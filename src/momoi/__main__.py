@@ -208,7 +208,9 @@ async def run(config_path: str | Path) -> None:
         if sig := getattr(signal, name, None):
             loop.add_signal_handler(sig, stop.set)
     logging.getLogger(__name__).info(
-        "Starting Momoi model=%s", config.llm.model
+        "Starting Momoi model=%s channel=%s",
+        config.llm.model,
+        getattr(config.channel, "plugin", "unknown"),
     )
     await MomoiDaemon(config).run(stop)
 

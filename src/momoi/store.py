@@ -499,17 +499,22 @@ class Store:
             )
 
     def add_event(self, message: IncomingMessage) -> bool:
+        payload = {
+            "channel": message.channel,
+            "segments": message.segments,
+        }
         cursor = self._db.execute(
             """INSERT OR IGNORE INTO events
                (id, message_id, kind, content, occurred_at, received_at, payload_json)
-               VALUES (?, ?, 'qq.message', ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (
                 message.event_id,
                 message.message_id,
+                f"{message.channel}.message",
                 message.text,
                 message.occurred_at,
                 message.received_at,
-                json.dumps(message.segments, ensure_ascii=False, separators=(",", ":")),
+                json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
             ),
         )
         self._db.commit()
@@ -531,7 +536,14 @@ class Store:
             value = json.loads(raw) if raw else []
         except json.JSONDecodeError:
             value = []
-        segments = tuple(item for item in value if isinstance(item, dict))
+        if isinstance(value, dict):
+            channel = str(value.get("channel") or "unknown")
+            raw_segments = value.get("segments") or []
+        else:
+            kind = str(row["kind"] or "")
+            channel = kind.removesuffix(".message") or "unknown"
+            raw_segments = value if isinstance(value, list) else []
+        segments = tuple(item for item in raw_segments if isinstance(item, dict))
         if not segments and row["content"]:
             segments = ({"type": "text", "data": {"text": row["content"]}},)
         return IncomingMessage(
@@ -541,6 +553,7 @@ class Store:
             occurred_at=row["occurred_at"],
             received_at=row["received_at"],
             segments=segments,
+            channel=channel,
         )
 
     def discard_events(self, events: list[IncomingMessage]) -> None:

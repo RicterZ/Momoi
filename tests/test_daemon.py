@@ -11,11 +11,11 @@ from unittest.mock import patch
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
+from momoi.channel.napcat import NapCatConfig
 from momoi.config import (
     AppConfig,
     HeartbeatConfig,
     LLMConfig,
-    NapCatConfig,
     NotificationConfig,
 )
 from momoi.daemon import (
@@ -117,7 +117,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             daemon = MomoiDaemon(
                 AppConfig(
                     llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
-                    napcat=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                    channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                     system_prompt="test",
                     recent_raw_tokens=1000,
                     recent_turns=2,
@@ -203,7 +203,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             daemon = MomoiDaemon(
                 AppConfig(
                     llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
-                    napcat=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                    channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                     system_prompt="test",
                     recent_raw_tokens=1000,
                     recent_turns=2,
@@ -224,7 +224,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             daemon = MomoiDaemon(
                 AppConfig(
                     llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
-                    napcat=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                    channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                     system_prompt="test",
                     recent_raw_tokens=1000,
                     recent_turns=2,
@@ -301,7 +301,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
                 llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
-                napcat=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="test",
                 recent_raw_tokens=1000,
                 recent_turns=2,
@@ -407,7 +407,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
                 llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
-                napcat=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
                 recent_raw_tokens=1000,
                 recent_turns=2,
@@ -446,7 +446,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
                 llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
-                napcat=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
                 recent_raw_tokens=1000,
                 recent_turns=2,
@@ -491,7 +491,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
                 llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
-                napcat=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
                 recent_raw_tokens=1000,
                 recent_turns=2,
@@ -524,7 +524,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
                 llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
-                napcat=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
                 recent_raw_tokens=1000,
                 recent_turns=2,
@@ -565,7 +565,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
                 llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
-                napcat=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
                 recent_raw_tokens=1000,
                 recent_turns=6,
@@ -588,7 +588,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
                 llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
-                napcat=NapCatConfig("ws://127.0.0.1", "20000", 0.01, 60, 30, 30, 20),
+                channel=NapCatConfig("ws://127.0.0.1", "20000", 0.01, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
                 recent_raw_tokens=1000,
                 recent_turns=2,
@@ -693,7 +693,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
                 llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
-                napcat=NapCatConfig("ws://127.0.0.1", "20000", 0.01, 60, 30, 30, 20),
+                channel=NapCatConfig("ws://127.0.0.1", "20000", 0.01, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
                 recent_raw_tokens=1000,
                 recent_turns=2,
@@ -900,7 +900,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         timeout_seconds=1,
                         max_retries=0,
                     ),
-                    napcat=NapCatConfig(
+                channel=NapCatConfig(
                         url=str(napcat_server.make_url("/")).replace(
                             "http://", "ws://"
                         ),

@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from .channel import load_channel_config
+
 
 class ConfigError(ValueError):
     pass
@@ -21,17 +23,6 @@ class LLMConfig:
     timeout_seconds: float
     max_retries: int
     api_format: str = "anthropic"
-
-
-@dataclass(frozen=True)
-class NapCatConfig:
-    url: str
-    owner_qq: str
-    quiet_seconds: float
-    max_batch_seconds: float
-    heartbeat_seconds: float
-    reconnect_max_seconds: float
-    send_timeout_seconds: float
 
 
 @dataclass(frozen=True)
@@ -67,7 +58,7 @@ class HeartbeatConfig:
 @dataclass(frozen=True)
 class AppConfig:
     llm: LLMConfig
-    napcat: NapCatConfig
+    channel: object
     system_prompt: str
     recent_raw_tokens: int
     recent_turns: int
@@ -87,7 +78,6 @@ class AppConfig:
     webhooks: WebhookConfig = WebhookConfig()
     heartbeat: HeartbeatConfig = HeartbeatConfig()
     workspace: Path | None = None
-
 
 def _mapping(value: Any, name: str) -> dict[str, Any]:
     if not isinstance(value, dict):
@@ -140,10 +130,15 @@ def load_config(path: str | Path) -> AppConfig:
     if api_format not in {"anthropic", "openai"}:
         raise ConfigError("llm.api_format must be anthropic or openai")
 
-    napcat_raw = _mapping(raw.get("napcat"), "napcat")
-    owner_qq = str(napcat_raw.get("owner_qq") or "")
-    if not owner_qq.isdigit():
-        raise ConfigError("napcat.owner_qq must contain digits only")
+    channel_section = _mapping(raw.get("channel"), "channel")
+    channel_name = str(channel_section.get("plugin") or "")
+    if not channel_name:
+        raise ConfigError("channel.plugin is required")
+    channel_settings = _mapping(channel_section.get("settings"), "channel.settings")
+    try:
+        channel_config = load_channel_config(channel_name, channel_settings)
+    except (TypeError, ValueError) as error:
+        raise ConfigError(str(error)) from None
 
     context_raw = _mapping(raw.get("context"), "context")
     storage_raw = _mapping(raw.get("storage"), "storage")
@@ -218,15 +213,7 @@ def load_config(path: str | Path) -> AppConfig:
             max_retries=max(0, int(llm_raw.get("max_retries", 2))),
             api_format=api_format,
         ),
-        napcat=NapCatConfig(
-            url=str(napcat_raw["url"]),
-            owner_qq=owner_qq,
-            quiet_seconds=_positive(napcat_raw.get("quiet_seconds", 1), "napcat.quiet_seconds"),
-            max_batch_seconds=_positive(napcat_raw.get("max_batch_seconds", 60), "napcat.max_batch_seconds"),
-            heartbeat_seconds=_positive(napcat_raw.get("heartbeat_seconds", 30), "napcat.heartbeat_seconds"),
-            reconnect_max_seconds=_positive(napcat_raw.get("reconnect_max_seconds", 30), "napcat.reconnect_max_seconds"),
-            send_timeout_seconds=_positive(napcat_raw.get("send_timeout_seconds", 20), "napcat.send_timeout_seconds"),
-        ),
+        channel=channel_config,
         system_prompt=system_prompt,
         recent_raw_tokens=max(1, int(context_raw.get("recent_raw_tokens", 32000))),
         recent_turns=max(1, int(context_raw.get("recent_turns", 6))),

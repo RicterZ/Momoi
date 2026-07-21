@@ -81,21 +81,28 @@ For Anthropic-compatible providers, Momoi calls `/v1/messages`. For OpenAI-compa
 
 `config.json` does not expand environment variables. Keep it private and restrict its file permissions if it contains credentials.
 
-## NapCat
+## Channel
+
+NapCat is the built-in default Channel plugin, implemented in `momoi.channel.napcat`. `plugin` identifies the adapter; its protocol-specific values stay under `settings`.
 
 ```json
 {
-  "napcat": {
-    "url": "ws://127.0.0.1:3001",
-    "owner_qq": "100000000",
-    "quiet_seconds": 6,
-    "max_batch_seconds": 60,
-    "heartbeat_seconds": 30,
-    "reconnect_max_seconds": 30,
-    "send_timeout_seconds": 20
+  "channel": {
+    "plugin": "napcat",
+    "settings": {
+      "url": "ws://127.0.0.1:3001",
+      "owner_qq": "100000000",
+      "quiet_seconds": 6,
+      "max_batch_seconds": 60,
+      "heartbeat_seconds": 30,
+      "reconnect_max_seconds": 30,
+      "send_timeout_seconds": 20
+    }
   }
 }
 ```
+
+`napcat` names this third-party adapter. A future official QQ AI Bot adapter will use a distinct `qq` plugin name.
 
 | Field | Required | Default | Description |
 | --- | --- | --- | --- |
@@ -107,9 +114,15 @@ For Anthropic-compatible providers, Momoi calls `/v1/messages`. For OpenAI-compa
 | `reconnect_max_seconds` | No | `30` | Maximum reconnect backoff |
 | `send_timeout_seconds` | No | `20` | Timeout for one outbound NapCat request |
 
-All timing fields in this section must be positive.
+All timing fields in `channel.settings` must be positive.
 
 Six seconds lets a natural sequence of short messages be handled together. Lower it to one second only when faster development feedback matters more than message collection.
+
+### Adding a Channel
+
+A Channel plugin is one module under `momoi.channel`. It exports `load_config(value)` and `create_channel(config)`. The created Channel supplies its `name`, runtime prompt context, batch timing, `run`, `send_message`, `content_blocks`, and Workflow variables. Incoming events identify their source with the plugin name, so NapCat events use `napcat:`; `qq:` remains available for an official QQ AI Bot plugin.
+
+Protocol-specific parsing, content rendering, and connection logs belong in that plugin module. The daemon, store, and webhook layers use only the common Channel interface.
 
 ## Context and memory budgets
 
@@ -189,6 +202,29 @@ Back up the complete workspace to preserve conversation history, memory, goals, 
   }
 }
 ```
+
+#### Connect gog Gmail and Calendar
+
+Use the built-in read-only `gog` MCP server directly:
+
+```json
+{
+  "mcpServers": {
+    "gog": {
+      "command": "/opt/homebrew/bin/gog",
+      "args": [
+        "--account", "you@gmail.com",
+        "--readonly",
+        "--no-input",
+        "mcp",
+        "--allow-tool", "gmail,calendar"
+      ]
+    }
+  }
+}
+```
+
+Run `gog --account you@gmail.com mcp --allow-tool gmail,calendar --list-tools` to inspect the exposed tools first. This configuration permits Gmail and Calendar reads only; widen it explicitly if writes are later required.
 
 ### Configure a remote MCP server
 

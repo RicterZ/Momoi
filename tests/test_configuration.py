@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from momoi.__main__ import emotion as emotion_command, goal as goal_command, parse_args
 from momoi.agenda_tools import AgendaTools
+from momoi.channel.napcat import NapCatConfig
 from momoi.config import (
     ConfigError,
     NotificationConfig,
@@ -23,6 +24,43 @@ from momoi.store import Store
 
 
 class ConfigurationTest(unittest.TestCase):
+    def test_loads_channel_plugin_configuration(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "prompts").mkdir()
+            (root / "prompts" / "SOUL.md").write_text("Test soul")
+            path = root / "config.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "llm": {
+                            "base_url": "https://example.com",
+                            "api_key": "key",
+                            "model": "model",
+                        },
+                        "channel": {
+                            "plugin": "napcat",
+                            "settings": {
+                                "url": "ws://localhost",
+                                "owner_qq": "123",
+                            },
+                        },
+                        "context": {},
+                        "storage": {"database": "momoi.sqlite3"},
+                        "logging": {},
+                    }
+                )
+            )
+            config = load_config(path)
+            self.assertIsInstance(config.channel, NapCatConfig)
+            self.assertEqual(config.channel.owner_qq, "123")
+
+            legacy = json.loads(path.read_text())
+            legacy["napcat"] = legacy.pop("channel")["settings"]
+            path.write_text(json.dumps(legacy))
+            with self.assertRaisesRegex(ConfigError, "channel must be a table/object"):
+                load_config(path)
+
     def test_config_rejects_string_booleans(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -31,7 +69,10 @@ class ConfigurationTest(unittest.TestCase):
             path = root / "config.json"
             config = {
                 "llm": {"base_url": "https://example.com", "api_key": "key", "model": "model"},
-                "napcat": {"url": "ws://localhost", "owner_qq": "123"},
+                "channel": {
+                    "plugin": "napcat",
+                    "settings": {"url": "ws://localhost", "owner_qq": "123"},
+                },
                 "context": {},
                 "storage": {"database": "momoi.sqlite3"},
                 "logging": {},

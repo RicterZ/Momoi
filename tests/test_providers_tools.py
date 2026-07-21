@@ -10,10 +10,10 @@ from aiohttp import web
 from aiohttp.test_utils import TestServer
 
 from momoi.builtin_tools import BuiltinTools
+from momoi.channel.napcat import NapCatConfig
 from momoi.config import (
     AppConfig,
     LLMConfig,
-    NapCatConfig,
 )
 from momoi.daemon import (
     MomoiDaemon,
@@ -52,7 +52,7 @@ class ProvidersToolsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
                 llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
-                napcat=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
                 recent_raw_tokens=1000,
                 recent_turns=2,
@@ -404,7 +404,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                 llm=LLMConfig(
                     "http://127.0.0.1", "test", "test", 100, 0, 1, 0, "openai"
                 ),
-                napcat=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
                 recent_raw_tokens=1000,
                 recent_turns=2,

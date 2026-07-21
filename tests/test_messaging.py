@@ -7,11 +7,20 @@ from pathlib import Path
 from unittest.mock import patch
 
 
-from momoi.channel import image_blocks, incoming_segments, render_segments
+from momoi.channel import (
+    SendRejected,
+    create_channel,
+)
+from momoi.channel.napcat import (
+    NapCatChannel,
+    NapCatConfig,
+    image_blocks,
+    incoming_segments,
+    render_segments,
+)
 from momoi.config import (
     AppConfig,
     LLMConfig,
-    NapCatConfig,
 )
 from momoi.daemon import (
     MomoiDaemon,
@@ -22,11 +31,14 @@ from momoi.models import (
     ProviderResponse,
     ToolCall,
 )
-from momoi.napcat import NapCatClient, SendRejected
 from momoi.store import Store
 
 
 class MessagingTest(unittest.TestCase):
+    def test_napcat_is_the_default_channel_plugin(self) -> None:
+        config = NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20)
+        self.assertIsInstance(create_channel(config), NapCatChannel)
+
     def test_renders_mixed_napcat_segments_without_losing_cards(self) -> None:
         payload = {
             "message": [
@@ -73,7 +85,7 @@ class MessagingTest(unittest.TestCase):
 
     def test_napcat_resolves_quoted_message_content_and_images(self) -> None:
         async def run() -> None:
-            client = NapCatClient(
+            client = NapCatChannel(
                 NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20)
             )
             accepted: list[IncomingMessage] = []
@@ -149,7 +161,7 @@ class MessagingTest(unittest.TestCase):
 
     def test_napcat_resolves_forward_nodes_and_images(self) -> None:
         async def run() -> None:
-            client = NapCatClient(
+            client = NapCatChannel(
                 NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20)
             )
             client._ready.set()
@@ -203,12 +215,21 @@ class MessagingTest(unittest.TestCase):
             )
             store = Store(path)
             store.add_event(
-                IncomingMessage("qq:1:rich", "rich", "附件", 1, 2, segments)
+                IncomingMessage(
+                    "qq:1:rich",
+                    "rich",
+                    "附件",
+                    1,
+                    2,
+                    segments,
+                    channel="napcat",
+                )
             )
             store.close()
             store = Store(path)
             restored = store.pending_events()[0]
             self.assertEqual(restored.segments, segments)
+            self.assertEqual(restored.channel, "napcat")
             store.close()
 
     def test_validates_terminal_response_tool(self) -> None:
@@ -266,7 +287,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
                 llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
-                napcat=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="test",
                 recent_raw_tokens=1000,
                 recent_turns=2,
@@ -294,7 +315,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             async def sleep(delay: float) -> None:
                 timeline.append(("sleep", delay))
 
-            daemon.napcat.send_message = send_message  # type: ignore[method-assign]
+            daemon.channel.send_message = send_message  # type: ignore[method-assign]
             with (
                 patch("momoi.daemon.random.uniform", return_value=3),
                 patch("momoi.daemon.asyncio.sleep", new=sleep),
@@ -317,7 +338,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
                 llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
-                napcat=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="test",
                 recent_raw_tokens=1000,
                 recent_turns=2,
@@ -341,7 +362,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             async def unexpected_sleep(_: float) -> None:
                 self.fail("different turns must not inherit an outbox delay")
 
-            daemon.napcat.send_message = send_message  # type: ignore[method-assign]
+            daemon.channel.send_message = send_message  # type: ignore[method-assign]
             with patch("momoi.daemon.asyncio.sleep", new=unexpected_sleep):
                 await daemon._outbox_worker(stop)
 
@@ -352,7 +373,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
                 llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
-                napcat=NapCatConfig("ws://127.0.0.1", "20000", 0.01, 60, 30, 30, 20),
+                channel=NapCatConfig("ws://127.0.0.1", "20000", 0.01, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
                 recent_raw_tokens=1000,
                 recent_turns=2,
@@ -367,7 +388,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             async def receive(message: IncomingMessage) -> None:
                 accepted.append(message)
 
-            await daemon.napcat._handle_payload(
+            await daemon.channel._handle_payload(  # type: ignore[attr-defined]
                 {
                     "post_type": "message",
                     "message_type": "private",
@@ -446,7 +467,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             asset.write_bytes(b"image")
             config = AppConfig(
                 llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
-                napcat=NapCatConfig("ws://127.0.0.1", "20000", 0.01, 60, 30, 30, 20),
+                channel=NapCatConfig("ws://127.0.0.1", "20000", 0.01, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
                 recent_raw_tokens=1000,
                 recent_turns=2,
@@ -533,7 +554,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
                 llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
-                napcat=NapCatConfig("ws://127.0.0.1", "20000", 0.01, 60, 30, 30, 20),
+                channel=NapCatConfig("ws://127.0.0.1", "20000", 0.01, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
                 recent_raw_tokens=1000,
                 recent_turns=2,
@@ -597,7 +618,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             daemon.store.close()
 
     async def test_napcat_sends_emotion_as_base64_image_segment(self) -> None:
-        client = NapCatClient(
+        client = NapCatChannel(
             NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20)
         )
         payloads: list[dict[str, object]] = []
@@ -633,7 +654,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(base64.b64decode(encoded), b"image-bytes")
 
     async def test_napcat_sends_rich_segments_and_forward_messages(self) -> None:
-        client = NapCatClient(
+        client = NapCatChannel(
             NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20)
         )
         payloads: list[dict[str, object]] = []

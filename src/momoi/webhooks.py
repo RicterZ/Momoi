@@ -15,7 +15,7 @@ import yaml
 from aiohttp import web
 
 from .channel import ChannelMessage
-from .config import NapCatConfig, WebhookConfig
+from .config import WebhookConfig
 from .store import Store
 
 
@@ -134,8 +134,11 @@ def _load_yaml(path: Path) -> dict[str, Any]:
 
 
 def load_catalog(
-    workflows_path: Path, executors_path: Path
+    workflows_path: Path,
+    executors_path: Path,
+    config_names: set[str] | None = None,
 ) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
+    config_names = config_names or set()
     executor_root = _load_yaml(executors_path)
     _only(executor_root, {"version", "executors"}, str(executors_path))
     if executor_root.get("version") != 1:
@@ -165,7 +168,7 @@ def load_catalog(
                     match.group(1) == "args" and match.group(2) not in parameters
                 ) or (
                     match.group(1) == "config"
-                    and match.group(2) not in {"napcat_url", "owner_qq"}
+                    and match.group(2) not in config_names
                 ) or match.group(1) == "inputs":
                     raise WorkflowError(f"executor {executor_id}.argv[{index}] has an invalid template")
         env = _mapping(item.get("env", {}), f"executor {executor_id}.env")
@@ -180,7 +183,7 @@ def load_catalog(
                     match.group(1) == "args" and match.group(2) not in parameters
                 ) or (
                     match.group(1) == "config"
-                    and match.group(2) not in {"napcat_url", "owner_qq"}
+                    and match.group(2) not in config_names
                 ) or match.group(1) == "inputs":
                     raise WorkflowError(f"executor {executor_id}.env.{key} has an invalid template")
         timeout = float(item.get("timeout_seconds", 180))
@@ -271,7 +274,7 @@ def bind_workflow(
     workflow: dict[str, Any],
     executors: dict[str, dict[str, Any]],
     supplied: object,
-    napcat: NapCatConfig,
+    config_values: dict[str, str],
 ) -> dict[str, Any]:
     values = _mapping(supplied, "request body")
     schemas = workflow["inputs"]
@@ -291,7 +294,6 @@ def bind_workflow(
             lambda match: str(normalized.get(match.group(2), "")), template
         )
 
-    config_values = {"napcat_url": napcat.url, "owner_qq": napcat.owner_qq}
     bound_steps: list[dict[str, Any]] = []
     for step in workflow["steps"]:
         if step["uses"] == "message":
@@ -334,7 +336,7 @@ class WebhookService:
     def __init__(
         self,
         config: WebhookConfig,
-        napcat: NapCatConfig,
+        channel_variables: dict[str, str],
         store: Store,
         generate_message: Callable[[str], Awaitable[list[ChannelMessage]]],
         wake_outbox: Callable[[], None],
@@ -342,11 +344,13 @@ class WebhookService:
         if config.workflows is None or config.executors is None:
             raise WorkflowError("webhook paths are not configured")
         self.config = config
-        self.napcat = napcat
+        self.channel_variables = channel_variables
         self.store = store
         self.generate_message = generate_message
         self.wake_outbox = wake_outbox
-        self.workflows, self.executors = load_catalog(config.workflows, config.executors)
+        self.workflows, self.executors = load_catalog(
+            config.workflows, config.executors, set(channel_variables)
+        )
         self.changed = asyncio.Event()
 
     async def run_api(self, stop: asyncio.Event) -> None:
@@ -380,7 +384,9 @@ class WebhookService:
             return web.json_response({"error": "workflow_not_found"}, status=404)
         try:
             body = await request.json()
-            plan = bind_workflow(workflow, self.executors, body, self.napcat)
+            plan = bind_workflow(
+                workflow, self.executors, body, self.channel_variables
+            )
             key = request.headers.get("Idempotency-Key")
             if key is not None and (not key or len(key) > 200 or any(ord(char) < 32 for char in key)):
                 raise WorkflowError("Idempotency-Key is invalid")

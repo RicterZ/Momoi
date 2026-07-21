@@ -5,10 +5,10 @@ import unittest
 from pathlib import Path
 
 
+from momoi.channel.napcat import NapCatConfig
 from momoi.config import (
     AppConfig,
     LLMConfig,
-    NapCatConfig,
     WebhookConfig,
 )
 from momoi.daemon import (
@@ -32,13 +32,16 @@ class WebhooksTest(unittest.TestCase):
         workflows, executors = load_catalog(
             root / "workflows", root / "workflow-executors.yaml"
         )
-        napcat = NapCatConfig("ws://napcat.test/ws", "20000", 1, 60, 30, 30, 20)
+        channel_variables = {
+            "channel_url": "ws://napcat.test/ws",
+            "owner_id": "20000",
+        }
         target_url = "https://status.example.com/health"
         plan = bind_workflow(
             workflows["url-check-event"],
             executors,
             {"event_prompt": "服务已经恢复，请提醒我。", "target_url": target_url},
-            napcat,
+            channel_variables,
         )
         argv = plan["steps"][0]["argv"]
         self.assertEqual(argv.count(target_url), 1)
@@ -49,13 +52,13 @@ class WebhooksTest(unittest.TestCase):
                 workflows["url-check-event"],
                 executors,
                 {"event_prompt": "测试", "target_url": "file:///etc/passwd"},
-                napcat,
+                channel_variables,
             )
         checked = bind_workflow(
             workflows["url-check-event"],
             executors,
             {"event_prompt": "检查完成", "target_url": "http://example.com/health"},
-            napcat,
+            channel_variables,
         )
         self.assertEqual(checked["steps"][0]["argv"][-1], "http://example.com/health")
         with self.assertRaisesRegex(WorkflowError, "unknown inputs"):
@@ -63,7 +66,7 @@ class WebhooksTest(unittest.TestCase):
                 workflows["event-message"],
                 executors,
                 {"event_prompt": "测试", "command": "rm -rf /"},
-                napcat,
+                channel_variables,
             )
 
 
@@ -72,7 +75,7 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
                 llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
-                napcat=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="contract\n{{SOUL}}\n{{CAPABILITY_POLICIES}}",
                 recent_raw_tokens=1000,
                 recent_turns=2,
@@ -219,7 +222,7 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                     workflows=root / "workflows",
                     executors=root / "workflow-executors.yaml",
                 ),
-                NapCatConfig("ws://napcat.test/ws", "20000", 1, 60, 30, 30, 20),
+                {"channel_url": "ws://napcat.test/ws", "owner_id": "20000"},
                 store,
                 generate,
                 lambda: None,
@@ -228,7 +231,7 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                 service.workflows["event-message"],
                 service.executors,
                 {"event_prompt": "门口检测到有人，请自然提醒我。"},
-                service.napcat,
+                service.channel_variables,
             )
             first, created = store.create_webhook_run(
                 "event-message", "same-event", plan

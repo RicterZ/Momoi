@@ -10,6 +10,7 @@ class IncomingMessage:
     occurred_at: float
     received_at: float
     segments: tuple[dict[str, Any], ...] = ()
+    channel: str = "unknown"
 
 
 @dataclass(frozen=True)

@@ -81,21 +81,28 @@ MCP 是添加由模型控制能力的常规方式。工作流用于事件驱动�
 
 `config.json` 不会展开环境变量。如果其中包含凭据，请妥善保管并限制文件权限。
 
-## NapCat
+## Channel
+
+NapCat 是内置的默认 Channel 插件，实现在 `momoi.channel.napcat`。`plugin` 标识适配器，协议专属配置放在 `settings` 下。
 
 ```json
 {
-  "napcat": {
-    "url": "ws://127.0.0.1:3001",
-    "owner_qq": "100000000",
-    "quiet_seconds": 6,
-    "max_batch_seconds": 60,
-    "heartbeat_seconds": 30,
-    "reconnect_max_seconds": 30,
-    "send_timeout_seconds": 20
+  "channel": {
+    "plugin": "napcat",
+    "settings": {
+      "url": "ws://127.0.0.1:3001",
+      "owner_qq": "100000000",
+      "quiet_seconds": 6,
+      "max_batch_seconds": 60,
+      "heartbeat_seconds": 30,
+      "reconnect_max_seconds": 30,
+      "send_timeout_seconds": 20
+    }
   }
 }
 ```
+
+`napcat` 表示第三方适配器；未来的 QQ 官方 AI Bot 适配器将使用独立的 `qq` 插件名。
 
 | 字段 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- |
@@ -107,9 +114,15 @@ MCP 是添加由模型控制能力的常规方式。工作流用于事件驱动�
 | `reconnect_max_seconds` | 否 | `30` | 重连退避的最大时间 |
 | `send_timeout_seconds` | 否 | `20` | 单次 NapCat 出站请求的超时时间 |
 
-本节所有时间字段都必须为正数。
+`channel.settings` 中的所有时间字段都必须为正数。
 
 6 秒可以把一组自然连续的短消息一起处理。只有在开发时更看重反馈速度而不是消息收集时，才建议降到 1 秒。
+
+### 接入新的 Channel
+
+一个 Channel 插件对应 `momoi.channel` 下的一个模块，并导出 `load_config(value)` 与 `create_channel(config)`。创建出的 Channel 提供 `name`、运行时 prompt 上下文、消息批处理时间、`run`、`send_message`、`content_blocks` 和 Workflow 变量。入站事件用插件名标识来源，因此 NapCat 事件使用 `napcat:`；`qq:` 留给未来的 QQ 官方 AI Bot 插件。
+
+协议专属的解析、内容渲染和连接日志都留在插件模块内。daemon、store 与 webhook 层只使用通用 Channel 接口。
 
 ## 上下文与记忆预算
 
@@ -189,6 +202,29 @@ MCP 是添加由模型控制能力的常规方式。工作流用于事件驱动�
   }
 }
 ```
+
+#### 连接 gog Gmail 与 Calendar
+
+可以直接使用 `gog` 自带的只读 MCP 服务器：
+
+```json
+{
+  "mcpServers": {
+    "gog": {
+      "command": "/opt/homebrew/bin/gog",
+      "args": [
+        "--account", "you@gmail.com",
+        "--readonly",
+        "--no-input",
+        "mcp",
+        "--allow-tool", "gmail,calendar"
+      ]
+    }
+  }
+}
+```
+
+用 `gog --account you@gmail.com mcp --allow-tool gmail,calendar --list-tools` 预先检查实际开放的工具。上述配置只允许读取 Gmail 和 Calendar；需要写操作时再显式扩大权限。
 
 ### 配置远程 MCP 服务器
 

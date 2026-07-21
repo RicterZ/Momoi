@@ -9,14 +9,17 @@
     "timeout_seconds": 120,
     "max_retries": 2
   },
-  "napcat": {
-    "url": "ws://127.0.0.1:3001",
-    "owner_qq": "123456789",
-    "quiet_seconds": 6,
-    "max_batch_seconds": 60,
-    "heartbeat_seconds": 30,
-    "reconnect_max_seconds": 30,
-    "send_timeout_seconds": 20
+  "channel": {
+    "plugin": "napcat",
+    "settings": {
+      "url": "ws://127.0.0.1:3001",
+      "owner_qq": "123456789",
+      "quiet_seconds": 6,
+      "max_batch_seconds": 60,
+      "heartbeat_seconds": 30,
+      "reconnect_max_seconds": 30,
+      "send_timeout_seconds": 20
+    }
   },
   "context": {
     "soul_prompt": "prompts/SOUL.md",

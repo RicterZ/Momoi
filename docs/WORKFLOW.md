@@ -246,8 +246,10 @@ Executor parameters use the same schema as Workflow inputs.
 `argv` and `env` values may be static strings or one complete template:
 
 - `${args.<parameter>}` — a validated executor argument
-- `${config.owner_qq}` — configured owner QQ
-- `${config.napcat_url}` — configured NapCat WebSocket URL
+- `${config.owner_id}` — owner identifier provided by the current Channel
+- `${config.channel_url}` — connection URL provided by the current Channel
+
+The NapCat plugin also provides `${config.owner_qq}` and `${config.napcat_url}`.
 
 Templates cannot be embedded inside a larger token. Momoi's existing process environment is inherited, so commands can read secrets from environment variables without placing them in Workflow input.
 
@@ -308,7 +310,7 @@ Call `rest_command.momoi_event` with an `event_prompt` value from an automation.
 ## Execution and recovery
 
 - Steps execute sequentially.
-- A `message` step waits until its QQ messages are delivered before the next step starts.
+- A `message` step waits until its Channel messages are delivered before the next step starts.
 - An `exec` step succeeds only with exit code `0`.
 - A nonzero exit or start failure marks the step failed.
 - A timeout has an ambiguous outcome because the process may have caused an external effect before it was stopped.

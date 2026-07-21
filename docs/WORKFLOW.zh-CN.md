@@ -246,8 +246,10 @@ executors:
 `argv` 和 `env` 中的值可以是静态字符串，也可以是一个完整模板：
 
 - `${args.<parameter>}`——已验证的执行器参数
-- `${config.owner_qq}`——配置的主人 QQ
-- `${config.napcat_url}`——配置的 NapCat WebSocket URL
+- `${config.owner_id}`——当前 Channel 配置的主人标识
+- `${config.channel_url}`——当前 Channel 的连接 URL
+
+NapCat 插件还提供 `${config.owner_qq}` 和 `${config.napcat_url}`。
 
 模板不能嵌入较大的 token 中。执行器会继承 Momoi 现有的进程环境，因此命令可以从环境变量读取 secret，无需把它放入工作流输入。
 
@@ -308,7 +310,7 @@ rest_command:
 ## 执行与恢复
 
 - 步骤按顺序执行。
-- `message` 步骤会等待其 QQ 消息投递完成，然后再执行下一步。
+- `message` 步骤会等待其 Channel 消息投递完成，然后再执行下一步。
 - `exec` 步骤只在退出码为 `0` 时成功。
 - 非零退出或启动失败会将步骤标记为失败。
 - 超时的结果不确定，因为进程可能在停止前已经造成外部影响。
