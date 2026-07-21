@@ -1,0 +1,25 @@
+version: 1
+id: url-check-event
+description: Check an HTTP endpoint, then notify the owner if it succeeds
+
+inputs:
+  event_prompt:
+    type: string
+    required: true
+    max_length: 2000
+  target_url:
+    type: string
+    required: true
+    format: url
+    schemes: [http, https]
+
+steps:
+  - id: check-endpoint
+    uses: exec
+    executor: http-check
+    args:
+      target_url: "${inputs.target_url}"
+
+  - id: notify
+    uses: message
+    prompt: "${inputs.event_prompt}"

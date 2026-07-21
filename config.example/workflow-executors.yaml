@@ -1,0 +1,16 @@
+version: 1
+executors:
+  http-check:
+    parameters:
+      target_url:
+        type: string
+        required: true
+        format: url
+        schemes: [http, https]
+    argv:
+      - python3
+      - -c
+      - "import sys, urllib.request; urllib.request.urlopen(sys.argv[1], timeout=15).close()"
+      - "${args.target_url}"
+    env: {}
+    timeout_seconds: 30

@@ -1,0 +1,84 @@
+from dataclasses import dataclass, field
+from typing import Any
+
+
+@dataclass(frozen=True)
+class IncomingMessage:
+    event_id: str
+    message_id: str
+    text: str
+    occurred_at: float
+    received_at: float
+    segments: tuple[dict[str, Any], ...] = ()
+
+
+@dataclass(frozen=True)
+class OutboxMessage:
+    id: int
+    turn_id: str
+    text: str
+    state: str
+    attempts: int
+    kind: str = "text"
+    media_path: str | None = None
+    payload: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class MemoryCandidate:
+    kind: str
+    key: str
+    content: str
+    evidence: str
+    importance: float = 0.5
+    replace_confirmed: bool = False
+
+
+@dataclass(frozen=True)
+class MemoryForgetCandidate:
+    kind: str
+    key: str
+    evidence: str
+
+
+@dataclass(frozen=True)
+class MemoryConflictCandidate:
+    kind: str
+    key: str
+    content: str
+    evidence: str
+    importance: float = 0.5
+
+
+@dataclass(frozen=True)
+class AgentReply:
+    messages: list[str | dict[str, Any]]
+    continuity: dict[str, Any] | str | None = None
+    mood_transition: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class ToolCall:
+    id: str
+    name: str
+    arguments: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class ProviderResponse:
+    content: list[dict[str, Any]]
+    tool_calls: list[ToolCall]
+    usage: dict[str, float | int | bool] | None = None
+
+
+@dataclass
+class TurnDraft:
+    memories: list[MemoryCandidate] = field(default_factory=list)
+    memory_conflicts: list[MemoryConflictCandidate] = field(default_factory=list)
+    forgotten_memories: list[MemoryForgetCandidate] = field(default_factory=list)
+    goals: dict[str, dict[str, Any]] = field(default_factory=dict)
+    reminders: dict[str, dict[str, Any]] = field(default_factory=dict)
+    notification_messages: list[str] | None = None
+    notification_key: str = ""
+    notification_priority: str = "normal"
+    notification_reason: str = ""

@@ -1,0 +1,322 @@
+# Configuration and capability access
+
+Momoi reads configuration from a workspace. The default workspace is `~/.momoi`; use `--workspace` to select another one.
+
+```bash
+momoi run
+momoi --workspace /path/to/workspace run
+```
+
+Create a workspace from the generic template before the first run:
+
+```bash
+mkdir -p ~/.momoi
+cp -R config.example/. ~/.momoi/
+```
+
+The complete template is [config.example/config.json](../config.example/config.json).
+
+## Choose an integration path
+
+| Need | Use |
+| --- | --- |
+| Let the model discover and call an external capability | MCP server in `mcp.json` |
+| Let Home Assistant, Jellyfin, or another service push an event | Webhook Workflow |
+| Repeat work that needs fresh reasoning or tool calls | Goal |
+| Deliver fixed text at a known time | Reminder |
+| Fetch a URL during an owner task | Built-in HTTP tool |
+
+MCP is the normal way to add model-controlled capabilities. Workflows are for event-driven, predefined sequences. See [WORKFLOW.md](./WORKFLOW.md) for webhook setup and YAML reference.
+
+## Paths and workspace files
+
+Relative paths in `config.json` are resolved from the directory containing that file.
+
+```text
+~/.momoi/
+├── config.json
+├── mcp.json
+├── prompts/
+│   └── SOUL.md
+├── workflows/
+│   └── *.yaml
+├── workflow-executors.yaml
+├── emotion/
+└── data/
+```
+
+This makes the workspace relocatable. Absolute paths are also accepted where a path field is supported.
+
+## LLM
+
+```json
+{
+  "llm": {
+    "api_format": "anthropic",
+    "base_url": "https://llm.example.com",
+    "api_key": "replace-me",
+    "model": "model-name",
+    "max_tokens": 4096,
+    "temperature": 0.6,
+    "timeout_seconds": 120,
+    "max_retries": 2
+  }
+}
+```
+
+| Field | Required | Default | Description |
+| --- | --- | --- | --- |
+| `api_format` | No | `anthropic` | `anthropic` or `openai` |
+| `base_url` | Yes | — | Compatible API base URL |
+| `api_key` | Yes | — | API credential; must not be empty |
+| `model` | Yes | — | Model identifier sent to the provider |
+| `max_tokens` | No | `2048` | Maximum output tokens for one model call |
+| `temperature` | No | `0.6` | Sampling temperature |
+| `timeout_seconds` | No | `120` | Positive request timeout |
+| `max_retries` | No | `2` | Retries for transient connection and server errors |
+
+For Anthropic-compatible providers, Momoi calls `/v1/messages`. For OpenAI-compatible providers, a host-only URL receives `/v1/chat/completions`; a URL that already contains a gateway path receives `/chat/completions` below that path.
+
+`config.json` does not expand environment variables. Keep it private and restrict its file permissions if it contains credentials.
+
+## NapCat
+
+```json
+{
+  "napcat": {
+    "url": "ws://127.0.0.1:3001",
+    "owner_qq": "100000000",
+    "quiet_seconds": 6,
+    "max_batch_seconds": 60,
+    "heartbeat_seconds": 30,
+    "reconnect_max_seconds": 30,
+    "send_timeout_seconds": 20
+  }
+}
+```
+
+| Field | Required | Default | Description |
+| --- | --- | --- | --- |
+| `url` | Yes | — | NapCat WebSocket URL |
+| `owner_qq` | Yes | — | Digits-only QQ ID accepted as the owner |
+| `quiet_seconds` | No | `6` in the production template | Wait after the latest owner message before starting; a new message resets the wait |
+| `max_batch_seconds` | No | `60` | Maximum time a continuously growing message batch may wait |
+| `heartbeat_seconds` | No | `30` | NapCat connection heartbeat interval |
+| `reconnect_max_seconds` | No | `30` | Maximum reconnect backoff |
+| `send_timeout_seconds` | No | `20` | Timeout for one outbound NapCat request |
+
+All timing fields in this section must be positive.
+
+The production template uses six seconds so a natural sequence of short messages is handled together. Lower it to one second only when faster development feedback matters more than message collection.
+
+## Context and memory budgets
+
+```json
+{
+  "context": {
+    "soul_prompt": "prompts/SOUL.md",
+    "recent_raw_tokens": 32000,
+    "recent_turns": 6,
+    "memory_results": 6,
+    "memory_tokens": 8000,
+    "max_input_tokens": 96000,
+    "summary_results": 3,
+    "summary_tokens": 6000
+  }
+}
+```
+
+| Field | Default | Description |
+| --- | --- | --- |
+| `soul_prompt` | `prompts/SOUL.md` | Persona file, relative to the workspace |
+| `recent_raw_tokens` | `32000` | Budget for recent conversation in original form |
+| `recent_turns` | `6` | Minimum recent owner interactions retained even when trimming history |
+| `memory_results` | `6` | Maximum durable memories recalled automatically |
+| `memory_tokens` | `8000` | Token budget for recalled durable memory |
+| `max_input_tokens` | `96000` | Target ceiling for the complete model input, including tool schemas |
+| `summary_results` | `3` | Maximum older conversation segments recalled automatically |
+| `summary_tokens` | `6000` | Token budget for recalled conversation segments |
+
+Set `max_input_tokens` below the provider's real context window. These are context-building budgets, not a promise that every provider counts tokens identically.
+
+Set a recall result count or token budget to `0` to disable that automatic recall layer. Explicit memory and conversation search tools remain available to the agent when their tool is enabled.
+
+## Storage
+
+```json
+{
+  "storage": {
+    "database": "data/momoi.sqlite3"
+  }
+}
+```
+
+`database` is required. A relative path is resolved from the workspace, and its parent directory is created automatically.
+
+Back up the complete workspace to preserve conversation history, memory, goals, reminders, emotion assets, and pending delivery state.
+
+## MCP and tool results
+
+```json
+{
+  "tools": {
+    "mcp_config": "mcp.json",
+    "result_max_chars": 30000
+  }
+}
+```
+
+| Field | Default | Description |
+| --- | --- | --- |
+| `mcp_config` | `mcp.json` | Standard MCP server configuration; use `null` or an empty string to disable MCP loading |
+| `result_max_chars` | `30000` | Maximum normalized tool-result size returned to the model; minimum `1000` |
+
+### Configure a stdio MCP server
+
+```json
+{
+  "mcpServers": {
+    "local-tools": {
+      "command": "your-mcp-server",
+      "args": ["--option", "value"],
+      "cwd": "/optional/working/directory",
+      "env": {
+        "SERVICE_TOKEN": "${SERVICE_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+### Configure a remote MCP server
+
+```json
+{
+  "mcpServers": {
+    "remote-tools": {
+      "url": "https://mcp.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer ${MCP_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+MCP environment values, remote URLs, and headers support `${VARIABLE}` expansion from Momoi's process environment. The variable must exist when Momoi starts. Add `"disabled": true` to keep a server definition without connecting it.
+
+Each connected server is isolated by name. Its tools appear to the model with a `mcp__<server>__<tool>` prefix. Connection failures are logged without preventing other configured servers from starting.
+
+## Turn budgets
+
+```json
+{
+  "turn": {
+    "max_seconds": 1800,
+    "max_total_tokens": 300000
+  }
+}
+```
+
+| Field | Default | Description |
+| --- | --- | --- |
+| `max_seconds` | `0` | Maximum wall time for one agent task; `0` disables the time limit |
+| `max_total_tokens` | `0` | Maximum accumulated input and output tokens for one task; `0` disables the token limit |
+
+These are safety budgets, not limits on the number of tool calls.
+
+## Proactive notification policy
+
+```json
+{
+  "notifications": {
+    "timezone": "UTC",
+    "quiet_start": null,
+    "quiet_end": null,
+    "cooldown_seconds": 1800,
+    "daily_budget": 12,
+    "urgent_daily_budget": 3,
+    "pending_owner_delay_seconds": 30
+  }
+}
+```
+
+| Field | Default | Description |
+| --- | --- | --- |
+| `timezone` | `UTC` | Valid IANA timezone used by daily schedules and notification budgets |
+| `quiet_start` | unset | Local `HH:MM` start of the quiet window |
+| `quiet_end` | unset | Local `HH:MM` end of the quiet window |
+| `cooldown_seconds` | `1800` | Minimum delay between queued notifications with the same key |
+| `daily_budget` | `12` | Maximum normal proactive notifications per local day |
+| `urgent_daily_budget` | `3` | Maximum urgent proactive notifications per local day |
+| `pending_owner_delay_seconds` | `30` | Delay proactive delivery while an owner message is waiting |
+
+`quiet_start` and `quiet_end` must either both be omitted or both use distinct `HH:MM` values. Overnight windows are supported.
+
+This policy applies to proactive Goal and Heartbeat notifications. A fixed Reminder follows its requested schedule.
+
+## Cognitive heartbeat
+
+```json
+{
+  "heartbeat": {
+    "enabled": false,
+    "initial_delay_seconds": 900,
+    "min_interval_seconds": 1800,
+    "max_interval_seconds": 21600,
+    "max_daily_turns": 12
+  }
+}
+```
+
+| Field | Default | Description |
+| --- | --- | --- |
+| `enabled` | `false` | Enable autonomous heartbeat evaluations |
+| `initial_delay_seconds` | `900` | Delay before the first heartbeat in a new workspace |
+| `min_interval_seconds` | `1800` | Smallest next interval Momoi may select |
+| `max_interval_seconds` | `21600` | Largest next interval Momoi may select |
+| `max_daily_turns` | `12` | Maximum heartbeat evaluations per local day |
+
+Intervals must be positive, and the maximum must not be smaller than the minimum. A silent heartbeat still counts as an evaluation.
+
+## Webhooks
+
+```json
+{
+  "webhooks": {
+    "enabled": false,
+    "host": "127.0.0.1",
+    "port": 8787,
+    "token": "replace-with-a-random-token",
+    "workflows": "workflows",
+    "executors": "workflow-executors.yaml"
+  }
+}
+```
+
+| Field | Default | Description |
+| --- | --- | --- |
+| `enabled` | `false` | Start the webhook API and workflow worker |
+| `host` | `127.0.0.1` | Bind address; use a reachable interface only when another machine must connect |
+| `port` | `8787` | TCP port from `1` to `65535` |
+| `token` | empty | Bearer token; required when webhooks are enabled |
+| `workflows` | `workflows` | Directory containing workflow YAML files |
+| `executors` | `workflow-executors.yaml` | File containing predefined command executors |
+
+Use a long random token and place a TLS reverse proxy in front of Momoi when the endpoint crosses an untrusted network. Continue with [WORKFLOW.md](./WORKFLOW.md).
+
+## Logging
+
+```json
+{
+  "logging": {
+    "level": "INFO"
+  }
+}
+```
+
+Use `INFO` for normal operation and `DEBUG` for development. DEBUG logs may contain owner messages, model output, and tool status; treat them as private data.
+
+## Apply changes
+
+Restart `momoi run` after changing `config.json`, `mcp.json`, `SOUL.md`, workflow files, or executor definitions. Startup validates required configuration and reports a concise configuration error before connecting services.

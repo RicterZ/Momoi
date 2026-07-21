@@ -1,0 +1,69 @@
+{
+  "llm": {
+    "api_format": "anthropic",
+    "base_url": "https://api.example.com",
+    "api_key": "replace-me",
+    "model": "model-name",
+    "max_tokens": 4096,
+    "temperature": 0.6,
+    "timeout_seconds": 120,
+    "max_retries": 2
+  },
+  "napcat": {
+    "url": "ws://127.0.0.1:3001",
+    "owner_qq": "123456789",
+    "quiet_seconds": 6,
+    "max_batch_seconds": 60,
+    "heartbeat_seconds": 30,
+    "reconnect_max_seconds": 30,
+    "send_timeout_seconds": 20
+  },
+  "context": {
+    "soul_prompt": "prompts/SOUL.md",
+    "recent_raw_tokens": 32000,
+    "recent_turns": 6,
+    "memory_results": 6,
+    "memory_tokens": 8000,
+    "max_input_tokens": 96000,
+    "summary_results": 3,
+    "summary_tokens": 6000
+  },
+  "storage": {
+    "database": "data/momoi.sqlite3"
+  },
+  "tools": {
+    "mcp_config": "mcp.json",
+    "result_max_chars": 30000
+  },
+  "turn": {
+    "max_seconds": 1800,
+    "max_total_tokens": 300000
+  },
+  "notifications": {
+    "timezone": "UTC",
+    "quiet_start": null,
+    "quiet_end": null,
+    "cooldown_seconds": 1800,
+    "daily_budget": 12,
+    "urgent_daily_budget": 3,
+    "pending_owner_delay_seconds": 30
+  },
+  "heartbeat": {
+    "enabled": false,
+    "initial_delay_seconds": 900,
+    "min_interval_seconds": 1800,
+    "max_interval_seconds": 21600,
+    "max_daily_turns": 12
+  },
+  "webhooks": {
+    "enabled": false,
+    "host": "127.0.0.1",
+    "port": 8787,
+    "token": "replace-with-a-random-token",
+    "workflows": "workflows",
+    "executors": "workflow-executors.yaml"
+  },
+  "logging": {
+    "level": "INFO"
+  }
+}

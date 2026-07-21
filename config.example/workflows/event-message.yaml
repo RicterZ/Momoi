@@ -1,0 +1,14 @@
+version: 1
+id: event-message
+description: Generate a natural notification from an event prompt
+
+inputs:
+  event_prompt:
+    type: string
+    required: true
+    max_length: 2000
+
+steps:
+  - id: notify
+    uses: message
+    prompt: "${inputs.event_prompt}"
