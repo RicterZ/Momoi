@@ -109,6 +109,12 @@ def _nonnegative(value: Any, name: str) -> float:
     return number
 
 
+def _boolean(value: Any, name: str) -> bool:
+    if not isinstance(value, bool):
+        raise ConfigError(f"{name} must be boolean")
+    return value
+
+
 def _clock(value: Any, name: str) -> str | None:
     if value in (None, ""):
         return None
@@ -174,7 +180,7 @@ def load_config(path: str | Path) -> AppConfig:
     heartbeat_raw = _mapping(raw.get("heartbeat", {}), "heartbeat")
     mcp_value = tools_raw.get("mcp_config", "mcp.json")
     mcp_config = (config_path.parent / str(mcp_value)).resolve() if mcp_value else None
-    webhook_enabled = bool(webhook_raw.get("enabled", False))
+    webhook_enabled = _boolean(webhook_raw.get("enabled", False), "webhooks.enabled")
     webhook_token = str(webhook_raw.get("token") or "")
     if webhook_enabled and not webhook_token:
         raise ConfigError("webhooks.token is required when webhooks are enabled")
@@ -268,7 +274,9 @@ def load_config(path: str | Path) -> AppConfig:
             executors=executor_path,
         ),
         heartbeat=HeartbeatConfig(
-            enabled=bool(heartbeat_raw.get("enabled", False)),
+            enabled=_boolean(
+                heartbeat_raw.get("enabled", False), "heartbeat.enabled"
+            ),
             initial_delay_seconds=_positive(
                 heartbeat_raw.get("initial_delay_seconds", 900),
                 "heartbeat.initial_delay_seconds",

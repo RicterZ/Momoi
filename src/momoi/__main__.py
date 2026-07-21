@@ -6,9 +6,9 @@ import re
 import shutil
 import signal
 from datetime import datetime, timedelta
+from importlib.metadata import version
 from pathlib import Path
 
-from . import __version__
 from .agenda_tools import AgendaTools
 from .config import ConfigError, load_config
 from .daemon import MomoiDaemon
@@ -18,7 +18,7 @@ from .store import Store
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the headless Momoi daemon")
-    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {version('momoi')}")
     parser.add_argument(
         "--workspace",
         type=lambda value: Path(value).expanduser(),

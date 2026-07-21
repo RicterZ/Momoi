@@ -10,7 +10,9 @@ from unittest.mock import patch
 from momoi.__main__ import emotion as emotion_command, goal as goal_command, parse_args
 from momoi.agenda_tools import AgendaTools
 from momoi.config import (
+    ConfigError,
     NotificationConfig,
+    load_config,
 )
 from momoi.mcp_client import load_mcp_servers
 from momoi.models import (
@@ -21,6 +23,26 @@ from momoi.store import Store
 
 
 class ConfigurationTest(unittest.TestCase):
+    def test_config_rejects_string_booleans(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "prompts").mkdir()
+            (root / "prompts" / "SOUL.md").write_text("Test soul")
+            path = root / "config.json"
+            config = {
+                "llm": {"base_url": "https://example.com", "api_key": "key", "model": "model"},
+                "napcat": {"url": "ws://localhost", "owner_qq": "123"},
+                "context": {},
+                "storage": {"database": "momoi.sqlite3"},
+                "logging": {},
+            }
+            for section in ("webhooks", "heartbeat"):
+                config[section] = {"enabled": "false"}
+                path.write_text(json.dumps(config))
+                with self.assertRaisesRegex(ConfigError, rf"{section}\.enabled must be boolean"):
+                    load_config(path)
+                del config[section]
+
     def test_emotion_cli_imports_deduplicates_lists_and_deletes_managed_files(
         self,
     ) -> None:

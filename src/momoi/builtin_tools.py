@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-import requests
+import aiohttp
 
 from .models import ToolCall
 
@@ -27,7 +27,7 @@ BUILTIN_TOOL_SPECS: list[dict[str, Any]] = [
     {
         "name": "curl",
         "description": (
-            "Send an HTTP(S) request with Python requests. Private-network and "
+            "Send an HTTP(S) request. Private-network and "
             "localhost URLs are allowed. Returns status, headers, final URL, and body."
         ),
         "input_schema": {
@@ -154,7 +154,7 @@ class BuiltinTools:
     async def execute(self, call: ToolCall) -> dict[str, Any]:
         try:
             if call.name == "curl":
-                return await asyncio.to_thread(self._curl, call.arguments)
+                return await self._curl(call.arguments)
             if call.name == "read_file":
                 return await asyncio.to_thread(self._read_file, call.arguments)
             if call.name == "write_file":
@@ -170,7 +170,7 @@ class BuiltinTools:
             return {"ok": False, "error": type(error).__name__, "message": str(error)[:1000]}
 
     @staticmethod
-    def _curl(arguments: dict[str, Any]) -> dict[str, Any]:
+    async def _curl(arguments: dict[str, Any]) -> dict[str, Any]:
         url = str(arguments.get("url") or "").strip()
         if not url.startswith(("http://", "https://")):
             raise ValueError("url must use http or https")
@@ -180,39 +180,34 @@ class BuiltinTools:
         json_body = arguments.get("json")
         if body is not None and json_body is not None:
             raise ValueError("body and json are mutually exclusive")
-        with requests.request(
-            method,
-            url,
-            headers=headers,
-            params=arguments.get("params"),
-            data=body,
-            json=json_body,
-            timeout=min(120.0, max(0.1, float(arguments.get("timeout_seconds", 20)))),
-            allow_redirects=bool(arguments.get("allow_redirects", True)),
-            verify=bool(arguments.get("verify_tls", True)),
-            stream=True,
-        ) as response:
-            chunks: list[bytes] = []
-            size = 0
-            truncated = False
-            for chunk in response.iter_content(8192):
-                remaining = 200_000 - size
-                if len(chunk) > remaining:
-                    chunks.append(chunk[:remaining])
-                    truncated = True
-                    break
-                chunks.append(chunk)
-                size += len(chunk)
-            raw = b"".join(chunks)
-            encoding = response.encoding or "utf-8"
-            return {
-                "ok": True,
-                "status": response.status_code,
-                "url": response.url,
-                "headers": dict(response.headers),
-                "body": raw.decode(encoding, errors="replace"),
-                "truncated": truncated,
-            }
+        timeout = aiohttp.ClientTimeout(
+            total=min(120.0, max(0.1, float(arguments.get("timeout_seconds", 20))))
+        )
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.request(
+                method,
+                url,
+                headers=headers,
+                params=arguments.get("params"),
+                data=body,
+                json=json_body,
+                allow_redirects=bool(arguments.get("allow_redirects", True)),
+                ssl=bool(arguments.get("verify_tls", True)),
+            ) as response:
+                try:
+                    raw = await response.content.readexactly(200_001)
+                except asyncio.IncompleteReadError as error:
+                    raw = error.partial
+                return {
+                    "ok": True,
+                    "status": response.status,
+                    "url": str(response.url),
+                    "headers": dict(response.headers),
+                    "body": raw[:200_000].decode(
+                        response.charset or "utf-8", errors="replace"
+                    ),
+                    "truncated": len(raw) > 200_000,
+                }
 
     @staticmethod
     def _read_file(arguments: dict[str, Any]) -> dict[str, Any]:

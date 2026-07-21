@@ -604,8 +604,12 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
         async def endpoint(_: web.Request) -> web.Response:
             return web.Response(text="inner-network-ok")
 
+        async def large_endpoint(_: web.Request) -> web.Response:
+            return web.Response(body=b"x" * 200_001)
+
         server = TestServer(web.Application())
         server.app.router.add_get("/status", endpoint)
+        server.app.router.add_get("/large", large_endpoint)
         await server.start_server()
         try:
             tools = BuiltinTools()
@@ -614,6 +618,11 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             self.assertTrue(response["ok"])
             self.assertEqual(response["body"], "inner-network-ok")
+            large = await tools.execute(
+                ToolCall("curl-large", "curl", {"url": str(server.make_url("/large"))})
+            )
+            self.assertTrue(large["truncated"])
+            self.assertEqual(len(large["body"]), 200_000)
 
             with tempfile.TemporaryDirectory() as directory:
                 path = Path(directory) / "note.txt"

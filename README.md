@@ -8,8 +8,6 @@ The goal is not to build another question-and-answer bot. The goal is to create 
 
 > Momoi is currently designed for trusted personal deployment and real-world testing. It is not a public or multi-user bot.
 
-Current release: **0.1.0**, the first installable Momoi release.
-
 ## Why Momoi
 
 Most chatbots are stateless request handlers with a personality prompt attached. Momoi is designed differently:

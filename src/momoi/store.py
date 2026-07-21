@@ -6,7 +6,6 @@ import re
 import sqlite3
 import time
 import uuid
-import zlib
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -43,6 +42,10 @@ MOOD_STATES = {
     "down",
     "frustrated",
 }
+BASELINE_MOOD_STATE = "calm"
+BASELINE_MOOD_INTENSITY = 0.35
+BASELINE_MOOD_CAUSE = "resting baseline"
+DEFAULT_ACTIVITY = "spending time freely"
 CJK_STOP_CHARS = set("的了是在我你他她它们和就都也很还把被让要会呢吧啊哦呀")
 
 
@@ -276,7 +279,6 @@ class Store:
                     CHECK (external_effect_started IN (0, 1)),
                 stage TEXT NOT NULL DEFAULT 'started',
                 failure_reason TEXT,
-                last_context_manifest_id INTEGER,
                 llm_calls INTEGER NOT NULL DEFAULT 0,
                 input_tokens INTEGER NOT NULL DEFAULT 0,
                 output_tokens INTEGER NOT NULL DEFAULT 0,
@@ -298,27 +300,6 @@ class Store:
                 text TEXT NOT NULL,
                 created_at REAL NOT NULL,
                 PRIMARY KEY (turn_id, tool_call_id, part_index)
-            );
-            CREATE TABLE IF NOT EXISTS context_blobs (
-                sha256 TEXT PRIMARY KEY,
-                content_zlib BLOB NOT NULL,
-                raw_bytes INTEGER NOT NULL,
-                created_at REAL NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS context_manifests (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                turn_id TEXT NOT NULL,
-                request_index INTEGER NOT NULL,
-                authority TEXT NOT NULL,
-                provider_json TEXT NOT NULL,
-                require_tool INTEGER NOT NULL,
-                system_sha256 TEXT NOT NULL,
-                messages_sha256 TEXT NOT NULL,
-                tools_sha256 TEXT NOT NULL,
-                payload_sha256 TEXT NOT NULL,
-                estimated_tokens INTEGER NOT NULL,
-                created_at REAL NOT NULL,
-                UNIQUE(turn_id, request_index)
             );
             CREATE TABLE IF NOT EXISTS webhook_runs (
                 id TEXT PRIMARY KEY,
@@ -387,10 +368,6 @@ class Store:
             )
         if "failure_reason" not in turn_columns:
             self._db.execute("ALTER TABLE turns ADD COLUMN failure_reason TEXT")
-        if "last_context_manifest_id" not in turn_columns:
-            self._db.execute(
-                "ALTER TABLE turns ADD COLUMN last_context_manifest_id INTEGER"
-            )
         for name in ("llm_calls", "input_tokens", "output_tokens"):
             if name not in turn_columns:
                 self._db.execute(
@@ -432,9 +409,30 @@ class Store:
             """INSERT OR IGNORE INTO self_state
                (id, mood_state, mood_intensity, mood_cause, mood_updated_at,
                 activity, activity_since, updated_at)
-               VALUES (1, 'cheerful', 0.55, 'personality baseline', ?,
-                       '自由安排自己的时间', ?, ?)""",
-            (now, now, now),
+               VALUES (1, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                BASELINE_MOOD_STATE,
+                BASELINE_MOOD_INTENSITY,
+                BASELINE_MOOD_CAUSE,
+                now,
+                DEFAULT_ACTIVITY,
+                now,
+                now,
+            ),
+        )
+        self._db.execute(
+            """UPDATE self_state SET mood_state=?, mood_intensity=?, mood_cause=?
+               WHERE mood_state='cheerful' AND mood_intensity=0.55
+                 AND mood_cause='personality baseline' AND mood_settle_at IS NULL""",
+            (
+                BASELINE_MOOD_STATE,
+                BASELINE_MOOD_INTENSITY,
+                BASELINE_MOOD_CAUSE,
+            ),
+        )
+        self._db.execute(
+            "UPDATE self_state SET activity=? WHERE activity='自由安排自己的时间'",
+            (DEFAULT_ACTIVITY,),
         )
         self._db.execute(
             """INSERT OR IGNORE INTO memory_evidence
@@ -980,20 +978,25 @@ class Store:
             with self._db:
                 self._db.execute(
                     """UPDATE self_state
-                       SET mood_state='cheerful', mood_intensity=0.55,
-                           mood_cause='personality baseline', mood_updated_at=?,
+                       SET mood_state=?, mood_intensity=?, mood_cause=?, mood_updated_at=?,
                            mood_settle_at=NULL, updated_at=? WHERE id=1""",
-                    (now, now),
+                    (
+                        BASELINE_MOOD_STATE,
+                        BASELINE_MOOD_INTENSITY,
+                        BASELINE_MOOD_CAUSE,
+                        now,
+                        now,
+                    ),
                 )
             state.update(
-                mood_state="cheerful",
-                mood_intensity=0.55,
-                mood_cause="personality baseline",
+                mood_state=BASELINE_MOOD_STATE,
+                mood_intensity=BASELINE_MOOD_INTENSITY,
+                mood_cause=BASELINE_MOOD_CAUSE,
                 mood_updated_at=now,
                 mood_settle_at=None,
                 updated_at=now,
             )
-            logger.debug("Mood settled from=%s to=cheerful", previous)
+            logger.debug("Mood settled from=%s to=%s", previous, BASELINE_MOOD_STATE)
         return state
 
     def self_state_context(self, now: float | None = None) -> str:
@@ -1057,10 +1060,6 @@ class Store:
             duration,
             str(transition["cause"]).replace("\n", " ")[:300],
         )
-
-    def apply_mood_transition(self, transition: dict[str, object]) -> None:
-        with self._db:
-            self._apply_mood_transition(transition, time.time())
 
     def ensure_heartbeat(self, config: HeartbeatConfig, now: float | None = None) -> None:
         if not config.enabled:
@@ -1656,128 +1655,6 @@ class Store:
                 (turn_id, tool_call_id, tool_name, capability, digest, time.time()),
             )
         return None
-
-    def record_context_manifest(
-        self,
-        turn_id: str,
-        authority: str,
-        provider: dict[str, object],
-        require_tool: bool,
-        system: object,
-        messages: object,
-        tools: object,
-    ) -> dict[str, object]:
-        now = time.time()
-        serialized = {
-            name: json.dumps(
-                value,
-                ensure_ascii=False,
-                sort_keys=True,
-                separators=(",", ":"),
-                default=str,
-            )
-            for name, value in (
-                ("system", system),
-                ("messages", messages),
-                ("tools", tools),
-            )
-        }
-        hashes = {
-            name: hashlib.sha256(content.encode()).hexdigest()
-            for name, content in serialized.items()
-        }
-        provider_json = json.dumps(
-            provider,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            default=str,
-        )
-        payload_sha256 = hashlib.sha256(
-            json.dumps(
-                {
-                    "provider": json.loads(provider_json),
-                    "require_tool": require_tool,
-                    **hashes,
-                },
-                sort_keys=True,
-                separators=(",", ":"),
-            ).encode()
-        ).hexdigest()
-        estimated = estimate_tokens(
-            json.dumps(
-                {"system": system, "messages": messages, "tools": tools},
-                ensure_ascii=False,
-                default=str,
-            )
-        )
-        with self._db:
-            for name, content in serialized.items():
-                raw = content.encode()
-                self._db.execute(
-                    """INSERT OR IGNORE INTO context_blobs
-                       (sha256, content_zlib, raw_bytes, created_at)
-                       VALUES (?, ?, ?, ?)""",
-                    (hashes[name], zlib.compress(raw), len(raw), now),
-                )
-            request_index = int(
-                self._db.execute(
-                    """SELECT COALESCE(MAX(request_index), -1) + 1
-                       FROM context_manifests WHERE turn_id=?""",
-                    (turn_id,),
-                ).fetchone()[0]
-            )
-            cursor = self._db.execute(
-                """INSERT INTO context_manifests
-                   (turn_id, request_index, authority, provider_json, require_tool,
-                    system_sha256, messages_sha256, tools_sha256, payload_sha256,
-                    estimated_tokens, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    turn_id,
-                    request_index,
-                    authority,
-                    provider_json,
-                    int(require_tool),
-                    hashes["system"],
-                    hashes["messages"],
-                    hashes["tools"],
-                    payload_sha256,
-                    estimated,
-                    now,
-                ),
-            )
-            self._db.execute(
-                """UPDATE turns SET stage='llm_request',
-                   last_context_manifest_id=?, updated_at=?
-                   WHERE id=? AND state='running'""",
-                (cursor.lastrowid, now, turn_id),
-            )
-        return {
-            "id": int(cursor.lastrowid),
-            "request_index": request_index,
-            "payload_sha256": payload_sha256,
-            "estimated_tokens": estimated,
-        }
-
-    def context_manifest(self, manifest_id: int) -> dict[str, object] | None:
-        row = self._db.execute(
-            "SELECT * FROM context_manifests WHERE id=?", (manifest_id,)
-        ).fetchone()
-        if row is None:
-            return None
-        manifest = dict(row)
-        for name in ("system", "messages", "tools"):
-            blob = self._db.execute(
-                "SELECT content_zlib FROM context_blobs WHERE sha256=?",
-                (manifest[f"{name}_sha256"],),
-            ).fetchone()
-            if blob is None:
-                raise RuntimeError(f"missing context blob: {name}")
-            manifest[name] = json.loads(zlib.decompress(blob[0]).decode())
-        manifest["provider"] = json.loads(str(manifest.pop("provider_json")))
-        manifest["require_tool"] = bool(manifest["require_tool"])
-        return manifest
 
     def complete_tool_call(
         self, turn_id: str, tool_call_id: str, result: dict[str, object]

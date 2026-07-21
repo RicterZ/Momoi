@@ -433,7 +433,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             turn_id = daemon._turn_id(event.event_id)
             await daemon._complete_batch_turn([event], asyncio.Event(), turn_id)
             self.assertEqual(provider.calls, 0)
-            self.assertIn("达到单轮处理预算", daemon.store.due_outbox()[0].text)
+            self.assertIn("per-turn processing limit", daemon.store.due_outbox()[0].text)
             turn = daemon.store._db.execute(
                 "SELECT state, llm_calls FROM turns WHERE id=?", (turn_id,)
             ).fetchone()
@@ -476,7 +476,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
 
             self.assertEqual(provider.calls, 1)
-            self.assertIn("停止这个 Turn", daemon.store.due_outbox()[0].text)
+            self.assertIn("model service failed", daemon.store.due_outbox()[0].text)
             turn = daemon.store._db.execute(
                 "SELECT state, failure_reason FROM turns WHERE id=?", (turn_id,)
             ).fetchone()
@@ -516,7 +516,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             daemon._complete_batch = fail_after_tool  # type: ignore[method-assign]
             await daemon._complete_batch_turn([event], asyncio.Event(), turn_id)
 
-            self.assertIn("致命错误", daemon.store.due_outbox()[0].text)
+            self.assertIn(f"/resolve {turn_id[:12]}", daemon.store.due_outbox()[0].text)
             self.assertIn(turn_id, daemon.store.open_reconciliations_context())
             daemon.store.close()
 

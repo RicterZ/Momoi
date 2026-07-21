@@ -33,10 +33,6 @@ class SendRejected(NapCatError):
     pass
 
 
-def extract_text(payload: dict[str, Any]) -> str:
-    return render_segments(incoming_segments(payload))
-
-
 class NapCatClient:
     def __init__(self, config: NapCatConfig) -> None:
         self.config = config
@@ -115,16 +111,6 @@ class NapCatClient:
                     except TimeoutError:
                         pass
                     delay = min(delay * 2, self.config.reconnect_max_seconds)
-
-    async def _handle_frame(
-        self,
-        raw: str,
-        on_message: Callable[[IncomingMessage], Awaitable[None]],
-    ) -> None:
-        payload = self._decode_frame(raw)
-        if payload is None or self._resolve_response(payload):
-            return
-        await self._handle_payload(payload, on_message)
 
     @staticmethod
     def _decode_frame(raw: str) -> dict[str, Any] | None:
@@ -249,14 +235,6 @@ class NapCatClient:
             )
         if rendered:
             segment["data"]["_forward"] = rendered
-
-    async def send_text(self, text: str) -> str:
-        return await self._send_segments(
-            [{"type": "text", "data": {"text": text}}]
-        )
-
-    async def send_image(self, path: str) -> str:
-        return await self._send_segments([{"type": "image", "data": {"file": path}}])
 
     async def send_message(self, payload: dict[str, Any]) -> str:
         if payload.get("action") == "forward":

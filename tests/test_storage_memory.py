@@ -142,50 +142,22 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertTrue(replay["ambiguous"])
             store.close()
 
-    def test_context_manifest_reconstructs_requests_and_deduplicates_blobs(
-        self,
-    ) -> None:
+    def test_legacy_context_manifest_tables_are_left_untouched(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            store = Store(Path(directory) / "momoi.sqlite3")
-            store.begin_turn("turn-context", "owner", ["qq:1:context"])
-            system = [{"type": "text", "text": "system"}]
-            messages = [{"role": "user", "content": "hello"}]
-            tools = [{"name": "respond", "input_schema": {"type": "object"}}]
-            first = store.record_context_manifest(
-                "turn-context",
-                "owner",
-                {"api_format": "anthropic", "model": "test"},
-                False,
-                system,
-                messages,
-                tools,
+            path = Path(directory) / "momoi.sqlite3"
+            database = sqlite3.connect(path)
+            database.executescript(
+                "CREATE TABLE context_manifests(id INTEGER);"
+                "INSERT INTO context_manifests VALUES (1);"
+                "CREATE TABLE context_blobs(id INTEGER);"
             )
-            second = store.record_context_manifest(
-                "turn-context",
-                "owner",
-                {"api_format": "anthropic", "model": "test"},
-                False,
-                system,
-                messages,
-                tools,
-            )
-            self.assertEqual(first["request_index"], 0)
-            self.assertEqual(second["request_index"], 1)
-            self.assertEqual(first["payload_sha256"], second["payload_sha256"])
-            self.assertEqual(
-                store._db.execute("SELECT COUNT(*) FROM context_blobs").fetchone()[0],
-                3,
-            )
-            restored = store.context_manifest(int(first["id"]))
-            self.assertEqual(restored["system"], system)
-            self.assertEqual(restored["messages"], messages)
-            self.assertEqual(restored["tools"], tools)
-            self.assertEqual(restored["provider"]["model"], "test")
-            turn = store._db.execute(
-                "SELECT stage, last_context_manifest_id FROM turns WHERE id='turn-context'"
-            ).fetchone()
-            self.assertEqual(turn["stage"], "llm_request")
-            self.assertEqual(turn["last_context_manifest_id"], second["id"])
+            database.close()
+
+            store = Store(path)
+            count = store._db.execute(
+                "SELECT COUNT(*) FROM context_manifests"
+            ).fetchone()[0]
+            self.assertEqual(count, 1)
             store.close()
 
     def test_crashed_external_effect_turn_requires_reconciliation(self) -> None:
@@ -474,9 +446,32 @@ class StorageMemoryTest(unittest.TestCase):
             active = store.self_state()
             self.assertEqual(active["mood_state"], "excited")
             settled = store.self_state(float(active["mood_settle_at"]) + 1)
-            self.assertEqual(settled["mood_state"], "cheerful")
-            self.assertEqual(settled["mood_intensity"], 0.55)
+            self.assertEqual(settled["mood_state"], "calm")
+            self.assertEqual(settled["mood_intensity"], 0.35)
+            self.assertEqual(settled["mood_cause"], "resting baseline")
             self.assertIsNone(settled["mood_settle_at"])
+            store.close()
+
+    def test_old_default_self_state_migrates_to_neutral_baseline(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "momoi.sqlite3"
+            store = Store(path)
+            store._db.execute(
+                """UPDATE self_state
+                   SET mood_state='cheerful', mood_intensity=0.55,
+                       mood_cause='personality baseline', mood_settle_at=NULL,
+                       activity='自由安排自己的时间'
+                   WHERE id=1"""
+            )
+            store._db.commit()
+            store.close()
+
+            store = Store(path)
+            state = store.self_state()
+            self.assertEqual(state["mood_state"], "calm")
+            self.assertEqual(state["mood_intensity"], 0.35)
+            self.assertEqual(state["mood_cause"], "resting baseline")
+            self.assertEqual(state["activity"], "spending time freely")
             store.close()
 
     def test_recurring_reminder_fires_multiple_occurrences(self) -> None:
@@ -881,7 +876,8 @@ class StorageMemoryTest(unittest.TestCase):
 
     def test_memory_survives_history_window_and_correction(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            store = Store(Path(directory) / "momoi.sqlite3")
+            path = Path(directory) / "momoi.sqlite3"
+            store = Store(path)
             event = IncomingMessage(
                 "qq:1:memory-1",
                 "memory-1",
@@ -969,6 +965,12 @@ class StorageMemoryTest(unittest.TestCase):
                 store.add_event(item)
                 store.commit_turn([item], item.text, AgentReply([f"回复{index}"]))
             self.assertGreater(len(store.history(10000, 6)), 24)
+            store.close()
+            store = Store(path)
+            self.assertIn(
+                "卧室灯默认使用冷色",
+                store.memory_context("卧室灯光", 6, 8000),
+            )
             store.close()
 
     def test_uncertain_memory_conflict_waits_for_owner_confirmation(self) -> None:

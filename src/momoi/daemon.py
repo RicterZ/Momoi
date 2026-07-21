@@ -39,6 +39,17 @@ AGENDA_POLL_SECONDS = 5
 MAX_CONSECUTIVE_TOOL_FAILURES = 3
 CURL_TOOL_SPEC = next(spec for spec in BUILTIN_TOOL_SPECS if spec["name"] == "curl")
 
+
+def _reconciliation_message(turn_id: str) -> str:
+    short_id = turn_id[:12]
+    return (
+        "An external tool may have already run before this turn was interrupted. "
+        "To avoid repeating the action, I did not continue automatically. "
+        f"After checking the actual result, send /resolve {short_id} <result>, "
+        f"or /resume {short_id} <current state> to continue."
+    )
+
+
 SEGMENT_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
@@ -678,13 +689,7 @@ class MomoiDaemon:
             self.store.commit_turn(
                 batch,
                 owner_content,
-                AgentReply(
-                    [
-                        "上次处理这条消息时已经开始调用外部工具，但进程在完成前中断了。"
-                        f"为避免重复操作，我没有自动继续。确认状态后可发送 /resolve {turn_id[:12]} 结果说明，"
-                        f"或发送 /resume {turn_id[:12]} 当前状态来继续。"
-                    ]
-                ),
+                AgentReply([_reconciliation_message(turn_id)]),
                 turn_id=turn_id,
             )
             self.outbox_changed.set()
@@ -709,25 +714,30 @@ class MomoiDaemon:
             self.store.open_reconciliation(
                 turn_id, "fatal_error_after_external_tool"
             )
-            failure_message = (
-                "工具已经执行过，但本轮随后遇到致命错误。为避免重复操作，我没有自动重试。"
-                f"确认状态后可发送 /resolve {turn_id[:12]} 结果说明，"
-                f"或发送 /resume {turn_id[:12]} 当前状态来继续。"
-            )
+            failure_message = _reconciliation_message(turn_id)
             failure_reason = "fatal_error_after_external_tool"
         except TurnBudgetExceeded as error:
             logger.warning("Owner turn budget exhausted: %s", error)
-            failure_message = "这次任务已经达到单轮处理预算，我先停在这里，避免继续消耗。你可以让我稍后继续。"
+            failure_message = (
+                "This task reached its per-turn processing limit, so I stopped to "
+                "avoid further usage. Ask me to continue when ready."
+            )
             failure_reason = type(error).__name__
         except asyncio.CancelledError:
             raise
         except ProviderError as error:
             logger.error("Owner turn stopped after Provider failure: %s", error)
-            failure_message = "模型服务本轮调用失败，我已经停止这个 Turn，没有继续重复请求。请稍后再试。"
+            failure_message = (
+                "The model service failed during this turn. I stopped without "
+                "repeated retries; please try again later."
+            )
             failure_reason = type(error).__name__
         except Exception as error:
             logger.exception("Owner turn stopped by fatal error: %s", type(error).__name__)
-            failure_message = "本轮遇到内部错误，已经停止，没有继续自动重试。"
+            failure_message = (
+                "This turn stopped because of an internal error and was not retried "
+                "automatically."
+            )
             failure_reason = type(error).__name__
         owner_content = f"# Current owner messages\n{self._render_batch(batch)}"
         self.store.commit_turn(
@@ -891,31 +901,6 @@ class MomoiDaemon:
             )
             self._check_turn_budget(turn_id, system, messages, request_tools)
             require_tool = require_response and self.config.llm.api_format == "openai"
-            try:
-                manifest = self.store.record_context_manifest(
-                    turn_id,
-                    authority,
-                    {
-                        "api_format": self.config.llm.api_format,
-                        "model": self.config.llm.model,
-                        "max_tokens": self.config.llm.max_tokens,
-                        "temperature": self.config.llm.temperature,
-                    },
-                    require_tool,
-                    system,
-                    messages,
-                    request_tools,
-                )
-                logger.debug(
-                    "Stored context manifest id=%d request=%d hash=%s",
-                    manifest["id"],
-                    manifest["request_index"],
-                    str(manifest["payload_sha256"])[:12],
-                )
-            except Exception as error:
-                logger.warning(
-                    "Context manifest failed: %s", type(error).__name__
-                )
             try:
                 response = await self.provider.complete(
                     system,
@@ -1503,11 +1488,7 @@ class MomoiDaemon:
             self.store.commit_autonomous_turn(
                 goal_id,
                 TurnDraft(
-                    notification_messages=[
-                        "我上次继续任务时已经开始调用外部工具，但进程在完成前中断了。"
-                        f"为避免重复操作，我没有自动继续。确认状态后可发送 /resolve {turn_id[:12]} 结果说明，"
-                        f"或发送 /resume {turn_id[:12]} 当前状态来继续。"
-                    ],
+                    notification_messages=[_reconciliation_message(turn_id)],
                     notification_key="goal.reconciliation",
                     notification_priority="urgent",
                     notification_reason="External action outcome requires owner confirmation.",
@@ -1537,11 +1518,7 @@ class MomoiDaemon:
                 turn_id, "fatal_error_after_external_tool"
             )
             draft = TurnDraft(
-                notification_messages=[
-                    "我继续处理一个任务时已经调用过工具，但本轮随后遇到致命错误。"
-                    f"为避免重复操作，我先停下来了。确认状态后可发送 /resolve {turn_id[:12]} 结果说明，"
-                    f"或发送 /resume {turn_id[:12]} 当前状态来继续。"
-                ],
+                notification_messages=[_reconciliation_message(turn_id)],
                 notification_key="goal.reconciliation",
                 notification_priority="urgent",
                 notification_reason="External action outcome requires owner confirmation.",
@@ -1553,7 +1530,7 @@ class MomoiDaemon:
             )
             draft = TurnDraft(
                 notification_messages=[
-                    "我继续处理任务时达到了单轮处理预算，已经暂停，避免继续消耗。"
+                    "I paused this task after it reached the per-turn processing limit."
                 ],
                 notification_key="goal.budget",
                 notification_priority="urgent",
@@ -1689,31 +1666,6 @@ class MomoiDaemon:
                 system, messages, tools, history_messages
             )
             self._check_turn_budget(turn_id, system, messages, tools)
-            try:
-                manifest = self.store.record_context_manifest(
-                    turn_id,
-                    "agent",
-                    {
-                        "api_format": self.config.llm.api_format,
-                        "model": self.config.llm.model,
-                        "max_tokens": self.config.llm.max_tokens,
-                        "temperature": self.config.llm.temperature,
-                    },
-                    True,
-                    system,
-                    messages,
-                    tools,
-                )
-                logger.debug(
-                    "Stored heartbeat context manifest id=%d request=%d hash=%s",
-                    manifest["id"],
-                    manifest["request_index"],
-                    str(manifest["payload_sha256"])[:12],
-                )
-            except Exception as error:
-                logger.warning(
-                    "Heartbeat context manifest failed: %s", type(error).__name__
-                )
             response = await self.provider.complete(
                 system, messages, tools, require_tool=True
             )

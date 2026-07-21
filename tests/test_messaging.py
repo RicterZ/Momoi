@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 
-from momoi.channel import image_blocks, render_segments
+from momoi.channel import image_blocks, incoming_segments, render_segments
 from momoi.config import (
     AppConfig,
     LLMConfig,
@@ -22,7 +22,7 @@ from momoi.models import (
     ProviderResponse,
     ToolCall,
 )
-from momoi.napcat import NapCatClient, SendRejected, extract_text
+from momoi.napcat import NapCatClient, SendRejected
 from momoi.store import Store
 
 
@@ -60,7 +60,7 @@ class MessagingTest(unittest.TestCase):
                 },
             ]
         }
-        rendered = extract_text(payload)
+        rendered = render_segments(incoming_segments(payload))
         self.assertIn("先开灯", rendered)
         self.assertIn("https://img.example/a.jpg", rendered)
         self.assertIn("，卧室的", rendered)
@@ -118,23 +118,21 @@ class MessagingTest(unittest.TestCase):
             async def receive(message: IncomingMessage) -> None:
                 accepted.append(message)
 
-            await client._handle_frame(
-                json.dumps(
-                    {
-                        "post_type": "message",
-                        "message_type": "private",
-                        "self_id": 10000,
-                        "user_id": 20000,
-                        "message_id": 88,
-                        "message": [
-                            {"type": "reply", "data": {"id": "77"}},
-                            {
-                                "type": "text",
-                                "data": {"text": "这张挺可爱的"},
-                            },
-                        ],
-                    }
-                ),
+            await client._handle_payload(
+                {
+                    "post_type": "message",
+                    "message_type": "private",
+                    "self_id": 10000,
+                    "user_id": 20000,
+                    "message_id": 88,
+                    "message": [
+                        {"type": "reply", "data": {"id": "77"}},
+                        {
+                            "type": "text",
+                            "data": {"text": "这张挺可爱的"},
+                        },
+                    ],
+                },
                 receive,
             )
             self.assertEqual(len(accepted), 1)
@@ -369,23 +367,21 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             async def receive(message: IncomingMessage) -> None:
                 accepted.append(message)
 
-            await daemon.napcat._handle_frame(
-                json.dumps(
-                    {
-                        "post_type": "message",
-                        "message_type": "private",
-                        "self_id": 10000,
-                        "user_id": 20000,
-                        "message_id": 88,
-                        "time": 1,
-                        "message": [
-                            {
-                                "type": "image",
-                                "data": {"url": "https://img.example/owner.jpg"},
-                            }
-                        ],
-                    }
-                ),
+            await daemon.napcat._handle_payload(
+                {
+                    "post_type": "message",
+                    "message_type": "private",
+                    "self_id": 10000,
+                    "user_id": 20000,
+                    "message_id": 88,
+                    "time": 1,
+                    "message": [
+                        {
+                            "type": "image",
+                            "data": {"url": "https://img.example/owner.jpg"},
+                        }
+                    ],
+                },
                 receive,
             )
             self.assertEqual(len(accepted), 1)
@@ -621,9 +617,16 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             asset = Path(directory) / "asset.png"
             asset.write_bytes(b"image-bytes")
-            self.assertEqual(await client.send_image(str(asset)), "9")
+            image = {
+                "action": "message",
+                "segments": [{"type": "image", "data": {"file": str(asset)}}],
+            }
+            self.assertEqual(await client.send_message(image), "9")
             with self.assertRaisesRegex(SendRejected, "cannot be read"):
-                await client.send_image(str(Path(directory) / "missing.png"))
+                image["segments"][0]["data"]["file"] = str(
+                    Path(directory) / "missing.png"
+                )
+                await client.send_message(image)
         segment = payloads[0]["params"]["message"][0]  # type: ignore[index]
         self.assertEqual(segment["type"], "image")
         encoded = segment["data"]["file"].removeprefix("base64://")
