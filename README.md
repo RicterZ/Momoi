@@ -1,6 +1,6 @@
 # Momoi
 
-[EN](./README.md) | [中文](./README.zh-CN.md)
+EN | [中文](./README.zh-CN.md)
 
 > A persistent personal AI companion for QQ — with memory, agency, mood, and a life rhythm of her own.
 

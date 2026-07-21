@@ -1,6 +1,6 @@
 # 配置与能力访问
 
-[EN](./CONFIG.md) | [中文](./CONFIG.zh-CN.md)
+[EN](./CONFIG.md) | 中文
 
 Momoi 从 workspace 读取配置。默认 workspace 是 `~/.momoi`；使用 `--workspace` 可选择其他目录。
 

@@ -1,6 +1,6 @@
 # Momoi
 
-[EN](./README.md) | [中文](./README.zh-CN.md)
+[EN](./README.md) | 中文
 
 > 一个常驻在 QQ 里的个人 AI 伙伴——拥有记忆、主动性、情绪和自己的生活节奏。
 

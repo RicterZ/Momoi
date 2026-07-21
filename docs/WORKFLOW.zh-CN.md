@@ -1,6 +1,6 @@
 # Webhook 工作流
 
-[EN](./WORKFLOW.md) | [中文](./WORKFLOW.zh-CN.md)
+[EN](./WORKFLOW.md) | 中文
 
 工作流让外部系统可以在 Momoi 中触发一段预先定义的执行序列。
 

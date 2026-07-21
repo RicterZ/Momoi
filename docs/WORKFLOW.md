@@ -1,6 +1,6 @@
 # Webhook workflows
 
-[EN](./WORKFLOW.md) | [中文](./WORKFLOW.zh-CN.md)
+EN | [中文](./WORKFLOW.zh-CN.md)
 
 Workflows let an external system trigger a predefined sequence in Momoi.
 
