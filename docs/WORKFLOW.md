@@ -1,5 +1,7 @@
 # Webhook workflows
 
+[EN](./WORKFLOW.md) | [中文](./WORKFLOW.zh-CN.md)
+
 Workflows let an external system trigger a predefined sequence in Momoi.
 
 Use a Workflow when Home Assistant, Jellyfin, a monitoring system, or another service already knows that an event happened. Use MCP instead when Momoi should decide whether and how to call a capability during a conversation or Goal.

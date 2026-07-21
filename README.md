@@ -1,5 +1,7 @@
 # Momoi
 
+[EN](./README.md) | [中文](./README.zh-CN.md)
+
 > A persistent personal AI companion for QQ — with memory, agency, mood, and a life rhythm of her own.
 
 Momoi is a headless, single-owner AI agent that lives in QQ private chat. She can talk naturally, remember shared context, use tools, manage long-running tasks, react to events from your home and services, and decide when it is genuinely worth starting a conversation.

@@ -1,5 +1,7 @@
 # Configuration and capability access
 
+[EN](./CONFIG.md) | [中文](./CONFIG.zh-CN.md)
+
 Momoi reads configuration from a workspace. The default workspace is `~/.momoi`; use `--workspace` to select another one.
 
 ```bash
