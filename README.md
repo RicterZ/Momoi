@@ -142,8 +142,6 @@ uv tool install .
 momoi --version
 ```
 
-The `momoi` command can now be used from any directory.
-
 ### Create a workspace
 
 Still in the repository root, copy the starter workspace once:
@@ -189,8 +187,6 @@ momoi emotion add \
 momoi emotion list
 momoi emotion del --slug very-happy-dance
 ```
-
-Imported assets are managed inside the workspace, so the original file can be moved later.
 
 ## Connect tools with MCP
 

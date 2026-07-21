@@ -101,7 +101,7 @@ For Anthropic-compatible providers, Momoi calls `/v1/messages`. For OpenAI-compa
 | --- | --- | --- | --- |
 | `url` | Yes | — | NapCat WebSocket URL |
 | `owner_qq` | Yes | — | Digits-only QQ ID accepted as the owner |
-| `quiet_seconds` | No | `6` in the production template | Wait after the latest owner message before starting; a new message resets the wait |
+| `quiet_seconds` | No | `6` | Wait after the latest owner message before starting; a new message resets the wait |
 | `max_batch_seconds` | No | `60` | Maximum time a continuously growing message batch may wait |
 | `heartbeat_seconds` | No | `30` | NapCat connection heartbeat interval |
 | `reconnect_max_seconds` | No | `30` | Maximum reconnect backoff |
@@ -109,7 +109,7 @@ For Anthropic-compatible providers, Momoi calls `/v1/messages`. For OpenAI-compa
 
 All timing fields in this section must be positive.
 
-The production template uses six seconds so a natural sequence of short messages is handled together. Lower it to one second only when faster development feedback matters more than message collection.
+Six seconds lets a natural sequence of short messages be handled together. Lower it to one second only when faster development feedback matters more than message collection.
 
 ## Context and memory budgets
 

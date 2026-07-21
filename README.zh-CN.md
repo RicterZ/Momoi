@@ -142,8 +142,6 @@ uv tool install .
 momoi --version
 ```
 
-之后可以在任何目录使用 `momoi` 命令。
-
 ### 创建 workspace
 
 仍在仓库根目录，复制一次初始 workspace：
@@ -189,8 +187,6 @@ momoi emotion add \
 momoi emotion list
 momoi emotion del --slug very-happy-dance
 ```
-
-导入的素材会由 workspace 管理，之后移动原始文件也不会受影响。
 
 ## 通过 MCP 连接工具
 
