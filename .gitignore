@@ -11,3 +11,4 @@ mcp.json
 *.sqlite3-shm
 *.sqlite3-wal
 var/
+dist
