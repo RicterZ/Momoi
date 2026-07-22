@@ -259,6 +259,19 @@ HEARTBEAT_FINISH_SPEC: dict[str, Any] = {
     },
 }
 
+AUTONOMOUS_FINISH_SPEC: dict[str, Any] = {
+    "name": "autonomous_finish",
+    "description": (
+        "Required terminal marker for a Goal review. Call it alone after updating, "
+        "finishing, or cancelling the Goal and after any optional owner_notify call."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": False,
+    },
+}
+
 REFLECTION_FINISH_SPEC: dict[str, Any] = {
     "name": "reflection_finish",
     "description": (

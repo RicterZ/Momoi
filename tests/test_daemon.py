@@ -19,6 +19,7 @@ from momoi.config import (
     NotificationConfig,
 )
 from momoi.runtime import (
+    AUTONOMOUS_FINISH_SPEC,
     HEARTBEAT_FINISH_SPEC,
     HEARTBEAT_QUEUE_ITEM,
     RESPOND_TOOL_SPEC,
@@ -119,6 +120,120 @@ class DaemonTest(unittest.TestCase):
 
 
 class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
+    async def test_goal_commits_only_after_explicit_autonomous_finish(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(
+                AppConfig(
+                    llm=LLMConfig(
+                        "http://127.0.0.1", "test", "test", 100, 0, 1, 0, "openai"
+                    ),
+                    channel=NapCatConfig(
+                        "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
+                    ),
+                    system_prompt="test",
+                    recent_raw_tokens=1000,
+                    recent_turns=2,
+                    memory_results=2,
+                    memory_tokens=1000,
+                    database=Path(directory) / "momoi.sqlite3",
+                    log_level="INFO",
+                )
+            )
+            event = IncomingMessage("qq:goal-finish", "goal-finish", "继续检查", 1, 1)
+            daemon.store.add_event(event)
+            draft = TurnDraft()
+            created = daemon.agenda_tools.execute(
+                ToolCall(
+                    "create",
+                    "goal_create",
+                    {
+                        "title": "检查任务",
+                        "success_criteria": "记录检查结果",
+                        "next_action": "执行检查",
+                        "next_review_at": (
+                            datetime.now().astimezone() + timedelta(milliseconds=20)
+                        ).isoformat(),
+                    },
+                ),
+                draft,
+                authority="owner",
+                source_event_id=event.event_id,
+                allow_notify=False,
+            )
+            goal_id = str(created["goal"]["id"])
+            daemon.store.commit_turn([event], event.text, AgentReply(["好"]), draft)
+            await asyncio.sleep(0.03)
+            daemon.store.claim_due_goal()
+
+            class Provider:
+                calls = 0
+
+                async def complete(
+                    self, _: object, __: object, tools: list[dict[str, object]], **kwargs: object
+                ) -> ProviderResponse:
+                    self.calls += 1
+                    if not kwargs.get("require_tool"):
+                        raise AssertionError("autonomous turns must require a terminal tool")
+                    if self.calls == 1:
+                        call = ToolCall(
+                            "update",
+                            "goal_update",
+                            {
+                                "goal_id": goal_id,
+                                "status": "waiting",
+                                "waiting_for": "下一次检查",
+                                "latest_result": "本次检查正常",
+                                "next_review_at": (
+                                    datetime.now().astimezone() + timedelta(hours=1)
+                                ).isoformat(),
+                            },
+                        )
+                    elif self.calls == 2:
+                        call = ToolCall(
+                            "notify",
+                            "owner_notify",
+                            {
+                                "text": "检查完成，目前正常",
+                                "reason": "任务阶段结果",
+                                "key": "service.check",
+                            },
+                        )
+                    else:
+                        if [tool["name"] for tool in tools] == ["respond"]:
+                            raise AssertionError("goal must not use owner respond")
+                        call = ToolCall("finish", "autonomous_finish", {})
+                    return ProviderResponse(
+                        [
+                            {
+                                "type": "tool_use",
+                                "id": call.id,
+                                "name": call.name,
+                                "input": call.arguments,
+                            }
+                        ],
+                        [call],
+                    )
+
+            provider = Provider()
+            daemon.provider = provider  # type: ignore[assignment]
+            await daemon._complete_goal_turn(goal_id, asyncio.Event())
+
+            self.assertEqual(provider.calls, 3)
+            self.assertEqual(daemon.store.goal(goal_id)["latest_result"], "本次检查正常")
+            notification = daemon.store._db.execute(
+                "SELECT state, messages_json FROM notifications WHERE goal_id=?",
+                (goal_id,),
+            ).fetchone()
+            self.assertEqual(notification["state"], "pending")
+            self.assertIn("检查完成", notification["messages_json"])
+            turn = daemon.store._db.execute(
+                "SELECT state FROM turns WHERE source_ids_json=?",
+                (json.dumps([f"goal:{goal_id}"]),),
+            ).fetchone()
+            self.assertEqual(turn["state"], "completed")
+            self.assertEqual(AUTONOMOUS_FINISH_SPEC["name"], "autonomous_finish")
+            daemon.store.close()
+
     async def test_repeated_invalid_tools_force_a_visible_failure_response(
         self,
     ) -> None:

@@ -1,5 +1,6 @@
 from .daemon import HEARTBEAT_QUEUE_ITEM, MomoiDaemon
 from .protocol import (
+    AUTONOMOUS_FINISH_SPEC,
     HEARTBEAT_FINISH_SPEC,
     REFLECTION_FINISH_SPEC,
     RESPOND_TOOL_SPEC,
@@ -8,6 +9,7 @@ from .protocol import (
 )
 
 __all__ = [
+    "AUTONOMOUS_FINISH_SPEC",
     "HEARTBEAT_FINISH_SPEC",
     "HEARTBEAT_QUEUE_ITEM",
     "REFLECTION_FINISH_SPEC",

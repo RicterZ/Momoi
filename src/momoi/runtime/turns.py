@@ -31,6 +31,7 @@ from .parsing import (
     validate_delivery,
 )
 from .protocol import (
+    AUTONOMOUS_FINISH_SPEC,
     CURL_TOOL_SPEC,
     HEARTBEAT_FINISH_SPEC,
     REFLECTION_FINISH_SPEC,
@@ -465,18 +466,30 @@ class TurnRunner:
         allow_notify: bool,
         turn_id: str,
         require_response: bool,
+        autonomous_goal_id: str | None = None,
     ) -> AgentReply | None:
         external_tool_used = False
         force_response = False
+        force_autonomous_finish = False
         failed_tool_rounds = 0
         history_messages = max(0, len(messages) - 1)
         while True:
-            request_tools = [RESPOND_TOOL_SPEC] if force_response else tools
+            request_tools = (
+                [RESPOND_TOOL_SPEC]
+                if force_response
+                else (
+                    [AUTONOMOUS_FINISH_SPEC]
+                    if force_autonomous_finish
+                    else tools
+                )
+            )
             history_messages = self._fit_context(
                 system, messages, request_tools, history_messages
             )
             self._check_turn_budget(turn_id, system, messages, request_tools)
-            require_tool = require_response and self.config.llm.api_format == "openai"
+            require_tool = bool(autonomous_goal_id) or (
+                require_response and self.config.llm.api_format == "openai"
+            )
             try:
                 response = await self.provider.complete(
                     system,
@@ -515,6 +528,21 @@ class TurnRunner:
             )
             self.store.record_turn_usage(turn_id, input_tokens, output_tokens)
             if not response.tool_calls:
+                if autonomous_goal_id:
+                    messages.extend(
+                        [
+                            {"role": "assistant", "content": response.content},
+                            {
+                                "role": "user",
+                                "content": (
+                                    "[Trusted runtime protocol error. Plain text was not "
+                                    "stored. Finish now by calling autonomous_finish alone.]"
+                                ),
+                            },
+                        ]
+                    )
+                    force_autonomous_finish = True
+                    continue
                 if not require_response:
                     return None
                 logger.debug("Rejected plain LLM response error=respond_tool_required")
@@ -532,6 +560,37 @@ class TurnRunner:
                     ]
                 )
                 force_response = True
+                continue
+            if (
+                autonomous_goal_id
+                and len(response.tool_calls) == 1
+                and response.tool_calls[0].name == "autonomous_finish"
+            ):
+                if autonomous_goal_id in draft.goals:
+                    return None
+                messages.extend(
+                    [
+                        {"role": "assistant", "content": response.content},
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "tool_result",
+                                    "tool_use_id": response.tool_calls[0].id,
+                                    "content": json.dumps(
+                                        {
+                                            "ok": False,
+                                            "error": "goal_must_be_updated_before_finish",
+                                        },
+                                        ensure_ascii=False,
+                                    ),
+                                    "is_error": True,
+                                }
+                            ],
+                        },
+                    ]
+                )
+                force_autonomous_finish = False
                 continue
             if (
                 require_response
@@ -591,6 +650,11 @@ class TurnRunner:
                             if require_response
                             else "tool_not_allowed"
                         ),
+                    }
+                elif call.name == "autonomous_finish":
+                    result = {
+                        "ok": False,
+                        "error": "autonomous_finish_must_be_the_only_terminal_tool",
                     }
                 elif call.name == "send_message":
                     error = self._validate_delivery(call.arguments)
@@ -1529,6 +1593,7 @@ class TurnRunner:
             OWNER_NOTIFY_SPEC,
             *BUILTIN_TOOL_SPECS,
             *self.mcp.tool_specs,
+            AUTONOMOUS_FINISH_SPEC,
         ]
         draft = TurnDraft()
         await self._run_tool_loop(
@@ -1542,6 +1607,7 @@ class TurnRunner:
             allow_notify=True,
             turn_id=turn_id,
             require_response=False,
+            autonomous_goal_id=goal_id,
         )
         self.store.commit_autonomous_turn(goal_id, draft, turn_id=turn_id)
         logger.info(
