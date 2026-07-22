@@ -16,7 +16,7 @@ from aiohttp import web
 
 from .channel import ChannelMessage
 from .config import WebhookConfig
-from .store import Store
+from .storage import Store
 
 
 logger = logging.getLogger(__name__)

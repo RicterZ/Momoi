@@ -8,31 +8,29 @@ import time
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from zoneinfo import ZoneInfo
 
-from .channel import (
+from ..channel import (
     ChannelMessage,
     media_path,
     normalize_channel_message,
     render_channel_message,
 )
-from .config import HeartbeatConfig, NotificationConfig, ReflectionConfig
-from .emotions import emotion_slug, valid_emotion_slug
-from .models import (
+from ..config import HeartbeatConfig, NotificationConfig, ReflectionConfig
+from ..emotions import emotion_slug, valid_emotion_slug
+from ..models import (
     AgentReply,
     IncomingMessage,
-    MemoryCandidate,
-    MemoryConflictCandidate,
-    MemoryForgetCandidate,
-    OutboxMessage,
     TurnDraft,
 )
+from .delivery import DeliveryStore
+from .memory import MemoryStore, estimate_tokens, lexical_units
+from .scheduling import local_day_bounds, next_schedule_at, quiet_until
 
 
 logger = logging.getLogger(__name__)
 
 
-MEMORY_KINDS = {"profile", "preference", "relationship", "shared", "episodic", "routine"}
 MOOD_STATES = {
     "cheerful",
     "excited",
@@ -46,7 +44,6 @@ BASELINE_MOOD_STATE = "calm"
 BASELINE_MOOD_INTENSITY = 0.35
 BASELINE_MOOD_CAUSE = "resting baseline"
 DEFAULT_ACTIVITY = "spending time freely"
-CJK_STOP_CHARS = set("的了是在我你他她它们和就都也很还把被让要会呢吧啊哦呀")
 REFLECTION_MEMORY_KINDS = {
     "owner_profile",
     "owner_preference",
@@ -58,24 +55,7 @@ REFLECTION_MEMORY_KINDS = {
 }
 
 
-def estimate_tokens(text: str) -> int:
-    ascii_chars = sum(ord(char) < 128 for char in text)
-    return max(1, math.ceil((len(text) - ascii_chars) + ascii_chars / 4))
-
-
-def lexical_units(text: str) -> set[str]:
-    normalized = text.casefold()
-    units = set(re.findall(r"[a-z0-9_]{2,}", normalized))
-    for run in re.findall(r"[\u3400-\u9fff]+", normalized):
-        units.update(char for char in run if char not in CJK_STOP_CHARS)
-        if len(run) == 1:
-            units.add(run)
-        else:
-            units.update(run[index : index + 2] for index in range(len(run) - 1))
-    return units
-
-
-class Store:
+class Store(MemoryStore, DeliveryStore):
     def __init__(self, path: Path, workspace: Path | None = None) -> None:
         database = Path(path).expanduser().resolve()
         self._workspace = (workspace or database.parent).expanduser().resolve()
@@ -92,287 +72,7 @@ class Store:
         self._db.close()
 
     def _migrate(self) -> None:
-        self._db.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS events (
-                id TEXT PRIMARY KEY,
-                message_id TEXT NOT NULL,
-                kind TEXT NOT NULL,
-                content TEXT NOT NULL,
-                occurred_at REAL NOT NULL,
-                received_at REAL NOT NULL,
-                payload_json TEXT NOT NULL DEFAULT '',
-                processed INTEGER NOT NULL DEFAULT 0 CHECK (processed IN (0, 1))
-            );
-            CREATE TABLE IF NOT EXISTS messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
-                content TEXT NOT NULL,
-                created_at REAL NOT NULL,
-                source_event_ids_json TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS outbox (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                turn_id TEXT NOT NULL,
-                dedupe_key TEXT NOT NULL UNIQUE,
-                text TEXT NOT NULL,
-                state TEXT NOT NULL DEFAULT 'pending',
-                attempts INTEGER NOT NULL DEFAULT 0,
-                possible_duplicate INTEGER NOT NULL DEFAULT 0,
-                next_attempt_at REAL NOT NULL DEFAULT 0,
-                last_error TEXT,
-                kind TEXT NOT NULL DEFAULT 'text',
-                media_path TEXT,
-                payload_json TEXT NOT NULL DEFAULT ''
-            );
-            CREATE TABLE IF NOT EXISTS continuity_state (
-                id INTEGER PRIMARY KEY CHECK (id = 1),
-                content TEXT NOT NULL,
-                source_event_ids_json TEXT NOT NULL,
-                updated_at REAL NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS conversation_summaries (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                start_message_id INTEGER NOT NULL,
-                end_message_id INTEGER NOT NULL UNIQUE,
-                content TEXT NOT NULL,
-                created_at REAL NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS reflections (
-                id TEXT PRIMARY KEY,
-                local_date TEXT NOT NULL UNIQUE,
-                state TEXT NOT NULL CHECK (state IN ('pending', 'running', 'completed')),
-                scheduled_at REAL NOT NULL,
-                retry_at REAL,
-                claimed_at REAL,
-                summary TEXT NOT NULL DEFAULT '',
-                memories_json TEXT NOT NULL DEFAULT '[]',
-                error TEXT,
-                created_at REAL NOT NULL,
-                completed_at REAL
-            );
-            CREATE INDEX IF NOT EXISTS reflections_due
-                ON reflections(scheduled_at, retry_at) WHERE state='pending';
-            CREATE TABLE IF NOT EXISTS reflection_memories (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                kind TEXT NOT NULL,
-                key TEXT NOT NULL,
-                content TEXT NOT NULL,
-                evidence TEXT NOT NULL,
-                confidence REAL NOT NULL,
-                source_reflection_id TEXT NOT NULL,
-                created_at REAL NOT NULL,
-                updated_at REAL NOT NULL,
-                UNIQUE(kind, key),
-                FOREIGN KEY (source_reflection_id) REFERENCES reflections(id)
-            );
-            CREATE TABLE IF NOT EXISTS memories (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                kind TEXT NOT NULL,
-                key TEXT NOT NULL,
-                content TEXT NOT NULL,
-                authority TEXT NOT NULL CHECK (authority = 'owner'),
-                source_event_id TEXT NOT NULL,
-                evidence_quote TEXT NOT NULL,
-                importance REAL NOT NULL DEFAULT 0.5,
-                created_at REAL NOT NULL,
-                updated_at REAL NOT NULL,
-                expires_at REAL,
-                superseded_by INTEGER
-            );
-            CREATE INDEX IF NOT EXISTS memories_active
-                ON memories(kind, key) WHERE superseded_by IS NULL;
-            CREATE TABLE IF NOT EXISTS memory_tombstones (
-                kind TEXT NOT NULL,
-                key TEXT NOT NULL,
-                source_event_id TEXT NOT NULL,
-                evidence_quote TEXT NOT NULL,
-                created_at REAL NOT NULL,
-                PRIMARY KEY (kind, key)
-            );
-            CREATE TABLE IF NOT EXISTS memory_evidence (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                memory_id INTEGER NOT NULL,
-                source_event_id TEXT NOT NULL,
-                quote TEXT NOT NULL,
-                created_at REAL NOT NULL,
-                UNIQUE(memory_id, source_event_id, quote)
-            );
-            CREATE TABLE IF NOT EXISTS memory_conflicts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                kind TEXT NOT NULL,
-                key TEXT NOT NULL,
-                existing_memory_id INTEGER NOT NULL,
-                candidate_content TEXT NOT NULL,
-                source_event_id TEXT NOT NULL,
-                evidence_quote TEXT NOT NULL,
-                importance REAL NOT NULL DEFAULT 0.5,
-                status TEXT NOT NULL CHECK (status IN ('open', 'resolved')),
-                resolution TEXT NOT NULL DEFAULT '',
-                created_at REAL NOT NULL,
-                updated_at REAL NOT NULL
-            );
-            CREATE UNIQUE INDEX IF NOT EXISTS memory_conflicts_open
-                ON memory_conflicts(kind, key) WHERE status='open';
-            CREATE TABLE IF NOT EXISTS goals (
-                id TEXT PRIMARY KEY,
-                title TEXT NOT NULL,
-                success_criteria TEXT NOT NULL,
-                authority TEXT NOT NULL CHECK (authority IN ('owner', 'agent')),
-                source_event_id TEXT NOT NULL,
-                status TEXT NOT NULL CHECK (
-                    status IN ('active', 'waiting', 'blocked', 'done', 'cancelled')
-                ),
-                plan_json TEXT NOT NULL,
-                next_action TEXT NOT NULL DEFAULT '',
-                waiting_for TEXT NOT NULL DEFAULT '',
-                blocked_reason TEXT NOT NULL DEFAULT '',
-                latest_result TEXT NOT NULL DEFAULT '',
-                schedule_json TEXT NOT NULL DEFAULT '',
-                next_review_at REAL,
-                retry_at REAL,
-                failure_count INTEGER NOT NULL DEFAULT 0,
-                review_claimed_at REAL,
-                created_at REAL NOT NULL,
-                updated_at REAL NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS goals_due
-                ON goals(next_review_at) WHERE status IN ('active', 'waiting');
-            CREATE TABLE IF NOT EXISTS reminders (
-                id TEXT PRIMARY KEY,
-                text TEXT NOT NULL,
-                source_event_id TEXT NOT NULL,
-                status TEXT NOT NULL CHECK (status IN ('pending', 'fired', 'cancelled')),
-                fire_at REAL NOT NULL,
-                schedule_json TEXT NOT NULL DEFAULT '',
-                claimed_at REAL,
-                created_at REAL NOT NULL,
-                updated_at REAL NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS reminders_due
-                ON reminders(fire_at) WHERE status='pending';
-            CREATE TABLE IF NOT EXISTS self_state (
-                id INTEGER PRIMARY KEY CHECK (id = 1),
-                mood_state TEXT NOT NULL,
-                mood_intensity REAL NOT NULL,
-                mood_cause TEXT NOT NULL,
-                mood_updated_at REAL NOT NULL,
-                mood_settle_at REAL,
-                activity TEXT NOT NULL,
-                activity_since REAL NOT NULL,
-                last_heartbeat_at REAL,
-                next_heartbeat_at REAL,
-                heartbeat_claimed_at REAL,
-                heartbeat_day TEXT NOT NULL DEFAULT '',
-                heartbeat_count INTEGER NOT NULL DEFAULT 0,
-                updated_at REAL NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS notifications (
-                id TEXT PRIMARY KEY,
-                turn_id TEXT NOT NULL UNIQUE,
-                goal_id TEXT NOT NULL,
-                notification_key TEXT NOT NULL,
-                priority TEXT NOT NULL CHECK (priority IN ('normal', 'urgent')),
-                reason TEXT NOT NULL,
-                messages_json TEXT NOT NULL,
-                state TEXT NOT NULL CHECK (state IN ('pending', 'queued')),
-                not_before REAL NOT NULL,
-                claimed_at REAL,
-                created_at REAL NOT NULL,
-                queued_at REAL
-            );
-            CREATE INDEX IF NOT EXISTS notifications_due
-                ON notifications(not_before) WHERE state='pending';
-            CREATE TABLE IF NOT EXISTS emotions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                slug TEXT NOT NULL UNIQUE,
-                path TEXT NOT NULL,
-                description TEXT NOT NULL,
-                created_at REAL NOT NULL,
-                updated_at REAL NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS tool_audit (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                turn_id TEXT NOT NULL,
-                tool_call_id TEXT NOT NULL,
-                tool_name TEXT NOT NULL,
-                capability TEXT NOT NULL DEFAULT 'external_effect',
-                arguments_sha256 TEXT NOT NULL,
-                state TEXT NOT NULL CHECK (state IN ('dispatching', 'completed')),
-                result_json TEXT,
-                ok INTEGER,
-                started_at REAL NOT NULL,
-                completed_at REAL,
-                UNIQUE(turn_id, tool_call_id)
-            );
-            CREATE TABLE IF NOT EXISTS turns (
-                id TEXT PRIMARY KEY,
-                kind TEXT NOT NULL CHECK (kind IN ('owner', 'autonomous')),
-                source_ids_json TEXT NOT NULL,
-                state TEXT NOT NULL CHECK (
-                    state IN ('running', 'needs_reconciliation', 'completed', 'cancelled')
-                ),
-                external_effect_started INTEGER NOT NULL DEFAULT 0
-                    CHECK (external_effect_started IN (0, 1)),
-                stage TEXT NOT NULL DEFAULT 'started',
-                failure_reason TEXT,
-                llm_calls INTEGER NOT NULL DEFAULT 0,
-                input_tokens INTEGER NOT NULL DEFAULT 0,
-                output_tokens INTEGER NOT NULL DEFAULT 0,
-                started_at REAL NOT NULL,
-                updated_at REAL NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS reconciliations (
-                turn_id TEXT PRIMARY KEY,
-                status TEXT NOT NULL CHECK (status IN ('open', 'resolved', 'resumed')),
-                reason TEXT NOT NULL,
-                resolution TEXT NOT NULL DEFAULT '',
-                created_at REAL NOT NULL,
-                updated_at REAL NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS turn_progress (
-                turn_id TEXT NOT NULL,
-                tool_call_id TEXT NOT NULL,
-                part_index INTEGER NOT NULL,
-                text TEXT NOT NULL,
-                created_at REAL NOT NULL,
-                PRIMARY KEY (turn_id, tool_call_id, part_index)
-            );
-            CREATE TABLE IF NOT EXISTS webhook_runs (
-                id TEXT PRIMARY KEY,
-                workflow_id TEXT NOT NULL,
-                idempotency_key TEXT,
-                plan_json TEXT NOT NULL,
-                state TEXT NOT NULL CHECK (
-                    state IN ('queued', 'running', 'waiting_delivery',
-                              'succeeded', 'failed', 'ambiguous')
-                ),
-                current_step INTEGER NOT NULL DEFAULT 0,
-                error TEXT,
-                created_at REAL NOT NULL,
-                updated_at REAL NOT NULL,
-                UNIQUE(workflow_id, idempotency_key)
-            );
-            CREATE INDEX IF NOT EXISTS webhook_runs_ready
-                ON webhook_runs(state, created_at);
-            CREATE TABLE IF NOT EXISTS webhook_steps (
-                run_id TEXT NOT NULL,
-                step_index INTEGER NOT NULL,
-                step_id TEXT NOT NULL,
-                kind TEXT NOT NULL CHECK (kind IN ('message', 'exec')),
-                state TEXT NOT NULL CHECK (
-                    state IN ('queued', 'running', 'waiting_delivery',
-                              'succeeded', 'failed', 'ambiguous')
-                ),
-                result_json TEXT NOT NULL DEFAULT '{}',
-                error TEXT,
-                started_at REAL,
-                completed_at REAL,
-                PRIMARY KEY (run_id, step_index),
-                FOREIGN KEY (run_id) REFERENCES webhook_runs(id) ON DELETE CASCADE
-            );
-            """
-        )
+        self._db.executescript(Path(__file__).with_name("schema.sql").read_text())
         outbox_columns = {
             str(row["name"])
             for row in self._db.execute("PRAGMA table_info(outbox)").fetchall()
@@ -491,7 +191,9 @@ class Store:
             self._db.execute("DROP TABLE conversation_summary")
         self._db.execute("UPDATE goals SET review_claimed_at=NULL")
         self._db.execute("UPDATE reminders SET claimed_at=NULL WHERE status='pending'")
-        self._db.execute("UPDATE notifications SET claimed_at=NULL WHERE state='pending'")
+        self._db.execute(
+            "UPDATE notifications SET claimed_at=NULL WHERE state='pending'"
+        )
         self._db.execute("UPDATE self_state SET heartbeat_claimed_at=NULL WHERE id=1")
         self._db.execute(
             "UPDATE reflections SET state='pending', claimed_at=NULL WHERE state='running'"
@@ -564,10 +266,7 @@ class Store:
         rows = self._db.execute(
             "SELECT * FROM events WHERE processed=0 ORDER BY received_at, rowid"
         ).fetchall()
-        return [
-            self._incoming_message(row)
-            for row in rows
-        ]
+        return [self._incoming_message(row) for row in rows]
 
     @staticmethod
     def _incoming_message(row: sqlite3.Row) -> IncomingMessage:
@@ -724,8 +423,7 @@ class Store:
                WHERE status='open' ORDER BY created_at LIMIT 10"""
         ).fetchall()
         return "\n".join(
-            f"- turn_id={row['turn_id']} reason={row['reason']}"
-            for row in rows
+            f"- turn_id={row['turn_id']} reason={row['reason']}" for row in rows
         )
 
     def resolve_reconciliation(
@@ -734,7 +432,9 @@ class Store:
         prefix = turn_prefix.strip()
         resolution = resolution.strip()
         if len(prefix) < 8 or not re.fullmatch(r"[0-9a-f]+", prefix):
-            raise ValueError("turn id prefix must contain at least 8 hexadecimal characters")
+            raise ValueError(
+                "turn id prefix must contain at least 8 hexadecimal characters"
+            )
         if not resolution:
             raise ValueError("resolution is required")
         rows = self._db.execute(
@@ -776,7 +476,11 @@ class Store:
         )
         for row in rows:
             row_tokens = estimate_tokens(row["content"])
-            if selected and tokens + row_tokens > token_budget and user_turns >= min_turns:
+            if (
+                selected
+                and tokens + row_tokens > token_budget
+                and user_turns >= min_turns
+            ):
                 break
             selected.append(row)
             tokens += row_tokens
@@ -963,9 +667,7 @@ class Store:
         projection = {
             "topic": text(state.get("topic")),
             "open_loops": [
-                item
-                for value in state.get("open_loops", [])
-                if (item := text(value))
+                item for value in state.get("open_loops", []) if (item := text(value))
             ],
             "pending_commitments": [
                 item
@@ -981,7 +683,9 @@ class Store:
         if not isinstance(value, str):
             return False
         try:
-            return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp() > now
+            return (
+                datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp() > now
+            )
         except ValueError:
             return False
 
@@ -1064,9 +768,9 @@ class Store:
 
         def timestamp(value: object) -> str | None:
             return (
-                datetime.fromtimestamp(float(value)).astimezone().isoformat(
-                    timespec="seconds"
-                )
+                datetime.fromtimestamp(float(value))
+                .astimezone()
+                .isoformat(timespec="seconds")
                 if value is not None
                 else None
             )
@@ -1121,7 +825,9 @@ class Store:
             str(transition["cause"]).replace("\n", " ")[:300],
         )
 
-    def ensure_heartbeat(self, config: HeartbeatConfig, now: float | None = None) -> None:
+    def ensure_heartbeat(
+        self, config: HeartbeatConfig, now: float | None = None
+    ) -> None:
         if not config.enabled:
             return
         now = time.time() if now is None else now
@@ -1150,21 +856,23 @@ class Store:
                 or float(row["next_heartbeat_at"]) > now
             ):
                 return None
-            quiet_until = self._quiet_until(now, notifications)
-            if quiet_until > now:
+            quiet_end = quiet_until(now, notifications)
+            if quiet_end > now:
                 self._db.execute(
                     """UPDATE self_state SET next_heartbeat_at=?, updated_at=?
                        WHERE id=1""",
-                    (quiet_until, now),
+                    (quiet_end, now),
                 )
                 return None
-            day = datetime.fromtimestamp(
-                now, ZoneInfo(notifications.timezone)
-            ).date().isoformat()
+            day = (
+                datetime.fromtimestamp(now, ZoneInfo(notifications.timezone))
+                .date()
+                .isoformat()
+            )
             count = int(row["heartbeat_count"]) if row["heartbeat_day"] == day else 0
             if count >= config.max_daily_turns:
-                _, next_day = self._local_day_bounds(now, notifications.timezone)
-                next_at = self._quiet_until(next_day, notifications)
+                _, next_day = local_day_bounds(now, notifications.timezone)
+                next_at = quiet_until(next_day, notifications)
                 self._db.execute(
                     """UPDATE self_state SET heartbeat_day=?, heartbeat_count=0,
                        next_heartbeat_at=?, updated_at=? WHERE id=1""",
@@ -1222,13 +930,13 @@ class Store:
         now = time.time()
         day = datetime.fromtimestamp(now, ZoneInfo(timezone)).date().isoformat()
         current = self.self_state(now)
-        count = int(current["heartbeat_count"]) if current["heartbeat_day"] == day else 0
+        count = (
+            int(current["heartbeat_count"]) if current["heartbeat_day"] == day else 0
+        )
         with self._db:
             self._apply_mood_transition(mood_transition, now)
             activity_since = (
-                current["activity_since"]
-                if current["activity"] == activity
-                else now
+                current["activity_since"] if current["activity"] == activity else now
             )
             self._db.execute(
                 """UPDATE self_state SET activity=?, activity_since=?,
@@ -1288,9 +996,7 @@ class Store:
         if not config.enabled:
             return None
         now = time.time() if now is None else now
-        local_date, scheduled_at, _ = self._reflection_slot(
-            now, timezone, config.at
-        )
+        local_date, scheduled_at, _ = self._reflection_slot(now, timezone, config.at)
         reflection_id = f"reflection:{local_date}"
         with self._db:
             self._db.execute(
@@ -1418,9 +1124,7 @@ class Store:
         text = "\n\n".join(
             f"[{label}]\n{content}" for _, label, content, _, _ in selected
         )
-        owner_text = "\n".join(
-            content for _, _, content, owner, _ in selected if owner
-        )
+        owner_text = "\n".join(content for _, _, content, owner, _ in selected if owner)
         knowledge_text = "\n".join(
             content for _, _, content, _, knowledge in selected if knowledge
         )
@@ -1494,7 +1198,9 @@ class Store:
         return self._goal_dict(row) if row else None
 
     def list_goals(self, include_closed: bool = False) -> list[dict[str, object]]:
-        where = "" if include_closed else "WHERE status IN ('active', 'waiting', 'blocked')"
+        where = (
+            "" if include_closed else "WHERE status IN ('active', 'waiting', 'blocked')"
+        )
         rows = self._db.execute(
             f"SELECT * FROM goals {where} ORDER BY updated_at DESC"
         ).fetchall()
@@ -1517,7 +1223,9 @@ class Store:
         for row in rows:
             goal = self._goal_dict(row)
             review = (
-                datetime.fromtimestamp(float(goal["next_review_at"])).astimezone().isoformat(timespec="seconds")
+                datetime.fromtimestamp(float(goal["next_review_at"]))
+                .astimezone()
+                .isoformat(timespec="seconds")
                 if goal["next_review_at"] is not None
                 else "none"
             )
@@ -1541,12 +1249,16 @@ class Store:
             for row in rows
         )
 
-    def add_emotion(self, slug: str, path: str | Path, description: str) -> dict[str, object]:
+    def add_emotion(
+        self, slug: str, path: str | Path, description: str
+    ) -> dict[str, object]:
         slug = slug.strip()
         description = description.strip()
         asset = self._resolve_asset_path(path)
         if not valid_emotion_slug(slug):
-            raise ValueError("slug must use lowercase letters, digits, dot, underscore, or hyphen")
+            raise ValueError(
+                "slug must use lowercase letters, digits, dot, underscore, or hyphen"
+            )
         if not asset.is_file():
             raise ValueError("path must be an existing file")
         if not description or len(description) > 500:
@@ -1629,9 +1341,10 @@ class Store:
                      AND last_error LIKE 'media asset cannot be read:%'"""
             ).fetchall()
             for message in failed:
-                if message["media_path"] and self._resolve_asset_path(
-                    str(message["media_path"])
-                ).is_file():
+                if (
+                    message["media_path"]
+                    and self._resolve_asset_path(str(message["media_path"])).is_file()
+                ):
                     self._db.execute(
                         """UPDATE outbox SET state='pending', attempts=0,
                            last_error=NULL, next_attempt_at=0 WHERE id=?""",
@@ -1642,8 +1355,9 @@ class Store:
         self, path: str, *, exclude_slug: str | None = None
     ) -> bool:
         path = self._stored_asset_path(path)
-        return self._db.execute(
-            """SELECT 1 FROM emotions
+        return (
+            self._db.execute(
+                """SELECT 1 FROM emotions
                WHERE path=? AND (? IS NULL OR slug<>?)
                UNION ALL
                SELECT 1 FROM outbox
@@ -1654,8 +1368,10 @@ class Store:
                WHERE n.state='pending'
                  AND instr(n.messages_json, 'emotion://' || e.slug) > 0
                LIMIT 1""",
-            (path, exclude_slug, exclude_slug, path, path),
-        ).fetchone() is not None
+                (path, exclude_slug, exclude_slug, path, path),
+            ).fetchone()
+            is not None
+        )
 
     def emotion_context(self, token_budget: int = 4000) -> str:
         lines: list[str] = []
@@ -1743,14 +1459,16 @@ class Store:
             ).fetchone()
             if row is None:
                 return False
-            schedule = json.loads(str(row["schedule_json"])) if row["schedule_json"] else None
+            schedule = (
+                json.loads(str(row["schedule_json"])) if row["schedule_json"] else None
+            )
             if schedule is not None and config is not None:
-                quiet_until = self._quiet_until(now, config)
-                if quiet_until > now:
+                quiet_end = quiet_until(now, config)
+                if quiet_end > now:
                     self._db.execute(
                         """UPDATE reminders SET fire_at=?, claimed_at=NULL, updated_at=?
                            WHERE id=?""",
-                        (quiet_until, now, reminder_id),
+                        (quiet_end, now, reminder_id),
                     )
                     return False
             occurrence = int(float(row["fire_at"]))
@@ -1764,7 +1482,7 @@ class Store:
                 self._db.execute(
                     """UPDATE reminders SET fire_at=?, claimed_at=NULL, updated_at=?
                        WHERE id=?""",
-                    (self.next_schedule_at(schedule, now), now, reminder_id),
+                    (next_schedule_at(schedule, now), now, reminder_id),
                 )
             self._db.execute(
                 """INSERT INTO messages(role, content, created_at, source_event_ids_json)
@@ -1789,48 +1507,6 @@ class Store:
         schedule_json = str(goal.pop("schedule_json", ""))
         goal["schedule"] = json.loads(schedule_json) if schedule_json else None
         return goal
-
-    @staticmethod
-    def normalize_schedule(value: object) -> dict[str, object]:
-        if not isinstance(value, dict):
-            raise ValueError("schedule must be an object")
-        kind = str(value.get("kind") or "")
-        timezone = str(value.get("timezone") or "")
-        try:
-            ZoneInfo(timezone)
-        except (ZoneInfoNotFoundError, ValueError):
-            raise ValueError("schedule.timezone must be a valid IANA timezone") from None
-        if kind == "interval":
-            every_seconds = int(value.get("every_seconds", 0))
-            if every_seconds < 60:
-                raise ValueError("interval schedule requires every_seconds >= 60")
-            return {
-                "kind": kind,
-                "timezone": timezone,
-                "every_seconds": every_seconds,
-            }
-        if kind == "daily":
-            at = str(value.get("at") or "")
-            if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", at):
-                raise ValueError("daily schedule requires at in HH:MM format")
-            return {"kind": kind, "timezone": timezone, "at": at}
-        raise ValueError("schedule.kind must be interval or daily")
-
-    @staticmethod
-    def next_schedule_at(
-        schedule: dict[str, object], after: float | None = None
-    ) -> float:
-        normalized = Store.normalize_schedule(schedule)
-        after = time.time() if after is None else after
-        if normalized["kind"] == "interval":
-            return after + int(normalized["every_seconds"])
-        zone = ZoneInfo(str(normalized["timezone"]))
-        hour, minute = (int(part) for part in str(normalized["at"]).split(":"))
-        local = datetime.fromtimestamp(after, zone)
-        candidate = local.replace(hour=hour, minute=minute, second=0, microsecond=0)
-        if candidate.timestamp() <= after:
-            candidate += timedelta(days=1)
-        return candidate.timestamp()
 
     def claim_due_goal(self) -> dict[str, object] | None:
         now = time.time()
@@ -1899,7 +1575,9 @@ class Store:
     ) -> dict[str, object] | None:
         if capability not in {"read", "write", "external_effect"}:
             raise ValueError("invalid tool capability")
-        serialized = json.dumps(arguments, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        serialized = json.dumps(
+            arguments, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        )
         digest = hashlib.sha256(serialized.encode()).hexdigest()
         row = self._db.execute(
             """SELECT tool_name, arguments_sha256, state, result_json
@@ -1961,88 +1639,6 @@ class Store:
                 (time.time(), turn_id),
             )
 
-    def memory_context(
-        self, query: str, max_results: int, token_budget: int
-    ) -> str:
-        if max_results <= 0 or token_budget <= 0:
-            return ""
-        rows = self.search_memories(query, max_results, include_core=True)
-
-        lines: list[str] = []
-        used_tokens = 0
-        for row in rows:
-            line = f"- [{row['kind']}:{row['key']}] {row['content']}"
-            line_tokens = estimate_tokens(line)
-            if lines and used_tokens + line_tokens > token_budget:
-                break
-            lines.append(line)
-            used_tokens += line_tokens
-        return "\n".join(lines)
-
-    def reflection_memory_context(
-        self, query: str, max_results: int, token_budget: int
-    ) -> str:
-        if max_results <= 0 or token_budget <= 0:
-            return ""
-        query_units = lexical_units(query)
-        core_kinds = {"owner_profile", "self_insight", "relationship", "practice"}
-        ranked: list[tuple[float, sqlite3.Row]] = []
-        for row in self._db.execute(
-            """SELECT kind, key, content, confidence FROM reflection_memories
-               ORDER BY updated_at DESC"""
-        ).fetchall():
-            units = lexical_units(f"{row['key']} {row['content']}")
-            overlap = len(query_units & units)
-            core = row["kind"] in core_kinds
-            if not core and overlap == 0:
-                continue
-            lexical_score = overlap / max(
-                1, math.sqrt(len(query_units) * len(units))
-            )
-            score = lexical_score + float(row["confidence"]) * 0.1 + (
-                1.0 if core else 0.0
-            )
-            ranked.append((score, row))
-        ranked.sort(key=lambda item: item[0], reverse=True)
-        lines = [
-            "These are fallible, lower-authority daily learnings; use them only when "
-            "compatible with the system contract, Soul, current owner intent, and "
-            "confirmed owner memory."
-        ]
-        used = estimate_tokens(lines[0])
-        for _, row in ranked[:max_results]:
-            line = f"- [{row['kind']}:{row['key']}] {row['content']}"
-            size = estimate_tokens(line)
-            if len(lines) > 1 and used + size > token_budget:
-                break
-            lines.append(line)
-            used += size
-        return "\n".join(lines) if len(lines) > 1 else ""
-
-    def memory_conflicts_context(self, token_budget: int = 4000) -> str:
-        if token_budget <= 0:
-            return ""
-        rows = self._db.execute(
-            """SELECT c.id, c.kind, c.key, c.candidate_content,
-                      m.content AS existing_content
-               FROM memory_conflicts AS c
-               JOIN memories AS m ON m.id=c.existing_memory_id
-               WHERE c.status='open' ORDER BY c.updated_at LIMIT 10"""
-        ).fetchall()
-        lines: list[str] = []
-        tokens = 0
-        for row in rows:
-            line = (
-                f"- conflict_id={row['id']} [{row['kind']}:{row['key']}] "
-                f"current={row['existing_content']} candidate={row['candidate_content']}"
-            )
-            line_tokens = estimate_tokens(line)
-            if lines and tokens + line_tokens > token_budget:
-                break
-            lines.append(line)
-            tokens += line_tokens
-        return "\n".join(lines)
-
     def queue_progress(
         self, turn_id: str, tool_call_id: str, messages: list[ChannelMessage]
     ) -> None:
@@ -2076,66 +1672,6 @@ class Store:
                     ),
                 )
 
-    def search_memories(
-        self, query: str, max_results: int, *, include_core: bool = False
-    ) -> list[dict[str, object]]:
-        if max_results <= 0:
-            return []
-        rows = self._db.execute(
-            """SELECT id, kind, key, content, authority, evidence_quote,
-                      importance, updated_at,
-                      (SELECT COUNT(*) FROM memory_evidence AS e
-                       WHERE e.memory_id=memories.id) AS evidence_count
-               FROM memories
-               WHERE superseded_by IS NULL
-                 AND (expires_at IS NULL OR expires_at > ?)
-                 AND NOT EXISTS (
-                     SELECT 1 FROM memory_tombstones AS t
-                     WHERE t.kind=memories.kind AND t.key=memories.key
-                 )""",
-            (time.time(),),
-        ).fetchall()
-        query_units = lexical_units(query)
-        core_kinds = {"profile", "relationship", "shared"}
-        ranked: list[tuple[float, sqlite3.Row]] = []
-        for row in rows:
-            memory_units = lexical_units(f"{row['key']} {row['content']}")
-            overlap = len(query_units & memory_units)
-            core = include_core and row["kind"] in core_kinds
-            if not core and overlap == 0:
-                continue
-            lexical_score = overlap / max(1, math.sqrt(len(query_units) * len(memory_units)))
-            score = lexical_score + float(row["importance"]) * 0.1 + (1.0 if core else 0.0)
-            ranked.append((score, row))
-        ranked.sort(key=lambda item: item[0], reverse=True)
-        return [dict(row) for _, row in ranked[:max_results]]
-
-    def has_memory(self, kind: str, key: str) -> bool:
-        return self._db.execute(
-            """SELECT 1 FROM memories AS m
-               WHERE m.kind=? AND m.key=? AND m.superseded_by IS NULL
-                 AND (m.expires_at IS NULL OR m.expires_at > ?)
-                 AND NOT EXISTS (
-                     SELECT 1 FROM memory_tombstones AS t
-                     WHERE t.kind=m.kind AND t.key=m.key
-                 )""",
-            (kind, key, time.time()),
-        ).fetchone() is not None
-
-    def active_memory(self, kind: str, key: str) -> dict[str, object] | None:
-        row = self._db.execute(
-            """SELECT id, kind, key, content, importance FROM memories AS m
-               WHERE m.kind=? AND m.key=? AND m.superseded_by IS NULL
-                 AND (m.expires_at IS NULL OR m.expires_at > ?)
-                 AND NOT EXISTS (
-                     SELECT 1 FROM memory_tombstones AS t
-                     WHERE t.kind=m.kind AND t.key=m.key
-                 )
-               ORDER BY m.id DESC LIMIT 1""",
-            (kind, key, time.time()),
-        ).fetchone()
-        return dict(row) if row else None
-
     def commit_turn(
         self,
         events: list[IncomingMessage],
@@ -2147,7 +1683,9 @@ class Store:
         assistant_messages = reply.messages
         if not assistant_messages:
             raise ValueError("assistant messages must not be empty")
-        normalized_messages = [self._outbox_content(message) for message in assistant_messages]
+        normalized_messages = [
+            self._outbox_content(message) for message in assistant_messages
+        ]
         turn_id = turn_id or uuid.uuid4().hex
         event_ids = [event.event_id for event in events]
         now = time.time()
@@ -2165,7 +1703,11 @@ class Store:
                 """INSERT INTO messages(role, content, created_at, source_event_ids_json)
                    VALUES ('assistant', ?, ?, ?)""",
                 (
-                    (row["text"], row["created_at"], json.dumps(event_ids, ensure_ascii=False))
+                    (
+                        row["text"],
+                        row["created_at"],
+                        json.dumps(event_ids, ensure_ascii=False),
+                    )
                     for row in progress
                 ),
             )
@@ -2217,7 +1759,8 @@ class Store:
             self._apply_goal_mutations(draft, now)
             self._apply_reminder_mutations(draft, now)
             self._db.executemany(
-                "UPDATE events SET processed=1 WHERE id=?", ((event_id,) for event_id in event_ids)
+                "UPDATE events SET processed=1 WHERE id=?",
+                ((event_id,) for event_id in event_ids),
             )
             self._db.execute(
                 """UPDATE turns SET state='completed', stage='completed',
@@ -2237,7 +1780,7 @@ class Store:
             if goal_id not in draft.goals:
                 current = self.goal(goal_id)
                 next_review_at = (
-                    self.next_schedule_at(current["schedule"], now)
+                    next_schedule_at(current["schedule"], now)
                     if current and current.get("schedule")
                     else now + 900
                 )
@@ -2272,41 +1815,13 @@ class Store:
             )
         return turn_id
 
-    @staticmethod
-    def _local_day_bounds(now: float, timezone: str) -> tuple[float, float]:
-        zone = ZoneInfo(timezone)
-        local = datetime.fromtimestamp(now, zone)
-        start = local.replace(hour=0, minute=0, second=0, microsecond=0)
-        return start.timestamp(), (start + timedelta(days=1)).timestamp()
-
-    @staticmethod
-    def _quiet_until(now: float, config: NotificationConfig) -> float:
-        if not config.quiet_start or not config.quiet_end:
-            return now
-        zone = ZoneInfo(config.timezone)
-        local = datetime.fromtimestamp(now, zone)
-        start_hour, start_minute = map(int, config.quiet_start.split(":"))
-        end_hour, end_minute = map(int, config.quiet_end.split(":"))
-        minute = local.hour * 60 + local.minute
-        start = start_hour * 60 + start_minute
-        end = end_hour * 60 + end_minute
-        in_quiet = start <= minute < end if start < end else minute >= start or minute < end
-        if not in_quiet:
-            return now
-        end_local = local.replace(
-            hour=end_hour, minute=end_minute, second=0, microsecond=0
-        )
-        if start > end and minute >= start:
-            end_local += timedelta(days=1)
-        return end_local.timestamp()
-
     def _notification_not_before(
         self, row: sqlite3.Row, config: NotificationConfig, now: float
     ) -> float:
         priority = str(row["priority"])
         eligible = now
         if priority == "normal":
-            eligible = max(eligible, self._quiet_until(now, config))
+            eligible = max(eligible, quiet_until(now, config))
             last = self._db.execute(
                 """SELECT MAX(queued_at) FROM notifications
                    WHERE state='queued' AND notification_key=?""",
@@ -2318,7 +1833,7 @@ class Store:
                 "SELECT 1 FROM events WHERE processed=0 LIMIT 1"
             ).fetchone():
                 eligible = max(eligible, now + config.pending_owner_delay_seconds)
-        day_start, next_day = self._local_day_bounds(now, config.timezone)
+        day_start, next_day = local_day_bounds(now, config.timezone)
         budget = (
             config.urgent_daily_budget if priority == "urgent" else config.daily_budget
         )
@@ -2444,13 +1959,23 @@ class Store:
                      review_claimed_at=NULL,
                      updated_at=excluded.updated_at""",
                 (
-                    goal["id"], goal["title"], goal["success_criteria"], goal["authority"],
-                    goal["source_event_id"], goal["status"],
+                    goal["id"],
+                    goal["title"],
+                    goal["success_criteria"],
+                    goal["authority"],
+                    goal["source_event_id"],
+                    goal["status"],
                     json.dumps(goal.get("plan", []), ensure_ascii=False),
-                    goal.get("next_action", ""), goal.get("waiting_for", ""),
-                    goal.get("blocked_reason", ""), goal.get("latest_result", ""),
-                    json.dumps(goal.get("schedule"), ensure_ascii=False) if goal.get("schedule") else "",
-                    goal.get("next_review_at"), now, now,
+                    goal.get("next_action", ""),
+                    goal.get("waiting_for", ""),
+                    goal.get("blocked_reason", ""),
+                    goal.get("latest_result", ""),
+                    json.dumps(goal.get("schedule"), ensure_ascii=False)
+                    if goal.get("schedule")
+                    else "",
+                    goal.get("next_review_at"),
+                    now,
+                    now,
                 ),
             )
 
@@ -2480,532 +2005,4 @@ class Store:
                     now,
                     now,
                 ),
-            )
-
-    def _remember(
-        self,
-        memory: MemoryCandidate,
-        events: list[IncomingMessage],
-        now: float,
-    ) -> None:
-        source_event = next(
-            (event for event in events if memory.evidence in event.text), None
-        )
-        if (
-            memory.kind not in MEMORY_KINDS
-            or not all((memory.key, memory.content, memory.evidence))
-            or source_event is None
-            or len(memory.key) > 200
-            or len(memory.content) > 2000
-            or len(memory.evidence) > 500
-        ):
-            return
-        source_event_id = source_event.event_id
-        self._db.execute(
-            "DELETE FROM memory_tombstones WHERE kind=? AND key=?",
-            (memory.kind, memory.key),
-        )
-        old = self._db.execute(
-            """SELECT id, content FROM memories
-               WHERE kind=? AND key=? AND superseded_by IS NULL
-               ORDER BY id DESC LIMIT 1""",
-            (memory.kind, memory.key),
-        ).fetchone()
-        if old and old["content"] == memory.content:
-            self._db.execute(
-                """UPDATE memories SET source_event_id=?, evidence_quote=?,
-                   importance=MAX(importance, ?), updated_at=? WHERE id=?""",
-                (
-                    source_event_id,
-                    memory.evidence,
-                    memory.importance,
-                    now,
-                    old["id"],
-                ),
-            )
-            self._add_memory_evidence(
-                int(old["id"]), source_event_id, memory.evidence, now
-            )
-            if memory.replace_confirmed:
-                self._resolve_memory_conflicts(
-                    memory.kind, memory.key, "confirmed_existing", now
-                )
-            return
-        cursor = self._db.execute(
-            """INSERT INTO memories
-               (kind, key, content, authority, source_event_id, evidence_quote,
-                importance, created_at, updated_at)
-               VALUES (?, ?, ?, 'owner', ?, ?, ?, ?, ?)""",
-            (
-                memory.kind,
-                memory.key,
-                memory.content,
-                source_event_id,
-                memory.evidence,
-                memory.importance,
-                now,
-                now,
-            ),
-        )
-        if old:
-            self._db.execute(
-                "UPDATE memories SET superseded_by=?, updated_at=? WHERE id=?",
-                (cursor.lastrowid, now, old["id"]),
-            )
-        self._add_memory_evidence(
-            int(cursor.lastrowid), source_event_id, memory.evidence, now
-        )
-        if memory.replace_confirmed:
-            self._resolve_memory_conflicts(
-                memory.kind, memory.key, "confirmed_replacement", now
-            )
-
-    def _propose_memory_conflict(
-        self,
-        conflict: MemoryConflictCandidate,
-        events: list[IncomingMessage],
-        now: float,
-    ) -> None:
-        source_event = next(
-            (event for event in events if conflict.evidence in event.text), None
-        )
-        existing = self.active_memory(conflict.kind, conflict.key)
-        if source_event is None or existing is None:
-            return
-        if existing["content"] == conflict.content:
-            self._remember(
-                MemoryCandidate(
-                    conflict.kind,
-                    conflict.key,
-                    conflict.content,
-                    conflict.evidence,
-                    conflict.importance,
-                ),
-                events,
-                now,
-            )
-            return
-        self._db.execute(
-            """UPDATE memory_conflicts SET status='resolved',
-               resolution='superseded_candidate', updated_at=?
-               WHERE kind=? AND key=? AND status='open'""",
-            (now, conflict.kind, conflict.key),
-        )
-        self._db.execute(
-            """INSERT INTO memory_conflicts
-               (kind, key, existing_memory_id, candidate_content, source_event_id,
-                evidence_quote, importance, status, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)""",
-            (
-                conflict.kind,
-                conflict.key,
-                existing["id"],
-                conflict.content,
-                source_event.event_id,
-                conflict.evidence,
-                conflict.importance,
-                now,
-                now,
-            ),
-        )
-
-    def _resolve_memory_conflicts(
-        self, kind: str, key: str, resolution: str, now: float
-    ) -> None:
-        self._db.execute(
-            """UPDATE memory_conflicts SET status='resolved', resolution=?, updated_at=?
-               WHERE kind=? AND key=? AND status='open'""",
-            (resolution, now, kind, key),
-        )
-
-    def _add_memory_evidence(
-        self,
-        memory_id: int,
-        source_event_id: str,
-        quote: str,
-        now: float,
-    ) -> None:
-        self._db.execute(
-            """INSERT OR IGNORE INTO memory_evidence
-               (memory_id, source_event_id, quote, created_at)
-               VALUES (?, ?, ?, ?)""",
-            (memory_id, source_event_id, quote, now),
-        )
-
-    def _forget_memory(
-        self,
-        memory: MemoryForgetCandidate,
-        events: list[IncomingMessage],
-        now: float,
-    ) -> None:
-        source_event = next(
-            (event for event in events if memory.evidence in event.text), None
-        )
-        if source_event is None:
-            return
-        self._db.execute(
-            """INSERT INTO memory_tombstones
-               (kind, key, source_event_id, evidence_quote, created_at)
-               VALUES (?, ?, ?, ?, ?)
-               ON CONFLICT(kind, key) DO UPDATE SET
-                 source_event_id=excluded.source_event_id,
-                 evidence_quote=excluded.evidence_quote,
-                 created_at=excluded.created_at""",
-            (memory.kind, memory.key, source_event.event_id, memory.evidence, now),
-        )
-        self._resolve_memory_conflicts(memory.kind, memory.key, "forgotten", now)
-
-    def create_webhook_run(
-        self,
-        workflow_id: str,
-        idempotency_key: str | None,
-        plan: dict[str, object],
-    ) -> tuple[dict[str, object], bool]:
-        if idempotency_key is not None:
-            existing = self._db.execute(
-                """SELECT id, workflow_id, state FROM webhook_runs
-                   WHERE workflow_id=? AND idempotency_key=?""",
-                (workflow_id, idempotency_key),
-            ).fetchone()
-            if existing is not None:
-                return dict(existing), False
-        run_id = uuid.uuid4().hex
-        now = time.time()
-        steps = plan.get("steps")
-        if not isinstance(steps, list) or not steps:
-            raise ValueError("webhook plan needs steps")
-        try:
-            with self._db:
-                self._db.execute(
-                    """INSERT INTO webhook_runs
-                       (id, workflow_id, idempotency_key, plan_json, state,
-                        current_step, created_at, updated_at)
-                       VALUES (?, ?, ?, ?, 'queued', 0, ?, ?)""",
-                    (
-                        run_id,
-                        workflow_id,
-                        idempotency_key,
-                        json.dumps(plan, ensure_ascii=False, separators=(",", ":")),
-                        now,
-                        now,
-                    ),
-                )
-                self._db.executemany(
-                    """INSERT INTO webhook_steps
-                       (run_id, step_index, step_id, kind, state)
-                       VALUES (?, ?, ?, ?, 'queued')""",
-                    (
-                        (run_id, index, str(step["id"]), str(step["uses"]))
-                        for index, step in enumerate(steps)
-                    ),
-                )
-        except sqlite3.IntegrityError:
-            if idempotency_key is None:
-                raise
-            existing = self._db.execute(
-                """SELECT id, workflow_id, state FROM webhook_runs
-                   WHERE workflow_id=? AND idempotency_key=?""",
-                (workflow_id, idempotency_key),
-            ).fetchone()
-            if existing is None:
-                raise
-            return dict(existing), False
-        return {"id": run_id, "workflow_id": workflow_id, "state": "queued"}, True
-
-    def webhook_run(self, run_id: str) -> dict[str, object] | None:
-        row = self._db.execute(
-            """SELECT id, workflow_id, state, current_step, error,
-                      created_at, updated_at
-               FROM webhook_runs WHERE id=?""",
-            (run_id,),
-        ).fetchone()
-        if row is None:
-            return None
-        steps = self._db.execute(
-            """SELECT step_index, step_id, kind, state, error, started_at, completed_at
-               FROM webhook_steps WHERE run_id=? ORDER BY step_index""",
-            (run_id,),
-        ).fetchall()
-        return {
-            "run_id": row["id"],
-            "workflow": row["workflow_id"],
-            "state": row["state"],
-            "current_step": row["current_step"],
-            "error": row["error"],
-            "created_at": row["created_at"],
-            "updated_at": row["updated_at"],
-            "steps": [dict(step) for step in steps],
-        }
-
-    def claim_webhook_run(self) -> dict[str, object] | None:
-        with self._db:
-            row = self._db.execute(
-                """SELECT id, workflow_id, plan_json, state, current_step
-                   FROM webhook_runs
-                   WHERE state IN ('queued', 'waiting_delivery')
-                   ORDER BY created_at LIMIT 1"""
-            ).fetchone()
-            if row is None:
-                return None
-            if row["state"] == "queued":
-                self._db.execute(
-                    "UPDATE webhook_runs SET state='running', updated_at=? WHERE id=?",
-                    (time.time(), row["id"]),
-                )
-        result = dict(row)
-        result["state"] = "running" if row["state"] == "queued" else row["state"]
-        result["plan"] = json.loads(str(row["plan_json"]))
-        return result
-
-    def webhook_step(self, run_id: str, step_index: int) -> dict[str, object] | None:
-        row = self._db.execute(
-            """SELECT run_id, step_index, step_id, kind, state, result_json, error
-               FROM webhook_steps WHERE run_id=? AND step_index=?""",
-            (run_id, step_index),
-        ).fetchone()
-        if row is None:
-            return None
-        result = dict(row)
-        try:
-            result["result"] = json.loads(str(row["result_json"]))
-        except json.JSONDecodeError:
-            result["result"] = {}
-        return result
-
-    def start_webhook_step(self, run_id: str, step_index: int) -> None:
-        now = time.time()
-        with self._db:
-            self._db.execute(
-                """UPDATE webhook_steps SET state='running', started_at=?,
-                   completed_at=NULL, error=NULL
-                   WHERE run_id=? AND step_index=? AND state='queued'""",
-                (now, run_id, step_index),
-            )
-            self._db.execute(
-                """UPDATE webhook_runs SET state='running', current_step=?,
-                   error=NULL, updated_at=? WHERE id=?""",
-                (step_index, now, run_id),
-            )
-
-    def queue_webhook_messages(
-        self, run_id: str, step_index: int, messages: list[ChannelMessage]
-    ) -> list[int]:
-        step = self.webhook_step(run_id, step_index)
-        if step is None:
-            raise ValueError("webhook step not found")
-        if step["state"] in {"waiting_delivery", "succeeded"}:
-            result = step["result"]
-            return [int(value) for value in result.get("outbox_ids", [])]  # type: ignore[union-attr]
-        if step["state"] != "running":
-            raise ValueError("webhook message step is not running")
-        if not messages:
-            raise ValueError("webhook messages must not be empty")
-        source = json.dumps([f"webhook:{run_id}:{step_index}"], ensure_ascii=False)
-        now = time.time()
-        outbox_ids: list[int] = []
-        with self._db:
-            for index, message in enumerate(messages):
-                text, kind, path, payload = self._outbox_content(message)
-                self._db.execute(
-                    """INSERT INTO messages(role, content, created_at, source_event_ids_json)
-                       VALUES ('assistant', ?, ?, ?)""",
-                    (text, now, source),
-                )
-                cursor = self._db.execute(
-                    """INSERT INTO outbox
-                       (turn_id, dedupe_key, text, kind, media_path, payload_json)
-                       VALUES (?, ?, ?, ?, ?, ?)""",
-                    (
-                        f"webhook:{run_id}",
-                        f"webhook:{run_id}:{step_index}:{index}",
-                        text,
-                        kind,
-                        path,
-                        json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
-                    ),
-                )
-                outbox_ids.append(int(cursor.lastrowid))
-            result_json = json.dumps({"outbox_ids": outbox_ids}, separators=(",", ":"))
-            self._db.execute(
-                """UPDATE webhook_steps SET state='waiting_delivery', result_json=?
-                   WHERE run_id=? AND step_index=?""",
-                (result_json, run_id, step_index),
-            )
-            self._db.execute(
-                """UPDATE webhook_runs SET state='waiting_delivery', updated_at=?
-                   WHERE id=?""",
-                (now, run_id),
-            )
-        return outbox_ids
-
-    def webhook_delivery_state(self, run_id: str, step_index: int) -> str:
-        step = self.webhook_step(run_id, step_index)
-        if step is None:
-            return "failed"
-        result = step["result"]
-        ids = [int(value) for value in result.get("outbox_ids", [])]  # type: ignore[union-attr]
-        if not ids:
-            return "failed"
-        placeholders = ",".join("?" for _ in ids)
-        rows = self._db.execute(
-            f"SELECT state FROM outbox WHERE id IN ({placeholders})", ids
-        ).fetchall()
-        states = {str(row["state"]) for row in rows}
-        if len(rows) != len(ids) or "failed" in states:
-            return "failed"
-        return "succeeded" if states == {"sent"} else "pending"
-
-    def finish_webhook_step(
-        self,
-        run_id: str,
-        step_index: int,
-        state: str,
-        result: dict[str, object],
-        error: str | None,
-    ) -> None:
-        if state not in {"succeeded", "failed", "ambiguous"}:
-            raise ValueError("invalid webhook terminal state")
-        now = time.time()
-        with self._db:
-            if result:
-                result_json = json.dumps(result, ensure_ascii=False, separators=(",", ":"))
-                self._db.execute(
-                    """UPDATE webhook_steps SET state=?, result_json=?, error=?, completed_at=?
-                       WHERE run_id=? AND step_index=?""",
-                    (state, result_json, error, now, run_id, step_index),
-                )
-            else:
-                self._db.execute(
-                    """UPDATE webhook_steps SET state=?, error=?, completed_at=?
-                       WHERE run_id=? AND step_index=?""",
-                    (state, error, now, run_id, step_index),
-                )
-            run_state = "running" if state == "succeeded" else state
-            self._db.execute(
-                """UPDATE webhook_runs SET state=?, current_step=?, error=?, updated_at=?
-                   WHERE id=?""",
-                (
-                    run_state,
-                    step_index + 1 if state == "succeeded" else step_index,
-                    error,
-                    now,
-                    run_id,
-                ),
-            )
-
-    def complete_webhook_run(self, run_id: str) -> None:
-        with self._db:
-            self._db.execute(
-                """UPDATE webhook_runs SET state='succeeded', error=NULL, updated_at=?
-                   WHERE id=? AND NOT EXISTS (
-                       SELECT 1 FROM webhook_steps
-                       WHERE run_id=? AND state!='succeeded'
-                   )""",
-                (time.time(), run_id, run_id),
-            )
-
-    def fail_webhook_run(self, run_id: str, error: str) -> None:
-        now = time.time()
-        with self._db:
-            self._db.execute(
-                """UPDATE webhook_runs SET state='failed', error=?, updated_at=?
-                   WHERE id=? AND state NOT IN ('succeeded', 'ambiguous')""",
-                (error[:500], now, run_id),
-            )
-            self._db.execute(
-                """UPDATE webhook_steps SET state='failed', error=?, completed_at=?
-                   WHERE run_id=? AND state='running'""",
-                (error[:500], now, run_id),
-            )
-
-    def due_outbox(self) -> list[OutboxMessage]:
-        rows = self._db.execute(
-            """SELECT o.id, o.turn_id, o.text, o.state, o.attempts,
-                      o.kind, o.media_path, o.payload_json
-               FROM outbox AS o
-               WHERE o.state IN ('pending', 'ambiguous')
-                 AND o.next_attempt_at <= ?
-                 AND NOT EXISTS (
-                     SELECT 1 FROM outbox AS earlier
-                     WHERE earlier.id < o.id
-                       AND earlier.state NOT IN ('sent', 'failed')
-                 )
-               ORDER BY o.id LIMIT 1""",
-            (time.time(),),
-        ).fetchall()
-        messages: list[OutboxMessage] = []
-        for row in rows:
-            raw = str(row["payload_json"] or "")
-            try:
-                payload = json.loads(raw) if raw else None
-            except json.JSONDecodeError:
-                payload = None
-            if not isinstance(payload, dict):
-                if row["kind"] == "image" and row["media_path"]:
-                    payload = {
-                        "action": "message",
-                        "segments": [
-                            {"type": "image", "data": {"file": row["media_path"]}}
-                        ],
-                    }
-                else:
-                    payload = normalize_channel_message(str(row["text"]))
-            stored_media = str(row["media_path"] or "")
-            resolved_media = (
-                str(self._resolve_asset_path(stored_media)) if stored_media else None
-            )
-            if isinstance(payload, dict) and stored_media and resolved_media:
-                for segment in payload.get("segments") or []:
-                    data = segment.get("data") if isinstance(segment, dict) else None
-                    if isinstance(data, dict) and data.get("file") == stored_media:
-                        data["file"] = resolved_media
-            messages.append(
-                OutboxMessage(
-                    id=row["id"],
-                    turn_id=row["turn_id"],
-                    text=row["text"],
-                    state=row["state"],
-                    attempts=row["attempts"],
-                    kind=row["kind"],
-                    media_path=resolved_media,
-                    payload=payload,
-                )
-            )
-        return messages
-
-    def mark_sending(self, outbox_id: int) -> None:
-        with self._db:
-            self._db.execute(
-                "UPDATE outbox SET state='sending', attempts=attempts+1 WHERE id=?",
-                (outbox_id,),
-            )
-
-    def mark_not_dispatched(self, outbox_id: int, error: str) -> None:
-        with self._db:
-            self._db.execute(
-                """UPDATE outbox SET state='pending', attempts=MAX(0, attempts-1),
-                   next_attempt_at=?, last_error=? WHERE id=?""",
-                (time.time() + 2, error, outbox_id),
-            )
-
-    def mark_sent(self, outbox_id: int) -> None:
-        with self._db:
-            self._db.execute(
-                "UPDATE outbox SET state='sent', last_error=NULL WHERE id=?", (outbox_id,)
-            )
-
-    def mark_ambiguous(self, outbox_id: int, attempts: int, error: str) -> None:
-        state = "ambiguous" if attempts < 2 else "failed"
-        with self._db:
-            self._db.execute(
-                """UPDATE outbox SET state=?, possible_duplicate=1,
-                   next_attempt_at=?, last_error=? WHERE id=?""",
-                (state, time.time() + 2, error, outbox_id),
-            )
-
-    def mark_failed(self, outbox_id: int, error: str) -> None:
-        with self._db:
-            self._db.execute(
-                "UPDATE outbox SET state='failed', last_error=? WHERE id=?",
-                (error, outbox_id),
             )

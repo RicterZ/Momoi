@@ -20,7 +20,7 @@ from momoi.models import (
     ToolCall,
     TurnDraft,
 )
-from momoi.store import Store
+from momoi.storage import Store
 
 
 class ConfigurationTest(unittest.TestCase):

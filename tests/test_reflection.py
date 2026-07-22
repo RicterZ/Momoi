@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 
 from momoi.channel.napcat import NapCatConfig
 from momoi.config import AppConfig, LLMConfig, NotificationConfig, ReflectionConfig
-from momoi.daemon import REFLECTION_FINISH_SPEC, MomoiDaemon
+from momoi.runtime import REFLECTION_FINISH_SPEC, MomoiDaemon
 from momoi.models import ProviderResponse, ToolCall
 from momoi.text_replacement import TextReplacementHook, cyber_keyword_pre_hook
 

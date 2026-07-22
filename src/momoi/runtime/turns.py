@@ -1,7 +1,6 @@
 import asyncio
 import json
 import logging
-import random
 import re
 import time
 import uuid
@@ -9,47 +8,48 @@ from datetime import datetime
 from importlib.resources import files
 from typing import Any
 
-from .agenda_tools import (
-    AGENDA_TOOL_SPECS,
+from ..agenda_tools import (
     AGENDA_TOOL_POLICY,
+    AGENDA_TOOL_SPECS,
     OWNER_NOTIFY_SPEC,
-    AgendaTools,
 )
-from .builtin_tools import BUILTIN_TOOL_POLICY, BUILTIN_TOOL_SPECS, BuiltinTools
-from .channel import (
-    AmbiguousSend,
-    Channel,
-    ChannelMessage,
-    NotConnected,
-    SendRejected,
-    create_channel,
-    normalize_channel_message,
+from ..builtin_tools import BUILTIN_TOOL_POLICY, BUILTIN_TOOL_SPECS
+from ..channel import ChannelMessage
+from ..emotions import EMOTION_PREFIX, emotion_slug
+from ..memory_tools import MEMORY_TOOL_POLICY, MEMORY_TOOL_SPECS
+from ..mcp_client import MCP_TOOL_POLICY
+from ..models import AgentReply, IncomingMessage, ToolCall, TurnDraft
+from ..provider import ProviderError
+from ..storage import estimate_tokens
+from ..text_replacement import cyber_keyword_pre_hook
+from .parsing import (
+    parse_messages,
+    parse_mood_decision,
+    parse_mood_transition,
+    parse_reflection_finish,
+    parse_response,
+    validate_delivery,
 )
-from .config import AppConfig
-from .emotions import EMOTION_PREFIX, emotion_slug
-from .memory_tools import MEMORY_TOOL_POLICY, MEMORY_TOOL_SPECS, MemoryTools
-from .mcp_client import MCPManager, MCP_TOOL_POLICY
-from .models import AgentReply, IncomingMessage, ToolCall, TurnDraft
-from .provider import AnthropicProvider, OpenAIProvider, ProviderError
-from .store import REFLECTION_MEMORY_KINDS, MOOD_STATES, Store, estimate_tokens
-from .text_replacement import cyber_keyword_pre_hook
-from .webhooks import WebhookService
+from .protocol import (
+    CURL_TOOL_SPEC,
+    HEARTBEAT_FINISH_SPEC,
+    REFLECTION_FINISH_SPEC,
+    RESPOND_TOOL_SPEC,
+    SEND_MESSAGE_TOOL_SPEC,
+    WEBHOOK_SEND_MESSAGE_TOOL_SPEC,
+)
 
 logger = logging.getLogger(__name__)
-WEBHOOK_SYSTEM_PROMPT = files("momoi").joinpath("prompts/webhook.md").read_text(
-    encoding="utf-8"
-).strip()
-HEARTBEAT_SYSTEM_PROMPT = files("momoi").joinpath("prompts/heartbeat.md").read_text(
-    encoding="utf-8"
-).strip()
-REFLECTION_SYSTEM_PROMPT = files("momoi").joinpath("prompts/reflection.md").read_text(
-    encoding="utf-8"
-).strip()
-HEARTBEAT_QUEUE_ITEM = "__momoi_heartbeat__"
-REFLECTION_QUEUE_PREFIX = "__momoi_reflection__:"
-AGENDA_POLL_SECONDS = 5
+WEBHOOK_SYSTEM_PROMPT = (
+    files("momoi").joinpath("prompts/webhook.md").read_text(encoding="utf-8").strip()
+)
+HEARTBEAT_SYSTEM_PROMPT = (
+    files("momoi").joinpath("prompts/heartbeat.md").read_text(encoding="utf-8").strip()
+)
+REFLECTION_SYSTEM_PROMPT = (
+    files("momoi").joinpath("prompts/reflection.md").read_text(encoding="utf-8").strip()
+)
 MAX_CONSECUTIVE_TOOL_FAILURES = 3
-CURL_TOOL_SPEC = next(spec for spec in BUILTIN_TOOL_SPECS if spec["name"] == "curl")
 
 
 def _reconciliation_message(turn_id: str) -> str:
@@ -62,312 +62,6 @@ def _reconciliation_message(turn_id: str) -> str:
     )
 
 
-SEGMENT_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "type": {
-            "type": "string",
-            "minLength": 1,
-            "description": (
-                "Channel-neutral segment type such as text, image, file, video, "
-                "audio, reply, link, location, mention, or another type supported "
-                "by the active channel."
-            ),
-        },
-        "data": {
-            "type": "object",
-            "description": (
-                "Channel segment data. Text uses text; reply uses id; media uses file "
-                "with a local path, HTTP(S) URL, or base64 resource. Other fields "
-                "depend on the active channel."
-            ),
-        },
-    },
-    "required": ["type", "data"],
-    "additionalProperties": False,
-}
-CHANNEL_MESSAGE_SCHEMA: dict[str, Any] = {
-    "oneOf": [
-        {"type": "string", "minLength": 1},
-        {
-            "type": "object",
-            "properties": {
-                "segments": {
-                    "type": "array",
-                    "minItems": 1,
-                    "items": SEGMENT_SCHEMA,
-                }
-            },
-            "required": ["segments"],
-            "additionalProperties": False,
-        },
-        {
-            "type": "object",
-            "properties": {
-                "forward": {
-                    "type": "array",
-                    "minItems": 1,
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "user_id": {"type": ["string", "integer"]},
-                            "nickname": {"type": "string", "minLength": 1},
-                            "content": {
-                                "oneOf": [
-                                    {"type": "string", "minLength": 1},
-                                    {
-                                        "type": "array",
-                                        "minItems": 1,
-                                        "items": SEGMENT_SCHEMA,
-                                    },
-                                ]
-                            },
-                        },
-                        "required": ["nickname", "content"],
-                        "additionalProperties": False,
-                    },
-                }
-            },
-            "required": ["forward"],
-            "additionalProperties": False,
-        },
-    ]
-}
-MOOD_TRANSITION_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "state": {"type": "string", "enum": sorted(MOOD_STATES)},
-        "intensity": {"type": "number", "minimum": 0, "maximum": 1},
-        "cause": {"type": "string", "minLength": 1, "maxLength": 300},
-        "duration_minutes": {
-            "type": "integer",
-            "minimum": 5,
-            "maximum": 1440,
-        },
-    },
-    "required": ["state", "intensity", "cause", "duration_minutes"],
-    "additionalProperties": False,
-}
-MOOD_DECISION_SCHEMA: dict[str, Any] = {
-    "oneOf": [
-        {
-            "type": "object",
-            "properties": {"action": {"type": "string", "enum": ["keep"]}},
-            "required": ["action"],
-            "additionalProperties": False,
-        },
-        {
-            "type": "object",
-            "properties": {
-                "action": {"type": "string", "enum": ["transition"]},
-                **MOOD_TRANSITION_SCHEMA["properties"],
-            },
-            "required": ["action", *MOOD_TRANSITION_SCHEMA["required"]],
-            "additionalProperties": False,
-        },
-    ]
-}
-DELIVERY_SCHEMA: dict[str, Any] = {
-    "type": "string",
-    "minLength": 1,
-    "maxLength": 200,
-    "description": (
-        "Brief private expression plan made before messages: choose the natural voice, "
-        "scale, message rhythm, and any emotion reaction and its position. It is not "
-        "shown to the owner."
-    ),
-}
-
-RESPOND_TOOL_SPEC: dict[str, Any] = {
-    "name": "respond",
-    "description": (
-        "Required closing conversational beat for every owner Turn, called only after "
-        "all tool work is complete. It ends the Turn but does not replace useful live "
-        "check-ins through send_message during substantial work."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "delivery": DELIVERY_SCHEMA,
-            "messages": {
-                "type": "array",
-                "minItems": 1,
-                "items": CHANNEL_MESSAGE_SCHEMA,
-            },
-            "continuity": {
-                "type": "object",
-                "properties": {
-                    "topic": {"type": "string"},
-                    "open_loops": {
-                        "type": "array",
-                        "maxItems": 8,
-                        "items": {"type": "string"},
-                    },
-                    "pending_commitments": {
-                        "type": "array",
-                        "maxItems": 8,
-                        "items": {"type": "string"},
-                    },
-                    "short_term_facts": {
-                        "type": "array",
-                        "maxItems": 12,
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "text": {"type": "string"},
-                                "expires_at": {
-                                    "type": "string",
-                                    "description": "ISO 8601 timestamp with timezone.",
-                                },
-                            },
-                            "required": ["text", "expires_at"],
-                            "additionalProperties": False,
-                        },
-                    },
-                },
-                "required": [
-                    "topic",
-                    "open_loops",
-                    "pending_commitments",
-                    "short_term_facts",
-                ],
-                "additionalProperties": False,
-            },
-            "mood": MOOD_DECISION_SCHEMA,
-        },
-        "required": ["delivery", "messages", "continuity", "mood"],
-        "additionalProperties": False,
-    },
-}
-
-SEND_MESSAGE_TOOL_SPEC: dict[str, Any] = {
-    "name": "send_message",
-    "description": (
-        "A live conversational beat with the owner that does not end the Turn. During "
-        "substantial multi-step work, actively use it at a natural turning point such "
-        "as an unexpected error or retry, a changed plan, a meaningful discovery, or "
-        "a real delay. React briefly in Momoi's personal voice instead of writing a "
-        "status report. Skip routine steps and never repeat the final respond."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "delivery": DELIVERY_SCHEMA,
-            "messages": {
-                "type": "array",
-                "minItems": 1,
-                "items": CHANNEL_MESSAGE_SCHEMA,
-            },
-        },
-        "required": ["delivery", "messages"],
-        "additionalProperties": False,
-    },
-}
-WEBHOOK_SEND_MESSAGE_TOOL_SPEC: dict[str, Any] = {
-    "name": "send_message",
-    "description": (
-        "Required terminal output tool for this webhook event. Send the complete "
-        "ordered messages exactly once after any required tool work."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "messages": {
-                "type": "array",
-                "minItems": 1,
-                "items": CHANNEL_MESSAGE_SCHEMA,
-            }
-        },
-        "required": ["messages"],
-        "additionalProperties": False,
-    },
-}
-HEARTBEAT_FINISH_SPEC: dict[str, Any] = {
-    "name": "heartbeat_finish",
-    "description": (
-        "Required terminal decision for a cognitive heartbeat. It atomically updates "
-        "Momoi's activity, optional mood, next heartbeat, and optional owner messages."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "messages": {
-                "type": "array",
-                "maxItems": 3,
-                "items": CHANNEL_MESSAGE_SCHEMA,
-            },
-            "activity": {"type": "string", "minLength": 1, "maxLength": 300},
-            "next_check_minutes": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 1440,
-            },
-            "reason": {"type": "string", "minLength": 1, "maxLength": 500},
-            "mood": MOOD_DECISION_SCHEMA,
-        },
-        "required": [
-            "messages",
-            "activity",
-            "next_check_minutes",
-            "reason",
-            "mood",
-        ],
-        "additionalProperties": False,
-    },
-}
-
-REFLECTION_FINISH_SPEC: dict[str, Any] = {
-    "name": "reflection_finish",
-    "description": (
-        "Required terminal result for the private daily retrospective. It stores the "
-        "reflection record and promotes only durable, evidence-backed learning."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "summary": {"type": "string", "minLength": 1, "maxLength": 6000},
-            "memories": {
-                "type": "array",
-                "maxItems": 12,
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "kind": {
-                            "type": "string",
-                            "enum": sorted(REFLECTION_MEMORY_KINDS),
-                        },
-                        "key": {
-                            "type": "string",
-                            "description": "Stable lowercase dot-separated key.",
-                        },
-                        "content": {"type": "string", "minLength": 1},
-                        "evidence": {
-                            "type": "string",
-                            "description": "Exact contiguous quote from the supplied day record.",
-                        },
-                        "confidence": {
-                            "type": "number",
-                            "minimum": 0,
-                            "maximum": 1,
-                        },
-                    },
-                    "required": [
-                        "kind",
-                        "key",
-                        "content",
-                        "evidence",
-                        "confidence",
-                    ],
-                    "additionalProperties": False,
-                },
-            },
-        },
-        "required": ["summary", "memories"],
-        "additionalProperties": False,
-    },
-}
-
-
 class ExternalToolTurnError(RuntimeError):
     pass
 
@@ -376,256 +70,13 @@ class TurnBudgetExceeded(RuntimeError):
     pass
 
 
-class MomoiDaemon:
-    def __init__(self, config: AppConfig, channel: Channel | None = None) -> None:
-        self.config = config
-        self.store = Store(config.database, config.workspace)
-        self.store.ensure_heartbeat(config.heartbeat)
-        self.agenda_tools = AgendaTools(self.store)
-        self.memory_tools = MemoryTools(self.store)
-        self.builtin_tools = BuiltinTools()
-        self.channel = channel or create_channel(config.channel)
-        self.provider = (
-            OpenAIProvider(config.llm)
-            if config.llm.api_format == "openai"
-            else AnthropicProvider(config.llm)
-        )
-        self.mcp = MCPManager(config.mcp_config)
-        self.incoming: asyncio.Queue[IncomingMessage] = asyncio.Queue()
-        self.webhook_requests: asyncio.Queue[
-            tuple[str, asyncio.Future[list[ChannelMessage]]]
-        ] = asyncio.Queue()
-        self.autonomous: asyncio.Queue[str] = asyncio.Queue()
-        self.outbox_changed = asyncio.Event()
-        self.agenda_changed = asyncio.Event()
-        self._active_turn: asyncio.Task[None] | None = None
-        self._stop_requested = False
-        self.webhooks = (
-            WebhookService(
-                config.webhooks,
-                self.channel.workflow_variables(),
-                self.store,
-                self._request_webhook_message,
-                self.outbox_changed.set,
-            )
-            if config.webhooks.enabled
-            else None
-        )
-
-    async def run(self, stop: asyncio.Event) -> None:
-        logger.info("Channel started name=%s", self.channel.name)
-        for event in self.store.pending_events():
-            self.incoming.put_nowait(event)
-        async with self.mcp, self.provider:
-            tasks: list[asyncio.Task[None]] = []
-            try:
-                async with asyncio.TaskGroup() as group:
-                    tasks.append(group.create_task(self.channel.run(self._receive, stop)))
-                    tasks.append(group.create_task(self._agent_worker(stop)))
-                    tasks.append(group.create_task(self._scheduler_worker(stop)))
-                    tasks.append(group.create_task(self._outbox_worker(stop)))
-                    if self.webhooks is not None:
-                        tasks.append(group.create_task(self.webhooks.run_api(stop)))
-                        tasks.append(group.create_task(self.webhooks.run_worker(stop)))
-                    await stop.wait()
-                    for task in tasks:
-                        task.cancel()
-            finally:
-                self.store.close()
-
-    async def _receive(self, message: IncomingMessage) -> None:
-        logger.debug(
-            "Received owner message channel=%s message=%s",
-            message.channel,
-            json.dumps(message.text, ensure_ascii=False),
-        )
-        if message.text.strip() == "/stop":
-            active = self._active_turn
-            if active is not None and not active.done():
-                self._stop_requested = True
-                active.cancel()
-            if self.store.add_event(message):
-                logger.info("Accepted /stop owner command")
-                await self.incoming.put(message)
-            return
-        if self.store.add_event(message):
-            logger.info("Accepted owner message channel=%s", message.channel)
-            await self.incoming.put(message)
-
-    async def _agent_worker(self, stop: asyncio.Event) -> None:
-        batch: list[IncomingMessage] = []
-        quiet_deadline = 0.0
-        hard_deadline = 0.0
-        loop = asyncio.get_running_loop()
-        while not stop.is_set():
-            if not batch:
-                kind, item = await self._next_work()
-                if kind == "webhook":
-                    prompt, future = item
-                    if future.cancelled():
-                        continue
-                    try:
-                        messages = await self._complete_webhook_message(prompt)
-                    except asyncio.CancelledError:
-                        if not future.done():
-                            future.cancel()
-                        raise
-                    except Exception as error:
-                        if not future.done():
-                            future.set_exception(error)
-                    else:
-                        if not future.done():
-                            future.set_result(messages)
-                    continue
-                if kind == "goal":
-                    goal_id = str(item)
-                    self._stop_requested = False
-                    if goal_id == HEARTBEAT_QUEUE_ITEM:
-                        work = self._complete_heartbeat_turn(stop)
-                    elif goal_id.startswith(REFLECTION_QUEUE_PREFIX):
-                        work = self._complete_reflection_turn(
-                            goal_id.removeprefix(REFLECTION_QUEUE_PREFIX), stop
-                        )
-                    else:
-                        work = self._complete_goal_turn(goal_id, stop)
-                    self._active_turn = asyncio.create_task(work)
-                    try:
-                        await self._active_turn
-                    except asyncio.CancelledError:
-                        if not self._stop_requested:
-                            raise
-                        if goal_id == HEARTBEAT_QUEUE_ITEM:
-                            self.store.release_heartbeat_claim(
-                                self.config.heartbeat.min_interval_seconds
-                            )
-                            logger.info("Active heartbeat turn stopped")
-                        elif goal_id.startswith(REFLECTION_QUEUE_PREFIX):
-                            local_date = goal_id.removeprefix(REFLECTION_QUEUE_PREFIX)
-                            self.store.release_reflection(
-                                local_date, "owner_stop", delay_seconds=3600
-                            )
-                            logger.info(
-                                "Active daily reflection stopped date=%s", local_date
-                            )
-                        else:
-                            self.store.release_goal_claim(goal_id, defer_seconds=900)
-                            logger.info(
-                                "Active autonomous turn stopped goal=%s",
-                                goal_id,
-                            )
-                    finally:
-                        self._active_turn = None
-                        self._stop_requested = False
-                        self.agenda_changed.set()
-                    continue
-                message = item
-                assert isinstance(message, IncomingMessage)
-                batch.append(message)
-                now = loop.time()
-                immediate = message.text.strip() == "/stop"
-                quiet_deadline = now if immediate else now + self.channel.quiet_seconds
-                hard_deadline = now if immediate else now + self.channel.max_batch_seconds
-                continue
-            timeout = max(0.0, min(quiet_deadline, hard_deadline) - loop.time())
-            try:
-                message = await asyncio.wait_for(self.incoming.get(), timeout=timeout)
-                if message.text.strip() == "/stop":
-                    self.store.discard_events(batch)
-                    batch = [message]
-                    quiet_deadline = loop.time()
-                    hard_deadline = quiet_deadline
-                    continue
-                batch.append(message)
-                quiet_deadline = min(
-                    loop.time() + self.channel.quiet_seconds, hard_deadline
-                )
-            except TimeoutError:
-                sealed = batch
-                batch = []
-                self._stop_requested = False
-                self._active_turn = asyncio.create_task(
-                    self._complete_batch_turn(
-                        sealed,
-                        stop,
-                        self._turn_id(*(event.event_id for event in sealed)),
-                    )
-                )
-                try:
-                    await self._active_turn
-                except asyncio.CancelledError:
-                    if not self._stop_requested:
-                        raise
-                    self.store.cancel_turn(
-                        self._turn_id(*(event.event_id for event in sealed)), sealed
-                    )
-                    logger.info("Active owner turn stopped")
-                finally:
-                    self._active_turn = None
-                    self._stop_requested = False
-
-    async def _next_work(self) -> tuple[str, Any]:
-        if not self.incoming.empty():
-            return "owner", await self.incoming.get()
-        if not self.webhook_requests.empty():
-            return "webhook", await self.webhook_requests.get()
-        if not self.autonomous.empty():
-            return "goal", self._next_autonomous()
-        owner = asyncio.create_task(self.incoming.get())
-        webhook = asyncio.create_task(self.webhook_requests.get())
-        goal = asyncio.create_task(self.autonomous.get())
-        tasks = {
-            "owner": (owner, self.incoming),
-            "webhook": (webhook, self.webhook_requests),
-            "goal": (goal, self.autonomous),
-        }
-        try:
-            done, _ = await asyncio.wait(
-                {owner, webhook, goal}, return_when=asyncio.FIRST_COMPLETED
-            )
-            chosen_kind = next(
-                kind for kind in ("owner", "webhook", "goal") if tasks[kind][0] in done
-            )
-            chosen = tasks[chosen_kind][0]
-            for kind, (task, queue) in tasks.items():
-                if kind == chosen_kind:
-                    continue
-                if task.done() and not task.cancelled():
-                    queue.put_nowait(task.result())
-                else:
-                    task.cancel()
-            item = chosen.result()
-            return (
-                chosen_kind,
-                self._prioritize_autonomous(item) if chosen_kind == "goal" else item,
-            )
-        except BaseException:
-            for task, _ in tasks.values():
-                if not task.done():
-                    task.cancel()
-            raise
-
-    def _next_autonomous(self) -> str:
-        return self._prioritize_autonomous(self.autonomous.get_nowait())
-
-    def _prioritize_autonomous(self, item: str) -> str:
-        if item != HEARTBEAT_QUEUE_ITEM or self.autonomous.empty():
-            if not item.startswith(REFLECTION_QUEUE_PREFIX) or self.autonomous.empty():
-                return item
-            next_item = self.autonomous.get_nowait()
-            if next_item == HEARTBEAT_QUEUE_ITEM:
-                self.autonomous.put_nowait(next_item)
-                return item
-        else:
-            next_item = self.autonomous.get_nowait()
-        self.autonomous.put_nowait(item)
-        return next_item
-
-    async def _request_webhook_message(self, prompt: str) -> list[ChannelMessage]:
-        future: asyncio.Future[list[ChannelMessage]] = (
-            asyncio.get_running_loop().create_future()
-        )
-        await self.webhook_requests.put((prompt, future))
-        return await future
+class TurnRunner:
+    _parse_messages = staticmethod(parse_messages)
+    _validate_delivery = staticmethod(validate_delivery)
+    _parse_response = staticmethod(parse_response)
+    _parse_mood_decision = staticmethod(parse_mood_decision)
+    _parse_mood_transition = staticmethod(parse_mood_transition)
+    _parse_reflection_finish = staticmethod(parse_reflection_finish)
 
     async def _complete_webhook_message(self, prompt: str) -> list[ChannelMessage]:
         history = self.store.history(
@@ -706,13 +157,9 @@ class MomoiDaemon:
                 system, conversation, tools, require_tool=True
             )
             metrics = response.usage or {}
-            used_tokens += int(metrics.get("input", 0)) + int(
-                metrics.get("output", 0)
-            )
+            used_tokens += int(metrics.get("input", 0)) + int(metrics.get("output", 0))
             if not response.tool_calls:
-                logger.debug(
-                    "Rejected plain webhook response error=tool_call_required"
-                )
+                logger.debug("Rejected plain webhook response error=tool_call_required")
                 conversation.extend(
                     [
                         {"role": "assistant", "content": response.content},
@@ -833,9 +280,7 @@ class MomoiDaemon:
             return
         except ExternalToolTurnError:
             logger.exception("Owner turn stopped after an external tool call")
-            self.store.open_reconciliation(
-                turn_id, "fatal_error_after_external_tool"
-            )
+            self.store.open_reconciliation(turn_id, "fatal_error_after_external_tool")
             failure_message = _reconciliation_message(turn_id)
             failure_reason = "fatal_error_after_external_tool"
         except TurnBudgetExceeded as error:
@@ -855,7 +300,9 @@ class MomoiDaemon:
             )
             failure_reason = type(error).__name__
         except Exception as error:
-            logger.exception("Owner turn stopped by fatal error: %s", type(error).__name__)
+            logger.exception(
+                "Owner turn stopped by fatal error: %s", type(error).__name__
+            )
             failure_message = (
                 "This turn stopped because of an internal error and was not retried "
                 "automatically."
@@ -1047,7 +494,11 @@ class MomoiDaemon:
                     "input",
                     estimate_tokens(
                         json.dumps(
-                            {"system": system, "messages": messages, "tools": request_tools},
+                            {
+                                "system": system,
+                                "messages": messages,
+                                "tools": request_tools,
+                            },
                             ensure_ascii=False,
                             default=str,
                         )
@@ -1066,9 +517,7 @@ class MomoiDaemon:
             if not response.tool_calls:
                 if not require_response:
                     return None
-                logger.debug(
-                    "Rejected plain LLM response error=respond_tool_required"
-                )
+                logger.debug("Rejected plain LLM response error=respond_tool_required")
                 messages.extend(
                     [
                         {"role": "assistant", "content": response.content},
@@ -1119,7 +568,8 @@ class MomoiDaemon:
                                     "type": "tool_result",
                                     "tool_use_id": response.tool_calls[0].id,
                                     "content": json.dumps(
-                                        {"ok": False, "error": error}, ensure_ascii=False
+                                        {"ok": False, "error": error},
+                                        ensure_ascii=False,
                                     ),
                                     "is_error": True,
                                 }
@@ -1166,7 +616,9 @@ class MomoiDaemon:
                             "state": "queued",
                             "messages": len(progress),
                         }
-                elif self.mcp.has_tool(call.name) or self.builtin_tools.has_tool(call.name):
+                elif self.mcp.has_tool(call.name) or self.builtin_tools.has_tool(
+                    call.name
+                ):
                     if not call.id:
                         result = {"ok": False, "error": "missing_tool_call_id"}
                     else:
@@ -1190,9 +642,7 @@ class MomoiDaemon:
                                 if self.mcp.has_tool(call.name)
                                 else await self.builtin_tools.execute(call)
                             )
-                            result = self._normalize_tool_result(
-                                call, result, source
-                            )
+                            result = self._normalize_tool_result(call, result, source)
                             self.store.complete_tool_call(turn_id, call.id, result)
                 elif self.agenda_tools.has_tool(call.name, allow_notify=allow_notify):
                     result = self.agenda_tools.execute(
@@ -1379,39 +829,6 @@ class MomoiDaemon:
             )
         return history_messages
 
-    @staticmethod
-    def _parse_messages(
-        arguments: dict[str, Any],
-    ) -> tuple[list[ChannelMessage] | None, str | None]:
-        raw_messages = arguments.get("messages")
-        if not isinstance(raw_messages, list) or not raw_messages:
-            return None, "messages_must_be_a_non_empty_array"
-        messages: list[ChannelMessage] = []
-        for item in raw_messages:
-            if isinstance(item, str):
-                text = item.strip()
-                if not text:
-                    return None, "messages_must_contain_non_empty_items"
-                messages.extend(part.strip() for part in re.split(r"\n\s*\n", text))
-                continue
-            try:
-                message = normalize_channel_message(item)
-            except ValueError as error:
-                return None, str(error)
-            segments = message.get("segments") or []
-            if (
-                message.get("action") == "message"
-                and len(segments) == 1
-                and segments[0].get("type") == "text"
-                and str(segments[0].get("data", {}).get("text", "")).startswith(
-                    EMOTION_PREFIX
-                )
-            ):
-                messages.append(str(segments[0]["data"]["text"]))
-            else:
-                messages.append(message)
-        return messages, None
-
     def _validate_emotion_messages(self, messages: list[ChannelMessage]) -> str | None:
         for message in messages:
             if not isinstance(message, str):
@@ -1424,126 +841,6 @@ class MomoiDaemon:
             if self.store.emotion(slug) is None:
                 return "unknown_emotion_slug"
         return None
-
-    @staticmethod
-    def _validate_delivery(arguments: dict[str, Any]) -> str | None:
-        delivery = arguments.get("delivery")
-        if not isinstance(delivery, str) or not delivery.strip() or len(delivery) > 200:
-            return "invalid_delivery"
-        return None
-
-    @classmethod
-    def _parse_response(
-        cls, arguments: dict[str, Any]
-    ) -> tuple[AgentReply | None, str | None]:
-        error = cls._validate_delivery(arguments)
-        if error is not None:
-            return None, error
-        messages, error = cls._parse_messages(arguments)
-        if messages is None:
-            return None, error
-        raw_continuity = arguments.get("continuity")
-        if not isinstance(raw_continuity, dict):
-            return None, "continuity_must_be_an_object"
-        topic = raw_continuity.get("topic")
-        open_loops = raw_continuity.get("open_loops")
-        commitments = raw_continuity.get("pending_commitments")
-        facts = raw_continuity.get("short_term_facts")
-        if not isinstance(topic, str) or len(topic) > 1000:
-            return None, "invalid_continuity_topic"
-        for name, items, limit in (
-            ("open_loops", open_loops, 8),
-            ("pending_commitments", commitments, 8),
-        ):
-            if (
-                not isinstance(items, list)
-                or len(items) > limit
-                or any(not isinstance(item, str) or not item.strip() for item in items)
-            ):
-                return None, f"invalid_continuity_{name}"
-        if not isinstance(facts, list) or len(facts) > 12:
-            return None, "invalid_continuity_short_term_facts"
-        normalized_facts: list[dict[str, str]] = []
-        for fact in facts:
-            if not isinstance(fact, dict):
-                return None, "invalid_continuity_short_term_facts"
-            text = fact.get("text")
-            expires_at = fact.get("expires_at")
-            if not isinstance(text, str) or not text.strip() or len(text) > 1000:
-                return None, "invalid_continuity_short_term_fact_text"
-            if not isinstance(expires_at, str):
-                return None, "invalid_continuity_expiry"
-            try:
-                expiry = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
-            except ValueError:
-                return None, "invalid_continuity_expiry"
-            if expiry.tzinfo is None:
-                return None, "invalid_continuity_expiry"
-            normalized_facts.append(
-                {"text": text.strip(), "expires_at": expiry.isoformat()}
-            )
-        continuity = {
-            "topic": topic.strip(),
-            "open_loops": [str(item).strip() for item in open_loops],
-            "pending_commitments": [str(item).strip() for item in commitments],
-            "short_term_facts": normalized_facts,
-        }
-        mood, error = cls._parse_mood_decision(arguments.get("mood"))
-        if error is not None:
-            return None, error
-        return AgentReply(messages, continuity, mood), None
-
-    @classmethod
-    def _parse_mood_decision(
-        cls, value: object
-    ) -> tuple[dict[str, Any] | None, str | None]:
-        if not isinstance(value, dict):
-            return None, "invalid_mood_decision"
-        action = value.get("action")
-        if action == "keep" and set(value) == {"action"}:
-            return None, None
-        if action != "transition":
-            return None, "invalid_mood_decision"
-        transition = {key: item for key, item in value.items() if key != "action"}
-        mood, error = cls._parse_mood_transition(transition)
-        return mood, "invalid_mood_decision" if error else None
-
-    @staticmethod
-    def _parse_mood_transition(
-        value: object,
-    ) -> tuple[dict[str, Any] | None, str | None]:
-        if value is None:
-            return None, None
-        if not isinstance(value, dict) or set(value) != {
-            "state",
-            "intensity",
-            "cause",
-            "duration_minutes",
-        }:
-            return None, "invalid_mood_transition"
-        state = value.get("state")
-        cause = value.get("cause")
-        intensity = value.get("intensity")
-        duration = value.get("duration_minutes")
-        if (
-            state not in MOOD_STATES
-            or not isinstance(cause, str)
-            or not cause.strip()
-            or len(cause) > 300
-        ):
-            return None, "invalid_mood_transition"
-        if isinstance(intensity, bool) or not isinstance(intensity, (int, float)):
-            return None, "invalid_mood_transition"
-        if not 0 <= float(intensity) <= 1:
-            return None, "invalid_mood_transition"
-        if isinstance(duration, bool) or not isinstance(duration, int) or not 5 <= duration <= 1440:
-            return None, "invalid_mood_transition"
-        return {
-            "state": state,
-            "intensity": float(intensity),
-            "cause": cause.strip()[:300],
-            "duration_minutes": duration,
-        }, None
 
     @staticmethod
     def _turn_id(*parts: object) -> str:
@@ -1655,10 +952,10 @@ class MomoiDaemon:
                 raise
             return
         except ExternalToolTurnError:
-            logger.exception("Autonomous turn stopped after an external tool call goal=%s", goal_id)
-            self.store.open_reconciliation(
-                turn_id, "fatal_error_after_external_tool"
+            logger.exception(
+                "Autonomous turn stopped after an external tool call goal=%s", goal_id
             )
+            self.store.open_reconciliation(turn_id, "fatal_error_after_external_tool")
             draft = TurnDraft(
                 notification_messages=[_reconciliation_message(turn_id)],
                 notification_key="goal.reconciliation",
@@ -1825,7 +1122,11 @@ class MomoiDaemon:
                         "input",
                         estimate_tokens(
                             json.dumps(
-                                {"system": system, "messages": messages, "tools": tools},
+                                {
+                                    "system": system,
+                                    "messages": messages,
+                                    "tools": tools,
+                                },
                                 ensure_ascii=False,
                                 default=str,
                             )
@@ -1836,7 +1137,9 @@ class MomoiDaemon:
                     metrics.get(
                         "output",
                         estimate_tokens(
-                            json.dumps(response.content, ensure_ascii=False, default=str)
+                            json.dumps(
+                                response.content, ensure_ascii=False, default=str
+                            )
                         ),
                     )
                 ),
@@ -1997,7 +1300,10 @@ class MomoiDaemon:
         source = self.store.reflection_source(
             local_date,
             self.config.notifications.timezone,
-            max(1000, min(self.config.recent_raw_tokens, self.config.max_input_tokens // 2)),
+            max(
+                1000,
+                min(self.config.recent_raw_tokens, self.config.max_input_tokens // 2),
+            ),
         )
         raw_record = str(source["text"] or "").strip()
         query = raw_record[-12000:]
@@ -2066,7 +1372,11 @@ class MomoiDaemon:
                         "input",
                         estimate_tokens(
                             json.dumps(
-                                {"system": system, "messages": messages, "tools": tools},
+                                {
+                                    "system": system,
+                                    "messages": messages,
+                                    "tools": tools,
+                                },
                                 ensure_ascii=False,
                                 default=str,
                             )
@@ -2077,7 +1387,9 @@ class MomoiDaemon:
                     metrics.get(
                         "output",
                         estimate_tokens(
-                            json.dumps(response.content, ensure_ascii=False, default=str)
+                            json.dumps(
+                                response.content, ensure_ascii=False, default=str
+                            )
                         ),
                     )
                 ),
@@ -2138,84 +1450,16 @@ class MomoiDaemon:
                     }
                 )
 
-    @staticmethod
-    def _parse_reflection_finish(
-        arguments: dict[str, Any],
-        source: str,
-        owner_source: str,
-        knowledge_source: str,
-    ) -> tuple[dict[str, Any] | None, str | None]:
-        if not isinstance(arguments, dict) or set(arguments) != {"summary", "memories"}:
-            return None, "invalid_reflection_finish"
-        summary = arguments.get("summary")
-        raw_memories = arguments.get("memories")
-        if (
-            not isinstance(summary, str)
-            or not summary.strip()
-            or len(summary) > 6000
-            or not isinstance(raw_memories, list)
-            or len(raw_memories) > 12
-        ):
-            return None, "invalid_reflection_finish"
-        memories: list[dict[str, Any]] = []
-        seen: set[tuple[str, str]] = set()
-        for item in raw_memories:
-            if not isinstance(item, dict) or set(item) != {
-                "kind",
-                "key",
-                "content",
-                "evidence",
-                "confidence",
-            }:
-                return None, "invalid_reflection_memory"
-            kind = item.get("kind")
-            key = item.get("key")
-            content = item.get("content")
-            evidence = item.get("evidence")
-            confidence = item.get("confidence")
-            if (
-                kind not in REFLECTION_MEMORY_KINDS
-                or not isinstance(key, str)
-                or not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,199}", key)
-                or not isinstance(content, str)
-                or not content.strip()
-                or len(content) > 1000
-                or not isinstance(evidence, str)
-                or not evidence.strip()
-                or len(evidence) > 500
-                or evidence not in source
-                or isinstance(confidence, bool)
-                or not isinstance(confidence, (int, float))
-                or not 0 <= float(confidence) <= 1
-            ):
-                return None, "invalid_reflection_memory"
-            if kind in {"owner_profile", "owner_preference"} and evidence not in owner_source:
-                return None, "owner_reflection_requires_owner_evidence"
-            if kind == "world_knowledge" and evidence not in knowledge_source:
-                return None, "world_reflection_requires_observed_evidence"
-            identity = (kind, key)
-            if identity in seen:
-                return None, "duplicate_reflection_memory"
-            seen.add(identity)
-            memories.append(
-                {
-                    "kind": kind,
-                    "key": key,
-                    "content": content.strip(),
-                    "evidence": evidence.strip(),
-                    "confidence": float(confidence),
-                }
-            )
-        return {"summary": summary.strip(), "memories": memories}, None
-
     async def _complete_goal(self, goal_id: str, turn_id: str) -> None:
         goal = self.store.goal(goal_id)
         if goal is None or goal["status"] not in {"active", "waiting"}:
             self.store.release_goal_claim(goal_id)
             return
         now = datetime.now().astimezone().isoformat(timespec="seconds")
-        review_at = datetime.fromtimestamp(float(goal["next_review_at"])).astimezone().isoformat(
-            timespec="seconds"
+        review_at = (
+            datetime.fromtimestamp(float(goal["next_review_at"]))
+            .astimezone()
+            .isoformat(timespec="seconds")
         )
         continuity = self.store.continuity_context()
         self_state = self.store.self_state_context()
@@ -2259,7 +1503,9 @@ class MomoiDaemon:
             context += f"\n\n# Recalled memory\n{memories}"
         if learned:
             context += f"\n\n# Daily reflection memory\n{learned}"
-        history = self.store.history(self.config.recent_raw_tokens, self.config.recent_turns)
+        history = self.store.history(
+            self.config.recent_raw_tokens, self.config.recent_turns
+        )
         self._cache_history_tail(history)
         messages: list[dict[str, Any]] = [
             *history,
@@ -2274,7 +1520,9 @@ class MomoiDaemon:
                 ],
             },
         ]
-        memory_search = [spec for spec in MEMORY_TOOL_SPECS if spec["name"] == "memory_search"]
+        memory_search = [
+            spec for spec in MEMORY_TOOL_SPECS if spec["name"] == "memory_search"
+        ]
         tools = [
             *memory_search,
             *AGENDA_TOOL_SPECS,
@@ -2304,79 +1552,6 @@ class MomoiDaemon:
         )
         self.agenda_changed.set()
 
-    async def _scheduler_worker(self, stop: asyncio.Event) -> None:
-        while not stop.is_set():
-            self.agenda_changed.clear()
-            reminder = self.store.claim_due_reminder()
-            if reminder is not None:
-                if self.store.fire_reminder(
-                    str(reminder["id"]), self.config.notifications
-                ):
-                    logger.info("Fired reminder id=%s", reminder["id"])
-                    self.outbox_changed.set()
-                continue
-            notification = self.store.claim_due_notification(
-                self.config.notifications
-            )
-            if notification is not None:
-                if self.store.queue_notification(
-                    str(notification["id"]), config=self.config.notifications
-                ):
-                    logger.info("Queued owner notification id=%s", notification["id"])
-                    self.outbox_changed.set()
-                continue
-            goal = self.store.claim_due_goal()
-            if goal is not None:
-                await self.autonomous.put(str(goal["id"]))
-                continue
-            reflection = self.store.claim_due_reflection(
-                self.config.reflection, self.config.notifications.timezone
-            )
-            if reflection is not None:
-                await self.autonomous.put(
-                    REFLECTION_QUEUE_PREFIX + str(reflection["local_date"])
-                )
-                continue
-            heartbeat = self.store.claim_due_heartbeat(
-                self.config.heartbeat, self.config.notifications
-            )
-            if heartbeat is not None:
-                await self.autonomous.put(HEARTBEAT_QUEUE_ITEM)
-                continue
-            due_times = [
-                due
-                for due in (
-                    self.store.next_reminder_due_at(),
-                    self.store.next_notification_due_at(),
-                    self.store.next_goal_due_at(),
-                    self.store.next_reflection_due_at(
-                        self.config.reflection,
-                        self.config.notifications.timezone,
-                    ),
-                    self.store.next_heartbeat_due_at(
-                        self.config.heartbeat.enabled
-                    ),
-                )
-                if due is not None
-            ]
-            if not due_times:
-                try:
-                    await asyncio.wait_for(
-                        self.agenda_changed.wait(), timeout=AGENDA_POLL_SECONDS
-                    )
-                except TimeoutError:
-                    pass
-                continue
-            due_at = min(due_times)
-            timeout = min(
-                AGENDA_POLL_SECONDS,
-                max(0.0, due_at - datetime.now().timestamp()),
-            )
-            try:
-                await asyncio.wait_for(self.agenda_changed.wait(), timeout=timeout)
-            except TimeoutError:
-                pass
-
     @staticmethod
     def _render_batch(batch: list[IncomingMessage]) -> str:
         lines = [
@@ -2388,9 +1563,7 @@ class MomoiDaemon:
             lines.append(f"{local_time:%H:%M:%S} {message.text}")
         return "\n".join(lines)
 
-    def _apply_reconciliation_commands(
-        self, batch: list[IncomingMessage]
-    ) -> str:
+    def _apply_reconciliation_commands(self, batch: list[IncomingMessage]) -> str:
         results: list[str] = []
         for message in batch:
             text = message.text.strip()
@@ -2416,59 +1589,3 @@ class MomoiDaemon:
             except ValueError as error:
                 results.append(f"Command rejected: {error}")
         return "\n".join(results)
-
-    async def _outbox_worker(self, stop: asyncio.Event) -> None:
-        previous_turn_id: str | None = None
-        while not stop.is_set():
-            self.outbox_changed.clear()
-            rows = self.store.due_outbox()
-            if not rows:
-                try:
-                    await asyncio.wait_for(self.outbox_changed.wait(), timeout=5)
-                except TimeoutError:
-                    pass
-                continue
-            for row in rows:
-                if row.turn_id == previous_turn_id:
-                    delay = random.uniform(2, 4)
-                    logger.debug(
-                        "Waiting %.2fs before next message channel=%s",
-                        delay,
-                        self.channel.name,
-                    )
-                    await asyncio.sleep(delay)
-                self.store.mark_sending(row.id)
-                attempt = row.attempts + 1
-                try:
-                    logger.debug(
-                        "Sending message channel=%s kind=%s content=%s",
-                        self.channel.name,
-                        row.kind,
-                        json.dumps(row.text, ensure_ascii=False),
-                    )
-                    await self.channel.send_message(
-                        row.payload
-                        or {
-                            "action": "message",
-                            "segments": [
-                                {"type": "text", "data": {"text": row.text}}
-                            ],
-                        }
-                    )
-                except NotConnected as error:
-                    self.store.mark_not_dispatched(row.id, type(error).__name__)
-                    break
-                except AmbiguousSend as error:
-                    self.store.mark_ambiguous(row.id, attempt, type(error).__name__)
-                except SendRejected as error:
-                    self.store.mark_failed(row.id, str(error))
-                    logger.warning(
-                        "Channel send rejected channel=%s outbox=%d error=%s",
-                        self.channel.name,
-                        row.id,
-                        str(error),
-                    )
-                else:
-                    self.store.mark_sent(row.id)
-                    previous_turn_id = row.turn_id
-                    logger.info("Sent outbox id=%d", row.id)

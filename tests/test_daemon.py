@@ -18,7 +18,7 @@ from momoi.config import (
     LLMConfig,
     NotificationConfig,
 )
-from momoi.daemon import (
+from momoi.runtime import (
     HEARTBEAT_FINISH_SPEC,
     HEARTBEAT_QUEUE_ITEM,
     RESPOND_TOOL_SPEC,
@@ -36,7 +36,7 @@ from momoi.models import (
 from momoi.provider import (
     ProviderError,
 )
-from momoi.store import estimate_tokens
+from momoi.storage import estimate_tokens
 
 
 class DaemonTest(unittest.TestCase):
@@ -197,7 +197,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             daemon.provider = provider  # type: ignore[assignment]
             event = IncomingMessage("qq:bad-goal", "bad-goal", "创建任务", 1, 1)
             daemon.store.add_event(event)
-            with self.assertLogs("momoi.daemon", level="DEBUG") as logs:
+            with self.assertLogs("momoi.runtime.turns", level="DEBUG") as logs:
                 await daemon._complete_batch_turn(
                     [event], asyncio.Event(), daemon._turn_id(event.event_id)
                 )
@@ -935,7 +935,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     database=Path(directory) / "momoi.sqlite3",
                     log_level="INFO",
                 )
-                with patch("momoi.daemon.random.uniform", return_value=0):
+                with patch("momoi.runtime.daemon.random.uniform", return_value=0):
                     await asyncio.wait_for(MomoiDaemon(config).run(stop), timeout=2)
         finally:
             await napcat_server.close()

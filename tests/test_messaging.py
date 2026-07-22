@@ -22,7 +22,7 @@ from momoi.config import (
     AppConfig,
     LLMConfig,
 )
-from momoi.daemon import (
+from momoi.runtime import (
     MomoiDaemon,
 )
 from momoi.models import (
@@ -31,7 +31,7 @@ from momoi.models import (
     ProviderResponse,
     ToolCall,
 )
-from momoi.store import Store
+from momoi.storage import Store
 
 
 class MessagingTest(unittest.TestCase):
@@ -332,8 +332,8 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
 
             daemon.channel.send_message = send_message  # type: ignore[method-assign]
             with (
-                patch("momoi.daemon.random.uniform", return_value=3),
-                patch("momoi.daemon.asyncio.sleep", new=sleep),
+                patch("momoi.runtime.daemon.random.uniform", return_value=3),
+                patch("momoi.runtime.daemon.asyncio.sleep", new=sleep),
             ):
                 await daemon._outbox_worker(stop)
 
@@ -378,7 +378,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                 self.fail("different turns must not inherit an outbox delay")
 
             daemon.channel.send_message = send_message  # type: ignore[method-assign]
-            with patch("momoi.daemon.asyncio.sleep", new=unexpected_sleep):
+            with patch("momoi.runtime.daemon.asyncio.sleep", new=unexpected_sleep):
                 await daemon._outbox_worker(stop)
 
             self.assertEqual(sent, ["第一轮", "第二轮"])

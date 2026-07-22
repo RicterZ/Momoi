@@ -1,0 +1,238 @@
+import re
+from datetime import datetime
+from typing import Any
+
+from ..channel import ChannelMessage, normalize_channel_message
+from ..emotions import EMOTION_PREFIX
+from ..models import AgentReply
+from ..storage import MOOD_STATES, REFLECTION_MEMORY_KINDS
+
+
+def parse_messages(
+    arguments: dict[str, Any],
+) -> tuple[list[ChannelMessage] | None, str | None]:
+    raw_messages = arguments.get("messages")
+    if not isinstance(raw_messages, list) or not raw_messages:
+        return None, "messages_must_be_a_non_empty_array"
+    messages: list[ChannelMessage] = []
+    for item in raw_messages:
+        if isinstance(item, str):
+            text = item.strip()
+            if not text:
+                return None, "messages_must_contain_non_empty_items"
+            messages.extend(part.strip() for part in re.split(r"\n\s*\n", text))
+            continue
+        try:
+            message = normalize_channel_message(item)
+        except ValueError as error:
+            return None, str(error)
+        segments = message.get("segments") or []
+        if (
+            message.get("action") == "message"
+            and len(segments) == 1
+            and segments[0].get("type") == "text"
+            and str(segments[0].get("data", {}).get("text", "")).startswith(
+                EMOTION_PREFIX
+            )
+        ):
+            messages.append(str(segments[0]["data"]["text"]))
+        else:
+            messages.append(message)
+    return messages, None
+
+
+def validate_delivery(arguments: dict[str, Any]) -> str | None:
+    delivery = arguments.get("delivery")
+    if not isinstance(delivery, str) or not delivery.strip() or len(delivery) > 200:
+        return "invalid_delivery"
+    return None
+
+
+def parse_response(
+    arguments: dict[str, Any],
+) -> tuple[AgentReply | None, str | None]:
+    error = validate_delivery(arguments)
+    if error is not None:
+        return None, error
+    messages, error = parse_messages(arguments)
+    if messages is None:
+        return None, error
+    raw_continuity = arguments.get("continuity")
+    if not isinstance(raw_continuity, dict):
+        return None, "continuity_must_be_an_object"
+    topic = raw_continuity.get("topic")
+    open_loops = raw_continuity.get("open_loops")
+    commitments = raw_continuity.get("pending_commitments")
+    facts = raw_continuity.get("short_term_facts")
+    if not isinstance(topic, str) or len(topic) > 1000:
+        return None, "invalid_continuity_topic"
+    for name, items, limit in (
+        ("open_loops", open_loops, 8),
+        ("pending_commitments", commitments, 8),
+    ):
+        if (
+            not isinstance(items, list)
+            or len(items) > limit
+            or any(not isinstance(item, str) or not item.strip() for item in items)
+        ):
+            return None, f"invalid_continuity_{name}"
+    if not isinstance(facts, list) or len(facts) > 12:
+        return None, "invalid_continuity_short_term_facts"
+    normalized_facts: list[dict[str, str]] = []
+    for fact in facts:
+        if not isinstance(fact, dict):
+            return None, "invalid_continuity_short_term_facts"
+        text = fact.get("text")
+        expires_at = fact.get("expires_at")
+        if not isinstance(text, str) or not text.strip() or len(text) > 1000:
+            return None, "invalid_continuity_short_term_fact_text"
+        if not isinstance(expires_at, str):
+            return None, "invalid_continuity_expiry"
+        try:
+            expiry = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+        except ValueError:
+            return None, "invalid_continuity_expiry"
+        if expiry.tzinfo is None:
+            return None, "invalid_continuity_expiry"
+        normalized_facts.append(
+            {"text": text.strip(), "expires_at": expiry.isoformat()}
+        )
+    continuity = {
+        "topic": topic.strip(),
+        "open_loops": [str(item).strip() for item in open_loops],
+        "pending_commitments": [str(item).strip() for item in commitments],
+        "short_term_facts": normalized_facts,
+    }
+    mood, error = parse_mood_decision(arguments.get("mood"))
+    if error is not None:
+        return None, error
+    return AgentReply(messages, continuity, mood), None
+
+
+def parse_mood_decision(
+    value: object,
+) -> tuple[dict[str, Any] | None, str | None]:
+    if not isinstance(value, dict):
+        return None, "invalid_mood_decision"
+    action = value.get("action")
+    if action == "keep" and set(value) == {"action"}:
+        return None, None
+    if action != "transition":
+        return None, "invalid_mood_decision"
+    transition = {key: item for key, item in value.items() if key != "action"}
+    mood, error = parse_mood_transition(transition)
+    return mood, "invalid_mood_decision" if error else None
+
+
+def parse_mood_transition(
+    value: object,
+) -> tuple[dict[str, Any] | None, str | None]:
+    if value is None:
+        return None, None
+    if not isinstance(value, dict) or set(value) != {
+        "state",
+        "intensity",
+        "cause",
+        "duration_minutes",
+    }:
+        return None, "invalid_mood_transition"
+    state = value.get("state")
+    cause = value.get("cause")
+    intensity = value.get("intensity")
+    duration = value.get("duration_minutes")
+    if (
+        state not in MOOD_STATES
+        or not isinstance(cause, str)
+        or not cause.strip()
+        or len(cause) > 300
+    ):
+        return None, "invalid_mood_transition"
+    if isinstance(intensity, bool) or not isinstance(intensity, (int, float)):
+        return None, "invalid_mood_transition"
+    if not 0 <= float(intensity) <= 1:
+        return None, "invalid_mood_transition"
+    if (
+        isinstance(duration, bool)
+        or not isinstance(duration, int)
+        or not 5 <= duration <= 1440
+    ):
+        return None, "invalid_mood_transition"
+    return {
+        "state": state,
+        "intensity": float(intensity),
+        "cause": cause.strip()[:300],
+        "duration_minutes": duration,
+    }, None
+
+
+def parse_reflection_finish(
+    arguments: dict[str, Any],
+    source: str,
+    owner_source: str,
+    knowledge_source: str,
+) -> tuple[dict[str, Any] | None, str | None]:
+    if not isinstance(arguments, dict) or set(arguments) != {"summary", "memories"}:
+        return None, "invalid_reflection_finish"
+    summary = arguments.get("summary")
+    raw_memories = arguments.get("memories")
+    if (
+        not isinstance(summary, str)
+        or not summary.strip()
+        or len(summary) > 6000
+        or not isinstance(raw_memories, list)
+        or len(raw_memories) > 12
+    ):
+        return None, "invalid_reflection_finish"
+    memories: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in raw_memories:
+        if not isinstance(item, dict) or set(item) != {
+            "kind",
+            "key",
+            "content",
+            "evidence",
+            "confidence",
+        }:
+            return None, "invalid_reflection_memory"
+        kind = item.get("kind")
+        key = item.get("key")
+        content = item.get("content")
+        evidence = item.get("evidence")
+        confidence = item.get("confidence")
+        if (
+            kind not in REFLECTION_MEMORY_KINDS
+            or not isinstance(key, str)
+            or not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,199}", key)
+            or not isinstance(content, str)
+            or not content.strip()
+            or len(content) > 1000
+            or not isinstance(evidence, str)
+            or not evidence.strip()
+            or len(evidence) > 500
+            or evidence not in source
+            or isinstance(confidence, bool)
+            or not isinstance(confidence, (int, float))
+            or not 0 <= float(confidence) <= 1
+        ):
+            return None, "invalid_reflection_memory"
+        if (
+            kind in {"owner_profile", "owner_preference"}
+            and evidence not in owner_source
+        ):
+            return None, "owner_reflection_requires_owner_evidence"
+        if kind == "world_knowledge" and evidence not in knowledge_source:
+            return None, "world_reflection_requires_observed_evidence"
+        identity = (kind, key)
+        if identity in seen:
+            return None, "duplicate_reflection_memory"
+        seen.add(identity)
+        memories.append(
+            {
+                "kind": kind,
+                "key": key,
+                "content": content.strip(),
+                "evidence": evidence.strip(),
+                "confidence": float(confidence),
+            }
+        )
+    return {"summary": summary.strip(), "memories": memories}, None

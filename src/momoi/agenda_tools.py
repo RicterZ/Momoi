@@ -6,7 +6,8 @@ from typing import Any
 
 from .emotions import EMOTION_PREFIX, emotion_slug
 from .models import ToolCall, TurnDraft
-from .store import Store
+from .storage import Store
+from .storage.scheduling import next_schedule_at, normalize_schedule
 
 
 AGENDA_TOOL_POLICY = """### Agenda tools
@@ -244,14 +245,14 @@ class AgendaTools:
         schedule_value = arguments.get("schedule")
         review_value = str(arguments.get("next_review_at") or "").strip()
         schedule = (
-            self.store.normalize_schedule(schedule_value)
+            normalize_schedule(schedule_value)
             if schedule_value is not None
             else None
         )
         if schedule is not None and review_value:
             raise ValueError("use schedule or next_review_at, not both")
         next_review_at = (
-            self.store.next_schedule_at(schedule)
+            next_schedule_at(schedule)
             if schedule is not None
             else _future_timestamp(review_value, "next_review_at")
         )
@@ -301,12 +302,12 @@ class AgendaTools:
         if "schedule" in arguments:
             if clear_schedule:
                 raise ValueError("schedule and clear_schedule cannot be combined")
-            goal["schedule"] = self.store.normalize_schedule(arguments["schedule"])
+            goal["schedule"] = normalize_schedule(arguments["schedule"])
         if status in {"active", "waiting"}:
             if status == "active" and goal.get("schedule"):
                 if str(arguments.get("next_review_at") or "").strip():
                     raise ValueError("recurring active goal does not accept next_review_at")
-                goal["next_review_at"] = self.store.next_schedule_at(goal["schedule"])
+                goal["next_review_at"] = next_schedule_at(goal["schedule"])
             else:
                 goal["next_review_at"] = _future_timestamp(
                     arguments.get("next_review_at"), "next_review_at"
@@ -337,7 +338,7 @@ class AgendaTools:
         if has_fire_at == has_schedule:
             raise ValueError("use exactly one of fire_at or schedule")
         schedule = (
-            self.store.normalize_schedule(arguments["schedule"])
+            normalize_schedule(arguments["schedule"])
             if has_schedule
             else None
         )
@@ -347,7 +348,7 @@ class AgendaTools:
             "source_event_id": source_event_id,
             "status": "pending",
             "fire_at": (
-                self.store.next_schedule_at(schedule)
+                next_schedule_at(schedule)
                 if schedule is not None
                 else _future_timestamp(arguments.get("fire_at"), "fire_at")
             ),

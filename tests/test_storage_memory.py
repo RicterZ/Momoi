@@ -18,7 +18,7 @@ from momoi.config import (
     LLMConfig,
     NotificationConfig,
 )
-from momoi.daemon import (
+from momoi.runtime import (
     MomoiDaemon,
 )
 from momoi.memory_tools import MemoryTools
@@ -28,7 +28,8 @@ from momoi.models import (
     ToolCall,
     TurnDraft,
 )
-from momoi.store import Store
+from momoi.storage import Store
+from momoi.storage.scheduling import next_schedule_at
 
 
 class StorageMemoryTest(unittest.TestCase):
@@ -495,7 +496,7 @@ class StorageMemoryTest(unittest.TestCase):
     def test_recurring_reminder_fires_multiple_occurrences(self) -> None:
         with (
             tempfile.TemporaryDirectory() as directory,
-            patch("momoi.store.time.time", return_value=1000),
+            patch("momoi.storage.store.time.time", return_value=1000),
         ):
             store = Store(Path(directory) / "momoi.sqlite3")
             tools = AgendaTools(store)
@@ -522,10 +523,10 @@ class StorageMemoryTest(unittest.TestCase):
             )["reminder"]
             store.commit_turn([event], event.text, AgentReply(["好"]), draft)
 
-            with patch("momoi.store.time.time", return_value=1061):
+            with patch("momoi.storage.store.time.time", return_value=1061):
                 self.assertEqual(store.claim_due_reminder()["id"], reminder["id"])
                 self.assertTrue(store.fire_reminder(reminder["id"]))
-            with patch("momoi.store.time.time", return_value=1122):
+            with patch("momoi.storage.store.time.time", return_value=1122):
                 self.assertEqual(store.claim_due_reminder()["id"], reminder["id"])
                 self.assertTrue(store.fire_reminder(reminder["id"]))
 
@@ -546,7 +547,7 @@ class StorageMemoryTest(unittest.TestCase):
         )
         with (
             tempfile.TemporaryDirectory() as directory,
-            patch("momoi.store.time.time", return_value=due),
+            patch("momoi.storage.store.time.time", return_value=due),
         ):
             store = Store(Path(directory) / "momoi.sqlite3")
             store._db.execute(
@@ -572,7 +573,7 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertFalse(store.fire_reminder("quiet-repeat", policy))
             self.assertEqual(store.reminder("quiet-repeat")["fire_at"], quiet_end)
             self.assertEqual(store.due_outbox(), [])
-            with patch("momoi.store.time.time", return_value=quiet_end):
+            with patch("momoi.storage.store.time.time", return_value=quiet_end):
                 self.assertIsNotNone(store.claim_due_reminder())
                 self.assertTrue(store.fire_reminder("quiet-repeat", policy))
             self.assertEqual(store.due_outbox()[0].text, "喝水")
@@ -590,7 +591,7 @@ class StorageMemoryTest(unittest.TestCase):
         notifications = NotificationConfig(timezone="Asia/Shanghai")
         with (
             tempfile.TemporaryDirectory() as directory,
-            patch("momoi.store.time.time", return_value=now),
+            patch("momoi.storage.store.time.time", return_value=now),
         ):
             store = Store(Path(directory) / "momoi.sqlite3")
             store.begin_turn("heartbeat-budget", "autonomous", ["heartbeat:test"])
@@ -603,7 +604,7 @@ class StorageMemoryTest(unittest.TestCase):
                 reason="test",
                 timezone="Asia/Shanghai",
             )
-            with patch("momoi.store.time.time", return_value=now + 61):
+            with patch("momoi.storage.store.time.time", return_value=now + 61):
                 self.assertIsNone(store.claim_due_heartbeat(heartbeat, notifications))
             state = store.self_state(now + 61)
             next_day = datetime(2026, 7, 22, 0, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
@@ -658,7 +659,7 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertIsNone(advanced["review_claimed_at"])
 
             after = datetime(2026, 7, 20, 9, tzinfo=ZoneInfo("Asia/Shanghai"))
-            next_daily = Store.next_schedule_at(
+            next_daily = next_schedule_at(
                 {"kind": "daily", "at": "08:00", "timezone": "Asia/Shanghai"},
                 after.timestamp(),
             )
