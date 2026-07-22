@@ -235,6 +235,7 @@ class MessagingTest(unittest.TestCase):
     def test_validates_terminal_response_tool(self) -> None:
         reply, error = MomoiDaemon._parse_response(
             {
+                "delivery": "轻松接住话题，分成两句",
                 "messages": ["嘿嘿，没忘吧~", "晚上在忙什么呢？"],
                 "continuity": {
                     "topic": "晚上的安排",
@@ -248,11 +249,25 @@ class MessagingTest(unittest.TestCase):
         self.assertIsNone(error)
         self.assertEqual(reply.messages, ["嘿嘿，没忘吧~", "晚上在忙什么呢？"])
         self.assertEqual(reply.continuity["topic"], "晚上的安排")
-        invalid, error = MomoiDaemon._parse_response(
+        split, error = MomoiDaemon._parse_messages(
             {"messages": ["第一条。\n\n第二条。"]}
         )
+        self.assertIsNone(error)
+        self.assertEqual(split, ["第一条。", "第二条。"])
+        invalid, error = MomoiDaemon._parse_response(
+            {
+                "messages": ["少了表达决策"],
+                "continuity": {
+                    "topic": "",
+                    "open_loops": [],
+                    "pending_commitments": [],
+                    "short_term_facts": [],
+                },
+                "mood": {"action": "keep"},
+            }
+        )
         self.assertIsNone(invalid)
-        self.assertEqual(error, "blank_lines_must_be_separate_messages")
+        self.assertEqual(error, "invalid_delivery")
         rich, error = MomoiDaemon._parse_messages(
             {
                 "messages": [
@@ -424,6 +439,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                         "image-response",
                         "respond",
                         {
+                            "delivery": "简单回应看到图片",
                             "messages": ["看到了"],
                             "continuity": {
                                 "topic": "",
@@ -464,7 +480,9 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             asset = root / "happy.jpg"
+            second_asset = root / "proud.jpg"
             asset.write_bytes(b"image")
+            second_asset.write_bytes(b"image")
             config = AppConfig(
                 llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
                 channel=NapCatConfig("ws://127.0.0.1", "20000", 0.01, 60, 30, 30, 20),
@@ -478,6 +496,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             daemon = MomoiDaemon(config)
             daemon.store.add_emotion("happy-1", asset, "真心高兴或庆祝时使用")
+            daemon.store.add_emotion("proud-1", second_asset, "得意收尾时使用")
 
             class Provider:
                 def __init__(self) -> None:
@@ -495,16 +514,12 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                         "emotion-response",
                         "respond",
                         {
+                            "delivery": "先报喜，两个表情分别跟在对应的话后面",
                             "messages": [
                                 "太好了",
-                                {
-                                    "segments": [
-                                        {
-                                            "type": "text",
-                                            "data": {"text": "emotion://happy-1"},
-                                        }
-                                    ]
-                                },
+                                "emotion://happy-1",
+                                "这次我可厉害了",
+                                "emotion://proud-1",
                             ],
                             "continuity": {
                                 "topic": "",
@@ -534,6 +549,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             await daemon._complete_batch([event], daemon._turn_id(event.event_id))
             request = json.dumps(provider.messages, ensure_ascii=False)
             self.assertIn("happy-1", request)
+            self.assertIn("proud-1", request)
             self.assertIn("真心高兴或庆祝时使用", request)
             self.assertNotIn(str(asset), request)
             self.assertEqual(
@@ -546,6 +562,13 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             image = daemon.store.due_outbox()[0]
             self.assertEqual(image.kind, "image")
             self.assertEqual(image.media_path, str(asset.resolve()))
+            daemon.store.mark_sent(image.id)
+            second_text = daemon.store.due_outbox()[0]
+            self.assertEqual(second_text.text, "这次我可厉害了")
+            daemon.store.mark_sent(second_text.id)
+            second_image = daemon.store.due_outbox()[0]
+            self.assertEqual(second_image.kind, "image")
+            self.assertEqual(second_image.media_path, str(second_asset.resolve()))
             daemon.store.close()
 
     async def test_unknown_emotion_directive_is_returned_to_llm_for_correction(
@@ -585,6 +608,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                         f"emotion-{self.calls}",
                         "respond",
                         {
+                            "delivery": "表情不可用时改成简短文字",
                             "messages": [value],
                             "continuity": {
                                 "topic": "",

@@ -22,6 +22,8 @@ from momoi.daemon import (
     HEARTBEAT_FINISH_SPEC,
     HEARTBEAT_QUEUE_ITEM,
     RESPOND_TOOL_SPEC,
+    SEND_MESSAGE_TOOL_SPEC,
+    WEBHOOK_SEND_MESSAGE_TOOL_SPEC,
     MomoiDaemon,
 )
 from momoi.models import (
@@ -70,6 +72,13 @@ class DaemonTest(unittest.TestCase):
             (None, "invalid_mood_decision"),
         )
         self.assertIn("mood", RESPOND_TOOL_SPEC["input_schema"]["required"])
+        self.assertIn("delivery", RESPOND_TOOL_SPEC["input_schema"]["required"])
+        self.assertIn("delivery", SEND_MESSAGE_TOOL_SPEC["input_schema"]["required"])
+        self.assertNotIn(
+            "delivery", WEBHOOK_SEND_MESSAGE_TOOL_SPEC["input_schema"]["required"]
+        )
+        self.assertIn("natural turning point", SEND_MESSAGE_TOOL_SPEC["description"])
+        self.assertIn("terminal output", WEBHOOK_SEND_MESSAGE_TOOL_SPEC["description"])
         self.assertIn("mood", HEARTBEAT_FINISH_SPEC["input_schema"]["required"])
 
     def test_context_budget_drops_old_history_and_truncates_tool_results(self) -> None:
@@ -156,6 +165,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "failed-response",
                             "respond",
                             {
+                                "delivery": "简短说明创建失败",
                                 "messages": ["创建任务失败：缺少有效的执行时间。"],
                                 "continuity": {
                                     "topic": "",
@@ -643,6 +653,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         "stop-response",
                         "respond",
                         {
+                            "delivery": "直接确认已经停下",
                             "messages": ["已经停下来了"],
                             "continuity": {
                                 "topic": "",
@@ -727,6 +738,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "stop-after-tool",
                             "respond",
                             {
+                                "delivery": "简短确认任务终止",
                                 "messages": ["已经终止当前任务"],
                                 "continuity": {
                                     "topic": "",
@@ -807,7 +819,10 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "type": "tool_use",
                                 "id": "progress-1",
                                 "name": "send_message",
-                                "input": {"messages": ["我先处理一下"]},
+                                "input": {
+                                    "delivery": "自然告诉主人我已经开始处理",
+                                    "messages": ["我先处理一下"],
+                                },
                             }
                         ],
                     }
@@ -839,6 +854,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "id": "respond-1",
                             "name": "respond",
                             "input": {
+                                "delivery": "完成后简短收尾",
                                 "messages": ["测试回复一", "测试回复二"],
                                 "continuity": {
                                     "topic": "",

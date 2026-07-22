@@ -166,18 +166,28 @@ MOOD_DECISION_SCHEMA: dict[str, Any] = {
         },
     ]
 }
+DELIVERY_SCHEMA: dict[str, Any] = {
+    "type": "string",
+    "minLength": 1,
+    "maxLength": 200,
+    "description": (
+        "Brief private expression plan made before messages: choose the natural voice, "
+        "scale, message rhythm, and any emotion reaction and its position. It is not "
+        "shown to the owner."
+    ),
+}
 
 RESPOND_TOOL_SPEC: dict[str, Any] = {
     "name": "respond",
     "description": (
-        "Required terminal output tool for every owner Turn. Pass the final ordered "
-        "channel messages after all tool work is complete; the tool stages them for "
-        "the current channel and ends the Turn. Use strings for ordinary text and "
-        "structured segments only when rich media is needed."
+        "Required closing conversational beat for every owner Turn, called only after "
+        "all tool work is complete. It ends the Turn but does not replace useful live "
+        "check-ins through send_message during substantial work."
     ),
     "input_schema": {
         "type": "object",
         "properties": {
+            "delivery": DELIVERY_SCHEMA,
             "messages": {
                 "type": "array",
                 "minItems": 1,
@@ -224,7 +234,7 @@ RESPOND_TOOL_SPEC: dict[str, Any] = {
             },
             "mood": MOOD_DECISION_SCHEMA,
         },
-        "required": ["messages", "continuity", "mood"],
+        "required": ["delivery", "messages", "continuity", "mood"],
         "additionalProperties": False,
     },
 }
@@ -232,9 +242,31 @@ RESPOND_TOOL_SPEC: dict[str, Any] = {
 SEND_MESSAGE_TOOL_SPEC: dict[str, Any] = {
     "name": "send_message",
     "description": (
-        "Send one or more ordered text or rich channel messages to the owner immediately "
-        "without ending the current Turn. Use for meaningful acknowledgement or "
-        "progress while tool work continues."
+        "A live conversational beat with the owner that does not end the Turn. During "
+        "substantial multi-step work, actively use it at a natural turning point such "
+        "as an unexpected error or retry, a changed plan, a meaningful discovery, or "
+        "a real delay. React briefly in Momoi's personal voice instead of writing a "
+        "status report. Skip routine steps and never repeat the final respond."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "delivery": DELIVERY_SCHEMA,
+            "messages": {
+                "type": "array",
+                "minItems": 1,
+                "items": CHANNEL_MESSAGE_SCHEMA,
+            },
+        },
+        "required": ["delivery", "messages"],
+        "additionalProperties": False,
+    },
+}
+WEBHOOK_SEND_MESSAGE_TOOL_SPEC: dict[str, Any] = {
+    "name": "send_message",
+    "description": (
+        "Required terminal output tool for this webhook event. Send the complete "
+        "ordered messages exactly once after any required tool work."
     ),
     "input_schema": {
         "type": "object",
@@ -653,9 +685,9 @@ class MomoiDaemon:
                     "authorized only within the supplied Webhook tools; it is not a "
                     f"statement from the owner.]\n{runtime_context}"
                 ),
-            }
+            },
         ]
-        tools = [SEND_MESSAGE_TOOL_SPEC, CURL_TOOL_SPEC]
+        tools = [WEBHOOK_SEND_MESSAGE_TOOL_SPEC, CURL_TOOL_SPEC]
         started = time.monotonic()
         used_tokens = 0
         while True:
@@ -936,12 +968,12 @@ class MomoiDaemon:
         ]
         draft = TurnDraft()
         tools = [
-            RESPOND_TOOL_SPEC,
             SEND_MESSAGE_TOOL_SPEC,
             *MEMORY_TOOL_SPECS,
             *AGENDA_TOOL_SPECS,
             *BUILTIN_TOOL_SPECS,
             *self.mcp.tool_specs,
+            RESPOND_TOOL_SPEC,
         ]
         reply = await self._run_tool_loop(
             system,
@@ -1043,8 +1075,8 @@ class MomoiDaemon:
                             "role": "user",
                             "content": (
                                 "[Trusted runtime protocol error. The previous text was not "
-                                "delivered. Finish now by calling respond with messages as an "
-                                "array. Do not output plain assistant text.]"
+                                "delivered. Finish now by calling respond with a short delivery "
+                                "plan and messages as an array. Do not output plain assistant text.]"
                             ),
                         },
                     ]
@@ -1110,7 +1142,10 @@ class MomoiDaemon:
                         ),
                     }
                 elif call.name == "send_message":
-                    progress, error = self._parse_messages(call.arguments)
+                    error = self._validate_delivery(call.arguments)
+                    progress = None
+                    if error is None:
+                        progress, error = self._parse_messages(call.arguments)
                     if progress is not None:
                         error = self._validate_emotion_messages(progress)
                         if error is not None:
@@ -1356,9 +1391,7 @@ class MomoiDaemon:
                 text = item.strip()
                 if not text:
                     return None, "messages_must_contain_non_empty_items"
-                if re.search(r"\n\s*\n", text):
-                    return None, "blank_lines_must_be_separate_messages"
-                messages.append(text)
+                messages.extend(part.strip() for part in re.split(r"\n\s*\n", text))
                 continue
             try:
                 message = normalize_channel_message(item)
@@ -1391,8 +1424,20 @@ class MomoiDaemon:
                 return "unknown_emotion_slug"
         return None
 
+    @staticmethod
+    def _validate_delivery(arguments: dict[str, Any]) -> str | None:
+        delivery = arguments.get("delivery")
+        if not isinstance(delivery, str) or not delivery.strip() or len(delivery) > 200:
+            return "invalid_delivery"
+        return None
+
     @classmethod
-    def _parse_response(cls, arguments: dict[str, Any]) -> tuple[AgentReply | None, str | None]:
+    def _parse_response(
+        cls, arguments: dict[str, Any]
+    ) -> tuple[AgentReply | None, str | None]:
+        error = cls._validate_delivery(arguments)
+        if error is not None:
+            return None, error
         messages, error = cls._parse_messages(arguments)
         if messages is None:
             return None, error
