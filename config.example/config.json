@@ -40,7 +40,7 @@
   },
   "turn": {
     "max_seconds": 1800,
-    "max_total_tokens": 300000
+    "max_total_tokens": 0
   },
   "notifications": {
     "timezone": "UTC",

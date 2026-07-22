@@ -285,7 +285,7 @@ Each connected server is isolated by name. Its tools appear to the model with a 
 {
   "turn": {
     "max_seconds": 1800,
-    "max_total_tokens": 300000
+    "max_total_tokens": 0
   }
 }
 ```
@@ -293,7 +293,7 @@ Each connected server is isolated by name. Its tools appear to the model with a 
 | Field | Default | Description |
 | --- | --- | --- |
 | `max_seconds` | `0` | Maximum wall time for one agent task; `0` disables the time limit |
-| `max_total_tokens` | `0` | Maximum accumulated input and output tokens for one task; `0` disables the token limit |
+| `max_total_tokens` | `0` | Maximum raw input and output tokens accumulated across model calls, including repeated or cached input; `0` disables the token limit |
 
 These are safety budgets, not limits on the number of tool calls.
 

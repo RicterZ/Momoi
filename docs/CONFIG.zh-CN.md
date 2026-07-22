@@ -285,7 +285,7 @@ MCP 环境值、远程 URL 和 header 支持从 Momoi 进程环境展开 `${VARI
 {
   "turn": {
     "max_seconds": 1800,
-    "max_total_tokens": 300000
+    "max_total_tokens": 0
   }
 }
 ```
@@ -293,7 +293,7 @@ MCP 环境值、远程 URL 和 header 支持从 Momoi 进程环境展开 `${VARI
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
 | `max_seconds` | `0` | 单个 Agent 任务的最大实际时间；`0` 表示不限制 |
-| `max_total_tokens` | `0` | 单个任务累计输入和输出 token 的最大数量；`0` 表示不限制 |
+| `max_total_tokens` | `0` | 单个任务跨模型调用累计的原始输入和输出 token，包含重复或缓存输入；`0` 表示不限制 |
 
 这些是安全预算，不是工具调用次数限制。
 
