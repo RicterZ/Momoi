@@ -14,6 +14,7 @@ from aiohttp.test_utils import TestServer
 from momoi.channel.napcat import NapCatConfig
 from momoi.config import (
     AppConfig,
+    AutonomyConfig,
     HeartbeatConfig,
     LLMConfig,
     NotificationConfig,
@@ -137,6 +138,9 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     memory_tokens=1000,
                     database=Path(directory) / "momoi.sqlite3",
                     log_level="INFO",
+                    autonomy=AutonomyConfig(
+                        ("curl", "read_file", "write_file", "mcp__test__read")
+                    ),
                 )
             )
             event = IncomingMessage("qq:goal-finish", "goal-finish", "继续检查", 1, 1)
@@ -185,7 +189,11 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 calls = 0
 
                 async def complete(
-                    self, _: object, __: object, tools: list[dict[str, object]], **kwargs: object
+                    self,
+                    _: object,
+                    messages: object,
+                    tools: list[dict[str, object]],
+                    **kwargs: object,
                 ) -> ProviderResponse:
                     self.calls += 1
                     if not kwargs.get("require_tool"):
@@ -194,10 +202,21 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         names = {str(tool["name"]) for tool in tools}
                         if "mcp__test__read" not in names or {
                             "mcp__test__write",
-                            "write_file",
                             "reminder_create",
                         } & names:
                             raise AssertionError(names)
+                        if "write_file" not in names:
+                            raise AssertionError(names)
+                        call = ToolCall(
+                            "outside-artifact",
+                            "write_file",
+                            {"path": "/tmp/not-allowed", "content": "no"},
+                        )
+                    elif self.calls == 2:
+                        if "path_outside_autonomous_artifacts" not in json.dumps(
+                            messages
+                        ):
+                            raise AssertionError(messages)
                         call = ToolCall(
                             "update",
                             "goal_update",
@@ -211,7 +230,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 ).isoformat(),
                             },
                         )
-                    elif self.calls == 2:
+                    elif self.calls == 3:
                         call = ToolCall(
                             "notify",
                             "owner_notify",
@@ -241,7 +260,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             daemon.provider = provider  # type: ignore[assignment]
             await daemon._complete_goal_turn(goal_id, asyncio.Event())
 
-            self.assertEqual(provider.calls, 3)
+            self.assertEqual(provider.calls, 4)
             self.assertEqual(daemon.store.goal(goal_id)["latest_result"], "本次检查正常")
             notification = daemon.store._db.execute(
                 "SELECT state, messages_json FROM notifications WHERE goal_id=?",
@@ -484,21 +503,56 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     **___: object,
                 ) -> ProviderResponse:
                     self.calls += 1
-                    self_names = [tool["name"] for tool in tools]
-                    if self_names != ["heartbeat_finish"]:
-                        raise AssertionError(self_names)
-                    messages = [] if self.calls == 1 else ["刚想到一个关卡点子！"]
-                    call = ToolCall(
-                        f"heartbeat-{self.calls}",
-                        "heartbeat_finish",
-                        {
-                            "messages": messages,
-                            "activity": "整理小游戏关卡灵感",
-                            "next_check_minutes": 2,
-                            "reason": "有具体的新点子才分享",
-                            "mood": {"action": "keep"},
-                        },
-                    )
+                    names = {str(tool["name"]) for tool in tools}
+                    if self.calls == 1:
+                        expected = {
+                            "memory_search",
+                            "goal_create",
+                            "curl",
+                            "read_file",
+                            "write_file",
+                            "heartbeat_finish",
+                        }
+                        if names != expected:
+                            raise AssertionError(names)
+                        call = ToolCall(
+                            "heartbeat-news",
+                            "curl",
+                            {"url": "https://news.example/today"},
+                        )
+                    elif self.calls == 3:
+                        call = ToolCall(
+                            "heartbeat-goal",
+                            "goal_create",
+                            {
+                                "title": "继续整理关卡点子",
+                                "success_criteria": "写下一份可玩的关卡草案",
+                                "next_action": "把玩法联想整理成关卡结构",
+                                "next_review_at": (
+                                    datetime.now().astimezone() + timedelta(hours=1)
+                                ).isoformat(),
+                            },
+                        )
+                    else:
+                        messages = (
+                            [] if self.calls == 2 else ["刚想到一个关卡点子！"]
+                        )
+                        call = ToolCall(
+                            f"heartbeat-{self.calls}",
+                            "heartbeat_finish",
+                            {
+                                "messages": messages,
+                                "activity": "整理小游戏关卡灵感",
+                                "result": (
+                                    "读完一条游戏新闻并记下玩法联想"
+                                    if self.calls == 2
+                                    else "已建立自己的关卡草案任务继续整理"
+                                ),
+                                "next_check_minutes": 2,
+                                "reason": "有具体的新点子才分享",
+                                "mood": {"action": "keep"},
+                            },
+                        )
                     return ProviderResponse(
                         [
                             {
@@ -513,6 +567,11 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
 
             provider = Provider()
             daemon.provider = provider  # type: ignore[assignment]
+
+            async def read_news(_: ToolCall) -> dict[str, object]:
+                return {"ok": True, "status": 200, "body": "新玩法公开"}
+
+            daemon.builtin_tools.execute = read_news  # type: ignore[method-assign]
             daemon.store._db.execute(
                 "UPDATE self_state SET next_heartbeat_at=? WHERE id=1",
                 (time.time() - 1,),
@@ -530,6 +589,10 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(
                 daemon.store.self_state()["activity"], "整理小游戏关卡灵感"
+            )
+            self.assertEqual(
+                daemon.store.self_state()["activity_result"],
+                "读完一条游戏新闻并记下玩法联想",
             )
 
             daemon.store._db.execute(
@@ -549,6 +612,10 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 )
             )
             self.assertEqual(daemon.store.due_outbox()[0].text, "刚想到一个关卡点子！")
+            goal = daemon.store.list_goals()[0]
+            self.assertEqual(goal["authority"], "agent")
+            self.assertEqual(goal["title"], "继续整理关卡点子")
+            self.assertEqual(provider.calls, 4)
             daemon.store.close()
 
     async def test_owner_turn_stops_cleanly_at_configured_token_budget(self) -> None:

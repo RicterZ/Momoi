@@ -56,6 +56,11 @@ class HeartbeatConfig:
 
 
 @dataclass(frozen=True)
+class AutonomyConfig:
+    allowed_tools: tuple[str, ...] = ("curl", "read_file", "write_file")
+
+
+@dataclass(frozen=True)
 class ReflectionConfig:
     enabled: bool = False
     at: str = "03:00"
@@ -83,6 +88,7 @@ class AppConfig:
     turn_max_total_tokens: int = 0
     webhooks: WebhookConfig = WebhookConfig()
     heartbeat: HeartbeatConfig = HeartbeatConfig()
+    autonomy: AutonomyConfig = AutonomyConfig()
     reflection: ReflectionConfig = ReflectionConfig()
     workspace: Path | None = None
 
@@ -182,6 +188,7 @@ def load_config(path: str | Path) -> AppConfig:
     turn_raw = _mapping(raw.get("turn", {}), "turn")
     webhook_raw = _mapping(raw.get("webhooks", {}), "webhooks")
     heartbeat_raw = _mapping(raw.get("heartbeat", {}), "heartbeat")
+    autonomy_raw = _mapping(raw.get("autonomy", {}), "autonomy")
     reflection_raw = _mapping(raw.get("reflection", {}), "reflection")
     mcp_value = tools_raw.get("mcp_config", "mcp.json")
     mcp_config = (config_path.parent / str(mcp_value)).resolve() if mcp_value else None
@@ -211,6 +218,13 @@ def load_config(path: str | Path) -> AppConfig:
         raise ConfigError(
             "heartbeat.max_interval_seconds must be at least min_interval_seconds"
         )
+    allowed_tools = autonomy_raw.get(
+        "allowed_tools", ["curl", "read_file", "write_file"]
+    )
+    if not isinstance(allowed_tools, list) or not all(
+        isinstance(item, str) and item.strip() for item in allowed_tools
+    ):
+        raise ConfigError("autonomy.allowed_tools must be an array of tool names")
 
     return AppConfig(
         llm=LLMConfig(
@@ -283,6 +297,9 @@ def load_config(path: str | Path) -> AppConfig:
             max_daily_turns=max(
                 1, int(heartbeat_raw.get("max_daily_turns", 12))
             ),
+        ),
+        autonomy=AutonomyConfig(
+            tuple(dict.fromkeys(item.strip() for item in allowed_tools))
         ),
         reflection=ReflectionConfig(
             enabled=_boolean(

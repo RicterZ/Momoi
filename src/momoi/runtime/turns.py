@@ -6,6 +6,7 @@ import time
 import uuid
 from datetime import datetime
 from importlib.resources import files
+from pathlib import Path
 from typing import Any
 
 from ..agenda_tools import (
@@ -16,7 +17,7 @@ from ..agenda_tools import (
 from ..builtin_tools import (
     BUILTIN_TOOL_POLICY,
     BUILTIN_TOOL_SPECS,
-    READ_ONLY_BUILTIN_TOOL_SPECS,
+    SELF_DIRECTED_BUILTIN_TOOL_SPECS,
 )
 from ..channel import ChannelMessage
 from ..emotions import EMOTION_PREFIX, emotion_slug
@@ -471,11 +472,14 @@ class TurnRunner:
         turn_id: str,
         require_response: bool,
         autonomous_goal_id: str | None = None,
+        heartbeat_turn: bool = False,
         allowed_capabilities: set[str] | None = None,
-    ) -> AgentReply | None:
+        artifact_root: Path | None = None,
+    ) -> AgentReply | dict[str, Any] | None:
         external_tool_used = False
         force_response = False
         force_autonomous_finish = False
+        force_heartbeat_finish = False
         failed_tool_rounds = 0
         history_messages = max(0, len(messages) - 1)
         while True:
@@ -485,14 +489,14 @@ class TurnRunner:
                 else (
                     [AUTONOMOUS_FINISH_SPEC]
                     if force_autonomous_finish
-                    else tools
+                    else ([HEARTBEAT_FINISH_SPEC] if force_heartbeat_finish else tools)
                 )
             )
             history_messages = self._fit_context(
                 system, messages, request_tools, history_messages
             )
             self._check_turn_budget(turn_id, system, messages, request_tools)
-            require_tool = bool(autonomous_goal_id) or (
+            require_tool = bool(autonomous_goal_id or heartbeat_turn) or (
                 require_response and self.config.llm.api_format == "openai"
             )
             try:
@@ -533,6 +537,21 @@ class TurnRunner:
             )
             self.store.record_turn_usage(turn_id, input_tokens, output_tokens)
             if not response.tool_calls:
+                if heartbeat_turn:
+                    messages.extend(
+                        [
+                            {"role": "assistant", "content": response.content},
+                            {
+                                "role": "user",
+                                "content": (
+                                    "[Trusted runtime protocol error. Plain text was not "
+                                    "delivered. Finish now by calling heartbeat_finish alone.]"
+                                ),
+                            },
+                        ]
+                    )
+                    force_heartbeat_finish = True
+                    continue
                 if autonomous_goal_id:
                     messages.extend(
                         [
@@ -565,6 +584,45 @@ class TurnRunner:
                     ]
                 )
                 force_response = True
+                continue
+            if (
+                heartbeat_turn
+                and len(response.tool_calls) == 1
+                and response.tool_calls[0].name == "heartbeat_finish"
+            ):
+                decision, error = self._parse_heartbeat_finish(
+                    response.tool_calls[0].arguments
+                )
+                if decision is not None:
+                    logger.debug(
+                        "LLM heartbeat_finish arguments=%s",
+                        json.dumps(
+                            response.tool_calls[0].arguments,
+                            ensure_ascii=False,
+                            default=str,
+                        ),
+                    )
+                    return decision
+                messages.extend(
+                    [
+                        {"role": "assistant", "content": response.content},
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "tool_result",
+                                    "tool_use_id": response.tool_calls[0].id,
+                                    "content": json.dumps(
+                                        {"ok": False, "error": error},
+                                        ensure_ascii=False,
+                                    ),
+                                    "is_error": True,
+                                }
+                            ],
+                        },
+                    ]
+                )
+                force_heartbeat_finish = True
                 continue
             if (
                 autonomous_goal_id
@@ -664,6 +722,11 @@ class TurnRunner:
                         "ok": False,
                         "error": "autonomous_finish_must_be_the_only_terminal_tool",
                     }
+                elif call.name == "heartbeat_finish":
+                    result = {
+                        "ok": False,
+                        "error": "heartbeat_finish_must_be_the_only_terminal_tool",
+                    }
                 elif call.name == "send_message":
                     error = self._validate_delivery(call.arguments)
                     progress = None
@@ -705,6 +768,15 @@ class TurnRunner:
                             and capability not in allowed_capabilities
                         ):
                             result = {"ok": False, "error": "tool_not_allowed"}
+                        elif (
+                            artifact_root is not None
+                            and call.name in {"read_file", "write_file"}
+                            and not self._artifact_path_allowed(call, artifact_root)
+                        ):
+                            result = {
+                                "ok": False,
+                                "error": "path_outside_autonomous_artifacts",
+                            }
                         else:
                             external_tool_used = (
                                 external_tool_used or capability != "read"
@@ -826,6 +898,30 @@ class TurnRunner:
             "original_chars": len(serialized),
             "content": payload_text[: self.config.tool_result_max_chars],
         }
+
+    @staticmethod
+    def _artifact_path_allowed(call: ToolCall, root: Path) -> bool:
+        try:
+            Path(str(call.arguments.get("path") or "")).expanduser().resolve().relative_to(
+                root.resolve()
+            )
+            return True
+        except (OSError, ValueError):
+            return False
+
+    def _self_directed_tool_specs(self) -> list[dict[str, Any]]:
+        allowed = set(self.config.autonomy.allowed_tools)
+        return [
+            spec
+            for spec in [
+                *SELF_DIRECTED_BUILTIN_TOOL_SPECS,
+                *self.mcp.read_only_tool_specs,
+            ]
+            if spec["name"] in allowed
+        ]
+
+    def _artifact_root(self) -> Path:
+        return Path(self.config.workspace or self.config.database.parent) / "artifacts"
 
     def _check_turn_budget(
         self,
@@ -1107,6 +1203,26 @@ class TurnRunner:
             return
         try:
             await self._complete_heartbeat(turn_id)
+        except ExternalToolTurnError:
+            logger.exception("Heartbeat stopped after an autonomous artifact write")
+            self.store.open_reconciliation(turn_id, "fatal_error_after_external_tool")
+            self.store.commit_autonomous_turn(
+                "heartbeat",
+                TurnDraft(
+                    notification_messages=[_reconciliation_message(turn_id)],
+                    notification_key="heartbeat.reconciliation",
+                    notification_priority="urgent",
+                    notification_reason=(
+                        "Autonomous artifact outcome requires owner confirmation."
+                    ),
+                ),
+                turn_id=turn_id,
+            )
+            self.store.release_heartbeat_claim(
+                self.config.heartbeat.min_interval_seconds
+            )
+            self.store.record_turn_failure(turn_id, "fatal_error_after_external_tool")
+            self.agenda_changed.set()
         except asyncio.CancelledError:
             if self._stop_requested:
                 self.store.cancel_turn(turn_id)
@@ -1129,38 +1245,50 @@ class TurnRunner:
             min(self.config.recent_raw_tokens, 8000),
             min(self.config.recent_turns, 2),
         )
-        self._cache_history_tail(history)
         continuity = self.store.continuity_context()
+        attention_query = "\n".join(
+            [
+                activity,
+                continuity,
+                *[
+                    str(message.get("content") or "")
+                    for message in history
+                    if message.get("role") == "user"
+                ],
+            ]
+        )[-12000:]
         summaries = self.store.summary_context(
-            activity, self.config.summary_results, self.config.summary_tokens
+            attention_query, self.config.summary_results, self.config.summary_tokens
         )
         memories = self.store.memory_context(
-            activity, self.config.memory_results, self.config.memory_tokens
+            attention_query, self.config.memory_results, self.config.memory_tokens
         )
         learned = self.store.reflection_memory_context(
-            activity,
+            attention_query,
             max(1, self.config.memory_results // 2),
             max(1000, self.config.memory_tokens // 2),
         )
-        goals = self.store.active_goals_context()
-        reminders = self.store.active_reminders_context()
+        goals = self.store.active_goals_context(authority="agent")
         emotions = self.store.emotion_context()
+        artifact_root = self._artifact_root().resolve()
         minimum = max(1, int(self.config.heartbeat.min_interval_seconds / 60))
         maximum = max(minimum, int(self.config.heartbeat.max_interval_seconds / 60))
         context = (
-            "[Trusted cognitive heartbeat generated by Momoi. This is not owner speech.]\n"
+            "[Trusted autonomous heartbeat generated by Momoi. This is not owner speech "
+            "or new authority for external side effects.]\n"
             f"Current local time: {datetime.now().astimezone().isoformat(timespec='seconds')}\n"
             f"Allowed next_check_minutes: {minimum}-{maximum}\n"
             f"Current self state: {self_context}\n"
-            "Decide your own activity first, then whether contacting the owner now is natural."
+            f"Autonomous artifact directory: {artifact_root}\n"
+            "Choose whether to rest, reflect, or do one concrete piece of useful work. "
+            "Use tools before claiming searches, observations, file work, or other results."
         )
         for heading, value in (
             ("Continuity", continuity),
             ("Recalled conversation segments", summaries),
             ("Recalled memory", memories),
             ("Daily reflection memory", learned),
-            ("Active goals", goals),
-            ("Pending reminders", reminders),
+            ("Momoi-owned goals", goals),
             ("Available emotion assets", emotions),
         ):
             if value:
@@ -1186,117 +1314,58 @@ class TurnRunner:
                 ],
             },
         ]
-        tools = [HEARTBEAT_FINISH_SPEC]
-        history_messages = max(0, len(messages) - 1)
-        while True:
-            history_messages = self._fit_context(
-                system, messages, tools, history_messages
-            )
-            self._check_turn_budget(turn_id, system, messages, tools)
-            response = await self.provider.complete(
-                system, messages, tools, require_tool=True
-            )
-            metrics = response.usage or {}
-            self.store.record_turn_usage(
-                turn_id,
-                int(
-                    metrics.get(
-                        "input",
-                        estimate_tokens(
-                            json.dumps(
-                                {
-                                    "system": system,
-                                    "messages": messages,
-                                    "tools": tools,
-                                },
-                                ensure_ascii=False,
-                                default=str,
-                            )
-                        ),
-                    )
-                ),
-                int(
-                    metrics.get(
-                        "output",
-                        estimate_tokens(
-                            json.dumps(
-                                response.content, ensure_ascii=False, default=str
-                            )
-                        ),
-                    )
-                ),
-            )
-            if (
-                len(response.tool_calls) == 1
-                and response.tool_calls[0].name == "heartbeat_finish"
-            ):
-                decision, error = self._parse_heartbeat_finish(
-                    response.tool_calls[0].arguments
-                )
-                if decision is not None:
-                    logger.debug(
-                        "LLM heartbeat_finish arguments=%s",
-                        json.dumps(
-                            response.tool_calls[0].arguments,
-                            ensure_ascii=False,
-                            default=str,
-                        ),
-                    )
-                    logger.debug(
-                        "LLM heartbeat mood decision action=%s",
-                        "transition" if decision["mood_transition"] else "keep",
-                    )
-                    self.store.commit_heartbeat(
-                        turn_id,
-                        activity=decision["activity"],
-                        next_heartbeat_at=time.time()
-                        + decision["next_check_minutes"] * 60,
-                        mood_transition=decision["mood_transition"],
-                        messages=decision["messages"],
-                        reason=decision["reason"],
-                        timezone=self.config.notifications.timezone,
-                    )
-                    self.agenda_changed.set()
-                    if decision["messages"]:
-                        self.outbox_changed.set()
-                    logger.info(
-                        "Committed heartbeat turn=%s messages=%d next_minutes=%d",
-                        turn_id,
-                        len(decision["messages"]),
-                        decision["next_check_minutes"],
-                    )
-                    return
-            else:
-                error = "heartbeat_finish_must_be_the_only_terminal_tool"
-            messages.append({"role": "assistant", "content": response.content})
-            if response.tool_calls:
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "tool_result",
-                                "tool_use_id": call.id,
-                                "content": json.dumps(
-                                    {"ok": False, "error": error},
-                                    ensure_ascii=False,
-                                ),
-                                "is_error": True,
-                            }
-                            for call in response.tool_calls
-                        ],
-                    }
-                )
-            else:
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": (
-                            "[Trusted runtime protocol error. The previous text was not "
-                            "delivered. Call heartbeat_finish exactly once.]"
-                        ),
-                    }
-                )
+        self._cache_history_tail(history)
+        memory_search = [
+            spec for spec in MEMORY_TOOL_SPECS if spec["name"] == "memory_search"
+        ]
+        goal_create = [
+            spec for spec in AGENDA_TOOL_SPECS if spec["name"] == "goal_create"
+        ]
+        tools = [
+            *memory_search,
+            *goal_create,
+            *self._self_directed_tool_specs(),
+            HEARTBEAT_FINISH_SPEC,
+        ]
+        draft = TurnDraft()
+        decision = await self._run_tool_loop(
+            system,
+            messages,
+            tools,
+            [],
+            draft,
+            authority="agent",
+            source_event_id=f"heartbeat:{turn_id}",
+            allow_notify=False,
+            turn_id=turn_id,
+            require_response=False,
+            heartbeat_turn=True,
+            allowed_capabilities={"read", "write"},
+            artifact_root=artifact_root,
+        )
+        if not isinstance(decision, dict):
+            raise RuntimeError("Heartbeat Turn ended without heartbeat_finish")
+        self.store.commit_heartbeat(
+            turn_id,
+            activity=decision["activity"],
+            result=decision["result"],
+            next_heartbeat_at=time.time() + decision["next_check_minutes"] * 60,
+            mood_transition=decision["mood_transition"],
+            messages=decision["messages"],
+            reason=decision["reason"],
+            timezone=self.config.notifications.timezone,
+            draft=draft,
+        )
+        self.agenda_changed.set()
+        if decision["messages"]:
+            self.outbox_changed.set()
+        logger.info(
+            "Committed heartbeat turn=%s messages=%d goals=%d next_minutes=%d",
+            turn_id,
+            len(decision["messages"]),
+            len(draft.goals),
+            decision["next_check_minutes"],
+        )
 
     def _parse_heartbeat_finish(
         self, arguments: dict[str, Any]
@@ -1316,12 +1385,15 @@ class TurnRunner:
         else:
             messages = []
         activity = arguments.get("activity")
+        result = arguments.get("result")
         reason = arguments.get("reason")
         minutes = arguments.get("next_check_minutes")
         if (
             not isinstance(activity, str)
             or not activity.strip()
             or len(activity) > 300
+            or not isinstance(result, str)
+            or len(result) > 2000
             or not isinstance(reason, str)
             or not reason.strip()
             or len(reason) > 500
@@ -1342,6 +1414,7 @@ class TurnRunner:
         return {
             "messages": messages,
             "activity": activity.strip(),
+            "result": result.strip(),
             "next_check_minutes": minutes,
             "reason": reason.strip(),
             "mood_transition": mood,
@@ -1619,8 +1692,8 @@ class TurnRunner:
             *memory_search,
             *agenda_specs,
             OWNER_NOTIFY_SPEC,
-            *(READ_ONLY_BUILTIN_TOOL_SPECS if agent_owned else BUILTIN_TOOL_SPECS),
-            *(self.mcp.read_only_tool_specs if agent_owned else self.mcp.tool_specs),
+            *(self._self_directed_tool_specs() if agent_owned else BUILTIN_TOOL_SPECS),
+            *([] if agent_owned else self.mcp.tool_specs),
             AUTONOMOUS_FINISH_SPEC,
         ]
         draft = TurnDraft()
@@ -1636,7 +1709,8 @@ class TurnRunner:
             turn_id=turn_id,
             require_response=False,
             autonomous_goal_id=goal_id,
-            allowed_capabilities={"read"} if agent_owned else None,
+            allowed_capabilities={"read", "write"} if agent_owned else None,
+            artifact_root=self._artifact_root() if agent_owned else None,
         )
         self.store.commit_autonomous_turn(goal_id, draft, turn_id=turn_id)
         logger.info(

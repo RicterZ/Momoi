@@ -240,6 +240,7 @@ HEARTBEAT_FINISH_SPEC: dict[str, Any] = {
                 "items": CHANNEL_MESSAGE_SCHEMA,
             },
             "activity": {"type": "string", "minLength": 1, "maxLength": 300},
+            "result": {"type": "string", "maxLength": 2000},
             "next_check_minutes": {
                 "type": "integer",
                 "minimum": 1,
@@ -251,6 +252,7 @@ HEARTBEAT_FINISH_SPEC: dict[str, Any] = {
         "required": [
             "messages",
             "activity",
+            "result",
             "next_check_minutes",
             "reason",
             "mood",

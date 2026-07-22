@@ -608,6 +608,7 @@ class StorageMemoryTest(unittest.TestCase):
             store.commit_heartbeat(
                 "heartbeat-budget",
                 activity="整理关卡灵感",
+                result="记录了一个点子",
                 next_heartbeat_at=now + 60,
                 mood_transition=None,
                 messages=[],

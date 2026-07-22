@@ -133,6 +133,14 @@ class Store(MemoryStore, DeliveryStore):
             self._db.execute(
                 "ALTER TABLE goals ADD COLUMN failure_count INTEGER NOT NULL DEFAULT 0"
             )
+        self_state_columns = {
+            str(row["name"])
+            for row in self._db.execute("PRAGMA table_info(self_state)").fetchall()
+        }
+        if "activity_result" not in self_state_columns:
+            self._db.execute(
+                "ALTER TABLE self_state ADD COLUMN activity_result TEXT NOT NULL DEFAULT ''"
+            )
         reminder_columns = {
             str(row["name"])
             for row in self._db.execute("PRAGMA table_info(reminders)").fetchall()
@@ -786,6 +794,7 @@ class Store(MemoryStore, DeliveryStore):
                 },
                 "activity": {
                     "text": state["activity"],
+                    "result": state["activity_result"],
                     "since": timestamp(state["activity_since"]),
                 },
                 "last_heartbeat_at": timestamp(state["last_heartbeat_at"]),
@@ -921,11 +930,13 @@ class Store(MemoryStore, DeliveryStore):
         turn_id: str,
         *,
         activity: str,
+        result: str,
         next_heartbeat_at: float,
         mood_transition: dict[str, object] | None,
         messages: list[ChannelMessage],
         reason: str,
         timezone: str,
+        draft: TurnDraft | None = None,
     ) -> None:
         now = time.time()
         day = datetime.fromtimestamp(now, ZoneInfo(timezone)).date().isoformat()
@@ -935,15 +946,17 @@ class Store(MemoryStore, DeliveryStore):
         )
         with self._db:
             self._apply_mood_transition(mood_transition, now)
+            self._apply_goal_mutations(draft, now)
             activity_since = (
                 current["activity_since"] if current["activity"] == activity else now
             )
             self._db.execute(
-                """UPDATE self_state SET activity=?, activity_since=?,
+                """UPDATE self_state SET activity=?, activity_result=?, activity_since=?,
                    last_heartbeat_at=?, next_heartbeat_at=?, heartbeat_claimed_at=NULL,
                    heartbeat_day=?, heartbeat_count=?, updated_at=? WHERE id=1""",
                 (
                     activity,
+                    result[:2000],
                     activity_since,
                     now,
                     next_heartbeat_at,
@@ -1210,12 +1223,15 @@ class Store(MemoryStore, DeliveryStore):
         with self._db:
             self._apply_goal_mutations(draft, time.time())
 
-    def active_goals_context(self) -> str:
+    def active_goals_context(self, authority: str | None = None) -> str:
+        authority_clause = " AND authority=?" if authority else ""
         rows = self._db.execute(
-            """SELECT * FROM goals
+            f"""SELECT * FROM goals
                WHERE status IN ('active', 'waiting', 'blocked')
+               {authority_clause}
                ORDER BY COALESCE(next_review_at, 1e30), updated_at DESC
-               LIMIT 20"""
+               LIMIT 20""",
+            (authority,) if authority else (),
         ).fetchall()
         if not rows:
             return ""

@@ -135,10 +135,12 @@ BUILTIN_TOOL_SPECS: list[dict[str, Any]] = [
     },
 ]
 
-READ_ONLY_BUILTIN_TOOL_SPECS = [
-    copy.deepcopy(spec) for spec in BUILTIN_TOOL_SPECS if spec["name"] == "curl"
+SELF_DIRECTED_BUILTIN_TOOL_SPECS = [
+    copy.deepcopy(spec)
+    for spec in BUILTIN_TOOL_SPECS
+    if spec["name"] in {"curl", "read_file", "write_file"}
 ]
-READ_ONLY_BUILTIN_TOOL_SPECS[0]["input_schema"]["properties"]["method"]["enum"] = [
+SELF_DIRECTED_BUILTIN_TOOL_SPECS[0]["input_schema"]["properties"]["method"]["enum"] = [
     "GET",
     "HEAD",
     "OPTIONS",

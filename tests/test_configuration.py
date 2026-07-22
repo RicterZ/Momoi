@@ -46,6 +46,12 @@ class ConfigurationTest(unittest.TestCase):
                             },
                         },
                         "context": {},
+                        "autonomy": {
+                            "allowed_tools": [
+                                "curl",
+                                "mcp__brave-search__brave_web_search",
+                            ]
+                        },
                         "storage": {"database": "momoi.sqlite3"},
                         "logging": {},
                     }
@@ -56,6 +62,10 @@ class ConfigurationTest(unittest.TestCase):
             self.assertEqual(config.channel.owner_qq, "123")
             self.assertFalse(config.reflection.enabled)
             self.assertEqual(config.reflection.at, "03:00")
+            self.assertEqual(
+                config.autonomy.allowed_tools,
+                ("curl", "mcp__brave-search__brave_web_search"),
+            )
 
             legacy = json.loads(path.read_text())
             legacy["napcat"] = legacy.pop("channel")["settings"]

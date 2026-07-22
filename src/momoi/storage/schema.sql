@@ -163,6 +163,7 @@ CREATE TABLE IF NOT EXISTS self_state (
     mood_updated_at REAL NOT NULL,
     mood_settle_at REAL,
     activity TEXT NOT NULL,
+    activity_result TEXT NOT NULL DEFAULT '',
     activity_since REAL NOT NULL,
     last_heartbeat_at REAL,
     next_heartbeat_at REAL,
@@ -275,4 +276,3 @@ CREATE TABLE IF NOT EXISTS webhook_steps (
     PRIMARY KEY (run_id, step_index),
     FOREIGN KEY (run_id) REFERENCES webhook_runs(id) ON DELETE CASCADE
 );
-
