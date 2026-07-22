@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import hashlib
 import os
 import subprocess
@@ -132,6 +133,15 @@ BUILTIN_TOOL_SPECS: list[dict[str, Any]] = [
             "additionalProperties": False,
         },
     },
+]
+
+READ_ONLY_BUILTIN_TOOL_SPECS = [
+    copy.deepcopy(spec) for spec in BUILTIN_TOOL_SPECS if spec["name"] == "curl"
+]
+READ_ONLY_BUILTIN_TOOL_SPECS[0]["input_schema"]["properties"]["method"]["enum"] = [
+    "GET",
+    "HEAD",
+    "OPTIONS",
 ]
 
 

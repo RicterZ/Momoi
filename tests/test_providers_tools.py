@@ -293,7 +293,9 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                 )
 
         manager = MCPManager(None)
-        manager.configs = {"search": {"command": "fake"}}
+        manager.configs = {
+            "search": {"command": "fake", "readOnlyTools": ["first"]}
+        }
         with (
             patch("momoi.mcp_client.stdio_client", return_value=Transport()),
             patch("momoi.mcp_client.ClientSession", Session),
@@ -304,6 +306,10 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             [spec["name"] for spec in manager.tool_specs],
             ["mcp__search__first", "mcp__search__second"],
+        )
+        self.assertEqual(
+            [spec["name"] for spec in manager.read_only_tool_specs],
+            ["mcp__search__first"],
         )
 
     async def test_mcp_reports_failure_and_recovers_connection_for_next_call(

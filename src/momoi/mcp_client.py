@@ -80,6 +80,12 @@ class MCPManager:
     async def _connect(self, name: str, config: dict[str, Any]) -> None:
         stack = AsyncExitStack()
         try:
+            configured_read_only = config.get("readOnlyTools", [])
+            if not isinstance(configured_read_only, list) or not all(
+                isinstance(item, str) for item in configured_read_only
+            ):
+                raise ValueError("readOnlyTools must be an array of tool names")
+            read_only_tools = set(configured_read_only)
             if command := config.get("command"):
                 env = {
                     **os.environ,
@@ -147,7 +153,9 @@ class MCPManager:
                     else {}
                 )
                 discovered_capabilities[wire_name] = (
-                    "read" if values.get("readOnlyHint") else "external_effect"
+                    "read"
+                    if values.get("readOnlyHint") or tool.name in read_only_tools
+                    else "external_effect"
                 )
             old_names = {
                 wire_name
@@ -192,6 +200,14 @@ class MCPManager:
 
     def capability(self, name: str) -> str:
         return self._capabilities.get(name, "external_effect")
+
+    @property
+    def read_only_tool_specs(self) -> list[dict[str, Any]]:
+        return [
+            spec
+            for spec in self.tool_specs
+            if self._capabilities.get(str(spec["name"])) == "read"
+        ]
 
     async def call(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         target = self._tools.get(name)

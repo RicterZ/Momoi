@@ -13,7 +13,11 @@ from ..agenda_tools import (
     AGENDA_TOOL_SPECS,
     OWNER_NOTIFY_SPEC,
 )
-from ..builtin_tools import BUILTIN_TOOL_POLICY, BUILTIN_TOOL_SPECS
+from ..builtin_tools import (
+    BUILTIN_TOOL_POLICY,
+    BUILTIN_TOOL_SPECS,
+    READ_ONLY_BUILTIN_TOOL_SPECS,
+)
 from ..channel import ChannelMessage
 from ..emotions import EMOTION_PREFIX, emotion_slug
 from ..memory_tools import MEMORY_TOOL_POLICY, MEMORY_TOOL_SPECS
@@ -467,6 +471,7 @@ class TurnRunner:
         turn_id: str,
         require_response: bool,
         autonomous_goal_id: str | None = None,
+        allowed_capabilities: set[str] | None = None,
     ) -> AgentReply | None:
         external_tool_used = False
         force_response = False
@@ -640,9 +645,12 @@ class TurnRunner:
                 continue
             messages.append({"role": "assistant", "content": response.content})
             results: list[dict[str, Any]] = []
+            allowed_tool_names = {str(spec["name"]) for spec in request_tools}
             for call in response.tool_calls:
                 logger.debug("Executing tool name=%s", call.name)
-                if call.name == "respond":
+                if call.name not in allowed_tool_names:
+                    result = {"ok": False, "error": "tool_not_allowed"}
+                elif call.name == "respond":
                     result = {
                         "ok": False,
                         "error": (
@@ -692,22 +700,32 @@ class TurnRunner:
                             if source == "mcp"
                             else self.builtin_tools.capability(call)
                         )
-                        external_tool_used = external_tool_used or capability != "read"
-                        result = self.store.begin_tool_call(
-                            turn_id,
-                            call.id,
-                            call.name,
-                            call.arguments,
-                            capability,
-                        )
-                        if result is None:
-                            result = (
-                                await self.mcp.call(call.name, call.arguments)
-                                if self.mcp.has_tool(call.name)
-                                else await self.builtin_tools.execute(call)
+                        if (
+                            allowed_capabilities is not None
+                            and capability not in allowed_capabilities
+                        ):
+                            result = {"ok": False, "error": "tool_not_allowed"}
+                        else:
+                            external_tool_used = (
+                                external_tool_used or capability != "read"
                             )
-                            result = self._normalize_tool_result(call, result, source)
-                            self.store.complete_tool_call(turn_id, call.id, result)
+                            result = self.store.begin_tool_call(
+                                turn_id,
+                                call.id,
+                                call.name,
+                                call.arguments,
+                                capability,
+                            )
+                            if result is None:
+                                result = (
+                                    await self.mcp.call(call.name, call.arguments)
+                                    if self.mcp.has_tool(call.name)
+                                    else await self.builtin_tools.execute(call)
+                                )
+                                result = self._normalize_tool_result(
+                                    call, result, source
+                                )
+                                self.store.complete_tool_call(turn_id, call.id, result)
                 elif self.agenda_tools.has_tool(call.name, allow_notify=allow_notify):
                     result = self.agenda_tools.execute(
                         call,
@@ -1587,12 +1605,22 @@ class TurnRunner:
         memory_search = [
             spec for spec in MEMORY_TOOL_SPECS if spec["name"] == "memory_search"
         ]
+        agent_owned = goal["authority"] == "agent"
+        agenda_specs = (
+            [
+                spec
+                for spec in AGENDA_TOOL_SPECS
+                if spec["name"] in {"goal_update", "goal_finish", "goal_cancel"}
+            ]
+            if agent_owned
+            else AGENDA_TOOL_SPECS
+        )
         tools = [
             *memory_search,
-            *AGENDA_TOOL_SPECS,
+            *agenda_specs,
             OWNER_NOTIFY_SPEC,
-            *BUILTIN_TOOL_SPECS,
-            *self.mcp.tool_specs,
+            *(READ_ONLY_BUILTIN_TOOL_SPECS if agent_owned else BUILTIN_TOOL_SPECS),
+            *(self.mcp.read_only_tool_specs if agent_owned else self.mcp.tool_specs),
             AUTONOMOUS_FINISH_SPEC,
         ]
         draft = TurnDraft()
@@ -1608,6 +1636,7 @@ class TurnRunner:
             turn_id=turn_id,
             require_response=False,
             autonomous_goal_id=goal_id,
+            allowed_capabilities={"read"} if agent_owned else None,
         )
         self.store.commit_autonomous_turn(goal_id, draft, turn_id=turn_id)
         logger.info(

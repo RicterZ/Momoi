@@ -156,12 +156,28 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     },
                 ),
                 draft,
-                authority="owner",
+                authority="agent",
                 source_event_id=event.event_id,
                 allow_notify=False,
             )
             goal_id = str(created["goal"]["id"])
             daemon.store.commit_turn([event], event.text, AgentReply(["好"]), draft)
+            daemon.mcp.tool_specs = [
+                {
+                    "name": "mcp__test__read",
+                    "description": "read",
+                    "input_schema": {"type": "object"},
+                },
+                {
+                    "name": "mcp__test__write",
+                    "description": "write",
+                    "input_schema": {"type": "object"},
+                },
+            ]
+            daemon.mcp._capabilities = {
+                "mcp__test__read": "read",
+                "mcp__test__write": "external_effect",
+            }
             await asyncio.sleep(0.03)
             daemon.store.claim_due_goal()
 
@@ -175,6 +191,13 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     if not kwargs.get("require_tool"):
                         raise AssertionError("autonomous turns must require a terminal tool")
                     if self.calls == 1:
+                        names = {str(tool["name"]) for tool in tools}
+                        if "mcp__test__read" not in names or {
+                            "mcp__test__write",
+                            "write_file",
+                            "reminder_create",
+                        } & names:
+                            raise AssertionError(names)
                         call = ToolCall(
                             "update",
                             "goal_update",
