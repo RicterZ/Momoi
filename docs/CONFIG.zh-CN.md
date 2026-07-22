@@ -279,6 +279,8 @@ MCP 环境值、远程 URL 和 header 支持从 Momoi 进程环境展开 `${VARI
 
 每个已连接服务器都会按名称隔离。它的工具以 `mcp__<server>__<tool>` 前缀呈现给模型。单个服务器连接失败会记录到日志，不会阻止其他已配置服务器启动。
 
+部分 MCP 服务器没有提供标准的 `readOnlyHint`。如果某个工具确定只读，可以在对应服务器配置中用 `readOnlyTools` 填写服务器原始工具名。这个声明本身不会把工具开放给自主工作；还必须把带前缀的工具名加入 `autonomy.allowed_tools`。
+
 ## 单轮预算
 
 ```json
@@ -327,7 +329,7 @@ MCP 环境值、远程 URL 和 header 支持从 Momoi 进程环境展开 `${VARI
 
 该策略适用于主动的目标和心跳通知。固定提醒按请求的计划执行。
 
-## 认知心跳
+## 自主心跳
 
 ```json
 {
@@ -350,6 +352,27 @@ MCP 环境值、远程 URL 和 header 支持从 Momoi 进程环境展开 `${VARI
 | `max_daily_turns` | `12` | 每个本地日的心跳评估上限 |
 
 间隔必须为正数，最大值不能小于最小值。即使某次心跳保持沉默，也会计入评估次数。
+
+心跳可以使用明确允许的只读工具、搜索记忆、在 `<workspace>/artifacts` 下生成文件，或者为需要跨轮继续的工作创建 agent-owned Goal。它会先记录真实结果，再决定是否有必要联系主人。主人 Goal 和提醒由各自的调度器负责，心跳不会代替或模仿它们。
+
+在主人私聊中发送 `/heartbeat` 可以立即触发一次心跳，即使自动心跳没有开启。已有心跳正在排队或执行时，重复命令会自动去重。
+
+## 自主工具白名单
+
+```json
+{
+  "autonomy": {
+    "allowed_tools": [
+      "curl",
+      "read_file",
+      "write_file",
+      "mcp__brave-search__brave_web_search"
+    ]
+  }
+}
+```
+
+默认允许 `curl`、`read_file` 和 `write_file`。`curl` 仅允许 GET、HEAD 和 OPTIONS；自主文件访问仅限 `<workspace>/artifacts`。MCP 工具必须同时出现在这里，并通过 `readOnlyHint` 或 `readOnlyTools` 判定为只读。agent-owned Goal 继承同一边界；主人创建的 Goal 继续使用主人任务授权的工具。
 
 ## 每日复盘
 

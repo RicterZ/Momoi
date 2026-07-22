@@ -522,6 +522,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 ),
             )
             daemon = MomoiDaemon(config)
+            self.assertTrue((Path(directory) / "artifacts").is_dir())
 
             class Provider:
                 calls = 0

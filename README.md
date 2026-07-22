@@ -40,7 +40,7 @@ Momoi can be reached in four ways:
 | Owner message | Conversation, questions, corrections, and immediate tasks |
 | Webhook event | Events from Home Assistant, Jellyfin, cameras, or other services |
 | Goal | Work that must continue later or repeat with fresh reasoning and tools |
-| Heartbeat | A low-priority chance for Momoi to choose an activity and decide whether to speak |
+| Heartbeat | A low-priority autonomous Turn to explore, make artifacts, continue her own work, and decide whether to speak |
 
 They share the same identity and relevant context. A webhook notification should sound like the person you were just talking to, not a separate automation bot.
 
@@ -102,7 +102,7 @@ Momoi separates different kinds of future behavior:
 | --- | --- | --- |
 | Reminder | “Remind me to stretch in one hour” | Delivers known content at the requested time |
 | Goal | “Every morning, check the weather and give me a riding recommendation” | Wakes up, gathers fresh information, reasons, and continues the task |
-| Heartbeat | Momoi's own activity and initiative | May start a relevant conversation or remain silent |
+| Heartbeat | Momoi's own activity and initiative | May use allowed tools, create her own Goal, share a useful result, or remain silent |
 | Reflection | Form durable learning each day | Reviews the day that just ended without sending a message |
 | Webhook | An external event happened | Handles the predefined event workflow in Momoi's normal voice |
 
@@ -122,8 +122,9 @@ Goal and Heartbeat notifications respect quiet hours, cooldowns, daily budgets, 
 - Send text, channel-native media, and managed image reactions
 - Maintain mood and activity across conversations
 - Reflect daily on the owner, the world, herself, and execution lessons, then retain sourced learning
-- Proactively speak through bounded heartbeats
+- Do bounded self-directed work and proactively speak through heartbeats
 - Stop active work with `/stop`
+- Trigger one heartbeat with `/heartbeat`
 - Recover safely when an external action has an uncertain outcome
 
 ## Getting started
@@ -234,7 +235,7 @@ Use `--at` for a future one-time review or `--every-seconds` for a recurring int
 
 ## Owner controls
 
-Send `/stop` in the active private chat to cancel the current task. Momoi stops the work and understands that the owner interrupted it.
+Send `/stop` in the active private chat to cancel the current task. Momoi stops the work and understands that the owner interrupted it. Send `/heartbeat` to trigger one autonomous heartbeat immediately.
 
 If an external action was dispatched but its result became uncertain, Momoi will ask the owner to confirm the real state before continuing. She will not repeat the action just because the process restarted.
 

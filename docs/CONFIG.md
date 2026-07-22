@@ -279,6 +279,8 @@ MCP environment values, remote URLs, and headers support `${VARIABLE}` expansion
 
 Each connected server is isolated by name. Its tools appear to the model with a `mcp__<server>__<tool>` prefix. Connection failures are logged without preventing other configured servers from starting.
 
+Some MCP servers omit the standard `readOnlyHint`. Add `readOnlyTools` with the server's original tool names when a tool is known to be read-only. This declaration does not expose the tool by itself; self-directed work must also allow its prefixed name through `autonomy.allowed_tools`.
+
 ## Turn budgets
 
 ```json
@@ -327,7 +329,7 @@ These are safety budgets, not limits on the number of tool calls.
 
 This policy applies to proactive Goal and Heartbeat notifications. A fixed Reminder follows its requested schedule.
 
-## Cognitive heartbeat
+## Autonomous heartbeat
 
 ```json
 {
@@ -350,6 +352,27 @@ This policy applies to proactive Goal and Heartbeat notifications. A fixed Remin
 | `max_daily_turns` | `12` | Maximum heartbeat evaluations per local day |
 
 Intervals must be positive, and the maximum must not be smaller than the minimum. A silent heartbeat still counts as an evaluation.
+
+A heartbeat may use explicitly allowed read-only tools, search memory, create files under `<workspace>/artifacts`, or create an agent-owned Goal for work that must continue. It records the real result before deciding whether contacting the owner is useful. Owner Goals and reminders remain separate and are never performed or imitated by a heartbeat.
+
+Send `/heartbeat` in the private owner chat to trigger one evaluation immediately, even when automatic heartbeat scheduling is disabled. A command received while another heartbeat is queued or running is deduplicated.
+
+## Self-directed tool allowlist
+
+```json
+{
+  "autonomy": {
+    "allowed_tools": [
+      "curl",
+      "read_file",
+      "write_file",
+      "mcp__brave-search__brave_web_search"
+    ]
+  }
+}
+```
+
+The default is `curl`, `read_file`, and `write_file`. `curl` is limited to GET, HEAD, and OPTIONS. Autonomous file access is restricted to `<workspace>/artifacts`. MCP tools must be both listed here and classified read-only through `readOnlyHint` or `readOnlyTools`. Agent-owned Goals inherit the same boundary; owner-created Goals retain the tools authorized by the owner's task.
 
 ## Daily reflection
 

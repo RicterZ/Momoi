@@ -58,6 +58,14 @@
     "max_interval_seconds": 21600,
     "max_daily_turns": 12
   },
+  "autonomy": {
+    "allowed_tools": [
+      "curl",
+      "read_file",
+      "write_file",
+      "mcp__brave-search__brave_web_search"
+    ]
+  },
   "reflection": {
     "enabled": true,
     "at": "03:00"

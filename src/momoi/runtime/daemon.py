@@ -33,6 +33,7 @@ AGENDA_POLL_SECONDS = 5
 class MomoiDaemon(TurnRunner):
     def __init__(self, config: AppConfig, channel: Channel | None = None) -> None:
         self.config = config
+        self._artifact_root().mkdir(parents=True, exist_ok=True)
         self.store = Store(config.database, config.workspace)
         self.store.ensure_heartbeat(config.heartbeat)
         self.agenda_tools = AgendaTools(self.store)
