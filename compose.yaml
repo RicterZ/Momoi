@@ -8,4 +8,4 @@ services:
     volumes:
       - ${MOMOI_WORKSPACE:-${HOME}/.momoi}:/home/momoi/.momoi
     ports:
-      - ${MOMOI_WEBHOOK_PORT:-8787}:8787
+      - 127.0.0.1:${MOMOI_WEBHOOK_PORT:-8787}:8787
