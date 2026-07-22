@@ -1,0 +1,11 @@
+services:
+  momoi:
+    build: .
+    restart: unless-stopped
+    environment:
+      BRAVE_API_KEY: ${BRAVE_API_KEY:-}
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - ${MOMOI_WORKSPACE:-${HOME}/.momoi}:/home/momoi/.momoi
+    ports:
+      - ${MOMOI_WEBHOOK_PORT:-8787}:8787
