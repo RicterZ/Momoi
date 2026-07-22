@@ -121,6 +121,37 @@ class DaemonTest(unittest.TestCase):
 
 
 class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
+    async def test_manual_heartbeat_command_queues_once_even_when_disabled(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(
+                AppConfig(
+                    llm=LLMConfig(
+                        "http://127.0.0.1", "test", "test", 100, 0, 1, 0
+                    ),
+                    channel=NapCatConfig(
+                        "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
+                    ),
+                    system_prompt="test",
+                    recent_raw_tokens=1000,
+                    recent_turns=2,
+                    memory_results=2,
+                    memory_tokens=1000,
+                    database=Path(directory) / "momoi.sqlite3",
+                    log_level="INFO",
+                )
+            )
+            command = IncomingMessage(
+                "qq:manual-heartbeat", "manual-heartbeat", "/heartbeat", 1, 1
+            )
+            await daemon._receive(command)
+            await daemon._receive(command)
+
+            self.assertEqual(await daemon.autonomous.get(), HEARTBEAT_QUEUE_ITEM)
+            self.assertTrue(daemon.autonomous.empty())
+            self.assertEqual(daemon.store.pending_events(), [])
+            self.assertIsNotNone(daemon.store.self_state()["heartbeat_claimed_at"])
+            daemon.store.close()
+
     async def test_goal_commits_only_after_explicit_autonomous_finish(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(

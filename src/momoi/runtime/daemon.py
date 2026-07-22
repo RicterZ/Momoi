@@ -104,6 +104,13 @@ class MomoiDaemon(TurnRunner):
                 logger.info("Accepted /stop owner command")
                 await self.incoming.put(message)
             return
+        if message.text.strip() == "/heartbeat":
+            if self.store.claim_manual_heartbeat():
+                logger.info("Accepted manual heartbeat command")
+                await self.autonomous.put(HEARTBEAT_QUEUE_ITEM)
+            else:
+                logger.info("Ignored manual heartbeat command: heartbeat already active")
+            return
         if self.store.add_event(message):
             logger.info("Accepted owner message channel=%s", message.channel)
             await self.incoming.put(message)

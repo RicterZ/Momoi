@@ -897,6 +897,21 @@ class Store(MemoryStore, DeliveryStore):
         claimed["heartbeat_count"] = count
         return claimed
 
+    def claim_manual_heartbeat(self, now: float | None = None) -> bool:
+        now = time.time() if now is None else now
+        with self._db:
+            row = self._db.execute(
+                "SELECT heartbeat_claimed_at FROM self_state WHERE id=1"
+            ).fetchone()
+            if row is None or row["heartbeat_claimed_at"] is not None:
+                return False
+            self._db.execute(
+                """UPDATE self_state SET next_heartbeat_at=?, heartbeat_claimed_at=?,
+                   updated_at=? WHERE id=1""",
+                (now, now, now),
+            )
+        return True
+
     def next_heartbeat_due_at(self, enabled: bool) -> float | None:
         if not enabled:
             return None
