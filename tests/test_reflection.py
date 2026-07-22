@@ -46,6 +46,20 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                    VALUES ('user', ?, ?, '[]')""",
                 ("# Current owner messages\n我不吃香菜", occurred),
             )
+            daemon.store._db.execute(
+                """INSERT INTO turns
+                   (id, kind, source_ids_json, state, started_at, updated_at)
+                   VALUES ('tool-turn', 'owner', '[]', 'completed', ?, ?)""",
+                (occurred, occurred),
+            )
+            daemon.store._db.execute(
+                """INSERT INTO tool_audit
+                   (turn_id, tool_call_id, tool_name, arguments_sha256, state,
+                    result_json, ok, started_at, completed_at, capability)
+                   VALUES ('tool-turn', 'mail-search', 'mcp__gog__gmail_search',
+                           'hash', 'completed', ?, 1, ?, ?, 'read')""",
+                ('{"subject":"CVE exploit details"}', occurred, occurred),
+            )
             daemon.store._db.commit()
 
             class Provider:
@@ -57,6 +71,11 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                     **_kwargs: object,
                 ) -> ProviderResponse:
                     assert tools == [REFLECTION_FINISH_SPEC]
+                    request = json.dumps(_messages, ensure_ascii=False)
+                    assert "CVE exploit details" not in request
+                    assert (
+                        "state=completed ok=true capability=read" in request
+                    )
                     call = ToolCall(
                         "finish-reflection",
                         "reflection_finish",

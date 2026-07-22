@@ -211,13 +211,31 @@ class StorageMemoryTest(unittest.TestCase):
                 ).fetchone()[0],
                 "read",
             )
+            store.record_turn_failure("turn-read", "ProviderError")
+            store.record_turn_usage("turn-read", 100, 20)
+            store._db.execute(
+                "UPDATE turns SET stage='llm', started_at=1 WHERE id='turn-read'"
+            )
+            store._db.commit()
             store.close()
 
             recovered = Store(path)
+            before_retry = time.time()
             self.assertEqual(
                 recovered.begin_turn("turn-read", "owner", ["qq:1:read"]),
                 "running",
             )
+            turn = recovered._db.execute(
+                """SELECT stage, failure_reason, llm_calls, input_tokens,
+                          output_tokens, started_at
+                   FROM turns WHERE id='turn-read'"""
+            ).fetchone()
+            self.assertEqual(turn["stage"], "started")
+            self.assertIsNone(turn["failure_reason"])
+            self.assertEqual(turn["llm_calls"], 0)
+            self.assertEqual(turn["input_tokens"], 0)
+            self.assertEqual(turn["output_tokens"], 0)
+            self.assertGreaterEqual(turn["started_at"], before_retry)
             self.assertEqual(recovered.open_reconciliations_context(), "")
             recovered.close()
 

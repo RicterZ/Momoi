@@ -630,6 +630,13 @@ class Store:
                     turn_id, "process_interrupted_after_external_effect", now
                 )
                 return "needs_reconciliation"
+            if row["state"] == "running":
+                self._db.execute(
+                    """UPDATE turns SET stage='started', failure_reason=NULL,
+                       llm_calls=0, input_tokens=0, output_tokens=0,
+                       started_at=?, updated_at=? WHERE id=?""",
+                    (now, now, turn_id),
+                )
             return str(row["state"])
 
     def cancel_turn(
@@ -1366,19 +1373,19 @@ class Store:
                 )
             )
         for row in self._db.execute(
-            """SELECT a.tool_name, a.result_json, a.state, a.ok, t.started_at
+            """SELECT a.tool_name, a.state, a.ok, a.capability, t.started_at
                FROM tool_audit AS a JOIN turns AS t ON t.id=a.turn_id
                WHERE t.started_at>=? AND t.started_at<? ORDER BY t.started_at""",
             (start.timestamp(), end.timestamp()),
         ).fetchall():
-            result = str(row["result_json"] or row["state"])
+            ok = "unknown" if row["ok"] is None else str(bool(row["ok"])).lower()
             entries.append(
                 (
                     float(row["started_at"]),
                     f"TOOL {row['tool_name']}",
-                    result[:4000],
+                    f"state={row['state']} ok={ok} capability={row['capability']}",
                     False,
-                    row["state"] == "completed" and bool(row["ok"]),
+                    False,
                 )
             )
         for row in self._db.execute(
