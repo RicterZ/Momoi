@@ -23,6 +23,7 @@ AGENDA_TOOL_POLICY = """### Agenda tools
   delivered at `fire_at`, without another LLM call. A fixed recurring reminder
   may use an interval or daily `schedule` instead. Use `reminder_cancel` to cancel
   it. Do not use `sleep` or a Goal for a reminder whose text needs no new research.
+- Submit independent reminder calls together in one response.
 - `owner_notify` is available only during autonomous work. Use it only for a
   useful result, a needed decision, or a meaningful failure; otherwise finish
   the autonomous Turn silently. Give it a stable category `key`; use urgent
@@ -141,6 +142,10 @@ AGENDA_TOOL_SPECS: list[dict[str, Any]] = [
                 },
             },
             "required": ["text"],
+            "oneOf": [
+                {"required": ["fire_at"]},
+                {"required": ["schedule"]},
+            ],
             "additionalProperties": False,
         },
     },

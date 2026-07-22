@@ -9,7 +9,7 @@ from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 
-from momoi.agenda_tools import AgendaTools
+from momoi.agenda_tools import AGENDA_TOOL_POLICY, AGENDA_TOOL_SPECS, AgendaTools
 from momoi.builtin_tools import BuiltinTools
 from momoi.channel.napcat import NapCatConfig
 from momoi.config import (
@@ -33,6 +33,16 @@ from momoi.storage.scheduling import next_schedule_at
 
 
 class StorageMemoryTest(unittest.TestCase):
+    def test_reminder_create_contract_requires_exactly_one_timing_mode(self) -> None:
+        spec = next(
+            spec for spec in AGENDA_TOOL_SPECS if spec["name"] == "reminder_create"
+        )
+        self.assertEqual(
+            spec["input_schema"]["oneOf"],
+            [{"required": ["fire_at"]}, {"required": ["schedule"]}],
+        )
+        self.assertIn("calls together in one response", AGENDA_TOOL_POLICY)
+
     def test_legacy_outbox_migrates_to_typed_messages(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "legacy.sqlite3"
