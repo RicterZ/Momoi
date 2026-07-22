@@ -107,12 +107,12 @@ def _log_usage(data: dict[str, Any]) -> None:
 
 
 async def _http_error(response: aiohttp.ClientResponse, protocol: str) -> ProviderError:
+    body = await response.text()
     try:
-        error_data = await response.json(content_type=None)
+        error_data = json.loads(body)
         detail = str(error_data.get("error", {}).get("message", ""))[:300]
     except (ValueError, TypeError, AttributeError):
-        await response.read()
-        detail = ""
+        detail = body.strip()[:300]
     suffix = f": {detail}" if detail else ""
     return ProviderError(f"{protocol} endpoint returned HTTP {response.status}{suffix}")
 

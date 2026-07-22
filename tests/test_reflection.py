@@ -10,9 +10,18 @@ from momoi.channel.napcat import NapCatConfig
 from momoi.config import AppConfig, LLMConfig, NotificationConfig, ReflectionConfig
 from momoi.daemon import REFLECTION_FINISH_SPEC, MomoiDaemon
 from momoi.models import ProviderResponse, ToolCall
+from momoi.text_replacement import TextReplacementHook, cyber_keyword_pre_hook
 
 
 class ReflectionTest(unittest.IsolatedAsyncioTestCase):
+    def test_text_replacement_hook_is_independent(self) -> None:
+        hook = TextReplacementHook(((r"cat", "dog"),))
+        self.assertEqual(hook("Cat catalog"), "dog dogalog")
+        self.assertEqual(
+            cyber_keyword_pre_hook("CVE vulnerability漏洞exploit"),
+            "C-V-E v-u-l-nerable漏-洞ex-ploit",
+        )
+
     async def test_daily_reflection_promotes_only_evidence_backed_learning(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
@@ -44,7 +53,10 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                 """INSERT INTO messages
                    (role, content, created_at, source_event_ids_json)
                    VALUES ('user', ?, ?, '[]')""",
-                ("# Current owner messages\n我不吃香菜", occurred),
+                (
+                    "# Current owner messages\n我不吃香菜，今天看了CVE vulnerability漏洞exploit。",
+                    occurred,
+                ),
             )
             daemon.store._db.execute(
                 """INSERT INTO turns
@@ -73,6 +85,8 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                     assert tools == [REFLECTION_FINISH_SPEC]
                     request = json.dumps(_messages, ensure_ascii=False)
                     assert "CVE exploit details" not in request
+                    assert "CVE vulnerability漏洞exploit" not in request
+                    assert "C-V-E v-u-l-nerable漏-洞ex-ploit" in request
                     assert (
                         "state=completed ok=true capability=read" in request
                     )

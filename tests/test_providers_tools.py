@@ -365,7 +365,11 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                 return web.json_response(
                     {"choices": [{"message": {"role": "assistant", "content": "ok"}}]}
                 )
-            return web.json_response({"error": {"message": "bad request"}}, status=400)
+            if attempts == 3:
+                return web.json_response(
+                    {"error": {"message": "bad request"}}, status=400
+                )
+            return web.Response(text="cyber policy rejection", status=400)
 
         server = TestServer(web.Application())
         server.app.router.add_post("/v1/chat/completions", completion)
@@ -392,9 +396,13 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                     await provider.complete(
                         "system", [{"role": "user", "content": "bad"}]
                     )
+                with self.assertRaisesRegex(ProviderError, "cyber policy rejection"):
+                    await provider.complete(
+                        "system", [{"role": "user", "content": "also bad"}]
+                    )
         finally:
             await server.close()
-        self.assertEqual(attempts, 3)
+        self.assertEqual(attempts, 4)
 
     async def test_owner_turn_corrects_openai_gateway_that_ignores_tool_choice(
         self,

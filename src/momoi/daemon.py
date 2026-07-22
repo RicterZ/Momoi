@@ -32,6 +32,7 @@ from .mcp_client import MCPManager, MCP_TOOL_POLICY
 from .models import AgentReply, IncomingMessage, ToolCall, TurnDraft
 from .provider import AnthropicProvider, OpenAIProvider, ProviderError
 from .store import REFLECTION_MEMORY_KINDS, MOOD_STATES, Store, estimate_tokens
+from .text_replacement import cyber_keyword_pre_hook
 from .webhooks import WebhookService
 
 logger = logging.getLogger(__name__)
@@ -1998,8 +1999,11 @@ class MomoiDaemon:
             self.config.notifications.timezone,
             max(1000, min(self.config.recent_raw_tokens, self.config.max_input_tokens // 2)),
         )
-        record = str(source["text"] or "").strip()
-        query = record[-12000:]
+        raw_record = str(source["text"] or "").strip()
+        query = raw_record[-12000:]
+        record = cyber_keyword_pre_hook(raw_record)
+        owner_source = cyber_keyword_pre_hook(str(source["owner_text"]))
+        knowledge_source = cyber_keyword_pre_hook(str(source["knowledge_text"]))
         confirmed_memory = self.store.memory_context(
             query, self.config.memory_results, self.config.memory_tokens
         )
@@ -2026,6 +2030,7 @@ class MomoiDaemon:
         ):
             if value:
                 context += f"\n\n# {heading}\n{value}"
+        context = cyber_keyword_pre_hook(context)
         system = [
             *self._system(),
             {
@@ -2084,8 +2089,8 @@ class MomoiDaemon:
                 decision, error = self._parse_reflection_finish(
                     response.tool_calls[0].arguments,
                     record,
-                    str(source["owner_text"]),
-                    str(source["knowledge_text"]),
+                    owner_source,
+                    knowledge_source,
                 )
                 if decision is not None:
                     self.store.commit_reflection(
