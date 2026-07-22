@@ -83,6 +83,20 @@ class MessagingTest(unittest.TestCase):
         self.assertIn("动画表情", rendered)
         self.assertIn("戳一戳", rendered)
 
+    def test_renders_napcat_face_names_with_unknown_fallback(self) -> None:
+        self.assertEqual(
+            render_segments([{"type": "face", "data": {"id": "32"}}]),
+            "[QQ face id=32 description=疑问]",
+        )
+        self.assertEqual(
+            render_segments([{"type": "face", "data": {"id": "999999"}}]),
+            "[QQ face id=999999]",
+        )
+        self.assertEqual(
+            render_segments([{"type": "face", "data": {"id": "32", "summary": "自定义名称"}}]),
+            "[QQ face id=32 description=自定义名称]",
+        )
+
     def test_napcat_resolves_quoted_message_content_and_images(self) -> None:
         async def run() -> None:
             client = NapCatChannel(

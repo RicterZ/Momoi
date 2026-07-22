@@ -11,13 +11,14 @@ from typing import Any, ClassVar
 
 import aiohttp
 
-from . import (
+from .. import (
     AmbiguousSend,
     ChannelError,
     NotConnected,
     SendRejected,
 )
-from ..models import IncomingMessage
+from ...models import IncomingMessage
+from .face_names import QQ_FACE_NAMES
 
 logger = logging.getLogger(__name__)
 
@@ -568,8 +569,10 @@ def _describe_card(kind: str, data: dict[str, Any]) -> str:
 def _describe_face(kind: str, data: dict[str, Any]) -> str:
     raw = data.get("raw")
     raw = raw if isinstance(raw, dict) else {}
-    label = data.get("summary") or data.get("text") or raw.get("faceText") or raw.get("vaspokeName")
     identifier = data.get("id") or data.get("emoji_id") or "unknown"
+    label = data.get("summary") or data.get("text") or raw.get("faceText") or raw.get("vaspokeName")
+    if not label and kind == "face":
+        label = QQ_FACE_NAMES.get(str(identifier))
     description = f" description={label}" if label else ""
     return f"[QQ {'sticker' if kind == 'mface' else 'face'} id={identifier}{description}]"
 
