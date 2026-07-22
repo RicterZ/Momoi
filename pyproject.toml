@@ -1,14 +1,16 @@
 [project]
 name = "momoi"
 version = "0.1.0"
-description = "A headless, single-owner agent daemon for QQ."
+description = "A headless, single-owner personal agent daemon."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "aiohttp>=3.11,<4",
+    "cryptography>=44,<50",
     "httpx>=0.27,<1",
     "mcp>=1.0,<2",
     "PyYAML>=6.0,<7",
+    "qrcode>=8,<9",
 ]
 
 [project.scripts]

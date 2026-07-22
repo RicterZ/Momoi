@@ -54,6 +54,8 @@ class ConfigurationTest(unittest.TestCase):
             config = load_config(path)
             self.assertIsInstance(config.channel, NapCatConfig)
             self.assertEqual(config.channel.owner_qq, "123")
+            self.assertFalse(config.reflection.enabled)
+            self.assertEqual(config.reflection.at, "03:00")
 
             legacy = json.loads(path.read_text())
             legacy["napcat"] = legacy.pop("channel")["settings"]
@@ -77,7 +79,7 @@ class ConfigurationTest(unittest.TestCase):
                 "storage": {"database": "momoi.sqlite3"},
                 "logging": {},
             }
-            for section in ("webhooks", "heartbeat"):
+            for section in ("webhooks", "heartbeat", "reflection"):
                 config[section] = {"enabled": "false"}
                 path.write_text(json.dumps(config))
                 with self.assertRaisesRegex(ConfigError, rf"{section}\.enabled must be boolean"):

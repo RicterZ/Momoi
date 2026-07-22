@@ -16,7 +16,7 @@ from .channel import (
     normalize_channel_message,
     render_channel_message,
 )
-from .config import HeartbeatConfig, NotificationConfig
+from .config import HeartbeatConfig, NotificationConfig, ReflectionConfig
 from .emotions import emotion_slug, valid_emotion_slug
 from .models import (
     AgentReply,
@@ -47,6 +47,15 @@ BASELINE_MOOD_INTENSITY = 0.35
 BASELINE_MOOD_CAUSE = "resting baseline"
 DEFAULT_ACTIVITY = "spending time freely"
 CJK_STOP_CHARS = set("的了是在我你他她它们和就都也很还把被让要会呢吧啊哦呀")
+REFLECTION_MEMORY_KINDS = {
+    "owner_profile",
+    "owner_preference",
+    "world_knowledge",
+    "self_insight",
+    "relationship",
+    "shared_experience",
+    "practice",
+}
 
 
 def estimate_tokens(text: str) -> int:
@@ -128,6 +137,34 @@ class Store:
                 end_message_id INTEGER NOT NULL UNIQUE,
                 content TEXT NOT NULL,
                 created_at REAL NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS reflections (
+                id TEXT PRIMARY KEY,
+                local_date TEXT NOT NULL UNIQUE,
+                state TEXT NOT NULL CHECK (state IN ('pending', 'running', 'completed')),
+                scheduled_at REAL NOT NULL,
+                retry_at REAL,
+                claimed_at REAL,
+                summary TEXT NOT NULL DEFAULT '',
+                memories_json TEXT NOT NULL DEFAULT '[]',
+                error TEXT,
+                created_at REAL NOT NULL,
+                completed_at REAL
+            );
+            CREATE INDEX IF NOT EXISTS reflections_due
+                ON reflections(scheduled_at, retry_at) WHERE state='pending';
+            CREATE TABLE IF NOT EXISTS reflection_memories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                kind TEXT NOT NULL,
+                key TEXT NOT NULL,
+                content TEXT NOT NULL,
+                evidence TEXT NOT NULL,
+                confidence REAL NOT NULL,
+                source_reflection_id TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL,
+                UNIQUE(kind, key),
+                FOREIGN KEY (source_reflection_id) REFERENCES reflections(id)
             );
             CREATE TABLE IF NOT EXISTS memories (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -456,6 +493,9 @@ class Store:
         self._db.execute("UPDATE reminders SET claimed_at=NULL WHERE status='pending'")
         self._db.execute("UPDATE notifications SET claimed_at=NULL WHERE state='pending'")
         self._db.execute("UPDATE self_state SET heartbeat_claimed_at=NULL WHERE id=1")
+        self._db.execute(
+            "UPDATE reflections SET state='pending', claimed_at=NULL WHERE state='running'"
+        )
         self._db.commit()
 
     def _recover_outbox(self) -> None:
@@ -1219,6 +1259,229 @@ class Store:
                 (now, turn_id),
             )
 
+    @staticmethod
+    def _reflection_slot(
+        now: float, timezone: str, at: str
+    ) -> tuple[str, float, datetime]:
+        zone = ZoneInfo(timezone)
+        local = datetime.fromtimestamp(now, zone)
+        hour, minute = map(int, at.split(":"))
+        scheduled = local.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if scheduled.timestamp() > now:
+            scheduled -= timedelta(days=1)
+        local_date = (scheduled.date() - timedelta(days=1)).isoformat()
+        return local_date, scheduled.timestamp(), scheduled
+
+    def claim_due_reflection(
+        self,
+        config: ReflectionConfig,
+        timezone: str,
+        now: float | None = None,
+    ) -> dict[str, object] | None:
+        if not config.enabled:
+            return None
+        now = time.time() if now is None else now
+        local_date, scheduled_at, _ = self._reflection_slot(
+            now, timezone, config.at
+        )
+        reflection_id = f"reflection:{local_date}"
+        with self._db:
+            self._db.execute(
+                """INSERT OR IGNORE INTO reflections
+                   (id, local_date, state, scheduled_at, created_at)
+                   VALUES (?, ?, 'pending', ?, ?)""",
+                (reflection_id, local_date, scheduled_at, now),
+            )
+            row = self._db.execute(
+                """SELECT * FROM reflections
+                   WHERE id=? AND state='pending' AND claimed_at IS NULL
+                     AND scheduled_at<=? AND COALESCE(retry_at, 0)<=?""",
+                (reflection_id, now, now),
+            ).fetchone()
+            if row is None:
+                return None
+            self._db.execute(
+                """UPDATE reflections SET state='running', claimed_at=?, error=NULL
+                   WHERE id=?""",
+                (now, reflection_id),
+            )
+        return dict(row)
+
+    def next_reflection_due_at(
+        self,
+        config: ReflectionConfig,
+        timezone: str,
+        now: float | None = None,
+    ) -> float | None:
+        if not config.enabled:
+            return None
+        now = time.time() if now is None else now
+        local_date, scheduled_at, scheduled = self._reflection_slot(
+            now, timezone, config.at
+        )
+        row = self._db.execute(
+            "SELECT state, retry_at FROM reflections WHERE local_date=?",
+            (local_date,),
+        ).fetchone()
+        if row is None:
+            return scheduled_at
+        if row["state"] == "pending":
+            return max(scheduled_at, float(row["retry_at"] or 0))
+        if row["state"] == "running":
+            return None
+        next_scheduled = scheduled + timedelta(days=1)
+        return next_scheduled.timestamp()
+
+    def release_reflection(
+        self, local_date: str, error: str, delay_seconds: float = 300
+    ) -> None:
+        now = time.time()
+        with self._db:
+            self._db.execute(
+                """UPDATE reflections SET state='pending', claimed_at=NULL,
+                   retry_at=?, error=? WHERE local_date=? AND state='running'""",
+                (now + delay_seconds, error[:500], local_date),
+            )
+
+    def reflection_source(
+        self, local_date: str, timezone: str, token_budget: int
+    ) -> dict[str, object]:
+        zone = ZoneInfo(timezone)
+        start = datetime.fromisoformat(f"{local_date}T00:00:00").replace(tzinfo=zone)
+        end = start + timedelta(days=1)
+        entries: list[tuple[float, str, str, bool, bool]] = []
+        for row in self._db.execute(
+            """SELECT role, content, created_at FROM messages
+               WHERE created_at>=? AND created_at<? ORDER BY created_at""",
+            (start.timestamp(), end.timestamp()),
+        ).fetchall():
+            owner = row["role"] == "user"
+            entries.append(
+                (
+                    float(row["created_at"]),
+                    "OWNER" if owner else "MOMOI",
+                    str(row["content"]),
+                    owner,
+                    owner,
+                )
+            )
+        for row in self._db.execute(
+            """SELECT a.tool_name, a.result_json, a.state, a.ok, t.started_at
+               FROM tool_audit AS a JOIN turns AS t ON t.id=a.turn_id
+               WHERE t.started_at>=? AND t.started_at<? ORDER BY t.started_at""",
+            (start.timestamp(), end.timestamp()),
+        ).fetchall():
+            result = str(row["result_json"] or row["state"])
+            entries.append(
+                (
+                    float(row["started_at"]),
+                    f"TOOL {row['tool_name']}",
+                    result[:4000],
+                    False,
+                    row["state"] == "completed" and bool(row["ok"]),
+                )
+            )
+        for row in self._db.execute(
+            """SELECT failure_reason, started_at FROM turns
+               WHERE started_at>=? AND started_at<? AND failure_reason IS NOT NULL""",
+            (start.timestamp(), end.timestamp()),
+        ).fetchall():
+            entries.append(
+                (
+                    float(row["started_at"]),
+                    "RUNTIME FAILURE",
+                    str(row["failure_reason"]),
+                    False,
+                    False,
+                )
+            )
+        selected: list[tuple[float, str, str, bool, bool]] = []
+        used = 0
+        for entry in sorted(entries, reverse=True):
+            line = f"[{entry[1]}]\n{entry[2]}"
+            size = estimate_tokens(line)
+            if selected and used + size > token_budget:
+                break
+            if not selected and size > token_budget:
+                entry = (*entry[:2], entry[2][:token_budget], *entry[3:])
+                size = estimate_tokens(f"[{entry[1]}]\n{entry[2]}")
+            selected.append(entry)
+            used += size
+        selected.reverse()
+        text = "\n\n".join(
+            f"[{label}]\n{content}" for _, label, content, _, _ in selected
+        )
+        owner_text = "\n".join(
+            content for _, _, content, owner, _ in selected if owner
+        )
+        knowledge_text = "\n".join(
+            content for _, _, content, _, knowledge in selected if knowledge
+        )
+        return {
+            "text": text,
+            "owner_text": owner_text,
+            "knowledge_text": knowledge_text,
+            "entries": len(selected),
+            "start_at": start.timestamp(),
+            "end_at": end.timestamp(),
+        }
+
+    def commit_reflection(
+        self,
+        local_date: str,
+        turn_id: str,
+        summary: str,
+        memories: list[dict[str, object]],
+    ) -> None:
+        reflection_id = f"reflection:{local_date}"
+        now = time.time()
+        with self._db:
+            self._db.execute(
+                """UPDATE reflections SET state='completed', claimed_at=NULL,
+                   retry_at=NULL, summary=?, memories_json=?, error=NULL,
+                   completed_at=? WHERE id=? AND state='running'""",
+                (
+                    summary,
+                    json.dumps(memories, ensure_ascii=False, separators=(",", ":")),
+                    now,
+                    reflection_id,
+                ),
+            )
+            for memory in memories:
+                self._db.execute(
+                    """INSERT INTO reflection_memories
+                       (kind, key, content, evidence, confidence,
+                        source_reflection_id, created_at, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                       ON CONFLICT(kind, key) DO UPDATE SET
+                         content=excluded.content,
+                         evidence=excluded.evidence,
+                         confidence=excluded.confidence,
+                         source_reflection_id=excluded.source_reflection_id,
+                         updated_at=excluded.updated_at""",
+                    (
+                        memory["kind"],
+                        memory["key"],
+                        memory["content"],
+                        memory["evidence"],
+                        memory["confidence"],
+                        reflection_id,
+                        now,
+                        now,
+                    ),
+                )
+            self._db.execute(
+                """UPDATE turns SET state='completed', stage='completed',
+                   failure_reason=NULL, updated_at=? WHERE id=?""",
+                (now, turn_id),
+            )
+
+    def reflection(self, local_date: str) -> dict[str, object] | None:
+        row = self._db.execute(
+            "SELECT * FROM reflections WHERE local_date=?", (local_date,)
+        ).fetchone()
+        return dict(row) if row else None
+
     def goal(self, goal_id: str) -> dict[str, object] | None:
         row = self._db.execute("SELECT * FROM goals WHERE id=?", (goal_id,)).fetchone()
         return self._goal_dict(row) if row else None
@@ -1708,6 +1971,46 @@ class Store:
             lines.append(line)
             used_tokens += line_tokens
         return "\n".join(lines)
+
+    def reflection_memory_context(
+        self, query: str, max_results: int, token_budget: int
+    ) -> str:
+        if max_results <= 0 or token_budget <= 0:
+            return ""
+        query_units = lexical_units(query)
+        core_kinds = {"owner_profile", "self_insight", "relationship", "practice"}
+        ranked: list[tuple[float, sqlite3.Row]] = []
+        for row in self._db.execute(
+            """SELECT kind, key, content, confidence FROM reflection_memories
+               ORDER BY updated_at DESC"""
+        ).fetchall():
+            units = lexical_units(f"{row['key']} {row['content']}")
+            overlap = len(query_units & units)
+            core = row["kind"] in core_kinds
+            if not core and overlap == 0:
+                continue
+            lexical_score = overlap / max(
+                1, math.sqrt(len(query_units) * len(units))
+            )
+            score = lexical_score + float(row["confidence"]) * 0.1 + (
+                1.0 if core else 0.0
+            )
+            ranked.append((score, row))
+        ranked.sort(key=lambda item: item[0], reverse=True)
+        lines = [
+            "These are fallible, lower-authority daily learnings; use them only when "
+            "compatible with the system contract, Soul, current owner intent, and "
+            "confirmed owner memory."
+        ]
+        used = estimate_tokens(lines[0])
+        for _, row in ranked[:max_results]:
+            line = f"- [{row['kind']}:{row['key']}] {row['content']}"
+            size = estimate_tokens(line)
+            if len(lines) > 1 and used + size > token_budget:
+                break
+            lines.append(line)
+            used += size
+        return "\n".join(lines) if len(lines) > 1 else ""
 
     def memory_conflicts_context(self, token_budget: int = 4000) -> str:
         if token_budget <= 0:

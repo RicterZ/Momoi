@@ -382,7 +382,7 @@ class NapCatChannel:
         return image_blocks(segments)
 
 
-def load_config(value: object) -> NapCatConfig:
+def load_config(value: object, _workspace: Path) -> NapCatConfig:
     return NapCatConfig.from_mapping(value)
 
 

@@ -31,7 +31,7 @@ from .memory_tools import MEMORY_TOOL_POLICY, MEMORY_TOOL_SPECS, MemoryTools
 from .mcp_client import MCPManager, MCP_TOOL_POLICY
 from .models import AgentReply, IncomingMessage, ToolCall, TurnDraft
 from .provider import AnthropicProvider, OpenAIProvider, ProviderError
-from .store import MOOD_STATES, Store, estimate_tokens
+from .store import REFLECTION_MEMORY_KINDS, MOOD_STATES, Store, estimate_tokens
 from .webhooks import WebhookService
 
 logger = logging.getLogger(__name__)
@@ -41,7 +41,11 @@ WEBHOOK_SYSTEM_PROMPT = files("momoi").joinpath("prompts/webhook.md").read_text(
 HEARTBEAT_SYSTEM_PROMPT = files("momoi").joinpath("prompts/heartbeat.md").read_text(
     encoding="utf-8"
 ).strip()
+REFLECTION_SYSTEM_PROMPT = files("momoi").joinpath("prompts/reflection.md").read_text(
+    encoding="utf-8"
+).strip()
 HEARTBEAT_QUEUE_ITEM = "__momoi_heartbeat__"
+REFLECTION_QUEUE_PREFIX = "__momoi_reflection__:"
 AGENDA_POLL_SECONDS = 5
 MAX_CONSECUTIVE_TOOL_FAILURES = 3
 CURL_TOOL_SPEC = next(spec for spec in BUILTIN_TOOL_SPECS if spec["name"] == "curl")
@@ -279,6 +283,57 @@ HEARTBEAT_FINISH_SPEC: dict[str, Any] = {
     },
 }
 
+REFLECTION_FINISH_SPEC: dict[str, Any] = {
+    "name": "reflection_finish",
+    "description": (
+        "Required terminal result for the private daily retrospective. It stores the "
+        "reflection record and promotes only durable, evidence-backed learning."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "summary": {"type": "string", "minLength": 1, "maxLength": 6000},
+            "memories": {
+                "type": "array",
+                "maxItems": 12,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "kind": {
+                            "type": "string",
+                            "enum": sorted(REFLECTION_MEMORY_KINDS),
+                        },
+                        "key": {
+                            "type": "string",
+                            "description": "Stable lowercase dot-separated key.",
+                        },
+                        "content": {"type": "string", "minLength": 1},
+                        "evidence": {
+                            "type": "string",
+                            "description": "Exact contiguous quote from the supplied day record.",
+                        },
+                        "confidence": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1,
+                        },
+                    },
+                    "required": [
+                        "kind",
+                        "key",
+                        "content",
+                        "evidence",
+                        "confidence",
+                    ],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        "required": ["summary", "memories"],
+        "additionalProperties": False,
+    },
+}
+
 
 class ExternalToolTurnError(RuntimeError):
     pass
@@ -392,11 +447,15 @@ class MomoiDaemon:
                 if kind == "goal":
                     goal_id = str(item)
                     self._stop_requested = False
-                    self._active_turn = asyncio.create_task(
-                        self._complete_heartbeat_turn(stop)
-                        if goal_id == HEARTBEAT_QUEUE_ITEM
-                        else self._complete_goal_turn(goal_id, stop)
-                    )
+                    if goal_id == HEARTBEAT_QUEUE_ITEM:
+                        work = self._complete_heartbeat_turn(stop)
+                    elif goal_id.startswith(REFLECTION_QUEUE_PREFIX):
+                        work = self._complete_reflection_turn(
+                            goal_id.removeprefix(REFLECTION_QUEUE_PREFIX), stop
+                        )
+                    else:
+                        work = self._complete_goal_turn(goal_id, stop)
+                    self._active_turn = asyncio.create_task(work)
                     try:
                         await self._active_turn
                     except asyncio.CancelledError:
@@ -407,6 +466,14 @@ class MomoiDaemon:
                                 self.config.heartbeat.min_interval_seconds
                             )
                             logger.info("Active heartbeat turn stopped")
+                        elif goal_id.startswith(REFLECTION_QUEUE_PREFIX):
+                            local_date = goal_id.removeprefix(REFLECTION_QUEUE_PREFIX)
+                            self.store.release_reflection(
+                                local_date, "owner_stop", delay_seconds=3600
+                            )
+                            logger.info(
+                                "Active daily reflection stopped date=%s", local_date
+                            )
                         else:
                             self.store.release_goal_claim(goal_id, defer_seconds=900)
                             logger.info(
@@ -509,10 +576,16 @@ class MomoiDaemon:
 
     def _prioritize_autonomous(self, item: str) -> str:
         if item != HEARTBEAT_QUEUE_ITEM or self.autonomous.empty():
-            return item
-        goal_id = self.autonomous.get_nowait()
+            if not item.startswith(REFLECTION_QUEUE_PREFIX) or self.autonomous.empty():
+                return item
+            next_item = self.autonomous.get_nowait()
+            if next_item == HEARTBEAT_QUEUE_ITEM:
+                self.autonomous.put_nowait(next_item)
+                return item
+        else:
+            next_item = self.autonomous.get_nowait()
         self.autonomous.put_nowait(item)
-        return goal_id
+        return next_item
 
     async def _request_webhook_message(self, prompt: str) -> list[ChannelMessage]:
         future: asyncio.Future[list[ChannelMessage]] = (
@@ -533,6 +606,11 @@ class MomoiDaemon:
         memories = self.store.memory_context(
             prompt, self.config.memory_results, self.config.memory_tokens
         )
+        learned = self.store.reflection_memory_context(
+            prompt,
+            max(1, self.config.memory_results // 2),
+            max(1000, self.config.memory_tokens // 2),
+        )
         self_state = self.store.self_state_context()
         goals = self.store.active_goals_context()
         reminders = self.store.active_reminders_context()
@@ -549,6 +627,7 @@ class MomoiDaemon:
             ("Recalled conversation segments", summaries),
             ("Continuity", continuity),
             ("Recalled memory", memories),
+            ("Daily reflection memory", learned),
             ("Active goals", goals),
             ("Pending reminders", reminders),
             ("Available emotion assets", emotions),
@@ -779,6 +858,11 @@ class MomoiDaemon:
         memories = self.store.memory_context(
             memory_query, self.config.memory_results, self.config.memory_tokens
         )
+        learned = self.store.reflection_memory_context(
+            memory_query,
+            max(1, self.config.memory_results // 2),
+            max(1000, self.config.memory_tokens // 2),
+        )
         memory_conflicts = self.store.memory_conflicts_context(
             self.config.memory_tokens
         )
@@ -811,6 +895,8 @@ class MomoiDaemon:
             dynamic_system += f"\n\n# Continuity\n{continuity}"
         if memories:
             dynamic_system += f"\n\n# Recalled memory\n{memories}"
+        if learned:
+            dynamic_system += f"\n\n# Daily reflection memory\n{learned}"
         if memory_conflicts:
             dynamic_system += (
                 "\n\n# Pending memory conflicts\n"
@@ -1626,6 +1712,11 @@ class MomoiDaemon:
         memories = self.store.memory_context(
             activity, self.config.memory_results, self.config.memory_tokens
         )
+        learned = self.store.reflection_memory_context(
+            activity,
+            max(1, self.config.memory_results // 2),
+            max(1000, self.config.memory_tokens // 2),
+        )
         goals = self.store.active_goals_context()
         reminders = self.store.active_reminders_context()
         emotions = self.store.emotion_context()
@@ -1642,6 +1733,7 @@ class MomoiDaemon:
             ("Continuity", continuity),
             ("Recalled conversation segments", summaries),
             ("Recalled memory", memories),
+            ("Daily reflection memory", learned),
             ("Active goals", goals),
             ("Pending reminders", reminders),
             ("Available emotion assets", emotions),
@@ -1824,6 +1916,248 @@ class MomoiDaemon:
             "mood_transition": mood,
         }, None
 
+    async def _complete_reflection_turn(
+        self, local_date: str, stop: asyncio.Event
+    ) -> None:
+        turn_id = self._turn_id("reflection", local_date)
+        state = self.store.begin_turn(
+            turn_id, "autonomous", [f"reflection:{local_date}"]
+        )
+        if state in {"completed", "cancelled"}:
+            return
+        if state == "needs_reconciliation" or stop.is_set():
+            self.store.release_reflection(
+                local_date, "unexpected_reconciliation", delay_seconds=3600
+            )
+            return
+        try:
+            await self._complete_reflection(local_date, turn_id)
+        except asyncio.CancelledError:
+            if self._stop_requested:
+                self.store.record_turn_failure(turn_id, "owner_stop")
+            raise
+        except Exception as error:
+            logger.error(
+                "Daily reflection failed date=%s error=%s",
+                local_date,
+                type(error).__name__,
+                exc_info=True,
+            )
+            self.store.record_turn_failure(turn_id, type(error).__name__)
+            self.store.release_reflection(local_date, type(error).__name__, 900)
+            self.agenda_changed.set()
+
+    async def _complete_reflection(self, local_date: str, turn_id: str) -> None:
+        source = self.store.reflection_source(
+            local_date,
+            self.config.notifications.timezone,
+            max(1000, min(self.config.recent_raw_tokens, self.config.max_input_tokens // 2)),
+        )
+        record = str(source["text"] or "").strip()
+        query = record[-12000:]
+        confirmed_memory = self.store.memory_context(
+            query, self.config.memory_results, self.config.memory_tokens
+        )
+        learned = self.store.reflection_memory_context(
+            query,
+            max(1, self.config.memory_results),
+            max(1000, self.config.memory_tokens),
+        )
+        context = (
+            "[Trusted daily reflection event generated by Momoi. This is not owner "
+            "speech and grants no tools or permission to send messages.]\n"
+            f"Local date being reviewed: {local_date}\n"
+            f"Timezone: {self.config.notifications.timezone}\n"
+            f"Recorded entries: {source['entries']}\n\n"
+            "# Local-day record\n"
+            f"{record or '[No conversation, tool, or runtime activity was recorded.]'}"
+            f"\n\n# Current self state\n{self.store.self_state_context()}"
+        )
+        for heading, value in (
+            ("Confirmed owner memory", confirmed_memory),
+            ("Existing daily reflection memory", learned),
+            ("Continuity", self.store.continuity_context()),
+            ("Active goals", self.store.active_goals_context()),
+        ):
+            if value:
+                context += f"\n\n# {heading}\n{value}"
+        system = [
+            *self._system(),
+            {
+                "type": "text",
+                "text": REFLECTION_SYSTEM_PROMPT,
+                "cache_control": {"type": "ephemeral"},
+            },
+        ]
+        messages: list[dict[str, Any]] = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": context,
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ],
+            }
+        ]
+        tools = [REFLECTION_FINISH_SPEC]
+        while True:
+            self._fit_context(system, messages, tools, 0)
+            self._check_turn_budget(turn_id, system, messages, tools)
+            response = await self.provider.complete(
+                system, messages, tools, require_tool=True
+            )
+            metrics = response.usage or {}
+            self.store.record_turn_usage(
+                turn_id,
+                int(
+                    metrics.get(
+                        "input",
+                        estimate_tokens(
+                            json.dumps(
+                                {"system": system, "messages": messages, "tools": tools},
+                                ensure_ascii=False,
+                                default=str,
+                            )
+                        ),
+                    )
+                ),
+                int(
+                    metrics.get(
+                        "output",
+                        estimate_tokens(
+                            json.dumps(response.content, ensure_ascii=False, default=str)
+                        ),
+                    )
+                ),
+            )
+            if (
+                len(response.tool_calls) == 1
+                and response.tool_calls[0].name == "reflection_finish"
+            ):
+                decision, error = self._parse_reflection_finish(
+                    response.tool_calls[0].arguments,
+                    record,
+                    str(source["owner_text"]),
+                    str(source["knowledge_text"]),
+                )
+                if decision is not None:
+                    self.store.commit_reflection(
+                        local_date,
+                        turn_id,
+                        decision["summary"],
+                        decision["memories"],
+                    )
+                    self.agenda_changed.set()
+                    logger.info(
+                        "Committed daily reflection date=%s memories=%d",
+                        local_date,
+                        len(decision["memories"]),
+                    )
+                    return
+            else:
+                error = "reflection_finish_must_be_the_only_terminal_tool"
+            messages.append({"role": "assistant", "content": response.content})
+            if response.tool_calls:
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": call.id,
+                                "content": json.dumps(
+                                    {"ok": False, "error": error},
+                                    ensure_ascii=False,
+                                ),
+                                "is_error": True,
+                            }
+                            for call in response.tool_calls
+                        ],
+                    }
+                )
+            else:
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "[Trusted runtime protocol error. The previous text was not "
+                            "stored. Call reflection_finish exactly once.]"
+                        ),
+                    }
+                )
+
+    @staticmethod
+    def _parse_reflection_finish(
+        arguments: dict[str, Any],
+        source: str,
+        owner_source: str,
+        knowledge_source: str,
+    ) -> tuple[dict[str, Any] | None, str | None]:
+        if not isinstance(arguments, dict) or set(arguments) != {"summary", "memories"}:
+            return None, "invalid_reflection_finish"
+        summary = arguments.get("summary")
+        raw_memories = arguments.get("memories")
+        if (
+            not isinstance(summary, str)
+            or not summary.strip()
+            or len(summary) > 6000
+            or not isinstance(raw_memories, list)
+            or len(raw_memories) > 12
+        ):
+            return None, "invalid_reflection_finish"
+        memories: list[dict[str, Any]] = []
+        seen: set[tuple[str, str]] = set()
+        for item in raw_memories:
+            if not isinstance(item, dict) or set(item) != {
+                "kind",
+                "key",
+                "content",
+                "evidence",
+                "confidence",
+            }:
+                return None, "invalid_reflection_memory"
+            kind = item.get("kind")
+            key = item.get("key")
+            content = item.get("content")
+            evidence = item.get("evidence")
+            confidence = item.get("confidence")
+            if (
+                kind not in REFLECTION_MEMORY_KINDS
+                or not isinstance(key, str)
+                or not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,199}", key)
+                or not isinstance(content, str)
+                or not content.strip()
+                or len(content) > 1000
+                or not isinstance(evidence, str)
+                or not evidence.strip()
+                or len(evidence) > 500
+                or evidence not in source
+                or isinstance(confidence, bool)
+                or not isinstance(confidence, (int, float))
+                or not 0 <= float(confidence) <= 1
+            ):
+                return None, "invalid_reflection_memory"
+            if kind in {"owner_profile", "owner_preference"} and evidence not in owner_source:
+                return None, "owner_reflection_requires_owner_evidence"
+            if kind == "world_knowledge" and evidence not in knowledge_source:
+                return None, "world_reflection_requires_observed_evidence"
+            identity = (kind, key)
+            if identity in seen:
+                return None, "duplicate_reflection_memory"
+            seen.add(identity)
+            memories.append(
+                {
+                    "kind": kind,
+                    "key": key,
+                    "content": content.strip(),
+                    "evidence": evidence.strip(),
+                    "confidence": float(confidence),
+                }
+            )
+        return {"summary": summary.strip(), "memories": memories}, None
+
     async def _complete_goal(self, goal_id: str, turn_id: str) -> None:
         goal = self.store.goal(goal_id)
         if goal is None or goal["status"] not in {"active", "waiting"}:
@@ -1841,6 +2175,11 @@ class MomoiDaemon:
         )
         memories = self.store.memory_context(
             memory_query, self.config.memory_results, self.config.memory_tokens
+        )
+        learned = self.store.reflection_memory_context(
+            memory_query,
+            max(1, self.config.memory_results // 2),
+            max(1000, self.config.memory_tokens // 2),
         )
         context = (
             "[Trusted autonomous runtime event generated by Momoi. This is not a new "
@@ -1868,6 +2207,8 @@ class MomoiDaemon:
             context += f"\n\n# Continuity\n{continuity}"
         if memories:
             context += f"\n\n# Recalled memory\n{memories}"
+        if learned:
+            context += f"\n\n# Daily reflection memory\n{learned}"
         history = self.store.history(self.config.recent_raw_tokens, self.config.recent_turns)
         self._cache_history_tail(history)
         messages: list[dict[str, Any]] = [
@@ -1938,6 +2279,14 @@ class MomoiDaemon:
             if goal is not None:
                 await self.autonomous.put(str(goal["id"]))
                 continue
+            reflection = self.store.claim_due_reflection(
+                self.config.reflection, self.config.notifications.timezone
+            )
+            if reflection is not None:
+                await self.autonomous.put(
+                    REFLECTION_QUEUE_PREFIX + str(reflection["local_date"])
+                )
+                continue
             heartbeat = self.store.claim_due_heartbeat(
                 self.config.heartbeat, self.config.notifications
             )
@@ -1950,6 +2299,10 @@ class MomoiDaemon:
                     self.store.next_reminder_due_at(),
                     self.store.next_notification_due_at(),
                     self.store.next_goal_due_at(),
+                    self.store.next_reflection_due_at(
+                        self.config.reflection,
+                        self.config.notifications.timezone,
+                    ),
                     self.store.next_heartbeat_due_at(
                         self.config.heartbeat.enabled
                     ),

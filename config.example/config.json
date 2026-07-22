@@ -58,6 +58,10 @@
     "max_interval_seconds": 21600,
     "max_daily_turns": 12
   },
+  "reflection": {
+    "enabled": true,
+    "at": "03:00"
+  },
   "webhooks": {
     "enabled": false,
     "host": "127.0.0.1",

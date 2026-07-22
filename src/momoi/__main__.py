@@ -10,6 +10,7 @@ from importlib.metadata import version
 from pathlib import Path
 
 from .agenda_tools import AgendaTools
+from .channel import login_channel
 from .config import ConfigError, load_config
 from .daemon import MomoiDaemon
 from .models import ToolCall, TurnDraft
@@ -27,6 +28,11 @@ def parse_args() -> argparse.Namespace:
     )
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("run", help="run the Momoi daemon")
+    channel_parser = commands.add_parser("channel", help="manage the active channel")
+    channel_commands = channel_parser.add_subparsers(
+        dest="channel_command", required=True
+    )
+    channel_commands.add_parser("login", help="authenticate the active channel")
     emotion_parser = commands.add_parser("emotion", help="manage emotion image assets")
     emotion_commands = emotion_parser.add_subparsers(
         dest="emotion_command", required=True
@@ -215,11 +221,19 @@ async def run(config_path: str | Path) -> None:
     await MomoiDaemon(config).run(stop)
 
 
+async def channel(args: argparse.Namespace) -> None:
+    config = load_config(args.workspace / "config.json")
+    if args.channel_command == "login":
+        await login_channel(config.channel)
+
+
 def main() -> None:
     args = parse_args()
     try:
         if args.command == "run":
             asyncio.run(run(args.workspace / "config.json"))
+        elif args.command == "channel":
+            asyncio.run(channel(args))
         elif args.command == "emotion":
             emotion(args)
         elif args.command == "goal":

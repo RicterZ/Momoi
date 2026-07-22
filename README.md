@@ -2,9 +2,9 @@
 
 EN | [中文](./README.zh-CN.md)
 
-> A persistent personal AI companion for QQ — with memory, agency, mood, and a life rhythm of her own.
+> A persistent personal AI companion for private chat — with memory, agency, mood, and a life rhythm of her own.
 
-Momoi is a headless, single-owner AI agent that lives in QQ private chat. She can talk naturally, remember shared context, use tools, manage long-running tasks, react to events from your home and services, and decide when it is genuinely worth starting a conversation.
+Momoi is a headless, single-owner AI agent that lives in private chat through NapCat/QQ or Tencent Weixin iLink. She can talk naturally, remember shared context, use tools, manage long-running tasks, react to events from your home and services, and decide when it is genuinely worth starting a conversation.
 
 The goal is not to build another question-and-answer bot. The goal is to create one continuous person who can stay with you, understand what is happening, and get things done.
 
@@ -25,7 +25,7 @@ Most chatbots are stateless request handlers with a personality prompt attached.
 
 ```mermaid
 flowchart LR
-  owner["Owner · QQ private chat"] --> momoi
+  owner["Owner · private chat"] --> momoi
   events["Home and internet events"] --> momoi
   time["Goals · reminders · heartbeat"] --> momoi
   momoi["Momoi<br/>identity · context · memory · mood · planning"] <--> tools["MCP and tools"]
@@ -46,7 +46,7 @@ They share the same identity and relevant context. A webhook notification should
 
 ## Core experience
 
-### Natural QQ conversation
+### Natural private conversation
 
 Momoi treats consecutive messages as one evolving thought. If you send a correction or an extra detail before she starts, it becomes part of the same request.
 
@@ -103,6 +103,7 @@ Momoi separates different kinds of future behavior:
 | Reminder | “Remind me to stretch in one hour” | Delivers known content at the requested time |
 | Goal | “Every morning, check the weather and give me a riding recommendation” | Wakes up, gathers fresh information, reasons, and continues the task |
 | Heartbeat | Momoi's own activity and initiative | May start a relevant conversation or remain silent |
+| Reflection | Form durable learning each day | Reviews the day that just ended without sending a message |
 | Webhook | An external event happened | Handles the predefined event workflow in Momoi's normal voice |
 
 Goal and Heartbeat notifications respect quiet hours, cooldowns, daily budgets, and pending owner messages. Silence is a valid decision; Heartbeat is not a scheduled “Are you there?” generator.
@@ -118,8 +119,9 @@ Goal and Heartbeat notifications respect quiet hours, cooldowns, daily budgets, 
 - Create one-time and recurring reminders
 - Create and progressively execute persistent goals
 - Receive event workflows from Home Assistant, Jellyfin, cameras, and other services
-- Send text, rich QQ messages, and managed image reactions
+- Send text, channel-native media, and managed image reactions
 - Maintain mood and activity across conversations
+- Reflect daily on the owner, the world, herself, and execution lessons, then retain sourced learning
 - Proactively speak through bounded heartbeats
 - Stop active work with `/stop`
 - Recover safely when an external action has an uncertain outcome
@@ -130,7 +132,7 @@ Goal and Heartbeat notifications respect quiet hours, cooldowns, daily budgets, 
 
 - Python 3.12 or newer
 - [uv](https://docs.astral.sh/uv/)
-- A working NapCat WebSocket connection
+- Either a working NapCat WebSocket connection or a Weixin account that can scan the iLink login QR code
 - An Anthropic Messages-compatible or OpenAI Chat Completions-compatible LLM endpoint
 
 ### Install the CLI
@@ -154,8 +156,7 @@ cp -R config.example/. ~/.momoi/
 Edit `~/.momoi/config.json` and set:
 
 - Your LLM API format, endpoint, key, and model
-- Your NapCat WebSocket URL
-- The QQ number of the single owner
+- Either your NapCat WebSocket URL and owner QQ number, or the `weixin` channel settings from [CONFIG.md](./docs/CONFIG.md)
 - Your local timezone
 
 ### Run
@@ -164,7 +165,13 @@ Edit `~/.momoi/config.json` and set:
 momoi run
 ```
 
-When the log shows `NapCat connected`, send a private QQ message from the configured owner account.
+For Weixin, authenticate once before the first run:
+
+```bash
+momoi channel login
+```
+
+Then start Momoi and send a private message from the configured or linked owner account. See [Channel configuration](./docs/CONFIG.md#channel) for both alternatives.
 
 To use another workspace:
 
@@ -227,13 +234,13 @@ Use `--at` for a future one-time review or `--every-seconds` for a recurring int
 
 ## Owner controls
 
-Send `/stop` in QQ to cancel the current task. Momoi stops the work and understands that the owner interrupted it.
+Send `/stop` in the active private chat to cancel the current task. Momoi stops the work and understands that the owner interrupted it.
 
 If an external action was dispatched but its result became uncertain, Momoi will ask the owner to confirm the real state before continuing. She will not repeat the action just because the process restarted.
 
 ## Current scope
 
-- One trusted owner and QQ private chat only
+- One trusted owner and one active private-chat channel only
 - No group-chat or multi-user isolation
 - No TUI or web administration interface
 - Designed for a trusted personal environment

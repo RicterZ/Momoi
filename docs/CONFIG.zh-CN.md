@@ -44,6 +44,8 @@ MCP 是添加由模型控制能力的常规方式。工作流用于事件驱动�
 │   └── *.yaml
 ├── workflow-executors.yaml
 ├── emotion/
+├── channel/
+│   └── weixin/       # 仅使用微信渠道时创建
 └── data/
 ```
 
@@ -83,7 +85,7 @@ MCP 是添加由模型控制能力的常规方式。工作流用于事件驱动�
 
 ## Channel
 
-NapCat 是内置的默认 Channel 插件，实现在 `momoi.channel.napcat`。`plugin` 标识适配器，协议专属配置放在 `settings` 下。
+Momoi 同一时间只运行一个 Channel 插件。示例默认使用 `napcat`，`weixin` 是原生腾讯 iLink 备选渠道。`plugin` 标识适配器，协议专属配置放在 `settings` 下。
 
 ```json
 {
@@ -118,9 +120,41 @@ NapCat 是内置的默认 Channel 插件，实现在 `momoi.channel.napcat`。`p
 
 6 秒可以把一组自然连续的短消息一起处理。只有在开发时更看重反馈速度而不是消息收集时，才建议降到 1 秒。
 
+### 微信（腾讯 iLink）
+
+用下面内容完整替换 `channel` 对象；不要和 NapCat 同时配置：
+
+```json
+{
+  "channel": {
+    "plugin": "weixin",
+    "settings": {
+      "quiet_seconds": 6,
+      "max_batch_seconds": 60,
+      "reconnect_max_seconds": 30,
+      "send_timeout_seconds": 20,
+      "media_max_bytes": 104857600
+    }
+  }
+}
+```
+
+在同一个 workspace 中扫码登录一次，再运行 daemon：
+
+```bash
+momoi --workspace ~/.momoi channel login
+momoi --workspace ~/.momoi run
+```
+
+登录命令会在终端打印二维码。凭据、更新游标和最新对话 context token 会以原子写入、权限 `0600` 的方式保存在 `channel/weixin/state.json`。解密后的入站附件保存在 `channel/weixin/media/inbound/`；它们都属于需要保护和备份的 workspace 数据。
+
+微信渠道可接收文本、引用、图片、视频、文件和语音。图片会交给支持视觉的模型，其他媒体以本地附件描述进入上下文；优先使用服务端语音转写，无转写时保留原始 SILK。可发送文本、图片、视频和文件；出站音频按文件附件发送。`media_max_bytes` 是入站下载，以及出站本地路径、HTTP(S) 或 `base64://` 来源的正整数大小上限。
+
+该实现按腾讯 MIT 许可的 [`@tencent-weixin/openclaw-weixin` 2.4.6](https://github.com/Tencent/openclaw-weixin) 协议行为实现。使用微信与 iLink 仍须遵守适用的腾讯及微信服务条款。Momoi 仅支持一个已绑定账号及扫码的唯一主人，不支持群聊或多账号同时在线。
+
 ### 接入新的 Channel
 
-一个 Channel 插件对应 `momoi.channel` 下的一个模块，并导出 `load_config(value)` 与 `create_channel(config)`。创建出的 Channel 提供 `name`、运行时 prompt 上下文、消息批处理时间、`run`、`send_message`、`content_blocks` 和 Workflow 变量。入站事件用插件名标识来源，因此 NapCat 事件使用 `napcat:`；`qq:` 留给未来的 QQ 官方 AI Bot 插件。
+一个 Channel 插件对应 `momoi.channel` 下的一个模块或 package，并导出 `load_config(value, workspace)` 与 `create_channel(config)`。创建出的 Channel 提供 `name`、运行时 prompt 上下文、消息批处理时间、`run`、`send_message`、`content_blocks` 和 Workflow 变量。入站事件用插件名标识来源，因此 NapCat 事件使用 `napcat:`，微信事件使用 `weixin:`；`qq:` 留给未来的 QQ 官方 AI Bot 插件。
 
 协议专属的解析、内容渲染和连接日志都留在插件模块内。daemon、store 与 webhook 层只使用通用 Channel 接口。
 
@@ -316,6 +350,21 @@ MCP 环境值、远程 URL 和 header 支持从 Momoi 进程环境展开 `${VARI
 | `max_daily_turns` | `12` | 每个本地日的心跳评估上限 |
 
 间隔必须为正数，最大值不能小于最小值。即使某次心跳保持沉默，也会计入评估次数。
+
+## 每日复盘
+
+```json
+{
+  "reflection": {
+    "enabled": true,
+    "at": "03:00"
+  }
+}
+```
+
+复盘使用 `notifications.timezone`，在每天本地时间 `03:00` 回顾刚结束的自然日。`at` 接受 `HH:MM`，默认值为 `03:00`；未配置时默认关闭，示例 workspace 默认开启。
+
+复盘不会联系主人或获得外部工具。完整摘要和候选学习保存在 SQLite 的 `reflections` 表；筛选后的长期学习保存在 `reflection_memories`，并以低于主人原话记忆的权限进入后续上下文。主人画像和偏好只有在复盘项包含当天主人原文证据时才会写入。
 
 ## Webhook
 

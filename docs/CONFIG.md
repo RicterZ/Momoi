@@ -44,6 +44,8 @@ Relative paths in `config.json` are resolved from the directory containing that 
 │   └── *.yaml
 ├── workflow-executors.yaml
 ├── emotion/
+├── channel/
+│   └── weixin/       # created only when the Weixin channel is used
 └── data/
 ```
 
@@ -83,7 +85,7 @@ For Anthropic-compatible providers, Momoi calls `/v1/messages`. For OpenAI-compa
 
 ## Channel
 
-NapCat is the built-in default Channel plugin, implemented in `momoi.channel.napcat`. `plugin` identifies the adapter; its protocol-specific values stay under `settings`.
+Momoi runs one Channel plugin at a time. `napcat` is the example default; `weixin` is the native Tencent iLink alternative. `plugin` identifies the adapter and its protocol-specific values stay under `settings`.
 
 ```json
 {
@@ -118,9 +120,41 @@ All timing fields in `channel.settings` must be positive.
 
 Six seconds lets a natural sequence of short messages be handled together. Lower it to one second only when faster development feedback matters more than message collection.
 
+### Weixin (Tencent iLink)
+
+Replace the complete `channel` object with the following; do not configure it alongside NapCat:
+
+```json
+{
+  "channel": {
+    "plugin": "weixin",
+    "settings": {
+      "quiet_seconds": 6,
+      "max_batch_seconds": 60,
+      "reconnect_max_seconds": 30,
+      "send_timeout_seconds": 20,
+      "media_max_bytes": 104857600
+    }
+  }
+}
+```
+
+Authenticate once in the same workspace, then run the daemon:
+
+```bash
+momoi --workspace ~/.momoi channel login
+momoi --workspace ~/.momoi run
+```
+
+The login command prints a QR code in the terminal. Credentials, the update cursor, and the latest conversation context token are stored atomically with mode `0600` in `channel/weixin/state.json`. Decrypted inbound attachments are stored in `channel/weixin/media/inbound/`; protect and back up these files as part of the workspace.
+
+Weixin receives text, quotes, images, video, files, and voice. Images are supplied to vision-capable models; other media are represented by local attachment descriptions. Server voice transcription is preferred, with raw SILK retained when no transcript is available. It sends text, images, video, and files; outbound audio is sent as a file attachment. `media_max_bytes` is a positive byte limit for inbound downloads and outbound local, HTTP(S), or `base64://` sources.
+
+This implementation follows Tencent's MIT-licensed [`@tencent-weixin/openclaw-weixin` 2.4.6](https://github.com/Tencent/openclaw-weixin) protocol behavior. Use of Weixin and iLink remains subject to the applicable Tencent and Weixin service terms. Momoi supports one linked account and its single scanning owner, not groups or multiple simultaneous accounts.
+
 ### Adding a Channel
 
-A Channel plugin is one module under `momoi.channel`. It exports `load_config(value)` and `create_channel(config)`. The created Channel supplies its `name`, runtime prompt context, batch timing, `run`, `send_message`, `content_blocks`, and Workflow variables. Incoming events identify their source with the plugin name, so NapCat events use `napcat:`; `qq:` remains available for an official QQ AI Bot plugin.
+A Channel plugin is one module or package under `momoi.channel`. It exports `load_config(value, workspace)` and `create_channel(config)`. The created Channel supplies its `name`, runtime prompt context, batch timing, `run`, `send_message`, `content_blocks`, and Workflow variables. Incoming events identify their source with the plugin name, so NapCat events use `napcat:` and Weixin events use `weixin:`; `qq:` remains available for an official QQ AI Bot plugin.
 
 Protocol-specific parsing, content rendering, and connection logs belong in that plugin module. The daemon, store, and webhook layers use only the common Channel interface.
 
@@ -316,6 +350,21 @@ This policy applies to proactive Goal and Heartbeat notifications. A fixed Remin
 | `max_daily_turns` | `12` | Maximum heartbeat evaluations per local day |
 
 Intervals must be positive, and the maximum must not be smaller than the minimum. A silent heartbeat still counts as an evaluation.
+
+## Daily reflection
+
+```json
+{
+  "reflection": {
+    "enabled": true,
+    "at": "03:00"
+  }
+}
+```
+
+Reflection uses `notifications.timezone` and reviews the local calendar day that just ended at `03:00`. `at` accepts `HH:MM` and defaults to `03:00`; the feature is disabled when omitted, while the example workspace enables it.
+
+Reflection never contacts the owner or receives external tools. The complete summary and candidate learning are stored in SQLite `reflections`; promoted durable learning is stored in `reflection_memories` and enters later context below confirmed owner memory. Owner profile and preference items are accepted only when they quote owner text from that day.
 
 ## Webhooks
 

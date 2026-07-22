@@ -69,6 +69,59 @@ class WebhooksTest(unittest.TestCase):
                 channel_variables,
             )
 
+    def test_incompatible_channel_executor_only_disables_its_workflow(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            workflows_path = root / "workflows"
+            workflows_path.mkdir()
+            (root / "executors.yaml").write_text(
+                """version: 1
+executors:
+  napcat-send:
+    parameters: {}
+    argv: [nap-msg, '${config.owner_qq}']
+    env: {}
+""",
+                encoding="utf-8",
+            )
+            (workflows_path / "camera.yaml").write_text(
+                """version: 1
+id: camera-event
+inputs: {}
+steps:
+  - id: send
+    uses: exec
+    executor: napcat-send
+    args: {}
+""",
+                encoding="utf-8",
+            )
+            (workflows_path / "event.yaml").write_text(
+                """version: 1
+id: event-message
+inputs:
+  event_prompt: {type: string, required: true}
+steps:
+  - id: notify
+    uses: message
+    prompt: '${inputs.event_prompt}'
+""",
+                encoding="utf-8",
+            )
+
+            with self.assertLogs("momoi.webhooks", level="WARNING") as logs:
+                workflows, executors = load_catalog(
+                    workflows_path,
+                    root / "executors.yaml",
+                    {"weixin_user_id"},
+                )
+            self.assertEqual(set(workflows), {"event-message"})
+            self.assertEqual(executors, {})
+            self.assertIn(
+                "Skipping incompatible workflow executor napcat-send", logs.output[0]
+            )
+            self.assertTrue(any("camera-event" in item for item in logs.output))
+
 
 class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
     async def test_webhook_event_turn_can_curl_before_sending_message(self) -> None:

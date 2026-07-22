@@ -149,7 +149,11 @@ def load_catalog(
     ).items():
         executor_id = _identifier(executor_id, "executor id")
         item = _mapping(raw, f"executor {executor_id}")
-        _only(item, {"parameters", "argv", "env", "timeout_seconds"}, f"executor {executor_id}")
+        _only(
+            item,
+            {"parameters", "argv", "env", "timeout_seconds"},
+            f"executor {executor_id}",
+        )
         parameters = {
             _identifier(key, f"executor {executor_id} parameter"): _input_schema(
                 value, f"executor {executor_id} parameter {key}"
@@ -159,36 +163,69 @@ def load_catalog(
             ).items()
         }
         argv = item.get("argv")
-        if not isinstance(argv, list) or not argv or not all(isinstance(arg, str) for arg in argv):
-            raise WorkflowError(f"executor {executor_id}.argv must be a non-empty string array")
+        if (
+            not isinstance(argv, list)
+            or not argv
+            or not all(isinstance(arg, str) for arg in argv)
+        ):
+            raise WorkflowError(
+                f"executor {executor_id}.argv must be a non-empty string array"
+            )
+        incompatible = False
         for index, arg in enumerate(argv):
             if "${" in arg:
                 match = _TEMPLATE.fullmatch(arg)
-                if match is None or (
-                    match.group(1) == "args" and match.group(2) not in parameters
-                ) or (
-                    match.group(1) == "config"
-                    and match.group(2) not in config_names
-                ) or match.group(1) == "inputs":
-                    raise WorkflowError(f"executor {executor_id}.argv[{index}] has an invalid template")
+                if (
+                    match is None
+                    or (match.group(1) == "args" and match.group(2) not in parameters)
+                    or (
+                        match.group(1) == "config"
+                        and match.group(2) not in config_names
+                    )
+                    or match.group(1) == "inputs"
+                ):
+                    logger.warning(
+                        "Skipping incompatible workflow executor %s: argv[%d] has an invalid template",
+                        executor_id,
+                        index,
+                    )
+                    incompatible = True
+                    break
+        if incompatible:
+            continue
         env = _mapping(item.get("env", {}), f"executor {executor_id}.env")
         if not all(isinstance(value, str) for value in env.values()):
             raise WorkflowError(f"executor {executor_id}.env values must be strings")
         for key, value in env.items():
             if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
-                raise WorkflowError(f"executor {executor_id}.env has an invalid variable name")
+                raise WorkflowError(
+                    f"executor {executor_id}.env has an invalid variable name"
+                )
             if "${" in value:
                 match = _TEMPLATE.fullmatch(value)
-                if match is None or (
-                    match.group(1) == "args" and match.group(2) not in parameters
-                ) or (
-                    match.group(1) == "config"
-                    and match.group(2) not in config_names
-                ) or match.group(1) == "inputs":
-                    raise WorkflowError(f"executor {executor_id}.env.{key} has an invalid template")
+                if (
+                    match is None
+                    or (match.group(1) == "args" and match.group(2) not in parameters)
+                    or (
+                        match.group(1) == "config"
+                        and match.group(2) not in config_names
+                    )
+                    or match.group(1) == "inputs"
+                ):
+                    logger.warning(
+                        "Skipping incompatible workflow executor %s: env.%s has an invalid template",
+                        executor_id,
+                        key,
+                    )
+                    incompatible = True
+                    break
+        if incompatible:
+            continue
         timeout = float(item.get("timeout_seconds", 180))
         if timeout <= 0:
-            raise WorkflowError(f"executor {executor_id}.timeout_seconds must be positive")
+            raise WorkflowError(
+                f"executor {executor_id}.timeout_seconds must be positive"
+            )
         executors[executor_id] = {
             "parameters": parameters,
             "argv": argv,
@@ -220,18 +257,27 @@ def load_catalog(
             raise WorkflowError(f"workflow {workflow_id}.steps must be non-empty")
         steps: list[dict[str, Any]] = []
         step_ids: set[str] = set()
+        incompatible = False
         for index, raw_step in enumerate(raw_steps):
             step = _mapping(raw_step, f"workflow {workflow_id} step {index}")
             step_id = _identifier(step.get("id"), f"workflow {workflow_id} step id")
             if step_id in step_ids:
-                raise WorkflowError(f"workflow {workflow_id} has duplicate step id {step_id}")
+                raise WorkflowError(
+                    f"workflow {workflow_id} has duplicate step id {step_id}"
+                )
             step_ids.add(step_id)
             uses = str(step.get("uses") or "")
             if uses == "message":
-                _only(step, {"id", "uses", "prompt"}, f"workflow {workflow_id} step {step_id}")
+                _only(
+                    step,
+                    {"id", "uses", "prompt"},
+                    f"workflow {workflow_id} step {step_id}",
+                )
                 prompt = step.get("prompt")
                 if not isinstance(prompt, str) or not prompt.strip():
-                    raise WorkflowError(f"workflow {workflow_id} step {step_id}.prompt is required")
+                    raise WorkflowError(
+                        f"workflow {workflow_id} step {step_id}.prompt is required"
+                    )
                 _templates(
                     prompt,
                     source="inputs",
@@ -241,21 +287,47 @@ def load_catalog(
                 steps.append({"id": step_id, "uses": uses, "prompt": prompt})
                 continue
             if uses != "exec":
-                raise WorkflowError(f"workflow {workflow_id} step {step_id}.uses is invalid")
-            _only(step, {"id", "uses", "executor", "args"}, f"workflow {workflow_id} step {step_id}")
-            executor_id = _identifier(step.get("executor"), f"workflow {workflow_id} executor")
+                raise WorkflowError(
+                    f"workflow {workflow_id} step {step_id}.uses is invalid"
+                )
+            _only(
+                step,
+                {"id", "uses", "executor", "args"},
+                f"workflow {workflow_id} step {step_id}",
+            )
+            executor_id = _identifier(
+                step.get("executor"), f"workflow {workflow_id} executor"
+            )
             executor = executors.get(executor_id)
             if executor is None:
-                raise WorkflowError(f"workflow {workflow_id} references unknown executor {executor_id}")
-            args = _mapping(step.get("args", {}), f"workflow {workflow_id} step {step_id}.args")
+                logger.warning(
+                    "Skipping incompatible workflow %s: executor %s is unavailable",
+                    workflow_id,
+                    executor_id,
+                )
+                incompatible = True
+                break
+            args = _mapping(
+                step.get("args", {}), f"workflow {workflow_id} step {step_id}.args"
+            )
             if set(args) != set(executor["parameters"]):
-                raise WorkflowError(f"workflow {workflow_id} step {step_id}.args must match executor parameters")
+                raise WorkflowError(
+                    f"workflow {workflow_id} step {step_id}.args must match executor parameters"
+                )
             for key, value in args.items():
                 if not isinstance(value, str):
-                    raise WorkflowError(f"workflow {workflow_id} step {step_id}.args.{key} must be a template")
+                    raise WorkflowError(
+                        f"workflow {workflow_id} step {step_id}.args.{key} must be a template"
+                    )
                 match = _TEMPLATE.fullmatch(value)
-                if match is None or match.group(1) != "inputs" or match.group(2) not in inputs:
-                    raise WorkflowError(f"workflow {workflow_id} step {step_id}.args.{key} must reference one input")
+                if (
+                    match is None
+                    or match.group(1) != "inputs"
+                    or match.group(2) not in inputs
+                ):
+                    raise WorkflowError(
+                        f"workflow {workflow_id} step {step_id}.args.{key} must reference one input"
+                    )
             steps.append(
                 {
                     "id": step_id,
@@ -264,9 +336,11 @@ def load_catalog(
                     "args": args,
                 }
             )
+        if incompatible:
+            continue
         workflows[workflow_id] = {"id": workflow_id, "inputs": inputs, "steps": steps}
     if not workflows:
-        raise WorkflowError(f"no workflow YAML files found in {workflows_path}")
+        logger.warning("No valid workflow YAML files found in %s", workflows_path)
     return workflows, executors
 
 
@@ -298,7 +372,11 @@ def bind_workflow(
     for step in workflow["steps"]:
         if step["uses"] == "message":
             bound_steps.append(
-                {"id": step["id"], "uses": "message", "prompt": render_prompt(step["prompt"])}
+                {
+                    "id": step["id"],
+                    "uses": "message",
+                    "prompt": render_prompt(step["prompt"]),
+                }
             )
             continue
         executor = executors[step["executor"]]
@@ -308,7 +386,9 @@ def bind_workflow(
             if input_name not in normalized:
                 raise WorkflowError(f"missing input required by executor: {input_name}")
             arguments[name] = _validate_value(
-                normalized[input_name], executor["parameters"][name], f"executor argument {name}"
+                normalized[input_name],
+                executor["parameters"][name],
+                f"executor argument {name}",
             )
 
         def resolve(token: str) -> str:
@@ -356,7 +436,8 @@ class WebhookService:
     async def run_api(self, stop: asyncio.Event) -> None:
         @web.middleware
         async def authenticate(
-            request: web.Request, handler: Callable[[web.Request], Awaitable[web.StreamResponse]]
+            request: web.Request,
+            handler: Callable[[web.Request], Awaitable[web.StreamResponse]],
         ) -> web.StreamResponse:
             authorization = request.headers.get("Authorization", "")
             expected = f"Bearer {self.config.token}"
@@ -371,7 +452,9 @@ class WebhookService:
         await runner.setup()
         site = web.TCPSite(runner, self.config.host, self.config.port)
         await site.start()
-        logger.info("Webhook API listening host=%s port=%d", self.config.host, self.config.port)
+        logger.info(
+            "Webhook API listening host=%s port=%d", self.config.host, self.config.port
+        )
         try:
             await stop.wait()
         finally:
@@ -384,18 +467,24 @@ class WebhookService:
             return web.json_response({"error": "workflow_not_found"}, status=404)
         try:
             body = await request.json()
-            plan = bind_workflow(
-                workflow, self.executors, body, self.channel_variables
-            )
+            plan = bind_workflow(workflow, self.executors, body, self.channel_variables)
             key = request.headers.get("Idempotency-Key")
-            if key is not None and (not key or len(key) > 200 or any(ord(char) < 32 for char in key)):
+            if key is not None and (
+                not key or len(key) > 200 or any(ord(char) < 32 for char in key)
+            ):
                 raise WorkflowError("Idempotency-Key is invalid")
             run, _ = self.store.create_webhook_run(workflow_id, key, plan)
         except (json.JSONDecodeError, WorkflowError, TypeError, ValueError) as error:
-            return web.json_response({"error": "invalid_request", "detail": str(error)}, status=400)
+            return web.json_response(
+                {"error": "invalid_request", "detail": str(error)}, status=400
+            )
         self.changed.set()
         return web.json_response(
-            {"run_id": run["id"], "workflow": run["workflow_id"], "state": run["state"]},
+            {
+                "run_id": run["id"],
+                "workflow": run["workflow_id"],
+                "state": run["state"],
+            },
             status=202,
         )
 
@@ -466,7 +555,9 @@ class WebhookService:
         while not stop.is_set():
             state = self.store.webhook_delivery_state(run_id, step_index)
             if state == "succeeded":
-                self.store.finish_webhook_step(run_id, step_index, "succeeded", {}, None)
+                self.store.finish_webhook_step(
+                    run_id, step_index, "succeeded", {}, None
+                )
                 return True
             if state == "failed":
                 self.store.finish_webhook_step(

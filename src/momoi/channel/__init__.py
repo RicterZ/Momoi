@@ -49,11 +49,11 @@ class Channel(Protocol):
     def workflow_variables(self) -> dict[str, str]: ...
 
 
-def load_channel_config(name: str, value: object) -> Any:
+def load_channel_config(name: str, value: object, workspace: Path) -> Any:
     loader = getattr(_plugin(name), "load_config", None)
     if not callable(loader):
         raise ValueError(f"channel plugin has no config loader: {name}")
-    return loader(value)
+    return loader(value, workspace)
 
 
 def create_channel(config: Any) -> Channel:
@@ -62,6 +62,14 @@ def create_channel(config: Any) -> Channel:
     if not callable(factory):
         raise ValueError(f"channel plugin has no factory: {name}")
     return factory(config)
+
+
+async def login_channel(config: Any) -> None:
+    name = str(getattr(config, "plugin", ""))
+    login = getattr(_plugin(name), "login", None)
+    if not callable(login):
+        raise ValueError(f"channel plugin does not support login: {name}")
+    await login(config)
 
 
 def _plugin(name: str) -> Any:

@@ -56,6 +56,12 @@ class HeartbeatConfig:
 
 
 @dataclass(frozen=True)
+class ReflectionConfig:
+    enabled: bool = False
+    at: str = "03:00"
+
+
+@dataclass(frozen=True)
 class AppConfig:
     llm: LLMConfig
     channel: object
@@ -77,6 +83,7 @@ class AppConfig:
     turn_max_total_tokens: int = 0
     webhooks: WebhookConfig = WebhookConfig()
     heartbeat: HeartbeatConfig = HeartbeatConfig()
+    reflection: ReflectionConfig = ReflectionConfig()
     workspace: Path | None = None
 
 def _mapping(value: Any, name: str) -> dict[str, Any]:
@@ -136,7 +143,9 @@ def load_config(path: str | Path) -> AppConfig:
         raise ConfigError("channel.plugin is required")
     channel_settings = _mapping(channel_section.get("settings"), "channel.settings")
     try:
-        channel_config = load_channel_config(channel_name, channel_settings)
+        channel_config = load_channel_config(
+            channel_name, channel_settings, config_path.parent
+        )
     except (TypeError, ValueError) as error:
         raise ConfigError(str(error)) from None
 
@@ -173,6 +182,7 @@ def load_config(path: str | Path) -> AppConfig:
     turn_raw = _mapping(raw.get("turn", {}), "turn")
     webhook_raw = _mapping(raw.get("webhooks", {}), "webhooks")
     heartbeat_raw = _mapping(raw.get("heartbeat", {}), "heartbeat")
+    reflection_raw = _mapping(raw.get("reflection", {}), "reflection")
     mcp_value = tools_raw.get("mcp_config", "mcp.json")
     mcp_config = (config_path.parent / str(mcp_value)).resolve() if mcp_value else None
     webhook_enabled = _boolean(webhook_raw.get("enabled", False), "webhooks.enabled")
@@ -273,6 +283,13 @@ def load_config(path: str | Path) -> AppConfig:
             max_daily_turns=max(
                 1, int(heartbeat_raw.get("max_daily_turns", 12))
             ),
+        ),
+        reflection=ReflectionConfig(
+            enabled=_boolean(
+                reflection_raw.get("enabled", False), "reflection.enabled"
+            ),
+            at=_clock(reflection_raw.get("at", "03:00"), "reflection.at")
+            or "03:00",
         ),
         workspace=config_path.parent,
     )
