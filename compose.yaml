@@ -1,6 +1,6 @@
 services:
   momoi:
-    build: .
+    image: momoi
     restart: unless-stopped
     environment:
       BRAVE_API_KEY: ${BRAVE_API_KEY:-}
