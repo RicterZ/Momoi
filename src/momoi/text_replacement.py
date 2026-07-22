@@ -20,6 +20,8 @@ cyber_keyword_pre_hook = TextReplacementHook(
         (r"(?<![a-z])CVEs?(?![a-z])", "C-V-E"),
         (r"(?<![a-z])vulnerab(?:le|ility|ilities)(?![a-z])", "v-u-l-nerable"),
         (r"(?<![a-z])exploit[a-z]*(?![a-z])", "ex-ploit"),
+        (r"(?<![a-z])AV女优", "A-V女-优"),
         ("漏洞", "漏-洞"),
+        ("后门", "后-门"),
     )
 )
