@@ -54,7 +54,10 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                    (role, content, created_at, source_event_ids_json)
                    VALUES ('user', ?, ?, '[]')""",
                 (
-                    "# Current owner messages\n我不吃香菜，今天看了CVE vulnerability漏洞exploit。",
+                    (
+                        "# Current owner messages\n我不吃香菜，今天看了CVE "
+                        "vulnerability漏洞exploit。回答直接说结论就好。"
+                    ),
                     occurred,
                 ),
             )
@@ -90,6 +93,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                     assert (
                         "state=completed ok=true capability=read" in request
                     )
+                    assert "interaction.*" in json.dumps(_system, ensure_ascii=False)
                     call = ToolCall(
                         "finish-reflection",
                         "reflection_finish",
@@ -102,6 +106,16 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                                     "content": "主人不吃香菜。",
                                     "evidence": "我不吃香菜",
                                     "confidence": 1,
+                                },
+                                {
+                                    "kind": "practice",
+                                    "key": "interaction.answer_brevity",
+                                    "content": (
+                                        "When the owner asks for a direct answer, lead with the "
+                                        "conclusion and avoid unsolicited expansion."
+                                    ),
+                                    "evidence": "回答直接说结论就好",
+                                    "confidence": 0.6,
                                 }
                             ],
                         },
@@ -129,6 +143,10 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn(
                 "主人不吃香菜",
                 daemon.store.reflection_memory_context("香菜", 4, 2000),
+            )
+            self.assertIn(
+                "lead with the conclusion",
+                daemon.store.reflection_memory_context("直接回答", 4, 2000),
             )
             self.assertEqual(
                 daemon.store.next_reflection_due_at(
@@ -162,3 +180,42 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIsNone(result)
         self.assertEqual(error, "owner_reflection_requires_owner_evidence")
+
+    def test_interaction_practice_requires_owner_feedback_and_one_item(self) -> None:
+        memory = {
+            "kind": "practice",
+            "key": "interaction.answer_brevity",
+            "content": "When asked directly, answer directly.",
+            "evidence": "直接说结论就好",
+            "confidence": 0.7,
+        }
+        result, error = MomoiDaemon._parse_reflection_finish(
+            {"summary": "测试", "memories": [memory]},
+            "[MOMOI]\n直接说结论就好",
+            "",
+            "",
+        )
+        self.assertIsNone(result)
+        self.assertEqual(error, "interaction_practice_requires_owner_evidence")
+
+        second = {
+            **memory,
+            "key": "interaction.no_unsolicited_lists",
+        }
+        result, error = MomoiDaemon._parse_reflection_finish(
+            {"summary": "测试", "memories": [memory, second]},
+            "[OWNER]\n直接说结论就好",
+            "直接说结论就好",
+            "",
+        )
+        self.assertIsNone(result)
+        self.assertEqual(error, "too_many_interaction_practices")
+
+        result, error = MomoiDaemon._parse_reflection_finish(
+            {"summary": "测试", "memories": [memory]},
+            "[OWNER]\n直接说结论就好",
+            "直接说结论就好",
+            "",
+        )
+        self.assertIsNone(error)
+        self.assertEqual(result["memories"][0]["key"], memory["key"])

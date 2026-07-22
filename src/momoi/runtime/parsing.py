@@ -185,6 +185,7 @@ def parse_reflection_finish(
         return None, "invalid_reflection_finish"
     memories: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
+    interaction_practices = 0
     for item in raw_memories:
         if not isinstance(item, dict) or set(item) != {
             "kind",
@@ -222,6 +223,12 @@ def parse_reflection_finish(
             return None, "owner_reflection_requires_owner_evidence"
         if kind == "world_knowledge" and evidence not in knowledge_source:
             return None, "world_reflection_requires_observed_evidence"
+        if kind == "practice" and key.startswith("interaction."):
+            if evidence not in owner_source:
+                return None, "interaction_practice_requires_owner_evidence"
+            interaction_practices += 1
+            if interaction_practices > 1:
+                return None, "too_many_interaction_practices"
         identity = (kind, key)
         if identity in seen:
             return None, "duplicate_reflection_memory"

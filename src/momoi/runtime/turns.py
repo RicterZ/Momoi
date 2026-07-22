@@ -84,6 +84,39 @@ class TurnRunner:
     _parse_mood_transition = staticmethod(parse_mood_transition)
     _parse_reflection_finish = staticmethod(parse_reflection_finish)
 
+    def _drain_owner_updates(
+        self, current_events: list[IncomingMessage]
+    ) -> list[IncomingMessage]:
+        updates: list[IncomingMessage] = []
+        while True:
+            try:
+                updates.append(self.incoming.get_nowait())
+            except asyncio.QueueEmpty:
+                break
+        if updates:
+            current_events.extend(updates)
+            logger.info("Injected owner updates into active Turn count=%d", len(updates))
+        return updates
+
+    def _owner_update_message(
+        self, updates: list[IncomingMessage]
+    ) -> dict[str, Any]:
+        content: list[dict[str, Any]] = [
+            {
+                "type": "text",
+                "text": (
+                    "[Trusted runtime update received while the previous operation was "
+                    "running. Re-evaluate the next action and any planned reply using the "
+                    "owner's latest intent.]\n# Current owner messages\n"
+                    + self._render_batch(updates)
+                ),
+                "cache_control": {"type": "ephemeral"},
+            }
+        ]
+        for event in updates:
+            content.extend(self.channel.content_blocks(event.segments))
+        return {"role": "user", "content": content}
+
     async def _complete_webhook_message(self, prompt: str) -> list[ChannelMessage]:
         history = self.store.history(
             self.config.recent_raw_tokens, self.config.recent_turns
@@ -440,10 +473,12 @@ class TurnRunner:
             allow_notify=False,
             turn_id=turn_id,
             require_response=True,
+            accept_owner_updates=True,
         )
         if reply is None:
             raise RuntimeError("Owner Turn ended without respond")
 
+        owner_content = f"# Current owner messages\n{self._render_batch(batch)}"
         self.store.commit_turn(batch, owner_content, reply, draft, turn_id=turn_id)
         logger.info(
             "Committed owner turn=%s events=%d messages=%d",
@@ -475,6 +510,7 @@ class TurnRunner:
         heartbeat_turn: bool = False,
         allowed_capabilities: set[str] | None = None,
         artifact_root: Path | None = None,
+        accept_owner_updates: bool = False,
     ) -> AgentReply | dict[str, Any] | None:
         external_tool_used = False
         force_response = False
@@ -483,6 +519,18 @@ class TurnRunner:
         failed_tool_rounds = 0
         history_messages = max(0, len(messages) - 1)
         while True:
+            updates = (
+                self._drain_owner_updates(current_events)
+                if accept_owner_updates
+                else []
+            )
+            if updates:
+                messages.append(self._owner_update_message(updates))
+                source_event_id = updates[-1].event_id
+                force_response = False
+                force_autonomous_finish = False
+                force_heartbeat_finish = False
+                failed_tool_rounds = 0
             request_tools = (
                 [RESPOND_TOOL_SPEC]
                 if force_response
@@ -536,6 +584,41 @@ class TurnRunner:
                 )
             )
             self.store.record_turn_usage(turn_id, input_tokens, output_tokens)
+            updates = (
+                self._drain_owner_updates(current_events)
+                if accept_owner_updates
+                else []
+            )
+            if updates:
+                messages.append({"role": "assistant", "content": response.content})
+                if response.tool_calls:
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "tool_result",
+                                    "tool_use_id": call.id,
+                                    "content": json.dumps(
+                                        {
+                                            "ok": False,
+                                            "error": "superseded_by_owner_update",
+                                        },
+                                        ensure_ascii=False,
+                                    ),
+                                    "is_error": True,
+                                }
+                                for call in response.tool_calls
+                            ],
+                        }
+                    )
+                messages.append(self._owner_update_message(updates))
+                source_event_id = updates[-1].event_id
+                force_response = False
+                force_autonomous_finish = False
+                force_heartbeat_finish = False
+                failed_tool_rounds = 0
+                continue
             if not response.tool_calls:
                 if heartbeat_turn:
                     messages.extend(
@@ -703,8 +786,9 @@ class TurnRunner:
                 continue
             messages.append({"role": "assistant", "content": response.content})
             results: list[dict[str, Any]] = []
+            updates = []
             allowed_tool_names = {str(spec["name"]) for spec in request_tools}
-            for call in response.tool_calls:
+            for index, call in enumerate(response.tool_calls):
                 logger.debug("Executing tool name=%s", call.name)
                 if call.name not in allowed_tool_names:
                     result = {"ok": False, "error": "tool_not_allowed"}
@@ -845,7 +929,32 @@ class TurnRunner:
                         "is_error": not bool(result.get("ok")),
                     }
                 )
+                if accept_owner_updates:
+                    updates = self._drain_owner_updates(current_events)
+                    if updates:
+                        results.extend(
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": pending.id,
+                                "content": json.dumps(
+                                    {
+                                        "ok": False,
+                                        "error": "superseded_by_owner_update",
+                                    },
+                                    ensure_ascii=False,
+                                ),
+                                "is_error": True,
+                            }
+                            for pending in response.tool_calls[index + 1 :]
+                        )
+                        break
             messages.append({"role": "user", "content": results})
+            if updates:
+                messages.append(self._owner_update_message(updates))
+                source_event_id = updates[-1].event_id
+                force_response = False
+                failed_tool_rounds = 0
+                continue
             if any(not block["is_error"] for block in results):
                 failed_tool_rounds = 0
                 continue

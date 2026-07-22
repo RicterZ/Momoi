@@ -1795,8 +1795,8 @@ class Store(MemoryStore, DeliveryStore):
             )
             self._db.execute(
                 """UPDATE turns SET state='completed', stage='completed',
-                   failure_reason=NULL, updated_at=? WHERE id=?""",
-                (now, turn_id),
+                   source_ids_json=?, failure_reason=NULL, updated_at=? WHERE id=?""",
+                (json.dumps(event_ids, ensure_ascii=False), now, turn_id),
             )
         return turn_id
 

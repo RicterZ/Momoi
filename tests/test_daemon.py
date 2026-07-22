@@ -121,6 +121,146 @@ class DaemonTest(unittest.TestCase):
 
 
 class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
+    async def test_owner_updates_interrupt_after_tool_and_before_respond(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(
+                AppConfig(
+                    llm=LLMConfig(
+                        "http://127.0.0.1", "test", "test", 100, 0, 1, 0
+                    ),
+                    channel=NapCatConfig(
+                        "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
+                    ),
+                    system_prompt="test",
+                    recent_raw_tokens=1000,
+                    recent_turns=2,
+                    memory_results=2,
+                    memory_tokens=1000,
+                    database=Path(directory) / "momoi.sqlite3",
+                    log_level="INFO",
+                )
+            )
+            tool_started = asyncio.Event()
+            finish_tool = asyncio.Event()
+            stale_respond_started = asyncio.Event()
+            finish_stale_respond = asyncio.Event()
+
+            async def execute_tool(call: ToolCall) -> dict[str, object]:
+                self.assertEqual(call.name, "read_file")
+                tool_started.set()
+                await finish_tool.wait()
+                return {"ok": True, "content": "旧地址天气"}
+
+            daemon.builtin_tools.execute = execute_tool  # type: ignore[method-assign]
+
+            class Provider:
+                calls = 0
+
+                async def complete(
+                    provider_self,
+                    _: object,
+                    messages: list[dict[str, object]],
+                    __: object,
+                    **___: object,
+                ) -> ProviderResponse:
+                    provider_self.calls += 1
+                    if provider_self.calls == 1:
+                        call = ToolCall(
+                            "weather-read", "read_file", {"path": "weather.txt"}
+                        )
+                    elif provider_self.calls == 2:
+                        self.assertIn("地址改成上海", json.dumps(messages, ensure_ascii=False))
+                        stale_respond_started.set()
+                        await finish_stale_respond.wait()
+                        call = ToolCall(
+                            "stale-respond",
+                            "respond",
+                            {
+                                "delivery": "报告上海天气",
+                                "messages": ["上海天气晴"],
+                                "continuity": {
+                                    "topic": "天气",
+                                    "open_loops": [],
+                                    "pending_commitments": [],
+                                    "short_term_facts": [],
+                                },
+                                "mood": {"action": "keep"},
+                            },
+                        )
+                    else:
+                        rendered = json.dumps(messages, ensure_ascii=False)
+                        self.assertIn("不用查天气了", rendered)
+                        self.assertIn("superseded_by_owner_update", rendered)
+                        call = ToolCall(
+                            "final-respond",
+                            "respond",
+                            {
+                                "delivery": "确认采用最新要求",
+                                "messages": ["收到，不查了"],
+                                "continuity": {
+                                    "topic": "",
+                                    "open_loops": [],
+                                    "pending_commitments": [],
+                                    "short_term_facts": [],
+                                },
+                                "mood": {"action": "keep"},
+                            },
+                        )
+                    return ProviderResponse(
+                        [
+                            {
+                                "type": "tool_use",
+                                "id": call.id,
+                                "name": call.name,
+                                "input": call.arguments,
+                            }
+                        ],
+                        [call],
+                    )
+
+            provider = Provider()
+            daemon.provider = provider  # type: ignore[assignment]
+            initial = IncomingMessage("qq:turn:1", "1", "查旧地址天气", 1, 1)
+            first_update = IncomingMessage("qq:turn:2", "2", "地址改成上海", 2, 2)
+            second_update = IncomingMessage(
+                "qq:turn:3", "3", "不用查天气了，只告诉我你收到了", 3, 3
+            )
+            daemon.store.add_event(initial)
+            turn_id = daemon._turn_id(initial.event_id)
+            turn = asyncio.create_task(
+                daemon._complete_batch_turn([initial], asyncio.Event(), turn_id)
+            )
+
+            await tool_started.wait()
+            await daemon._receive(first_update)
+            finish_tool.set()
+            await stale_respond_started.wait()
+            await daemon._receive(second_update)
+            finish_stale_respond.set()
+            await turn
+
+            self.assertEqual(provider.calls, 3)
+            self.assertTrue(daemon.incoming.empty())
+            self.assertEqual([row.text for row in daemon.store.due_outbox()], ["收到，不查了"])
+            stored = daemon.store._db.execute(
+                "SELECT content, source_event_ids_json FROM messages WHERE role='user'"
+            ).fetchone()
+            self.assertIn("地址改成上海", stored["content"])
+            self.assertIn("不用查天气了", stored["content"])
+            self.assertEqual(
+                json.loads(stored["source_event_ids_json"]),
+                [initial.event_id, first_update.event_id, second_update.event_id],
+            )
+            stored_turn = daemon.store._db.execute(
+                "SELECT source_ids_json FROM turns WHERE id=?", (turn_id,)
+            ).fetchone()
+            self.assertEqual(
+                json.loads(stored_turn["source_ids_json"]),
+                [initial.event_id, first_update.event_id, second_update.event_id],
+            )
+            self.assertEqual(daemon.store.pending_events(), [])
+            daemon.store.close()
+
     async def test_manual_heartbeat_command_queues_once_even_when_disabled(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(
