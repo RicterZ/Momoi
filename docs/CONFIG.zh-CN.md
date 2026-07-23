@@ -337,8 +337,7 @@ MCP 环境值、远程 URL 和 header 支持从 Momoi 进程环境展开 `${VARI
     "enabled": false,
     "initial_delay_seconds": 900,
     "min_interval_seconds": 1800,
-    "max_interval_seconds": 21600,
-    "max_daily_turns": 12
+    "max_interval_seconds": 21600
   }
 }
 ```
@@ -349,9 +348,8 @@ MCP 环境值、远程 URL 和 header 支持从 Momoi 进程环境展开 `${VARI
 | `initial_delay_seconds` | `900` | 新 workspace 第一次心跳前的延迟 |
 | `min_interval_seconds` | `1800` | Momoi 可选择的最短下次间隔 |
 | `max_interval_seconds` | `21600` | Momoi 可选择的最长下次间隔 |
-| `max_daily_turns` | `12` | 每个本地日的心跳评估上限 |
 
-间隔必须为正数，最大值不能小于最小值。即使某次心跳保持沉默，也会计入评估次数。
+间隔必须为正数，最大值不能小于最小值。最短间隔同时限定了心跳评估的最高频率。
 
 心跳可以使用明确允许的只读工具、搜索记忆、在 `<workspace>/artifacts` 下生成文件，或者为需要跨轮继续的工作创建 agent-owned Goal。它会先记录真实结果，再决定是否有必要联系主人。主人 Goal 和提醒由各自的调度器负责，心跳不会代替或模仿它们。
 

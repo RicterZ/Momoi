@@ -1462,7 +1462,6 @@ class TurnRunner:
             mood_transition=decision["mood_transition"],
             messages=decision["messages"],
             reason=decision["reason"],
-            timezone=self.config.notifications.timezone,
             draft=draft,
         )
         self.agenda_changed.set()

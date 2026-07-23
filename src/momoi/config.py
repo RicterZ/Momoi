@@ -52,7 +52,6 @@ class HeartbeatConfig:
     initial_delay_seconds: float = 900
     min_interval_seconds: float = 1800
     max_interval_seconds: float = 21600
-    max_daily_turns: int = 12
 
 
 @dataclass(frozen=True)
@@ -294,9 +293,6 @@ def load_config(path: str | Path) -> AppConfig:
             ),
             min_interval_seconds=heartbeat_min,
             max_interval_seconds=heartbeat_max,
-            max_daily_turns=max(
-                1, int(heartbeat_raw.get("max_daily_turns", 12))
-            ),
         ),
         autonomy=AutonomyConfig(
             tuple(dict.fromkeys(item.strip() for item in allowed_tools))

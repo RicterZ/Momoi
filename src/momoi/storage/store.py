@@ -873,29 +873,11 @@ class Store(MemoryStore, DeliveryStore):
                     (quiet_end, now),
                 )
                 return None
-            day = (
-                datetime.fromtimestamp(now, ZoneInfo(notifications.timezone))
-                .date()
-                .isoformat()
-            )
-            count = int(row["heartbeat_count"]) if row["heartbeat_day"] == day else 0
-            if count >= config.max_daily_turns:
-                _, next_day = local_day_bounds(now, notifications.timezone)
-                next_at = quiet_until(next_day, notifications)
-                self._db.execute(
-                    """UPDATE self_state SET heartbeat_day=?, heartbeat_count=0,
-                       next_heartbeat_at=?, updated_at=? WHERE id=1""",
-                    (day, next_at, now),
-                )
-                return None
             self._db.execute(
                 "UPDATE self_state SET heartbeat_claimed_at=? WHERE id=1",
                 (now,),
             )
-        claimed = dict(row)
-        claimed["heartbeat_day"] = day
-        claimed["heartbeat_count"] = count
-        return claimed
+        return dict(row)
 
     def claim_manual_heartbeat(self, now: float | None = None) -> bool:
         now = time.time() if now is None else now
@@ -950,15 +932,10 @@ class Store(MemoryStore, DeliveryStore):
         mood_transition: dict[str, object] | None,
         messages: list[ChannelMessage],
         reason: str,
-        timezone: str,
         draft: TurnDraft | None = None,
     ) -> None:
         now = time.time()
-        day = datetime.fromtimestamp(now, ZoneInfo(timezone)).date().isoformat()
         current = self.self_state(now)
-        count = (
-            int(current["heartbeat_count"]) if current["heartbeat_day"] == day else 0
-        )
         with self._db:
             self._apply_mood_transition(mood_transition, now)
             self._apply_goal_mutations(draft, now)
@@ -968,15 +945,13 @@ class Store(MemoryStore, DeliveryStore):
             self._db.execute(
                 """UPDATE self_state SET activity=?, activity_result=?, activity_since=?,
                    last_heartbeat_at=?, next_heartbeat_at=?, heartbeat_claimed_at=NULL,
-                   heartbeat_day=?, heartbeat_count=?, updated_at=? WHERE id=1""",
+                   updated_at=? WHERE id=1""",
                 (
                     activity,
                     result[:2000],
                     activity_since,
                     now,
                     next_heartbeat_at,
-                    day,
-                    count + 1,
                     now,
                 ),
             )

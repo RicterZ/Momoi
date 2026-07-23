@@ -589,14 +589,13 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertEqual(store.due_outbox()[0].text, "喝水")
             store.close()
 
-    def test_heartbeat_daily_budget_moves_next_check_to_next_day(self) -> None:
+    def test_heartbeat_has_no_daily_evaluation_cap(self) -> None:
         now = datetime(2026, 7, 21, 12, 0, tzinfo=ZoneInfo("Asia/Shanghai")).timestamp()
         heartbeat = HeartbeatConfig(
             enabled=True,
             initial_delay_seconds=60,
             min_interval_seconds=60,
             max_interval_seconds=600,
-            max_daily_turns=1,
         )
         notifications = NotificationConfig(timezone="Asia/Shanghai")
         with (
@@ -604,22 +603,25 @@ class StorageMemoryTest(unittest.TestCase):
             patch("momoi.storage.store.time.time", return_value=now),
         ):
             store = Store(Path(directory) / "momoi.sqlite3")
-            store.begin_turn("heartbeat-budget", "autonomous", ["heartbeat:test"])
-            store.commit_heartbeat(
-                "heartbeat-budget",
-                activity="整理关卡灵感",
-                result="记录了一个点子",
-                next_heartbeat_at=now + 60,
-                mood_transition=None,
-                messages=[],
-                reason="test",
-                timezone="Asia/Shanghai",
-            )
-            with patch("momoi.storage.store.time.time", return_value=now + 61):
-                self.assertIsNone(store.claim_due_heartbeat(heartbeat, notifications))
-            state = store.self_state(now + 61)
-            next_day = datetime(2026, 7, 22, 0, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
-            self.assertEqual(state["next_heartbeat_at"], next_day.timestamp())
+            for index in range(20):
+                turn_id = f"heartbeat-{index}"
+                store.begin_turn(turn_id, "autonomous", [f"heartbeat:{index}"])
+                store._db.execute(
+                    "UPDATE self_state SET next_heartbeat_at=? WHERE id=1", (now - 1,)
+                )
+                store._db.commit()
+                self.assertIsNotNone(
+                    store.claim_due_heartbeat(heartbeat, notifications, now)
+                )
+                store.commit_heartbeat(
+                    turn_id,
+                    activity="整理关卡灵感",
+                    result="记录了一个点子",
+                    next_heartbeat_at=now - 1,
+                    mood_transition=None,
+                    messages=[],
+                    reason="test",
+                )
             store.close()
 
     def test_recurring_goal_persists_schedule_and_advances_after_review(self) -> None:

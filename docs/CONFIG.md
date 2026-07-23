@@ -337,8 +337,7 @@ This policy applies to proactive Goal and Heartbeat notifications. A fixed Remin
     "enabled": false,
     "initial_delay_seconds": 900,
     "min_interval_seconds": 1800,
-    "max_interval_seconds": 21600,
-    "max_daily_turns": 12
+    "max_interval_seconds": 21600
   }
 }
 ```
@@ -349,9 +348,8 @@ This policy applies to proactive Goal and Heartbeat notifications. A fixed Remin
 | `initial_delay_seconds` | `900` | Delay before the first heartbeat in a new workspace |
 | `min_interval_seconds` | `1800` | Smallest next interval Momoi may select |
 | `max_interval_seconds` | `21600` | Largest next interval Momoi may select |
-| `max_daily_turns` | `12` | Maximum heartbeat evaluations per local day |
 
-Intervals must be positive, and the maximum must not be smaller than the minimum. A silent heartbeat still counts as an evaluation.
+Intervals must be positive, and the maximum must not be smaller than the minimum. The minimum interval bounds the maximum heartbeat evaluation rate.
 
 A heartbeat may use explicitly allowed read-only tools, search memory, create files under `<workspace>/artifacts`, or create an agent-owned Goal for work that must continue. It records the real result before deciding whether contacting the owner is useful. Owner Goals and reminders remain separate and are never performed or imitated by a heartbeat.
 

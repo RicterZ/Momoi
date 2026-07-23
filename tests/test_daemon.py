@@ -658,7 +658,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     initial_delay_seconds=60,
                     min_interval_seconds=60,
                     max_interval_seconds=600,
-                    max_daily_turns=10,
                 ),
             )
             daemon = MomoiDaemon(config)

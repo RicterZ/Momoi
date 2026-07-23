@@ -168,8 +168,6 @@ CREATE TABLE IF NOT EXISTS self_state (
     last_heartbeat_at REAL,
     next_heartbeat_at REAL,
     heartbeat_claimed_at REAL,
-    heartbeat_day TEXT NOT NULL DEFAULT '',
-    heartbeat_count INTEGER NOT NULL DEFAULT 0,
     updated_at REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS notifications (
