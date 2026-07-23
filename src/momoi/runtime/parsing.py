@@ -9,10 +9,10 @@ from ..storage import MOOD_STATES, REFLECTION_MEMORY_KINDS
 
 
 def parse_messages(
-    arguments: dict[str, Any],
+    arguments: dict[str, Any], *, allow_empty: bool = False
 ) -> tuple[list[ChannelMessage] | None, str | None]:
     raw_messages = arguments.get("messages")
-    if not isinstance(raw_messages, list) or not raw_messages:
+    if not isinstance(raw_messages, list) or (not raw_messages and not allow_empty):
         return None, "messages_must_be_a_non_empty_array"
     messages: list[ChannelMessage] = []
     for item in raw_messages:
@@ -54,7 +54,7 @@ def parse_response(
     error = validate_delivery(arguments)
     if error is not None:
         return None, error
-    messages, error = parse_messages(arguments)
+    messages, error = parse_messages(arguments, allow_empty=True)
     if messages is None:
         return None, error
     raw_continuity = arguments.get("continuity")

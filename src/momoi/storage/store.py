@@ -1687,8 +1687,6 @@ class Store(MemoryStore, DeliveryStore):
         turn_id: str | None = None,
     ) -> str:
         assistant_messages = reply.messages
-        if not assistant_messages:
-            raise ValueError("assistant messages must not be empty")
         normalized_messages = [
             self._outbox_content(message) for message in assistant_messages
         ]

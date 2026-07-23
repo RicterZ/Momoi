@@ -115,18 +115,19 @@ DELIVERY_SCHEMA: dict[str, Any] = {
     "minLength": 1,
     "maxLength": 200,
     "description": (
-        "Brief private expression plan made before messages: choose the natural voice, "
-        "scale, message rhythm, and any emotion reaction and its position. It is not "
-        "shown to the owner."
+        "Brief private expression plan made before messages: decide whether a visible "
+        "reply is natural; if speaking, choose the voice, scale, message rhythm, and "
+        "any emotion reaction and its position. It is not shown to the owner."
     ),
 }
 
 RESPOND_TOOL_SPEC: dict[str, Any] = {
     "name": "respond",
     "description": (
-        "Required closing conversational beat for every owner Turn, called only after "
-        "all tool work is complete. It ends the Turn but does not replace useful live "
-        "check-ins through send_message during substantial work."
+        "Required terminal decision for every owner Turn, called only after all tool "
+        "work is complete. It may carry no message when silence naturally closes an "
+        "already-finished exchange, and does not replace useful live check-ins through "
+        "send_message during substantial work."
     ),
     "input_schema": {
         "type": "object",
@@ -134,7 +135,6 @@ RESPOND_TOOL_SPEC: dict[str, Any] = {
             "delivery": DELIVERY_SCHEMA,
             "messages": {
                 "type": "array",
-                "minItems": 1,
                 "items": CHANNEL_MESSAGE_SCHEMA,
             },
             "continuity": {

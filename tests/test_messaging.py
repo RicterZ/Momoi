@@ -363,6 +363,65 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             daemon.store.close()
 
+    async def test_respond_can_close_a_turn_without_a_visible_message(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            config = AppConfig(
+                llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
+                channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                system_prompt="test",
+                recent_raw_tokens=1000,
+                recent_turns=2,
+                memory_results=2,
+                memory_tokens=1000,
+                database=Path(directory) / "momoi.sqlite3",
+                log_level="INFO",
+            )
+            daemon = MomoiDaemon(config)
+            case = self
+
+            class Provider:
+                async def complete(
+                    self,
+                    _: object,
+                    __: object,
+                    tools: list[dict[str, object]],
+                    **___: object,
+                ) -> ProviderResponse:
+                    respond = next(tool for tool in tools if tool["name"] == "respond")
+                    case.assertNotIn(
+                        "minItems",
+                        respond["input_schema"]["properties"]["messages"],
+                    )
+                    call = ToolCall(
+                        "silent-close",
+                        "respond",
+                        {
+                            "delivery": "话题已经自然结束，不追加机械回应",
+                            "messages": [],
+                            "continuity": {
+                                "topic": "",
+                                "open_loops": [],
+                                "pending_commitments": [],
+                                "short_term_facts": [],
+                            },
+                            "mood": {"action": "keep"},
+                        },
+                    )
+                    return ProviderResponse([], [call])
+
+            provider = Provider()
+            daemon.provider = provider  # type: ignore[assignment]
+            event = IncomingMessage("qq:silent-close", "silent-close", "[表情]", 1, 1)
+            daemon.store.add_event(event)
+            await daemon._complete_batch_turn(
+                [event], asyncio.Event(), daemon._turn_id(event.event_id)
+            )
+
+            self.assertEqual(daemon.store.due_outbox(), [])
+            self.assertEqual(daemon.store.history(1000, 1)[-1]["role"], "user")
+            self.assertEqual(daemon.store.pending_events(), [])
+            daemon.store.close()
+
     async def test_outbox_does_not_wait_between_different_turns(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
