@@ -1389,11 +1389,8 @@ class TurnRunner:
             f"Allowed next_check_minutes: {minimum}-{maximum}\n"
             f"Current self state: {self_context}\n"
             f"Autonomous artifact directory: {artifact_root}\n"
-            "Evaluate activity and owner notification separately. First consider whether "
-            "a bounded activity grounded in the supplied context is worthwhile now; rest "
-            "is valid, and you must not manufacture busywork. Having no reason to message "
-            "the owner is not a reason to skip an otherwise worthwhile activity. If you "
-            "act, use tools before claiming searches, observations, file work, or other results."
+            "Use the supplied context to decide activity first and owner contact second. "
+            "Use tools before claiming searches, observations, file work, or other results."
         )
         for heading, value in (
             ("Continuity", continuity),
