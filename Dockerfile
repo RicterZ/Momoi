@@ -1,7 +1,8 @@
 FROM python:3.13-slim-trixie
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    HOME=/home/momoi
 
 ARG NAP_MSG_COMMIT=f0e789d0134375faf5e56de2673139f685a0c7cf
 
@@ -13,10 +14,8 @@ WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY src ./src
 RUN pip install --no-cache-dir . \
-        "nap-msg @ https://github.com/RicterZ/Openclaw-NapcatQQ/archive/${NAP_MSG_COMMIT}.zip#subdirectory=nap-msg" \
-    && useradd --create-home momoi
+        "nap-msg @ https://github.com/RicterZ/Openclaw-NapcatQQ/archive/${NAP_MSG_COMMIT}.zip#subdirectory=nap-msg"
 
-USER momoi
 EXPOSE 8787
 ENTRYPOINT ["momoi"]
 CMD ["run"]
