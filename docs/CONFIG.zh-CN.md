@@ -2,7 +2,7 @@
 
 [EN](./CONFIG.md) | 中文
 
-Momoi 从 workspace 读取配置。默认 workspace 是 `~/.momoi`；使用 `--workspace` 可选择其他目录。
+Momoi 从 workspace 读取配置。默认 workspace 是 `~/.momoi`；把 `--workspace` 放在任意命令前可选择其他目录。
 
 ```bash
 momoi run

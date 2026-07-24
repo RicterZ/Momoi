@@ -55,6 +55,7 @@ Replies are shaped for private chat:
 - One message is the natural default.
 - Longer replies may become several conversational bubbles.
 - The first bubble is sent immediately; later bubbles keep a human rhythm.
+- When a finished exchange needs no new reply, Momoi may simply stay silent.
 - Text, images, replies, forwards, cards, files, video, and voice can retain their message meaning.
 - Image-capable models can understand images from the conversation.
 - Useful progress can be sent while a longer task is still running.
@@ -174,7 +175,7 @@ momoi channel login
 
 Then start Momoi and send a private message from the configured or linked owner account. See [Channel configuration](./docs/CONFIG.md#channel) for both alternatives.
 
-To use another workspace:
+Pass `--workspace` before any command to use another workspace:
 
 ```bash
 momoi --workspace /path/to/workspace run
@@ -233,11 +234,32 @@ momoi goal del <goal-id-or-prefix> --reason "No longer needed"
 
 Use `--at` for a future one-time review or `--every-seconds` for a recurring interval.
 
+## CLI commands
+
+`--workspace /path/to/workspace` may be placed before any command.
+
+| Command | Purpose |
+| --- | --- |
+| `momoi run` | Start the daemon |
+| `momoi --version` | Print the installed version |
+| `momoi channel login` | Authenticate the active channel when it needs login |
+| `momoi emotion add --slug <slug> --path <file> --desc <text>` | Add or update an image reaction asset |
+| `momoi emotion list` | List image reaction assets |
+| `momoi emotion del --slug <slug>` | Delete an image reaction asset |
+| `momoi goal add --title <title> --success <text> --action <text> [--at <time> \| --every-seconds <seconds> \| --daily HH:MM]` | Create a persistent goal |
+| `momoi goal list [--all]` | List active or all goals |
+| `momoi goal del <goal-id-or-prefix> [--reason <text>]` | Cancel a goal |
+
 ## Owner controls
 
-Send `/stop` in the active private chat to cancel the current task. Momoi stops the work and understands that the owner interrupted it. Send `/heartbeat` to trigger one autonomous heartbeat immediately.
+| Chat command | Purpose |
+| --- | --- |
+| `/stop` | Cancel the current task |
+| `/heartbeat` | Trigger one autonomous heartbeat immediately |
+| `/resolve <id> <result>` | Close an uncertain external action after checking the real result |
+| `/resume <id> <current state>` | Continue an uncertain external action from the confirmed state |
 
-If an external action was dispatched but its result became uncertain, Momoi will ask the owner to confirm the real state before continuing. She will not repeat the action just because the process restarted.
+When `/resolve` or `/resume` is needed, Momoi sends a recovery message that includes the short `<id>` and the command form to use. Copy that command and replace only the result or current-state text. She will not repeat the uncertain action just because the process restarted.
 
 ## Current scope
 

@@ -55,6 +55,7 @@ Momoi 会把连续发来的消息当作一个不断完善的想法。如果你�
 - 默认只发一条消息。
 - 较长的回复可以拆成几个自然的气泡。
 - 第一个气泡立即发送，后续消息保持类人的节奏。
+- 当一段交流已经自然结束、不需要新回复时，Momoi 可以保持沉默。
 - 文本、图片、引用、合并转发、卡片、文件、视频和语音都能保留原有的消息含义。
 - 支持图像的模型可以理解对话中的图片。
 - 处理长任务时，可以及时发送有价值的进度。
@@ -174,7 +175,7 @@ momoi channel login
 
 然后启动 Momoi，并从配置或扫码绑定的主人账号发送私聊消息。两种渠道的配置见[渠道配置](./docs/CONFIG.zh-CN.md#channel)。
 
-使用其他 workspace：
+`--workspace` 可以放在任意命令前，用来指定其他 workspace：
 
 ```bash
 momoi --workspace /path/to/workspace run
@@ -233,11 +234,32 @@ momoi goal del <goal-id-or-prefix> --reason "No longer needed"
 
 使用 `--at` 设置未来的单次检查，或使用 `--every-seconds` 设置循环间隔。
 
+## CLI 命令
+
+`--workspace /path/to/workspace` 可以放在任意命令前。
+
+| 命令 | 用途 |
+| --- | --- |
+| `momoi run` | 启动 daemon |
+| `momoi --version` | 查看已安装版本 |
+| `momoi channel login` | 为需要登录的当前渠道认证 |
+| `momoi emotion add --slug <slug> --path <file> --desc <text>` | 添加或更新图片反应素材 |
+| `momoi emotion list` | 列出图片反应素材 |
+| `momoi emotion del --slug <slug>` | 删除图片反应素材 |
+| `momoi goal add --title <title> --success <text> --action <text> [--at <time> \| --every-seconds <seconds> \| --daily HH:MM]` | 创建持久目标 |
+| `momoi goal list [--all]` | 列出当前或全部目标 |
+| `momoi goal del <goal-id-or-prefix> [--reason <text>]` | 取消目标 |
+
 ## 主人控制
 
-在当前私聊渠道中发送 `/stop` 可取消当前任务。Momoi 会停止工作，并理解是主人中断了她。发送 `/heartbeat` 可以立即触发一次自主心跳。
+| 聊天命令 | 用途 |
+| --- | --- |
+| `/stop` | 取消当前任务 |
+| `/heartbeat` | 立即触发一次自主心跳 |
+| `/resolve <id> <result>` | 确认真实结果后，关闭一次不确定的外部操作 |
+| `/resume <id> <current state>` | 从确认后的状态继续一次不确定的外部操作 |
 
-如果某个外部操作已经发出，但结果变得不确定，Momoi 会先请主人确认真实状态，然后再继续。她不会只因进程重启就重复执行操作。
+需要 `/resolve` 或 `/resume` 时，Momoi 会发送一条恢复提示，里面带有短 `<id>` 和可使用的命令形式。照着那条命令发送，只替换结果或当前状态文本即可。她不会只因进程重启就重复执行不确定的操作。
 
 ## 当前范围
 

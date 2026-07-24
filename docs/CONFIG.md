@@ -2,7 +2,7 @@
 
 EN | [中文](./CONFIG.zh-CN.md)
 
-Momoi reads configuration from a workspace. The default workspace is `~/.momoi`; use `--workspace` to select another one.
+Momoi reads configuration from a workspace. The default workspace is `~/.momoi`; pass `--workspace` before any command to select another one.
 
 ```bash
 momoi run
