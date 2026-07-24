@@ -576,19 +576,22 @@ class Store(MemoryStore, DeliveryStore):
             "SELECT id, role, content FROM messages WHERE id>? ORDER BY id",
             (after_id,),
         ).fetchall()
+        row_tokens = [estimate_tokens(str(row["content"])) for row in rows]
+        if sum(row_tokens) <= math.ceil(token_budget * 1.25):
+            return None
         tokens = 0
         user_turns = 0
         keep_from = len(rows)
         for index in range(len(rows) - 1, -1, -1):
-            row_tokens = estimate_tokens(str(rows[index]["content"]))
+            row_token = row_tokens[index]
             if (
                 keep_from < len(rows)
-                and tokens + row_tokens > token_budget
+                and tokens + row_token > token_budget
                 and user_turns >= min_turns
             ):
                 break
             keep_from = index
-            tokens += row_tokens
+            tokens += row_token
             if rows[index]["role"] == "user":
                 user_turns += 1
         while 0 < keep_from < len(rows) and rows[keep_from]["role"] != "user":

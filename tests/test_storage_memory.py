@@ -1370,3 +1370,21 @@ class StorageMemoryTest(unittest.TestCase):
                 )
             )
             store.close()
+
+    def test_compaction_waits_for_hysteresis_margin(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            for index, size in enumerate((20, 40, 90)):
+                event = IncomingMessage(
+                    f"qq:1:hysteresis-{index}",
+                    f"hysteresis-{index}",
+                    "甲" * size,
+                    float(index),
+                    float(index),
+                )
+                store.add_event(event)
+                store.commit_turn([event], event.text, AgentReply(["乙" * size]))
+
+            self.assertIsNone(store.compaction_candidate(250, 1))
+            self.assertIsNotNone(store.compaction_candidate(200, 1))
+            store.close()
