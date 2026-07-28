@@ -370,6 +370,12 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     if not kwargs.get("require_tool"):
                         raise AssertionError("autonomous turns must require a terminal tool")
                     if self.calls == 1:
+                        request = json.dumps(messages, ensure_ascii=False)
+                        if (
+                            "<due_goal>" not in request
+                            or "<runtime_state>" not in request
+                        ):
+                            raise AssertionError(messages)
                         names = {str(tool["name"]) for tool in tools}
                         if "mcp__test__read" not in names or {
                             "mcp__test__write",
@@ -676,6 +682,12 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     self.calls += 1
                     names = {str(tool["name"]) for tool in tools}
                     if self.calls == 1:
+                        request = json.dumps(__, ensure_ascii=False)
+                        if (
+                            "<autonomous_heartbeat>" not in request
+                            or "<runtime_state>" not in request
+                        ):
+                            raise AssertionError(__)
                         expected = {
                             "memory_search",
                             "goal_create",
@@ -1344,6 +1356,12 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         current_text = current_content[0]["text"]
         self.assertIn("你好", current_text)
         self.assertIn("Trusted runtime context", current_text)
+        self.assertLess(
+            current_text.index("<current_owner_messages>"),
+            current_text.index("<runtime_state>"),
+        )
+        self.assertIn("</current_owner_messages>", current_text)
+        self.assertIn("</runtime_state>", current_text)
         self.assertIn(
             "Consecutive messages from the authenticated user",
             current_text,

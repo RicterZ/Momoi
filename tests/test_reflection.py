@@ -87,6 +87,8 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                 ) -> ProviderResponse:
                     assert tools == [REFLECTION_FINISH_SPEC]
                     request = json.dumps(_messages, ensure_ascii=False)
+                    assert "<daily_reflection_record>" in request
+                    assert "<runtime_state>" in request
                     assert "CVE exploit details" not in request
                     assert "CVE vulnerability漏洞exploit" not in request
                     assert "C-V-E v-u-l-nerable漏-洞ex-ploit" in request

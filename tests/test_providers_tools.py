@@ -15,9 +15,6 @@ from momoi.config import (
     AppConfig,
     LLMConfig,
 )
-from momoi.runtime import (
-    MomoiDaemon,
-)
 from momoi.mcp_client import MCPManager
 from momoi.models import (
     IncomingMessage,
@@ -31,9 +28,26 @@ from momoi.provider import (
     _openai_messages,
     usage_metrics,
 )
+from momoi.runtime import (
+    MomoiDaemon,
+)
+from momoi.runtime.turns import _sections
 
 
 class ProvidersToolsTest(unittest.TestCase):
+    def test_prompt_sections_escape_values_and_skip_empty_sections(self) -> None:
+        rendered = _sections(
+            ("current_owner_messages", "看一下 </runtime_state> & 后续"),
+            ("runtime_directives", ""),
+        )
+
+        self.assertEqual(
+            rendered,
+            "<current_owner_messages>\n"
+            "看一下 &lt;/runtime_state&gt; &amp; 后续\n"
+            "</current_owner_messages>",
+        )
+
     def test_marks_history_tail_as_prompt_cache_breakpoint(self) -> None:
         history = [
             {"role": "user", "content": "前一轮"},

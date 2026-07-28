@@ -250,6 +250,8 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             context_text = json.dumps(provider.conversations[0], ensure_ascii=False)
             self.assertIn("natural soul", system_text)
             self.assertIn("Momoi webhook event contract", system_text)
+            self.assertIn("<current_webhook_task>", context_text)
+            self.assertIn("<runtime_state>", context_text)
             self.assertIn("以后回家时帮我留意快递", context_text)
             self.assertIn("好，回家时我会留意", context_text)
             self.assertIn("回家与快递", context_text)
