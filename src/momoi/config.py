@@ -90,6 +90,7 @@ class AppConfig:
     autonomy: AutonomyConfig = AutonomyConfig()
     reflection: ReflectionConfig = ReflectionConfig()
     workspace: Path | None = None
+    heartbeat_prompt: str = ""
 
 def _mapping(value: Any, name: str) -> dict[str, Any]:
     if not isinstance(value, dict):
@@ -176,6 +177,12 @@ def load_config(path: str | Path) -> AppConfig:
     ).resolve()
     system_prompt = files("momoi").joinpath("prompts/system.md").read_text(encoding="utf-8").strip()
     soul_prompt = soul_path.read_text(encoding="utf-8").strip()
+    heartbeat_path = config_path.parent / "HEARTBEAT.md"
+    heartbeat_prompt = (
+        heartbeat_path.read_text(encoding="utf-8").strip()
+        if heartbeat_path.is_file()
+        else ""
+    )
     if not system_prompt or not soul_prompt:
         raise ConfigError("system and soul prompts must not be empty")
 
@@ -248,6 +255,7 @@ def load_config(path: str | Path) -> AppConfig:
         summary_results=max(0, int(context_raw.get("summary_results", 3))),
         summary_tokens=max(0, int(context_raw.get("summary_tokens", 6000))),
         soul_prompt=soul_prompt,
+        heartbeat_prompt=heartbeat_prompt,
         mcp_config=mcp_config,
         notifications=NotificationConfig(
             timezone=notification_timezone,

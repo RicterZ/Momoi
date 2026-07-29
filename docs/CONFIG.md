@@ -351,6 +351,8 @@ This policy applies to proactive Goal and Heartbeat notifications. A fixed Remin
 
 Intervals must be positive, and the maximum must not be smaller than the minimum. The minimum interval bounds the maximum heartbeat evaluation rate.
 
+When a non-empty `HEARTBEAT.md` exists beside the configuration file, Momoi automatically appends it as workspace heartbeat guidance. No additional prompt is injected when the file is absent.
+
 A heartbeat may use explicitly allowed read-only tools, search memory, create files under `<workspace>/artifacts`, or create an agent-owned Goal for work that must continue. It records the real result before deciding whether contacting the owner is useful. Owner Goals and reminders remain separate and are never performed or imitated by a heartbeat.
 
 Send `/heartbeat` in the private owner chat to trigger one evaluation immediately, even when automatic heartbeat scheduling is disabled. A command received while another heartbeat is queued or running is deduplicated.

@@ -1414,11 +1414,17 @@ class TurnRunner:
             ("active_goals", goals),
             ("emotion_catalog", emotions),
         )
+        heartbeat_system_prompt = HEARTBEAT_SYSTEM_PROMPT
+        if self.config.heartbeat_prompt:
+            heartbeat_system_prompt += (
+                "\n\n# Workspace heartbeat guidance\n\n"
+                + self.config.heartbeat_prompt
+            )
         system = [
             *self._system(),
             {
                 "type": "text",
-                "text": HEARTBEAT_SYSTEM_PROMPT,
+                "text": heartbeat_system_prompt,
                 "cache_control": {"type": "ephemeral"},
             },
         ]

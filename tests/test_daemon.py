@@ -665,6 +665,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     min_interval_seconds=60,
                     max_interval_seconds=600,
                 ),
+                heartbeat_prompt="偶尔看看最近有什么有趣的新游戏。",
             )
             daemon = MomoiDaemon(config)
             self.assertTrue((Path(directory) / "artifacts").is_dir())
@@ -682,6 +683,9 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     self.calls += 1
                     names = {str(tool["name"]) for tool in tools}
                     if self.calls == 1:
+                        system_request = json.dumps(_, ensure_ascii=False)
+                        if "偶尔看看最近有什么有趣的新游戏。" not in system_request:
+                            raise AssertionError(_)
                         request = json.dumps(__, ensure_ascii=False)
                         if (
                             "<autonomous_heartbeat>" not in request
