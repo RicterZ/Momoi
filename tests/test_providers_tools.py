@@ -238,7 +238,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                         {
                             "role": "user",
                             "content": [
-                                {"type": "text", "text": "看图"},
+                                {"type": "text", "text": "看图，超市后门"},
                                 {
                                     "type": "image",
                                     "source": {
@@ -258,6 +258,10 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
         finally:
             await server.close()
         self.assertEqual(attempts, 3)
+        self.assertEqual(
+            requests[0]["messages"][0]["content"][0]["text"],  # type: ignore[index]
+            "看图，超市后-门",
+        )
         self.assertEqual(
             requests[0]["messages"][0]["content"][1],  # type: ignore[index]
             {
@@ -373,10 +377,12 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
         self,
     ) -> None:
         attempts = 0
+        requests: list[dict[str, object]] = []
 
-        async def completion(_: web.Request) -> web.Response:
+        async def completion(request: web.Request) -> web.Response:
             nonlocal attempts
             attempts += 1
+            requests.append(await request.json())
             if attempts == 1:
                 return web.json_response(
                     {"error": {"message": "temporary"}}, status=500
@@ -409,7 +415,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
         try:
             async with provider:
                 response = await provider.complete(
-                    "system", [{"role": "user", "content": "hi"}]
+                    "system", [{"role": "user", "content": "超市后门"}]
                 )
                 self.assertEqual(response.content[0]["text"], "ok")
                 with self.assertRaisesRegex(ProviderError, "bad request"):
@@ -423,6 +429,10 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
         finally:
             await server.close()
         self.assertEqual(attempts, 4)
+        self.assertEqual(
+            requests[0]["messages"][1]["content"],  # type: ignore[index]
+            "超市后-门",
+        )
 
     async def test_owner_turn_corrects_openai_gateway_that_ignores_tool_choice(
         self,

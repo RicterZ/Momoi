@@ -8,6 +8,7 @@ import aiohttp
 
 from .config import LLMConfig
 from .models import ProviderResponse, ToolCall
+from .text_replacement import cyber_keyword_pre_hook
 
 logger = logging.getLogger(__name__)
 
@@ -152,6 +153,7 @@ class AnthropicProvider:
             payload["tools"] = tools
             if require_tool:
                 payload["tool_choice"] = {"type": "any"}
+        payload = cyber_keyword_pre_hook.replace_strings(payload)
         headers = {
             "x-api-key": self.config.api_key,
             "anthropic-version": "2023-06-01",
@@ -338,6 +340,7 @@ class OpenAIProvider:
             ]
             if require_tool:
                 payload["tool_choice"] = "required"
+        payload = cyber_keyword_pre_hook.replace_strings(payload)
         headers = {
             "authorization": f"Bearer {self.config.api_key}",
             "content-type": "application/json",
