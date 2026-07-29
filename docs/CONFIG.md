@@ -38,6 +38,7 @@ Relative paths in `config.json` are resolved from the directory containing that 
 ~/.momoi/
 ├── config.json
 ├── mcp.json
+├── HEARTBEAT.md
 ├── prompts/
 │   └── SOUL.md
 ├── workflows/

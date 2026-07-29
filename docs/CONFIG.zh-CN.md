@@ -38,6 +38,7 @@ MCP 是添加由模型控制能力的常规方式。工作流用于事件驱动�
 ~/.momoi/
 ├── config.json
 ├── mcp.json
+├── HEARTBEAT.md
 ├── prompts/
 │   └── SOUL.md
 ├── workflows/
