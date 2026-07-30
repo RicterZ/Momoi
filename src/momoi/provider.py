@@ -218,11 +218,11 @@ class AnthropicProvider:
         raise ProviderError(f"Anthropic-compatible request failed: {type(last_error).__name__}")
 
 
-def _text(content: Any) -> str:
+def _text(content: Any, separator: str = "\n") -> str:
     if isinstance(content, str):
         return content
     if isinstance(content, list):
-        return "\n".join(
+        return separator.join(
             str(block.get("text", ""))
             for block in content
             if isinstance(block, dict) and block.get("type") == "text"
@@ -234,7 +234,7 @@ def _openai_messages(
     system: str | list[dict[str, Any]], messages: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
     wire: list[dict[str, Any]] = []
-    system_text = _text(system)
+    system_text = _text(system, "\n\n")
     if system_text:
         wire.append({"role": "system", "content": system_text})
     for message in messages:

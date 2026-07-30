@@ -35,6 +35,19 @@ from momoi.runtime.turns import _sections
 
 
 class ProvidersToolsTest(unittest.TestCase):
+    def test_openai_system_blocks_keep_a_clear_boundary(self) -> None:
+        messages = _openai_messages(
+            [
+                {"type": "text", "text": "Base contract."},
+                {"type": "text", "text": "# Turn contract"},
+            ],
+            [],
+        )
+        self.assertEqual(
+            messages,
+            [{"role": "system", "content": "Base contract.\n\n# Turn contract"}],
+        )
+
     def test_prompt_sections_escape_values_and_skip_empty_sections(self) -> None:
         rendered = _sections(
             ("current_owner_messages", "看一下 </runtime_state> & 后续"),

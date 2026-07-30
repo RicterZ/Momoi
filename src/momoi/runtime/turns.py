@@ -368,7 +368,7 @@ class TurnRunner:
             ("open_reconciliations", reconciliations),
             ("emotion_catalog", emotions),
         )
-        system = self._system()
+        system = self._system(include_tool_policies=True)
 
         current_content: list[dict[str, Any]] = [
             {
@@ -1121,17 +1121,23 @@ class TurnRunner:
             estimate_tokens(summary),
         )
 
-    def _system(self) -> list[dict[str, Any]]:
-        policies = [
-            MEMORY_TOOL_POLICY.strip(),
-            BUILTIN_TOOL_POLICY.strip(),
-            AGENDA_TOOL_POLICY.strip(),
-        ]
-        if self.mcp.tool_specs:
-            policies.append(MCP_TOOL_POLICY.strip())
+    def _system(self, *, include_tool_policies: bool = False) -> list[dict[str, Any]]:
+        policies: list[str] = []
+        if include_tool_policies:
+            policies = [
+                MEMORY_TOOL_POLICY.strip(),
+                BUILTIN_TOOL_POLICY.strip(),
+                AGENDA_TOOL_POLICY.strip(),
+            ]
+            if self.mcp.tool_specs:
+                policies.append(MCP_TOOL_POLICY.strip())
         text = self.config.system_prompt.replace(
             "{{SOUL}}", self.config.soul_prompt or "No additional Soul is configured."
-        ).replace("{{CAPABILITY_POLICIES}}", "\n\n".join(policies))
+        ).replace(
+            "{{CAPABILITY_POLICIES}}",
+            "\n\n".join(policies)
+            or "Use only the tools supplied for this Turn and follow their schemas.",
+        )
         return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
 
     async def _complete_goal_turn(self, goal_id: str, stop: asyncio.Event) -> None:

@@ -41,6 +41,21 @@ from momoi.storage import estimate_tokens
 
 
 class DaemonTest(unittest.TestCase):
+    def test_specialized_system_omits_unavailable_tool_policies(self) -> None:
+        daemon = object.__new__(MomoiDaemon)
+        daemon.config = SimpleNamespace(
+            system_prompt="{{SOUL}}\n{{CAPABILITY_POLICIES}}",
+            soul_prompt="Test soul",
+        )
+        daemon.mcp = SimpleNamespace(tool_specs=[])
+
+        specialized = daemon._system()[0]["text"]
+        owner = daemon._system(include_tool_policies=True)[0]["text"]
+
+        self.assertIn("Use only the tools supplied", specialized)
+        self.assertNotIn("Memory tools", specialized)
+        self.assertIn("Memory tools", owner)
+
     def test_mood_transition_parser_rejects_invalid_state(self) -> None:
         mood, error = MomoiDaemon._parse_mood_transition(
             {
@@ -75,6 +90,12 @@ class DaemonTest(unittest.TestCase):
         self.assertIn("mood", RESPOND_TOOL_SPEC["input_schema"]["required"])
         self.assertIn("delivery", RESPOND_TOOL_SPEC["input_schema"]["required"])
         self.assertIn("expects_reply", RESPOND_TOOL_SPEC["input_schema"]["required"])
+        self.assertIn(
+            "guided by her Soul",
+            RESPOND_TOOL_SPEC["input_schema"]["properties"]["expects_reply"][
+                "description"
+            ],
+        )
         self.assertIn("delivery", SEND_MESSAGE_TOOL_SPEC["input_schema"]["required"])
         self.assertIn("natural turning point", SEND_MESSAGE_TOOL_SPEC["description"])
         self.assertIn("conversational Turn", RESPOND_TOOL_SPEC["description"])

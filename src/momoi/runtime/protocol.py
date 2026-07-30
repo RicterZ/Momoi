@@ -140,17 +140,17 @@ RESPOND_TOOL_SPEC: dict[str, Any] = {
             "expects_reply": {
                 "type": "boolean",
                 "description": (
-                    "Whether the final messages genuinely invite or require an owner "
-                    "reply. This drives a later conversational follow-up; do not set "
-                    "it merely because a reply would be welcome."
+                    "Whether Momoi, guided by her Soul, relationship with the owner, "
+                    "and current context, will genuinely wait for, look forward to, or "
+                    "keep attention on the owner's reply to these final messages."
                 ),
             },
             "reply_expectation": {
                 "type": "string",
                 "maxLength": 300,
                 "description": (
-                    "Briefly state what owner response is awaited when expects_reply "
-                    "is true; otherwise use an empty string."
+                    "Briefly state what Momoi is waiting for when expects_reply is true; "
+                    "otherwise use an empty string."
                 ),
             },
             "continuity": {
@@ -246,15 +246,17 @@ HEARTBEAT_FINISH_SPEC: dict[str, Any] = {
             "expects_reply": {
                 "type": "boolean",
                 "description": (
-                    "Whether these owner messages genuinely invite or require a reply."
+                    "Whether Momoi, guided by her Soul, relationship with the owner, "
+                    "and current context, will genuinely keep attention on a reply to "
+                    "these messages."
                 ),
             },
             "reply_expectation": {
                 "type": "string",
                 "maxLength": 300,
                 "description": (
-                    "What owner response is awaited when expects_reply is true; "
-                    "otherwise empty."
+                    "What Momoi is waiting for when expects_reply is true; otherwise "
+                    "empty."
                 ),
             },
             "activity": {"type": "string", "minLength": 1, "maxLength": 300},
