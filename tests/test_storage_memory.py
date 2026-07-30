@@ -624,6 +624,91 @@ class StorageMemoryTest(unittest.TestCase):
                 )
             store.close()
 
+    def test_expected_reply_keeps_heartbeat_attention_until_owner_returns(self) -> None:
+        heartbeat = HeartbeatConfig(
+            enabled=False,
+            initial_delay_seconds=60,
+            min_interval_seconds=60,
+            max_interval_seconds=600,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store.commit_turn(
+                [],
+                "",
+                AgentReply(
+                    ["今晚想吃什么？"],
+                    expects_reply=True,
+                    reply_expectation="主人对晚餐的选择",
+                ),
+                turn_id="owner-question",
+            )
+            row = store.due_outbox()[0]
+            with patch("momoi.storage.delivery.time.time", return_value=1000):
+                self.assertTrue(store.mark_sent(row.id, 60))
+            self.assertEqual(
+                store.pending_owner_reply(1000)["expected_response"],
+                "主人对晚餐的选择",
+            )
+            self.assertEqual(store.next_heartbeat_due_at(False), 1060)
+            self.assertIsNotNone(
+                store.claim_due_heartbeat(
+                    heartbeat, NotificationConfig(), now=1060
+                )
+            )
+
+            store.begin_turn("reply-check", "autonomous", ["heartbeat:1060"])
+            with patch("momoi.storage.store.time.time", return_value=1060):
+                store.commit_heartbeat(
+                    "reply-check",
+                    activity="等主人选晚餐",
+                    result="轻轻问了一次",
+                    next_heartbeat_at=1660,
+                    mood_transition=None,
+                    messages=["还没想好的话，我可以帮你挑两个呀。"],
+                    reason="晚餐选择还需要主人回复",
+                    reply_expectation="主人是否需要帮忙挑晚餐",
+                    pending_reply_turn_id="owner-question",
+                )
+            self.assertEqual(store.next_heartbeat_due_at(False), 1660)
+            self.assertIsNotNone(
+                store.claim_due_heartbeat(
+                    heartbeat, NotificationConfig(), now=1660
+                )
+            )
+            self.assertEqual(
+                store.pending_owner_reply(1060)["expected_response"],
+                "主人对晚餐的选择",
+            )
+            key = store._db.execute(
+                "SELECT notification_key FROM notifications WHERE turn_id='reply-check'"
+            ).fetchone()[0]
+            self.assertEqual(key, "heartbeat.reply_followup")
+
+            policy = NotificationConfig()
+            notification = store.claim_due_notification(policy, now=1060)
+            self.assertTrue(store.queue_notification(notification["id"], 1060, policy))
+            stale_followup = store.due_outbox()[0]
+            self.assertEqual(
+                store._db.execute(
+                    "SELECT reply_expectation FROM outbox WHERE id=?",
+                    (stale_followup.id,),
+                ).fetchone()[0],
+                "主人是否需要帮忙挑晚餐",
+            )
+
+            store.add_event(
+                IncomingMessage("owner-answer", "answer", "吃面", 1061, 1061)
+            )
+            self.assertEqual(
+                store._db.execute(
+                    "SELECT state FROM outbox WHERE id=?", (stale_followup.id,)
+                ).fetchone()[0],
+                "failed",
+            )
+            self.assertFalse(store.mark_sending(stale_followup.id))
+            store.close()
+
     def test_recurring_goal_persists_schedule_and_advances_after_review(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")

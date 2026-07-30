@@ -3,8 +3,8 @@ import sqlite3
 import time
 import uuid
 
-from ..channel import ChannelMessage, normalize_channel_message
-from ..models import OutboxMessage
+from ..channel import normalize_channel_message
+from ..models import AgentReply, OutboxMessage
 
 
 class DeliveryStore:
@@ -140,8 +140,8 @@ class DeliveryStore:
                 (step_index, now, run_id),
             )
 
-    def queue_webhook_messages(
-        self, run_id: str, step_index: int, messages: list[ChannelMessage]
+    def commit_webhook_reply(
+        self, run_id: str, step_index: int, turn_id: str, reply: AgentReply
     ) -> list[int]:
         step = self.webhook_step(run_id, step_index)
         if step is None:
@@ -151,43 +151,94 @@ class DeliveryStore:
             return [int(value) for value in result.get("outbox_ids", [])]  # type: ignore[union-attr]
         if step["state"] != "running":
             raise ValueError("webhook message step is not running")
-        if not messages:
-            raise ValueError("webhook messages must not be empty")
-        source = json.dumps([f"webhook:{run_id}:{step_index}"], ensure_ascii=False)
+        normalized = [self._outbox_content(message) for message in reply.messages]
+        source_ids = [turn_id]
+        source = json.dumps(source_ids, ensure_ascii=False)
         now = time.time()
-        outbox_ids: list[int] = []
         with self._db:
-            for index, message in enumerate(messages):
-                text, kind, path, payload = self._outbox_content(message)
+            progress = self._db.execute(
+                """SELECT text, created_at FROM turn_progress
+                   WHERE turn_id=? ORDER BY created_at, tool_call_id, part_index""",
+                (turn_id,),
+            ).fetchall()
+            self._db.executemany(
+                """INSERT INTO messages(role, content, created_at, source_event_ids_json)
+                   VALUES ('assistant', ?, ?, ?)""",
+                ((row["text"], row["created_at"], source) for row in progress),
+            )
+            for index, (text, kind, path, payload) in enumerate(normalized):
                 self._db.execute(
                     """INSERT INTO messages(role, content, created_at, source_event_ids_json)
                        VALUES ('assistant', ?, ?, ?)""",
                     (text, now, source),
                 )
-                cursor = self._db.execute(
+                self._db.execute(
                     """INSERT INTO outbox
-                       (turn_id, dedupe_key, text, kind, media_path, payload_json)
-                       VALUES (?, ?, ?, ?, ?, ?)""",
+                       (turn_id, dedupe_key, text, kind, media_path, payload_json,
+                        reply_expectation)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
                     (
-                        f"webhook:{run_id}",
-                        f"webhook:{run_id}:{step_index}:{index}",
+                        turn_id,
+                        f"turn:{turn_id}:{index}",
                         text,
                         kind,
                         path,
                         json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+                        (
+                            reply.reply_expectation
+                            if reply.expects_reply and index == len(normalized) - 1
+                            else ""
+                        ),
                     ),
                 )
-                outbox_ids.append(int(cursor.lastrowid))
+            if reply.continuity is not None:
+                continuity = self._serialize_continuity(
+                    reply.continuity, source_ids, now
+                )
+                self._db.execute(
+                    """INSERT INTO continuity_state
+                       (id, content, source_event_ids_json, updated_at)
+                       VALUES (1, ?, ?, ?)
+                       ON CONFLICT(id) DO UPDATE SET
+                         content=excluded.content,
+                         source_event_ids_json=excluded.source_event_ids_json,
+                         updated_at=excluded.updated_at""",
+                    (continuity, source, now),
+                )
+            self._apply_mood_transition(reply.mood_transition, now)
+            outbox_ids = [
+                int(row["id"])
+                for row in self._db.execute(
+                    "SELECT id FROM outbox WHERE turn_id=? ORDER BY id", (turn_id,)
+                ).fetchall()
+            ]
             result_json = json.dumps({"outbox_ids": outbox_ids}, separators=(",", ":"))
+            step_state = "waiting_delivery" if outbox_ids else "succeeded"
             self._db.execute(
-                """UPDATE webhook_steps SET state='waiting_delivery', result_json=?
+                """UPDATE webhook_steps SET state=?, result_json=?, completed_at=?
                    WHERE run_id=? AND step_index=?""",
-                (result_json, run_id, step_index),
+                (
+                    step_state,
+                    result_json,
+                    None if outbox_ids else now,
+                    run_id,
+                    step_index,
+                ),
             )
             self._db.execute(
-                """UPDATE webhook_runs SET state='waiting_delivery', updated_at=?
+                """UPDATE webhook_runs SET state=?, current_step=?, updated_at=?
                    WHERE id=?""",
-                (now, run_id),
+                (
+                    "waiting_delivery" if outbox_ids else "running",
+                    step_index if outbox_ids else step_index + 1,
+                    now,
+                    run_id,
+                ),
+            )
+            self._db.execute(
+                """UPDATE turns SET state='completed', stage='completed',
+                   failure_reason=NULL, updated_at=? WHERE id=?""",
+                (now, turn_id),
             )
         return outbox_ids
 
@@ -328,12 +379,14 @@ class DeliveryStore:
             )
         return messages
 
-    def mark_sending(self, outbox_id: int) -> None:
+    def mark_sending(self, outbox_id: int) -> bool:
         with self._db:
-            self._db.execute(
-                "UPDATE outbox SET state='sending', attempts=attempts+1 WHERE id=?",
+            cursor = self._db.execute(
+                """UPDATE outbox SET state='sending', attempts=attempts+1
+                   WHERE id=? AND state IN ('pending', 'ambiguous')""",
                 (outbox_id,),
             )
+        return cursor.rowcount == 1
 
     def mark_not_dispatched(self, outbox_id: int, error: str) -> None:
         with self._db:
@@ -343,12 +396,39 @@ class DeliveryStore:
                 (time.time() + 2, error, outbox_id),
             )
 
-    def mark_sent(self, outbox_id: int) -> None:
+    def mark_sent(
+        self, outbox_id: int, reply_check_delay: float | None = None
+    ) -> bool:
+        activated = False
         with self._db:
+            row = self._db.execute(
+                "SELECT turn_id, reply_expectation FROM outbox WHERE id=?",
+                (outbox_id,),
+            ).fetchone()
             self._db.execute(
                 "UPDATE outbox SET state='sent', last_error=NULL WHERE id=?",
                 (outbox_id,),
             )
+            expectation = str(row["reply_expectation"] or "").strip() if row else ""
+            if (
+                expectation
+                and reply_check_delay is not None
+                and self._db.execute(
+                    "SELECT 1 FROM events WHERE processed=0 LIMIT 1"
+                ).fetchone()
+                is None
+            ):
+                now = time.time()
+                due = now + reply_check_delay
+                self._db.execute(
+                    """UPDATE self_state SET pending_reply_turn_id=?,
+                       pending_reply_expectation=?, pending_reply_since=?,
+                       next_heartbeat_at=?,
+                       updated_at=? WHERE id=1""",
+                    (row["turn_id"], expectation, now, due, now),
+                )
+                activated = True
+        return activated
 
     def mark_ambiguous(self, outbox_id: int, attempts: int, error: str) -> None:
         state = "ambiguous" if attempts < 2 else "failed"

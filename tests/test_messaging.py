@@ -250,6 +250,8 @@ class MessagingTest(unittest.TestCase):
         reply, error = MomoiDaemon._parse_response(
             {
                 "delivery": "轻松接住话题，分成两句",
+                "expects_reply": True,
+                "reply_expectation": "主人晚上的安排",
                 "messages": ["嘿嘿，没忘吧~", "晚上在忙什么呢？"],
                 "continuity": {
                     "topic": "晚上的安排",
@@ -262,6 +264,8 @@ class MessagingTest(unittest.TestCase):
         )
         self.assertIsNone(error)
         self.assertEqual(reply.messages, ["嘿嘿，没忘吧~", "晚上在忙什么呢？"])
+        self.assertTrue(reply.expects_reply)
+        self.assertEqual(reply.reply_expectation, "主人晚上的安排")
         self.assertEqual(reply.continuity["topic"], "晚上的安排")
         split, error = MomoiDaemon._parse_messages(
             {"messages": ["第一条。\n\n第二条。"]}
@@ -397,6 +401,8 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                         "respond",
                         {
                             "delivery": "话题已经自然结束，不追加机械回应",
+                            "expects_reply": False,
+                            "reply_expectation": "",
                             "messages": [],
                             "continuity": {
                                 "topic": "",
@@ -513,6 +519,8 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                         "respond",
                         {
                             "delivery": "简单回应看到图片",
+                            "expects_reply": False,
+                            "reply_expectation": "",
                             "messages": ["看到了"],
                             "continuity": {
                                 "topic": "",
@@ -588,6 +596,8 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                         "respond",
                         {
                             "delivery": "先报喜，两个表情分别跟在对应的话后面",
+                            "expects_reply": False,
+                            "reply_expectation": "",
                             "messages": [
                                 "太好了",
                                 "emotion://happy-1",
@@ -682,6 +692,8 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                         "respond",
                         {
                             "delivery": "表情不可用时改成简短文字",
+                            "expects_reply": False,
+                            "reply_expectation": "",
                             "messages": [value],
                             "continuity": {
                                 "topic": "",

@@ -5,7 +5,6 @@ from .protocol import (
     REFLECTION_FINISH_SPEC,
     RESPOND_TOOL_SPEC,
     SEND_MESSAGE_TOOL_SPEC,
-    WEBHOOK_SEND_MESSAGE_TOOL_SPEC,
 )
 
 __all__ = [
@@ -15,6 +14,5 @@ __all__ = [
     "REFLECTION_FINISH_SPEC",
     "RESPOND_TOOL_SPEC",
     "SEND_MESSAGE_TOOL_SPEC",
-    "WEBHOOK_SEND_MESSAGE_TOOL_SPEC",
     "MomoiDaemon",
 ]

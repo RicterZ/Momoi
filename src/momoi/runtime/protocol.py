@@ -124,10 +124,10 @@ DELIVERY_SCHEMA: dict[str, Any] = {
 RESPOND_TOOL_SPEC: dict[str, Any] = {
     "name": "respond",
     "description": (
-        "Required terminal decision for every owner Turn, called only after all tool "
-        "work is complete. It may carry no message when silence naturally closes an "
-        "already-finished exchange, and does not replace useful live check-ins through "
-        "send_message during substantial work."
+        "Required terminal decision for every conversational Turn, called only after "
+        "all tool work is complete. It may carry no message when silence is natural, "
+        "and does not replace useful live check-ins through send_message during "
+        "substantial work."
     ),
     "input_schema": {
         "type": "object",
@@ -136,6 +136,22 @@ RESPOND_TOOL_SPEC: dict[str, Any] = {
             "messages": {
                 "type": "array",
                 "items": CHANNEL_MESSAGE_SCHEMA,
+            },
+            "expects_reply": {
+                "type": "boolean",
+                "description": (
+                    "Whether the final messages genuinely invite or require an owner "
+                    "reply. This drives a later conversational follow-up; do not set "
+                    "it merely because a reply would be welcome."
+                ),
+            },
+            "reply_expectation": {
+                "type": "string",
+                "maxLength": 300,
+                "description": (
+                    "Briefly state what owner response is awaited when expects_reply "
+                    "is true; otherwise use an empty string."
+                ),
             },
             "continuity": {
                 "type": "object",
@@ -178,7 +194,14 @@ RESPOND_TOOL_SPEC: dict[str, Any] = {
             },
             "mood": MOOD_DECISION_SCHEMA,
         },
-        "required": ["delivery", "messages", "continuity", "mood"],
+        "required": [
+            "delivery",
+            "messages",
+            "expects_reply",
+            "reply_expectation",
+            "continuity",
+            "mood",
+        ],
         "additionalProperties": False,
     },
 }
@@ -206,25 +229,6 @@ SEND_MESSAGE_TOOL_SPEC: dict[str, Any] = {
         "additionalProperties": False,
     },
 }
-WEBHOOK_SEND_MESSAGE_TOOL_SPEC: dict[str, Any] = {
-    "name": "send_message",
-    "description": (
-        "Required terminal output tool for this webhook event. Send the complete "
-        "ordered messages exactly once after any required tool work."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "messages": {
-                "type": "array",
-                "minItems": 1,
-                "items": CHANNEL_MESSAGE_SCHEMA,
-            }
-        },
-        "required": ["messages"],
-        "additionalProperties": False,
-    },
-}
 HEARTBEAT_FINISH_SPEC: dict[str, Any] = {
     "name": "heartbeat_finish",
     "description": (
@@ -239,6 +243,20 @@ HEARTBEAT_FINISH_SPEC: dict[str, Any] = {
                 "maxItems": 3,
                 "items": CHANNEL_MESSAGE_SCHEMA,
             },
+            "expects_reply": {
+                "type": "boolean",
+                "description": (
+                    "Whether these owner messages genuinely invite or require a reply."
+                ),
+            },
+            "reply_expectation": {
+                "type": "string",
+                "maxLength": 300,
+                "description": (
+                    "What owner response is awaited when expects_reply is true; "
+                    "otherwise empty."
+                ),
+            },
             "activity": {"type": "string", "minLength": 1, "maxLength": 300},
             "result": {"type": "string", "maxLength": 2000},
             "next_check_minutes": {
@@ -251,6 +269,8 @@ HEARTBEAT_FINISH_SPEC: dict[str, Any] = {
         },
         "required": [
             "messages",
+            "expects_reply",
+            "reply_expectation",
             "activity",
             "result",
             "next_check_minutes",

@@ -48,6 +48,23 @@ def validate_delivery(arguments: dict[str, Any]) -> str | None:
     return None
 
 
+def parse_reply_expectation(
+    arguments: dict[str, Any], messages: list[ChannelMessage]
+) -> tuple[tuple[bool, str] | None, str | None]:
+    expects_reply = arguments.get("expects_reply")
+    expectation = arguments.get("reply_expectation")
+    if not isinstance(expects_reply, bool):
+        return None, "invalid_expects_reply"
+    if not isinstance(expectation, str) or len(expectation) > 300:
+        return None, "invalid_reply_expectation"
+    expectation = expectation.strip()
+    if expects_reply and (not messages or not expectation):
+        return None, "invalid_reply_expectation"
+    if not expects_reply and expectation:
+        return None, "invalid_reply_expectation"
+    return (expects_reply, expectation), None
+
+
 def parse_response(
     arguments: dict[str, Any],
 ) -> tuple[AgentReply | None, str | None]:
@@ -106,7 +123,11 @@ def parse_response(
     mood, error = parse_mood_decision(arguments.get("mood"))
     if error is not None:
         return None, error
-    return AgentReply(messages, continuity, mood), None
+    reply_expectation, error = parse_reply_expectation(arguments, messages)
+    if reply_expectation is None:
+        return None, error
+    expects_reply, expectation = reply_expectation
+    return AgentReply(messages, continuity, mood, expects_reply, expectation), None
 
 
 def parse_mood_decision(

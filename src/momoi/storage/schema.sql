@@ -27,7 +27,8 @@ CREATE TABLE IF NOT EXISTS outbox (
     last_error TEXT,
     kind TEXT NOT NULL DEFAULT 'text',
     media_path TEXT,
-    payload_json TEXT NOT NULL DEFAULT ''
+    payload_json TEXT NOT NULL DEFAULT '',
+    reply_expectation TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS continuity_state (
     id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -168,6 +169,9 @@ CREATE TABLE IF NOT EXISTS self_state (
     last_heartbeat_at REAL,
     next_heartbeat_at REAL,
     heartbeat_claimed_at REAL,
+    pending_reply_turn_id TEXT,
+    pending_reply_expectation TEXT NOT NULL DEFAULT '',
+    pending_reply_since REAL,
     updated_at REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS notifications (
@@ -178,6 +182,7 @@ CREATE TABLE IF NOT EXISTS notifications (
     priority TEXT NOT NULL CHECK (priority IN ('normal', 'urgent')),
     reason TEXT NOT NULL,
     messages_json TEXT NOT NULL,
+    reply_expectation TEXT NOT NULL DEFAULT '',
     state TEXT NOT NULL CHECK (state IN ('pending', 'queued')),
     not_before REAL NOT NULL,
     claimed_at REAL,

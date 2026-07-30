@@ -124,7 +124,7 @@ steps:
 
 
 class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
-    async def test_webhook_event_turn_can_curl_before_sending_message(self) -> None:
+    async def test_webhook_turn_uses_normal_curl_and_respond_loop(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
                 llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
@@ -206,8 +206,20 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                         self.assert_tool_result(messages)
                         call = ToolCall(
                             "notify-owner",
-                            "send_message",
-                            {"messages": ["有一个快递到了，取件码是 1234。"]},
+                            "respond",
+                            {
+                                "delivery": "自然提醒主人快递已经到达",
+                                "messages": ["有一个快递到了，取件码是 1234。"],
+                                "expects_reply": False,
+                                "reply_expectation": "",
+                                "continuity": {
+                                    "topic": "回家与快递",
+                                    "open_loops": [],
+                                    "pending_commitments": [],
+                                    "short_term_facts": [],
+                                },
+                                "mood": {"action": "keep"},
+                            },
                         )
                     return ProviderResponse(
                         [
@@ -227,6 +239,14 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                     assert "1234" in str(result)
 
             class Tools:
+                @staticmethod
+                def has_tool(name: str) -> bool:
+                    return name == "curl"
+
+                @staticmethod
+                def capability(_: ToolCall) -> str:
+                    return "read"
+
                 async def execute(self, call: ToolCall) -> dict[str, object]:
                     self.last_call = call
                     return {
@@ -239,12 +259,14 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             tools = Tools()
             daemon.provider = provider  # type: ignore[assignment]
             daemon.builtin_tools = tools  # type: ignore[assignment]
-            reply = await daemon._complete_webhook_message(
-                "回家时检查快递状态并根据结果提醒我。"
+            reply = await daemon._complete_webhook_turn(
+                "回家时检查快递状态并根据结果提醒我。", "webhook:test:0"
             )
-            self.assertEqual(reply, ["有一个快递到了，取件码是 1234。"])
+            self.assertEqual(reply.messages, ["有一个快递到了，取件码是 1234。"])
             self.assertEqual(provider.calls, 2)
-            self.assertEqual(provider.tool_names[0], ["send_message", "curl"])
+            self.assertEqual(
+                provider.tool_names[0], ["send_message", "curl", "respond"]
+            )
             self.assertEqual(tools.last_call.name, "curl")
             system_text = json.dumps(provider.systems[0], ensure_ascii=False)
             context_text = json.dumps(provider.conversations[0], ensure_ascii=False)
@@ -266,9 +288,26 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             store = Store(Path(directory) / "momoi.sqlite3")
             generated: list[str] = []
 
-            async def generate(prompt: str) -> list[str]:
+            async def generate(prompt: str, turn_id: str) -> AgentReply:
                 generated.append(prompt)
-                return ["门口好像有人，我提醒你看一下。"]
+                store.begin_turn(turn_id, "autonomous", [turn_id])
+                return AgentReply(
+                    ["门口好像有人，需要我继续帮你留意吗？"],
+                    {
+                        "topic": "门口动态",
+                        "open_loops": ["等待主人决定是否继续留意"],
+                        "pending_commitments": [],
+                        "short_term_facts": [],
+                    },
+                    {
+                        "state": "focused",
+                        "intensity": 0.5,
+                        "cause": "门口出现需要关注的动态",
+                        "duration_minutes": 15,
+                    },
+                    True,
+                    "主人是否需要继续留意门口",
+                )
 
             service = WebhookService(
                 WebhookConfig(
@@ -307,7 +346,19 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                     break
                 await asyncio.sleep(0.01)
             self.assertEqual(generated, ["门口检测到有人，请自然提醒我。"])
-            self.assertEqual(rows[0].text, "门口好像有人，我提醒你看一下。")
+            self.assertEqual(
+                rows[0].text, "门口好像有人，需要我继续帮你留意吗？"
+            )
+            self.assertEqual(
+                store._db.execute(
+                    "SELECT reply_expectation FROM outbox WHERE id=?", (rows[0].id,)
+                ).fetchone()[0],
+                "主人是否需要继续留意门口",
+            )
+            self.assertEqual(
+                json.loads(store.continuity_context())["topic"], "门口动态"
+            )
+            self.assertEqual(store.self_state()["mood_state"], "focused")
             self.assertEqual(
                 store.webhook_run(str(first["id"]))["state"], "waiting_delivery"
             )
@@ -315,6 +366,53 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             await asyncio.wait_for(task, timeout=1)
             self.assertEqual(store.webhook_run(str(first["id"]))["state"], "succeeded")
             self.assertEqual(
+                store._db.execute(
+                    "SELECT state FROM turns WHERE id=?",
+                    (f"webhook:{first['id']}:0",),
+                ).fetchone()[0],
+                "completed",
+            )
+            self.assertEqual(
                 store._db.execute("SELECT COUNT(*) FROM outbox").fetchone()[0], 1
+            )
+            store.close()
+
+    async def test_message_webhook_can_finish_silently(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(__file__).resolve().parents[1] / "config.example"
+            store = Store(Path(directory) / "momoi.sqlite3")
+
+            async def generate(_: str, __: str) -> AgentReply:
+                return AgentReply([])
+
+            service = WebhookService(
+                WebhookConfig(
+                    enabled=True,
+                    token="test",
+                    workflows=root / "workflows",
+                    executors=root / "workflow-executors.yaml",
+                ),
+                {"channel_url": "ws://napcat.test/ws", "owner_id": "20000"},
+                store,
+                generate,
+                lambda: None,
+            )
+            plan = bind_workflow(
+                service.workflows["event-message"],
+                service.executors,
+                {"event_prompt": "没有变化时保持安静。"},
+                service.channel_variables,
+            )
+            created, _ = store.create_webhook_run("event-message", "silent", plan)
+            run = store.claim_webhook_run()
+            await service._execute(run, asyncio.Event())
+
+            self.assertEqual(
+                store.webhook_run(str(created["id"]))["state"], "succeeded"
+            )
+            self.assertEqual(store.due_outbox(), [])
+            self.assertEqual(
+                store.webhook_step(str(created["id"]), 0)["result"],
+                {"outbox_ids": []},
             )
             store.close()

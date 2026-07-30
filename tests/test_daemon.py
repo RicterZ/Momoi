@@ -25,7 +25,6 @@ from momoi.runtime import (
     HEARTBEAT_QUEUE_ITEM,
     RESPOND_TOOL_SPEC,
     SEND_MESSAGE_TOOL_SPEC,
-    WEBHOOK_SEND_MESSAGE_TOOL_SPEC,
     MomoiDaemon,
 )
 from momoi.models import (
@@ -75,13 +74,17 @@ class DaemonTest(unittest.TestCase):
         )
         self.assertIn("mood", RESPOND_TOOL_SPEC["input_schema"]["required"])
         self.assertIn("delivery", RESPOND_TOOL_SPEC["input_schema"]["required"])
+        self.assertIn("expects_reply", RESPOND_TOOL_SPEC["input_schema"]["required"])
         self.assertIn("delivery", SEND_MESSAGE_TOOL_SPEC["input_schema"]["required"])
-        self.assertNotIn(
-            "delivery", WEBHOOK_SEND_MESSAGE_TOOL_SPEC["input_schema"]["required"]
-        )
         self.assertIn("natural turning point", SEND_MESSAGE_TOOL_SPEC["description"])
-        self.assertIn("terminal output", WEBHOOK_SEND_MESSAGE_TOOL_SPEC["description"])
+        self.assertIn("conversational Turn", RESPOND_TOOL_SPEC["description"])
+        self.assertNotIn(
+            "minItems", RESPOND_TOOL_SPEC["input_schema"]["properties"]["messages"]
+        )
         self.assertIn("mood", HEARTBEAT_FINISH_SPEC["input_schema"]["required"])
+        self.assertIn(
+            "expects_reply", HEARTBEAT_FINISH_SPEC["input_schema"]["required"]
+        )
 
     def test_context_budget_drops_old_history_and_truncates_tool_results(self) -> None:
         daemon = object.__new__(MomoiDaemon)
@@ -177,6 +180,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "respond",
                             {
                                 "delivery": "报告上海天气",
+                                "expects_reply": False,
+                                "reply_expectation": "",
                                 "messages": ["上海天气晴"],
                                 "continuity": {
                                     "topic": "天气",
@@ -196,6 +201,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "respond",
                             {
                                 "delivery": "确认采用最新要求",
+                                "expects_reply": False,
+                                "reply_expectation": "",
                                 "messages": ["收到，不查了"],
                                 "continuity": {
                                     "topic": "",
@@ -500,6 +507,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "respond",
                             {
                                 "delivery": "简短说明创建失败",
+                                "expects_reply": False,
+                                "reply_expectation": "",
                                 "messages": ["创建任务失败：缺少有效的执行时间。"],
                                 "continuity": {
                                     "topic": "",
@@ -729,6 +738,10 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "heartbeat_finish",
                             {
                                 "messages": messages,
+                                "expects_reply": bool(messages),
+                                "reply_expectation": (
+                                    "主人对关卡点子的回应" if messages else ""
+                                ),
                                 "activity": "整理小游戏关卡灵感",
                                 "result": (
                                     "读完一条游戏新闻并记下玩法联想"
@@ -1046,6 +1059,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         "respond",
                         {
                             "delivery": "直接确认已经停下",
+                            "expects_reply": False,
+                            "reply_expectation": "",
                             "messages": ["已经停下来了"],
                             "continuity": {
                                 "topic": "",
@@ -1131,6 +1146,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "respond",
                             {
                                 "delivery": "简短确认任务终止",
+                                "expects_reply": False,
+                                "reply_expectation": "",
                                 "messages": ["已经终止当前任务"],
                                 "continuity": {
                                     "topic": "",
@@ -1247,6 +1264,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "name": "respond",
                             "input": {
                                 "delivery": "完成后简短收尾",
+                                "expects_reply": False,
+                                "reply_expectation": "",
                                 "messages": ["测试回复一", "测试回复二"],
                                 "continuity": {
                                     "topic": "",

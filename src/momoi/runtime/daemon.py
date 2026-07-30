@@ -10,7 +10,6 @@ from ..builtin_tools import BuiltinTools
 from ..channel import (
     AmbiguousSend,
     Channel,
-    ChannelMessage,
     NotConnected,
     SendRejected,
     create_channel,
@@ -18,7 +17,7 @@ from ..channel import (
 from ..config import AppConfig
 from ..memory_tools import MemoryTools
 from ..mcp_client import MCPManager
-from ..models import IncomingMessage
+from ..models import AgentReply, IncomingMessage
 from ..provider import AnthropicProvider, OpenAIProvider
 from ..storage import Store
 from ..webhooks import WebhookService
@@ -48,7 +47,7 @@ class MomoiDaemon(TurnRunner):
         self.mcp = MCPManager(config.mcp_config)
         self.incoming: asyncio.Queue[IncomingMessage] = asyncio.Queue()
         self.webhook_requests: asyncio.Queue[
-            tuple[str, asyncio.Future[list[ChannelMessage]]]
+            tuple[str, str, asyncio.Future[AgentReply]]
         ] = asyncio.Queue()
         self.autonomous: asyncio.Queue[str] = asyncio.Queue()
         self.outbox_changed = asyncio.Event()
@@ -60,7 +59,7 @@ class MomoiDaemon(TurnRunner):
                 config.webhooks,
                 self.channel.workflow_variables(),
                 self.store,
-                self._request_webhook_message,
+                self._request_webhook_turn,
                 self.outbox_changed.set,
             )
             if config.webhooks.enabled
@@ -125,11 +124,11 @@ class MomoiDaemon(TurnRunner):
             if not batch:
                 kind, item = await self._next_work()
                 if kind == "webhook":
-                    prompt, future = item
+                    prompt, turn_id, future = item
                     if future.cancelled():
                         continue
                     try:
-                        messages = await self._complete_webhook_message(prompt)
+                        reply = await self._complete_webhook_turn(prompt, turn_id)
                     except asyncio.CancelledError:
                         if not future.done():
                             future.cancel()
@@ -139,7 +138,7 @@ class MomoiDaemon(TurnRunner):
                             future.set_exception(error)
                     else:
                         if not future.done():
-                            future.set_result(messages)
+                            future.set_result(reply)
                     continue
                 if kind == "goal":
                     goal_id = str(item)
@@ -286,11 +285,11 @@ class MomoiDaemon(TurnRunner):
         self.autonomous.put_nowait(item)
         return next_item
 
-    async def _request_webhook_message(self, prompt: str) -> list[ChannelMessage]:
-        future: asyncio.Future[list[ChannelMessage]] = (
-            asyncio.get_running_loop().create_future()
-        )
-        await self.webhook_requests.put((prompt, future))
+    async def _request_webhook_turn(
+        self, prompt: str, turn_id: str
+    ) -> AgentReply:
+        future: asyncio.Future[AgentReply] = asyncio.get_running_loop().create_future()
+        await self.webhook_requests.put((prompt, turn_id, future))
         return await future
 
     async def _scheduler_worker(self, stop: asyncio.Event) -> None:
@@ -382,7 +381,8 @@ class MomoiDaemon(TurnRunner):
                         self.channel.name,
                     )
                     await asyncio.sleep(delay)
-                self.store.mark_sending(row.id)
+                if not self.store.mark_sending(row.id):
+                    continue
                 attempt = row.attempts + 1
                 try:
                     logger.debug(
@@ -412,6 +412,10 @@ class MomoiDaemon(TurnRunner):
                         str(error),
                     )
                 else:
-                    self.store.mark_sent(row.id)
+                    reply_waiting = self.store.mark_sent(
+                        row.id, self.config.heartbeat.min_interval_seconds
+                    )
+                    if reply_waiting:
+                        self.agenda_changed.set()
                     previous_turn_id = row.turn_id
                     logger.info("Sent outbox id=%d", row.id)

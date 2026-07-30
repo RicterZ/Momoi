@@ -14,8 +14,8 @@ from urllib.parse import urlsplit
 import yaml
 from aiohttp import web
 
-from .channel import ChannelMessage
 from .config import WebhookConfig
+from .models import AgentReply
 from .storage import Store
 
 
@@ -418,7 +418,7 @@ class WebhookService:
         config: WebhookConfig,
         channel_variables: dict[str, str],
         store: Store,
-        generate_message: Callable[[str], Awaitable[list[ChannelMessage]]],
+        complete_turn: Callable[[str, str], Awaitable[AgentReply]],
         wake_outbox: Callable[[], None],
     ) -> None:
         if config.workflows is None or config.executors is None:
@@ -426,7 +426,7 @@ class WebhookService:
         self.config = config
         self.channel_variables = channel_variables
         self.store = store
-        self.generate_message = generate_message
+        self.complete_turn = complete_turn
         self.wake_outbox = wake_outbox
         self.workflows, self.executors = load_catalog(
             config.workflows, config.executors, set(channel_variables)
@@ -525,8 +525,13 @@ class WebhookService:
             if step["uses"] == "message":
                 if record["state"] != "waiting_delivery":
                     self.store.start_webhook_step(run_id, index)
-                    messages = await self.generate_message(str(step["prompt"]))
-                    self.store.queue_webhook_messages(run_id, index, messages)
+                    turn_id = f"webhook:{run_id}:{index}"
+                    reply = await self.complete_turn(str(step["prompt"]), turn_id)
+                    outbox_ids = self.store.commit_webhook_reply(
+                        run_id, index, turn_id, reply
+                    )
+                    if not outbox_ids:
+                        continue
                     self.wake_outbox()
                 if not await self._wait_delivery(run_id, index, stop):
                     return
