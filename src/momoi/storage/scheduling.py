@@ -42,13 +42,6 @@ def next_schedule_at(schedule: dict[str, object], after: float | None = None) ->
     return candidate.timestamp()
 
 
-def local_day_bounds(now: float, timezone: str) -> tuple[float, float]:
-    zone = ZoneInfo(timezone)
-    local = datetime.fromtimestamp(now, zone)
-    start = local.replace(hour=0, minute=0, second=0, microsecond=0)
-    return start.timestamp(), (start + timedelta(days=1)).timestamp()
-
-
 def quiet_until(now: float, config: NotificationConfig) -> float:
     if not config.quiet_start or not config.quiet_end:
         return now

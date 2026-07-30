@@ -309,8 +309,6 @@ MCP 环境值、远程 URL 和 header 支持从 Momoi 进程环境展开 `${VARI
     "quiet_start": null,
     "quiet_end": null,
     "cooldown_seconds": 1800,
-    "daily_budget": 12,
-    "urgent_daily_budget": 3,
     "pending_owner_delay_seconds": 30
   }
 }
@@ -318,12 +316,10 @@ MCP 环境值、远程 URL 和 header 支持从 Momoi 进程环境展开 `${VARI
 
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
-| `timezone` | `UTC` | 每日计划和通知预算使用的有效 IANA 时区 |
+| `timezone` | `UTC` | 计划与静默时段使用的有效 IANA 时区 |
 | `quiet_start` | 未设置 | 本地静默时段的 `HH:MM` 开始时间 |
 | `quiet_end` | 未设置 | 本地静默时段的 `HH:MM` 结束时间 |
 | `cooldown_seconds` | `1800` | 具有相同 key 的排队通知之间的最小间隔 |
-| `daily_budget` | `12` | 每个本地日的普通主动通知上限 |
-| `urgent_daily_budget` | `3` | 每个本地日的紧急主动通知上限 |
 | `pending_owner_delay_seconds` | `30` | 存在待处理主人消息时，主动通知延后投递的时间 |
 
 `quiet_start` 和 `quiet_end` 必须同时省略，或同时设为不同的 `HH:MM` 值。支持跨夜时段。

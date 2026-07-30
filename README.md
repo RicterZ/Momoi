@@ -107,7 +107,7 @@ Momoi separates different kinds of future behavior:
 | Reflection | Form durable learning each day | Reviews the day that just ended without sending a message |
 | Webhook | An external event happened | Handles the predefined event workflow in Momoi's normal voice |
 
-Goal and Heartbeat notifications respect quiet hours, cooldowns, daily budgets, and pending owner messages. Silence is a valid decision; Heartbeat is not a scheduled “Are you there?” generator.
+Goal and Heartbeat notifications respect quiet hours, cooldowns, and pending owner messages. Silence is a valid decision; Heartbeat is not a scheduled “Are you there?” generator.
 
 ## What Momoi can do today
 

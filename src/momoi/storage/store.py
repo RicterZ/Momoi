@@ -25,7 +25,7 @@ from ..models import (
 )
 from .delivery import DeliveryStore
 from .memory import MemoryStore, estimate_tokens, lexical_units
-from .scheduling import local_day_bounds, next_schedule_at, quiet_until
+from .scheduling import next_schedule_at, quiet_until
 
 
 logger = logging.getLogger(__name__)
@@ -1977,17 +1977,6 @@ class Store(MemoryStore, DeliveryStore):
                 "SELECT 1 FROM events WHERE processed=0 LIMIT 1"
             ).fetchone():
                 eligible = max(eligible, now + config.pending_owner_delay_seconds)
-        day_start, next_day = local_day_bounds(now, config.timezone)
-        budget = (
-            config.urgent_daily_budget if priority == "urgent" else config.daily_budget
-        )
-        used = self._db.execute(
-            """SELECT COUNT(*) FROM notifications
-               WHERE state='queued' AND priority=? AND queued_at>=? AND queued_at<?""",
-            (priority, day_start, next_day),
-        ).fetchone()[0]
-        if used >= budget:
-            eligible = max(eligible, next_day)
         return eligible
 
     def claim_due_notification(

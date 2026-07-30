@@ -309,8 +309,6 @@ These are safety budgets, not limits on the number of tool calls.
     "quiet_start": null,
     "quiet_end": null,
     "cooldown_seconds": 1800,
-    "daily_budget": 12,
-    "urgent_daily_budget": 3,
     "pending_owner_delay_seconds": 30
   }
 }
@@ -318,12 +316,10 @@ These are safety budgets, not limits on the number of tool calls.
 
 | Field | Default | Description |
 | --- | --- | --- |
-| `timezone` | `UTC` | Valid IANA timezone used by daily schedules and notification budgets |
+| `timezone` | `UTC` | Valid IANA timezone used by schedules and quiet hours |
 | `quiet_start` | unset | Local `HH:MM` start of the quiet window |
 | `quiet_end` | unset | Local `HH:MM` end of the quiet window |
 | `cooldown_seconds` | `1800` | Minimum delay between queued notifications with the same key |
-| `daily_budget` | `12` | Maximum normal proactive notifications per local day |
-| `urgent_daily_budget` | `3` | Maximum urgent proactive notifications per local day |
 | `pending_owner_delay_seconds` | `30` | Delay proactive delivery while an owner message is waiting |
 
 `quiet_start` and `quiet_end` must either both be omitted or both use distinct `HH:MM` values. Overnight windows are supported.

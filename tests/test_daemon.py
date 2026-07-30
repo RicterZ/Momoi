@@ -690,7 +690,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 notifications=NotificationConfig(
                     timezone="Asia/Shanghai",
                     cooldown_seconds=0,
-                    daily_budget=10,
                     pending_owner_delay_seconds=0,
                 ),
                 heartbeat=HeartbeatConfig(
@@ -975,8 +974,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 log_level="INFO",
                 notifications=NotificationConfig(
                     cooldown_seconds=0,
-                    daily_budget=10,
-                    urgent_daily_budget=10,
                     pending_owner_delay_seconds=0,
                 ),
             )

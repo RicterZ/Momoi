@@ -874,7 +874,6 @@ class StorageMemoryTest(unittest.TestCase):
                 quiet_start="23:00",
                 quiet_end="08:00",
                 cooldown_seconds=3600,
-                daily_budget=10,
             )
             late = datetime(2030, 1, 1, 23, 30, tzinfo=zone).timestamp()
             add(store, "quiet", "service.status", "normal", late)
@@ -891,16 +890,6 @@ class StorageMemoryTest(unittest.TestCase):
             ).fetchone()[0]
             self.assertGreaterEqual(not_before, morning + 3600)
 
-            add(store, "budget", "another.status", "normal", morning + 120)
-            budget = NotificationConfig(
-                timezone="Asia/Shanghai", cooldown_seconds=0, daily_budget=1
-            )
-            self.assertIsNone(store.claim_due_notification(budget, morning + 120))
-            next_day = datetime(2030, 1, 3, 0, 0, tzinfo=zone).timestamp()
-            budget_due = store._db.execute(
-                "SELECT not_before FROM notifications WHERE id='budget'"
-            ).fetchone()[0]
-            self.assertEqual(budget_due, next_day)
             store.close()
 
         with tempfile.TemporaryDirectory() as directory:
@@ -913,8 +902,6 @@ class StorageMemoryTest(unittest.TestCase):
             policy = NotificationConfig(
                 timezone="Asia/Shanghai",
                 cooldown_seconds=0,
-                daily_budget=10,
-                urgent_daily_budget=2,
                 pending_owner_delay_seconds=60,
             )
             self.assertIsNone(store.claim_due_notification(policy, now))
@@ -925,6 +912,35 @@ class StorageMemoryTest(unittest.TestCase):
                 "SELECT not_before FROM notifications WHERE id='normal'"
             ).fetchone()[0]
             self.assertEqual(normal_due, now + 60)
+            store.close()
+
+    def test_notification_policy_has_no_daily_delivery_cap(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            now = datetime(2030, 1, 2, 10, 0).timestamp()
+            store._db.executemany(
+                """INSERT INTO notifications
+                   (id, turn_id, goal_id, notification_key, priority, reason,
+                    messages_json, state, not_before, created_at, queued_at)
+                   VALUES (?, ?, 'goal', ?, 'normal', 'test', '["状态更新"]',
+                           'queued', ?, ?, ?)""",
+                [
+                    (f"sent-{index}", f"turn-{index}", f"key-{index}", now, now, now)
+                    for index in range(12)
+                ],
+            )
+            store._db.execute(
+                """INSERT INTO notifications
+                   (id, turn_id, goal_id, notification_key, priority, reason,
+                    messages_json, state, not_before, created_at)
+                   VALUES ('next', 'turn-next', 'heartbeat', 'heartbeat.chat',
+                           'normal', 'test', '["还在吗？"]', 'pending', ?, ?)""",
+                (now, now),
+            )
+            claimed = store.claim_due_notification(
+                NotificationConfig(cooldown_seconds=0), now
+            )
+            self.assertEqual(claimed["id"], "next")
             store.close()
 
     def test_event_turn_and_outbox_are_atomic(self) -> None:

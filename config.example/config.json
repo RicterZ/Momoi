@@ -47,8 +47,6 @@
     "quiet_start": null,
     "quiet_end": null,
     "cooldown_seconds": 1800,
-    "daily_budget": 12,
-    "urgent_daily_budget": 3,
     "pending_owner_delay_seconds": 30
   },
   "heartbeat": {

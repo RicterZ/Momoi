@@ -31,8 +31,6 @@ class NotificationConfig:
     quiet_start: str | None = None
     quiet_end: str | None = None
     cooldown_seconds: float = 1800
-    daily_budget: int = 12
-    urgent_daily_budget: int = 3
     pending_owner_delay_seconds: float = 30
 
 
@@ -269,10 +267,6 @@ def load_config(path: str | Path) -> AppConfig:
             cooldown_seconds=_nonnegative(
                 notification_raw.get("cooldown_seconds", 1800),
                 "notifications.cooldown_seconds",
-            ),
-            daily_budget=max(0, int(notification_raw.get("daily_budget", 12))),
-            urgent_daily_budget=max(
-                0, int(notification_raw.get("urgent_daily_budget", 3))
             ),
             pending_owner_delay_seconds=_nonnegative(
                 notification_raw.get("pending_owner_delay_seconds", 30),
