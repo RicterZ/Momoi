@@ -259,6 +259,14 @@ HEARTBEAT_FINISH_SPEC: dict[str, Any] = {
                     "empty."
                 ),
             },
+            "continue_waiting_for_reply": {
+                "type": "boolean",
+                "description": (
+                    "When pending_owner_reply exists, whether Momoi still genuinely "
+                    "wants the runtime to keep checking for that reply. False releases "
+                    "the waiting thread; use false when no reply is pending."
+                ),
+            },
             "activity": {"type": "string", "minLength": 1, "maxLength": 300},
             "result": {"type": "string", "maxLength": 2000},
             "next_check_minutes": {
@@ -273,6 +281,7 @@ HEARTBEAT_FINISH_SPEC: dict[str, Any] = {
             "messages",
             "expects_reply",
             "reply_expectation",
+            "continue_waiting_for_reply",
             "activity",
             "result",
             "next_check_minutes",

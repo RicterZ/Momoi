@@ -51,7 +51,8 @@ class HeartbeatConfig:
     enabled: bool = False
     initial_delay_seconds: float = 900
     min_interval_seconds: float = 1800
-    max_interval_seconds: float = 21600
+    max_interval_seconds: float = 5400
+    reply_initial_interval_seconds: float = 60
 
 
 @dataclass(frozen=True)
@@ -217,8 +218,12 @@ def load_config(path: str | Path) -> AppConfig:
         "heartbeat.min_interval_seconds",
     )
     heartbeat_max = _positive(
-        heartbeat_raw.get("max_interval_seconds", 21600),
+        heartbeat_raw.get("max_interval_seconds", 5400),
         "heartbeat.max_interval_seconds",
+    )
+    heartbeat_reply_initial = _positive(
+        heartbeat_raw.get("reply_initial_interval_seconds", 60),
+        "heartbeat.reply_initial_interval_seconds",
     )
     if heartbeat_max < heartbeat_min:
         raise ConfigError(
@@ -301,6 +306,7 @@ def load_config(path: str | Path) -> AppConfig:
             ),
             min_interval_seconds=heartbeat_min,
             max_interval_seconds=heartbeat_max,
+            reply_initial_interval_seconds=heartbeat_reply_initial,
         ),
         autonomy=AutonomyConfig(
             tuple(dict.fromkeys(item.strip() for item in allowed_tools))

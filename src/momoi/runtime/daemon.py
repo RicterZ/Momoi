@@ -159,7 +159,7 @@ class MomoiDaemon(TurnRunner):
                             raise
                         if goal_id == HEARTBEAT_QUEUE_ITEM:
                             self.store.release_heartbeat_claim(
-                                self.config.heartbeat.min_interval_seconds
+                                self._heartbeat_retry_delay()
                             )
                             logger.info("Active heartbeat turn stopped")
                         elif goal_id.startswith(REFLECTION_QUEUE_PREFIX):
@@ -413,7 +413,8 @@ class MomoiDaemon(TurnRunner):
                     )
                 else:
                     reply_waiting = self.store.mark_sent(
-                        row.id, self.config.heartbeat.min_interval_seconds
+                        row.id,
+                        self.config.heartbeat.reply_initial_interval_seconds,
                     )
                     if reply_waiting:
                         self.agenda_changed.set()

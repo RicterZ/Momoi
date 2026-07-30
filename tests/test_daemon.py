@@ -106,6 +106,10 @@ class DaemonTest(unittest.TestCase):
         self.assertIn(
             "expects_reply", HEARTBEAT_FINISH_SPEC["input_schema"]["required"]
         )
+        self.assertIn(
+            "continue_waiting_for_reply",
+            HEARTBEAT_FINISH_SPEC["input_schema"]["required"],
+        )
 
     def test_context_budget_drops_old_history_and_truncates_tool_results(self) -> None:
         daemon = object.__new__(MomoiDaemon)
@@ -763,6 +767,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "reply_expectation": (
                                     "主人对关卡点子的回应" if messages else ""
                                 ),
+                                "continue_waiting_for_reply": False,
                                 "activity": "整理小游戏关卡灵感",
                                 "result": (
                                     "读完一条游戏新闻并记下玩法联想"

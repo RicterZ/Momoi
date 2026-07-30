@@ -338,7 +338,8 @@ MCP 环境值、远程 URL 和 header 支持从 Momoi 进程环境展开 `${VARI
     "enabled": false,
     "initial_delay_seconds": 900,
     "min_interval_seconds": 1800,
-    "max_interval_seconds": 21600
+    "max_interval_seconds": 5400,
+    "reply_initial_interval_seconds": 60
   }
 }
 ```
@@ -348,9 +349,10 @@ MCP 环境值、远程 URL 和 header 支持从 Momoi 进程环境展开 `${VARI
 | `enabled` | `false` | 启用自主心跳评估 |
 | `initial_delay_seconds` | `900` | 新 workspace 第一次心跳前的延迟 |
 | `min_interval_seconds` | `1800` | Momoi 可选择的最短下次间隔 |
-| `max_interval_seconds` | `21600` | Momoi 可选择的最长下次间隔 |
+| `max_interval_seconds` | `5400` | Momoi 可选择的最长下次间隔（默认 90 分钟） |
+| `reply_initial_interval_seconds` | `60` | 主动等待主人回复时，第一次心跳前的延迟 |
 
-间隔必须为正数，最大值不能小于最小值。最短间隔同时限定了心跳评估的最高频率。
+所有间隔必须为正数，最大间隔不能小于普通最短间隔。
 
 配置文件同目录下存在非空的 `HEARTBEAT.md` 时，其内容会作为 workspace 的 heartbeat 指引自动追加；文件不存在时不注入额外提示词。
 
@@ -358,7 +360,7 @@ MCP 环境值、远程 URL 和 header 支持从 Momoi 进程环境展开 `${VARI
 
 在主人私聊中发送 `/heartbeat` 可以立即触发一次心跳，即使自动心跳没有开启。已有心跳正在排队或执行时，重复命令会自动去重。
 
-当一条已送达回复明确期待主人回应时，Momoi 会在 `min_interval_seconds` 后提高原有心跳的注意力，即使自动心跳未开启。每次心跳都会独立判断是否跟进以及多久后再看；等待越久，节奏应自然退火并回到普通频率。主人发来任何新消息都会结束旧的等待状态，并取消尚未送达的跟进。
+当一条已送达回复明确期待主人回应时，Momoi 会在 `reply_initial_interval_seconds` 后提高注意力，即使自动心跳未开启。程序会在约第 1、3、7 分钟做三次短时检查；模型每次独立判断是否跟进以及是否继续等待。第三次之后即使仍在等待，也会恢复普通心跳节奏。主人发来任何新消息都会结束旧的等待状态，并取消尚未送达的跟进。
 
 ## 自主工具白名单
 

@@ -1245,9 +1245,7 @@ class TurnRunner:
             self.store.clear_heartbeat_claim()
             return
         if turn_state == "needs_reconciliation" or stop.is_set():
-            self.store.release_heartbeat_claim(
-                self.config.heartbeat.min_interval_seconds
-            )
+            self.store.release_heartbeat_claim(self._heartbeat_retry_delay())
             return
         try:
             await self._complete_heartbeat(turn_id)
@@ -1266,9 +1264,7 @@ class TurnRunner:
                 ),
                 turn_id=turn_id,
             )
-            self.store.release_heartbeat_claim(
-                self.config.heartbeat.min_interval_seconds
-            )
+            self.store.release_heartbeat_claim(self._heartbeat_retry_delay())
             self.store.record_turn_failure(turn_id, "fatal_error_after_external_tool")
             self.agenda_changed.set()
         except asyncio.CancelledError:
@@ -1280,10 +1276,17 @@ class TurnRunner:
                 "Heartbeat turn failed error=%s", type(error).__name__, exc_info=True
             )
             self.store.record_turn_failure(turn_id, type(error).__name__)
-            self.store.release_heartbeat_claim(
-                self.config.heartbeat.min_interval_seconds
-            )
+            self.store.release_heartbeat_claim(self._heartbeat_retry_delay())
             self.agenda_changed.set()
+
+    def _heartbeat_retry_delay(self) -> float:
+        pending = self.store.pending_owner_reply()
+        if not pending or int(pending["heartbeat_checks"]) >= 3:
+            return self.config.heartbeat.min_interval_seconds
+        return (
+            self.config.heartbeat.reply_initial_interval_seconds
+            * 2 ** int(pending["heartbeat_checks"])
+        )
 
     async def _complete_heartbeat(self, turn_id: str) -> None:
         state = self.store.self_state()
@@ -1421,6 +1424,10 @@ class TurnRunner:
             pending_reply_turn_id=(
                 str(pending_reply["source_turn"]) if pending_reply else None
             ),
+            continue_waiting_for_reply=decision["continue_waiting_for_reply"],
+            reply_initial_interval_seconds=(
+                self.config.heartbeat.reply_initial_interval_seconds
+            ),
         )
         self.agenda_changed.set()
         if decision["messages"]:
@@ -1477,6 +1484,9 @@ class TurnRunner:
         mood, error = self._parse_mood_decision(arguments.get("mood"))
         if error is not None:
             return None, error
+        continue_waiting = arguments.get("continue_waiting_for_reply")
+        if not isinstance(continue_waiting, bool):
+            return None, "invalid_continue_waiting_for_reply"
         reply_expectation, error = self._parse_reply_expectation(arguments, messages)
         if reply_expectation is None:
             return None, error
@@ -1485,6 +1495,7 @@ class TurnRunner:
             "messages": messages,
             "expects_reply": expects_reply,
             "reply_expectation": expectation,
+            "continue_waiting_for_reply": continue_waiting,
             "activity": activity.strip(),
             "result": result.strip(),
             "next_check_minutes": minutes,

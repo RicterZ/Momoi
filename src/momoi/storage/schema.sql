@@ -172,6 +172,7 @@ CREATE TABLE IF NOT EXISTS self_state (
     pending_reply_turn_id TEXT,
     pending_reply_expectation TEXT NOT NULL DEFAULT '',
     pending_reply_since REAL,
+    pending_reply_checks INTEGER NOT NULL DEFAULT 0,
     updated_at REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS notifications (

@@ -397,7 +397,7 @@ class DeliveryStore:
             )
 
     def mark_sent(
-        self, outbox_id: int, reply_check_delay: float | None = None
+        self, outbox_id: int, reply_initial_delay: float | None = None
     ) -> bool:
         activated = False
         with self._db:
@@ -412,21 +412,41 @@ class DeliveryStore:
             expectation = str(row["reply_expectation"] or "").strip() if row else ""
             if (
                 expectation
-                and reply_check_delay is not None
+                and reply_initial_delay is not None
                 and self._db.execute(
                     "SELECT 1 FROM events WHERE processed=0 LIMIT 1"
                 ).fetchone()
                 is None
             ):
                 now = time.time()
-                due = now + reply_check_delay
-                self._db.execute(
-                    """UPDATE self_state SET pending_reply_turn_id=?,
-                       pending_reply_expectation=?, pending_reply_since=?,
-                       next_heartbeat_at=?,
-                       updated_at=? WHERE id=1""",
-                    (row["turn_id"], expectation, now, due, now),
+                state = self._db.execute(
+                    """SELECT pending_reply_expectation, next_heartbeat_at
+                       FROM self_state WHERE id=1"""
+                ).fetchone()
+                due = now + reply_initial_delay
+                already_waiting = bool(
+                    state
+                    and str(state["pending_reply_expectation"] or "").strip()
                 )
+                if already_waiting and state["next_heartbeat_at"] is not None:
+                    due = float(state["next_heartbeat_at"])
+                elif state and state["next_heartbeat_at"] is not None:
+                    due = min(due, float(state["next_heartbeat_at"]))
+                if already_waiting:
+                    self._db.execute(
+                        """UPDATE self_state SET pending_reply_turn_id=?,
+                           pending_reply_expectation=?, next_heartbeat_at=?,
+                           updated_at=? WHERE id=1""",
+                        (row["turn_id"], expectation, due, now),
+                    )
+                else:
+                    self._db.execute(
+                        """UPDATE self_state SET pending_reply_turn_id=?,
+                           pending_reply_expectation=?, pending_reply_since=?,
+                           pending_reply_checks=0, next_heartbeat_at=?,
+                           updated_at=? WHERE id=1""",
+                        (row["turn_id"], expectation, now, due, now),
+                    )
                 activated = True
         return activated
 

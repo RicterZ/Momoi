@@ -338,7 +338,8 @@ This policy applies to proactive Goal and Heartbeat notifications. A fixed Remin
     "enabled": false,
     "initial_delay_seconds": 900,
     "min_interval_seconds": 1800,
-    "max_interval_seconds": 21600
+    "max_interval_seconds": 5400,
+    "reply_initial_interval_seconds": 60
   }
 }
 ```
@@ -348,9 +349,10 @@ This policy applies to proactive Goal and Heartbeat notifications. A fixed Remin
 | `enabled` | `false` | Enable autonomous heartbeat evaluations |
 | `initial_delay_seconds` | `900` | Delay before the first heartbeat in a new workspace |
 | `min_interval_seconds` | `1800` | Smallest next interval Momoi may select |
-| `max_interval_seconds` | `21600` | Largest next interval Momoi may select |
+| `max_interval_seconds` | `5400` | Largest next interval Momoi may select (90 minutes by default) |
+| `reply_initial_interval_seconds` | `60` | First heartbeat delay while actively waiting for an owner reply |
 
-Intervals must be positive, and the maximum must not be smaller than the minimum. The minimum interval bounds the maximum heartbeat evaluation rate.
+Intervals must be positive, and the maximum must not be smaller than the ordinary minimum.
 
 When a non-empty `HEARTBEAT.md` exists beside the configuration file, Momoi automatically appends it as workspace heartbeat guidance. No additional prompt is injected when the file is absent.
 
@@ -358,7 +360,7 @@ A heartbeat may use explicitly allowed read-only tools, search memory, create fi
 
 Send `/heartbeat` in the private owner chat to trigger one evaluation immediately, even when automatic heartbeat scheduling is disabled. A command received while another heartbeat is queued or running is deduplicated.
 
-When a delivered reply explicitly expects an owner response, Momoi raises its normal heartbeat attention after `min_interval_seconds`, even if automatic heartbeats are disabled. Each heartbeat independently decides whether to follow up and when to check again; as the wait grows, it should naturally cool toward the ordinary rhythm. Any owner message ends the old waiting state and cancels an unsent follow-up.
+When a delivered reply explicitly expects an owner response, Momoi raises its attention after `reply_initial_interval_seconds`, even if automatic heartbeats are disabled. It performs three short checks at roughly 1, 3, and 7 minutes; the model independently decides whether to follow up and whether to keep waiting. After the third check, any continued waiting uses the ordinary heartbeat rhythm. Any owner message ends the old waiting state and cancels an unsent follow-up.
 
 ## Self-directed tool allowlist
 

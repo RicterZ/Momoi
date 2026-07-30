@@ -68,6 +68,8 @@ class ConfigurationTest(unittest.TestCase):
                 ("curl", "mcp__brave-search__brave_web_search"),
             )
             self.assertEqual(config.heartbeat_prompt, "偶尔整理自己的摄影兴趣。")
+            self.assertEqual(config.heartbeat.max_interval_seconds, 5400)
+            self.assertEqual(config.heartbeat.reply_initial_interval_seconds, 60)
 
             (root / "HEARTBEAT.md").unlink()
             self.assertEqual(load_config(path).heartbeat_prompt, "")

@@ -150,6 +150,7 @@ class Store(MemoryStore, DeliveryStore):
             ("pending_reply_turn_id", "TEXT"),
             ("pending_reply_expectation", "TEXT NOT NULL DEFAULT ''"),
             ("pending_reply_since", "REAL"),
+            ("pending_reply_checks", "INTEGER NOT NULL DEFAULT 0"),
         ):
             if name not in self_state_columns:
                 self._db.execute(
@@ -295,6 +296,7 @@ class Store(MemoryStore, DeliveryStore):
                 self._db.execute(
                     """UPDATE self_state SET pending_reply_turn_id=NULL,
                        pending_reply_expectation='', pending_reply_since=NULL,
+                       pending_reply_checks=0,
                        updated_at=? WHERE id=1""",
                     (time.time(),),
                 )
@@ -853,11 +855,23 @@ class Store(MemoryStore, DeliveryStore):
         now = time.time() if now is None else now
         row = self._db.execute(
             """SELECT pending_reply_turn_id, pending_reply_expectation,
-                      pending_reply_since FROM self_state WHERE id=1"""
+                      pending_reply_since, pending_reply_checks
+               FROM self_state WHERE id=1"""
         ).fetchone()
         if row is None or not str(row["pending_reply_expectation"] or "").strip():
             return None
         since = float(row["pending_reply_since"] or now)
+        followups = self._db.execute(
+            """SELECT COUNT(*) FROM notifications AS notification
+               WHERE notification.notification_key='heartbeat.reply_followup'
+                 AND notification.created_at>=?
+                 AND EXISTS (
+                     SELECT 1 FROM outbox
+                     WHERE outbox.turn_id=notification.turn_id
+                       AND outbox.state='sent'
+                 )""",
+            (since,),
+        ).fetchone()[0]
         return {
             "source_turn": str(row["pending_reply_turn_id"] or ""),
             "expected_response": str(row["pending_reply_expectation"]),
@@ -865,6 +879,8 @@ class Store(MemoryStore, DeliveryStore):
             .astimezone()
             .isoformat(timespec="seconds"),
             "waiting_minutes": max(0, int((now - since) / 60)),
+            "heartbeat_checks": int(row["pending_reply_checks"] or 0),
+            "delivered_followups": int(followups or 0),
         }
 
     def _apply_mood_transition(
@@ -1001,12 +1017,15 @@ class Store(MemoryStore, DeliveryStore):
         reply_expectation: str = "",
         draft: TurnDraft | None = None,
         pending_reply_turn_id: str | None = None,
+        continue_waiting_for_reply: bool = False,
+        reply_initial_interval_seconds: float = 60,
     ) -> None:
         now = time.time()
         current = self.self_state(now)
         with self._db:
             pending = self._db.execute(
-                "SELECT pending_reply_turn_id FROM self_state WHERE id=1"
+                """SELECT pending_reply_turn_id, pending_reply_checks
+                   FROM self_state WHERE id=1"""
             ).fetchone()
             pending_reply_is_current = bool(
                 pending_reply_turn_id
@@ -1015,6 +1034,36 @@ class Store(MemoryStore, DeliveryStore):
             )
             if pending_reply_turn_id and not pending_reply_is_current:
                 messages = []
+            if pending_reply_is_current:
+                if continue_waiting_for_reply:
+                    checks = int(pending["pending_reply_checks"] or 0) + 1
+                    if checks < 3:
+                        next_heartbeat_at = (
+                            now + reply_initial_interval_seconds * 2**checks
+                        )
+                    self._db.execute(
+                        """UPDATE self_state SET
+                           pending_reply_checks=pending_reply_checks+1 WHERE id=1"""
+                    )
+                else:
+                    self._db.execute(
+                        """UPDATE self_state SET pending_reply_turn_id=NULL,
+                           pending_reply_expectation='', pending_reply_since=NULL,
+                           pending_reply_checks=0 WHERE id=1"""
+                    )
+                    self._db.execute(
+                        """DELETE FROM notifications
+                           WHERE notification_key='heartbeat.reply_followup'
+                             AND state='pending'"""
+                    )
+                    self._db.execute(
+                        """UPDATE outbox SET state='failed',
+                           last_error='reply_waiting_ended'
+                           WHERE state='pending' AND turn_id IN (
+                               SELECT turn_id FROM notifications
+                               WHERE notification_key='heartbeat.reply_followup'
+                           )"""
+                    )
             self._apply_mood_transition(mood_transition, now)
             self._apply_goal_mutations(draft, now)
             activity_since = (
