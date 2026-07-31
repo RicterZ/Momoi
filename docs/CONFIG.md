@@ -430,4 +430,4 @@ Use `INFO` for normal operation and `DEBUG` for development. DEBUG logs may cont
 
 ## Apply changes
 
-Restart `momoi run` after changing `config.json`, `mcp.json`, `SOUL.md`, workflow files, or executor definitions. Startup validates required configuration and reports a concise configuration error before connecting services.
+`SOUL.md` and `HEARTBEAT.md` are reloaded for each new Turn, so edits need no restart. Restart `momoi run` after changing `config.json`, `mcp.json`, workflow files, or executor definitions. Startup validates required configuration and reports a concise configuration error before connecting services.

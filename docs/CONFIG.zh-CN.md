@@ -430,4 +430,4 @@ MCP 环境值、远程 URL 和 header 支持从 Momoi 进程环境展开 `${VARI
 
 ## 应用更改
 
-修改 `config.json`、`mcp.json`、`SOUL.md`、工作流文件或执行器定义后，重启 `momoi run`。启动时会验证必需配置，并在连接服务前报告简洁的配置错误。
+`SOUL.md` 和 `HEARTBEAT.md` 会在每个新 Turn 开始时重新读取，修改后无需重启。修改 `config.json`、`mcp.json`、工作流文件或执行器定义后，仍需重启 `momoi run`。启动时会验证必需配置，并在连接服务前报告简洁的配置错误。

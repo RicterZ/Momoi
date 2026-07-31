@@ -90,6 +90,8 @@ class AppConfig:
     reflection: ReflectionConfig = ReflectionConfig()
     workspace: Path | None = None
     heartbeat_prompt: str = ""
+    soul_prompt_path: Path | None = None
+    heartbeat_prompt_path: Path | None = None
 
 def _mapping(value: Any, name: str) -> dict[str, Any]:
     if not isinstance(value, dict):
@@ -313,4 +315,6 @@ def load_config(path: str | Path) -> AppConfig:
             or "03:00",
         ),
         workspace=config_path.parent,
+        soul_prompt_path=soul_path,
+        heartbeat_prompt_path=heartbeat_path,
     )

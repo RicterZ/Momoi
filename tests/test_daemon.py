@@ -56,6 +56,34 @@ class DaemonTest(unittest.TestCase):
         self.assertNotIn("Memory tools", specialized)
         self.assertIn("Memory tools", owner)
 
+    def test_workspace_prompts_hot_reload_between_turns(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            soul = root / "SOUL.md"
+            heartbeat = root / "HEARTBEAT.md"
+            soul.write_text("Old soul")
+            heartbeat.write_text("Old heartbeat")
+            daemon = object.__new__(MomoiDaemon)
+            daemon.config = SimpleNamespace(
+                system_prompt="{{SOUL}}\n{{CAPABILITY_POLICIES}}",
+                soul_prompt="Old soul",
+                soul_prompt_path=soul,
+                heartbeat_prompt="Old heartbeat",
+                heartbeat_prompt_path=heartbeat,
+            )
+            daemon.mcp = SimpleNamespace(tool_specs=[])
+
+            self.assertIn("Old soul", daemon._system()[0]["text"])
+            self.assertIn("Old heartbeat", daemon._heartbeat_system_prompt())
+            soul.write_text("New soul")
+            heartbeat.write_text("New heartbeat")
+            self.assertIn("New soul", daemon._system()[0]["text"])
+            self.assertIn("New heartbeat", daemon._heartbeat_system_prompt())
+            heartbeat.unlink()
+            self.assertNotIn(
+                "# Workspace heartbeat guidance", daemon._heartbeat_system_prompt()
+            )
+
     def test_mood_transition_parser_rejects_invalid_state(self) -> None:
         mood, error = MomoiDaemon._parse_mood_transition(
             {

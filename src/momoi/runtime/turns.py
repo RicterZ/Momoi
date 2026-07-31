@@ -47,16 +47,32 @@ from .protocol import (
 )
 
 logger = logging.getLogger(__name__)
+PROMPT_ROOT = files("momoi").joinpath("prompts")
+SYSTEM_PROMPT_PATH = PROMPT_ROOT.joinpath("system.md")
+WEBHOOK_PROMPT_PATH = PROMPT_ROOT.joinpath("webhook.md")
+HEARTBEAT_PROMPT_PATH = PROMPT_ROOT.joinpath("heartbeat.md")
+REFLECTION_PROMPT_PATH = PROMPT_ROOT.joinpath("reflection.md")
 WEBHOOK_SYSTEM_PROMPT = (
-    files("momoi").joinpath("prompts/webhook.md").read_text(encoding="utf-8").strip()
+    WEBHOOK_PROMPT_PATH.read_text(encoding="utf-8").strip()
 )
 HEARTBEAT_SYSTEM_PROMPT = (
-    files("momoi").joinpath("prompts/heartbeat.md").read_text(encoding="utf-8").strip()
+    HEARTBEAT_PROMPT_PATH.read_text(encoding="utf-8").strip()
 )
 REFLECTION_SYSTEM_PROMPT = (
-    files("momoi").joinpath("prompts/reflection.md").read_text(encoding="utf-8").strip()
+    REFLECTION_PROMPT_PATH.read_text(encoding="utf-8").strip()
 )
 MAX_CONSECUTIVE_TOOL_FAILURES = 3
+
+
+def _live_prompt(path: Any, fallback: str, *, optional: bool = False) -> str:
+    try:
+        if optional and not path.is_file():
+            return ""
+        text = path.read_text(encoding="utf-8").strip()
+    except OSError as error:
+        logger.warning("Could not reload prompt path=%s error=%s", path, error)
+        return "" if optional else fallback
+    return text if text or optional else fallback
 
 
 def _sections(*items: tuple[str, str]) -> str:
@@ -188,7 +204,7 @@ class TurnRunner:
             *self._system(),
             {
                 "type": "text",
-                "text": WEBHOOK_SYSTEM_PROMPT,
+                "text": _live_prompt(WEBHOOK_PROMPT_PATH, WEBHOOK_SYSTEM_PROMPT),
                 "cache_control": {"type": "ephemeral"},
             },
         ]
@@ -1131,14 +1147,32 @@ class TurnRunner:
             ]
             if self.mcp.tool_specs:
                 policies.append(MCP_TOOL_POLICY.strip())
-        text = self.config.system_prompt.replace(
-            "{{SOUL}}", self.config.soul_prompt or "No additional Soul is configured."
+        system_prompt = self.config.system_prompt
+        soul_prompt = self.config.soul_prompt
+        soul_path = getattr(self.config, "soul_prompt_path", None)
+        if soul_path is not None:
+            system_prompt = _live_prompt(SYSTEM_PROMPT_PATH, system_prompt)
+            soul_prompt = _live_prompt(soul_path, soul_prompt)
+        text = system_prompt.replace(
+            "{{SOUL}}", soul_prompt or "No additional Soul is configured."
         ).replace(
             "{{CAPABILITY_POLICIES}}",
             "\n\n".join(policies)
             or "Use only the tools supplied for this Turn and follow their schemas.",
         )
         return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
+
+    def _heartbeat_system_prompt(self) -> str:
+        prompt = _live_prompt(HEARTBEAT_PROMPT_PATH, HEARTBEAT_SYSTEM_PROMPT)
+        path = getattr(self.config, "heartbeat_prompt_path", None)
+        workspace_prompt = (
+            _live_prompt(path, "", optional=True)
+            if path is not None
+            else self.config.heartbeat_prompt
+        )
+        if workspace_prompt:
+            prompt += "\n\n# Workspace heartbeat guidance\n\n" + workspace_prompt
+        return prompt
 
     async def _complete_goal_turn(self, goal_id: str, stop: asyncio.Event) -> None:
         goal = self.store.goal(goal_id)
@@ -1353,17 +1387,11 @@ class TurnRunner:
             ),
             ("emotion_catalog", emotions),
         )
-        heartbeat_system_prompt = HEARTBEAT_SYSTEM_PROMPT
-        if self.config.heartbeat_prompt:
-            heartbeat_system_prompt += (
-                "\n\n# Workspace heartbeat guidance\n\n"
-                + self.config.heartbeat_prompt
-            )
         system = [
             *self._system(),
             {
                 "type": "text",
-                "text": heartbeat_system_prompt,
+                "text": self._heartbeat_system_prompt(),
                 "cache_control": {"type": "ephemeral"},
             },
         ]
@@ -1577,7 +1605,9 @@ class TurnRunner:
             *self._system(),
             {
                 "type": "text",
-                "text": REFLECTION_SYSTEM_PROMPT,
+                "text": _live_prompt(
+                    REFLECTION_PROMPT_PATH, REFLECTION_SYSTEM_PROMPT
+                ),
                 "cache_control": {"type": "ephemeral"},
             },
         ]
