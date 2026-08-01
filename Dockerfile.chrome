@@ -1,4 +1,4 @@
-FROM --platform=linux/amd64 python:3.13-slim-trixie
+FROM python:3.13-slim-trixie
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -8,11 +8,10 @@ ARG NAP_MSG_COMMIT=f0e789d0134375faf5e56de2673139f685a0c7cf
 ARG CHROME_DEVTOOLS_MCP_VERSION=1.6.0
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates ffmpeg nodejs npm tzdata \
-    && python -c "from urllib.request import urlretrieve; urlretrieve('https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb', '/tmp/chrome.deb')" \
-    && apt-get install -y --no-install-recommends /tmp/chrome.deb \
+    && apt-get install -y --no-install-recommends ca-certificates chromium ffmpeg nodejs npm tzdata \
+    && mkdir -p /opt/google/chrome \
+    && ln -s /usr/bin/chromium /opt/google/chrome/chrome \
     && npm install --global "chrome-devtools-mcp@${CHROME_DEVTOOLS_MCP_VERSION}" \
-    && rm -f /tmp/chrome.deb \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
