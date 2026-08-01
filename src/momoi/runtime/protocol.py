@@ -229,6 +229,31 @@ SEND_MESSAGE_TOOL_SPEC: dict[str, Any] = {
         "additionalProperties": False,
     },
 }
+
+
+def send_message_tool_spec(
+    channel_names: list[str], primary_channel: str
+) -> dict[str, Any]:
+    return {
+        **SEND_MESSAGE_TOOL_SPEC,
+        "input_schema": {
+            **SEND_MESSAGE_TOOL_SPEC["input_schema"],
+            "properties": {
+                **SEND_MESSAGE_TOOL_SPEC["input_schema"]["properties"],
+                "channel": {
+                    "type": "string",
+                    "enum": channel_names,
+                    "default": primary_channel,
+                    "description": (
+                        "Delivery channel. Omit it to use the configured primary "
+                        f"channel ({primary_channel})."
+                    ),
+                },
+            },
+        },
+    }
+
+
 HEARTBEAT_FINISH_SPEC: dict[str, Any] = {
     "name": "heartbeat_finish",
     "description": (

@@ -877,14 +877,44 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                     self,
                     _: object,
                     messages: list[dict[str, object]],
-                    *__: object,
-                    **___: object,
+                    tools: list[dict[str, object]],
+                    **__: object,
                 ) -> ProviderResponse:
                     self.calls += 1
                     serialized = json.dumps(messages, ensure_ascii=False)
                     if self.calls == 2:
                         case.assertIn("QQ 上说过的事", serialized)
                         case.assertIn("Channel: weixin", serialized)
+                        spec = next(
+                            tool for tool in tools if tool["name"] == "send_message"
+                        )
+                        channel = spec["input_schema"]["properties"][  # type: ignore[index]
+                            "channel"
+                        ]
+                        case.assertEqual(
+                            channel["enum"],  # type: ignore[index]
+                            ["napcat", "weixin"],
+                        )
+                        case.assertEqual(
+                            channel["default"], "napcat"  # type: ignore[index]
+                        )
+                    if self.calls in {2, 3}:
+                        arguments: dict[str, object] = {
+                            "delivery": "send a live beat",
+                            "messages": [f"进度 {self.calls - 1}"],
+                        }
+                        if self.calls == 2:
+                            arguments["channel"] = "weixin"
+                        return ProviderResponse(
+                            [],
+                            [
+                                ToolCall(
+                                    f"progress-{self.calls}",
+                                    "send_message",
+                                    arguments,
+                                )
+                            ],
+                        )
                     text = "QQ 回复" if self.calls == 1 else "微信回复"
                     return ProviderResponse(
                         [],
@@ -923,10 +953,17 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                 daemon.store.begin_turn(turn_id, "owner", [event.event_id])
                 await daemon._complete_batch([event], turn_id)
 
-            rows = daemon.store.due_outbox()
+            rows = daemon.store._db.execute(
+                "SELECT text, target_channel FROM outbox ORDER BY id"
+            ).fetchall()
             self.assertEqual(
-                [(row.text, row.channel) for row in rows],
-                [("QQ 回复", "napcat"), ("微信回复", "weixin")],
+                [(row["text"], row["target_channel"]) for row in rows],
+                [
+                    ("QQ 回复", "napcat"),
+                    ("进度 1", "weixin"),
+                    ("进度 2", "napcat"),
+                    ("微信回复", "weixin"),
+                ],
             )
             qq_update = IncomingMessage(
                 "napcat:update", "3", "QQ 补充", 3, 3, channel="napcat"

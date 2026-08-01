@@ -43,7 +43,7 @@ from .protocol import (
     HEARTBEAT_FINISH_SPEC,
     REFLECTION_FINISH_SPEC,
     RESPOND_TOOL_SPEC,
-    SEND_MESSAGE_TOOL_SPEC,
+    send_message_tool_spec,
 )
 
 logger = logging.getLogger(__name__)
@@ -229,7 +229,7 @@ class TurnRunner:
         reply = await self._run_tool_loop(
             system,
             messages,
-            [SEND_MESSAGE_TOOL_SPEC, CURL_TOOL_SPEC, RESPOND_TOOL_SPEC],
+            [self._send_message_tool_spec(), CURL_TOOL_SPEC, RESPOND_TOOL_SPEC],
             [],
             TurnDraft(),
             authority="webhook",
@@ -423,7 +423,7 @@ class TurnRunner:
         ]
         draft = TurnDraft()
         tools = [
-            SEND_MESSAGE_TOOL_SPEC,
+            self._send_message_tool_spec(),
             *MEMORY_TOOL_SPECS,
             *AGENDA_TOOL_SPECS,
             *BUILTIN_TOOL_SPECS,
@@ -804,16 +804,23 @@ class TurnRunner:
                     elif progress is None:
                         result = {"ok": False, "error": error}
                     else:
-                        external_tool_used = True
-                        self.store.queue_progress(
-                            turn_id, call.id, progress, delivery_channel.name
+                        target = self.channels.get(
+                            str(call.arguments.get("channel") or self.channel.name)
                         )
-                        self.outbox_changed.set()
-                        result = {
-                            "ok": True,
-                            "state": "queued",
-                            "messages": len(progress),
-                        }
+                        if target is None:
+                            result = {"ok": False, "error": "invalid_channel"}
+                        else:
+                            external_tool_used = True
+                            self.store.queue_progress(
+                                turn_id, call.id, progress, target.name
+                            )
+                            self.outbox_changed.set()
+                            result = {
+                                "ok": True,
+                                "state": "queued",
+                                "channel": target.name,
+                                "messages": len(progress),
+                            }
                 elif self.mcp.has_tool(call.name) or self.builtin_tools.has_tool(
                     call.name
                 ):
@@ -1009,6 +1016,9 @@ class TurnRunner:
             ]
             if spec["name"] in allowed
         ]
+
+    def _send_message_tool_spec(self) -> dict[str, Any]:
+        return send_message_tool_spec(list(self.channels), self.channel.name)
 
     def _artifact_root(self) -> Path:
         return Path(self.config.workspace or self.config.database.parent) / "artifacts"
