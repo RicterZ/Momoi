@@ -28,7 +28,8 @@ CREATE TABLE IF NOT EXISTS outbox (
     kind TEXT NOT NULL DEFAULT 'text',
     media_path TEXT,
     payload_json TEXT NOT NULL DEFAULT '',
-    reply_expectation TEXT NOT NULL DEFAULT ''
+    reply_expectation TEXT NOT NULL DEFAULT '',
+    target_channel TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS continuity_state (
     id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -173,6 +174,7 @@ CREATE TABLE IF NOT EXISTS self_state (
     pending_reply_expectation TEXT NOT NULL DEFAULT '',
     pending_reply_since REAL,
     pending_reply_checks INTEGER NOT NULL DEFAULT 0,
+    pending_reply_channel TEXT NOT NULL DEFAULT '',
     updated_at REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS notifications (
@@ -188,7 +190,8 @@ CREATE TABLE IF NOT EXISTS notifications (
     not_before REAL NOT NULL,
     claimed_at REAL,
     created_at REAL NOT NULL,
-    queued_at REAL
+    queued_at REAL,
+    target_channel TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS notifications_due
     ON notifications(not_before) WHERE state='pending';

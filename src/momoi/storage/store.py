@@ -92,6 +92,10 @@ class Store(MemoryStore, DeliveryStore):
                 """ALTER TABLE outbox ADD COLUMN reply_expectation
                    TEXT NOT NULL DEFAULT ''"""
             )
+        if "target_channel" not in outbox_columns:
+            self._db.execute(
+                "ALTER TABLE outbox ADD COLUMN target_channel TEXT NOT NULL DEFAULT ''"
+            )
         event_columns = {
             str(row["name"])
             for row in self._db.execute("PRAGMA table_info(events)").fetchall()
@@ -151,6 +155,7 @@ class Store(MemoryStore, DeliveryStore):
             ("pending_reply_expectation", "TEXT NOT NULL DEFAULT ''"),
             ("pending_reply_since", "REAL"),
             ("pending_reply_checks", "INTEGER NOT NULL DEFAULT 0"),
+            ("pending_reply_channel", "TEXT NOT NULL DEFAULT ''"),
         ):
             if name not in self_state_columns:
                 self._db.execute(
@@ -171,6 +176,11 @@ class Store(MemoryStore, DeliveryStore):
         if "reply_expectation" not in notification_columns:
             self._db.execute(
                 """ALTER TABLE notifications ADD COLUMN reply_expectation
+                   TEXT NOT NULL DEFAULT ''"""
+            )
+        if "target_channel" not in notification_columns:
+            self._db.execute(
+                """ALTER TABLE notifications ADD COLUMN target_channel
                    TEXT NOT NULL DEFAULT ''"""
             )
         now = time.time()
@@ -243,6 +253,13 @@ class Store(MemoryStore, DeliveryStore):
         )
         self._db.commit()
 
+    def assign_legacy_outbox_channel(self, primary_channel: str) -> None:
+        with self._db:
+            self._db.execute(
+                "UPDATE outbox SET target_channel=? WHERE target_channel=''",
+                (primary_channel,),
+            )
+
     def _recover_webhooks(self) -> None:
         now = time.time()
         with self._db:
@@ -296,7 +313,7 @@ class Store(MemoryStore, DeliveryStore):
                 self._db.execute(
                     """UPDATE self_state SET pending_reply_turn_id=NULL,
                        pending_reply_expectation='', pending_reply_since=NULL,
-                       pending_reply_checks=0,
+                       pending_reply_checks=0, pending_reply_channel='',
                        updated_at=? WHERE id=1""",
                     (time.time(),),
                 )
@@ -855,7 +872,8 @@ class Store(MemoryStore, DeliveryStore):
         now = time.time() if now is None else now
         row = self._db.execute(
             """SELECT pending_reply_turn_id, pending_reply_expectation,
-                      pending_reply_since, pending_reply_checks
+                      pending_reply_since, pending_reply_checks,
+                      pending_reply_channel
                FROM self_state WHERE id=1"""
         ).fetchone()
         if row is None or not str(row["pending_reply_expectation"] or "").strip():
@@ -880,6 +898,7 @@ class Store(MemoryStore, DeliveryStore):
             .isoformat(timespec="seconds"),
             "waiting_minutes": max(0, int((now - since) / 60)),
             "heartbeat_checks": int(row["pending_reply_checks"] or 0),
+            "channel": str(row["pending_reply_channel"] or ""),
             "delivered_followups": int(followups or 0),
         }
 
@@ -1019,12 +1038,14 @@ class Store(MemoryStore, DeliveryStore):
         pending_reply_turn_id: str | None = None,
         continue_waiting_for_reply: bool = False,
         reply_initial_interval_seconds: float = 60,
+        notification_channel: str = "",
     ) -> None:
         now = time.time()
         current = self.self_state(now)
         with self._db:
             pending = self._db.execute(
-                """SELECT pending_reply_turn_id, pending_reply_checks
+                """SELECT pending_reply_turn_id, pending_reply_checks,
+                          pending_reply_channel
                    FROM self_state WHERE id=1"""
             ).fetchone()
             pending_reply_is_current = bool(
@@ -1049,7 +1070,8 @@ class Store(MemoryStore, DeliveryStore):
                     self._db.execute(
                         """UPDATE self_state SET pending_reply_turn_id=NULL,
                            pending_reply_expectation='', pending_reply_since=NULL,
-                           pending_reply_checks=0 WHERE id=1"""
+                           pending_reply_checks=0, pending_reply_channel=''
+                           WHERE id=1"""
                     )
                     self._db.execute(
                         """DELETE FROM notifications
@@ -1083,12 +1105,18 @@ class Store(MemoryStore, DeliveryStore):
                 ),
             )
             if messages:
+                target_channel = (
+                    str(pending["pending_reply_channel"] or "")
+                    if pending_reply_is_current
+                    else notification_channel
+                )
                 self._db.execute(
                     """INSERT OR IGNORE INTO notifications
                        (id, turn_id, goal_id, notification_key, priority, reason,
-                        messages_json, reply_expectation, state, not_before, created_at)
+                        messages_json, reply_expectation, state, not_before, created_at,
+                        target_channel)
                         VALUES (?, ?, 'heartbeat', ?, 'normal', ?, ?, ?,
-                               'pending', ?, ?)""",
+                               'pending', ?, ?, ?)""",
                     (
                         f"notification:{turn_id}",
                         turn_id,
@@ -1102,6 +1130,7 @@ class Store(MemoryStore, DeliveryStore):
                         reply_expectation,
                         now,
                         now,
+                        target_channel,
                     ),
                 )
             self._db.execute(
@@ -1588,6 +1617,7 @@ class Store(MemoryStore, DeliveryStore):
         self,
         reminder_id: str,
         config: NotificationConfig | None = None,
+        target_channel: str = "",
     ) -> bool:
         now = time.time()
         with self._db:
@@ -1629,12 +1659,14 @@ class Store(MemoryStore, DeliveryStore):
                 (row["text"], now, json.dumps([f"reminder:{reminder_id}"])),
             )
             self._db.execute(
-                """INSERT OR IGNORE INTO outbox(turn_id, dedupe_key, text)
-                   VALUES (?, ?, ?)""",
+                """INSERT OR IGNORE INTO outbox
+                   (turn_id, dedupe_key, text, target_channel)
+                   VALUES (?, ?, ?, ?)""",
                 (
                     f"reminder:{reminder_id}:{occurrence}",
                     f"reminder:{reminder_id}:{occurrence}",
                     row["text"],
+                    target_channel,
                 ),
             )
         return True
@@ -1779,7 +1811,11 @@ class Store(MemoryStore, DeliveryStore):
             )
 
     def queue_progress(
-        self, turn_id: str, tool_call_id: str, messages: list[ChannelMessage]
+        self,
+        turn_id: str,
+        tool_call_id: str,
+        messages: list[ChannelMessage],
+        target_channel: str = "",
     ) -> None:
         now = time.time()
         with self._db:
@@ -1799,8 +1835,9 @@ class Store(MemoryStore, DeliveryStore):
                 )
                 self._db.execute(
                     """INSERT OR IGNORE INTO outbox
-                       (turn_id, dedupe_key, text, kind, media_path, payload_json)
-                       VALUES (?, ?, ?, ?, ?, ?)""",
+                       (turn_id, dedupe_key, text, kind, media_path, payload_json,
+                        target_channel)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
                     (
                         turn_id,
                         f"turn:{turn_id}:progress:{tool_call_id}:{index}",
@@ -1808,6 +1845,7 @@ class Store(MemoryStore, DeliveryStore):
                         kind,
                         path,
                         json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+                        target_channel,
                     ),
                 )
 
@@ -1818,6 +1856,7 @@ class Store(MemoryStore, DeliveryStore):
         reply: AgentReply,
         draft: TurnDraft | None = None,
         turn_id: str | None = None,
+        target_channel: str = "",
     ) -> str:
         assistant_messages = reply.messages
         normalized_messages = [
@@ -1858,8 +1897,8 @@ class Store(MemoryStore, DeliveryStore):
                 self._db.execute(
                     """INSERT INTO outbox
                        (turn_id, dedupe_key, text, kind, media_path, payload_json,
-                        reply_expectation)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                        reply_expectation, target_channel)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         turn_id,
                         f"turn:{turn_id}:{index}",
@@ -1873,6 +1912,7 @@ class Store(MemoryStore, DeliveryStore):
                             and index == len(normalized_messages) - 1
                             else ""
                         ),
+                        target_channel,
                     ),
                 )
             if reply.continuity is not None:
@@ -1914,7 +1954,11 @@ class Store(MemoryStore, DeliveryStore):
         return turn_id
 
     def commit_autonomous_turn(
-        self, goal_id: str, draft: TurnDraft, turn_id: str | None = None
+        self,
+        goal_id: str,
+        draft: TurnDraft,
+        turn_id: str | None = None,
+        notification_channel: str = "",
     ) -> str:
         turn_id = turn_id or uuid.uuid4().hex
         now = time.time()
@@ -1938,8 +1982,8 @@ class Store(MemoryStore, DeliveryStore):
                 self._db.execute(
                     """INSERT OR IGNORE INTO notifications
                        (id, turn_id, goal_id, notification_key, priority, reason,
-                        messages_json, state, not_before, created_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)""",
+                        messages_json, state, not_before, created_at, target_channel)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)""",
                     (
                         f"notification:{turn_id}",
                         turn_id,
@@ -1950,6 +1994,7 @@ class Store(MemoryStore, DeliveryStore):
                         json.dumps(draft.notification_messages, ensure_ascii=False),
                         now,
                         now,
+                        notification_channel,
                     ),
                 )
             self._db.execute(
@@ -2016,6 +2061,7 @@ class Store(MemoryStore, DeliveryStore):
         notification_id: str,
         now: float | None = None,
         config: NotificationConfig | None = None,
+        primary_channel: str = "",
     ) -> bool:
         now = time.time() if now is None else now
         with self._db:
@@ -2036,6 +2082,7 @@ class Store(MemoryStore, DeliveryStore):
                     )
                     return False
             messages = json.loads(str(row["messages_json"]))
+            target_channel = str(row["target_channel"] or primary_channel)
             source = (
                 f"heartbeat:{row['turn_id']}"
                 if row["goal_id"] == "heartbeat"
@@ -2051,8 +2098,8 @@ class Store(MemoryStore, DeliveryStore):
                 self._db.execute(
                     """INSERT OR IGNORE INTO outbox
                        (turn_id, dedupe_key, text, kind, media_path, payload_json,
-                        reply_expectation)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                        reply_expectation, target_channel)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         row["turn_id"],
                         f"notification:{notification_id}:{index}",
@@ -2065,6 +2112,7 @@ class Store(MemoryStore, DeliveryStore):
                             if index == len(messages) - 1
                             else ""
                         ),
+                        target_channel,
                     ),
                 )
             self._db.execute(

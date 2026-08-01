@@ -134,7 +134,7 @@ Goal and Heartbeat notifications respect quiet hours, cooldowns, and pending own
 
 - Python 3.12 or newer
 - [uv](https://docs.astral.sh/uv/)
-- Either a working NapCat WebSocket connection or a Weixin account that can scan the iLink login QR code
+- A working NapCat WebSocket connection, a Weixin account that can scan the iLink login QR code, or both
 - An Anthropic Messages-compatible or OpenAI Chat Completions-compatible LLM endpoint
 
 ### Install the CLI
@@ -158,7 +158,7 @@ cp -R config.example/. ~/.momoi/
 Edit `~/.momoi/config.json` and set:
 
 - Your LLM API format, endpoint, key, and model
-- Either your NapCat WebSocket URL and owner QQ number, or the `weixin` channel settings from [CONFIG.md](./docs/CONFIG.md)
+- Your enabled channels and which one should be primary
 - Your local timezone
 
 ### Run
@@ -170,10 +170,10 @@ momoi run
 For Weixin, authenticate once before the first run:
 
 ```bash
-momoi channel login
+momoi channel login weixin
 ```
 
-Then start Momoi and send a private message from the configured or linked owner account. See [Channel configuration](./docs/CONFIG.md#channel) for both alternatives.
+Then start Momoi and send a private message from either owner account. Replies stay on the channel where the conversation started; proactive messages use the configured primary channel.
 
 Pass `--workspace` before any command to use another workspace:
 
@@ -242,7 +242,7 @@ Use `--at` for a future one-time review or `--every-seconds` for a recurring int
 | --- | --- |
 | `momoi run` | Start the daemon |
 | `momoi --version` | Print the installed version |
-| `momoi channel login` | Authenticate the active channel when it needs login |
+| `momoi channel login <name>` | Authenticate a configured channel when it needs login |
 | `momoi emotion add --slug <slug> --path <file> --desc <text>` | Add or update an image reaction asset |
 | `momoi emotion list` | List image reaction assets |
 | `momoi emotion del --slug <slug>` | Delete an image reaction asset |
@@ -263,7 +263,7 @@ When `/resolve` or `/resume` is needed, Momoi sends a recovery message that incl
 
 ## Current scope
 
-- One trusted owner and one active private-chat channel only
+- One trusted owner across one or more private-chat channels
 - No group-chat or multi-user isolation
 - No TUI or web administration interface
 - Designed for a trusted personal environment

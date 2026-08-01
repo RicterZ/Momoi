@@ -92,6 +92,11 @@ class AppConfig:
     heartbeat_prompt: str = ""
     soul_prompt_path: Path | None = None
     heartbeat_prompt_path: Path | None = None
+    channels: tuple[object, ...] = ()
+
+    @property
+    def channel_configs(self) -> tuple[object, ...]:
+        return self.channels or (self.channel,)
 
 def _mapping(value: Any, name: str) -> dict[str, Any]:
     if not isinstance(value, dict):
@@ -144,15 +149,42 @@ def load_config(path: str | Path) -> AppConfig:
     if api_format not in {"anthropic", "openai"}:
         raise ConfigError("llm.api_format must be anthropic or openai")
 
-    channel_section = _mapping(raw.get("channel"), "channel")
-    channel_name = str(channel_section.get("plugin") or "")
-    if not channel_name:
-        raise ConfigError("channel.plugin is required")
-    channel_settings = _mapping(channel_section.get("settings"), "channel.settings")
+    if "channel" in raw and "channels" in raw:
+        raise ConfigError("configure either channel or channels, not both")
     try:
-        channel_config = load_channel_config(
-            channel_name, channel_settings, config_path.parent
-        )
+        if "channels" in raw:
+            channel_section = _mapping(raw.get("channels"), "channels")
+            primary_name = str(channel_section.get("primary") or "")
+            enabled = _mapping(channel_section.get("enabled"), "channels.enabled")
+            if not enabled:
+                raise ConfigError("channels.enabled must not be empty")
+            if primary_name not in enabled:
+                raise ConfigError("channels.primary must name an enabled channel")
+            channel_configs = tuple(
+                load_channel_config(
+                    str(name),
+                    _mapping(settings, f"channels.enabled.{name}"),
+                    config_path.parent,
+                )
+                for name, settings in enabled.items()
+            )
+            channel_config = next(
+                item
+                for item in channel_configs
+                if getattr(item, "plugin", "") == primary_name
+            )
+        else:
+            channel_section = _mapping(raw.get("channel"), "channel")
+            channel_name = str(channel_section.get("plugin") or "")
+            if not channel_name:
+                raise ConfigError("channel.plugin is required")
+            channel_settings = _mapping(
+                channel_section.get("settings"), "channel.settings"
+            )
+            channel_config = load_channel_config(
+                channel_name, channel_settings, config_path.parent
+            )
+            channel_configs = (channel_config,)
     except (TypeError, ValueError) as error:
         raise ConfigError(str(error)) from None
 
@@ -317,4 +349,5 @@ def load_config(path: str | Path) -> AppConfig:
         workspace=config_path.parent,
         soul_prompt_path=soul_path,
         heartbeat_prompt_path=heartbeat_path,
+        channels=channel_configs,
     )

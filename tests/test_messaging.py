@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 
 from momoi.channel import (
+    NotConnected,
     SendRejected,
     create_channel,
 )
@@ -18,6 +19,7 @@ from momoi.channel.napcat import (
     incoming_segments,
     render_segments,
 )
+from momoi.channel.weixin import WeixinConfig
 from momoi.config import (
     AppConfig,
     LLMConfig,
@@ -841,3 +843,159 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(segments[6], {"type": "face", "data": {"id": "178"}})
         self.assertEqual(payloads[1]["action"], "send_private_forward_msg")
         self.assertEqual(payloads[1]["params"]["messages"][0]["type"], "node")  # type: ignore[index]
+
+    async def test_channels_share_context_but_reply_to_the_source(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            napcat = NapCatConfig(
+                "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
+            )
+            weixin = WeixinConfig.from_mapping({}, root)
+            daemon = MomoiDaemon(
+                AppConfig(
+                    llm=LLMConfig(
+                        "http://127.0.0.1", "test", "test", 100, 0, 1, 0
+                    ),
+                    channel=napcat,
+                    channels=(napcat, weixin),
+                    system_prompt="test",
+                    recent_raw_tokens=1000,
+                    recent_turns=2,
+                    memory_results=2,
+                    memory_tokens=1000,
+                    database=root / "momoi.sqlite3",
+                    log_level="INFO",
+                    workspace=root,
+                )
+            )
+            case = self
+
+            class Provider:
+                calls = 0
+
+                async def complete(
+                    self,
+                    _: object,
+                    messages: list[dict[str, object]],
+                    *__: object,
+                    **___: object,
+                ) -> ProviderResponse:
+                    self.calls += 1
+                    serialized = json.dumps(messages, ensure_ascii=False)
+                    if self.calls == 2:
+                        case.assertIn("QQ 上说过的事", serialized)
+                        case.assertIn("Channel: weixin", serialized)
+                    text = "QQ 回复" if self.calls == 1 else "微信回复"
+                    return ProviderResponse(
+                        [],
+                        [
+                            ToolCall(
+                                f"respond-{self.calls}",
+                                "respond",
+                                {
+                                    "delivery": "reply on the current channel",
+                                    "expects_reply": False,
+                                    "reply_expectation": "",
+                                    "messages": [text],
+                                    "continuity": {
+                                        "topic": "跨渠道话题",
+                                        "open_loops": [],
+                                        "pending_commitments": [],
+                                        "short_term_facts": [],
+                                    },
+                                    "mood": {"action": "keep"},
+                                },
+                            )
+                        ],
+                    )
+
+            daemon.provider = Provider()  # type: ignore[assignment]
+            for event in (
+                IncomingMessage(
+                    "napcat:1", "1", "QQ 上说过的事", 1, 1, channel="napcat"
+                ),
+                IncomingMessage(
+                    "weixin:2", "2", "接着刚才聊", 2, 2, channel="weixin"
+                ),
+            ):
+                daemon.store.add_event(event)
+                turn_id = daemon._turn_id(event.event_id)
+                daemon.store.begin_turn(turn_id, "owner", [event.event_id])
+                await daemon._complete_batch([event], turn_id)
+
+            rows = daemon.store.due_outbox()
+            self.assertEqual(
+                [(row.text, row.channel) for row in rows],
+                [("QQ 回复", "napcat"), ("微信回复", "weixin")],
+            )
+            qq_update = IncomingMessage(
+                "napcat:update", "3", "QQ 补充", 3, 3, channel="napcat"
+            )
+            weixin_update = IncomingMessage(
+                "weixin:update", "4", "微信另聊", 4, 4, channel="weixin"
+            )
+            daemon.incoming.put_nowait(qq_update)
+            daemon.incoming.put_nowait(weixin_update)
+            self.assertEqual(
+                daemon._drain_owner_updates([], "napcat"), [qq_update]
+            )
+            self.assertEqual(daemon._deferred_incoming.popleft(), weixin_update)
+            daemon.store.close()
+
+    async def test_disconnected_channel_does_not_block_another_channel(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            napcat = NapCatConfig(
+                "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
+            )
+            weixin = WeixinConfig.from_mapping({}, root)
+            daemon = MomoiDaemon(
+                AppConfig(
+                    llm=LLMConfig(
+                        "http://127.0.0.1", "test", "test", 100, 0, 1, 0
+                    ),
+                    channel=napcat,
+                    channels=(napcat, weixin),
+                    system_prompt="test",
+                    recent_raw_tokens=1000,
+                    recent_turns=2,
+                    memory_results=2,
+                    memory_tokens=1000,
+                    database=root / "momoi.sqlite3",
+                    log_level="INFO",
+                    workspace=root,
+                )
+            )
+            daemon.store.commit_turn(
+                [], "", AgentReply(["QQ pending"]), turn_id="qq", target_channel="napcat"
+            )
+            daemon.store.commit_turn(
+                [],
+                "",
+                AgentReply(["Weixin ready"]),
+                turn_id="weixin",
+                target_channel="weixin",
+            )
+            sent: list[str] = []
+            stop = asyncio.Event()
+
+            async def offline(_: dict[str, object]) -> str:
+                raise NotConnected("offline")
+
+            async def online(payload: dict[str, object]) -> str:
+                sent.append(payload["segments"][0]["data"]["text"])  # type: ignore[index]
+                stop.set()
+                return "sent"
+
+            daemon.channels["napcat"].send_message = offline  # type: ignore[method-assign]
+            daemon.channels["weixin"].send_message = online  # type: ignore[method-assign]
+            await daemon._outbox_worker(stop)
+
+            self.assertEqual(sent, ["Weixin ready"])
+            states = dict(
+                daemon.store._db.execute(
+                    "SELECT target_channel, state FROM outbox"
+                ).fetchall()
+            )
+            self.assertEqual(states, {"napcat": "pending", "weixin": "sent"})
+            daemon.store.close()

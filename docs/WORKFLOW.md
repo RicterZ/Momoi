@@ -246,10 +246,10 @@ Executor parameters use the same schema as Workflow inputs.
 `argv` and `env` values may be static strings or one complete template:
 
 - `${args.<parameter>}` — a validated executor argument
-- `${config.owner_id}` — owner identifier provided by the current Channel
-- `${config.channel_url}` — connection URL provided by the current Channel
+- `${config.owner_id}` — owner identifier provided by the primary Channel
+- `${config.channel_url}` — connection URL provided by the primary Channel, when available
 
-The NapCat plugin also provides `${config.owner_qq}` and `${config.napcat_url}`.
+Configured plugins also provide namespaced variables, such as NapCat's `${config.owner_qq}` and `${config.napcat_url}` or Weixin's `${config.weixin_user_id}`.
 
 Templates cannot be embedded inside a larger token. Momoi's existing process environment is inherited, so commands can read secrets from environment variables without placing them in Workflow input.
 

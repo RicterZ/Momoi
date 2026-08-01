@@ -341,12 +341,18 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 )
             )
             command = IncomingMessage(
-                "qq:manual-heartbeat", "manual-heartbeat", "/heartbeat", 1, 1
+                "qq:manual-heartbeat",
+                "manual-heartbeat",
+                "/heartbeat",
+                1,
+                1,
+                channel="napcat",
             )
             await daemon._receive(command)
             await daemon._receive(command)
 
             self.assertEqual(await daemon.autonomous.get(), HEARTBEAT_QUEUE_ITEM)
+            self.assertEqual(daemon._manual_heartbeat_channel, "napcat")
             self.assertTrue(daemon.autonomous.empty())
             self.assertEqual(daemon.store.pending_events(), [])
             self.assertIsNotNone(daemon.store.self_state()["heartbeat_claimed_at"])
@@ -1022,6 +1028,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     break
                 await asyncio.sleep(0.01)
             self.assertEqual(daemon.store.due_outbox()[0].text, "后台检查完成")
+            self.assertEqual(daemon.store.due_outbox()[0].channel, "napcat")
             stop.set()
             daemon.agenda_changed.set()
             await worker

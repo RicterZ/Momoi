@@ -32,7 +32,10 @@ def parse_args() -> argparse.Namespace:
     channel_commands = channel_parser.add_subparsers(
         dest="channel_command", required=True
     )
-    channel_commands.add_parser("login", help="authenticate the active channel")
+    login_parser = channel_commands.add_parser(
+        "login", help="authenticate a configured channel"
+    )
+    login_parser.add_argument("channel_name", nargs="?")
     emotion_parser = commands.add_parser("emotion", help="manage emotion image assets")
     emotion_commands = emotion_parser.add_subparsers(
         dest="emotion_command", required=True
@@ -214,8 +217,12 @@ async def run(config_path: str | Path) -> None:
         if sig := getattr(signal, name, None):
             loop.add_signal_handler(sig, stop.set)
     logging.getLogger(__name__).info(
-        "Starting Momoi model=%s channel=%s",
+        "Starting Momoi model=%s channels=%s primary=%s",
         config.llm.model,
+        ",".join(
+            str(getattr(item, "plugin", "unknown"))
+            for item in config.channel_configs
+        ),
         getattr(config.channel, "plugin", "unknown"),
     )
     await MomoiDaemon(config).run(stop)
@@ -224,7 +231,22 @@ async def run(config_path: str | Path) -> None:
 async def channel(args: argparse.Namespace) -> None:
     config = load_config(args.workspace / "config.json")
     if args.channel_command == "login":
-        await login_channel(config.channel)
+        if args.channel_name is None:
+            if len(config.channel_configs) != 1:
+                raise ValueError("channel name is required when multiple channels are configured")
+            selected = config.channel_configs[0]
+        else:
+            selected = next(
+                (
+                    item
+                    for item in config.channel_configs
+                    if getattr(item, "plugin", "") == args.channel_name
+                ),
+                None,
+            )
+            if selected is None:
+                raise ValueError(f"configured channel not found: {args.channel_name}")
+        await login_channel(selected)
 
 
 def main() -> None:

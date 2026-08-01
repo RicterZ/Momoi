@@ -23,6 +23,7 @@ class OutboxMessage:
     kind: str = "text"
     media_path: str | None = None
     payload: dict[str, Any] | None = None
+    channel: str = ""
 
 
 @dataclass(frozen=True)

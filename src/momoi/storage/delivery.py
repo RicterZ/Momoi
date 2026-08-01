@@ -141,7 +141,12 @@ class DeliveryStore:
             )
 
     def commit_webhook_reply(
-        self, run_id: str, step_index: int, turn_id: str, reply: AgentReply
+        self,
+        run_id: str,
+        step_index: int,
+        turn_id: str,
+        reply: AgentReply,
+        target_channel: str = "",
     ) -> list[int]:
         step = self.webhook_step(run_id, step_index)
         if step is None:
@@ -175,8 +180,8 @@ class DeliveryStore:
                 self._db.execute(
                     """INSERT INTO outbox
                        (turn_id, dedupe_key, text, kind, media_path, payload_json,
-                        reply_expectation)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                        reply_expectation, target_channel)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         turn_id,
                         f"turn:{turn_id}:{index}",
@@ -189,6 +194,7 @@ class DeliveryStore:
                             if reply.expects_reply and index == len(normalized) - 1
                             else ""
                         ),
+                        target_channel,
                     ),
                 )
             if reply.continuity is not None:
@@ -327,16 +333,17 @@ class DeliveryStore:
     def due_outbox(self) -> list[OutboxMessage]:
         rows = self._db.execute(
             """SELECT o.id, o.turn_id, o.text, o.state, o.attempts,
-                      o.kind, o.media_path, o.payload_json
+                      o.kind, o.media_path, o.payload_json, o.target_channel
                FROM outbox AS o
                WHERE o.state IN ('pending', 'ambiguous')
                  AND o.next_attempt_at <= ?
                  AND NOT EXISTS (
                      SELECT 1 FROM outbox AS earlier
                      WHERE earlier.id < o.id
+                       AND earlier.target_channel = o.target_channel
                        AND earlier.state NOT IN ('sent', 'failed')
                  )
-               ORDER BY o.id LIMIT 1""",
+               ORDER BY o.id""",
             (time.time(),),
         ).fetchall()
         messages: list[OutboxMessage] = []
@@ -375,6 +382,7 @@ class DeliveryStore:
                     kind=row["kind"],
                     media_path=resolved_media,
                     payload=payload,
+                    channel=str(row["target_channel"] or ""),
                 )
             )
         return messages
@@ -402,7 +410,8 @@ class DeliveryStore:
         activated = False
         with self._db:
             row = self._db.execute(
-                "SELECT turn_id, reply_expectation FROM outbox WHERE id=?",
+                """SELECT turn_id, reply_expectation, target_channel
+                   FROM outbox WHERE id=?""",
                 (outbox_id,),
             ).fetchone()
             self._db.execute(
@@ -435,17 +444,32 @@ class DeliveryStore:
                 if already_waiting:
                     self._db.execute(
                         """UPDATE self_state SET pending_reply_turn_id=?,
-                           pending_reply_expectation=?, next_heartbeat_at=?,
+                           pending_reply_expectation=?, pending_reply_channel=?,
+                           next_heartbeat_at=?,
                            updated_at=? WHERE id=1""",
-                        (row["turn_id"], expectation, due, now),
+                        (
+                            row["turn_id"],
+                            expectation,
+                            row["target_channel"],
+                            due,
+                            now,
+                        ),
                     )
                 else:
                     self._db.execute(
                         """UPDATE self_state SET pending_reply_turn_id=?,
-                           pending_reply_expectation=?, pending_reply_since=?,
+                           pending_reply_expectation=?, pending_reply_channel=?,
+                           pending_reply_since=?,
                            pending_reply_checks=0, next_heartbeat_at=?,
                            updated_at=? WHERE id=1""",
-                        (row["turn_id"], expectation, now, due, now),
+                        (
+                            row["turn_id"],
+                            expectation,
+                            row["target_channel"],
+                            now,
+                            due,
+                            now,
+                        ),
                     )
                 activated = True
         return activated

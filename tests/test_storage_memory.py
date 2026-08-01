@@ -642,6 +642,7 @@ class StorageMemoryTest(unittest.TestCase):
                     reply_expectation="主人对晚餐的选择",
                 ),
                 turn_id="owner-question",
+                target_channel="weixin",
             )
             row = store.due_outbox()[0]
             with patch("momoi.storage.delivery.time.time", return_value=1000):
@@ -683,8 +684,13 @@ class StorageMemoryTest(unittest.TestCase):
 
             policy = NotificationConfig()
             notification = store.claim_due_notification(policy, now=1060)
-            self.assertTrue(store.queue_notification(notification["id"], 1060, policy))
+            self.assertTrue(
+                store.queue_notification(
+                    notification["id"], 1060, policy, primary_channel="napcat"
+                )
+            )
             stale_followup = store.due_outbox()[0]
+            self.assertEqual(stale_followup.channel, "weixin")
             self.assertEqual(
                 store._db.execute(
                     "SELECT reply_expectation FROM outbox WHERE id=?",

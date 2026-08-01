@@ -134,7 +134,7 @@ Momoi 把不同类型的未来行为分开处理：
 
 - Python 3.12 或更高版本
 - [uv](https://docs.astral.sh/uv/)
-- 可用的 NapCat WebSocket 连接，或可扫描 iLink 登录二维码的微信账号，两者选一
+- 可用的 NapCat WebSocket 连接、可扫描 iLink 登录二维码的微信账号，或两者同时使用
 - 兼容 Anthropic Messages 或 OpenAI Chat Completions 的 LLM 端点
 
 ### 安装 CLI
@@ -158,7 +158,7 @@ cp -R config.example/. ~/.momoi/
 编辑 `~/.momoi/config.json` 并设置：
 
 - LLM API 格式、端点、密钥和模型
-- NapCat WebSocket URL 与主人 QQ 号，或 [CONFIG.zh-CN.md](./docs/CONFIG.zh-CN.md) 中的 `weixin` 渠道设置
+- 启用的渠道，以及其中哪个作为 primary
 - 本地时区
 
 ### 运行
@@ -170,10 +170,10 @@ momoi run
 微信渠道首次运行前需要扫码登录一次：
 
 ```bash
-momoi channel login
+momoi channel login weixin
 ```
 
-然后启动 Momoi，并从配置或扫码绑定的主人账号发送私聊消息。两种渠道的配置见[渠道配置](./docs/CONFIG.zh-CN.md#channel)。
+然后启动 Momoi，从任一主人账号发送私聊消息。回复留在发起对话的渠道，主动消息发送到配置的 primary。
 
 `--workspace` 可以放在任意命令前，用来指定其他 workspace：
 
@@ -242,7 +242,7 @@ momoi goal del <goal-id-or-prefix> --reason "No longer needed"
 | --- | --- |
 | `momoi run` | 启动 daemon |
 | `momoi --version` | 查看已安装版本 |
-| `momoi channel login` | 为需要登录的当前渠道认证 |
+| `momoi channel login <name>` | 为需要登录的已配置渠道认证 |
 | `momoi emotion add --slug <slug> --path <file> --desc <text>` | 添加或更新图片反应素材 |
 | `momoi emotion list` | 列出图片反应素材 |
 | `momoi emotion del --slug <slug>` | 删除图片反应素材 |
@@ -263,7 +263,7 @@ momoi goal del <goal-id-or-prefix> --reason "No longer needed"
 
 ## 当前范围
 
-- 仅支持一位可信主人和一个当前启用的私聊渠道
+- 仅支持一位可信主人，可同时使用多个私聊渠道
 - 不支持群聊或多用户隔离
 - 没有 TUI 或 Web 管理界面
 - 面向可信的个人环境设计

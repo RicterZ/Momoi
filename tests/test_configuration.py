@@ -10,6 +10,7 @@ from unittest.mock import patch
 from momoi.__main__ import emotion as emotion_command, goal as goal_command, parse_args
 from momoi.agenda_tools import AgendaTools
 from momoi.channel.napcat import NapCatConfig
+from momoi.channel.weixin import WeixinConfig
 from momoi.config import (
     ConfigError,
     NotificationConfig,
@@ -24,6 +25,48 @@ from momoi.storage import Store
 
 
 class ConfigurationTest(unittest.TestCase):
+    def test_loads_multiple_channels_and_validates_primary(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "prompts").mkdir()
+            (root / "prompts" / "SOUL.md").write_text("Test soul")
+            path = root / "config.json"
+            value = {
+                "llm": {
+                    "base_url": "https://example.com",
+                    "api_key": "key",
+                    "model": "model",
+                },
+                "channels": {
+                    "primary": "napcat",
+                    "enabled": {
+                        "napcat": {"url": "ws://localhost", "owner_qq": "123"},
+                        "weixin": {},
+                    },
+                },
+                "context": {},
+                "storage": {"database": "momoi.sqlite3"},
+                "logging": {},
+            }
+            path.write_text(json.dumps(value))
+            config = load_config(path)
+            self.assertIsInstance(config.channel, NapCatConfig)
+            self.assertEqual(
+                [type(item) for item in config.channel_configs],
+                [NapCatConfig, WeixinConfig],
+            )
+
+            value["channels"]["primary"] = "missing"  # type: ignore[index]
+            path.write_text(json.dumps(value))
+            with self.assertRaisesRegex(ConfigError, "must name an enabled channel"):
+                load_config(path)
+
+            value["channels"]["primary"] = "napcat"  # type: ignore[index]
+            value["channel"] = {"plugin": "weixin", "settings": {}}
+            path.write_text(json.dumps(value))
+            with self.assertRaisesRegex(ConfigError, "either channel or channels"):
+                load_config(path)
+
     def test_loads_channel_plugin_configuration(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -162,6 +205,8 @@ class ConfigurationTest(unittest.TestCase):
             patch("sys.argv", ["momoi", "--workspace", directory, "emotion", "list"]),
         ):
             self.assertEqual(parse_args().workspace, Path(directory))
+        with patch("sys.argv", ["momoi", "channel", "login", "weixin"]):
+            self.assertEqual(parse_args().channel_name, "weixin")
 
     def test_goal_cli_add_list_and_delete(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

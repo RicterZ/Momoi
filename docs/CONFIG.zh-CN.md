@@ -46,7 +46,7 @@ MCP 是添加由模型控制能力的常规方式。工作流用于事件驱动�
 ├── workflow-executors.yaml
 ├── emotion/
 ├── channel/
-│   └── weixin/       # 仅使用微信渠道时创建
+│   └── weixin/       # 启用微信渠道时创建
 └── data/
 ```
 
@@ -86,24 +86,35 @@ MCP 是添加由模型控制能力的常规方式。工作流用于事件驱动�
 
 ## Channel
 
-Momoi 同一时间只运行一个 Channel 插件。示例默认使用 `napcat`，`weixin` 是原生腾讯 iLink 备选渠道。`plugin` 标识适配器，协议专属配置放在 `settings` 下。
+Momoi 可以同时运行多个 Channel 插件。它们共享同一段对话、记忆、目标、情绪与身份。主人在哪个渠道开口就在哪里回复；新发起的主动消息使用 `primary`。
 
 ```json
 {
-  "channel": {
-    "plugin": "napcat",
-    "settings": {
-      "url": "ws://127.0.0.1:3001",
-      "owner_qq": "100000000",
-      "quiet_seconds": 6,
-      "max_batch_seconds": 60,
-      "heartbeat_seconds": 30,
-      "reconnect_max_seconds": 30,
-      "send_timeout_seconds": 20
+  "channels": {
+    "primary": "napcat",
+    "enabled": {
+      "napcat": {
+        "url": "ws://127.0.0.1:3001",
+        "owner_qq": "100000000",
+        "quiet_seconds": 6,
+        "max_batch_seconds": 60,
+        "heartbeat_seconds": 30,
+        "reconnect_max_seconds": 30,
+        "send_timeout_seconds": 20
+      },
+      "weixin": {
+        "quiet_seconds": 6,
+        "max_batch_seconds": 60,
+        "reconnect_max_seconds": 30,
+        "send_timeout_seconds": 20,
+        "media_max_bytes": 104857600
+      }
     }
   }
 }
 ```
+
+`primary` 必须对应 `enabled` 中的一个插件。某个渠道断线时，它自己的消息会继续排队，但不会阻塞其他渠道；Momoi 也不会悄悄把消息改发到另一个平台。旧的单一 `channel.plugin/settings` 格式仍可作为只有一个 primary 的配置使用。
 
 `napcat` 表示第三方适配器；未来的 QQ 官方 AI Bot 适配器将使用独立的 `qq` 插件名。
 
@@ -117,33 +128,16 @@ Momoi 同一时间只运行一个 Channel 插件。示例默认使用 `napcat`�
 | `reconnect_max_seconds` | 否 | `30` | 重连退避的最大时间 |
 | `send_timeout_seconds` | 否 | `20` | 单次 NapCat 出站请求的超时时间 |
 
-`channel.settings` 中的所有时间字段都必须为正数。
+所有渠道时间字段都必须为正数。
 
 6 秒可以把一组自然连续的短消息一起处理。只有在开发时更看重反馈速度而不是消息收集时，才建议降到 1 秒。
 
 ### 微信（腾讯 iLink）
 
-用下面内容完整替换 `channel` 对象；不要和 NapCat 同时配置：
-
-```json
-{
-  "channel": {
-    "plugin": "weixin",
-    "settings": {
-      "quiet_seconds": 6,
-      "max_batch_seconds": 60,
-      "reconnect_max_seconds": 30,
-      "send_timeout_seconds": 20,
-      "media_max_bytes": 104857600
-    }
-  }
-}
-```
-
 在同一个 workspace 中扫码登录一次，再运行 daemon：
 
 ```bash
-momoi --workspace ~/.momoi channel login
+momoi --workspace ~/.momoi channel login weixin
 momoi --workspace ~/.momoi run
 ```
 
@@ -155,7 +149,7 @@ momoi --workspace ~/.momoi run
 
 ### 接入新的 Channel
 
-一个 Channel 插件对应 `momoi.channel` 下的一个模块或 package，并导出 `load_config(value, workspace)` 与 `create_channel(config)`。创建出的 Channel 提供 `name`、运行时 prompt 上下文、消息批处理时间、`run`、`send_message`、`content_blocks` 和 Workflow 变量。入站事件用插件名标识来源，因此 NapCat 事件使用 `napcat:`，微信事件使用 `weixin:`；`qq:` 留给未来的 QQ 官方 AI Bot 插件。
+一个 Channel 插件对应 `momoi.channel` 下的一个模块或 package，并导出 `load_config(value, workspace)` 与 `create_channel(config)`。创建出的 Channel 提供唯一的 `name`、运行时 prompt 上下文、消息批处理时间、`run`、`send_message`、`content_blocks` 和 Workflow 变量。入站事件用插件名标识来源，因此 NapCat 事件使用 `napcat:`，微信事件使用 `weixin:`；`qq:` 留给未来的 QQ 官方 AI Bot 插件。
 
 协议专属的解析、内容渲染和连接日志都留在插件模块内。daemon、store 与 webhook 层只使用通用 Channel 接口。
 

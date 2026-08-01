@@ -246,10 +246,10 @@ executors:
 `argv` 和 `env` 中的值可以是静态字符串，也可以是一个完整模板：
 
 - `${args.<parameter>}`——已验证的执行器参数
-- `${config.owner_id}`——当前 Channel 配置的主人标识
-- `${config.channel_url}`——当前 Channel 的连接 URL
+- `${config.owner_id}`——primary Channel 提供的主人标识
+- `${config.channel_url}`——primary Channel 提供的连接 URL（如果有）
 
-NapCat 插件还提供 `${config.owner_qq}` 和 `${config.napcat_url}`。
+已配置插件也会提供各自的命名变量，例如 NapCat 的 `${config.owner_qq}`、`${config.napcat_url}`，以及微信的 `${config.weixin_user_id}`。
 
 模板不能嵌入较大的 token 中。执行器会继承 Momoi 现有的进程环境，因此命令可以从环境变量读取 secret，无需把它放入工作流输入。
 

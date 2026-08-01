@@ -86,24 +86,35 @@ For Anthropic-compatible providers, Momoi calls `/v1/messages`. For OpenAI-compa
 
 ## Channel
 
-Momoi runs one Channel plugin at a time. `napcat` is the example default; `weixin` is the native Tencent iLink alternative. `plugin` identifies the adapter and its protocol-specific values stay under `settings`.
+Momoi can run multiple Channel plugins at once. They share one conversation, memory, goals, mood, and identity. Replies stay on the channel where the owner spoke; new proactive messages use `primary`.
 
 ```json
 {
-  "channel": {
-    "plugin": "napcat",
-    "settings": {
-      "url": "ws://127.0.0.1:3001",
-      "owner_qq": "100000000",
-      "quiet_seconds": 6,
-      "max_batch_seconds": 60,
-      "heartbeat_seconds": 30,
-      "reconnect_max_seconds": 30,
-      "send_timeout_seconds": 20
+  "channels": {
+    "primary": "napcat",
+    "enabled": {
+      "napcat": {
+        "url": "ws://127.0.0.1:3001",
+        "owner_qq": "100000000",
+        "quiet_seconds": 6,
+        "max_batch_seconds": 60,
+        "heartbeat_seconds": 30,
+        "reconnect_max_seconds": 30,
+        "send_timeout_seconds": 20
+      },
+      "weixin": {
+        "quiet_seconds": 6,
+        "max_batch_seconds": 60,
+        "reconnect_max_seconds": 30,
+        "send_timeout_seconds": 20,
+        "media_max_bytes": 104857600
+      }
     }
   }
 }
 ```
+
+`primary` must name an entry in `enabled`. A disconnected channel keeps its own messages queued without blocking the others, and Momoi never silently reroutes a message across platforms. The legacy single `channel.plugin/settings` form remains supported as one primary channel.
 
 `napcat` names this third-party adapter. A future official QQ AI Bot adapter will use a distinct `qq` plugin name.
 
@@ -117,33 +128,16 @@ Momoi runs one Channel plugin at a time. `napcat` is the example default; `weixi
 | `reconnect_max_seconds` | No | `30` | Maximum reconnect backoff |
 | `send_timeout_seconds` | No | `20` | Timeout for one outbound NapCat request |
 
-All timing fields in `channel.settings` must be positive.
+All channel timing fields must be positive.
 
 Six seconds lets a natural sequence of short messages be handled together. Lower it to one second only when faster development feedback matters more than message collection.
 
 ### Weixin (Tencent iLink)
 
-Replace the complete `channel` object with the following; do not configure it alongside NapCat:
-
-```json
-{
-  "channel": {
-    "plugin": "weixin",
-    "settings": {
-      "quiet_seconds": 6,
-      "max_batch_seconds": 60,
-      "reconnect_max_seconds": 30,
-      "send_timeout_seconds": 20,
-      "media_max_bytes": 104857600
-    }
-  }
-}
-```
-
 Authenticate once in the same workspace, then run the daemon:
 
 ```bash
-momoi --workspace ~/.momoi channel login
+momoi --workspace ~/.momoi channel login weixin
 momoi --workspace ~/.momoi run
 ```
 
@@ -155,7 +149,7 @@ This implementation follows Tencent's MIT-licensed [`@tencent-weixin/openclaw-we
 
 ### Adding a Channel
 
-A Channel plugin is one module or package under `momoi.channel`. It exports `load_config(value, workspace)` and `create_channel(config)`. The created Channel supplies its `name`, runtime prompt context, batch timing, `run`, `send_message`, `content_blocks`, and Workflow variables. Incoming events identify their source with the plugin name, so NapCat events use `napcat:` and Weixin events use `weixin:`; `qq:` remains available for an official QQ AI Bot plugin.
+A Channel plugin is one module or package under `momoi.channel`. It exports `load_config(value, workspace)` and `create_channel(config)`. The created Channel supplies its unique `name`, runtime prompt context, batch timing, `run`, `send_message`, `content_blocks`, and Workflow variables. Incoming events identify their source with the plugin name, so NapCat events use `napcat:` and Weixin events use `weixin:`; `qq:` remains available for an official QQ AI Bot plugin.
 
 Protocol-specific parsing, content rendering, and connection logs belong in that plugin module. The daemon, store, and webhook layers use only the common Channel interface.
 
