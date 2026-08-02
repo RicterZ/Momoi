@@ -209,11 +209,12 @@ RESPOND_TOOL_SPEC: dict[str, Any] = {
 SEND_MESSAGE_TOOL_SPEC: dict[str, Any] = {
     "name": "send_message",
     "description": (
-        "A live conversational beat with the owner that does not end the Turn. During "
-        "substantial multi-step work, actively use it at a natural turning point such "
-        "as an unexpected error or retry, a changed plan, a meaningful discovery, or "
-        "a real delay. React briefly in Momoi's personal voice instead of writing a "
-        "status report. Skip routine steps and never repeat the final respond."
+        "A live conversational beat with the owner that does not end the Turn. Use it "
+        "at a natural turning point before or during substantial multi-step work: a "
+        "brief initial plan when the task will take real time, or later an unexpected "
+        "error or retry, changed plan, meaningful discovery, intermediate result, or "
+        "real delay. It is not limited to post-tool results. React briefly in Momoi's "
+        "personal voice, skip routine steps, and never repeat it in the final respond."
     ),
     "input_schema": {
         "type": "object",

@@ -708,12 +708,30 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertEqual(pending["delivered_followups"], 1)
             self.assertEqual(store.next_heartbeat_due_at(False), 1180)
 
-            store.add_event(
-                IncomingMessage("owner-answer", "answer", "吃面", 1061, 1061)
-            )
+            answer = IncomingMessage("owner-answer", "answer", "吃面", 1061, 1061)
+            store.add_event(answer)
             self.assertIsNone(store.pending_owner_reply(1071))
             self.assertIsNone(store.next_heartbeat_due_at(False))
+            self.assertIsNone(
+                store._db.execute(
+                    "SELECT next_heartbeat_at FROM self_state WHERE id=1"
+                ).fetchone()[0]
+            )
             self.assertFalse(store.mark_sending(stale_followup.id))
+            store.commit_turn(
+                [answer],
+                "吃面",
+                AgentReply(
+                    ["吃完告诉我呀"],
+                    expects_reply=True,
+                    reply_expectation="主人是否已经吃完",
+                ),
+                turn_id="next-question",
+                target_channel="weixin",
+            )
+            with patch("momoi.storage.delivery.time.time", return_value=1080):
+                self.assertTrue(store.mark_sent(store.due_outbox()[0].id, 60))
+            self.assertEqual(store.next_heartbeat_due_at(False), 1140)
             store.close()
 
     def test_heartbeat_can_stop_reply_annealing_without_owner_input(self) -> None:

@@ -314,6 +314,9 @@ class Store(MemoryStore, DeliveryStore):
                     """UPDATE self_state SET pending_reply_turn_id=NULL,
                        pending_reply_expectation='', pending_reply_since=NULL,
                        pending_reply_checks=0, pending_reply_channel='',
+                       next_heartbeat_at=CASE
+                           WHEN TRIM(pending_reply_expectation)<>'' THEN NULL
+                           ELSE next_heartbeat_at END,
                        updated_at=? WHERE id=1""",
                     (time.time(),),
                 )
