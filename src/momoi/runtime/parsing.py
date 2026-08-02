@@ -20,7 +20,7 @@ def parse_messages(
             text = item.strip()
             if not text:
                 return None, "messages_must_contain_non_empty_items"
-            messages.extend(part.strip() for part in re.split(r"\n\s*\n", text))
+            messages.append(text)
             continue
         try:
             message = normalize_channel_message(item)

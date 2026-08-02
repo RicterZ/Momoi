@@ -402,9 +402,7 @@ class AgendaTools:
             raise ValueError("text, reason, and a stable lowercase key are required")
         if priority not in {"normal", "urgent"}:
             raise ValueError("priority must be normal or urgent")
-        messages = [
-            part.strip() for part in re.split(r"\n\s*\n", text) if part.strip()
-        ]
+        messages = [text]
         for message in messages:
             if message.startswith(EMOTION_PREFIX):
                 slug = emotion_slug(message)

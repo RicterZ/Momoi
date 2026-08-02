@@ -354,7 +354,7 @@ class StorageMemoryTest(unittest.TestCase):
                         "notify",
                         "owner_notify",
                         {
-                            "text": "检查完成，目前正常",
+                            "text": "检查完成\n\n目前正常",
                             "reason": "任务阶段结果",
                             "key": "service.check",
                         },
@@ -372,7 +372,7 @@ class StorageMemoryTest(unittest.TestCase):
             notification = store.claim_due_notification(NotificationConfig())
             self.assertIsNotNone(notification)
             self.assertTrue(store.queue_notification(str(notification["id"])))
-            self.assertEqual(store.due_outbox()[0].text, "检查完成，目前正常")
+            self.assertEqual(store.due_outbox()[0].text, "检查完成\n\n目前正常")
             store.close()
 
     def test_one_time_reminder_fires_once_and_can_be_cancelled(self) -> None:

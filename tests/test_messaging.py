@@ -269,11 +269,11 @@ class MessagingTest(unittest.TestCase):
         self.assertTrue(reply.expects_reply)
         self.assertEqual(reply.reply_expectation, "主人晚上的安排")
         self.assertEqual(reply.continuity["topic"], "晚上的安排")
-        split, error = MomoiDaemon._parse_messages(
+        preserved, error = MomoiDaemon._parse_messages(
             {"messages": ["第一条。\n\n第二条。"]}
         )
         self.assertIsNone(error)
-        self.assertEqual(split, ["第一条。", "第二条。"])
+        self.assertEqual(preserved, ["第一条。\n\n第二条。"])
         invalid, error = MomoiDaemon._parse_response(
             {
                 "messages": ["少了表达决策"],
