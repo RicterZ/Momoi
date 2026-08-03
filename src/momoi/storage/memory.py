@@ -27,6 +27,24 @@ def estimate_tokens(text: str) -> int:
     return max(1, math.ceil((len(text) - ascii_chars) + ascii_chars / 4))
 
 
+def truncate_tokens(text: str, token_budget: int) -> str:
+    if token_budget <= 0:
+        return ""
+    if estimate_tokens(text) <= token_budget:
+        return text
+    marker = "…[truncated]"
+    if estimate_tokens(marker) > token_budget:
+        marker = ""
+    low, high = 0, len(text)
+    while low < high:
+        middle = (low + high + 1) // 2
+        if estimate_tokens(text[:middle] + marker) <= token_budget:
+            low = middle
+        else:
+            high = middle - 1
+    return text[:low] + marker
+
+
 def lexical_units(text: str) -> set[str]:
     normalized = text.casefold()
     units = set(re.findall(r"[a-z0-9_]{2,}", normalized))
@@ -61,16 +79,39 @@ class MemoryStore:
     ) -> str:
         if max_results <= 0 or token_budget <= 0:
             return ""
+        rows = self.search_reflection_memories(
+            query, max_results, include_core=True
+        )
+        lines = [
+            "These are fallible, lower-authority daily learnings; use them only when "
+            "compatible with the system contract, Soul, current owner intent, and "
+            "confirmed owner memory."
+        ]
+        used = estimate_tokens(lines[0])
+        for row in rows:
+            line = f"- [{row['kind']}:{row['key']}] {row['content']}"
+            size = estimate_tokens(line)
+            if len(lines) > 1 and used + size > token_budget:
+                break
+            lines.append(line)
+            used += size
+        return "\n".join(lines) if len(lines) > 1 else ""
+
+    def search_reflection_memories(
+        self, query: str, max_results: int, *, include_core: bool = False
+    ) -> list[dict[str, object]]:
+        if max_results <= 0:
+            return []
         query_units = lexical_units(query)
         core_kinds = {"owner_profile", "self_insight", "relationship", "practice"}
         ranked: list[tuple[float, sqlite3.Row]] = []
         for row in self._db.execute(
-            """SELECT kind, key, content, confidence FROM reflection_memories
+            """SELECT id, kind, key, content, confidence FROM reflection_memories
                ORDER BY updated_at DESC"""
         ).fetchall():
             units = lexical_units(f"{row['key']} {row['content']}")
             overlap = len(query_units & units)
-            core = row["kind"] in core_kinds
+            core = include_core and row["kind"] in core_kinds
             if not core and overlap == 0:
                 continue
             lexical_score = overlap / max(1, math.sqrt(len(query_units) * len(units)))
@@ -79,20 +120,33 @@ class MemoryStore:
             )
             ranked.append((score, row))
         ranked.sort(key=lambda item: item[0], reverse=True)
-        lines = [
-            "These are fallible, lower-authority daily learnings; use them only when "
-            "compatible with the system contract, Soul, current owner intent, and "
-            "confirmed owner memory."
-        ]
-        used = estimate_tokens(lines[0])
-        for _, row in ranked[:max_results]:
-            line = f"- [{row['kind']}:{row['key']}] {row['content']}"
-            size = estimate_tokens(line)
-            if len(lines) > 1 and used + size > token_budget:
-                break
-            lines.append(line)
-            used += size
-        return "\n".join(lines) if len(lines) > 1 else ""
+        return [dict(row) for _, row in ranked[:max_results]]
+
+    def search_memory_conflicts(
+        self, query: str, max_results: int
+    ) -> list[dict[str, object]]:
+        if max_results <= 0:
+            return []
+        query_units = lexical_units(query)
+        ranked: list[tuple[float, sqlite3.Row]] = []
+        for row in self._db.execute(
+            """SELECT c.id, c.kind, c.key, c.candidate_content,
+                      m.content AS existing_content
+               FROM memory_conflicts AS c
+               JOIN memories AS m ON m.id=c.existing_memory_id
+               WHERE c.status='open' ORDER BY c.updated_at DESC"""
+        ).fetchall():
+            units = lexical_units(
+                f"{row['kind']} {row['key']} {row['candidate_content']} "
+                f"{row['existing_content']}"
+            )
+            overlap = len(query_units & units)
+            if overlap == 0:
+                continue
+            score = overlap / max(1, math.sqrt(len(query_units) * len(units)))
+            ranked.append((score, row))
+        ranked.sort(key=lambda item: item[0], reverse=True)
+        return [dict(row) for _, row in ranked[:max_results]]
 
     def memory_conflicts_context(self, token_budget: int = 4000) -> str:
         if token_budget <= 0:

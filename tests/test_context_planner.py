@@ -6,7 +6,7 @@ from pathlib import Path
 
 from momoi.channel.napcat import NapCatConfig
 from momoi.config import AppConfig, LLMConfig
-from momoi.models import IncomingMessage, ProviderResponse, ToolCall
+from momoi.models import AgentReply, IncomingMessage, ProviderResponse, ToolCall
 from momoi.runtime import MomoiDaemon
 from momoi.runtime.context_planner import (
     ContextPlanError,
@@ -117,6 +117,12 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
     async def test_planner_runs_without_tools_before_main_and_commits_episodes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(app_config(directory))
+            daemon.store.commit_turn(
+                [],
+                "GLOBAL RAW MUST NOT LEAK",
+                AgentReply(["UNSELECTED ASSISTANT RAW"]),
+                turn_id="unselected-turn",
+            )
 
             class Provider:
                 calls: list[str] = []
@@ -145,7 +151,10 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                             [],
                         )
                     provider_self.calls.append("main")
-                    self.assertIn("<context_plan>", json.dumps(messages, ensure_ascii=False))
+                    rendered = json.dumps(messages, ensure_ascii=False)
+                    self.assertIn("<context_plan>", rendered)
+                    self.assertNotIn("GLOBAL RAW MUST NOT LEAK", rendered)
+                    self.assertEqual(len(messages), 1)
                     self.assertEqual(daemon.store.list_episode_candidates(), [])
                     call = ToolCall(
                         "respond",
@@ -177,7 +186,8 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
 
             self.assertEqual(provider.calls, ["planner", "main"])
             stored = daemon.store.context_plan(turn_id)
-            self.assertEqual(stored["state"], "planned")
+            self.assertEqual(stored["state"], "recalled")
+            self.assertEqual(stored["retrieval"]["version"], 1)
             self.assertEqual(len(stored["plan"]["intent_units"]), 2)
             self.assertEqual(len(daemon.store.list_episode_candidates()), 2)
             self.assertEqual(

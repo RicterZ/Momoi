@@ -1,4 +1,4 @@
-from .memory import MEMORY_KINDS, estimate_tokens, lexical_units
+from .memory import MEMORY_KINDS, estimate_tokens, lexical_units, truncate_tokens
 from .store import (
     MOOD_STATES,
     REFLECTION_MEMORY_KINDS,
@@ -12,4 +12,5 @@ __all__ = [
     "Store",
     "estimate_tokens",
     "lexical_units",
+    "truncate_tokens",
 ]

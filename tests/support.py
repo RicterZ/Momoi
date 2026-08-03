@@ -8,6 +8,7 @@ from momoi.runtime.turns import CONTEXT_PLANNER_SYSTEM_PROMPT
 def context_plan_response(messages: list[dict[str, Any]]) -> ProviderResponse:
     payload = json.loads(str(messages[0]["content"]))
     owner_messages = payload["owner_messages"]
+    candidates = payload["candidate_episodes"]
     units = [
         {
             "id": f"u{index}",
@@ -19,13 +20,15 @@ def context_plan_response(messages: list[dict[str, Any]]) -> ProviderResponse:
         }
         for index, message in enumerate(owner_messages, 1)
     ]
+    episode_ref = candidates[0]["id"] if candidates else "new:test-thread"
+    episode_title = candidates[0]["title"] if candidates else "Test conversation"
     plan = {
         "version": 1,
         "intent_units": units,
         "episode_bindings": [
             {
-                "episode_ref": "new:test-thread",
-                "title": "Test conversation",
+                "episode_ref": episode_ref,
+                "title": episode_title,
                 "relation": "primary",
                 "unit_ids": [unit["id"] for unit in units],
                 "topics": ["test"],

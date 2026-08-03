@@ -327,7 +327,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             ).fetchall()
             self.assertEqual(
                 [(row["revision"], row["state"]) for row in plans],
-                [(1, "superseded"), (2, "superseded"), (3, "planned")],
+                [(1, "superseded"), (2, "superseded"), (3, "recalled")],
             )
             self.assertEqual(
                 daemon.store._db.execute(

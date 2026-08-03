@@ -24,7 +24,7 @@ from ..models import (
     TurnDraft,
 )
 from .delivery import DeliveryStore
-from .memory import MemoryStore, estimate_tokens, lexical_units
+from .memory import MemoryStore, estimate_tokens, lexical_units, truncate_tokens
 from .scheduling import next_schedule_at, quiet_until
 
 
@@ -758,6 +758,50 @@ class Store(MemoryStore, DeliveryStore):
             for row in rows
         ]
 
+    def episode_messages(
+        self, episode_id: str, token_budget: int
+    ) -> list[dict[str, object]]:
+        if token_budget <= 0:
+            return []
+        rows = self._db.execute(
+            """SELECT m.id, m.turn_id, et.ordinal, m.role, m.content, m.created_at
+               FROM episode_turns AS et
+               JOIN messages AS m ON m.turn_id=et.turn_id
+               WHERE et.episode_id=?
+               ORDER BY et.ordinal DESC, m.id""",
+            (episode_id,),
+        ).fetchall()
+        groups: list[list[dict[str, object]]] = []
+        for row in rows:
+            item = dict(row)
+            if not groups or groups[-1][0]["turn_id"] != item["turn_id"]:
+                groups.append([])
+            groups[-1].append(item)
+        selected: list[list[dict[str, object]]] = []
+        used = 0
+        for group in groups:
+            size = sum(estimate_tokens(str(item["content"])) for item in group)
+            if selected and used + size > token_budget:
+                break
+            if not selected and size > token_budget:
+                if len(group) > token_budget:
+                    group = (
+                        [group[0]]
+                        if token_budget == 1
+                        else [group[0], *group[-(token_budget - 1) :]]
+                    )
+                per_message = max(1, token_budget // len(group))
+                for item in group:
+                    item["content"] = truncate_tokens(
+                        str(item["content"]), per_message
+                    )
+                size = sum(
+                    estimate_tokens(str(item["content"])) for item in group
+                )
+            selected.append(group)
+            used += size
+        return [item for group in reversed(selected) for item in group]
+
     def link_episodes(
         self, from_episode_id: str, to_episode_id: str, kind: str
     ) -> None:
@@ -946,7 +990,7 @@ class Store(MemoryStore, DeliveryStore):
         return "\n".join(lines)
 
     def search_conversation_summaries(
-        self, query: str, max_results: int
+        self, query: str, max_results: int, *, include_latest: bool = True
     ) -> list[dict[str, object]]:
         if max_results <= 0:
             return []
@@ -962,7 +1006,7 @@ class Store(MemoryStore, DeliveryStore):
         for row in rows:
             units = lexical_units(str(row["content"]))
             overlap = len(query_units & units)
-            latest = int(row["id"]) == latest_id
+            latest = include_latest and int(row["id"]) == latest_id
             if not latest and overlap == 0:
                 continue
             score = overlap / max(1, math.sqrt(len(query_units) * len(units)))
@@ -1739,6 +1783,34 @@ class Store(MemoryStore, DeliveryStore):
         ).fetchall()
         return [self._goal_dict(row) for row in rows]
 
+    def search_goals(self, query: str, max_results: int) -> list[dict[str, object]]:
+        if max_results <= 0:
+            return []
+        query_units = lexical_units(query)
+        ranked: list[tuple[float, dict[str, object]]] = []
+        for goal in self.list_goals():
+            units = lexical_units(
+                " ".join(
+                    str(goal.get(name) or "")
+                    for name in (
+                        "id",
+                        "title",
+                        "success_criteria",
+                        "next_action",
+                        "waiting_for",
+                        "blocked_reason",
+                        "latest_result",
+                    )
+                )
+            )
+            overlap = len(query_units & units)
+            if overlap == 0:
+                continue
+            score = overlap / max(1, math.sqrt(len(query_units) * len(units)))
+            ranked.append((score, goal))
+        ranked.sort(key=lambda item: item[0], reverse=True)
+        return [goal for _, goal in ranked[:max_results]]
+
     def commit_goal_draft(self, draft: TurnDraft) -> None:
         with self._db:
             self._apply_goal_mutations(draft, time.time())
@@ -1784,6 +1856,33 @@ class Store(MemoryStore, DeliveryStore):
             f"schedule={row['schedule_json'] or 'none'} text={row['text']}"
             for row in rows
         )
+
+    def list_reminders(self, limit: int = 20) -> list[dict[str, object]]:
+        if limit <= 0:
+            return []
+        rows = self._db.execute(
+            """SELECT * FROM reminders
+               WHERE status='pending' ORDER BY fire_at LIMIT ?""",
+            (limit,),
+        ).fetchall()
+        return [self._reminder_dict(row) for row in rows]
+
+    def search_reminders(
+        self, query: str, max_results: int
+    ) -> list[dict[str, object]]:
+        if max_results <= 0:
+            return []
+        query_units = lexical_units(query)
+        ranked: list[tuple[float, dict[str, object]]] = []
+        for reminder in self.list_reminders():
+            units = lexical_units(f"{reminder['id']} {reminder['text']}")
+            overlap = len(query_units & units)
+            if overlap == 0:
+                continue
+            score = overlap / max(1, math.sqrt(len(query_units) * len(units)))
+            ranked.append((score, reminder))
+        ranked.sort(key=lambda item: item[0], reverse=True)
+        return [reminder for _, reminder in ranked[:max_results]]
 
     def add_emotion(
         self, slug: str, path: str | Path, description: str

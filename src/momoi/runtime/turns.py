@@ -28,6 +28,7 @@ from ..models import AgentReply, IncomingMessage, ToolCall, TurnDraft
 from ..provider import ProviderError
 from ..storage import estimate_tokens
 from ..text_replacement import cyber_keyword_pre_hook
+from .context_assembler import assemble_main_context, build_plan_retrieval
 from .context_planner import (
     ContextPlanError,
     degraded_context_plan,
@@ -142,7 +143,14 @@ class TurnRunner:
         updates: list[IncomingMessage],
         channel: Channel,
         context_plan: dict[str, object],
+        recalled: dict[str, str],
     ) -> dict[str, Any]:
+        conflicts = recalled["memory_conflicts"]
+        if conflicts:
+            conflicts += (
+                "\nKeep the current value unless the owner explicitly confirms "
+                "a replacement."
+            )
         content: list[dict[str, Any]] = [
             {
                 "type": "text",
@@ -164,6 +172,16 @@ class TurnRunner:
                             separators=(",", ":"),
                         ),
                     ),
+                    ("recalled_episodes", recalled["episodes"]),
+                    (
+                        "recalled_conversation",
+                        recalled["legacy_conversation"],
+                    ),
+                    ("confirmed_owner_memory", recalled["confirmed_memories"]),
+                    ("reflection_memory", recalled["reflection_memories"]),
+                    ("pending_memory_conflicts", conflicts),
+                    ("active_goals", recalled["goals"]),
+                    ("pending_reminders", recalled["reminders"]),
                 ),
                 "cache_control": {"type": "ephemeral"},
             }
@@ -219,6 +237,27 @@ class TurnRunner:
             }
             for event in events
         ]
+        candidate_goals = [
+            {
+                name: goal.get(name)
+                for name in (
+                    "id",
+                    "status",
+                    "title",
+                    "next_action",
+                    "waiting_for",
+                    "latest_result",
+                )
+            }
+            for goal in self.store.list_goals()[:8]
+        ]
+        candidate_reminders = [
+            {
+                name: reminder.get(name)
+                for name in ("id", "text", "fire_at", "schedule")
+            }
+            for reminder in self.store.list_reminders(8)
+        ]
         request: list[dict[str, Any]] = [
             {
                 "role": "user",
@@ -226,6 +265,8 @@ class TurnRunner:
                     {
                         "owner_messages": owner_messages,
                         "candidate_episodes": candidate_context,
+                        "candidate_goals": candidate_goals,
+                        "candidate_reminders": candidate_reminders,
                     },
                     ensure_ascii=False,
                     separators=(",", ":"),
@@ -313,6 +354,29 @@ class TurnRunner:
             )
             return self._stored_context_plan(saved)
         raise RuntimeError("context planner retry loop ended unexpectedly")
+
+    async def _prepare_owner_context(
+        self, events: list[IncomingMessage], turn_id: str
+    ) -> tuple[dict[str, object], dict[str, str]]:
+        plan = await self._plan_owner_context(events, turn_id)
+        record = self.store.context_plan(turn_id)
+        if record is None:
+            raise RuntimeError("active context plan was not saved")
+        retrieval = record.get("retrieval")
+        if not isinstance(retrieval, dict) or retrieval.get("version") != 1:
+            retrieval = build_plan_retrieval(self.store, plan, self.config)
+            record = self.store.save_context_retrieval(
+                turn_id,
+                int(record["revision"]),
+                retrieval,
+                state=("degraded" if record["state"] == "degraded" else "recalled"),
+            )
+            retrieval = record["retrieval"]
+        if not isinstance(retrieval, dict):
+            raise RuntimeError("stored context retrieval is not an object")
+        return plan, assemble_main_context(
+            self.store, retrieval, self.config.recent_raw_tokens
+        )
 
     async def _complete_webhook_turn(
         self, prompt: str, turn_id: str, channel: Channel | None = None
@@ -494,34 +558,11 @@ class TurnRunner:
         channel: Channel | None = None,
     ) -> None:
         channel = channel or self._channel_for(batch[0].channel)
-        context_plan = await self._plan_owner_context(batch, turn_id)
-        history = self.store.history(
-            self.config.recent_raw_tokens, self.config.recent_turns
-        )
-        self._cache_history_tail(history)
+        context_plan, recalled = await self._prepare_owner_context(batch, turn_id)
         user_text = self._render_batch(batch)
-        owner_content = f"# Current owner messages\n{user_text}"
-        memory_query = "\n".join(message.text for message in batch)
         reconciliation_control = self._apply_reconciliation_commands(batch)
-        continuity = self.store.continuity_context()
-        summaries = self.store.summary_context(
-            memory_query, self.config.summary_results, self.config.summary_tokens
-        )
-        goals = self.store.active_goals_context()
-        reminders = self.store.active_reminders_context()
         reconciliations = self.store.open_reconciliations_context()
         emotions = self.store.emotion_context()
-        memories = self.store.memory_context(
-            memory_query, self.config.memory_results, self.config.memory_tokens
-        )
-        learned = self.store.reflection_memory_context(
-            memory_query,
-            max(1, self.config.memory_results // 2),
-            max(1000, self.config.memory_tokens // 2),
-        )
-        memory_conflicts = self.store.memory_conflicts_context(
-            self.config.memory_tokens
-        )
         self_state = self.store.self_state_context()
         runtime = datetime.now().astimezone().isoformat(timespec="seconds")
         runtime_state = (
@@ -544,6 +585,12 @@ class TurnRunner:
             )
         if reconciliation_control:
             directives.append(reconciliation_control)
+        memory_conflicts = recalled["memory_conflicts"]
+        if memory_conflicts:
+            memory_conflicts += (
+                "\nKeep the current value unless the owner explicitly confirms "
+                "a replacement."
+            )
         current_text = _sections(
             ("current_owner_messages", user_text),
             (
@@ -552,21 +599,13 @@ class TurnRunner:
             ),
             ("runtime_directives", "\n\n".join(directives)),
             ("runtime_state", runtime_state),
-            ("continuity", continuity),
-            ("recalled_conversation", summaries),
-            ("confirmed_owner_memory", memories),
-            ("reflection_memory", learned),
-            (
-                "pending_memory_conflicts",
-                (
-                    memory_conflicts
-                    + "\nKeep the current value unless the owner explicitly confirms a replacement."
-                    if memory_conflicts
-                    else ""
-                ),
-            ),
-            ("active_goals", goals),
-            ("pending_reminders", reminders),
+            ("recalled_episodes", recalled["episodes"]),
+            ("recalled_conversation", recalled["legacy_conversation"]),
+            ("confirmed_owner_memory", recalled["confirmed_memories"]),
+            ("reflection_memory", recalled["reflection_memories"]),
+            ("pending_memory_conflicts", memory_conflicts),
+            ("active_goals", recalled["goals"]),
+            ("pending_reminders", recalled["reminders"]),
             ("open_reconciliations", reconciliations),
             ("emotion_catalog", emotions),
         )
@@ -582,11 +621,7 @@ class TurnRunner:
         for event in batch:
             current_content.extend(channel.content_blocks(event.segments))
         messages: list[dict[str, Any]] = [
-            *history,
-            {
-                "role": "user",
-                "content": current_content,
-            },
+            {"role": "user", "content": current_content}
         ]
         draft = TurnDraft()
         tools = [
@@ -669,12 +704,12 @@ class TurnRunner:
                 else []
             )
             if updates:
-                context_plan = await self._plan_owner_context(
+                context_plan, recalled = await self._prepare_owner_context(
                     current_events, turn_id
                 )
                 messages.append(
                     self._owner_update_message(
-                        updates, delivery_channel, context_plan
+                        updates, delivery_channel, context_plan, recalled
                     )
                 )
                 source_event_id = updates[-1].event_id
@@ -763,12 +798,12 @@ class TurnRunner:
                             ],
                         }
                     )
-                context_plan = await self._plan_owner_context(
+                context_plan, recalled = await self._prepare_owner_context(
                     current_events, turn_id
                 )
                 messages.append(
                     self._owner_update_message(
-                        updates, delivery_channel, context_plan
+                        updates, delivery_channel, context_plan, recalled
                     )
                 )
                 source_event_id = updates[-1].event_id
@@ -1119,12 +1154,12 @@ class TurnRunner:
                         break
             messages.append({"role": "user", "content": results})
             if updates:
-                context_plan = await self._plan_owner_context(
+                context_plan, recalled = await self._prepare_owner_context(
                     current_events, turn_id
                 )
                 messages.append(
                     self._owner_update_message(
-                        updates, delivery_channel, context_plan
+                        updates, delivery_channel, context_plan, recalled
                     )
                 )
                 source_event_id = updates[-1].event_id
