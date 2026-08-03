@@ -200,6 +200,9 @@ class Store(MemoryStore, DeliveryStore):
             ),
         )
         self._db.execute(
+            "UPDATE self_state SET next_heartbeat_at=0 WHERE next_heartbeat_at IS NULL"
+        )
+        self._db.execute(
             """UPDATE self_state SET mood_state=?, mood_intensity=?, mood_cause=?
                WHERE mood_state='cheerful' AND mood_intensity=0.55
                  AND mood_cause='personality baseline' AND mood_settle_at IS NULL""",
@@ -314,9 +317,6 @@ class Store(MemoryStore, DeliveryStore):
                     """UPDATE self_state SET pending_reply_turn_id=NULL,
                        pending_reply_expectation='', pending_reply_since=NULL,
                        pending_reply_checks=0, pending_reply_channel='',
-                       next_heartbeat_at=CASE
-                           WHEN TRIM(pending_reply_expectation)<>'' THEN NULL
-                           ELSE next_heartbeat_at END,
                        updated_at=? WHERE id=1""",
                     (time.time(),),
                 )
@@ -945,7 +945,7 @@ class Store(MemoryStore, DeliveryStore):
         with self._db:
             self._db.execute(
                 """UPDATE self_state SET next_heartbeat_at=?, updated_at=?
-                   WHERE id=1 AND next_heartbeat_at IS NULL""",
+                   WHERE id=1 AND next_heartbeat_at<=0""",
                 (now + config.initial_delay_seconds, now),
             )
 

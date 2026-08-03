@@ -603,6 +603,9 @@ class StorageMemoryTest(unittest.TestCase):
             patch("momoi.storage.store.time.time", return_value=now),
         ):
             store = Store(Path(directory) / "momoi.sqlite3")
+            self.assertEqual(store.self_state()["next_heartbeat_at"], 0)
+            store.ensure_heartbeat(heartbeat, now)
+            self.assertEqual(store.next_heartbeat_due_at(True), now + 60)
             for index in range(20):
                 turn_id = f"heartbeat-{index}"
                 store.begin_turn(turn_id, "autonomous", [f"heartbeat:{index}"])
@@ -712,10 +715,12 @@ class StorageMemoryTest(unittest.TestCase):
             store.add_event(answer)
             self.assertIsNone(store.pending_owner_reply(1071))
             self.assertIsNone(store.next_heartbeat_due_at(False))
-            self.assertIsNone(
+            self.assertEqual(store.next_heartbeat_due_at(True), 1180)
+            self.assertEqual(
                 store._db.execute(
                     "SELECT next_heartbeat_at FROM self_state WHERE id=1"
-                ).fetchone()[0]
+                ).fetchone()[0],
+                1180,
             )
             self.assertFalse(store.mark_sending(stale_followup.id))
             store.commit_turn(

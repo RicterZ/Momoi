@@ -168,7 +168,7 @@ CREATE TABLE IF NOT EXISTS self_state (
     activity_result TEXT NOT NULL DEFAULT '',
     activity_since REAL NOT NULL,
     last_heartbeat_at REAL,
-    next_heartbeat_at REAL,
+    next_heartbeat_at REAL NOT NULL DEFAULT 0,
     heartbeat_claimed_at REAL,
     pending_reply_turn_id TEXT,
     pending_reply_expectation TEXT NOT NULL DEFAULT '',

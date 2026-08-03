@@ -437,9 +437,9 @@ class DeliveryStore:
                     state
                     and str(state["pending_reply_expectation"] or "").strip()
                 )
-                if already_waiting and state["next_heartbeat_at"] is not None:
+                if already_waiting and float(state["next_heartbeat_at"] or 0) > 0:
                     due = float(state["next_heartbeat_at"])
-                elif state and state["next_heartbeat_at"] is not None:
+                elif state and float(state["next_heartbeat_at"] or 0) > 0:
                     due = min(due, float(state["next_heartbeat_at"]))
                 if already_waiting:
                     self._db.execute(
