@@ -297,7 +297,11 @@ def _episode_context(
             lines.append(
                 f"open_loops: {json.dumps(episode['open_loops'], ensure_ascii=False)}"
             )
-        messages = store.episode_messages(str(episode["id"]), per_episode)
+        messages = store.episode_messages(
+            str(episode["id"]),
+            per_episode,
+            after_ordinal=int(episode["summarized_through_ordinal"]),
+        )
         if messages:
             lines.append("raw_tail:")
             lines.extend(

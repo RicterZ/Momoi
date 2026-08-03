@@ -251,6 +251,9 @@ class Store(MemoryStore, DeliveryStore):
         self._db.execute(
             "UPDATE reflections SET state='pending', claimed_at=NULL WHERE state='running'"
         )
+        self._db.execute(
+            "UPDATE conversation_episodes SET summary_claimed_at=NULL"
+        )
         self._db.commit()
 
     def _recover_outbox(self) -> None:
@@ -759,7 +762,7 @@ class Store(MemoryStore, DeliveryStore):
         ]
 
     def episode_messages(
-        self, episode_id: str, token_budget: int
+        self, episode_id: str, token_budget: int, *, after_ordinal: int = 0
     ) -> list[dict[str, object]]:
         if token_budget <= 0:
             return []
@@ -767,9 +770,9 @@ class Store(MemoryStore, DeliveryStore):
             """SELECT m.id, m.turn_id, et.ordinal, m.role, m.content, m.created_at
                FROM episode_turns AS et
                JOIN messages AS m ON m.turn_id=et.turn_id
-               WHERE et.episode_id=?
+               WHERE et.episode_id=? AND et.ordinal>?
                ORDER BY et.ordinal DESC, m.id""",
-            (episode_id,),
+            (episode_id, after_ordinal),
         ).fetchall()
         groups: list[list[dict[str, object]]] = []
         for row in rows:
@@ -801,6 +804,99 @@ class Store(MemoryStore, DeliveryStore):
             selected.append(group)
             used += size
         return [item for group in reversed(selected) for item in group]
+
+    def claim_episode_annealing_candidate(
+        self, raw_tail_turns: int, raw_token_budget: int
+    ) -> dict[str, object] | None:
+        raw_tail_turns = max(1, raw_tail_turns)
+        raw_token_budget = max(1, raw_token_budget)
+        now = time.time()
+        with self._db:
+            episodes = self._db.execute(
+                """SELECT * FROM conversation_episodes
+                   WHERE status IN ('open', 'closing')
+                     AND summary_claimed_at IS NULL
+                     AND COALESCE(summary_retry_at, 0)<=?
+                   ORDER BY updated_at""",
+                (now,),
+            ).fetchall()
+            for episode in episodes:
+                rows = self._db.execute(
+                    """SELECT et.ordinal, m.id, m.turn_id, m.role, m.content,
+                              m.created_at
+                       FROM episode_turns AS et
+                       JOIN messages AS m ON m.turn_id=et.turn_id
+                       WHERE et.episode_id=? AND et.ordinal>?
+                       ORDER BY et.ordinal, m.id""",
+                    (
+                        episode["id"],
+                        episode["summarized_through_ordinal"],
+                    ),
+                ).fetchall()
+                ordinals = list(dict.fromkeys(int(row["ordinal"]) for row in rows))
+                if len(ordinals) <= raw_tail_turns:
+                    continue
+                tokens = sum(estimate_tokens(str(row["content"])) for row in rows)
+                if (
+                    len(ordinals) <= raw_tail_turns * 2
+                    and tokens <= math.ceil(raw_token_budget * 1.25)
+                ):
+                    continue
+                through = ordinals[-raw_tail_turns - 1]
+                compact = [dict(row) for row in rows if int(row["ordinal"]) <= through]
+                cursor = self._db.execute(
+                    """UPDATE conversation_episodes SET summary_claimed_at=?
+                       WHERE id=? AND summary_claimed_at IS NULL""",
+                    (now, episode["id"]),
+                )
+                if cursor.rowcount != 1:
+                    continue
+                return {
+                    "episode": self._episode_dict(episode),
+                    "through_ordinal": through,
+                    "messages": compact,
+                }
+        return None
+
+    def finish_episode_annealing(
+        self, episode_id: str, through_ordinal: int, working_summary: str
+    ) -> None:
+        with self._db:
+            cursor = self._db.execute(
+                """UPDATE conversation_episodes
+                   SET working_summary=?, summarized_through_ordinal=?,
+                       summary_claimed_at=NULL, summary_retry_at=NULL,
+                       summary_failure_count=0, updated_at=?
+                   WHERE id=? AND summary_claimed_at IS NOT NULL
+                     AND summarized_through_ordinal<?""",
+                (
+                    working_summary[:12000],
+                    through_ordinal,
+                    time.time(),
+                    episode_id,
+                    through_ordinal,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError("claimed episode summary was not found")
+
+    def release_episode_annealing(self, episode_id: str) -> None:
+        with self._db:
+            row = self._db.execute(
+                """SELECT summary_failure_count FROM conversation_episodes
+                   WHERE id=? AND summary_claimed_at IS NOT NULL""",
+                (episode_id,),
+            ).fetchone()
+            if row is None:
+                return
+            failures = int(row["summary_failure_count"]) + 1
+            delay = min(3600, 60 * 2 ** min(failures - 1, 6))
+            self._db.execute(
+                """UPDATE conversation_episodes
+                   SET summary_claimed_at=NULL, summary_retry_at=?,
+                       summary_failure_count=? WHERE id=?""",
+                (time.time() + delay, failures, episode_id),
+            )
 
     def link_episodes(
         self, from_episode_id: str, to_episode_id: str, kind: str

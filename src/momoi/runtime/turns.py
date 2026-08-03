@@ -59,6 +59,7 @@ WEBHOOK_PROMPT_PATH = PROMPT_ROOT.joinpath("webhook.md")
 HEARTBEAT_PROMPT_PATH = PROMPT_ROOT.joinpath("heartbeat.md")
 REFLECTION_PROMPT_PATH = PROMPT_ROOT.joinpath("reflection.md")
 CONTEXT_PLANNER_PROMPT_PATH = PROMPT_ROOT.joinpath("context_planner.md")
+EPISODE_SUMMARY_PROMPT_PATH = PROMPT_ROOT.joinpath("episode_summary.md")
 WEBHOOK_SYSTEM_PROMPT = (
     WEBHOOK_PROMPT_PATH.read_text(encoding="utf-8").strip()
 )
@@ -69,6 +70,9 @@ REFLECTION_SYSTEM_PROMPT = (
     REFLECTION_PROMPT_PATH.read_text(encoding="utf-8").strip()
 )
 CONTEXT_PLANNER_SYSTEM_PROMPT = CONTEXT_PLANNER_PROMPT_PATH.read_text(
+    encoding="utf-8"
+).strip()
+EPISODE_SUMMARY_SYSTEM_PROMPT = EPISODE_SUMMARY_PROMPT_PATH.read_text(
     encoding="utf-8"
 ).strip()
 MAX_CONSECUTIVE_TOOL_FAILURES = 3
@@ -666,6 +670,10 @@ class TurnRunner:
         )
         self.outbox_changed.set()
         self.agenda_changed.set()
+        try:
+            await self._anneal_episode_history(turn_id)
+        except Exception as error:
+            logger.warning("Episode annealing failed: %s", type(error).__name__)
         try:
             await self._compact_history()
         except Exception as error:
@@ -1401,6 +1409,77 @@ class TurnRunner:
             end_id,
             estimate_tokens(summary),
         )
+
+    async def _anneal_episode_history(self, turn_id: str) -> None:
+        for _ in range(2):
+            candidate = self.store.claim_episode_annealing_candidate(
+                self.config.recent_turns, self.config.recent_raw_tokens
+            )
+            if candidate is None:
+                return
+            episode = candidate["episode"]
+            episode_id = str(episode["id"])
+            payload = {
+                "episode": {
+                    "id": episode_id,
+                    "title": episode["title"],
+                    "previous_working_summary": episode["working_summary"],
+                },
+                "new_turns": [
+                    {
+                        "ordinal": message["ordinal"],
+                        "role": message["role"],
+                        "content": message["content"],
+                    }
+                    for message in candidate["messages"]
+                ],
+            }
+            request = [
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        payload, ensure_ascii=False, separators=(",", ":")
+                    ),
+                }
+            ]
+            try:
+                response = await self.provider.complete(
+                    EPISODE_SUMMARY_SYSTEM_PROMPT, request, []
+                )
+                summary = self._context_plan_response_text(response.content)
+                summary = re.sub(
+                    r"<think>.*?</think>", "", summary, flags=re.DOTALL
+                ).strip()
+                if not summary:
+                    raise RuntimeError("episode summary provider returned no text")
+                self.store.finish_episode_annealing(
+                    episode_id,
+                    int(candidate["through_ordinal"]),
+                    summary,
+                )
+                metrics = response.usage or {}
+                self.store.record_turn_usage(
+                    turn_id,
+                    int(
+                        metrics.get(
+                            "input",
+                            estimate_tokens(
+                                EPISODE_SUMMARY_SYSTEM_PROMPT
+                                + json.dumps(payload, ensure_ascii=False)
+                            ),
+                        )
+                    ),
+                    int(metrics.get("output", estimate_tokens(summary))),
+                )
+                logger.info(
+                    "Annealed episode=%s through_ordinal=%d summary_tokens=%d",
+                    episode_id,
+                    candidate["through_ordinal"],
+                    estimate_tokens(summary),
+                )
+            except Exception:
+                self.store.release_episode_annealing(episode_id)
+                raise
 
     def _system(self, *, include_tool_policies: bool = False) -> list[dict[str, Any]]:
         policies: list[str] = []
