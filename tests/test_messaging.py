@@ -34,6 +34,7 @@ from momoi.models import (
     ToolCall,
 )
 from momoi.storage import Store
+from tests.support import with_context_planner
 
 
 class MessagingTest(unittest.TestCase):
@@ -418,7 +419,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                     return ProviderResponse([], [call])
 
             provider = Provider()
-            daemon.provider = provider  # type: ignore[assignment]
+            daemon.provider = with_context_planner(provider)  # type: ignore[assignment]
             event = IncomingMessage("qq:silent-close", "silent-close", "[表情]", 1, 1)
             daemon.store.add_event(event)
             await daemon._complete_batch_turn(
@@ -546,11 +547,11 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                     )
 
             provider = Provider()
-            daemon.provider = provider  # type: ignore[assignment]
+            daemon.provider = with_context_planner(provider)  # type: ignore[assignment]
             daemon.store.add_event(accepted[0])
-            await daemon._complete_batch(
-                accepted, daemon._turn_id(accepted[0].event_id)
-            )
+            turn_id = daemon._turn_id(accepted[0].event_id)
+            daemon.store.begin_turn(turn_id, "owner", [accepted[0].event_id])
+            await daemon._complete_batch(accepted, turn_id)
             blocks = provider.messages[-1]["content"]
             self.assertEqual(blocks[1]["type"], "image")  # type: ignore[index]
             self.assertEqual(
@@ -628,10 +629,12 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                     )
 
             provider = Provider()
-            daemon.provider = provider  # type: ignore[assignment]
+            daemon.provider = with_context_planner(provider)  # type: ignore[assignment]
             event = IncomingMessage("qq:1:emotion", "emotion", "好消息", 1, 1)
             daemon.store.add_event(event)
-            await daemon._complete_batch([event], daemon._turn_id(event.event_id))
+            turn_id = daemon._turn_id(event.event_id)
+            daemon.store.begin_turn(turn_id, "owner", [event.event_id])
+            await daemon._complete_batch([event], turn_id)
             request = json.dumps(provider.messages, ensure_ascii=False)
             self.assertIn("happy-1", request)
             self.assertIn("proud-1", request)
@@ -719,10 +722,12 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                     )
 
             provider = Provider()
-            daemon.provider = provider  # type: ignore[assignment]
+            daemon.provider = with_context_planner(provider)  # type: ignore[assignment]
             event = IncomingMessage("qq:1:emotion-fix", "emotion-fix", "回我", 1, 1)
             daemon.store.add_event(event)
-            await daemon._complete_batch([event], daemon._turn_id(event.event_id))
+            turn_id = daemon._turn_id(event.event_id)
+            daemon.store.begin_turn(turn_id, "owner", [event.event_id])
+            await daemon._complete_batch([event], turn_id)
             self.assertEqual(provider.calls, 2)
             self.assertIn("unknown_emotion_slug", provider.errors[0])
             self.assertEqual(daemon.store.due_outbox()[0].text, "改成文字回复")
@@ -939,7 +944,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                         ],
                     )
 
-            daemon.provider = Provider()  # type: ignore[assignment]
+            daemon.provider = with_context_planner(Provider())  # type: ignore[assignment]
             for event in (
                 IncomingMessage(
                     "napcat:1", "1", "QQ 上说过的事", 1, 1, channel="napcat"

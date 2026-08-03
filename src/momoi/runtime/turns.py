@@ -28,6 +28,11 @@ from ..models import AgentReply, IncomingMessage, ToolCall, TurnDraft
 from ..provider import ProviderError
 from ..storage import estimate_tokens
 from ..text_replacement import cyber_keyword_pre_hook
+from .context_planner import (
+    ContextPlanError,
+    degraded_context_plan,
+    parse_context_plan,
+)
 from .parsing import (
     parse_messages,
     parse_mood_decision,
@@ -52,6 +57,7 @@ SYSTEM_PROMPT_PATH = PROMPT_ROOT.joinpath("system.md")
 WEBHOOK_PROMPT_PATH = PROMPT_ROOT.joinpath("webhook.md")
 HEARTBEAT_PROMPT_PATH = PROMPT_ROOT.joinpath("heartbeat.md")
 REFLECTION_PROMPT_PATH = PROMPT_ROOT.joinpath("reflection.md")
+CONTEXT_PLANNER_PROMPT_PATH = PROMPT_ROOT.joinpath("context_planner.md")
 WEBHOOK_SYSTEM_PROMPT = (
     WEBHOOK_PROMPT_PATH.read_text(encoding="utf-8").strip()
 )
@@ -61,6 +67,9 @@ HEARTBEAT_SYSTEM_PROMPT = (
 REFLECTION_SYSTEM_PROMPT = (
     REFLECTION_PROMPT_PATH.read_text(encoding="utf-8").strip()
 )
+CONTEXT_PLANNER_SYSTEM_PROMPT = CONTEXT_PLANNER_PROMPT_PATH.read_text(
+    encoding="utf-8"
+).strip()
 MAX_CONSECUTIVE_TOOL_FAILURES = 3
 
 
@@ -129,7 +138,10 @@ class TurnRunner:
         return updates
 
     def _owner_update_message(
-        self, updates: list[IncomingMessage], channel: Channel
+        self,
+        updates: list[IncomingMessage],
+        channel: Channel,
+        context_plan: dict[str, object],
     ) -> dict[str, Any]:
         content: list[dict[str, Any]] = [
             {
@@ -144,6 +156,14 @@ class TurnRunner:
                             "the owner's latest intent.]"
                         ),
                     ),
+                    (
+                        "context_plan",
+                        json.dumps(
+                            context_plan,
+                            ensure_ascii=False,
+                            separators=(",", ":"),
+                        ),
+                    ),
                 ),
                 "cache_control": {"type": "ephemeral"},
             }
@@ -151,6 +171,148 @@ class TurnRunner:
         for event in updates:
             content.extend(channel.content_blocks(event.segments))
         return {"role": "user", "content": content}
+
+    @staticmethod
+    def _context_plan_response_text(content: list[dict[str, Any]]) -> str:
+        return "\n".join(
+            str(block.get("text") or "")
+            for block in content
+            if block.get("type") == "text"
+        ).strip()
+
+    @staticmethod
+    def _stored_context_plan(record: dict[str, object]) -> dict[str, object]:
+        plan = record.get("plan")
+        if not isinstance(plan, dict):
+            raise RuntimeError("stored context plan is not an object")
+        return plan
+
+    async def _plan_owner_context(
+        self, events: list[IncomingMessage], turn_id: str
+    ) -> dict[str, object]:
+        event_ids = [event.event_id for event in events]
+        active = self.store.context_plan(turn_id)
+        if active is not None and active["source_event_ids"] == event_ids:
+            return self._stored_context_plan(active)
+
+        revision = self.store.next_context_plan_revision(turn_id)
+        candidates = self.store.list_episode_candidates(8)
+        candidate_context = [
+            {
+                "id": candidate["id"],
+                "status": candidate["status"],
+                "title": candidate["title"],
+                "summary": str(
+                    candidate["working_summary"] or candidate["summary"]
+                )[:600],
+                "topics": candidate["topics"],
+                "entities": candidate["entities"],
+                "open_loops": candidate["open_loops"],
+            }
+            for candidate in candidates
+        ]
+        owner_messages = [
+            {
+                "event_id": event.event_id,
+                "channel": event.channel,
+                "text": event.text,
+            }
+            for event in events
+        ]
+        request: list[dict[str, Any]] = [
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "owner_messages": owner_messages,
+                        "candidate_episodes": candidate_context,
+                    },
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ),
+            }
+        ]
+        last_error = "invalid_context_plan"
+        for attempt in range(2):
+            self._check_turn_budget(
+                turn_id, CONTEXT_PLANNER_SYSTEM_PROMPT, request, []
+            )
+            response = await self.provider.complete(
+                CONTEXT_PLANNER_SYSTEM_PROMPT, request, []
+            )
+            metrics = response.usage or {}
+            self.store.record_turn_usage(
+                turn_id,
+                int(
+                    metrics.get(
+                        "input",
+                        estimate_tokens(
+                            json.dumps(
+                                {
+                                    "system": CONTEXT_PLANNER_SYSTEM_PROMPT,
+                                    "messages": request,
+                                },
+                                ensure_ascii=False,
+                            )
+                        ),
+                    )
+                ),
+                int(
+                    metrics.get(
+                        "output",
+                        estimate_tokens(
+                            json.dumps(response.content, ensure_ascii=False)
+                        ),
+                    )
+                ),
+            )
+            response_text = self._context_plan_response_text(response.content)
+            try:
+                plan = parse_context_plan(
+                    response_text, event_ids, candidates, turn_id, revision
+                )
+            except ContextPlanError as error:
+                last_error = str(error)
+                if attempt == 0:
+                    request.extend(
+                        [
+                            {"role": "assistant", "content": response.content},
+                            {
+                                "role": "user",
+                                "content": (
+                                    "[Trusted protocol correction: the previous context "
+                                    f"plan failed validation with {last_error}. Return only "
+                                    "one corrected JSON object matching the system protocol.]"
+                                ),
+                            },
+                        ]
+                    )
+                    continue
+                plan = degraded_context_plan(owner_messages, last_error)
+                logger.warning(
+                    "Context planner degraded turn=%s revision=%d error=%s",
+                    turn_id,
+                    revision,
+                    last_error,
+                )
+                saved = self.store.save_context_plan(
+                    turn_id, revision, event_ids, plan, state="degraded"
+                )
+                return self._stored_context_plan(saved)
+            saved = self.store.save_context_plan(
+                turn_id, revision, event_ids, plan
+            )
+            units = plan.get("intent_units")
+            bindings = plan.get("episode_bindings")
+            logger.info(
+                "Planned owner context turn=%s revision=%d units=%d episodes=%d",
+                turn_id,
+                revision,
+                len(units) if isinstance(units, list) else 0,
+                len(bindings) if isinstance(bindings, list) else 0,
+            )
+            return self._stored_context_plan(saved)
+        raise RuntimeError("context planner retry loop ended unexpectedly")
 
     async def _complete_webhook_turn(
         self, prompt: str, turn_id: str, channel: Channel | None = None
@@ -332,6 +494,7 @@ class TurnRunner:
         channel: Channel | None = None,
     ) -> None:
         channel = channel or self._channel_for(batch[0].channel)
+        context_plan = await self._plan_owner_context(batch, turn_id)
         history = self.store.history(
             self.config.recent_raw_tokens, self.config.recent_turns
         )
@@ -383,6 +546,10 @@ class TurnRunner:
             directives.append(reconciliation_control)
         current_text = _sections(
             ("current_owner_messages", user_text),
+            (
+                "context_plan",
+                json.dumps(context_plan, ensure_ascii=False, separators=(",", ":")),
+            ),
             ("runtime_directives", "\n\n".join(directives)),
             ("runtime_state", runtime_state),
             ("continuity", continuity),
@@ -502,7 +669,14 @@ class TurnRunner:
                 else []
             )
             if updates:
-                messages.append(self._owner_update_message(updates, delivery_channel))
+                context_plan = await self._plan_owner_context(
+                    current_events, turn_id
+                )
+                messages.append(
+                    self._owner_update_message(
+                        updates, delivery_channel, context_plan
+                    )
+                )
                 source_event_id = updates[-1].event_id
                 force_response = False
                 force_autonomous_finish = False
@@ -589,7 +763,14 @@ class TurnRunner:
                             ],
                         }
                     )
-                messages.append(self._owner_update_message(updates, delivery_channel))
+                context_plan = await self._plan_owner_context(
+                    current_events, turn_id
+                )
+                messages.append(
+                    self._owner_update_message(
+                        updates, delivery_channel, context_plan
+                    )
+                )
                 source_event_id = updates[-1].event_id
                 force_response = False
                 force_autonomous_finish = False
@@ -938,7 +1119,14 @@ class TurnRunner:
                         break
             messages.append({"role": "user", "content": results})
             if updates:
-                messages.append(self._owner_update_message(updates, delivery_channel))
+                context_plan = await self._plan_owner_context(
+                    current_events, turn_id
+                )
+                messages.append(
+                    self._owner_update_message(
+                        updates, delivery_channel, context_plan
+                    )
+                )
                 source_event_id = updates[-1].event_id
                 force_response = False
                 failed_tool_rounds = 0

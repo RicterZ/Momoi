@@ -37,7 +37,9 @@ from momoi.models import (
 from momoi.provider import (
     ProviderError,
 )
+from momoi.runtime.turns import CONTEXT_PLANNER_SYSTEM_PROMPT
 from momoi.storage import estimate_tokens
+from tests.support import context_plan_response, with_context_planner
 
 
 class DaemonTest(unittest.TestCase):
@@ -279,7 +281,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     )
 
             provider = Provider()
-            daemon.provider = provider  # type: ignore[assignment]
+            daemon.provider = with_context_planner(provider)  # type: ignore[assignment]
             initial = IncomingMessage("qq:turn:1", "1", "查旧地址天气", 1, 1)
             first_update = IncomingMessage("qq:turn:2", "2", "地址改成上海", 2, 2)
             second_update = IncomingMessage(
@@ -317,6 +319,27 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 json.loads(stored_turn["source_ids_json"]),
                 [initial.event_id, first_update.event_id, second_update.event_id],
+            )
+            plans = daemon.store._db.execute(
+                """SELECT revision, state FROM context_plans
+                   WHERE turn_id=? ORDER BY revision""",
+                (turn_id,),
+            ).fetchall()
+            self.assertEqual(
+                [(row["revision"], row["state"]) for row in plans],
+                [(1, "superseded"), (2, "superseded"), (3, "planned")],
+            )
+            self.assertEqual(
+                daemon.store._db.execute(
+                    "SELECT COUNT(*) FROM episode_turns WHERE turn_id=?", (turn_id,)
+                ).fetchone()[0],
+                1,
+            )
+            self.assertEqual(
+                daemon.store._db.execute(
+                    "SELECT COUNT(*) FROM conversation_episodes"
+                ).fetchone()[0],
+                1,
             )
             self.assertEqual(daemon.store.pending_events(), [])
             daemon.store.close()
@@ -500,7 +523,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     )
 
             provider = Provider()
-            daemon.provider = provider  # type: ignore[assignment]
+            daemon.provider = with_context_planner(provider)  # type: ignore[assignment]
             await daemon._complete_goal_turn(goal_id, asyncio.Event())
 
             self.assertEqual(provider.calls, 4)
@@ -596,7 +619,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         raise AssertionError(tools)
 
             provider = Provider()
-            daemon.provider = provider  # type: ignore[assignment]
+            daemon.provider = with_context_planner(provider)  # type: ignore[assignment]
             event = IncomingMessage("qq:bad-goal", "bad-goal", "创建任务", 1, 1)
             daemon.store.add_event(event)
             with self.assertLogs("momoi.runtime.turns", level="DEBUG") as logs:
@@ -825,7 +848,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     )
 
             provider = Provider()
-            daemon.provider = provider  # type: ignore[assignment]
+            daemon.provider = with_context_planner(provider)  # type: ignore[assignment]
 
             async def read_news(_: ToolCall) -> dict[str, object]:
                 return {"ok": True, "status": 200, "body": "新玩法公开"}
@@ -901,7 +924,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     raise AssertionError("provider must not be called beyond budget")
 
             provider = Provider()
-            daemon.provider = provider  # type: ignore[assignment]
+            daemon.provider = with_context_planner(provider)  # type: ignore[assignment]
             event = IncomingMessage("qq:budget", "budget", "继续一个很长的任务", 1, 1)
             daemon.store.add_event(event)
             turn_id = daemon._turn_id(event.event_id)
@@ -939,7 +962,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     raise ProviderError("model engine error")
 
             provider = Provider()
-            daemon.provider = provider  # type: ignore[assignment]
+            daemon.provider = with_context_planner(provider)  # type: ignore[assignment]
             event = IncomingMessage("qq:provider-error", "provider-error", "测试", 1, 1)
             daemon.store.add_event(event)
             turn_id = daemon._turn_id(event.event_id)
@@ -1142,7 +1165,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     )
 
             provider = Provider()
-            daemon.provider = provider  # type: ignore[assignment]
+            daemon.provider = with_context_planner(provider)  # type: ignore[assignment]
             daemon.autonomous.put_nowait(goal_id)
             worker = asyncio.create_task(daemon._agent_worker(asyncio.Event()))
             try:
@@ -1228,7 +1251,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         [call],
                     )
 
-            daemon.provider = Provider()  # type: ignore[assignment]
+            daemon.provider = with_context_planner(Provider())  # type: ignore[assignment]
             stop = asyncio.Event()
             worker = asyncio.create_task(daemon._agent_worker(stop))
             original = IncomingMessage("qq:1:tool-stop", "tool-stop", "等一会儿", 1, 1)
@@ -1276,8 +1299,13 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         llm_requests: list[dict[str, object]] = []
 
         async def llm(request: web.Request) -> web.Response:
-            llm_requests.append(await request.json())
-            if len(llm_requests) == 1:
+            payload = await request.json()
+            llm_requests.append(payload)
+            if payload.get("system") == CONTEXT_PLANNER_SYSTEM_PROMPT:
+                planned = context_plan_response(payload["messages"])
+                return web.json_response({"content": planned.content})
+            main_call = sum("tools" in item for item in llm_requests)
+            if main_call == 1:
                 return web.json_response(
                     {
                         "stop_reason": "tool_use",
@@ -1294,21 +1322,21 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         ],
                     }
                 )
-            if len(llm_requests) <= 4:
+            if main_call <= 4:
                 return web.json_response(
                     {
                         "stop_reason": "tool_use",
                         "content": [
                             {
                                 "type": "tool_use",
-                                "id": f"search-{len(llm_requests)}",
+                                "id": f"search-{main_call}",
                                 "name": "memory_search",
                                 "input": {"query": "问候"},
                             }
                         ],
                     }
                 )
-            if len(llm_requests) == 5:
+            if main_call == 5:
                 return web.json_response(
                     {"content": [{"type": "text", "text": "这段 raw text 不应发送"}]}
                 )
@@ -1411,28 +1439,30 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             await llm_server.close()
 
         self.assertEqual(sent, ["我先处理一下", "测试回复一", "测试回复二"])
-        self.assertEqual(len(llm_requests), 6)
-        self.assertIn("tools", llm_requests[0])
+        self.assertEqual(len(llm_requests), 7)
+        self.assertNotIn("tools", llm_requests[0])
+        self.assertIn("Context planning protocol", llm_requests[0]["system"])
+        self.assertIn("tools", llm_requests[1])
         self.assertIn(
-            "send_message", [tool["name"] for tool in llm_requests[0]["tools"]]
+            "send_message", [tool["name"] for tool in llm_requests[1]["tools"]]
         )
         self.assertEqual(
-            [tool["name"] for tool in llm_requests[5]["tools"]], ["respond"]
+            [tool["name"] for tool in llm_requests[6]["tools"]], ["respond"]
         )
-        self.assertNotIn("tool_choice", llm_requests[5])
+        self.assertNotIn("tool_choice", llm_requests[6])
         self.assertEqual(
-            llm_requests[0]["system"][0]["cache_control"], {"type": "ephemeral"}
+            llm_requests[1]["system"][0]["cache_control"], {"type": "ephemeral"}
         )
-        self.assertIn("You are Momoi.", llm_requests[0]["system"][0]["text"])
+        self.assertIn("You are Momoi.", llm_requests[1]["system"][0]["text"])
         self.assertTrue(
-            llm_requests[0]["system"][0]["text"].rstrip().endswith("You are Momoi.")
+            llm_requests[1]["system"][0]["text"].rstrip().endswith("You are Momoi.")
         )
-        self.assertEqual(len(llm_requests[0]["system"]), 1)
+        self.assertEqual(len(llm_requests[1]["system"]), 1)
         self.assertEqual(
-            llm_requests[1]["messages"][-1]["content"][0]["type"], "tool_result"
+            llm_requests[2]["messages"][-1]["content"][0]["type"], "tool_result"
         )
-        self.assertEqual(llm_requests[0]["messages"][-1]["role"], "user")
-        current_content = llm_requests[0]["messages"][-1]["content"]
+        self.assertEqual(llm_requests[1]["messages"][-1]["role"], "user")
+        current_content = llm_requests[1]["messages"][-1]["content"]
         self.assertEqual(current_content[0]["cache_control"], {"type": "ephemeral"})
         current_text = current_content[0]["text"]
         self.assertIn("你好", current_text)

@@ -32,6 +32,7 @@ from momoi.runtime import (
     MomoiDaemon,
 )
 from momoi.runtime.turns import _sections
+from tests.support import with_context_planner
 
 
 class ProvidersToolsTest(unittest.TestCase):
@@ -512,7 +513,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                     )
 
             fake = FakeProvider()
-            daemon.provider = fake
+            daemon.provider = with_context_planner(fake)  # type: ignore[assignment]
             event = IncomingMessage(
                 "qq:1:ignored-choice", "ignored-choice", "测试", 1, 1
             )

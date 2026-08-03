@@ -564,6 +564,13 @@ class Store(MemoryStore, DeliveryStore):
             ).fetchone()
         return self._context_plan_dict(row) if row else None
 
+    def next_context_plan_revision(self, turn_id: str) -> int:
+        row = self._db.execute(
+            "SELECT COALESCE(MAX(revision), 0) + 1 FROM context_plans WHERE turn_id=?",
+            (turn_id,),
+        ).fetchone()
+        return int(row[0])
+
     def save_context_retrieval(
         self,
         turn_id: str,
@@ -761,6 +768,77 @@ class Store(MemoryStore, DeliveryStore):
                 """INSERT OR IGNORE INTO episode_links
                    (from_episode_id, to_episode_id, kind) VALUES (?, ?, ?)""",
                 (from_episode_id, to_episode_id, kind),
+            )
+
+    def _apply_context_plan_episodes(self, turn_id: str, now: float) -> None:
+        row = self._db.execute(
+            """SELECT plan_json FROM context_plans
+               WHERE turn_id=? AND state<>'superseded'
+               ORDER BY revision DESC LIMIT 1""",
+            (turn_id,),
+        ).fetchone()
+        if row is None:
+            return
+        plan = json.loads(str(row["plan_json"]))
+        bindings = plan.get("episode_bindings", [])
+        links = plan.get("episode_links", [])
+        self._db.execute("DELETE FROM episode_turns WHERE turn_id=?", (turn_id,))
+        for binding in bindings:
+            episode_id = str(binding["episode_id"])
+            episode = self._db.execute(
+                "SELECT 1 FROM conversation_episodes WHERE id=?", (episode_id,)
+            ).fetchone()
+            if episode is None:
+                if binding.get("is_new") is not True:
+                    raise RuntimeError("planned existing episode was not found")
+                self._db.execute(
+                    """INSERT INTO conversation_episodes
+                       (id, title, topics_json, entities_json, open_loops_json,
+                        salience, created_at, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        episode_id,
+                        str(binding["title"]),
+                        json.dumps(binding["topics"], ensure_ascii=False),
+                        json.dumps(binding["entities"], ensure_ascii=False),
+                        json.dumps(binding["open_loops"], ensure_ascii=False),
+                        float(binding["salience"]),
+                        now,
+                        now,
+                    ),
+                )
+            ordinal = int(
+                self._db.execute(
+                    """SELECT COALESCE(MAX(ordinal), 0) + 1 FROM episode_turns
+                       WHERE episode_id=?""",
+                    (episode_id,),
+                ).fetchone()[0]
+            )
+            self._db.execute(
+                """INSERT INTO episode_turns
+                   (episode_id, turn_id, ordinal, relation, unit_ids_json)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (
+                    episode_id,
+                    turn_id,
+                    ordinal,
+                    str(binding["relation"]),
+                    json.dumps(binding["unit_ids"], ensure_ascii=False),
+                ),
+            )
+            self._db.execute(
+                "UPDATE conversation_episodes SET updated_at=? WHERE id=?",
+                (now, episode_id),
+            )
+        for link in links:
+            self._db.execute(
+                """INSERT OR IGNORE INTO episode_links
+                   (from_episode_id, to_episode_id, kind) VALUES (?, ?, ?)""",
+                (
+                    str(link["from_episode_id"]),
+                    str(link["to_episode_id"]),
+                    str(link["kind"]),
+                ),
             )
 
     def open_reconciliation(self, turn_id: str, reason: str) -> None:
@@ -2163,6 +2241,7 @@ class Store(MemoryStore, DeliveryStore):
         event_ids = [event.event_id for event in events]
         now = time.time()
         with self._db:
+            self._apply_context_plan_episodes(turn_id, now)
             self._db.execute(
                 """INSERT INTO messages
                    (turn_id, role, content, created_at, source_event_ids_json)
