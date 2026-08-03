@@ -32,19 +32,6 @@ CREATE TABLE IF NOT EXISTS outbox (
     reply_expectation TEXT NOT NULL DEFAULT '',
     target_channel TEXT NOT NULL DEFAULT ''
 );
-CREATE TABLE IF NOT EXISTS continuity_state (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    content TEXT NOT NULL,
-    source_event_ids_json TEXT NOT NULL,
-    updated_at REAL NOT NULL
-);
-CREATE TABLE IF NOT EXISTS conversation_summaries (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    start_message_id INTEGER NOT NULL,
-    end_message_id INTEGER NOT NULL UNIQUE,
-    content TEXT NOT NULL,
-    created_at REAL NOT NULL
-);
 CREATE TABLE IF NOT EXISTS reflections (
     id TEXT PRIMARY KEY,
     local_date TEXT NOT NULL UNIQUE,

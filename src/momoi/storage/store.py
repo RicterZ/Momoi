@@ -72,6 +72,9 @@ class Store(MemoryStore, DeliveryStore):
         self._db.close()
 
     def _migrate(self) -> None:
+        import_unassigned_messages = not self._table_exists(
+            "conversation_episodes"
+        )
         self._db.executescript(Path(__file__).with_name("schema.sql").read_text())
         outbox_columns = {
             str(row["name"])
@@ -234,6 +237,16 @@ class Store(MemoryStore, DeliveryStore):
                WHERE type='table' AND name='conversation_summary'"""
         ).fetchone()
         if legacy_summary:
+            import_unassigned_messages = True
+            self._db.execute(
+                """CREATE TABLE IF NOT EXISTS conversation_summaries (
+                       id INTEGER PRIMARY KEY AUTOINCREMENT,
+                       start_message_id INTEGER NOT NULL,
+                       end_message_id INTEGER NOT NULL UNIQUE,
+                       content TEXT NOT NULL,
+                       created_at REAL NOT NULL
+                   )"""
+            )
             self._db.execute(
                 """INSERT OR IGNORE INTO conversation_summaries
                    (start_message_id, end_message_id, content, created_at)
@@ -242,6 +255,10 @@ class Store(MemoryStore, DeliveryStore):
                    FROM conversation_summary WHERE id=1"""
             )
             self._db.execute("DROP TABLE conversation_summary")
+        if self._table_exists("conversation_summaries"):
+            import_unassigned_messages = True
+        self._migrate_legacy_conversations(import_unassigned_messages)
+        self._migrate_legacy_continuity()
         self._db.execute("UPDATE goals SET review_claimed_at=NULL")
         self._db.execute("UPDATE reminders SET claimed_at=NULL WHERE status='pending'")
         self._db.execute(
@@ -255,6 +272,224 @@ class Store(MemoryStore, DeliveryStore):
             "UPDATE conversation_episodes SET summary_claimed_at=NULL"
         )
         self._db.commit()
+
+    def _table_exists(self, name: str) -> bool:
+        return (
+            self._db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
+            ).fetchone()
+            is not None
+        )
+
+    def _legacy_turn_groups(
+        self, rows: list[sqlite3.Row]
+    ) -> list[dict[str, object]]:
+        grouped: list[list[sqlite3.Row]] = []
+        group_key = ""
+        for row in rows:
+            stored_turn_id = str(row["turn_id"] or "")
+            key = f"stored:{stored_turn_id}" if stored_turn_id else "legacy"
+            starts_group = (
+                not grouped
+                or key != group_key
+                or (not stored_turn_id and row["role"] == "user")
+            )
+            if starts_group:
+                grouped.append([])
+                group_key = key
+            grouped[-1].append(row)
+
+        turns: list[dict[str, object]] = []
+        for messages in grouped:
+            stored_turn_id = str(messages[0]["turn_id"] or "")
+            turn_id = stored_turn_id or uuid.uuid5(
+                uuid.NAMESPACE_URL,
+                f"momoi:legacy-turn:{messages[0]['id']}:{messages[-1]['id']}",
+            ).hex
+            source_ids: list[str] = []
+            for message in messages:
+                try:
+                    values = json.loads(str(message["source_event_ids_json"]))
+                except json.JSONDecodeError:
+                    values = []
+                if isinstance(values, list):
+                    source_ids.extend(str(value) for value in values)
+            source_ids = list(dict.fromkeys(source_ids))
+            started_at = min(float(message["created_at"]) for message in messages)
+            updated_at = max(float(message["created_at"]) for message in messages)
+            kind = "owner" if any(message["role"] == "user" for message in messages) else "autonomous"
+            self._db.execute(
+                """INSERT OR IGNORE INTO turns
+                   (id, kind, source_ids_json, state, stage, started_at, updated_at)
+                   VALUES (?, ?, ?, 'completed', 'completed', ?, ?)""",
+                (
+                    turn_id,
+                    kind,
+                    json.dumps(source_ids, ensure_ascii=False),
+                    started_at,
+                    updated_at,
+                ),
+            )
+            self._db.executemany(
+                "UPDATE messages SET turn_id=? WHERE id=? AND turn_id=''",
+                ((turn_id, message["id"]) for message in messages),
+            )
+            turns.append(
+                {
+                    "turn_id": turn_id,
+                    "messages": [dict(message) for message in messages],
+                    "created_at": started_at,
+                    "updated_at": updated_at,
+                }
+            )
+        return turns
+
+    @staticmethod
+    def _legacy_episode_title(turns: list[dict[str, object]]) -> str:
+        for turn in turns:
+            for message in turn["messages"]:
+                if message["role"] != "user":
+                    continue
+                lines = [
+                    line.strip()
+                    for line in str(message["content"]).splitlines()
+                    if line.strip() and not line.lstrip().startswith("#")
+                ]
+                if lines:
+                    return f"Imported: {lines[0][:120]}"
+        return "Imported conversation"
+
+    def _insert_legacy_episode(
+        self,
+        episode_id: str,
+        turns: list[dict[str, object]],
+        *,
+        status: str,
+        working_summary: str = "",
+        summary: str = "",
+    ) -> None:
+        if not turns:
+            return
+        created_at = min(float(turn["created_at"]) for turn in turns)
+        updated_at = max(float(turn["updated_at"]) for turn in turns)
+        summarized_through = len(turns) if status == "closed" or working_summary else 0
+        self._db.execute(
+            """INSERT OR IGNORE INTO conversation_episodes
+               (id, status, title, working_summary,
+                summarized_through_ordinal, summary, salience,
+                created_at, updated_at, closed_at)
+               VALUES (?, ?, ?, ?, ?, ?, 0.3, ?, ?, ?)""",
+            (
+                episode_id,
+                status,
+                self._legacy_episode_title(turns),
+                working_summary,
+                summarized_through,
+                summary,
+                created_at,
+                updated_at,
+                updated_at if status == "closed" else None,
+            ),
+        )
+        self._db.executemany(
+            """INSERT OR IGNORE INTO episode_turns
+               (episode_id, turn_id, ordinal, relation, unit_ids_json)
+               VALUES (?, ?, ?, 'primary', '[]')""",
+            (
+                (episode_id, turn["turn_id"], ordinal)
+                for ordinal, turn in enumerate(turns, 1)
+            ),
+        )
+
+    def _migrate_legacy_conversations(self, import_unassigned: bool) -> None:
+        if self._table_exists("conversation_summaries"):
+            summaries = self._db.execute(
+                "SELECT * FROM conversation_summaries ORDER BY end_message_id"
+            ).fetchall()
+            for summary in summaries:
+                rows = self._db.execute(
+                    """SELECT * FROM messages AS m
+                       WHERE m.id BETWEEN ? AND ?
+                         AND (m.turn_id='' OR NOT EXISTS (
+                             SELECT 1 FROM episode_turns AS et
+                             WHERE et.turn_id=m.turn_id
+                         ))
+                       ORDER BY m.id""",
+                    (summary["start_message_id"], summary["end_message_id"]),
+                ).fetchall()
+                turns = self._legacy_turn_groups(rows)
+                episode_id = uuid.uuid5(
+                    uuid.NAMESPACE_URL,
+                    f"momoi:legacy-summary:{summary['id']}:{summary['end_message_id']}",
+                ).hex
+                self._insert_legacy_episode(
+                    episode_id,
+                    turns,
+                    status="closed",
+                    summary=str(summary["content"]),
+                )
+            self._db.execute("DROP TABLE conversation_summaries")
+
+        if not import_unassigned:
+            return
+        rows = self._db.execute(
+            """SELECT * FROM messages AS m
+               WHERE m.turn_id='' OR NOT EXISTS (
+                   SELECT 1 FROM episode_turns AS et WHERE et.turn_id=m.turn_id
+               )
+               ORDER BY m.id"""
+        ).fetchall()
+        turns = self._legacy_turn_groups(rows)
+        for offset in range(0, len(turns), 24):
+            chunk = turns[offset : offset + 24]
+            first_message = chunk[0]["messages"][0]
+            last_message = chunk[-1]["messages"][-1]
+            episode_id = uuid.uuid5(
+                uuid.NAMESPACE_URL,
+                f"momoi:legacy-raw:{first_message['id']}:{last_message['id']}",
+            ).hex
+            index_lines = [
+                f"{'OWNER' if message['role'] == 'user' else 'MOMOI'}: "
+                f"{message['content']}"
+                for turn in chunk
+                for message in turn["messages"]
+            ]
+            working_summary = (
+                "[Imported extractive recall index; not yet a semantic summary.]\n"
+                + "\n".join(index_lines)
+            )
+            self._insert_legacy_episode(
+                episode_id,
+                chunk,
+                status="open",
+                working_summary=truncate_tokens(working_summary, 6000),
+            )
+
+    def _migrate_legacy_continuity(self) -> None:
+        if not self._table_exists("continuity_state"):
+            return
+        row = self._db.execute(
+            "SELECT content, updated_at FROM continuity_state WHERE id=1"
+        ).fetchone()
+        if row is not None and str(row["content"]).strip():
+            episode_id = uuid.uuid5(
+                uuid.NAMESPACE_URL, "momoi:legacy-continuity"
+            ).hex
+            self._db.execute(
+                """INSERT OR IGNORE INTO conversation_episodes
+                   (id, status, title, working_summary, salience,
+                    created_at, updated_at)
+                   VALUES (?, 'closing', 'Imported short-term continuity', ?,
+                           0.4, ?, ?)""",
+                (
+                    episode_id,
+                    "[Imported legacy continuity; may be stale.]\n"
+                    + str(row["content"]),
+                    row["updated_at"],
+                    row["updated_at"],
+                ),
+            )
+        self._db.execute("DROP TABLE continuity_state")
 
     def _recover_outbox(self) -> None:
         self._db.execute(
@@ -683,6 +918,60 @@ class Store(MemoryStore, DeliveryStore):
         ).fetchall()
         return [self._episode_dict(row) for row in rows]
 
+    def search_episodes(
+        self, query: str, max_results: int
+    ) -> list[dict[str, object]]:
+        if max_results <= 0:
+            return []
+        query_units = lexical_units(query)
+        ranked: list[tuple[float, sqlite3.Row]] = []
+        rows = self._db.execute(
+            "SELECT * FROM conversation_episodes ORDER BY updated_at DESC"
+        ).fetchall()
+        for row in rows:
+            units = lexical_units(
+                " ".join(
+                    str(row[name] or "")
+                    for name in (
+                        "title",
+                        "working_summary",
+                        "summary",
+                        "topics_json",
+                        "entities_json",
+                        "open_loops_json",
+                    )
+                )
+            )
+            overlap = len(query_units & units)
+            if overlap == 0:
+                continue
+            score = (
+                overlap / max(1, math.sqrt(len(query_units) * len(units)))
+                + float(row["salience"]) * 0.1
+            )
+            ranked.append((score, row))
+        ranked.sort(key=lambda item: item[0], reverse=True)
+        return [self._episode_dict(row) for _, row in ranked[:max_results]]
+
+    def conversation_episode(
+        self, episode_id: str, token_budget: int = 30000
+    ) -> dict[str, object] | None:
+        episode = self.episode(episode_id)
+        if episode is None:
+            return None
+        total = self._db.execute(
+            """SELECT COUNT(*) FROM episode_turns AS et
+               JOIN messages AS m ON m.turn_id=et.turn_id
+               WHERE et.episode_id=?""",
+            (episode_id,),
+        ).fetchone()[0]
+        messages = self.episode_messages(episode_id, token_budget)
+        return {
+            **episode,
+            "messages": messages,
+            "truncated": len(messages) < int(total),
+        }
+
     def link_turn_to_episode(
         self,
         episode_id: str,
@@ -1037,279 +1326,6 @@ class Store(MemoryStore, DeliveryStore):
             "status": status,
             "resolution": resolution[:2000],
         }
-
-    def history(self, token_budget: int, min_turns: int) -> list[dict[str, str]]:
-        if token_budget <= 0:
-            return []
-        summary = self._db.execute(
-            "SELECT MAX(end_message_id) AS end_id FROM conversation_summaries"
-        ).fetchone()
-        after_id = int(summary["end_id"]) if summary and summary["end_id"] else 0
-        selected: list[sqlite3.Row] = []
-        tokens = 0
-        user_turns = 0
-        rows = self._db.execute(
-            "SELECT role, content FROM messages WHERE id>? ORDER BY id DESC",
-            (after_id,),
-        )
-        for row in rows:
-            row_tokens = estimate_tokens(row["content"])
-            if (
-                selected
-                and tokens + row_tokens > token_budget
-                and user_turns >= min_turns
-            ):
-                break
-            selected.append(row)
-            tokens += row_tokens
-            if row["role"] == "user":
-                user_turns += 1
-        return [
-            {"role": row["role"], "content": row["content"]}
-            for row in reversed(selected)
-        ]
-
-    def summary_context(self, query: str, max_results: int, token_budget: int) -> str:
-        rows = self.search_conversation_summaries(query, max_results)
-        lines: list[str] = []
-        tokens = 0
-        for row in rows:
-            line = (
-                f"- [conversation:{row['id']} messages "
-                f"{row['start_message_id']}-{row['end_message_id']}] {row['content']}"
-            )
-            line_tokens = estimate_tokens(line)
-            if lines and tokens + line_tokens > token_budget:
-                break
-            lines.append(line)
-            tokens += line_tokens
-        return "\n".join(lines)
-
-    def search_conversation_summaries(
-        self, query: str, max_results: int, *, include_latest: bool = True
-    ) -> list[dict[str, object]]:
-        if max_results <= 0:
-            return []
-        rows = self._db.execute(
-            """SELECT id, start_message_id, end_message_id, content, created_at
-               FROM conversation_summaries ORDER BY end_message_id DESC"""
-        ).fetchall()
-        if not rows:
-            return []
-        query_units = lexical_units(query)
-        latest_id = int(rows[0]["id"])
-        ranked: list[tuple[float, sqlite3.Row]] = []
-        for row in rows:
-            units = lexical_units(str(row["content"]))
-            overlap = len(query_units & units)
-            latest = include_latest and int(row["id"]) == latest_id
-            if not latest and overlap == 0:
-                continue
-            score = overlap / max(1, math.sqrt(len(query_units) * len(units)))
-            ranked.append((score + (0.15 if latest else 0), row))
-        ranked.sort(key=lambda item: item[0], reverse=True)
-        return [dict(row) for _, row in ranked[:max_results]]
-
-    def conversation_segment(self, segment_id: int) -> dict[str, object] | None:
-        segment = self._db.execute(
-            "SELECT * FROM conversation_summaries WHERE id=?", (segment_id,)
-        ).fetchone()
-        if segment is None:
-            return None
-        messages = self._db.execute(
-            """SELECT id, role, content, created_at FROM messages
-               WHERE id BETWEEN ? AND ? ORDER BY id LIMIT 200""",
-            (segment["start_message_id"], segment["end_message_id"]),
-        ).fetchall()
-        selected: list[dict[str, object]] = []
-        characters = 0
-        for message in messages:
-            content = str(message["content"])
-            if selected and characters + len(content) > 30000:
-                break
-            selected.append(dict(message))
-            characters += len(content)
-        return {
-            **dict(segment),
-            "messages": selected,
-            "truncated": len(selected) < len(messages),
-        }
-
-    def compaction_candidate(
-        self, token_budget: int, min_turns: int
-    ) -> tuple[list[dict[str, object]], int, int] | None:
-        summary = self._db.execute(
-            "SELECT MAX(end_message_id) AS end_id FROM conversation_summaries"
-        ).fetchone()
-        after_id = int(summary["end_id"]) if summary and summary["end_id"] else 0
-        rows = self._db.execute(
-            "SELECT id, role, content FROM messages WHERE id>? ORDER BY id",
-            (after_id,),
-        ).fetchall()
-        row_tokens = [estimate_tokens(str(row["content"])) for row in rows]
-        if sum(row_tokens) <= math.ceil(token_budget * 1.25):
-            return None
-        tokens = 0
-        user_turns = 0
-        keep_from = len(rows)
-        for index in range(len(rows) - 1, -1, -1):
-            row_token = row_tokens[index]
-            if (
-                keep_from < len(rows)
-                and tokens + row_token > token_budget
-                and user_turns >= min_turns
-            ):
-                break
-            keep_from = index
-            tokens += row_token
-            if rows[index]["role"] == "user":
-                user_turns += 1
-        while 0 < keep_from < len(rows) and rows[keep_from]["role"] != "user":
-            keep_from -= 1
-        compact = rows[:keep_from]
-        if not compact:
-            return None
-        return (
-            [dict(row) for row in compact],
-            int(compact[0]["id"]),
-            int(compact[-1]["id"]),
-        )
-
-    def save_conversation_summary(
-        self, content: str, start_message_id: int, end_message_id: int
-    ) -> None:
-        with self._db:
-            self._db.execute(
-                """INSERT OR IGNORE INTO conversation_summaries
-                   (start_message_id, end_message_id, content, created_at)
-                   VALUES (?, ?, ?, ?)""",
-                (start_message_id, end_message_id, content[:6000], time.time()),
-            )
-
-    def continuity(self) -> str:
-        row = self._db.execute(
-            "SELECT content FROM continuity_state WHERE id=1"
-        ).fetchone()
-        if row is None:
-            return ""
-        content = str(row["content"])
-        try:
-            state = json.loads(content)
-        except json.JSONDecodeError:
-            return content
-        if not isinstance(state, dict):
-            return content
-        facts = state.get("short_term_facts")
-        if isinstance(facts, list):
-            now = time.time()
-            state["short_term_facts"] = [
-                fact
-                for fact in facts
-                if isinstance(fact, dict)
-                and self._future_timestamp(fact.get("expires_at"), now)
-            ]
-        topic = state.get("topic")
-        if not any(
-            (
-                isinstance(topic, dict) and bool(topic.get("text")),
-                bool(state.get("open_loops")),
-                bool(state.get("pending_commitments")),
-                bool(state.get("short_term_facts")),
-            )
-        ):
-            return ""
-        return json.dumps(state, ensure_ascii=False, separators=(",", ":"))
-
-    def continuity_context(self) -> str:
-        """Return the writable projection shown to the model, without runtime metadata."""
-        content = self.continuity()
-        if not content:
-            return ""
-        try:
-            state = json.loads(content)
-        except json.JSONDecodeError:
-            state = {"topic": content}
-        if not isinstance(state, dict):
-            return ""
-
-        def text(value: object) -> str:
-            if isinstance(value, dict):
-                value = value.get("text")
-            return str(value or "").strip()
-
-        facts = []
-        for fact in state.get("short_term_facts", []):
-            if not isinstance(fact, dict):
-                continue
-            fact_text = text(fact)
-            expires_at = fact.get("expires_at")
-            if fact_text and isinstance(expires_at, str):
-                facts.append({"text": fact_text, "expires_at": expires_at})
-        projection = {
-            "topic": text(state.get("topic")),
-            "open_loops": [
-                item for value in state.get("open_loops", []) if (item := text(value))
-            ],
-            "pending_commitments": [
-                item
-                for value in state.get("pending_commitments", [])
-                if (item := text(value))
-            ],
-            "short_term_facts": facts,
-        }
-        return json.dumps(projection, ensure_ascii=False, separators=(",", ":"))
-
-    @staticmethod
-    def _future_timestamp(value: object, now: float) -> bool:
-        if not isinstance(value, str):
-            return False
-        try:
-            return (
-                datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp() > now
-            )
-        except ValueError:
-            return False
-
-    @staticmethod
-    def _serialize_continuity(
-        value: dict[str, object] | str,
-        event_ids: list[str],
-        now: float,
-    ) -> str:
-        timestamp = datetime.fromtimestamp(now).astimezone().isoformat()
-
-        def item(text: object) -> dict[str, object]:
-            return {
-                "text": str(text).strip()[:1000],
-                "updated_at": timestamp,
-                "source_event_ids": event_ids,
-            }
-
-        if isinstance(value, str):
-            state: dict[str, object] = {
-                "topic": item(value) if value.strip() else None,
-                "open_loops": [],
-                "pending_commitments": [],
-                "short_term_facts": [],
-            }
-        else:
-            topic = str(value.get("topic") or "").strip()
-            state = {
-                "topic": item(topic) if topic else None,
-                "open_loops": [item(text) for text in value.get("open_loops", [])],
-                "pending_commitments": [
-                    item(text) for text in value.get("pending_commitments", [])
-                ],
-                "short_term_facts": [
-                    {
-                        **item(fact.get("text")),
-                        "expires_at": str(fact.get("expires_at")),
-                    }
-                    for fact in value.get("short_term_facts", [])
-                    if isinstance(fact, dict)
-                ],
-            }
-        return json.dumps(state, ensure_ascii=False, separators=(",", ":"))
 
     def self_state(self, now: float | None = None) -> dict[str, object]:
         now = time.time() if now is None else now
@@ -2500,24 +2516,6 @@ class Store(MemoryStore, DeliveryStore):
                             else ""
                         ),
                         target_channel,
-                    ),
-                )
-            if reply.continuity is not None:
-                continuity = self._serialize_continuity(
-                    reply.continuity, event_ids, now
-                )
-                self._db.execute(
-                    """INSERT INTO continuity_state
-                       (id, content, source_event_ids_json, updated_at)
-                       VALUES (1, ?, ?, ?)
-                       ON CONFLICT(id) DO UPDATE SET
-                         content=excluded.content,
-                         source_event_ids_json=excluded.source_event_ids_json,
-                         updated_at=excluded.updated_at""",
-                    (
-                        continuity,
-                        json.dumps(event_ids, ensure_ascii=False),
-                        now,
                     ),
                 )
             self._apply_mood_transition(reply.mood_transition, now)

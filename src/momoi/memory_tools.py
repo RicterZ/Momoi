@@ -41,7 +41,7 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
     {
         "name": "conversation_search",
         "description": (
-            "Search compressed conversation segments when older events or context "
+            "Search conversation episodes when older events or context "
             "are not present in recent messages or durable memory."
         ),
         "input_schema": {
@@ -62,13 +62,19 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
     {
         "name": "conversation_read",
         "description": (
-            "Read the archived raw messages covered by one conversation segment "
+            "Read the archived raw messages covered by one conversation episode "
             "returned by conversation_search."
         ),
         "input_schema": {
             "type": "object",
-            "properties": {"segment_id": {"type": "integer", "minimum": 1}},
-            "required": ["segment_id"],
+            "properties": {
+                "episode_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                }
+            },
+            "required": ["episode_id"],
             "additionalProperties": False,
         },
     },
@@ -145,8 +151,8 @@ MEMORY_TOOL_POLICY = """### Memory tools
 - `memory_search` searches committed long-term memory. Call it before saying you
   do not remember when the user refers to an earlier person, fact, preference,
   event, promise, or vague shared context that is not already visible.
-- `conversation_search` searches older compressed conversation segments;
-  `conversation_read` retrieves the archived raw messages for a returned segment.
+- `conversation_search` searches older conversation episodes;
+  `conversation_read` retrieves the archived raw messages for a returned episode.
   Use them when factual memory is insufficient to reconstruct an older episode.
 - `memory_remember` stages durable memory for this Turn. When the user explicitly
   says to remember something, states a stable preference/relationship/routine,
@@ -225,18 +231,17 @@ class MemoryTools:
             limit = min(10, max(1, int(arguments.get("limit", 5))))
         except (TypeError, ValueError):
             limit = 5
-        results = self.store.search_conversation_summaries(query, limit)
+        results = self.store.search_episodes(query, limit)
         return {"ok": True, "count": len(results), "results": results}
 
     def _conversation_read(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        try:
-            segment_id = int(arguments.get("segment_id"))
-        except (TypeError, ValueError):
-            return {"ok": False, "error": "invalid_segment_id"}
-        segment = self.store.conversation_segment(segment_id)
-        if segment is None:
-            return {"ok": False, "error": "segment_not_found"}
-        return {"ok": True, "segment": segment}
+        episode_id = arguments.get("episode_id")
+        if not isinstance(episode_id, str) or not episode_id.strip():
+            return {"ok": False, "error": "invalid_episode_id"}
+        episode = self.store.conversation_episode(episode_id.strip())
+        if episode is None:
+            return {"ok": False, "error": "episode_not_found"}
+        return {"ok": True, "episode": episode}
 
     def _remember(
         self,

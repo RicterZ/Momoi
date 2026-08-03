@@ -103,14 +103,30 @@ class StorageMemoryTest(unittest.TestCase):
             row = store._db.execute(
                 "SELECT content, turn_id FROM messages"
             ).fetchone()
-            self.assertEqual((row["content"], row["turn_id"]), ("旧对话", ""))
+            self.assertEqual(row["content"], "旧对话")
+            self.assertTrue(row["turn_id"])
+            episodes = store.search_episodes("旧对话", 3)
+            self.assertEqual(len(episodes), 1)
+            episode_id = str(episodes[0]["id"])
+            self.assertEqual(
+                store.conversation_episode(episode_id)["messages"][0]["content"],
+                "旧对话",
+            )
             store.close()
 
             reopened = Store(path)
             row = reopened._db.execute(
                 "SELECT content, turn_id FROM messages"
             ).fetchone()
-            self.assertEqual((row["content"], row["turn_id"]), ("旧对话", ""))
+            self.assertEqual(row["content"], "旧对话")
+            self.assertTrue(row["turn_id"])
+            self.assertEqual(
+                reopened._db.execute(
+                    "SELECT COUNT(*) FROM conversation_episodes"
+                ).fetchone()[0],
+                1,
+            )
+            self.assertEqual(reopened.search_episodes("旧对话", 3)[0]["id"], episode_id)
             reopened.close()
 
     def test_context_plan_revisions_and_episode_turn_links_persist(self) -> None:
@@ -1185,7 +1201,12 @@ class StorageMemoryTest(unittest.TestCase):
             )
 
             self.assertEqual(
-                [item["content"] for item in store.history(1000, 1)],
+                [
+                    row["content"]
+                    for row in store._db.execute(
+                        "SELECT content FROM messages ORDER BY id"
+                    ).fetchall()
+                ],
                 ["执行任务", "正在处理", "处理完成"],
             )
             rows = store._db.execute(
@@ -1206,60 +1227,42 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertEqual(store.due_outbox()[0].text, "处理完成")
             store.close()
 
-    def test_structured_continuity_tracks_source_and_expires_short_term_facts(
-        self,
-    ) -> None:
+    def test_legacy_continuity_migrates_once_to_a_recallable_episode(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            store = Store(Path(directory) / "momoi.sqlite3")
-            event = IncomingMessage("qq:1:continuity", "continuity", "继续聊", 1, 1)
-            store.add_event(event)
-            store.commit_turn(
-                [event],
-                event.text,
-                AgentReply(
-                    ["好"],
-                    {
-                        "topic": "当前话题",
-                        "open_loops": ["等待结果"],
-                        "pending_commitments": [],
-                        "short_term_facts": [
-                            {
-                                "text": "仍然有效",
-                                "expires_at": (
-                                    datetime.now().astimezone() + timedelta(hours=1)
-                                ).isoformat(),
-                            },
-                            {
-                                "text": "已经过期",
-                                "expires_at": (
-                                    datetime.now().astimezone() - timedelta(hours=1)
-                                ).isoformat(),
-                            },
-                        ],
-                    },
-                ),
-            )
-            state = json.loads(store.continuity())
-            self.assertEqual(state["topic"]["source_event_ids"], [event.event_id])
-            self.assertEqual(
-                [fact["text"] for fact in state["short_term_facts"]], ["仍然有效"]
-            )
-            context = json.loads(store.continuity_context())
-            self.assertEqual(
-                context,
-                {
-                    "topic": "当前话题",
-                    "open_loops": ["等待结果"],
-                    "pending_commitments": [],
-                    "short_term_facts": [
-                        {
-                            "text": "仍然有效",
-                            "expires_at": state["short_term_facts"][0]["expires_at"],
-                        }
-                    ],
-                },
-            )
+            path = Path(directory) / "momoi.sqlite3"
+            store = Store(path)
             store.close()
+            database = sqlite3.connect(path)
+            database.execute(
+                """CREATE TABLE continuity_state (
+                       id INTEGER PRIMARY KEY,
+                       content TEXT NOT NULL,
+                       source_event_ids_json TEXT NOT NULL,
+                       updated_at REAL NOT NULL
+                   )"""
+            )
+            database.execute(
+                """INSERT INTO continuity_state
+                   VALUES (1, '{"topic":"当前话题","open_loops":["等待结果"]}',
+                           '["old-event"]', 10)"""
+            )
+            database.commit()
+            database.close()
+
+            store = Store(path)
+            episode = store.search_episodes("当前话题 等待结果", 3)[0]
+            self.assertEqual(episode["status"], "closing")
+            self.assertIn("Imported legacy continuity", episode["working_summary"])
+            self.assertFalse(store._table_exists("continuity_state"))
+            episode_id = episode["id"]
+            store.close()
+
+            reopened = Store(path)
+            self.assertEqual(
+                reopened.search_episodes("当前话题 等待结果", 3)[0]["id"],
+                episode_id,
+            )
+            reopened.close()
 
     def test_memory_survives_history_window_and_correction(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1293,12 +1296,8 @@ class StorageMemoryTest(unittest.TestCase):
             store.commit_turn(
                 [event],
                 event.text,
-                AgentReply(["记住啦"], "卧室灯光偏好已经确认。"),
+                AgentReply(["记住啦"]),
                 draft,
-            )
-            self.assertEqual(
-                json.loads(store.continuity())["topic"]["text"],
-                "卧室灯光偏好已经确认。",
             )
             self.assertIn(
                 "卧室灯默认使用暖色",
@@ -1334,7 +1333,7 @@ class StorageMemoryTest(unittest.TestCase):
             store.commit_turn(
                 [correction],
                 correction.text,
-                AgentReply(["改成冷色了"], ""),
+                AgentReply(["改成冷色了"]),
                 correction_draft,
             )
             recalled = store.memory_context("卧室灯光", 6, 8000)
@@ -1351,7 +1350,10 @@ class StorageMemoryTest(unittest.TestCase):
                 )
                 store.add_event(item)
                 store.commit_turn([item], item.text, AgentReply([f"回复{index}"]))
-            self.assertGreater(len(store.history(10000, 6)), 24)
+            self.assertGreater(
+                store._db.execute("SELECT COUNT(*) FROM messages").fetchone()[0],
+                60,
+            )
             store.close()
             store = Store(path)
             self.assertIn(
@@ -1669,36 +1671,78 @@ class StorageMemoryTest(unittest.TestCase):
                 self.assertEqual(result["error"], error)
             store.close()
 
-    def test_compaction_keeps_raw_messages_and_replaces_old_context_with_summary(
-        self,
-    ) -> None:
+    def test_legacy_summaries_become_closed_episodes_without_losing_raw(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            store = Store(Path(directory) / "momoi.sqlite3")
-            for index in range(4):
-                event = IncomingMessage(
-                    f"qq:1:compact-{index}",
-                    f"compact-{index}",
-                    f"第{index}轮" + "内容" * 100,
-                    float(index),
-                    float(index),
-                )
-                store.add_event(event)
-                store.commit_turn(
-                    [event], event.text, AgentReply(["回复" + "内容" * 100])
-                )
+            path = Path(directory) / "legacy.sqlite3"
+            database = sqlite3.connect(path)
+            database.execute(
+                """CREATE TABLE messages (
+                       id INTEGER PRIMARY KEY AUTOINCREMENT,
+                       role TEXT NOT NULL,
+                       content TEXT NOT NULL,
+                       created_at REAL NOT NULL,
+                       source_event_ids_json TEXT NOT NULL
+                   )"""
+            )
+            database.executemany(
+                """INSERT INTO messages
+                   (role, content, created_at, source_event_ids_json)
+                   VALUES (?, ?, ?, '[]')""",
+                [
+                    ("user", "项目邮件还没到", 1),
+                    ("assistant", "我会记着项目邮件", 1),
+                    ("user", "微博上看到一只猫", 2),
+                    ("assistant", "那只猫很可爱", 2),
+                ],
+            )
+            database.execute(
+                """CREATE TABLE conversation_summaries (
+                       id INTEGER PRIMARY KEY AUTOINCREMENT,
+                       start_message_id INTEGER NOT NULL,
+                       end_message_id INTEGER NOT NULL UNIQUE,
+                       content TEXT NOT NULL,
+                       created_at REAL NOT NULL
+                   )"""
+            )
+            database.execute(
+                """INSERT INTO conversation_summaries
+                   (start_message_id, end_message_id, content, created_at)
+                   VALUES (1, 2, '较早的项目邮件仍在等待', 3)"""
+            )
+            database.commit()
+            database.close()
 
-            candidate = store.compaction_candidate(250, 1)
-            self.assertIsNotNone(candidate)
-            rows, start_id, end_id = candidate
-            self.assertGreater(len(rows), 0)
-            store.save_conversation_summary("较早对话摘要", start_id, end_id)
-
-            self.assertIn("较早对话摘要", store.summary_context("没有关键词", 3, 1000))
+            store = Store(path)
+            self.assertFalse(store._table_exists("conversation_summaries"))
+            self.assertEqual(
+                store._db.execute("SELECT COUNT(*) FROM messages").fetchone()[0], 4
+            )
+            self.assertEqual(
+                store._db.execute(
+                    "SELECT COUNT(*) FROM messages WHERE turn_id<>''"
+                ).fetchone()[0],
+                4,
+            )
+            summary_episode = store.search_episodes("项目邮件 等待", 3)[0]
+            self.assertEqual(summary_episode["status"], "closed")
+            self.assertEqual(summary_episode["summary"], "较早的项目邮件仍在等待")
+            raw_episode = store.search_episodes("微博 猫", 3)[0]
+            self.assertEqual(raw_episode["status"], "open")
+            self.assertIn("Imported extractive recall index", raw_episode["working_summary"])
+            self.assertEqual(
+                [
+                    item["content"]
+                    for item in store.conversation_episode(str(raw_episode["id"]))[
+                        "messages"
+                    ]
+                ],
+                ["微博上看到一只猫", "那只猫很可爱"],
+            )
             search = MemoryTools(store).execute(
                 ToolCall(
                     "conversation-search",
                     "conversation_search",
-                    {"query": "较早对话"},
+                    {"query": "项目邮件 等待"},
                 ),
                 [],
                 TurnDraft(),
@@ -1708,38 +1752,97 @@ class StorageMemoryTest(unittest.TestCase):
                 ToolCall(
                     "conversation-read",
                     "conversation_read",
-                    {"segment_id": search["results"][0]["id"]},
+                    {"episode_id": search["results"][0]["id"]},
                 ),
                 [],
                 TurnDraft(),
             )
             self.assertTrue(read["ok"])
-            self.assertGreater(len(read["segment"]["messages"]), 0)
+            self.assertEqual(len(read["episode"]["messages"]), 2)
+            episode_ids = {
+                row["id"]
+                for row in store._db.execute(
+                    "SELECT id FROM conversation_episodes"
+                ).fetchall()
+            }
+            store.close()
+
+            reopened = Store(path)
             self.assertEqual(
-                store._db.execute("SELECT COUNT(*) FROM messages").fetchone()[0], 8
+                {
+                    row["id"]
+                    for row in reopened._db.execute(
+                        "SELECT id FROM conversation_episodes"
+                    ).fetchall()
+                },
+                episode_ids,
+            )
+            self.assertEqual(
+                reopened._db.execute("SELECT COUNT(*) FROM messages").fetchone()[0],
+                4,
+            )
+            reopened.close()
+
+    def test_legacy_raw_turns_are_chunked_and_indexed_without_raw_injection(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "legacy.sqlite3"
+            database = sqlite3.connect(path)
+            database.execute(
+                """CREATE TABLE messages (
+                       id INTEGER PRIMARY KEY AUTOINCREMENT,
+                       role TEXT NOT NULL,
+                       content TEXT NOT NULL,
+                       created_at REAL NOT NULL,
+                       source_event_ids_json TEXT NOT NULL
+                   )"""
+            )
+            rows = []
+            for index in range(25):
+                rows.extend(
+                    [
+                        ("user", f"第{index + 1}个旧主题", index, "[]"),
+                        ("assistant", f"第{index + 1}个旧回复", index, "[]"),
+                    ]
+                )
+            database.executemany(
+                """INSERT INTO messages
+                   (role, content, created_at, source_event_ids_json)
+                   VALUES (?, ?, ?, ?)""",
+                rows,
+            )
+            database.commit()
+            database.close()
+
+            store = Store(path)
+            episodes = store._db.execute(
+                """SELECT id, working_summary, summarized_through_ordinal
+                   FROM conversation_episodes WHERE status='open'
+                   ORDER BY created_at"""
+            ).fetchall()
+            self.assertEqual(len(episodes), 2)
+            self.assertEqual(
+                [row["summarized_through_ordinal"] for row in episodes], [24, 1]
             )
             self.assertTrue(
                 all(
-                    "第3轮" in item["content"] or item["role"] == "assistant"
-                    for item in store.history(250, 1)
+                    str(row["working_summary"]).startswith(
+                        "[Imported extractive recall index;"
+                    )
+                    for row in episodes
                 )
             )
-            store.close()
-
-    def test_compaction_waits_for_hysteresis_margin(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            store = Store(Path(directory) / "momoi.sqlite3")
-            for index, size in enumerate((20, 40, 90)):
-                event = IncomingMessage(
-                    f"qq:1:hysteresis-{index}",
-                    f"hysteresis-{index}",
-                    "甲" * size,
-                    float(index),
-                    float(index),
+            self.assertTrue(
+                all(
+                    store.episode_messages(
+                        str(row["id"]),
+                        10000,
+                        after_ordinal=int(row["summarized_through_ordinal"]),
+                    )
+                    == []
+                    for row in episodes
                 )
-                store.add_event(event)
-                store.commit_turn([event], event.text, AgentReply(["乙" * size]))
-
-            self.assertIsNone(store.compaction_candidate(250, 1))
-            self.assertIsNotNone(store.compaction_candidate(200, 1))
+            )
+            self.assertEqual(
+                store._db.execute("SELECT COUNT(*) FROM messages").fetchone()[0], 50
+            )
             store.close()

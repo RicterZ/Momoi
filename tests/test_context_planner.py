@@ -164,12 +164,6 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "messages": ["我分开看了这两件事。"],
                             "expects_reply": False,
                             "reply_expectation": "",
-                            "continuity": {
-                                "topic": "微博与邮件",
-                                "open_loops": [],
-                                "pending_commitments": [],
-                                "short_term_facts": [],
-                            },
                             "mood": {"action": "keep"},
                         },
                     )
@@ -187,7 +181,7 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(provider.calls, ["planner", "main"])
             stored = daemon.store.context_plan(turn_id)
             self.assertEqual(stored["state"], "recalled")
-            self.assertEqual(stored["retrieval"]["version"], 1)
+            self.assertEqual(stored["retrieval"]["version"], 2)
             self.assertEqual(len(stored["plan"]["intent_units"]), 2)
             self.assertEqual(len(daemon.store.list_episode_candidates()), 2)
             self.assertEqual(
@@ -234,12 +228,6 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "messages": ["我先分别看邮件和微博。"],
                             "expects_reply": False,
                             "reply_expectation": "",
-                            "continuity": {
-                                "topic": "邮件与微博",
-                                "open_loops": [],
-                                "pending_commitments": [],
-                                "short_term_facts": [],
-                            },
                             "mood": {"action": "keep"},
                         },
                     )

@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any
 
 from ..config import AppConfig
-from ..storage import Store, estimate_tokens
+from ..storage import Store, estimate_tokens, truncate_tokens
 
 
 def _selected_by_unit(
@@ -97,18 +97,18 @@ def build_plan_retrieval(
         reflection_limit,
         config.memory_tokens // 2,
     )
-    legacy = _selected_by_unit(
+    recalled_episodes = _selected_by_unit(
         units,
-        lambda query, limit: store.search_conversation_summaries(
-            query, limit, include_latest=False
-        ),
+        store.search_episodes,
         lambda row: row["id"],
-        lambda row: str(row["content"]),
+        lambda row: truncate_tokens(
+            _episode_search_text(row),
+            max(1, config.summary_tokens // max(1, config.summary_results)),
+        ),
         lambda row: {
-            "id": row["id"],
-            "start_message_id": row["start_message_id"],
-            "end_message_id": row["end_message_id"],
-            "content": row["content"],
+            "episode_id": row["id"],
+            "relation": "recalled",
+            "is_new": False,
         },
         config.summary_results,
         config.summary_tokens,
@@ -173,21 +173,34 @@ def build_plan_retrieval(
         config.memory_results,
         config.memory_tokens // 2,
     )
-    episodes = [
-        {
+    episodes: dict[str, dict[str, object]] = {}
+    new_episodes: list[dict[str, object]] = []
+    for binding in bindings:
+        item = {
             "episode_id": binding["episode_id"],
             "relation": binding["relation"],
-            "unit_ids": binding["unit_ids"],
+            "unit_ids": list(binding["unit_ids"]),
             "is_new": binding["is_new"],
         }
-        for binding in bindings
-    ]
+        if binding["is_new"]:
+            new_episodes.append(item)
+        elif len(episodes) < config.summary_results:
+            episodes[str(binding["episode_id"])] = item
+    for recalled in recalled_episodes:
+        episode_id = str(recalled["episode_id"])
+        existing = episodes.get(episode_id)
+        if existing is not None:
+            existing_units = existing["unit_ids"]
+            for unit_id in recalled["unit_ids"]:
+                if unit_id not in existing_units:
+                    existing_units.append(unit_id)
+        elif len(episodes) < config.summary_results:
+            episodes[episode_id] = recalled
     return {
-        "version": 1,
-        "episodes": episodes,
+        "version": 2,
+        "episodes": [*episodes.values(), *new_episodes],
         "confirmed_memories": confirmed,
         "reflection_memories": reflection,
-        "legacy_summaries": legacy,
         "goals": goals,
         "reminders": reminders,
         "memory_conflicts": conflicts,
@@ -209,13 +222,17 @@ def _memory_lines(items: object) -> str:
     )
 
 
-def _legacy_lines(items: object) -> str:
-    if not isinstance(items, list):
-        return ""
-    return "\n".join(
-        f"- [units={_supports(item)} legacy_messages="
-        f"{item['start_message_id']}-{item['end_message_id']}] {item['content']}"
-        for item in items
+def _episode_search_text(episode: dict[str, object]) -> str:
+    return " ".join(
+        str(episode.get(name) or "")
+        for name in (
+            "title",
+            "working_summary",
+            "summary",
+            "topics",
+            "entities",
+            "open_loops",
+        )
     )
 
 
@@ -263,7 +280,10 @@ def _conflict_lines(items: object) -> str:
 
 
 def _episode_context(
-    store: Store, episodes: object, token_budget: int
+    store: Store,
+    episodes: object,
+    summary_token_budget: int,
+    raw_token_budget: int,
 ) -> str:
     if not isinstance(episodes, list):
         return ""
@@ -272,9 +292,10 @@ def _episode_context(
         for item in episodes
         if not item.get("is_new") and store.episode(str(item["episode_id"]))
     ]
-    if not existing or token_budget <= 0:
+    if not existing or (summary_token_budget <= 0 and raw_token_budget <= 0):
         return ""
-    per_episode = max(1, token_budget // len(existing))
+    per_summary = max(1, summary_token_budget // len(existing))
+    per_raw_tail = max(1, raw_token_budget // len(existing))
     sections: list[str] = []
     for selected in existing:
         episode = store.episode(str(selected["episode_id"]))
@@ -285,9 +306,10 @@ def _episode_context(
             f"relation={selected['relation']} status={episode['status']}]",
             f"title: {episode['title']}",
         ]
-        if episode["working_summary"] or episode["summary"]:
+        summary = str(episode["summary"] or episode["working_summary"])
+        if summary and summary_token_budget > 0:
             lines.append(
-                f"summary: {episode['working_summary'] or episode['summary']}"
+                f"summary: {truncate_tokens(summary, per_summary)}"
             )
         if episode["topics"]:
             lines.append(
@@ -297,10 +319,14 @@ def _episode_context(
             lines.append(
                 f"open_loops: {json.dumps(episode['open_loops'], ensure_ascii=False)}"
             )
-        messages = store.episode_messages(
-            str(episode["id"]),
-            per_episode,
-            after_ordinal=int(episode["summarized_through_ordinal"]),
+        messages = (
+            store.episode_messages(
+                str(episode["id"]),
+                per_raw_tail,
+                after_ordinal=int(episode["summarized_through_ordinal"]),
+            )
+            if raw_token_budget > 0
+            else []
         )
         if messages:
             lines.append("raw_tail:")
@@ -314,7 +340,10 @@ def _episode_context(
 
 
 def assemble_main_context(
-    store: Store, retrieval: dict[str, object], raw_token_budget: int
+    store: Store,
+    retrieval: dict[str, object],
+    summary_token_budget: int,
+    raw_token_budget: int,
 ) -> dict[str, str]:
     reflection = _memory_lines(retrieval.get("reflection_memories"))
     if reflection:
@@ -323,10 +352,10 @@ def assemble_main_context(
         )
     return {
         "episodes": _episode_context(
-            store, retrieval.get("episodes"), raw_token_budget
-        ),
-        "legacy_conversation": _legacy_lines(
-            retrieval.get("legacy_summaries")
+            store,
+            retrieval.get("episodes"),
+            summary_token_budget,
+            raw_token_budget,
         ),
         "confirmed_memories": _memory_lines(
             retrieval.get("confirmed_memories")
@@ -338,3 +367,31 @@ def assemble_main_context(
             retrieval.get("memory_conflicts")
         ),
     }
+
+
+def recall_episode_context(
+    store: Store,
+    query: str,
+    max_results: int,
+    summary_token_budget: int,
+    raw_token_budget: int,
+) -> str:
+    query = query.strip()
+    if not query:
+        return ""
+    episodes = _selected_by_unit(
+        [{"id": "query", "recall_queries": [query]}],
+        store.search_episodes,
+        lambda row: row["id"],
+        _episode_search_text,
+        lambda row: {
+            "episode_id": row["id"],
+            "relation": "recalled",
+            "is_new": False,
+        },
+        max_results,
+        summary_token_budget,
+    )
+    return _episode_context(
+        store, episodes, summary_token_budget, raw_token_budget
+    )

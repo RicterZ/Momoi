@@ -202,20 +202,6 @@ class DeliveryStore:
                         target_channel,
                     ),
                 )
-            if reply.continuity is not None:
-                continuity = self._serialize_continuity(
-                    reply.continuity, source_ids, now
-                )
-                self._db.execute(
-                    """INSERT INTO continuity_state
-                       (id, content, source_event_ids_json, updated_at)
-                       VALUES (1, ?, ?, ?)
-                       ON CONFLICT(id) DO UPDATE SET
-                         content=excluded.content,
-                         source_event_ids_json=excluded.source_event_ids_json,
-                         updated_at=excluded.updated_at""",
-                    (continuity, source, now),
-                )
             self._apply_mood_transition(reply.mood_transition, now)
             outbox_ids = [
                 int(row["id"])

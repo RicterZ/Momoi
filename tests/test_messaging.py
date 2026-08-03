@@ -256,12 +256,6 @@ class MessagingTest(unittest.TestCase):
                 "expects_reply": True,
                 "reply_expectation": "主人晚上的安排",
                 "messages": ["嘿嘿，没忘吧~", "晚上在忙什么呢？"],
-                "continuity": {
-                    "topic": "晚上的安排",
-                    "open_loops": ["等待对方说晚上的安排"],
-                    "pending_commitments": [],
-                    "short_term_facts": [],
-                },
                 "mood": {"action": "keep"},
             }
         )
@@ -269,7 +263,6 @@ class MessagingTest(unittest.TestCase):
         self.assertEqual(reply.messages, ["嘿嘿，没忘吧~", "晚上在忙什么呢？"])
         self.assertTrue(reply.expects_reply)
         self.assertEqual(reply.reply_expectation, "主人晚上的安排")
-        self.assertEqual(reply.continuity["topic"], "晚上的安排")
         preserved, error = MomoiDaemon._parse_messages(
             {"messages": ["第一条。\n\n第二条。"]}
         )
@@ -278,12 +271,6 @@ class MessagingTest(unittest.TestCase):
         invalid, error = MomoiDaemon._parse_response(
             {
                 "messages": ["少了表达决策"],
-                "continuity": {
-                    "topic": "",
-                    "open_loops": [],
-                    "pending_commitments": [],
-                    "short_term_facts": [],
-                },
                 "mood": {"action": "keep"},
             }
         )
@@ -407,12 +394,6 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "expects_reply": False,
                             "reply_expectation": "",
                             "messages": [],
-                            "continuity": {
-                                "topic": "",
-                                "open_loops": [],
-                                "pending_commitments": [],
-                                "short_term_facts": [],
-                            },
                             "mood": {"action": "keep"},
                         },
                     )
@@ -427,7 +408,12 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
 
             self.assertEqual(daemon.store.due_outbox(), [])
-            self.assertEqual(daemon.store.history(1000, 1)[-1]["role"], "user")
+            self.assertEqual(
+                daemon.store._db.execute(
+                    "SELECT role FROM messages ORDER BY id DESC LIMIT 1"
+                ).fetchone()[0],
+                "user",
+            )
             self.assertEqual(daemon.store.pending_events(), [])
             daemon.store.close()
 
@@ -525,12 +511,6 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "expects_reply": False,
                             "reply_expectation": "",
                             "messages": ["看到了"],
-                            "continuity": {
-                                "topic": "",
-                                "open_loops": [],
-                                "pending_commitments": [],
-                                "short_term_facts": [],
-                            },
                             "mood": {"action": "keep"},
                         },
                     )
@@ -607,12 +587,6 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "这次我可厉害了",
                                 "emotion://proud-1",
                             ],
-                            "continuity": {
-                                "topic": "",
-                                "open_loops": [],
-                                "pending_commitments": [],
-                                "short_term_facts": [],
-                            },
                             "mood": {"action": "keep"},
                         },
                     )
@@ -700,12 +674,6 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "expects_reply": False,
                             "reply_expectation": "",
                             "messages": [value],
-                            "continuity": {
-                                "topic": "",
-                                "open_loops": [],
-                                "pending_commitments": [],
-                                "short_term_facts": [],
-                            },
                             "mood": {"action": "keep"},
                         },
                     )
@@ -932,12 +900,6 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                                     "expects_reply": False,
                                     "reply_expectation": "",
                                     "messages": [text],
-                                    "continuity": {
-                                        "topic": "跨渠道话题",
-                                        "open_loops": [],
-                                        "pending_commitments": [],
-                                        "short_term_facts": [],
-                                    },
                                     "mood": {"action": "keep"},
                                 },
                             )

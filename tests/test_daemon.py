@@ -118,6 +118,9 @@ class DaemonTest(unittest.TestCase):
             (None, "invalid_mood_decision"),
         )
         self.assertIn("mood", RESPOND_TOOL_SPEC["input_schema"]["required"])
+        self.assertNotIn(
+            "continuity", RESPOND_TOOL_SPEC["input_schema"]["properties"]
+        )
         self.assertIn("delivery", RESPOND_TOOL_SPEC["input_schema"]["required"])
         self.assertIn("expects_reply", RESPOND_TOOL_SPEC["input_schema"]["required"])
         self.assertIn(
@@ -238,12 +241,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "expects_reply": False,
                                 "reply_expectation": "",
                                 "messages": ["上海天气晴"],
-                                "continuity": {
-                                    "topic": "天气",
-                                    "open_loops": [],
-                                    "pending_commitments": [],
-                                    "short_term_facts": [],
-                                },
                                 "mood": {"action": "keep"},
                             },
                         )
@@ -259,12 +256,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "expects_reply": False,
                                 "reply_expectation": "",
                                 "messages": ["收到，不查了"],
-                                "continuity": {
-                                    "topic": "",
-                                    "open_loops": [],
-                                    "pending_commitments": [],
-                                    "short_term_facts": [],
-                                },
                                 "mood": {"action": "keep"},
                             },
                         )
@@ -592,12 +583,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "expects_reply": False,
                                 "reply_expectation": "",
                                 "messages": ["创建任务失败：缺少有效的执行时间。"],
-                                "continuity": {
-                                    "topic": "",
-                                    "open_loops": [],
-                                    "pending_commitments": [],
-                                    "short_term_facts": [],
-                                },
                                 "mood": {"action": "keep"},
                             },
                         )
@@ -1143,12 +1128,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "expects_reply": False,
                             "reply_expectation": "",
                             "messages": ["已经停下来了"],
-                            "continuity": {
-                                "topic": "",
-                                "open_loops": [],
-                                "pending_commitments": [],
-                                "short_term_facts": [],
-                            },
                             "mood": {"action": "keep"},
                         },
                     )
@@ -1230,12 +1209,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "expects_reply": False,
                                 "reply_expectation": "",
                                 "messages": ["已经终止当前任务"],
-                                "continuity": {
-                                    "topic": "",
-                                    "open_loops": [],
-                                    "pending_commitments": [],
-                                    "short_term_facts": [],
-                                },
                                 "mood": {"action": "keep"},
                             },
                         )
@@ -1353,12 +1326,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "expects_reply": False,
                                 "reply_expectation": "",
                                 "messages": ["测试回复一", "测试回复二"],
-                                "continuity": {
-                                    "topic": "",
-                                    "open_loops": [],
-                                    "pending_commitments": [],
-                                    "short_term_facts": [],
-                                },
                                 "mood": {"action": "keep"},
                             },
                         }

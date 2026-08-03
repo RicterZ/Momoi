@@ -9,6 +9,7 @@ from momoi.models import AgentReply, IncomingMessage
 from momoi.runtime.context_assembler import (
     assemble_main_context,
     build_plan_retrieval,
+    recall_episode_context,
 )
 from momoi.storage import Store, estimate_tokens
 
@@ -153,8 +154,28 @@ class ContextAssemblerTest(unittest.TestCase):
                     ),
                 ],
             )
-            store.save_conversation_summary("较早的项目邮件仍在等待", 1, 1)
-            store.save_conversation_summary("最近聊过微博上的猫", 2, 2)
+            store.create_episode(
+                "较早的项目邮件",
+                episode_id="episode-mail-history",
+                topics=["项目邮件"],
+            )
+            store.create_episode(
+                "较早的微博闲聊",
+                episode_id="episode-social-history",
+                topics=["微博"],
+            )
+            store._db.execute(
+                """UPDATE conversation_episodes
+                   SET status='closed', summary='较早的项目邮件仍在等待', closed_at=?
+                   WHERE id='episode-mail-history'""",
+                (now,),
+            )
+            store._db.execute(
+                """UPDATE conversation_episodes
+                   SET status='closed', summary='最近聊过微博上的猫', closed_at=?
+                   WHERE id='episode-social-history'""",
+                (now,),
+            )
             store._db.executemany(
                 """INSERT INTO goals
                    (id, title, success_criteria, authority, source_event_id,
@@ -179,7 +200,7 @@ class ContextAssemblerTest(unittest.TestCase):
             retrieval = build_plan_retrieval(
                 store, plan("等待 项目 邮件"), config(directory)
             )
-            assembled = assemble_main_context(store, retrieval, 2000)
+            assembled = assemble_main_context(store, retrieval, 2000, 2000)
 
             self.assertEqual(
                 [item["key"] for item in retrieval["confirmed_memories"]],
@@ -201,6 +222,11 @@ class ContextAssemblerTest(unittest.TestCase):
             self.assertNotIn("微博上有只猫", rendered)
             self.assertNotIn("goal-social", rendered)
             self.assertNotIn("reminder-social", rendered)
+            autonomous = recall_episode_context(
+                store, "等待 项目 邮件", 3, 2000, 2000
+            )
+            self.assertIn("较早的项目邮件仍在等待", autonomous)
+            self.assertNotIn("最近聊过微博上的猫", autonomous)
             bounded_tail = store.episode_messages("episode-mail", 5)
             self.assertLessEqual(
                 sum(estimate_tokens(str(item["content"])) for item in bounded_tail),

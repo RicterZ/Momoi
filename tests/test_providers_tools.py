@@ -62,18 +62,6 @@ class ProvidersToolsTest(unittest.TestCase):
             "</current_owner_messages>",
         )
 
-    def test_marks_history_tail_as_prompt_cache_breakpoint(self) -> None:
-        history = [
-            {"role": "user", "content": "前一轮"},
-            {"role": "assistant", "content": "前一轮回复"},
-        ]
-        MomoiDaemon._cache_history_tail(history)
-        self.assertEqual(history[0]["content"], "前一轮")
-        self.assertEqual(history[1]["content"][0]["text"], "前一轮回复")
-        self.assertEqual(
-            history[1]["content"][0]["cache_control"], {"type": "ephemeral"}
-        )
-
     def test_tool_result_envelope_is_uniform_and_deterministically_truncated(
         self,
     ) -> None:
@@ -491,12 +479,6 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "expects_reply": False,
                             "reply_expectation": "",
                             "messages": ["已纠正"],
-                            "continuity": {
-                                "topic": "",
-                                "open_loops": [],
-                                "pending_commitments": [],
-                                "short_term_facts": [],
-                            },
                             "mood": {"action": "keep"},
                         },
                     )

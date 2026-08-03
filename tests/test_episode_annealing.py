@@ -101,7 +101,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                     }
                 ]
             }
-            context = assemble_main_context(daemon.store, retrieval, 10000)[
+            context = assemble_main_context(daemon.store, retrieval, 10000, 10000)[
                 "episodes"
             ]
             self.assertIn("工作摘要第1版", context)

@@ -164,20 +164,21 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                 draft,
             )
             self.assertTrue(remembered["ok"])
+            owner_turn_id = "owner-packages"
+            daemon.store.begin_turn(owner_turn_id, "owner", [event.event_id])
             daemon.store.commit_turn(
                 [event],
                 event.text,
-                AgentReply(
-                    ["好，回家时我会留意。"],
-                    {
-                        "topic": "回家与快递",
-                        "open_loops": [],
-                        "pending_commitments": [],
-                        "short_term_facts": [],
-                    },
-                ),
+                AgentReply(["好，回家时我会留意。"]),
                 draft,
+                turn_id=owner_turn_id,
             )
+            daemon.store.create_episode(
+                "回家与快递",
+                episode_id="arrival-packages",
+                topics=["回家", "快递"],
+            )
+            daemon.store.link_turn_to_episode("arrival-packages", owner_turn_id)
 
             class Provider:
                 calls = 0
@@ -212,12 +213,6 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "messages": ["有一个快递到了，取件码是 1234。"],
                                 "expects_reply": False,
                                 "reply_expectation": "",
-                                "continuity": {
-                                    "topic": "回家与快递",
-                                    "open_loops": [],
-                                    "pending_commitments": [],
-                                    "short_term_facts": [],
-                                },
                                 "mood": {"action": "keep"},
                             },
                         )
@@ -274,6 +269,7 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn("Momoi webhook event contract", system_text)
             self.assertIn("<current_webhook_task>", context_text)
             self.assertIn("<runtime_state>", context_text)
+            self.assertIn("<recalled_episodes>", context_text)
             self.assertIn("以后回家时帮我留意快递", context_text)
             self.assertIn("好，回家时我会留意", context_text)
             self.assertIn("回家与快递", context_text)
@@ -293,20 +289,14 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                 store.begin_turn(turn_id, "autonomous", [turn_id])
                 return AgentReply(
                     ["门口好像有人，需要我继续帮你留意吗？"],
-                    {
-                        "topic": "门口动态",
-                        "open_loops": ["等待主人决定是否继续留意"],
-                        "pending_commitments": [],
-                        "short_term_facts": [],
-                    },
-                    {
+                    mood_transition={
                         "state": "focused",
                         "intensity": 0.5,
                         "cause": "门口出现需要关注的动态",
                         "duration_minutes": 15,
                     },
-                    True,
-                    "主人是否需要继续留意门口",
+                    expects_reply=True,
+                    reply_expectation="主人是否需要继续留意门口",
                 )
 
             service = WebhookService(
@@ -354,9 +344,6 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                     "SELECT reply_expectation FROM outbox WHERE id=?", (rows[0].id,)
                 ).fetchone()[0],
                 "主人是否需要继续留意门口",
-            )
-            self.assertEqual(
-                json.loads(store.continuity_context())["topic"], "门口动态"
             )
             self.assertEqual(store.self_state()["mood_state"], "focused")
             self.assertEqual(

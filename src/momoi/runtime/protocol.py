@@ -153,45 +153,6 @@ RESPOND_TOOL_SPEC: dict[str, Any] = {
                     "otherwise use an empty string."
                 ),
             },
-            "continuity": {
-                "type": "object",
-                "properties": {
-                    "topic": {"type": "string"},
-                    "open_loops": {
-                        "type": "array",
-                        "maxItems": 8,
-                        "items": {"type": "string"},
-                    },
-                    "pending_commitments": {
-                        "type": "array",
-                        "maxItems": 8,
-                        "items": {"type": "string"},
-                    },
-                    "short_term_facts": {
-                        "type": "array",
-                        "maxItems": 12,
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "text": {"type": "string"},
-                                "expires_at": {
-                                    "type": "string",
-                                    "description": "ISO 8601 timestamp with timezone.",
-                                },
-                            },
-                            "required": ["text", "expires_at"],
-                            "additionalProperties": False,
-                        },
-                    },
-                },
-                "required": [
-                    "topic",
-                    "open_loops",
-                    "pending_commitments",
-                    "short_term_facts",
-                ],
-                "additionalProperties": False,
-            },
             "mood": MOOD_DECISION_SCHEMA,
         },
         "required": [
@@ -199,7 +160,6 @@ RESPOND_TOOL_SPEC: dict[str, Any] = {
             "messages",
             "expects_reply",
             "reply_expectation",
-            "continuity",
             "mood",
         ],
         "additionalProperties": False,

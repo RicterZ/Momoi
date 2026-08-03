@@ -1,5 +1,4 @@
 import re
-from datetime import datetime
 from typing import Any
 
 from ..channel import ChannelMessage, normalize_channel_message
@@ -74,52 +73,6 @@ def parse_response(
     messages, error = parse_messages(arguments, allow_empty=True)
     if messages is None:
         return None, error
-    raw_continuity = arguments.get("continuity")
-    if not isinstance(raw_continuity, dict):
-        return None, "continuity_must_be_an_object"
-    topic = raw_continuity.get("topic")
-    open_loops = raw_continuity.get("open_loops")
-    commitments = raw_continuity.get("pending_commitments")
-    facts = raw_continuity.get("short_term_facts")
-    if not isinstance(topic, str) or len(topic) > 1000:
-        return None, "invalid_continuity_topic"
-    for name, items, limit in (
-        ("open_loops", open_loops, 8),
-        ("pending_commitments", commitments, 8),
-    ):
-        if (
-            not isinstance(items, list)
-            or len(items) > limit
-            or any(not isinstance(item, str) or not item.strip() for item in items)
-        ):
-            return None, f"invalid_continuity_{name}"
-    if not isinstance(facts, list) or len(facts) > 12:
-        return None, "invalid_continuity_short_term_facts"
-    normalized_facts: list[dict[str, str]] = []
-    for fact in facts:
-        if not isinstance(fact, dict):
-            return None, "invalid_continuity_short_term_facts"
-        text = fact.get("text")
-        expires_at = fact.get("expires_at")
-        if not isinstance(text, str) or not text.strip() or len(text) > 1000:
-            return None, "invalid_continuity_short_term_fact_text"
-        if not isinstance(expires_at, str):
-            return None, "invalid_continuity_expiry"
-        try:
-            expiry = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
-        except ValueError:
-            return None, "invalid_continuity_expiry"
-        if expiry.tzinfo is None:
-            return None, "invalid_continuity_expiry"
-        normalized_facts.append(
-            {"text": text.strip(), "expires_at": expiry.isoformat()}
-        )
-    continuity = {
-        "topic": topic.strip(),
-        "open_loops": [str(item).strip() for item in open_loops],
-        "pending_commitments": [str(item).strip() for item in commitments],
-        "short_term_facts": normalized_facts,
-    }
     mood, error = parse_mood_decision(arguments.get("mood"))
     if error is not None:
         return None, error
@@ -127,7 +80,12 @@ def parse_response(
     if reply_expectation is None:
         return None, error
     expects_reply, expectation = reply_expectation
-    return AgentReply(messages, continuity, mood, expects_reply, expectation), None
+    return AgentReply(
+        messages,
+        mood_transition=mood,
+        expects_reply=expects_reply,
+        reply_expectation=expectation,
+    ), None
 
 
 def parse_mood_decision(
