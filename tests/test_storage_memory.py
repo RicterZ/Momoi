@@ -73,6 +73,134 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertEqual(row.text, "旧消息")
             store.close()
 
+    def test_legacy_messages_gain_turn_id_without_losing_history(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "legacy.sqlite3"
+            database = sqlite3.connect(path)
+            database.execute(
+                """CREATE TABLE messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+                    content TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    source_event_ids_json TEXT NOT NULL
+                )"""
+            )
+            database.execute(
+                """INSERT INTO messages
+                   (role, content, created_at, source_event_ids_json)
+                   VALUES ('user', '旧对话', 1, '["old-event"]')"""
+            )
+            database.commit()
+            database.close()
+
+            store = Store(path)
+            columns = {
+                row["name"]
+                for row in store._db.execute("PRAGMA table_info(messages)")
+            }
+            self.assertIn("turn_id", columns)
+            row = store._db.execute(
+                "SELECT content, turn_id FROM messages"
+            ).fetchone()
+            self.assertEqual((row["content"], row["turn_id"]), ("旧对话", ""))
+            store.close()
+
+            reopened = Store(path)
+            row = reopened._db.execute(
+                "SELECT content, turn_id FROM messages"
+            ).fetchone()
+            self.assertEqual((row["content"], row["turn_id"]), ("旧对话", ""))
+            reopened.close()
+
+    def test_context_plan_revisions_and_episode_turn_links_persist(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "momoi.sqlite3"
+            store = Store(path)
+            store.begin_turn("turn-1", "owner", ["event-1"])
+            store.begin_turn("turn-2", "owner", ["event-2"])
+            store.begin_turn("turn-3", "owner", ["event-3"])
+
+            first = store.save_context_plan(
+                "turn-1",
+                1,
+                ["event-1"],
+                {"units": [{"id": "unit-1", "query": "邮件"}]},
+            )
+            self.assertEqual(first["state"], "planned")
+            recalled = store.save_context_retrieval(
+                "turn-1", 1, {"memory_ids": [7]}
+            )
+            self.assertEqual(recalled["state"], "recalled")
+            self.assertEqual(recalled["retrieval"], {"memory_ids": [7]})
+            second = store.save_context_plan(
+                "turn-1",
+                2,
+                ["event-1", "event-update"],
+                {"units": [{"id": "unit-2", "query": "邮件和微博"}]},
+            )
+            self.assertEqual(second["revision"], 2)
+            self.assertEqual(store.context_plan("turn-1", 1)["state"], "superseded")
+            self.assertEqual(store.context_plan("turn-1")["revision"], 2)
+
+            mail = store.create_episode(
+                "邮件跟进", episode_id="episode-mail", topics=["邮件"], salience=0.8
+            )
+            social = store.create_episode(
+                "微博浏览", episode_id="episode-social", topics=["微博"]
+            )
+            self.assertEqual(mail["topics"], ["邮件"])
+            self.assertEqual(
+                [item["id"] for item in store.list_episode_candidates()],
+                ["episode-mail", "episode-social"],
+            )
+            first_link = store.link_turn_to_episode(
+                "episode-mail", "turn-1", unit_ids=["unit-1"]
+            )
+            related_link = store.link_turn_to_episode(
+                "episode-social",
+                "turn-1",
+                relation="related",
+                unit_ids=["unit-2"],
+            )
+            second_link = store.link_turn_to_episode(
+                "episode-mail", "turn-2", unit_ids=["unit-3"]
+            )
+            self.assertEqual(first_link["ordinal"], 1)
+            self.assertEqual(related_link["ordinal"], 1)
+            self.assertEqual(second_link["ordinal"], 2)
+            self.assertEqual(
+                [item["turn_id"] for item in store.episode_turns("episode-mail")],
+                ["turn-1", "turn-2"],
+            )
+            with self.assertRaises(sqlite3.IntegrityError):
+                store._db.execute(
+                    """INSERT INTO episode_turns
+                       (episode_id, turn_id, ordinal, relation, unit_ids_json)
+                       VALUES ('episode-mail', 'turn-3', 2, 'related', '[]')"""
+                )
+            store._db.rollback()
+            store.link_episodes("episode-social", "episode-mail", "references")
+            self.assertTrue(store.supersede_context_plan("turn-1", 2))
+            self.assertIsNone(store.context_plan("turn-1"))
+            store.close()
+
+            reopened = Store(path)
+            self.assertEqual(
+                reopened.context_plan("turn-1", 2)["state"], "superseded"
+            )
+            self.assertEqual(
+                [item["ordinal"] for item in reopened.episode_turns("episode-mail")],
+                [1, 2],
+            )
+            self.assertEqual(
+                reopened._db.execute("SELECT COUNT(*) FROM episode_links").fetchone()[
+                    0
+                ],
+                1,
+            )
+            reopened.close()
+
     def test_emotion_paths_are_relative_and_old_workspace_paths_migrate(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             workspace = Path(directory) / "workspace"
@@ -373,6 +501,11 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertIsNotNone(notification)
             self.assertTrue(store.queue_notification(str(notification["id"])))
             self.assertEqual(store.due_outbox()[0].text, "检查完成\n\n目前正常")
+            notification_message = store._db.execute(
+                """SELECT turn_id FROM messages
+                   WHERE content='检查完成\n\n目前正常' ORDER BY id DESC LIMIT 1"""
+            ).fetchone()
+            self.assertEqual(notification_message["turn_id"], notification["turn_id"])
             store.close()
 
     def test_one_time_reminder_fires_once_and_can_be_cancelled(self) -> None:
@@ -408,7 +541,13 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertFalse(store.fire_reminder(reminder_id))
             first = store.due_outbox()[0]
             store.mark_sent(first.id)
-            self.assertEqual(store.due_outbox()[0].text, "该起来活动一下啦")
+            reminder_outbox = store.due_outbox()[0]
+            self.assertEqual(reminder_outbox.text, "该起来活动一下啦")
+            reminder_message = store._db.execute(
+                """SELECT turn_id FROM messages
+                   WHERE content='该起来活动一下啦' ORDER BY id DESC LIMIT 1"""
+            ).fetchone()
+            self.assertEqual(reminder_message["turn_id"], reminder_outbox.turn_id)
             self.assertEqual(store.reminder(reminder_id)["status"], "fired")
 
             cancel_event = IncomingMessage(
@@ -1049,6 +1188,18 @@ class StorageMemoryTest(unittest.TestCase):
                 [item["content"] for item in store.history(1000, 1)],
                 ["执行任务", "正在处理", "处理完成"],
             )
+            rows = store._db.execute(
+                "SELECT role, content, turn_id FROM messages ORDER BY id"
+            ).fetchall()
+            self.assertEqual(
+                [(row["role"], row["content"]) for row in rows],
+                [
+                    ("user", "执行任务"),
+                    ("assistant", "正在处理"),
+                    ("assistant", "处理完成"),
+                ],
+            )
+            self.assertEqual({row["turn_id"] for row in rows}, {"turn-progress"})
             first = store.due_outbox()[0]
             self.assertEqual(first.text, "正在处理")
             store.mark_sent(first.id)

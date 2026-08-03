@@ -104,6 +104,14 @@ class Store(MemoryStore, DeliveryStore):
             self._db.execute(
                 "ALTER TABLE events ADD COLUMN payload_json TEXT NOT NULL DEFAULT ''"
             )
+        message_columns = {
+            str(row["name"])
+            for row in self._db.execute("PRAGMA table_info(messages)").fetchall()
+        }
+        if "turn_id" not in message_columns:
+            self._db.execute(
+                "ALTER TABLE messages ADD COLUMN turn_id TEXT NOT NULL DEFAULT ''"
+            )
         turn_columns = {
             str(row["name"])
             for row in self._db.execute("PRAGMA table_info(turns)").fetchall()
@@ -474,6 +482,285 @@ class Store(MemoryStore, DeliveryStore):
                     time.time(),
                     turn_id,
                 ),
+            )
+
+    @staticmethod
+    def _context_plan_dict(row: sqlite3.Row) -> dict[str, object]:
+        plan = dict(row)
+        plan["source_event_ids"] = json.loads(
+            str(plan.pop("source_event_ids_json"))
+        )
+        plan["plan"] = json.loads(str(plan.pop("plan_json")))
+        plan["retrieval"] = json.loads(str(plan.pop("retrieval_json")))
+        return plan
+
+    def save_context_plan(
+        self,
+        turn_id: str,
+        revision: int,
+        source_event_ids: list[str],
+        plan: dict[str, object],
+        *,
+        state: str = "planned",
+    ) -> dict[str, object]:
+        if revision < 1:
+            raise ValueError("context plan revision must be positive")
+        if state not in {"planned", "degraded"}:
+            raise ValueError("a new context plan must be planned or degraded")
+        source_json = json.dumps(
+            source_event_ids, ensure_ascii=False, separators=(",", ":")
+        )
+        plan_json = json.dumps(plan, ensure_ascii=False, separators=(",", ":"))
+        now = time.time()
+        with self._db:
+            existing = self._db.execute(
+                "SELECT * FROM context_plans WHERE turn_id=? AND revision=?",
+                (turn_id, revision),
+            ).fetchone()
+            if existing is not None:
+                if (
+                    json.loads(str(existing["source_event_ids_json"]))
+                    != source_event_ids
+                    or json.loads(str(existing["plan_json"])) != plan
+                ):
+                    raise ValueError("context plan revision already exists")
+                return self._context_plan_dict(existing)
+            latest = self._db.execute(
+                "SELECT MAX(revision) FROM context_plans WHERE turn_id=?", (turn_id,)
+            ).fetchone()[0]
+            if latest is not None and int(latest) >= revision:
+                raise ValueError("context plan revision must increase")
+            self._db.execute(
+                """UPDATE context_plans SET state='superseded', updated_at=?
+                   WHERE turn_id=? AND state<>'superseded'""",
+                (now, turn_id),
+            )
+            self._db.execute(
+                """INSERT INTO context_plans
+                   (turn_id, revision, source_event_ids_json, plan_json,
+                    state, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (turn_id, revision, source_json, plan_json, state, now, now),
+            )
+        saved = self.context_plan(turn_id, revision)
+        if saved is None:
+            raise RuntimeError("context plan was not saved")
+        return saved
+
+    def context_plan(
+        self, turn_id: str, revision: int | None = None
+    ) -> dict[str, object] | None:
+        if revision is None:
+            row = self._db.execute(
+                """SELECT * FROM context_plans
+                   WHERE turn_id=? AND state<>'superseded'
+                   ORDER BY revision DESC LIMIT 1""",
+                (turn_id,),
+            ).fetchone()
+        else:
+            row = self._db.execute(
+                "SELECT * FROM context_plans WHERE turn_id=? AND revision=?",
+                (turn_id, revision),
+            ).fetchone()
+        return self._context_plan_dict(row) if row else None
+
+    def save_context_retrieval(
+        self,
+        turn_id: str,
+        revision: int,
+        retrieval: dict[str, object],
+        *,
+        state: str = "recalled",
+    ) -> dict[str, object]:
+        if state not in {"recalled", "degraded"}:
+            raise ValueError("context retrieval must be recalled or degraded")
+        now = time.time()
+        with self._db:
+            cursor = self._db.execute(
+                """UPDATE context_plans SET retrieval_json=?, state=?, updated_at=?
+                   WHERE turn_id=? AND revision=? AND state<>'superseded'""",
+                (
+                    json.dumps(
+                        retrieval, ensure_ascii=False, separators=(",", ":")
+                    ),
+                    state,
+                    now,
+                    turn_id,
+                    revision,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError("active context plan not found")
+        saved = self.context_plan(turn_id, revision)
+        if saved is None:
+            raise RuntimeError("context retrieval was not saved")
+        return saved
+
+    def supersede_context_plan(self, turn_id: str, revision: int) -> bool:
+        with self._db:
+            cursor = self._db.execute(
+                """UPDATE context_plans SET state='superseded', updated_at=?
+                   WHERE turn_id=? AND revision=? AND state<>'superseded'""",
+                (time.time(), turn_id, revision),
+            )
+        return cursor.rowcount == 1
+
+    @staticmethod
+    def _episode_dict(row: sqlite3.Row) -> dict[str, object]:
+        episode = dict(row)
+        for name in ("topics", "entities", "open_loops"):
+            episode[name] = json.loads(str(episode.pop(f"{name}_json")))
+        return episode
+
+    def create_episode(
+        self,
+        title: str,
+        *,
+        episode_id: str | None = None,
+        topics: list[object] | None = None,
+        entities: list[object] | None = None,
+        open_loops: list[object] | None = None,
+        salience: float = 0.5,
+    ) -> dict[str, object]:
+        title = title.strip()
+        if not title:
+            raise ValueError("episode title is required")
+        if not 0 <= salience <= 1:
+            raise ValueError("episode salience must be between 0 and 1")
+        episode_id = episode_id or uuid.uuid4().hex
+        now = time.time()
+        with self._db:
+            self._db.execute(
+                """INSERT INTO conversation_episodes
+                   (id, title, topics_json, entities_json, open_loops_json,
+                    salience, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    episode_id,
+                    title[:200],
+                    json.dumps(topics or [], ensure_ascii=False, separators=(",", ":")),
+                    json.dumps(
+                        entities or [], ensure_ascii=False, separators=(",", ":")
+                    ),
+                    json.dumps(
+                        open_loops or [], ensure_ascii=False, separators=(",", ":")
+                    ),
+                    salience,
+                    now,
+                    now,
+                ),
+            )
+        saved = self.episode(episode_id)
+        if saved is None:
+            raise RuntimeError("episode was not saved")
+        return saved
+
+    def episode(self, episode_id: str) -> dict[str, object] | None:
+        row = self._db.execute(
+            "SELECT * FROM conversation_episodes WHERE id=?", (episode_id,)
+        ).fetchone()
+        return self._episode_dict(row) if row else None
+
+    def list_episode_candidates(self, limit: int = 20) -> list[dict[str, object]]:
+        if limit <= 0:
+            return []
+        rows = self._db.execute(
+            """SELECT * FROM conversation_episodes
+               WHERE status IN ('open', 'closing')
+               ORDER BY status='open' DESC, salience DESC, updated_at DESC
+               LIMIT ?""",
+            (limit,),
+        ).fetchall()
+        return [self._episode_dict(row) for row in rows]
+
+    def link_turn_to_episode(
+        self,
+        episode_id: str,
+        turn_id: str,
+        *,
+        relation: str = "primary",
+        unit_ids: list[str] | None = None,
+    ) -> dict[str, object]:
+        if relation not in {"primary", "related"}:
+            raise ValueError("episode turn relation must be primary or related")
+        now = time.time()
+        with self._db:
+            row = self._db.execute(
+                """SELECT ordinal FROM episode_turns
+                   WHERE episode_id=? AND turn_id=?""",
+                (episode_id, turn_id),
+            ).fetchone()
+            if row is None:
+                ordinal = int(
+                    self._db.execute(
+                        """SELECT COALESCE(MAX(ordinal), 0) + 1 FROM episode_turns
+                           WHERE episode_id=?""",
+                        (episode_id,),
+                    ).fetchone()[0]
+                )
+                self._db.execute(
+                    """INSERT INTO episode_turns
+                       (episode_id, turn_id, ordinal, relation, unit_ids_json)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (
+                        episode_id,
+                        turn_id,
+                        ordinal,
+                        relation,
+                        json.dumps(
+                            unit_ids or [], ensure_ascii=False, separators=(",", ":")
+                        ),
+                    ),
+                )
+            else:
+                ordinal = int(row["ordinal"])
+                self._db.execute(
+                    """UPDATE episode_turns SET relation=?, unit_ids_json=?
+                       WHERE episode_id=? AND turn_id=?""",
+                    (
+                        relation,
+                        json.dumps(
+                            unit_ids or [], ensure_ascii=False, separators=(",", ":")
+                        ),
+                        episode_id,
+                        turn_id,
+                    ),
+                )
+            self._db.execute(
+                "UPDATE conversation_episodes SET updated_at=? WHERE id=?",
+                (now, episode_id),
+            )
+        return {
+            "episode_id": episode_id,
+            "turn_id": turn_id,
+            "ordinal": ordinal,
+            "relation": relation,
+            "unit_ids": unit_ids or [],
+        }
+
+    def episode_turns(self, episode_id: str) -> list[dict[str, object]]:
+        rows = self._db.execute(
+            "SELECT * FROM episode_turns WHERE episode_id=? ORDER BY ordinal",
+            (episode_id,),
+        ).fetchall()
+        return [
+            {
+                **{key: row[key] for key in row.keys() if key != "unit_ids_json"},
+                "unit_ids": json.loads(str(row["unit_ids_json"])),
+            }
+            for row in rows
+        ]
+
+    def link_episodes(
+        self, from_episode_id: str, to_episode_id: str, kind: str
+    ) -> None:
+        if kind not in {"continues", "references", "supersedes"}:
+            raise ValueError("invalid episode link kind")
+        with self._db:
+            self._db.execute(
+                """INSERT OR IGNORE INTO episode_links
+                   (from_episode_id, to_episode_id, kind) VALUES (?, ?, ?)""",
+                (from_episode_id, to_episode_id, kind),
             )
 
     def open_reconciliation(self, turn_id: str, reason: str) -> None:
@@ -1656,18 +1943,25 @@ class Store(MemoryStore, DeliveryStore):
                        WHERE id=?""",
                     (next_schedule_at(schedule, now), now, reminder_id),
                 )
+            reminder_turn_id = f"reminder:{reminder_id}:{occurrence}"
             self._db.execute(
-                """INSERT INTO messages(role, content, created_at, source_event_ids_json)
-                   VALUES ('assistant', ?, ?, ?)""",
-                (row["text"], now, json.dumps([f"reminder:{reminder_id}"])),
+                """INSERT INTO messages
+                   (turn_id, role, content, created_at, source_event_ids_json)
+                   VALUES (?, 'assistant', ?, ?, ?)""",
+                (
+                    reminder_turn_id,
+                    row["text"],
+                    now,
+                    json.dumps([f"reminder:{reminder_id}"]),
+                ),
             )
             self._db.execute(
                 """INSERT OR IGNORE INTO outbox
                    (turn_id, dedupe_key, text, target_channel)
                    VALUES (?, ?, ?, ?)""",
                 (
-                    f"reminder:{reminder_id}:{occurrence}",
-                    f"reminder:{reminder_id}:{occurrence}",
+                    reminder_turn_id,
+                    reminder_turn_id,
                     row["text"],
                     target_channel,
                 ),
@@ -1870,8 +2164,15 @@ class Store(MemoryStore, DeliveryStore):
         now = time.time()
         with self._db:
             self._db.execute(
-                "INSERT INTO messages(role, content, created_at, source_event_ids_json) VALUES ('user', ?, ?, ?)",
-                (user_text, now, json.dumps(event_ids, ensure_ascii=False)),
+                """INSERT INTO messages
+                   (turn_id, role, content, created_at, source_event_ids_json)
+                   VALUES (?, 'user', ?, ?, ?)""",
+                (
+                    turn_id,
+                    user_text,
+                    now,
+                    json.dumps(event_ids, ensure_ascii=False),
+                ),
             )
             progress = self._db.execute(
                 """SELECT text, created_at FROM turn_progress
@@ -1879,10 +2180,12 @@ class Store(MemoryStore, DeliveryStore):
                 (turn_id,),
             ).fetchall()
             self._db.executemany(
-                """INSERT INTO messages(role, content, created_at, source_event_ids_json)
-                   VALUES ('assistant', ?, ?, ?)""",
+                """INSERT INTO messages
+                   (turn_id, role, content, created_at, source_event_ids_json)
+                   VALUES (?, 'assistant', ?, ?, ?)""",
                 (
                     (
+                        turn_id,
                         row["text"],
                         row["created_at"],
                         json.dumps(event_ids, ensure_ascii=False),
@@ -1894,8 +2197,15 @@ class Store(MemoryStore, DeliveryStore):
                 normalized_messages
             ):
                 self._db.execute(
-                    "INSERT INTO messages(role, content, created_at, source_event_ids_json) VALUES ('assistant', ?, ?, ?)",
-                    (assistant_text, now, json.dumps(event_ids, ensure_ascii=False)),
+                    """INSERT INTO messages
+                       (turn_id, role, content, created_at, source_event_ids_json)
+                       VALUES (?, 'assistant', ?, ?, ?)""",
+                    (
+                        turn_id,
+                        assistant_text,
+                        now,
+                        json.dumps(event_ids, ensure_ascii=False),
+                    ),
                 )
                 self._db.execute(
                     """INSERT INTO outbox
@@ -2094,9 +2404,10 @@ class Store(MemoryStore, DeliveryStore):
             for index, message in enumerate(messages):
                 visible, kind, path, payload = self._outbox_content(message)
                 self._db.execute(
-                    """INSERT INTO messages(role, content, created_at, source_event_ids_json)
-                       VALUES ('assistant', ?, ?, ?)""",
-                    (visible, now, json.dumps([source])),
+                    """INSERT INTO messages
+                       (turn_id, role, content, created_at, source_event_ids_json)
+                       VALUES (?, 'assistant', ?, ?, ?)""",
+                    (row["turn_id"], visible, now, json.dumps([source])),
                 )
                 self._db.execute(
                     """INSERT OR IGNORE INTO outbox

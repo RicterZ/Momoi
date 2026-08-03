@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE TABLE IF NOT EXISTS messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    turn_id TEXT NOT NULL DEFAULT '',
     role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
     content TEXT NOT NULL,
     created_at REAL NOT NULL,
@@ -234,6 +235,67 @@ CREATE TABLE IF NOT EXISTS turns (
     started_at REAL NOT NULL,
     updated_at REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS conversation_episodes (
+    id TEXT PRIMARY KEY,
+    status TEXT NOT NULL DEFAULT 'open'
+        CHECK (status IN ('open', 'closing', 'closed')),
+    title TEXT NOT NULL,
+    working_summary TEXT NOT NULL DEFAULT '',
+    summarized_through_ordinal INTEGER NOT NULL DEFAULT 0
+        CHECK (summarized_through_ordinal >= 0),
+    summary TEXT NOT NULL DEFAULT '',
+    topics_json TEXT NOT NULL DEFAULT '[]',
+    entities_json TEXT NOT NULL DEFAULT '[]',
+    open_loops_json TEXT NOT NULL DEFAULT '[]',
+    salience REAL NOT NULL DEFAULT 0.5 CHECK (salience BETWEEN 0 AND 1),
+    summary_claimed_at REAL,
+    summary_retry_at REAL,
+    summary_failure_count INTEGER NOT NULL DEFAULT 0,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    closed_at REAL
+);
+CREATE INDEX IF NOT EXISTS conversation_episodes_candidates
+    ON conversation_episodes(status, salience DESC, updated_at DESC);
+CREATE TABLE IF NOT EXISTS episode_turns (
+    episode_id TEXT NOT NULL,
+    turn_id TEXT NOT NULL,
+    ordinal INTEGER NOT NULL CHECK (ordinal > 0),
+    relation TEXT NOT NULL CHECK (relation IN ('primary', 'related')),
+    unit_ids_json TEXT NOT NULL DEFAULT '[]',
+    PRIMARY KEY (episode_id, turn_id),
+    UNIQUE (episode_id, ordinal),
+    FOREIGN KEY (episode_id) REFERENCES conversation_episodes(id) ON DELETE CASCADE,
+    FOREIGN KEY (turn_id) REFERENCES turns(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS episode_turns_by_turn
+    ON episode_turns(turn_id, relation);
+CREATE TABLE IF NOT EXISTS episode_links (
+    from_episode_id TEXT NOT NULL,
+    to_episode_id TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('continues', 'references', 'supersedes')),
+    PRIMARY KEY (from_episode_id, to_episode_id, kind),
+    CHECK (from_episode_id <> to_episode_id),
+    FOREIGN KEY (from_episode_id) REFERENCES conversation_episodes(id)
+        ON DELETE CASCADE,
+    FOREIGN KEY (to_episode_id) REFERENCES conversation_episodes(id)
+        ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS context_plans (
+    turn_id TEXT NOT NULL,
+    revision INTEGER NOT NULL CHECK (revision > 0),
+    source_event_ids_json TEXT NOT NULL,
+    plan_json TEXT NOT NULL,
+    retrieval_json TEXT NOT NULL DEFAULT '{}',
+    state TEXT NOT NULL DEFAULT 'planned'
+        CHECK (state IN ('planned', 'recalled', 'superseded', 'degraded')),
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    PRIMARY KEY (turn_id, revision),
+    FOREIGN KEY (turn_id) REFERENCES turns(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS context_plans_latest
+    ON context_plans(turn_id, revision DESC);
 CREATE TABLE IF NOT EXISTS reconciliations (
     turn_id TEXT PRIMARY KEY,
     status TEXT NOT NULL CHECK (status IN ('open', 'resolved', 'resumed')),

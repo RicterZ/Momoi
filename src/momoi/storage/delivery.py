@@ -167,15 +167,20 @@ class DeliveryStore:
                 (turn_id,),
             ).fetchall()
             self._db.executemany(
-                """INSERT INTO messages(role, content, created_at, source_event_ids_json)
-                   VALUES ('assistant', ?, ?, ?)""",
-                ((row["text"], row["created_at"], source) for row in progress),
+                """INSERT INTO messages
+                   (turn_id, role, content, created_at, source_event_ids_json)
+                   VALUES (?, 'assistant', ?, ?, ?)""",
+                (
+                    (turn_id, row["text"], row["created_at"], source)
+                    for row in progress
+                ),
             )
             for index, (text, kind, path, payload) in enumerate(normalized):
                 self._db.execute(
-                    """INSERT INTO messages(role, content, created_at, source_event_ids_json)
-                       VALUES ('assistant', ?, ?, ?)""",
-                    (text, now, source),
+                    """INSERT INTO messages
+                       (turn_id, role, content, created_at, source_event_ids_json)
+                       VALUES (?, 'assistant', ?, ?, ?)""",
+                    (turn_id, text, now, source),
                 )
                 self._db.execute(
                     """INSERT INTO outbox

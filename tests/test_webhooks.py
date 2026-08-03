@@ -362,13 +362,21 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 store.webhook_run(str(first["id"]))["state"], "waiting_delivery"
             )
+            webhook_turn_id = f"webhook:{first['id']}:0"
+            self.assertEqual(
+                store._db.execute(
+                    """SELECT turn_id FROM messages
+                       WHERE content='门口好像有人，需要我继续帮你留意吗？'"""
+                ).fetchone()[0],
+                webhook_turn_id,
+            )
             store.mark_sent(rows[0].id)
             await asyncio.wait_for(task, timeout=1)
             self.assertEqual(store.webhook_run(str(first["id"]))["state"], "succeeded")
             self.assertEqual(
                 store._db.execute(
                     "SELECT state FROM turns WHERE id=?",
-                    (f"webhook:{first['id']}:0",),
+                    (webhook_turn_id,),
                 ).fetchone()[0],
                 "completed",
             )
