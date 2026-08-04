@@ -871,9 +871,13 @@ class Store(MemoryStore, DeliveryStore):
         )
 
     def _index_episode_message_terms(
-        self, episode_id: str, message_id: int, content: str
+        self,
+        episode_id: str,
+        message_id: int,
+        content: str,
+        terms: set[str] | None = None,
     ) -> None:
-        terms = self._recall_terms(content)
+        terms = self._recall_terms(content) if terms is None else terms
         self._db.executemany(
             """INSERT OR IGNORE INTO episode_message_recall_terms
                (episode_id, message_id, term) VALUES (?, ?, ?)""",
@@ -882,18 +886,93 @@ class Store(MemoryStore, DeliveryStore):
 
     def _index_turn_episode_terms(self, turn_id: str) -> None:
         messages = self._db.execute(
-            "SELECT id, content FROM messages WHERE turn_id=?", (turn_id,)
+            "SELECT id, role, content FROM messages WHERE turn_id=?", (turn_id,)
         ).fetchall()
+        plan_row = self._db.execute(
+            """SELECT plan_json FROM context_plans
+               WHERE turn_id=? AND state<>'superseded'
+               ORDER BY revision DESC LIMIT 1""",
+            (turn_id,),
+        ).fetchone()
+        plan = json.loads(str(plan_row["plan_json"])) if plan_row else {}
+        units = {
+            str(unit["id"]): unit
+            for unit in plan.get("intent_units", [])
+            if isinstance(unit, dict) and unit.get("id")
+        }
         for episode in self._db.execute(
-            "SELECT episode_id FROM episode_turns WHERE turn_id=?", (turn_id,)
+            """SELECT episode_id, relation, unit_ids_json FROM episode_turns
+               WHERE turn_id=?""",
+            (turn_id,),
         ).fetchall():
             episode_id = str(episode["episode_id"])
+            unit_values = [
+                units[unit_id]
+                for unit_id in json.loads(str(episode["unit_ids_json"]))
+                if unit_id in units
+            ]
+            unit_terms = self._recall_terms(
+                *(
+                    value
+                    for unit in unit_values
+                    for value in (
+                        unit.get("text"),
+                        unit.get("intent"),
+                        unit.get("references"),
+                        unit.get("recall_queries"),
+                    )
+                )
+            )
+            self._db.execute(
+                """DELETE FROM episode_message_recall_terms
+                   WHERE episode_id=? AND message_id IN (
+                       SELECT id FROM messages WHERE turn_id=?
+                   )""",
+                (episode_id, turn_id),
+            )
+            if unit_terms:
+                self._index_episode_terms(episode_id, *unit_values)
             for message in messages:
                 content = str(message["content"])
-                self._index_episode_terms(episode_id, content)
+                content_terms = self._recall_terms(content)
+                if not unit_terms:
+                    indexed_terms = content_terms
+                elif message["role"] == "user":
+                    indexed_terms = unit_terms
+                elif content_terms & unit_terms or episode["relation"] == "primary":
+                    indexed_terms = content_terms
+                else:
+                    continue
+                self._index_episode_terms(episode_id, *indexed_terms)
                 self._index_episode_message_terms(
-                    episode_id, int(message["id"]), content
+                    episode_id, int(message["id"]), content, indexed_terms
                 )
+
+    def _reindex_episode_terms(self, episode_id: str) -> None:
+        episode = self.episode(episode_id)
+        if episode is None:
+            return
+        self._db.execute(
+            "DELETE FROM episode_recall_terms WHERE episode_id=?", (episode_id,)
+        )
+        self._db.execute(
+            "DELETE FROM episode_message_recall_terms WHERE episode_id=?", (episode_id,)
+        )
+        self._index_episode_terms(
+            episode_id,
+            episode["title"],
+            episode["working_summary"],
+            episode["summary"],
+            episode["topics"],
+            episode["entities"],
+            episode["open_loops"],
+        )
+        turns = self._db.execute(
+            "SELECT turn_id FROM episode_turns WHERE episode_id=? ORDER BY ordinal",
+            (episode_id,),
+        ).fetchall()
+        for turn in turns:
+            self._index_turn_episode_terms(str(turn["turn_id"]))
 
     def _ensure_autonomous_episode(
         self,
@@ -962,8 +1041,8 @@ class Store(MemoryStore, DeliveryStore):
                 episode["entities"],
                 episode["open_loops"],
             )
-        missing_messages = self._db.execute(
-            """SELECT et.episode_id, m.id, m.content
+        missing_turns = self._db.execute(
+            """SELECT DISTINCT et.turn_id
                FROM episode_turns AS et
                JOIN messages AS m ON m.turn_id=et.turn_id
                WHERE NOT EXISTS (
@@ -971,11 +1050,8 @@ class Store(MemoryStore, DeliveryStore):
                    WHERE mrt.episode_id=et.episode_id AND mrt.message_id=m.id
                )"""
         ).fetchall()
-        for message in missing_messages:
-            episode_id = str(message["episode_id"])
-            content = str(message["content"])
-            self._index_episode_terms(episode_id, content)
-            self._index_episode_message_terms(episode_id, int(message["id"]), content)
+        for turn in missing_turns:
+            self._index_turn_episode_terms(str(turn["turn_id"]))
 
     def create_episode(
         self,
@@ -1089,9 +1165,15 @@ class Store(MemoryStore, DeliveryStore):
         if limit <= 0:
             return []
         rows = self._db.execute(
-            """SELECT * FROM conversation_episodes
+            """SELECT * FROM conversation_episodes AS e
                WHERE status IN ('open', 'closing')
-               ORDER BY status='open' DESC, salience DESC, updated_at DESC
+               ORDER BY status='open' DESC,
+                        COALESCE((
+                            SELECT MAX(t.updated_at) FROM episode_turns AS et
+                            JOIN turns AS t ON t.id=et.turn_id
+                            WHERE et.episode_id=e.id
+                        ), 0) DESC,
+                        salience DESC, updated_at DESC
                LIMIT ?""",
             (limit,),
         ).fetchall()
@@ -1248,8 +1330,11 @@ class Store(MemoryStore, DeliveryStore):
                     ),
                 )
             self._db.execute(
-                "UPDATE conversation_episodes SET updated_at=? WHERE id=?",
-                (now, episode_id),
+                """UPDATE conversation_episodes
+                   SET status=CASE WHEN ?='primary' THEN 'open' ELSE status END,
+                       closed_at=CASE WHEN ?='primary' THEN NULL ELSE closed_at END,
+                       updated_at=? WHERE id=?""",
+                (relation, relation, now, episode_id),
             )
             self._index_turn_episode_terms(turn_id)
         return {
@@ -1396,7 +1481,7 @@ class Store(MemoryStore, DeliveryStore):
             )
             if cursor.rowcount != 1:
                 raise ValueError("claimed episode summary was not found")
-            self._index_episode_terms(episode_id, working_summary)
+            self._reindex_episode_terms(episode_id)
 
     def release_episode_annealing(self, episode_id: str) -> None:
         with self._db:
@@ -1469,6 +1554,29 @@ class Store(MemoryStore, DeliveryStore):
                     "salience": 0.5,
                 }
             ]
+        primary_ids = [
+            str(binding["episode_id"])
+            for binding in bindings
+            if binding.get("relation") == "primary"
+        ]
+        primary_placeholders = ",".join("?" for _ in primary_ids)
+        excluded = (
+            f"AND id NOT IN ({primary_placeholders})" if primary_ids else ""
+        )
+        owner_episode = """AND id IN (
+            SELECT et.episode_id FROM episode_turns AS et
+            JOIN turns AS t ON t.id=et.turn_id WHERE t.kind='owner'
+        )"""
+        self._db.execute(
+            f"""UPDATE conversation_episodes SET status='closed', closed_at=?
+                WHERE status='closing' {owner_episode} {excluded}""",
+            (now, *primary_ids),
+        )
+        self._db.execute(
+            f"""UPDATE conversation_episodes SET status='closing'
+                WHERE status='open' {owner_episode} {excluded}""",
+            tuple(primary_ids),
+        )
         self._db.execute("DELETE FROM episode_turns WHERE turn_id=?", (turn_id,))
         for binding in bindings:
             episode_id = str(binding["episode_id"])
@@ -1498,6 +1606,26 @@ class Store(MemoryStore, DeliveryStore):
                         now,
                     ),
                 )
+            else:
+                self._db.execute(
+                    """UPDATE conversation_episodes
+                       SET title=?, topics_json=?, entities_json=?, open_loops_json=?,
+                           salience=?, status=CASE WHEN ?='primary' THEN 'open' ELSE status END,
+                           closed_at=CASE WHEN ?='primary' THEN NULL ELSE closed_at END,
+                           updated_at=? WHERE id=?""",
+                    (
+                        str(binding["title"]),
+                        json.dumps(binding["topics"], ensure_ascii=False),
+                        json.dumps(binding["entities"], ensure_ascii=False),
+                        json.dumps(binding["open_loops"], ensure_ascii=False),
+                        float(binding["salience"]),
+                        str(binding["relation"]),
+                        str(binding["relation"]),
+                        now,
+                        episode_id,
+                    ),
+                )
+                self._reindex_episode_terms(episode_id)
             self._index_episode_terms(
                 episode_id,
                 binding["title"],

@@ -62,6 +62,88 @@ def plan(query: str, episode_id: str = "episode-mail") -> dict[str, object]:
 
 
 class ContextAssemblerTest(unittest.TestCase):
+    def test_multi_intent_turn_indexes_only_its_bound_episode_units(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store.create_episode("邮件事项", episode_id="mail")
+            store.create_episode("微博事项", episode_id="social")
+            event = IncomingMessage(
+                "mixed", "mixed", "检查 SMTP 邮件，然后刷微博看猫", 1, 1
+            )
+            store.add_event(event)
+            store.begin_turn("mixed", "owner", [event.event_id])
+            mixed_plan = {
+                "version": 1,
+                "intent_units": [
+                    {
+                        "id": "mail-unit",
+                        "event_ids": [event.event_id],
+                        "text": "检查 SMTP 邮件",
+                        "intent": "check mail",
+                        "references": [],
+                        "recall_queries": ["SMTP 邮件"],
+                    },
+                    {
+                        "id": "social-unit",
+                        "event_ids": [event.event_id],
+                        "text": "刷微博看猫",
+                        "intent": "browse social media",
+                        "references": [],
+                        "recall_queries": ["微博 看猫"],
+                    },
+                ],
+                "episode_bindings": [
+                    {
+                        "episode_id": "mail",
+                        "is_new": False,
+                        "title": "邮件事项",
+                        "relation": "primary",
+                        "unit_ids": ["mail-unit"],
+                        "topics": ["SMTP", "邮件"],
+                        "entities": [],
+                        "open_loops": [],
+                        "salience": 0.5,
+                    },
+                    {
+                        "episode_id": "social",
+                        "is_new": False,
+                        "title": "微博事项",
+                        "relation": "related",
+                        "unit_ids": ["social-unit"],
+                        "topics": ["微博", "猫"],
+                        "entities": [],
+                        "open_loops": [],
+                        "salience": 0.5,
+                    },
+                ],
+                "episode_links": [],
+                "uncertainty": [],
+            }
+            store.save_context_plan("mixed", 1, [event.event_id], mixed_plan)
+            store.commit_turn(
+                [event], event.text, AgentReply(["处理完成"]), turn_id="mixed"
+            )
+
+            self.assertEqual(
+                [item["id"] for item in store.search_episodes("SMTP", 5)],
+                ["mail"],
+            )
+            self.assertEqual(
+                [item["id"] for item in store.search_episodes("看猫", 5)],
+                ["social"],
+            )
+            store._db.execute("DELETE FROM episode_message_recall_terms")
+            store._db.execute("DELETE FROM episode_recall_terms")
+            store._db.commit()
+            store.close()
+
+            reopened = Store(Path(directory) / "momoi.sqlite3")
+            self.assertEqual(
+                [item["id"] for item in reopened.search_episodes("SMTP", 5)],
+                ["mail"],
+            )
+            reopened.close()
+
     def test_recent_turn_and_core_identity_survive_unrelated_degraded_recall(
         self,
     ) -> None:

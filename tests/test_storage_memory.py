@@ -32,6 +32,63 @@ from momoi.storage.scheduling import next_schedule_at
 
 
 class StorageMemoryTest(unittest.TestCase):
+    def test_episode_metadata_updates_and_owner_focus_ages_out(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+
+            def commit(turn_id: str, episode_id: str, topic: str) -> None:
+                event = IncomingMessage(turn_id, turn_id, f"处理 {turn_id}", 1, 1)
+                store.add_event(event)
+                store.begin_turn(turn_id, "owner", [event.event_id])
+                context_plan = {
+                    "version": 1,
+                    "intent_units": [
+                        {
+                            "id": "u1",
+                            "event_ids": [event.event_id],
+                            "text": event.text,
+                            "intent": "continue topic",
+                            "references": [],
+                            "recall_queries": [event.text],
+                        }
+                    ],
+                    "episode_bindings": [
+                        {
+                            "episode_id": episode_id,
+                            "is_new": store.episode(episode_id) is None,
+                            "title": f"主题 {episode_id}",
+                            "relation": "primary",
+                            "unit_ids": ["u1"],
+                            "topics": [topic],
+                            "entities": [],
+                            "open_loops": [],
+                            "salience": 0.5,
+                        }
+                    ],
+                    "episode_links": [],
+                    "uncertainty": [],
+                }
+                store.save_context_plan(turn_id, 1, [event.event_id], context_plan)
+                store.commit_turn(
+                    [event], event.text, AgentReply(["收到"]), turn_id=turn_id
+                )
+
+            commit("turn-a1", "episode-a", "obsolete_marker")
+            commit("turn-a2", "episode-a", "fresh_marker")
+            self.assertEqual(store.episode("episode-a")["topics"], ["fresh_marker"])
+            self.assertEqual(store.search_episodes("obsolete_marker", 3), [])
+
+            commit("turn-b", "episode-b", "第二主题")
+            self.assertEqual(store.episode("episode-a")["status"], "closing")
+            commit("turn-c", "episode-c", "第三主题")
+            self.assertEqual(store.episode("episode-a")["status"], "closed")
+            self.assertEqual(store.episode("episode-b")["status"], "closing")
+            self.assertEqual(
+                [item["id"] for item in store.list_episode_candidates()],
+                ["episode-c", "episode-b"],
+            )
+            store.close()
+
     def test_reminder_create_contract_requires_exactly_one_timing_mode(self) -> None:
         spec = next(
             spec for spec in AGENDA_TOOL_SPECS if spec["name"] == "reminder_create"
