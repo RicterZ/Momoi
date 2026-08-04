@@ -1133,12 +1133,12 @@ class StorageMemoryTest(unittest.TestCase):
             store.add_event(answer)
             self.assertIsNone(store.pending_owner_reply(1071))
             self.assertIsNone(store.next_heartbeat_due_at(False))
-            self.assertEqual(store.next_heartbeat_due_at(True), 1180)
+            self.assertEqual(store.next_heartbeat_due_at(True), 1660)
             self.assertEqual(
                 store._db.execute(
                     "SELECT next_heartbeat_at FROM self_state WHERE id=1"
                 ).fetchone()[0],
-                1180,
+                1660,
             )
             self.assertFalse(store.mark_sending(stale_followup.id))
             store.commit_turn(
@@ -1155,6 +1155,34 @@ class StorageMemoryTest(unittest.TestCase):
             with patch("momoi.storage.delivery.time.time", return_value=1080):
                 self.assertTrue(store.mark_sent(store.due_outbox()[0].id, 60))
             self.assertEqual(store.next_heartbeat_due_at(False), 1140)
+            store.close()
+
+    def test_owner_reply_cancels_only_reply_check_schedule(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store.commit_turn(
+                [],
+                "",
+                AgentReply(
+                    ["你会喜欢这种风险设计吗？"],
+                    expects_reply=True,
+                    reply_expectation="主人的风险偏好",
+                ),
+                turn_id="question",
+            )
+            store._db.execute("UPDATE self_state SET next_heartbeat_at=4900 WHERE id=1")
+            with patch("momoi.storage.delivery.time.time", return_value=1000):
+                self.assertTrue(store.mark_sent(store.due_outbox()[0].id, 60))
+            state = store.self_state()
+            self.assertEqual(state["next_heartbeat_at"], 4900)
+            self.assertEqual(state["pending_reply_next_check_at"], 1060)
+
+            store.add_event(
+                IncomingMessage("answer", "answer", "我喜欢求稳", 1020, 1020)
+            )
+            state = store.self_state()
+            self.assertIsNone(state["pending_reply_next_check_at"])
+            self.assertEqual(store.next_heartbeat_due_at(True), 4900)
             store.close()
 
     def test_heartbeat_can_stop_reply_annealing_without_owner_input(self) -> None:

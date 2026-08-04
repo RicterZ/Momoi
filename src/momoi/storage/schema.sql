@@ -162,11 +162,15 @@ CREATE TABLE IF NOT EXISTS self_state (
     last_heartbeat_at REAL,
     next_heartbeat_at REAL NOT NULL DEFAULT 0,
     heartbeat_claimed_at REAL,
+    heartbeat_claim_kind TEXT CHECK (
+        heartbeat_claim_kind IN ('ordinary', 'reply', 'manual')
+    ),
     pending_reply_turn_id TEXT,
     pending_reply_expectation TEXT NOT NULL DEFAULT '',
     pending_reply_since REAL,
     pending_reply_checks INTEGER NOT NULL DEFAULT 0,
     pending_reply_channel TEXT NOT NULL DEFAULT '',
+    pending_reply_next_check_at REAL,
     updated_at REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS notifications (

@@ -356,7 +356,7 @@ A heartbeat may use explicitly allowed read-only tools, search memory, create fi
 
 Send `/heartbeat` in the private owner chat to trigger one evaluation immediately, even when automatic heartbeat scheduling is disabled. A command received while another heartbeat is queued or running is deduplicated.
 
-When a delivered reply explicitly expects an owner response, Momoi raises its attention after `reply_initial_interval_seconds`, even if automatic heartbeats are disabled. It performs three short checks at roughly 1, 3, and 7 minutes; the model independently decides whether to follow up and whether to keep waiting. After the third check, any continued waiting uses the ordinary heartbeat rhythm. Any owner message ends the old waiting state and cancels an unsent follow-up.
+When a delivered reply explicitly expects an owner response, Momoi raises its attention after `reply_initial_interval_seconds`, even if automatic heartbeats are disabled. Reply attention has its own schedule and never replaces the ordinary `next_heartbeat_at` rhythm. It performs three short checks at roughly 1, 3, and 7 minutes; the model independently decides whether to follow up and whether to keep waiting. After the third check, any continued waiting uses the ordinary heartbeat rhythm. Any owner message ends the old waiting state, cancels its scheduled check, and cancels an unsent follow-up.
 
 ## Self-directed tool allowlist
 

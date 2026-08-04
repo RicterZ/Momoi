@@ -457,22 +457,21 @@ class DeliveryStore:
             ):
                 now = time.time()
                 state = self._db.execute(
-                    """SELECT pending_reply_expectation, next_heartbeat_at
+                    """SELECT pending_reply_expectation,
+                              pending_reply_next_check_at
                        FROM self_state WHERE id=1"""
                 ).fetchone()
                 due = now + reply_initial_delay
                 already_waiting = bool(
                     state and str(state["pending_reply_expectation"] or "").strip()
                 )
-                if already_waiting and float(state["next_heartbeat_at"] or 0) > 0:
-                    due = float(state["next_heartbeat_at"])
-                elif state and float(state["next_heartbeat_at"] or 0) > 0:
-                    due = min(due, float(state["next_heartbeat_at"]))
+                if already_waiting and state["pending_reply_next_check_at"] is not None:
+                    due = float(state["pending_reply_next_check_at"])
                 if already_waiting:
                     self._db.execute(
                         """UPDATE self_state SET pending_reply_turn_id=?,
                            pending_reply_expectation=?, pending_reply_channel=?,
-                           next_heartbeat_at=?,
+                           pending_reply_next_check_at=?,
                            updated_at=? WHERE id=1""",
                         (
                             row["turn_id"],
@@ -487,7 +486,7 @@ class DeliveryStore:
                         """UPDATE self_state SET pending_reply_turn_id=?,
                            pending_reply_expectation=?, pending_reply_channel=?,
                            pending_reply_since=?,
-                           pending_reply_checks=0, next_heartbeat_at=?,
+                           pending_reply_checks=0, pending_reply_next_check_at=?,
                            updated_at=? WHERE id=1""",
                         (
                             row["turn_id"],

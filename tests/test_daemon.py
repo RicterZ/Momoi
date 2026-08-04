@@ -6,7 +6,7 @@ import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from aiohttp import web
 from aiohttp.test_utils import TestServer
@@ -370,6 +370,49 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(daemon.autonomous.empty())
             self.assertEqual(daemon.store.pending_events(), [])
             self.assertIsNotNone(daemon.store.self_state()["heartbeat_claimed_at"])
+            daemon.store.close()
+
+    async def test_reply_heartbeat_turn_uses_reply_check_schedule(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(
+                AppConfig(
+                    llm=LLMConfig(
+                        "http://127.0.0.1", "test", "test", 100, 0, 1, 0
+                    ),
+                    channel=NapCatConfig(
+                        "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
+                    ),
+                    system_prompt="test",
+                    recent_raw_tokens=1000,
+                    recent_turns=2,
+                    memory_results=2,
+                    memory_tokens=1000,
+                    database=Path(directory) / "momoi.sqlite3",
+                    log_level="INFO",
+                )
+            )
+            daemon.store._db.execute(
+                """UPDATE self_state SET next_heartbeat_at=1660,
+                   pending_reply_turn_id='question',
+                   pending_reply_expectation='主人是否回复',
+                   pending_reply_next_check_at=1060 WHERE id=1"""
+            )
+            self.assertIsNotNone(
+                daemon.store.claim_due_heartbeat(
+                    daemon.config.heartbeat,
+                    daemon.config.notifications,
+                    now=1060,
+                )
+            )
+
+            with patch.object(
+                daemon, "_complete_heartbeat", new_callable=AsyncMock
+            ) as complete:
+                await daemon._complete_heartbeat_turn(asyncio.Event())
+
+            self.assertEqual(
+                complete.await_args.args[0], daemon._turn_id("heartbeat", 1060.0)
+            )
             daemon.store.close()
 
     async def test_goal_commits_only_after_explicit_autonomous_finish(self) -> None:

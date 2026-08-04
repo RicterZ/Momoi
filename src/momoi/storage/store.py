@@ -257,21 +257,36 @@ class Store(MemoryStore, DeliveryStore):
             str(row["name"])
             for row in self._db.execute("PRAGMA table_info(self_state)").fetchall()
         }
+        migrating_reply_schedule = (
+            "pending_reply_next_check_at" not in self_state_columns
+        )
         if "activity_result" not in self_state_columns:
             self._db.execute(
                 "ALTER TABLE self_state ADD COLUMN activity_result TEXT NOT NULL DEFAULT ''"
             )
         for name, definition in (
+            (
+                "heartbeat_claim_kind",
+                "TEXT CHECK (heartbeat_claim_kind IN ('ordinary', 'reply', 'manual'))",
+            ),
             ("pending_reply_turn_id", "TEXT"),
             ("pending_reply_expectation", "TEXT NOT NULL DEFAULT ''"),
             ("pending_reply_since", "REAL"),
             ("pending_reply_checks", "INTEGER NOT NULL DEFAULT 0"),
             ("pending_reply_channel", "TEXT NOT NULL DEFAULT ''"),
+            ("pending_reply_next_check_at", "REAL"),
         ):
             if name not in self_state_columns:
                 self._db.execute(
                     f"ALTER TABLE self_state ADD COLUMN {name} {definition}"
                 )
+        if migrating_reply_schedule:
+            self._db.execute(
+                """UPDATE self_state
+                   SET pending_reply_next_check_at=next_heartbeat_at,
+                       next_heartbeat_at=0
+                   WHERE pending_reply_expectation<>''"""
+            )
         reminder_columns = {
             str(row["name"])
             for row in self._db.execute("PRAGMA table_info(reminders)").fetchall()
@@ -384,7 +399,10 @@ class Store(MemoryStore, DeliveryStore):
         self._db.execute(
             "UPDATE notifications SET claimed_at=NULL WHERE state='pending'"
         )
-        self._db.execute("UPDATE self_state SET heartbeat_claimed_at=NULL WHERE id=1")
+        self._db.execute(
+            """UPDATE self_state SET heartbeat_claimed_at=NULL,
+               heartbeat_claim_kind=NULL WHERE id=1"""
+        )
         self._db.execute(
             "UPDATE reflections SET state='pending', claimed_at=NULL WHERE state='running'"
         )
@@ -694,6 +712,7 @@ class Store(MemoryStore, DeliveryStore):
                     """UPDATE self_state SET pending_reply_turn_id=NULL,
                        pending_reply_expectation='', pending_reply_since=NULL,
                        pending_reply_checks=0, pending_reply_channel='',
+                       pending_reply_next_check_at=NULL,
                        updated_at=? WHERE id=1""",
                     (time.time(),),
                 )
@@ -2220,30 +2239,42 @@ class Store(MemoryStore, DeliveryStore):
         now = time.time() if now is None else now
         with self._db:
             row = self._db.execute("SELECT * FROM self_state WHERE id=1").fetchone()
-            if (
-                row is None
-                or (
-                    not config.enabled
-                    and not str(row["pending_reply_expectation"] or "").strip()
-                )
-                or row["heartbeat_claimed_at"] is not None
-                or row["next_heartbeat_at"] is None
-                or float(row["next_heartbeat_at"]) > now
-            ):
+            if row is None or row["heartbeat_claimed_at"] is not None:
+                return None
+            waiting = bool(str(row["pending_reply_expectation"] or "").strip())
+            due: list[tuple[float, str]] = []
+            if (config.enabled or waiting) and float(row["next_heartbeat_at"] or 0) > 0:
+                due.append((float(row["next_heartbeat_at"]), "ordinary"))
+            if waiting and row["pending_reply_next_check_at"] is not None:
+                due.append((float(row["pending_reply_next_check_at"]), "reply"))
+            if not due:
+                return None
+            scheduled_at, claim_kind = min(
+                due, key=lambda item: (item[0], item[1] != "reply")
+            )
+            if scheduled_at > now:
                 return None
             quiet_end = quiet_until(now, notifications)
             if quiet_end > now:
+                column = (
+                    "pending_reply_next_check_at"
+                    if claim_kind == "reply"
+                    else "next_heartbeat_at"
+                )
                 self._db.execute(
-                    """UPDATE self_state SET next_heartbeat_at=?, updated_at=?
-                       WHERE id=1""",
+                    f"UPDATE self_state SET {column}=?, updated_at=? WHERE id=1",
                     (quiet_end, now),
                 )
                 return None
             self._db.execute(
-                "UPDATE self_state SET heartbeat_claimed_at=? WHERE id=1",
-                (now,),
+                """UPDATE self_state SET heartbeat_claimed_at=?,
+                   heartbeat_claim_kind=? WHERE id=1""",
+                (now, claim_kind),
             )
-        return dict(row)
+        claimed = dict(row)
+        claimed["heartbeat_claim_kind"] = claim_kind
+        claimed["heartbeat_scheduled_at"] = scheduled_at
+        return claimed
 
     def claim_manual_heartbeat(self, now: float | None = None) -> bool:
         now = time.time() if now is None else now
@@ -2254,38 +2285,65 @@ class Store(MemoryStore, DeliveryStore):
             if row is None or row["heartbeat_claimed_at"] is not None:
                 return False
             self._db.execute(
-                """UPDATE self_state SET next_heartbeat_at=?, heartbeat_claimed_at=?,
-                   updated_at=? WHERE id=1""",
-                (now, now, now),
+                """UPDATE self_state SET heartbeat_claimed_at=?,
+                   heartbeat_claim_kind='manual', updated_at=? WHERE id=1""",
+                (now, now),
             )
         return True
 
     def next_heartbeat_due_at(self, enabled: bool) -> float | None:
         row = self._db.execute(
-            """SELECT next_heartbeat_at, pending_reply_expectation FROM self_state
+            """SELECT next_heartbeat_at, pending_reply_expectation,
+                      pending_reply_next_check_at FROM self_state
                WHERE id=1 AND heartbeat_claimed_at IS NULL"""
         ).fetchone()
-        return (
-            float(row["next_heartbeat_at"])
-            if row
-            and (enabled or str(row["pending_reply_expectation"] or "").strip())
-            and row["next_heartbeat_at"] is not None
-            else None
-        )
+        if row is None:
+            return None
+        waiting = bool(str(row["pending_reply_expectation"] or "").strip())
+        due: list[float] = []
+        if (enabled or waiting) and float(row["next_heartbeat_at"] or 0) > 0:
+            due.append(float(row["next_heartbeat_at"]))
+        if waiting and row["pending_reply_next_check_at"] is not None:
+            due.append(float(row["pending_reply_next_check_at"]))
+        return min(due) if due else None
 
     def release_heartbeat_claim(self, delay_seconds: float) -> None:
         now = time.time()
         with self._db:
-            self._db.execute(
-                """UPDATE self_state SET heartbeat_claimed_at=NULL,
-                   next_heartbeat_at=?, updated_at=? WHERE id=1""",
-                (now + delay_seconds, now),
-            )
+            state = self._db.execute(
+                """SELECT heartbeat_claim_kind, pending_reply_expectation
+                   FROM self_state WHERE id=1"""
+            ).fetchone()
+            if (
+                state
+                and state["heartbeat_claim_kind"] == "reply"
+                and str(state["pending_reply_expectation"] or "").strip()
+            ):
+                self._db.execute(
+                    """UPDATE self_state SET heartbeat_claimed_at=NULL,
+                       heartbeat_claim_kind=NULL, pending_reply_next_check_at=?,
+                       updated_at=? WHERE id=1""",
+                    (now + delay_seconds, now),
+                )
+            elif state and state["heartbeat_claim_kind"] == "reply":
+                self._db.execute(
+                    """UPDATE self_state SET heartbeat_claimed_at=NULL,
+                       heartbeat_claim_kind=NULL, updated_at=? WHERE id=1""",
+                    (now,),
+                )
+            else:
+                self._db.execute(
+                    """UPDATE self_state SET heartbeat_claimed_at=NULL,
+                       heartbeat_claim_kind=NULL, next_heartbeat_at=?, updated_at=?
+                       WHERE id=1""",
+                    (now + delay_seconds, now),
+                )
 
     def clear_heartbeat_claim(self) -> None:
         with self._db:
             self._db.execute(
-                "UPDATE self_state SET heartbeat_claimed_at=NULL WHERE id=1"
+                """UPDATE self_state SET heartbeat_claimed_at=NULL,
+                   heartbeat_claim_kind=NULL WHERE id=1"""
             )
 
     def commit_heartbeat(
@@ -2323,19 +2381,23 @@ class Store(MemoryStore, DeliveryStore):
             if pending_reply_is_current:
                 if continue_waiting_for_reply:
                     checks = int(pending["pending_reply_checks"] or 0) + 1
-                    if checks < 3:
-                        next_heartbeat_at = (
-                            now + reply_initial_interval_seconds * 2**checks
-                        )
+                    next_reply_check_at = (
+                        now + reply_initial_interval_seconds * 2**checks
+                        if checks < 3
+                        else None
+                    )
                     self._db.execute(
                         """UPDATE self_state SET
-                           pending_reply_checks=pending_reply_checks+1 WHERE id=1"""
+                           pending_reply_checks=pending_reply_checks+1,
+                           pending_reply_next_check_at=? WHERE id=1""",
+                        (next_reply_check_at,),
                     )
                 else:
                     self._db.execute(
                         """UPDATE self_state SET pending_reply_turn_id=NULL,
                            pending_reply_expectation='', pending_reply_since=NULL,
-                           pending_reply_checks=0, pending_reply_channel=''
+                           pending_reply_checks=0, pending_reply_channel='',
+                           pending_reply_next_check_at=NULL
                            WHERE id=1"""
                     )
                     self._db.execute(
@@ -2366,7 +2428,7 @@ class Store(MemoryStore, DeliveryStore):
             self._db.execute(
                 """UPDATE self_state SET activity=?, activity_result=?, activity_since=?,
                    last_heartbeat_at=?, next_heartbeat_at=?, heartbeat_claimed_at=NULL,
-                   updated_at=? WHERE id=1""",
+                   heartbeat_claim_kind=NULL, updated_at=? WHERE id=1""",
                 (
                     activity,
                     result[:2000],

@@ -1594,7 +1594,16 @@ class TurnRunner:
         self, stop: asyncio.Event, target_channel: str | None = None
     ) -> None:
         state = self.store.self_state()
-        scheduled_at = state.get("next_heartbeat_at")
+        claim_kind = state.get("heartbeat_claim_kind")
+        scheduled_at = (
+            state.get("pending_reply_next_check_at")
+            if claim_kind == "reply"
+            else (
+                state.get("heartbeat_claimed_at")
+                if claim_kind == "manual"
+                else state.get("next_heartbeat_at")
+            )
+        )
         turn_id = self._turn_id("heartbeat", scheduled_at)
         turn_state = self.store.begin_turn(
             turn_id, "autonomous", [f"heartbeat:{scheduled_at}"]
