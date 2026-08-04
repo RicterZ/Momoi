@@ -59,6 +59,9 @@ REFLECTION_MEMORY_KINDS = {
     "shared_experience",
     "practice",
 }
+UNVERIFIED_EPISODE_SUMMARY = (
+    "[UNVERIFIED legacy summary; use only as a retrieval hint and verify against raw messages.]"
+)
 
 
 class Store(MemoryStore, DeliveryStore):
@@ -275,6 +278,25 @@ class Store(MemoryStore, DeliveryStore):
                 """ALTER TABLE notifications ADD COLUMN target_channel
                    TEXT NOT NULL DEFAULT ''"""
             )
+        episode_columns = {
+            str(row["name"])
+            for row in self._db.execute(
+                "PRAGMA table_info(conversation_episodes)"
+            ).fetchall()
+        }
+        if "working_summary_claims_json" not in episode_columns:
+            self._db.execute(
+                """ALTER TABLE conversation_episodes
+                   ADD COLUMN working_summary_claims_json
+                   TEXT NOT NULL DEFAULT '[]'"""
+            )
+            self._db.execute(
+                """UPDATE conversation_episodes
+                   SET summarized_through_ordinal=0,
+                       summary_retry_at=NULL
+                   WHERE status IN ('open', 'closing')
+                     AND working_summary<>''"""
+            )
         now = time.time()
         self._db.execute(
             """INSERT OR IGNORE INTO self_state
@@ -457,7 +479,7 @@ class Store(MemoryStore, DeliveryStore):
             return
         created_at = min(float(turn["created_at"]) for turn in turns)
         updated_at = max(float(turn["updated_at"]) for turn in turns)
-        summarized_through = len(turns) if status == "closed" or working_summary else 0
+        summarized_through = len(turns) if status == "closed" else 0
         self._db.execute(
             """INSERT OR IGNORE INTO conversation_episodes
                (id, status, title, working_summary,
@@ -950,6 +972,17 @@ class Store(MemoryStore, DeliveryStore):
     def _episode_dict(row: sqlite3.Row) -> dict[str, object]:
         episode = dict(row)
         episode.pop("overlap", None)
+        try:
+            claims = json.loads(str(episode.pop("working_summary_claims_json")))
+        except (json.JSONDecodeError, TypeError):
+            claims = []
+        episode["working_summary_claims"] = claims if isinstance(claims, list) else []
+        if episode["working_summary"] and not episode["working_summary_claims"]:
+            episode["working_summary"] = (
+                f"{UNVERIFIED_EPISODE_SUMMARY}\n{episode['working_summary']}"
+            )
+        if episode["summary"]:
+            episode["summary"] = f"{UNVERIFIED_EPISODE_SUMMARY}\n{episode['summary']}"
         for name in ("topics", "entities", "open_loops"):
             episode[name] = json.loads(str(episode.pop(f"{name}_json")))
         return episode
@@ -1629,8 +1662,23 @@ class Store(MemoryStore, DeliveryStore):
                     raw_token_budget * 1.25
                 ):
                     continue
-                through = ordinals[-raw_tail_turns - 1]
-                compact = [dict(row) for row in rows if int(row["ordinal"]) <= through]
+                compact: list[dict[str, object]] = []
+                compact_tokens = 0
+                through = 0
+                for ordinal in ordinals[:-raw_tail_turns]:
+                    group = [row for row in rows if int(row["ordinal"]) == ordinal]
+                    group_tokens = sum(
+                        estimate_tokens(str(row["content"])) for row in group
+                    )
+                    if group_tokens > raw_token_budget and not compact:
+                        break
+                    if compact and compact_tokens + group_tokens > raw_token_budget:
+                        break
+                    compact.extend(dict(row) for row in group)
+                    compact_tokens += group_tokens
+                    through = ordinal
+                if not compact:
+                    continue
                 cursor = self._db.execute(
                     """UPDATE conversation_episodes SET summary_claimed_at=?
                        WHERE id=? AND summary_claimed_at IS NULL""",
@@ -1646,18 +1694,104 @@ class Store(MemoryStore, DeliveryStore):
         return None
 
     def finish_episode_annealing(
-        self, episode_id: str, through_ordinal: int, working_summary: str
-    ) -> None:
+        self,
+        episode_id: str,
+        through_ordinal: int,
+        claims: list[object],
+    ) -> str:
+        if not 1 <= len(claims) <= 64:
+            raise ValueError("episode summary needs 1 to 64 evidence claims")
+        normalized: list[dict[str, object]] = []
+        seen: set[tuple[int, str]] = set()
+        for claim in claims:
+            if not isinstance(claim, dict) or set(claim) != {
+                "message_id",
+                "turn_id",
+                "ordinal",
+                "quote",
+            }:
+                raise ValueError("invalid episode summary claim")
+            message_id = claim["message_id"]
+            ordinal = claim["ordinal"]
+            if (
+                isinstance(message_id, bool)
+                or not isinstance(message_id, int)
+                or isinstance(ordinal, bool)
+                or not isinstance(ordinal, int)
+                or not isinstance(claim["turn_id"], str)
+                or not isinstance(claim["quote"], str)
+            ):
+                raise ValueError("invalid episode summary citation")
+            quote = str(claim["quote"]).strip()
+            if not quote or len(quote) > 1000:
+                raise ValueError("invalid episode summary quote")
+            row = self._db.execute(
+                """SELECT m.turn_id, et.ordinal, m.role, m.content,
+                          m.delivery_state
+                   FROM episode_turns AS et
+                   JOIN messages AS m ON m.turn_id=et.turn_id
+                   WHERE et.episode_id=? AND m.id=?""",
+                (episode_id, message_id),
+            ).fetchone()
+            if (
+                row is None
+                or str(row["turn_id"]) != claim["turn_id"]
+                or int(row["ordinal"]) != ordinal
+                or ordinal > through_ordinal
+                or quote not in str(row["content"])
+                or (
+                    row["role"] == "assistant"
+                    and row["delivery_state"]
+                    not in {"delivered", "uncertain", "internal"}
+                )
+            ):
+                raise ValueError("episode summary evidence does not match raw history")
+            key = (message_id, quote)
+            if key in seen:
+                raise ValueError("duplicate episode summary claim")
+            seen.add(key)
+            normalized.append(
+                {
+                    "message_id": message_id,
+                    "turn_id": str(row["turn_id"]),
+                    "ordinal": int(row["ordinal"]),
+                    "role": str(row["role"]),
+                    "delivery_state": str(row["delivery_state"]),
+                    "quote": quote,
+                }
+            )
+        lines = []
+        for claim in normalized:
+            if claim["role"] == "user":
+                source = "OWNER"
+            elif claim["delivery_state"] == "uncertain":
+                source = "MOMOI delivery=uncertain"
+            elif claim["delivery_state"] == "internal":
+                source = "MOMOI visibility=internal"
+            else:
+                source = "MOMOI delivery=delivered"
+            lines.append(
+                f"- [source {source} turn={claim['turn_id']} "
+                f"ordinal={claim['ordinal']}] "
+                f"{json.dumps(claim['quote'], ensure_ascii=False)}"
+            )
+        working_summary = "\n".join(lines)
+        if len(working_summary) > 12000:
+            raise ValueError("episode summary exceeds storage budget")
         with self._db:
             cursor = self._db.execute(
                 """UPDATE conversation_episodes
-                   SET working_summary=?, summarized_through_ordinal=?,
+                   SET working_summary=?, working_summary_claims_json=?,
+                       summarized_through_ordinal=?,
                        summary_claimed_at=NULL, summary_retry_at=NULL,
                        summary_failure_count=0, updated_at=?
                    WHERE id=? AND summary_claimed_at IS NOT NULL
                      AND summarized_through_ordinal<?""",
                 (
-                    working_summary[:12000],
+                    working_summary,
+                    json.dumps(
+                        normalized, ensure_ascii=False, separators=(",", ":")
+                    ),
                     through_ordinal,
                     time.time(),
                     episode_id,
@@ -1667,6 +1801,7 @@ class Store(MemoryStore, DeliveryStore):
             if cursor.rowcount != 1:
                 raise ValueError("claimed episode summary was not found")
             self._reindex_episode_terms(episode_id)
+        return working_summary
 
     def release_episode_annealing(self, episode_id: str) -> None:
         with self._db:

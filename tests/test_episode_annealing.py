@@ -9,6 +9,7 @@ from momoi.models import AgentReply, IncomingMessage, ProviderResponse
 from momoi.runtime import MomoiDaemon
 from momoi.runtime.context_assembler import assemble_main_context
 from momoi.runtime.turns import EPISODE_SUMMARY_SYSTEM_PROMPT
+from momoi.storage import estimate_tokens
 
 
 def config(directory: str) -> AppConfig:
@@ -45,6 +46,27 @@ def add_turn(daemon: MomoiDaemon, ordinal: int) -> None:
 
 
 class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
+    async def test_annealing_claims_only_one_bounded_prefix_batch(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(config(directory))
+            daemon.store.create_episode("长期项目", episode_id="episode-main")
+            for ordinal in range(1, 11):
+                add_turn(daemon, ordinal)
+
+            candidate = daemon.store.claim_episode_annealing_candidate(2, 30)
+
+            self.assertIsNotNone(candidate)
+            self.assertEqual(candidate["through_ordinal"], 2)
+            self.assertLessEqual(
+                sum(
+                    estimate_tokens(str(message["content"]))
+                    for message in candidate["messages"]
+                ),
+                30,
+            )
+            daemon.store.release_episode_annealing("episode-main")
+            daemon.store.close()
+
     async def test_old_episode_prefix_progressively_merges_into_working_summary(
         self,
     ) -> None:
@@ -68,8 +90,34 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(tools, [])
                     payload = json.loads(str(messages[0]["content"]))
                     provider_self.payloads.append(payload)
-                    summary = f"工作摘要第{len(provider_self.payloads)}版"
-                    return ProviderResponse([{"type": "text", "text": summary}], [])
+                    claims = [
+                        {
+                            name: claim[name]
+                            for name in ("message_id", "turn_id", "ordinal", "quote")
+                        }
+                        for claim in payload["episode"]["previous_verified_claims"]
+                    ]
+                    message = payload["new_messages"][0]
+                    claims.append(
+                        {
+                            "message_id": message["message_id"],
+                            "turn_id": message["turn_id"],
+                            "ordinal": message["ordinal"],
+                            "quote": f"第{message['ordinal']}轮",
+                        }
+                    )
+                    return ProviderResponse(
+                        [
+                            {
+                                "type": "text",
+                                "text": json.dumps(
+                                    {"version": 1, "claims": claims},
+                                    ensure_ascii=False,
+                                ),
+                            }
+                        ],
+                        [],
+                    )
 
             provider = Provider()
             daemon.provider = provider  # type: ignore[assignment]
@@ -77,7 +125,10 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
 
             episode = daemon.store.episode("episode-main")
             self.assertEqual(episode["summarized_through_ordinal"], 3)
-            self.assertEqual(episode["working_summary"], "工作摘要第1版")
+            self.assertEqual(
+                episode["working_summary"],
+                '- [source OWNER turn=turn-1 ordinal=1] "第1轮"',
+            )
             self.assertEqual(
                 {
                     item["ordinal"]
@@ -90,7 +141,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 {
                     item["ordinal"]
-                    for item in provider.payloads[0]["new_turns"]
+                    for item in provider.payloads[0]["new_messages"]
                 },
                 {1, 2, 3},
             )
@@ -108,7 +159,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
             context = assemble_main_context(daemon.store, retrieval, 10000, 10000)[
                 "episodes"
             ]
-            self.assertIn("工作摘要第1版", context)
+            self.assertIn("source OWNER turn=turn-1 ordinal=1", context)
             self.assertIn("第4轮主人消息", context)
             self.assertNotIn("第1轮主人消息", context)
 
@@ -117,10 +168,16 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
             await daemon._anneal_episode_history("turn-9")
             episode = daemon.store.episode("episode-main")
             self.assertEqual(episode["summarized_through_ordinal"], 7)
-            self.assertEqual(episode["working_summary"], "工作摘要第2版")
             self.assertEqual(
-                provider.payloads[1]["episode"]["previous_working_summary"],
-                "工作摘要第1版",
+                episode["working_summary"],
+                '- [source OWNER turn=turn-1 ordinal=1] "第1轮"\n'
+                '- [source OWNER turn=turn-4 ordinal=4] "第4轮"',
+            )
+            self.assertEqual(
+                provider.payloads[1]["episode"]["previous_verified_claims"][0][
+                    "quote"
+                ],
+                "第1轮",
             )
             self.assertEqual(
                 {
@@ -156,4 +213,51 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(episode["summary_failure_count"], 1)
             self.assertIsNotNone(episode["summary_retry_at"])
             self.assertEqual(episode["summarized_through_ordinal"], 0)
+            daemon.store.close()
+
+    async def test_hallucinated_summary_quote_cannot_replace_working_set(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(config(directory))
+            daemon.store.create_episode("长期项目", episode_id="episode-main")
+            for ordinal in range(1, 6):
+                add_turn(daemon, ordinal)
+
+            class Provider:
+                async def complete(
+                    self,
+                    _system: object,
+                    messages: list[dict[str, object]],
+                    _tools: list[dict[str, object]],
+                    **_: object,
+                ) -> ProviderResponse:
+                    payload = json.loads(str(messages[0]["content"]))
+                    message = payload["new_messages"][0]
+                    response = {
+                        "version": 1,
+                        "claims": [
+                            {
+                                "message_id": message["message_id"],
+                                "turn_id": message["turn_id"],
+                                "ordinal": message["ordinal"],
+                                "quote": "主人答应了原文里不存在的事情",
+                            }
+                        ],
+                    }
+                    return ProviderResponse(
+                        [
+                            {
+                                "type": "text",
+                                "text": json.dumps(response, ensure_ascii=False),
+                            }
+                        ],
+                        [],
+                    )
+
+            daemon.provider = Provider()  # type: ignore[assignment]
+            with self.assertRaisesRegex(ValueError, "does not match raw history"):
+                await daemon._anneal_episode_history("turn-5")
+            episode = daemon.store.episode("episode-main")
+            self.assertEqual(episode["working_summary"], "")
+            self.assertEqual(episode["summarized_through_ordinal"], 0)
+            self.assertEqual(episode["summary_failure_count"], 1)
             daemon.store.close()

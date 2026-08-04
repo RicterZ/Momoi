@@ -232,6 +232,7 @@ CREATE TABLE IF NOT EXISTS conversation_episodes (
         CHECK (status IN ('open', 'closing', 'closed')),
     title TEXT NOT NULL,
     working_summary TEXT NOT NULL DEFAULT '',
+    working_summary_claims_json TEXT NOT NULL DEFAULT '[]',
     summarized_through_ordinal INTEGER NOT NULL DEFAULT 0
         CHECK (summarized_through_ordinal >= 0),
     summary TEXT NOT NULL DEFAULT '',

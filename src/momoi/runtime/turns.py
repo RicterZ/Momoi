@@ -200,6 +200,21 @@ class TurnRunner:
         ).strip()
 
     @staticmethod
+    def _episode_summary_claims(text: str) -> list[object]:
+        try:
+            value = json.loads(text)
+        except (json.JSONDecodeError, TypeError) as error:
+            raise RuntimeError("episode summary provider returned invalid JSON") from error
+        if (
+            not isinstance(value, dict)
+            or set(value) != {"version", "claims"}
+            or value["version"] != 1
+            or not isinstance(value["claims"], list)
+        ):
+            raise RuntimeError("episode summary provider returned invalid claims")
+        return value["claims"]
+
+    @staticmethod
     def _stored_context_plan(record: dict[str, object]) -> dict[str, object]:
         plan = record.get("plan")
         if not isinstance(plan, dict):
@@ -1360,12 +1375,17 @@ class TurnRunner:
                 "episode": {
                     "id": episode_id,
                     "title": episode["title"],
-                    "previous_working_summary": episode["working_summary"],
+                    "previous_verified_claims": episode[
+                        "working_summary_claims"
+                    ],
                 },
-                "new_turns": [
+                "new_messages": [
                     {
+                        "message_id": message["id"],
+                        "turn_id": message["turn_id"],
                         "ordinal": message["ordinal"],
                         "role": message["role"],
+                        "delivery_state": message["delivery_state"],
                         "content": message["content"],
                     }
                     for message in candidate["messages"]
@@ -1389,10 +1409,11 @@ class TurnRunner:
                 ).strip()
                 if not summary:
                     raise RuntimeError("episode summary provider returned no text")
-                self.store.finish_episode_annealing(
+                claims = self._episode_summary_claims(summary)
+                working_summary = self.store.finish_episode_annealing(
                     episode_id,
                     int(candidate["through_ordinal"]),
-                    summary,
+                    claims,
                 )
                 metrics = response.usage or {}
                 self.store.record_turn_usage(
@@ -1412,7 +1433,7 @@ class TurnRunner:
                     "Annealed episode=%s through_ordinal=%d summary_tokens=%d",
                     episode_id,
                     candidate["through_ordinal"],
-                    estimate_tokens(summary),
+                    estimate_tokens(working_summary),
                 )
             except Exception:
                 self.store.release_episode_annealing(episode_id)

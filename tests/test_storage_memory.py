@@ -1939,7 +1939,8 @@ class StorageMemoryTest(unittest.TestCase):
             )
             summary_episode = store.search_episodes("项目邮件 等待", 3)[0]
             self.assertEqual(summary_episode["status"], "closed")
-            self.assertEqual(summary_episode["summary"], "较早的项目邮件仍在等待")
+            self.assertIn("UNVERIFIED legacy summary", summary_episode["summary"])
+            self.assertIn("较早的项目邮件仍在等待", summary_episode["summary"])
             raw_episode = store.search_episodes("微博 猫", 3)[0]
             self.assertEqual(raw_episode["status"], "open")
             self.assertIn(
@@ -2039,7 +2040,7 @@ class StorageMemoryTest(unittest.TestCase):
             ).fetchall()
             self.assertEqual(len(episodes), 2)
             self.assertEqual(
-                [row["summarized_through_ordinal"] for row in episodes], [24, 1]
+                [row["summarized_through_ordinal"] for row in episodes], [0, 0]
             )
             self.assertTrue(
                 all(
@@ -2049,17 +2050,11 @@ class StorageMemoryTest(unittest.TestCase):
                     for row in episodes
                 )
             )
-            self.assertTrue(
-                all(
-                    store.episode_messages(
-                        str(row["id"]),
-                        10000,
-                        after_ordinal=int(row["summarized_through_ordinal"]),
-                    )
-                    == []
-                    for row in episodes
-                )
-            )
+            candidate = store.claim_episode_annealing_candidate(2, 10000)
+            self.assertIsNotNone(candidate)
+            self.assertEqual(candidate["through_ordinal"], 22)
+            self.assertTrue(candidate["messages"])
+            store.release_episode_annealing(str(candidate["episode"]["id"]))
             self.assertEqual(
                 store._db.execute("SELECT COUNT(*) FROM messages").fetchone()[0], 50
             )
