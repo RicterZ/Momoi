@@ -319,6 +319,16 @@ def _conflict_lines(items: object) -> str:
     )
 
 
+def _message_role(message: dict[str, object]) -> str:
+    role = str(message.get("role") or "").upper()
+    state = str(message.get("delivery_state") or "")
+    if state == "uncertain":
+        return f"{role} delivery=uncertain"
+    if state == "internal":
+        return f"{role} visibility=internal"
+    return role
+
+
 def _episode_context(
     store: Store,
     episodes: object,
@@ -367,7 +377,7 @@ def _episode_context(
             ):
                 continue
             prefix = (
-                f"  [{str(message.get('role') or '').upper()} "
+                f"  [{_message_role(message)} "
                 f"turn={message.get('turn_id')} ordinal={message.get('ordinal')}] "
             )
             prefix_tokens = estimate_tokens(prefix)
@@ -400,7 +410,7 @@ def _episode_context(
         if messages:
             lines.append("raw_tail:")
             lines.extend(
-                f"  [{message['role'].upper()} turn={message['turn_id']} "
+                f"  [{_message_role(message)} turn={message['turn_id']} "
                 f"ordinal={message['ordinal']}] {message['content']}"
                 for message in messages
             )
@@ -419,12 +429,16 @@ def assemble_main_context(
         recent_turns, raw_token_budget
     )
     recent = "\n".join(
-        f"[{str(message['role']).upper()} turn={message['turn_id']}] "
+        f"[{_message_role(message)} turn={message['turn_id']}] "
         f"{message['content']}"
         for message in recent_messages
     )
     recent_ids = {int(message["id"]) for message in recent_messages}
-    remaining_raw = max(0, raw_token_budget - estimate_tokens(recent)) if recent else raw_token_budget
+    remaining_raw = (
+        max(0, raw_token_budget - estimate_tokens(recent))
+        if recent
+        else raw_token_budget
+    )
     reflection = _memory_lines(retrieval.get("reflection_memories"))
     if reflection:
         reflection = (

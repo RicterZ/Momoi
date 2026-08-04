@@ -32,6 +32,66 @@ from momoi.storage.scheduling import next_schedule_at
 
 
 class StorageMemoryTest(unittest.TestCase):
+    def test_assistant_conversation_truth_follows_delivery_state(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            event = IncomingMessage("delivery-event", "delivery-event", "告诉我结果", 1, 1)
+            store.add_event(event)
+            store.commit_turn(
+                [event],
+                event.text,
+                AgentReply(["这条消息等待投递"]),
+                turn_id="delivery-turn",
+            )
+            episode_id = str(store.list_episode_candidates()[0]["id"])
+            outbox_id = int(
+                store._db.execute(
+                    "SELECT id FROM outbox WHERE turn_id='delivery-turn'"
+                ).fetchone()["id"]
+            )
+
+            queued = store.conversation_episode(episode_id)["messages"][-1]
+            self.assertEqual(queued["delivery_state"], "queued")
+            self.assertNotIn(
+                "这条消息等待投递",
+                [item["content"] for item in store.recent_conversation_messages(1, 1000)],
+            )
+
+            store.mark_ambiguous(outbox_id, 1, "timeout")
+            uncertain = store.recent_conversation_messages(1, 1000)[-1]
+            self.assertEqual(uncertain["delivery_state"], "uncertain")
+            self.assertEqual(uncertain["content"], "这条消息等待投递")
+
+            store.mark_failed(outbox_id, "not delivered")
+            self.assertEqual(
+                store.conversation_episode(episode_id)["messages"][-1][
+                    "delivery_state"
+                ],
+                "uncertain",
+            )
+
+            failed_event = IncomingMessage(
+                "failed-event", "failed-event", "再告诉我一次", 2, 2
+            )
+            store.add_event(failed_event)
+            store.commit_turn(
+                [failed_event],
+                failed_event.text,
+                AgentReply(["这条确定没有送达"]),
+                turn_id="failed-turn",
+            )
+            failed_outbox_id = int(
+                store._db.execute(
+                    "SELECT id FROM outbox WHERE turn_id='failed-turn'"
+                ).fetchone()["id"]
+            )
+            store.mark_failed(failed_outbox_id, "not dispatched")
+            self.assertNotIn(
+                "这条确定没有送达",
+                [item["content"] for item in store.recent_conversation_messages(2, 2000)],
+            )
+            store.close()
+
     def test_episode_metadata_updates_and_owner_focus_ages_out(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")

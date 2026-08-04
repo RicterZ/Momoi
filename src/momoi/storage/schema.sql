@@ -14,7 +14,11 @@ CREATE TABLE IF NOT EXISTS messages (
     role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
     content TEXT NOT NULL,
     created_at REAL NOT NULL,
-    source_event_ids_json TEXT NOT NULL
+    source_event_ids_json TEXT NOT NULL,
+    outbox_id INTEGER,
+    delivery_state TEXT NOT NULL DEFAULT 'delivered' CHECK (
+        delivery_state IN ('internal', 'queued', 'delivered', 'uncertain', 'failed')
+    )
 );
 CREATE TABLE IF NOT EXISTS outbox (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

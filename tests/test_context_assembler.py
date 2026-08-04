@@ -291,6 +291,19 @@ class ContextAssemblerTest(unittest.TestCase):
             self.assertEqual(
                 store.episode_turns(str(episode["id"]))[0]["turn_id"], "fallback"
             )
+            self.assertNotIn(
+                "这轮仍然会归档",
+                recall_episode_context(store, "规划器失败 归档", 3, 1000, 1000),
+            )
+            outbox_id = store._db.execute(
+                "SELECT id FROM outbox WHERE turn_id='fallback'"
+            ).fetchone()["id"]
+            store.mark_ambiguous(int(outbox_id), 1, "timeout")
+            self.assertIn(
+                "[ASSISTANT delivery=uncertain",
+                recall_episode_context(store, "规划器失败 归档", 3, 1000, 1000),
+            )
+            store.mark_sent(int(outbox_id))
             self.assertIn(
                 "这轮仍然会归档",
                 recall_episode_context(store, "规划器失败 归档", 3, 1000, 1000),

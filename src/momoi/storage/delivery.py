@@ -162,24 +162,41 @@ class DeliveryStore:
         now = time.time()
         with self._db:
             progress = self._db.execute(
-                """SELECT text, created_at FROM turn_progress
+                """SELECT text, created_at, tool_call_id, part_index
+                   FROM turn_progress
                    WHERE turn_id=? ORDER BY created_at, tool_call_id, part_index""",
                 (turn_id,),
             ).fetchall()
-            self._db.executemany(
-                """INSERT INTO messages
-                   (turn_id, role, content, created_at, source_event_ids_json)
-                   VALUES (?, 'assistant', ?, ?, ?)""",
-                ((turn_id, row["text"], row["created_at"], source) for row in progress),
-            )
-            for index, (text, kind, path, payload) in enumerate(normalized):
+            for row in progress:
+                outbox = self._db.execute(
+                    """SELECT id, state, possible_duplicate FROM outbox
+                       WHERE dedupe_key=?""",
+                    (
+                        f"turn:{turn_id}:progress:{row['tool_call_id']}:"
+                        f"{row['part_index']}",
+                    ),
+                ).fetchone()
                 self._db.execute(
                     """INSERT INTO messages
-                       (turn_id, role, content, created_at, source_event_ids_json)
-                       VALUES (?, 'assistant', ?, ?, ?)""",
-                    (turn_id, text, now, source),
+                       (turn_id, role, content, created_at, source_event_ids_json,
+                        outbox_id, delivery_state)
+                       VALUES (?, 'assistant', ?, ?, ?, ?, ?)""",
+                    (
+                        turn_id,
+                        row["text"],
+                        row["created_at"],
+                        source,
+                        outbox["id"] if outbox else None,
+                        self._message_delivery_state(
+                            str(outbox["state"]),
+                            bool(outbox["possible_duplicate"]),
+                        )
+                        if outbox
+                        else "uncertain",
+                    ),
                 )
-                self._db.execute(
+            for index, (text, kind, path, payload) in enumerate(normalized):
+                outbox = self._db.execute(
                     """INSERT INTO outbox
                        (turn_id, dedupe_key, text, kind, media_path, payload_json,
                         reply_expectation, target_channel)
@@ -198,6 +215,13 @@ class DeliveryStore:
                         ),
                         target_channel,
                     ),
+                )
+                self._db.execute(
+                    """INSERT INTO messages
+                       (turn_id, role, content, created_at, source_event_ids_json,
+                        outbox_id, delivery_state)
+                       VALUES (?, 'assistant', ?, ?, ?, ?, 'queued')""",
+                    (turn_id, text, now, source, outbox.lastrowid),
                 )
             visible = [str(row["text"]) for row in progress] + [
                 text for text, _, _, _ in normalized
@@ -421,6 +445,7 @@ class DeliveryStore:
                 "UPDATE outbox SET state='sent', last_error=NULL WHERE id=?",
                 (outbox_id,),
             )
+            self._sync_outbox_message(outbox_id, "sent")
             expectation = str(row["reply_expectation"] or "").strip() if row else ""
             if (
                 expectation
@@ -484,6 +509,7 @@ class DeliveryStore:
                    next_attempt_at=?, last_error=? WHERE id=?""",
                 (state, time.time() + 2, error, outbox_id),
             )
+            self._sync_outbox_message(outbox_id, state)
 
     def mark_failed(self, outbox_id: int, error: str) -> None:
         with self._db:
@@ -491,3 +517,4 @@ class DeliveryStore:
                 "UPDATE outbox SET state='failed', last_error=? WHERE id=?",
                 (error, outbox_id),
             )
+            self._sync_outbox_message(outbox_id, "failed")

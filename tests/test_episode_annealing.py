@@ -37,6 +37,10 @@ def add_turn(daemon: MomoiDaemon, ordinal: int) -> None:
         AgentReply([f"第{ordinal}轮桃衣回复"]),
         turn_id=turn_id,
     )
+    outbox_id = daemon.store._db.execute(
+        "SELECT id FROM outbox WHERE turn_id=?", (turn_id,)
+    ).fetchone()["id"]
+    daemon.store.mark_sent(int(outbox_id))
     daemon.store.link_turn_to_episode("episode-main", turn_id)
 
 

@@ -77,6 +77,41 @@ class Store(MemoryStore, DeliveryStore):
     def close(self) -> None:
         self._db.close()
 
+    @staticmethod
+    def _message_delivery_state(
+        outbox_state: str, possible_duplicate: bool = False
+    ) -> str:
+        if possible_duplicate and outbox_state != "sent":
+            return "uncertain"
+        return {
+            "sent": "delivered",
+            "ambiguous": "uncertain",
+            "failed": "failed",
+        }.get(outbox_state, "queued")
+
+    def _sync_outbox_message(self, outbox_id: int, outbox_state: str) -> None:
+        episodes = self._db.execute(
+            """SELECT DISTINCT et.episode_id FROM messages AS m
+               JOIN episode_turns AS et ON et.turn_id=m.turn_id
+               WHERE m.outbox_id=?""",
+            (outbox_id,),
+        ).fetchall()
+        outbox = self._db.execute(
+            "SELECT possible_duplicate FROM outbox WHERE id=?", (outbox_id,)
+        ).fetchone()
+        self._db.execute(
+            "UPDATE messages SET delivery_state=? WHERE outbox_id=?",
+            (
+                self._message_delivery_state(
+                    outbox_state,
+                    bool(outbox and outbox["possible_duplicate"]),
+                ),
+                outbox_id,
+            ),
+        )
+        for row in episodes:
+            self._reindex_episode_terms(str(row["episode_id"]))
+
     def _migrate(self) -> None:
         import_unassigned_messages = not self._table_exists("conversation_episodes")
         self._db.executescript(Path(__file__).with_name("schema.sql").read_text())
@@ -119,6 +154,48 @@ class Store(MemoryStore, DeliveryStore):
             self._db.execute(
                 "ALTER TABLE messages ADD COLUMN turn_id TEXT NOT NULL DEFAULT ''"
             )
+        if "outbox_id" not in message_columns:
+            self._db.execute("ALTER TABLE messages ADD COLUMN outbox_id INTEGER")
+        if "delivery_state" not in message_columns:
+            self._db.execute(
+                """ALTER TABLE messages ADD COLUMN delivery_state
+                   TEXT NOT NULL DEFAULT 'delivered'"""
+            )
+        self._db.execute(
+            """UPDATE messages SET delivery_state='internal'
+               WHERE role='assistant'
+                 AND content LIKE '[AUTONOMOUS %; not sent to the owner]%'"""
+        )
+        for outbox in self._db.execute(
+            """SELECT id, turn_id, text, state, possible_duplicate
+               FROM outbox ORDER BY id"""
+        ).fetchall():
+            message = self._db.execute(
+                """SELECT id FROM messages
+                   WHERE turn_id=? AND role='assistant' AND content=?
+                     AND outbox_id IS NULL AND delivery_state<>'internal'
+                   ORDER BY id LIMIT 1""",
+                (outbox["turn_id"], outbox["text"]),
+            ).fetchone()
+            if message is not None:
+                self._db.execute(
+                    "UPDATE messages SET outbox_id=?, delivery_state=? WHERE id=?",
+                    (
+                        outbox["id"],
+                        self._message_delivery_state(
+                            str(outbox["state"]),
+                            bool(outbox["possible_duplicate"]),
+                        ),
+                        message["id"],
+                    ),
+                )
+        self._db.execute(
+            "CREATE INDEX IF NOT EXISTS messages_delivery ON messages(delivery_state, outbox_id)"
+        )
+        self._db.execute(
+            """CREATE UNIQUE INDEX IF NOT EXISTS messages_outbox
+               ON messages(outbox_id) WHERE outbox_id IS NOT NULL"""
+        )
         turn_columns = {
             str(row["name"])
             for row in self._db.execute("PRAGMA table_info(turns)").fetchall()
@@ -498,14 +575,24 @@ class Store(MemoryStore, DeliveryStore):
         self._db.execute("DROP TABLE continuity_state")
 
     def _recover_outbox(self) -> None:
+        recovered = self._db.execute(
+            "SELECT id FROM outbox WHERE state='sending'"
+        ).fetchall()
         self._db.execute(
             """UPDATE outbox
                SET state='ambiguous', possible_duplicate=1, next_attempt_at=0
                WHERE state='sending' AND attempts < 2"""
         )
         self._db.execute(
-            "UPDATE outbox SET state='failed' WHERE state='sending' AND attempts >= 2"
+            """UPDATE outbox SET state='failed', possible_duplicate=1
+               WHERE state='sending' AND attempts >= 2"""
         )
+        for row in recovered:
+            outbox_id = int(row["id"])
+            state = self._db.execute(
+                "SELECT state FROM outbox WHERE id=?", (outbox_id,)
+            ).fetchone()["state"]
+            self._sync_outbox_message(outbox_id, str(state))
         self._db.commit()
 
     def assign_legacy_outbox_channel(self, primary_channel: str) -> None:
@@ -577,14 +664,21 @@ class Store(MemoryStore, DeliveryStore):
                        WHERE notification_key='heartbeat.reply_followup'
                          AND state='pending'"""
                 )
-                self._db.execute(
-                    """UPDATE outbox SET state='failed',
-                       last_error='owner_replied_before_followup'
+                stale = self._db.execute(
+                    """SELECT id FROM outbox
                        WHERE state='pending' AND turn_id IN (
                            SELECT turn_id FROM notifications
                            WHERE notification_key='heartbeat.reply_followup'
                        )"""
-                )
+                ).fetchall()
+                for row in stale:
+                    outbox_id = int(row["id"])
+                    self._db.execute(
+                        """UPDATE outbox SET state='failed',
+                           last_error='owner_replied_before_followup' WHERE id=?""",
+                        (outbox_id,),
+                    )
+                    self._sync_outbox_message(outbox_id, "failed")
         return cursor.rowcount == 1
 
     def pending_events(self) -> list[IncomingMessage]:
@@ -893,7 +987,9 @@ class Store(MemoryStore, DeliveryStore):
 
     def _index_turn_episode_terms(self, turn_id: str) -> None:
         messages = self._db.execute(
-            "SELECT id, role, content FROM messages WHERE turn_id=?", (turn_id,)
+            """SELECT id, role, content, delivery_state FROM messages
+               WHERE turn_id=?""",
+            (turn_id,),
         ).fetchall()
         plan_row = self._db.execute(
             """SELECT plan_json FROM context_plans
@@ -940,6 +1036,10 @@ class Store(MemoryStore, DeliveryStore):
             if unit_terms:
                 self._index_episode_terms(episode_id, *unit_values)
             for message in messages:
+                if message["role"] == "assistant" and message[
+                    "delivery_state"
+                ] not in {"delivered", "uncertain", "internal"}:
+                    continue
                 content = str(message["content"])
                 content_terms = self._recall_terms(content)
                 if not unit_terms:
@@ -1122,10 +1222,7 @@ class Store(MemoryStore, DeliveryStore):
                WHERE t.state='completed' AND EXISTS (
                    SELECT 1 FROM messages AS m
                    WHERE m.turn_id=t.id
-                     AND NOT (
-                         m.role='assistant'
-                         AND m.content LIKE '[AUTONOMOUS %; not sent to the owner]%'
-                     )
+                     AND (m.role='user' OR m.delivery_state IN ('delivered', 'uncertain'))
                )
                ORDER BY t.updated_at DESC LIMIT ?""",
             (turn_limit,),
@@ -1135,13 +1232,11 @@ class Store(MemoryStore, DeliveryStore):
         turn_ids = [str(row["id"]) for row in turns]
         placeholders = ",".join("?" for _ in turn_ids)
         rows = self._db.execute(
-            f"""SELECT m.id, m.turn_id, m.role, m.content, m.created_at
+            f"""SELECT m.id, m.turn_id, m.role, m.content, m.created_at,
+                       m.delivery_state
                 FROM messages AS m
                 WHERE m.turn_id IN ({placeholders})
-                  AND NOT (
-                      m.role='assistant'
-                      AND m.content LIKE '[AUTONOMOUS %; not sent to the owner]%'
-                  )
+                  AND (m.role='user' OR m.delivery_state IN ('delivered', 'uncertain'))
                 ORDER BY m.id""",
             tuple(turn_ids),
         ).fetchall()
@@ -1236,12 +1331,14 @@ class Store(MemoryStore, DeliveryStore):
         placeholders = ",".join("?" for _ in query_units)
         rows = self._db.execute(
             f"""SELECT m.id, m.turn_id, et.ordinal, m.role, m.content,
-                       m.created_at, COUNT(*) AS overlap
+                       m.created_at, m.delivery_state, COUNT(*) AS overlap
                 FROM episode_message_recall_terms AS mrt
                 JOIN messages AS m ON m.id=mrt.message_id
                 JOIN episode_turns AS et
                   ON et.episode_id=mrt.episode_id AND et.turn_id=m.turn_id
                 WHERE mrt.episode_id=? AND mrt.term IN ({placeholders})
+                  AND (m.role='user' OR m.delivery_state IN
+                       ('delivered', 'uncertain', 'internal'))
                 GROUP BY m.id, m.turn_id, et.ordinal, m.role, m.content, m.created_at
                 ORDER BY overlap DESC, et.ordinal DESC
                 LIMIT ?""",
@@ -1251,7 +1348,14 @@ class Store(MemoryStore, DeliveryStore):
             {
                 **{
                     name: row[name]
-                    for name in ("id", "turn_id", "ordinal", "role", "created_at")
+                    for name in (
+                        "id",
+                        "turn_id",
+                        "ordinal",
+                        "role",
+                        "created_at",
+                        "delivery_state",
+                    )
                 },
                 "content": excerpt_tokens(str(row["content"]), query_units, 500),
             }
@@ -1266,7 +1370,8 @@ class Store(MemoryStore, DeliveryStore):
         token_budget: int = 30000,
     ) -> dict[str, object] | None:
         row = self._db.execute(
-            """SELECT m.id, m.turn_id, et.ordinal, m.role, m.content, m.created_at
+            """SELECT m.id, m.turn_id, et.ordinal, m.role, m.content, m.created_at,
+                      m.delivery_state
                FROM episode_turns AS et
                JOIN messages AS m ON m.turn_id=et.turn_id
                WHERE et.episode_id=? AND m.id=?""",
@@ -1280,7 +1385,14 @@ class Store(MemoryStore, DeliveryStore):
         return {
             **{
                 name: row[name]
-                for name in ("id", "turn_id", "ordinal", "role", "created_at")
+                for name in (
+                    "id",
+                    "turn_id",
+                    "ordinal",
+                    "role",
+                    "created_at",
+                    "delivery_state",
+                )
             },
             "content": content,
             "content_offset": content_offset,
@@ -1305,7 +1417,10 @@ class Store(MemoryStore, DeliveryStore):
             (episode_id, before_ordinal, before_ordinal),
         ).fetchall()
         messages = self.episode_messages(
-            episode_id, token_budget, before_ordinal=before_ordinal
+            episode_id,
+            token_budget,
+            before_ordinal=before_ordinal,
+            include_nondelivered=True,
         )
         omitted_messages = len(messages) < len(archived)
         content_truncated = (
@@ -1413,17 +1528,27 @@ class Store(MemoryStore, DeliveryStore):
         after_ordinal: int = 0,
         before_ordinal: int | None = None,
         exclude_message_ids: set[int] | None = None,
+        include_nondelivered: bool = False,
     ) -> list[dict[str, object]]:
         if token_budget <= 0:
             return []
         rows = self._db.execute(
-            """SELECT m.id, m.turn_id, et.ordinal, m.role, m.content, m.created_at
+            """SELECT m.id, m.turn_id, et.ordinal, m.role, m.content, m.created_at,
+                      m.delivery_state
                FROM episode_turns AS et
                JOIN messages AS m ON m.turn_id=et.turn_id
                WHERE et.episode_id=? AND et.ordinal>?
                  AND (? IS NULL OR et.ordinal<?)
+                 AND (? OR m.role='user' OR m.delivery_state IN
+                      ('delivered', 'uncertain', 'internal'))
                ORDER BY et.ordinal DESC, m.id""",
-            (episode_id, after_ordinal, before_ordinal, before_ordinal),
+            (
+                episode_id,
+                after_ordinal,
+                before_ordinal,
+                before_ordinal,
+                int(include_nondelivered),
+            ),
         ).fetchall()
         excluded = exclude_message_ids or set()
         groups: list[list[dict[str, object]]] = []
@@ -1472,16 +1597,24 @@ class Store(MemoryStore, DeliveryStore):
                    WHERE status IN ('open', 'closing')
                      AND summary_claimed_at IS NULL
                      AND COALESCE(summary_retry_at, 0)<=?
+                     AND NOT EXISTS (
+                         SELECT 1 FROM episode_turns AS et
+                         JOIN messages AS m ON m.turn_id=et.turn_id
+                         WHERE et.episode_id=conversation_episodes.id
+                           AND m.delivery_state='queued'
+                     )
                    ORDER BY updated_at""",
                 (now,),
             ).fetchall()
             for episode in episodes:
                 rows = self._db.execute(
                     """SELECT et.ordinal, m.id, m.turn_id, m.role, m.content,
-                              m.created_at
+                              m.created_at, m.delivery_state
                        FROM episode_turns AS et
                        JOIN messages AS m ON m.turn_id=et.turn_id
                        WHERE et.episode_id=? AND et.ordinal>?
+                         AND (m.role='user' OR m.delivery_state IN
+                              ('delivered', 'uncertain', 'internal'))
                        ORDER BY et.ordinal, m.id""",
                     (
                         episode["id"],
@@ -2059,14 +2192,21 @@ class Store(MemoryStore, DeliveryStore):
                            WHERE notification_key='heartbeat.reply_followup'
                              AND state='pending'"""
                     )
-                    self._db.execute(
-                        """UPDATE outbox SET state='failed',
-                           last_error='reply_waiting_ended'
+                    stale = self._db.execute(
+                        """SELECT id FROM outbox
                            WHERE state='pending' AND turn_id IN (
                                SELECT turn_id FROM notifications
                                WHERE notification_key='heartbeat.reply_followup'
                            )"""
-                    )
+                    ).fetchall()
+                    for row in stale:
+                        outbox_id = int(row["id"])
+                        self._db.execute(
+                            """UPDATE outbox SET state='failed',
+                               last_error='reply_waiting_ended' WHERE id=?""",
+                            (outbox_id,),
+                        )
+                        self._sync_outbox_message(outbox_id, "failed")
             self._apply_mood_transition(mood_transition, now)
             self._apply_goal_mutations(draft, now)
             activity_since = (
@@ -2093,8 +2233,9 @@ class Store(MemoryStore, DeliveryStore):
             heartbeat_source = json.dumps([f"heartbeat-record:{turn_id}"])
             self._db.execute(
                 """INSERT INTO messages
-                   (turn_id, role, content, created_at, source_event_ids_json)
-                   SELECT ?, 'assistant', ?, ?, ?
+                   (turn_id, role, content, created_at, source_event_ids_json,
+                    delivery_state)
+                   SELECT ?, 'assistant', ?, ?, ?, 'internal'
                    WHERE NOT EXISTS (
                        SELECT 1 FROM messages
                        WHERE turn_id=? AND source_event_ids_json=?
@@ -2241,15 +2382,23 @@ class Store(MemoryStore, DeliveryStore):
         end = start + timedelta(days=1)
         entries: list[tuple[float, str, str, bool, bool]] = []
         for row in self._db.execute(
-            """SELECT role, content, created_at FROM messages
-               WHERE created_at>=? AND created_at<? ORDER BY created_at""",
+            """SELECT role, content, created_at, delivery_state FROM messages
+               WHERE created_at>=? AND created_at<?
+                 AND (role='user' OR delivery_state IN
+                      ('delivered', 'uncertain', 'internal'))
+               ORDER BY created_at""",
             (start.timestamp(), end.timestamp()),
         ).fetchall():
             owner = row["role"] == "user"
+            label = "OWNER" if owner else "MOMOI"
+            if row["delivery_state"] == "internal":
+                label = "MOMOI INTERNAL (not sent to owner)"
+            elif row["delivery_state"] == "uncertain":
+                label = "MOMOI DELIVERY UNCERTAIN"
             entries.append(
                 (
                     float(row["created_at"]),
-                    "OWNER" if owner else "MOMOI",
+                    label,
                     str(row["content"]),
                     owner,
                     owner,
@@ -2583,6 +2732,7 @@ class Store(MemoryStore, DeliveryStore):
                            last_error=NULL, next_attempt_at=0 WHERE id=?""",
                         (message["id"],),
                     )
+                    self._sync_outbox_message(int(message["id"]), "pending")
 
     def emotion_path_referenced(
         self, path: str, *, exclude_slug: str | None = None
@@ -2719,18 +2869,7 @@ class Store(MemoryStore, DeliveryStore):
                     (next_schedule_at(schedule, now), now, reminder_id),
                 )
             reminder_turn_id = f"reminder:{reminder_id}:{occurrence}"
-            self._db.execute(
-                """INSERT INTO messages
-                   (turn_id, role, content, created_at, source_event_ids_json)
-                   VALUES (?, 'assistant', ?, ?, ?)""",
-                (
-                    reminder_turn_id,
-                    row["text"],
-                    now,
-                    json.dumps([f"reminder:{reminder_id}"]),
-                ),
-            )
-            self._db.execute(
+            outbox = self._db.execute(
                 """INSERT OR IGNORE INTO outbox
                    (turn_id, dedupe_key, text, target_channel)
                    VALUES (?, ?, ?, ?)""",
@@ -2739,6 +2878,33 @@ class Store(MemoryStore, DeliveryStore):
                     reminder_turn_id,
                     row["text"],
                     target_channel,
+                ),
+            )
+            outbox_id = (
+                int(outbox.lastrowid)
+                if outbox.lastrowid
+                else int(
+                    self._db.execute(
+                        "SELECT id FROM outbox WHERE dedupe_key=?",
+                        (reminder_turn_id,),
+                    ).fetchone()["id"]
+                )
+            )
+            self._db.execute(
+                """INSERT INTO messages
+                   (turn_id, role, content, created_at, source_event_ids_json,
+                    outbox_id, delivery_state)
+                   SELECT ?, 'assistant', ?, ?, ?, ?, 'queued'
+                   WHERE NOT EXISTS (
+                       SELECT 1 FROM messages WHERE outbox_id=?
+                   )""",
+                (
+                    reminder_turn_id,
+                    row["text"],
+                    now,
+                    json.dumps([f"reminder:{reminder_id}"]),
+                    outbox_id,
+                    outbox_id,
                 ),
             )
             self._ensure_autonomous_episode(
@@ -2965,39 +3131,43 @@ class Store(MemoryStore, DeliveryStore):
                 ),
             )
             progress = self._db.execute(
-                """SELECT text, created_at FROM turn_progress
+                """SELECT text, created_at, tool_call_id, part_index
+                   FROM turn_progress
                    WHERE turn_id=? ORDER BY created_at, tool_call_id, part_index""",
                 (turn_id,),
             ).fetchall()
-            self._db.executemany(
-                """INSERT INTO messages
-                   (turn_id, role, content, created_at, source_event_ids_json)
-                   VALUES (?, 'assistant', ?, ?, ?)""",
-                (
+            for row in progress:
+                outbox = self._db.execute(
+                    """SELECT id, state, possible_duplicate FROM outbox
+                       WHERE dedupe_key=?""",
+                    (
+                        f"turn:{turn_id}:progress:{row['tool_call_id']}:"
+                        f"{row['part_index']}",
+                    ),
+                ).fetchone()
+                self._db.execute(
+                    """INSERT INTO messages
+                       (turn_id, role, content, created_at, source_event_ids_json,
+                        outbox_id, delivery_state)
+                       VALUES (?, 'assistant', ?, ?, ?, ?, ?)""",
                     (
                         turn_id,
                         row["text"],
                         row["created_at"],
                         source_json,
-                    )
-                    for row in progress
-                ),
-            )
+                        outbox["id"] if outbox else None,
+                        self._message_delivery_state(
+                            str(outbox["state"]),
+                            bool(outbox["possible_duplicate"]),
+                        )
+                        if outbox
+                        else "uncertain",
+                    ),
+                )
             for index, (assistant_text, kind, path, payload) in enumerate(
                 normalized_messages
             ):
-                self._db.execute(
-                    """INSERT INTO messages
-                       (turn_id, role, content, created_at, source_event_ids_json)
-                       VALUES (?, 'assistant', ?, ?, ?)""",
-                    (
-                        turn_id,
-                        assistant_text,
-                        now,
-                        source_json,
-                    ),
-                )
-                self._db.execute(
+                outbox = self._db.execute(
                     """INSERT INTO outbox
                        (turn_id, dedupe_key, text, kind, media_path, payload_json,
                         reply_expectation, target_channel)
@@ -3016,6 +3186,19 @@ class Store(MemoryStore, DeliveryStore):
                             else ""
                         ),
                         target_channel,
+                    ),
+                )
+                self._db.execute(
+                    """INSERT INTO messages
+                       (turn_id, role, content, created_at, source_event_ids_json,
+                        outbox_id, delivery_state)
+                       VALUES (?, 'assistant', ?, ?, ?, ?, 'queued')""",
+                    (
+                        turn_id,
+                        assistant_text,
+                        now,
+                        source_json,
+                        outbox.lastrowid,
                     ),
                 )
             self._index_turn_episode_terms(turn_id)
@@ -3076,8 +3259,9 @@ class Store(MemoryStore, DeliveryStore):
                 goal_source = json.dumps([f"goal-record:{turn_id}"])
                 self._db.execute(
                     """INSERT INTO messages
-                       (turn_id, role, content, created_at, source_event_ids_json)
-                       SELECT ?, 'assistant', ?, ?, ?
+                       (turn_id, role, content, created_at, source_event_ids_json,
+                        delivery_state)
+                       SELECT ?, 'assistant', ?, ?, ?, 'internal'
                        WHERE NOT EXISTS (
                            SELECT 1 FROM messages
                            WHERE turn_id=? AND source_event_ids_json=?
@@ -3212,20 +3396,15 @@ class Store(MemoryStore, DeliveryStore):
             for index, message in enumerate(messages):
                 visible, kind, path, payload = self._outbox_content(message)
                 visible_messages.append(visible)
-                self._db.execute(
-                    """INSERT INTO messages
-                       (turn_id, role, content, created_at, source_event_ids_json)
-                       VALUES (?, 'assistant', ?, ?, ?)""",
-                    (row["turn_id"], visible, now, json.dumps([source])),
-                )
-                self._db.execute(
+                dedupe_key = f"notification:{notification_id}:{index}"
+                outbox = self._db.execute(
                     """INSERT OR IGNORE INTO outbox
                        (turn_id, dedupe_key, text, kind, media_path, payload_json,
                         reply_expectation, target_channel)
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         row["turn_id"],
-                        f"notification:{notification_id}:{index}",
+                        dedupe_key,
                         visible,
                         kind,
                         path,
@@ -3236,6 +3415,32 @@ class Store(MemoryStore, DeliveryStore):
                             else ""
                         ),
                         target_channel,
+                    ),
+                )
+                outbox_id = (
+                    int(outbox.lastrowid)
+                    if outbox.lastrowid
+                    else int(
+                        self._db.execute(
+                            "SELECT id FROM outbox WHERE dedupe_key=?", (dedupe_key,)
+                        ).fetchone()["id"]
+                    )
+                )
+                self._db.execute(
+                    """INSERT INTO messages
+                       (turn_id, role, content, created_at, source_event_ids_json,
+                        outbox_id, delivery_state)
+                       SELECT ?, 'assistant', ?, ?, ?, ?, 'queued'
+                       WHERE NOT EXISTS (
+                           SELECT 1 FROM messages WHERE outbox_id=?
+                       )""",
+                    (
+                        row["turn_id"],
+                        visible,
+                        now,
+                        json.dumps([source]),
+                        outbox_id,
+                        outbox_id,
                     ),
                 )
             if visible_messages:

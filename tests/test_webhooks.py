@@ -172,6 +172,10 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                 draft,
                 turn_id=owner_turn_id,
             )
+            owner_outbox_id = daemon.store._db.execute(
+                "SELECT id FROM outbox WHERE turn_id=?", (owner_turn_id,)
+            ).fetchone()["id"]
+            daemon.store.mark_sent(int(owner_outbox_id))
             daemon.store.create_episode(
                 "回家与快递",
                 episode_id="arrival-packages",
