@@ -153,13 +153,15 @@ class Store(MemoryStore, DeliveryStore):
             str(row["name"])
             for row in self._db.execute("PRAGMA table_info(messages)").fetchall()
         }
-        if "turn_id" not in message_columns:
+        migrating_legacy_turn_ids = "turn_id" not in message_columns
+        if migrating_legacy_turn_ids:
             self._db.execute(
                 "ALTER TABLE messages ADD COLUMN turn_id TEXT NOT NULL DEFAULT ''"
             )
         if "outbox_id" not in message_columns:
             self._db.execute("ALTER TABLE messages ADD COLUMN outbox_id INTEGER")
-        if "delivery_state" not in message_columns:
+        migrating_legacy_delivery = "delivery_state" not in message_columns
+        if migrating_legacy_delivery:
             self._db.execute(
                 """ALTER TABLE messages ADD COLUMN delivery_state
                    TEXT NOT NULL DEFAULT 'delivered'"""
@@ -180,6 +182,14 @@ class Store(MemoryStore, DeliveryStore):
                    ORDER BY id LIMIT 1""",
                 (outbox["turn_id"], outbox["text"]),
             ).fetchone()
+            if message is None and migrating_legacy_turn_ids:
+                message = self._db.execute(
+                    """SELECT id FROM messages
+                       WHERE role='assistant' AND content=?
+                         AND outbox_id IS NULL AND delivery_state<>'internal'
+                       ORDER BY id LIMIT 1""",
+                    (outbox["text"],),
+                ).fetchone()
             if message is not None:
                 self._db.execute(
                     "UPDATE messages SET outbox_id=?, delivery_state=? WHERE id=?",
@@ -192,6 +202,12 @@ class Store(MemoryStore, DeliveryStore):
                         message["id"],
                     ),
                 )
+        if migrating_legacy_delivery:
+            self._db.execute(
+                """UPDATE messages SET delivery_state='uncertain'
+                   WHERE role='assistant' AND outbox_id IS NULL
+                     AND delivery_state='delivered'"""
+            )
         self._db.execute(
             "CREATE INDEX IF NOT EXISTS messages_delivery ON messages(delivery_state, outbox_id)"
         )

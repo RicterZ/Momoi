@@ -203,9 +203,37 @@ class StorageMemoryTest(unittest.TestCase):
                 )"""
             )
             database.execute(
+                """CREATE TABLE outbox (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    turn_id TEXT NOT NULL,
+                    dedupe_key TEXT NOT NULL UNIQUE,
+                    text TEXT NOT NULL,
+                    state TEXT NOT NULL DEFAULT 'pending',
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    possible_duplicate INTEGER NOT NULL DEFAULT 0,
+                    next_attempt_at REAL NOT NULL DEFAULT 0,
+                    last_error TEXT
+                )"""
+            )
+            database.execute(
                 """INSERT INTO messages
                    (role, content, created_at, source_event_ids_json)
                    VALUES ('user', '旧对话', 1, '["old-event"]')"""
+            )
+            database.execute(
+                """INSERT INTO messages
+                   (role, content, created_at, source_event_ids_json)
+                   VALUES ('assistant', '无法证明送达的旧回复', 1, '["old-event"]')"""
+            )
+            database.execute(
+                """INSERT INTO messages
+                   (role, content, created_at, source_event_ids_json)
+                   VALUES ('assistant', '有出站证据的旧回复', 1, '["old-event"]')"""
+            )
+            database.execute(
+                """INSERT INTO outbox
+                   (turn_id, dedupe_key, text, state)
+                   VALUES ('old-turn', 'old-turn:0', '有出站证据的旧回复', 'sent')"""
             )
             database.commit()
             database.close()
@@ -215,9 +243,23 @@ class StorageMemoryTest(unittest.TestCase):
                 row["name"] for row in store._db.execute("PRAGMA table_info(messages)")
             }
             self.assertIn("turn_id", columns)
-            row = store._db.execute("SELECT content, turn_id FROM messages").fetchone()
+            row = store._db.execute(
+                "SELECT content, turn_id FROM messages WHERE role='user'"
+            ).fetchone()
             self.assertEqual(row["content"], "旧对话")
             self.assertTrue(row["turn_id"])
+            assistants = {
+                row["content"]: (row["delivery_state"], row["outbox_id"])
+                for row in store._db.execute(
+                    """SELECT content, delivery_state, outbox_id FROM messages
+                       WHERE role='assistant'"""
+                ).fetchall()
+            }
+            self.assertEqual(
+                assistants["无法证明送达的旧回复"], ("uncertain", None)
+            )
+            self.assertEqual(assistants["有出站证据的旧回复"][0], "delivered")
+            self.assertIsNotNone(assistants["有出站证据的旧回复"][1])
             episodes = store.search_episodes("旧对话", 3)
             self.assertEqual(len(episodes), 1)
             episode_id = str(episodes[0]["id"])
@@ -229,7 +271,7 @@ class StorageMemoryTest(unittest.TestCase):
 
             reopened = Store(path)
             row = reopened._db.execute(
-                "SELECT content, turn_id FROM messages"
+                "SELECT content, turn_id FROM messages WHERE role='user'"
             ).fetchone()
             self.assertEqual(row["content"], "旧对话")
             self.assertTrue(row["turn_id"])
@@ -240,6 +282,13 @@ class StorageMemoryTest(unittest.TestCase):
                 1,
             )
             self.assertEqual(reopened.search_episodes("旧对话", 3)[0]["id"], episode_id)
+            self.assertEqual(
+                reopened._db.execute(
+                    """SELECT delivery_state FROM messages
+                       WHERE content='无法证明送达的旧回复'"""
+                ).fetchone()[0],
+                "uncertain",
+            )
             reopened.close()
 
     def test_context_plan_revisions_and_episode_turn_links_persist(self) -> None:
