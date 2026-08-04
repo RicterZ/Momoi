@@ -80,6 +80,22 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
                         "previous result. Omit it for the newest page."
                     ),
                 },
+                "message_id": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": (
+                        "Read another chunk of one oversized archived message. Use "
+                        "the id returned with next_content_offset."
+                    ),
+                },
+                "content_offset": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": (
+                        "Character offset returned as next_content_offset for the "
+                        "same message_id."
+                    ),
+                },
             },
             "required": ["episode_id"],
             "additionalProperties": False,
@@ -252,6 +268,30 @@ class MemoryTools:
             or before_ordinal < 2
         ):
             return {"ok": False, "error": "invalid_before_ordinal"}
+        message_id = arguments.get("message_id")
+        content_offset = arguments.get("content_offset", 0)
+        if message_id is not None and (
+            isinstance(message_id, bool)
+            or not isinstance(message_id, int)
+            or message_id < 1
+            or isinstance(content_offset, bool)
+            or not isinstance(content_offset, int)
+            or content_offset < 0
+            or before_ordinal is not None
+        ):
+            return {"ok": False, "error": "invalid_message_cursor"}
+        if message_id is None and "content_offset" in arguments:
+            return {"ok": False, "error": "message_id_required"}
+        if message_id is not None:
+            try:
+                message = self.store.conversation_message(
+                    episode_id.strip(), message_id, content_offset
+                )
+            except ValueError:
+                return {"ok": False, "error": "invalid_content_offset"}
+            if message is None:
+                return {"ok": False, "error": "message_not_found"}
+            return {"ok": True, "message": message}
         episode = self.store.conversation_episode(
             episode_id.strip(), before_ordinal=before_ordinal
         )

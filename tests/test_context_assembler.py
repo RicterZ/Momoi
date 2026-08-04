@@ -62,6 +62,38 @@ def plan(query: str, episode_id: str = "episode-mail") -> dict[str, object]:
 
 
 class ContextAssemblerTest(unittest.TestCase):
+    def test_matched_raw_excerpt_is_centered_on_a_late_message_match(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store.create_episode("很久以前的暗号", episode_id="long-match")
+            secret = "紫罗兰火车票在银色抽屉"
+            event = IncomingMessage(
+                "long-match-event",
+                "long-match-event",
+                "甲" * 700 + secret,
+                1,
+                1,
+            )
+            store.add_event(event)
+            store.begin_turn("long-match-turn", "owner", [event.event_id])
+            store.commit_turn(
+                [event], event.text, AgentReply(["记下了"]), turn_id="long-match-turn"
+            )
+            store.link_turn_to_episode("long-match", "long-match-turn")
+            store._db.execute(
+                """UPDATE conversation_episodes
+                   SET working_summary='曾经谈过一个暗号',
+                       summarized_through_ordinal=1
+                   WHERE id='long-match'"""
+            )
+            store._db.commit()
+
+            recalled = recall_episode_context(store, secret, 3, 1000, 1000)
+
+            self.assertIn("matched_raw", recalled)
+            self.assertIn(secret, recalled)
+            store.close()
+
     def test_multi_intent_turn_indexes_only_its_bound_episode_units(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")

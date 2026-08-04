@@ -312,6 +312,45 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertIsNone(second["next_before_ordinal"])
             store.close()
 
+    def test_conversation_read_continues_inside_one_oversized_message(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store.create_episode("单条超长消息", episode_id="oversized")
+            turn_id = "oversized-turn"
+            store.begin_turn(turn_id, "autonomous", [turn_id])
+            secret = "末尾仍然必须可以读取"
+            with store._db:
+                store._db.execute(
+                    """INSERT INTO messages
+                       (turn_id, role, content, created_at, source_event_ids_json)
+                       VALUES (?, 'assistant', ?, 1, '[]')""",
+                    (turn_id, "甲" * 35000 + secret),
+                )
+            store.link_turn_to_episode("oversized", turn_id)
+
+            first = MemoryTools(store).execute(
+                ToolCall("first", "conversation_read", {"episode_id": "oversized"}),
+                [],
+                TurnDraft(),
+            )["episode"]["messages"][0]
+            self.assertIsNotNone(first["next_content_offset"])
+            second = MemoryTools(store).execute(
+                ToolCall(
+                    "second",
+                    "conversation_read",
+                    {
+                        "episode_id": "oversized",
+                        "message_id": first["id"],
+                        "content_offset": first["next_content_offset"],
+                    },
+                ),
+                [],
+                TurnDraft(),
+            )["message"]
+            self.assertIn(secret, second["content"])
+            self.assertIsNone(second["next_content_offset"])
+            store.close()
+
     def test_emotion_paths_are_relative_and_old_workspace_paths_migrate(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             workspace = Path(directory) / "workspace"

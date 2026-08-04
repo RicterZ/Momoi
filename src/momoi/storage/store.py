@@ -24,7 +24,14 @@ from ..models import (
     TurnDraft,
 )
 from .delivery import DeliveryStore
-from .memory import MemoryStore, estimate_tokens, lexical_units, truncate_tokens
+from .memory import (
+    MemoryStore,
+    estimate_tokens,
+    excerpt_tokens,
+    lexical_units,
+    token_chunk,
+    truncate_tokens,
+)
 from .scheduling import next_schedule_at, quiet_until
 
 logger = logging.getLogger(__name__)
@@ -1179,6 +1186,17 @@ class Store(MemoryStore, DeliveryStore):
         ).fetchall()
         return [self._episode_dict(row) for row in rows]
 
+    def list_episode_directory(self, limit: int = 64) -> list[dict[str, object]]:
+        if limit <= 0:
+            return []
+        rows = self._db.execute(
+            """SELECT * FROM conversation_episodes
+               ORDER BY status='open' DESC, status='closing' DESC,
+                        updated_at DESC, salience DESC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+        return [self._episode_dict(row) for row in rows]
+
     def search_episodes(self, query: str, max_results: int) -> list[dict[str, object]]:
         if max_results <= 0:
             return []
@@ -1235,10 +1253,39 @@ class Store(MemoryStore, DeliveryStore):
                     name: row[name]
                     for name in ("id", "turn_id", "ordinal", "role", "created_at")
                 },
-                "content": truncate_tokens(str(row["content"]), 500),
+                "content": excerpt_tokens(str(row["content"]), query_units, 500),
             }
             for row in rows
         ]
+
+    def conversation_message(
+        self,
+        episode_id: str,
+        message_id: int,
+        content_offset: int = 0,
+        token_budget: int = 30000,
+    ) -> dict[str, object] | None:
+        row = self._db.execute(
+            """SELECT m.id, m.turn_id, et.ordinal, m.role, m.content, m.created_at
+               FROM episode_turns AS et
+               JOIN messages AS m ON m.turn_id=et.turn_id
+               WHERE et.episode_id=? AND m.id=?""",
+            (episode_id, message_id),
+        ).fetchone()
+        if row is None:
+            return None
+        content, next_offset = token_chunk(
+            str(row["content"]), content_offset, token_budget
+        )
+        return {
+            **{
+                name: row[name]
+                for name in ("id", "turn_id", "ordinal", "role", "created_at")
+            },
+            "content": content,
+            "content_offset": content_offset,
+            "next_content_offset": next_offset,
+        }
 
     def conversation_episode(
         self,
@@ -1402,7 +1449,12 @@ class Store(MemoryStore, DeliveryStore):
                     )
                 per_message = max(1, token_budget // len(group))
                 for item in group:
-                    item["content"] = truncate_tokens(str(item["content"]), per_message)
+                    content, next_offset = token_chunk(
+                        str(item["content"]), 0, per_message
+                    )
+                    item["content"] = content
+                    item["content_offset"] = 0
+                    item["next_content_offset"] = next_offset
                 size = sum(estimate_tokens(str(item["content"])) for item in group)
             selected.append(group)
             used += size

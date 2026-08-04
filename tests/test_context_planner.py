@@ -118,6 +118,85 @@ class ContextPlannerTest(unittest.TestCase):
 
 
 class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
+    async def test_closed_episode_directory_allows_semantic_planner_binding(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(app_config(directory))
+            daemon.store.create_episode(
+                "蓝色保温杯收纳",
+                episode_id="old-cup",
+                topics=["保温杯", "阁楼收纳"],
+            )
+            daemon.store._db.execute(
+                """UPDATE conversation_episodes
+                   SET status='closed', working_summary='杯子放在阁楼纸箱中'
+                   WHERE id='old-cup'"""
+            )
+            daemon.store._db.commit()
+
+            class Provider:
+                async def complete(
+                    provider_self,
+                    system: object,
+                    messages: list[dict[str, object]],
+                    tools: list[dict[str, object]],
+                    **_: object,
+                ) -> ProviderResponse:
+                    self.assertEqual(system, CONTEXT_PLANNER_SYSTEM_PROMPT)
+                    payload = json.loads(str(messages[0]["content"]))
+                    self.assertIn(
+                        "old-cup",
+                        {item["id"] for item in payload["candidate_episodes"]},
+                    )
+                    plan = {
+                        "version": 1,
+                        "intent_units": [
+                            {
+                                "id": "u1",
+                                "event_ids": ["semantic-event"],
+                                "text": "我把喝水用的东西搁哪儿啦",
+                                "intent": "find stored drinking container",
+                                "references": ["喝水用的东西"],
+                                "recall_queries": ["保温杯 阁楼 收纳位置"],
+                            }
+                        ],
+                        "episode_bindings": [
+                            {
+                                "episode_ref": "old-cup",
+                                "title": "蓝色保温杯收纳",
+                                "relation": "primary",
+                                "unit_ids": ["u1"],
+                                "topics": ["保温杯", "阁楼收纳"],
+                                "entities": [],
+                                "open_loops": [],
+                                "salience": 0.7,
+                            }
+                        ],
+                        "episode_links": [],
+                        "uncertainty": [],
+                    }
+                    return ProviderResponse(
+                        [{"type": "text", "text": json.dumps(plan, ensure_ascii=False)}],
+                        [],
+                    )
+
+            daemon.provider = Provider()  # type: ignore[assignment]
+            event = IncomingMessage(
+                "semantic-event",
+                "semantic-event",
+                "我把喝水用的东西搁哪儿啦",
+                1,
+                1,
+            )
+            turn_id = "semantic-turn"
+            daemon.store.begin_turn(turn_id, "owner", [event.event_id])
+
+            planned = await daemon._plan_owner_context([event], turn_id)
+
+            self.assertEqual(planned["episode_bindings"][0]["episode_id"], "old-cup")
+            daemon.store.close()
+
     async def test_planner_runs_without_tools_before_main_and_commits_episodes(
         self,
     ) -> None:

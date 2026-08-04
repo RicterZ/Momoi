@@ -45,6 +45,77 @@ def truncate_tokens(text: str, token_budget: int) -> str:
     return text[:low] + marker
 
 
+def excerpt_tokens(text: str, terms: set[str], token_budget: int) -> str:
+    if token_budget <= 0:
+        return ""
+    if estimate_tokens(text) <= token_budget:
+        return text
+    folded = text.casefold()
+    matches = [
+        (folded.find(term.casefold()), term)
+        for term in terms
+        if term and folded.find(term.casefold()) >= 0
+    ]
+    if not matches:
+        return truncate_tokens(text, token_budget)
+    positions = [position for position, _ in matches]
+    anchor = max(
+        matches,
+        key=lambda match: (
+            sum(
+                len(term)
+                for position, term in matches
+                if abs(position - match[0]) <= 500
+            ),
+            len(match[1]),
+            -match[0],
+        ),
+    )[0]
+    marker = "…"
+    marker_tokens = estimate_tokens(marker)
+    left_budget = max(0, (token_budget - marker_tokens) // 3)
+    left = text[:anchor]
+    low, high = 0, len(left)
+    while low < high:
+        middle = (low + high) // 2
+        if estimate_tokens(left[middle:]) <= left_budget:
+            high = middle
+        else:
+            low = middle + 1
+    prefix = left[low:]
+    remaining = max(
+        1,
+        token_budget
+        - estimate_tokens(prefix)
+        - (marker_tokens if low else 0),
+    )
+    suffix = truncate_tokens(text[anchor:], remaining)
+    return (marker if low else "") + prefix + suffix
+
+
+def token_chunk(text: str, offset: int, token_budget: int) -> tuple[str, int | None]:
+    if token_budget <= 0:
+        raise ValueError("token budget must be positive")
+    if offset < 0 or offset > len(text):
+        raise ValueError("content offset is outside the message")
+    remaining = text[offset:]
+    if estimate_tokens(remaining) <= token_budget:
+        return remaining, None
+    marker = "…[continued]"
+    if estimate_tokens(marker) >= token_budget:
+        marker = ""
+    low, high = 0, len(remaining)
+    while low < high:
+        middle = (low + high + 1) // 2
+        if estimate_tokens(remaining[:middle] + marker) <= token_budget:
+            low = middle
+        else:
+            high = middle - 1
+    if low == 0:
+        low = 1
+    return remaining[:low] + marker, offset + low
+
+
 def lexical_units(text: str) -> set[str]:
     normalized = text.casefold()
     units = set(re.findall(r"[a-z0-9_]{2,}", normalized))

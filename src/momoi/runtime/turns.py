@@ -220,9 +220,10 @@ class TurnRunner:
         for candidate in [
             *self.store.search_episodes(owner_query, 8),
             *self.store.list_episode_candidates(12),
+            *self.store.list_episode_directory(64),
         ]:
             candidates_by_id.setdefault(str(candidate["id"]), candidate)
-            if len(candidates_by_id) == 12:
+            if len(candidates_by_id) == 64:
                 break
         candidates = list(candidates_by_id.values())
         candidate_context = [
@@ -231,7 +232,7 @@ class TurnRunner:
                 "status": candidate["status"],
                 "title": candidate["title"],
                 "summary": str(candidate["working_summary"] or candidate["summary"])[
-                    :600
+                    :400
                 ],
                 "topics": candidate["topics"],
                 "entities": candidate["entities"],
