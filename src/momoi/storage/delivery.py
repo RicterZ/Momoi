@@ -170,10 +170,7 @@ class DeliveryStore:
                 """INSERT INTO messages
                    (turn_id, role, content, created_at, source_event_ids_json)
                    VALUES (?, 'assistant', ?, ?, ?)""",
-                (
-                    (turn_id, row["text"], row["created_at"], source)
-                    for row in progress
-                ),
+                ((turn_id, row["text"], row["created_at"], source) for row in progress),
             )
             for index, (text, kind, path, payload) in enumerate(normalized):
                 self._db.execute(
@@ -201,6 +198,21 @@ class DeliveryStore:
                         ),
                         target_channel,
                     ),
+                )
+            visible = [str(row["text"]) for row in progress] + [
+                text for text, _, _, _ in normalized
+            ]
+            if visible:
+                workflow = self._db.execute(
+                    "SELECT workflow_id FROM webhook_runs WHERE id=?", (run_id,)
+                ).fetchone()
+                workflow_id = str(workflow["workflow_id"]) if workflow else run_id
+                self._ensure_autonomous_episode(
+                    f"webhook:{workflow_id}",
+                    turn_id,
+                    self._episode_title(visible[0], "Webhook conversation"),
+                    now,
+                    visible,
                 )
             self._apply_mood_transition(reply.mood_transition, now)
             outbox_ids = [
@@ -425,8 +437,7 @@ class DeliveryStore:
                 ).fetchone()
                 due = now + reply_initial_delay
                 already_waiting = bool(
-                    state
-                    and str(state["pending_reply_expectation"] or "").strip()
+                    state and str(state["pending_reply_expectation"] or "").strip()
                 )
                 if already_waiting and float(state["next_heartbeat_at"] or 0) > 0:
                     due = float(state["next_heartbeat_at"])

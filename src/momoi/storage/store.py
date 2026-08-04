@@ -1,5 +1,5 @@
-import json
 import hashlib
+import json
 import logging
 import math
 import re
@@ -26,7 +26,6 @@ from ..models import (
 from .delivery import DeliveryStore
 from .memory import MemoryStore, estimate_tokens, lexical_units, truncate_tokens
 from .scheduling import next_schedule_at, quiet_until
-
 
 logger = logging.getLogger(__name__)
 
@@ -72,9 +71,7 @@ class Store(MemoryStore, DeliveryStore):
         self._db.close()
 
     def _migrate(self) -> None:
-        import_unassigned_messages = not self._table_exists(
-            "conversation_episodes"
-        )
+        import_unassigned_messages = not self._table_exists("conversation_episodes")
         self._db.executescript(Path(__file__).with_name("schema.sql").read_text())
         outbox_columns = {
             str(row["name"])
@@ -259,6 +256,7 @@ class Store(MemoryStore, DeliveryStore):
             import_unassigned_messages = True
         self._migrate_legacy_conversations(import_unassigned_messages)
         self._migrate_legacy_continuity()
+        self._backfill_episode_recall_terms()
         self._db.execute("UPDATE goals SET review_claimed_at=NULL")
         self._db.execute("UPDATE reminders SET claimed_at=NULL WHERE status='pending'")
         self._db.execute(
@@ -268,9 +266,7 @@ class Store(MemoryStore, DeliveryStore):
         self._db.execute(
             "UPDATE reflections SET state='pending', claimed_at=NULL WHERE state='running'"
         )
-        self._db.execute(
-            "UPDATE conversation_episodes SET summary_claimed_at=NULL"
-        )
+        self._db.execute("UPDATE conversation_episodes SET summary_claimed_at=NULL")
         self._db.commit()
 
     def _table_exists(self, name: str) -> bool:
@@ -281,9 +277,7 @@ class Store(MemoryStore, DeliveryStore):
             is not None
         )
 
-    def _legacy_turn_groups(
-        self, rows: list[sqlite3.Row]
-    ) -> list[dict[str, object]]:
+    def _legacy_turn_groups(self, rows: list[sqlite3.Row]) -> list[dict[str, object]]:
         grouped: list[list[sqlite3.Row]] = []
         group_key = ""
         for row in rows:
@@ -302,10 +296,13 @@ class Store(MemoryStore, DeliveryStore):
         turns: list[dict[str, object]] = []
         for messages in grouped:
             stored_turn_id = str(messages[0]["turn_id"] or "")
-            turn_id = stored_turn_id or uuid.uuid5(
-                uuid.NAMESPACE_URL,
-                f"momoi:legacy-turn:{messages[0]['id']}:{messages[-1]['id']}",
-            ).hex
+            turn_id = (
+                stored_turn_id
+                or uuid.uuid5(
+                    uuid.NAMESPACE_URL,
+                    f"momoi:legacy-turn:{messages[0]['id']}:{messages[-1]['id']}",
+                ).hex
+            )
             source_ids: list[str] = []
             for message in messages:
                 try:
@@ -317,7 +314,11 @@ class Store(MemoryStore, DeliveryStore):
             source_ids = list(dict.fromkeys(source_ids))
             started_at = min(float(message["created_at"]) for message in messages)
             updated_at = max(float(message["created_at"]) for message in messages)
-            kind = "owner" if any(message["role"] == "user" for message in messages) else "autonomous"
+            kind = (
+                "owner"
+                if any(message["role"] == "user" for message in messages)
+                else "autonomous"
+            )
             self._db.execute(
                 """INSERT OR IGNORE INTO turns
                    (id, kind, source_ids_json, state, stage, started_at, updated_at)
@@ -472,9 +473,7 @@ class Store(MemoryStore, DeliveryStore):
             "SELECT content, updated_at FROM continuity_state WHERE id=1"
         ).fetchone()
         if row is not None and str(row["content"]).strip():
-            episode_id = uuid.uuid5(
-                uuid.NAMESPACE_URL, "momoi:legacy-continuity"
-            ).hex
+            episode_id = uuid.uuid5(uuid.NAMESPACE_URL, "momoi:legacy-continuity").hex
             self._db.execute(
                 """INSERT OR IGNORE INTO conversation_episodes
                    (id, status, title, working_summary, salience,
@@ -725,9 +724,7 @@ class Store(MemoryStore, DeliveryStore):
     @staticmethod
     def _context_plan_dict(row: sqlite3.Row) -> dict[str, object]:
         plan = dict(row)
-        plan["source_event_ids"] = json.loads(
-            str(plan.pop("source_event_ids_json"))
-        )
+        plan["source_event_ids"] = json.loads(str(plan.pop("source_event_ids_json")))
         plan["plan"] = json.loads(str(plan.pop("plan_json")))
         plan["retrieval"] = json.loads(str(plan.pop("retrieval_json")))
         return plan
@@ -825,9 +822,7 @@ class Store(MemoryStore, DeliveryStore):
                 """UPDATE context_plans SET retrieval_json=?, state=?, updated_at=?
                    WHERE turn_id=? AND revision=? AND state<>'superseded'""",
                 (
-                    json.dumps(
-                        retrieval, ensure_ascii=False, separators=(",", ":")
-                    ),
+                    json.dumps(retrieval, ensure_ascii=False, separators=(",", ":")),
                     state,
                     now,
                     turn_id,
@@ -853,9 +848,134 @@ class Store(MemoryStore, DeliveryStore):
     @staticmethod
     def _episode_dict(row: sqlite3.Row) -> dict[str, object]:
         episode = dict(row)
+        episode.pop("overlap", None)
         for name in ("topics", "entities", "open_loops"):
             episode[name] = json.loads(str(episode.pop(f"{name}_json")))
         return episode
+
+    @staticmethod
+    def _recall_terms(*values: object) -> set[str]:
+        return lexical_units(
+            " ".join(
+                json.dumps(value, ensure_ascii=False)
+                if isinstance(value, (list, dict))
+                else str(value or "")
+                for value in values
+            )
+        )
+
+    def _index_episode_terms(self, episode_id: str, *values: object) -> None:
+        self._db.executemany(
+            "INSERT OR IGNORE INTO episode_recall_terms (episode_id, term) VALUES (?, ?)",
+            ((episode_id, term) for term in self._recall_terms(*values)),
+        )
+
+    def _index_episode_message_terms(
+        self, episode_id: str, message_id: int, content: str
+    ) -> None:
+        terms = self._recall_terms(content)
+        self._db.executemany(
+            """INSERT OR IGNORE INTO episode_message_recall_terms
+               (episode_id, message_id, term) VALUES (?, ?, ?)""",
+            ((episode_id, message_id, term) for term in terms),
+        )
+
+    def _index_turn_episode_terms(self, turn_id: str) -> None:
+        messages = self._db.execute(
+            "SELECT id, content FROM messages WHERE turn_id=?", (turn_id,)
+        ).fetchall()
+        for episode in self._db.execute(
+            "SELECT episode_id FROM episode_turns WHERE turn_id=?", (turn_id,)
+        ).fetchall():
+            episode_id = str(episode["episode_id"])
+            for message in messages:
+                content = str(message["content"])
+                self._index_episode_terms(episode_id, content)
+                self._index_episode_message_terms(
+                    episode_id, int(message["id"]), content
+                )
+
+    def _ensure_autonomous_episode(
+        self,
+        episode_key: str,
+        turn_id: str,
+        title: str,
+        now: float,
+        *recall_values: object,
+    ) -> str:
+        episode_id = uuid.uuid5(
+            uuid.NAMESPACE_URL, f"momoi:autonomous-episode:{episode_key}"
+        ).hex
+        self._db.execute(
+            """INSERT OR IGNORE INTO turns
+               (id, kind, source_ids_json, state, started_at, updated_at)
+               VALUES (?, 'autonomous', ?, 'running', ?, ?)""",
+            (turn_id, json.dumps([episode_key]), now, now),
+        )
+        self._db.execute(
+            """INSERT OR IGNORE INTO conversation_episodes
+               (id, title, salience, created_at, updated_at)
+               VALUES (?, ?, 0.4, ?, ?)""",
+            (episode_id, title[:200], now, now),
+        )
+        linked = self._db.execute(
+            """SELECT 1 FROM episode_turns
+               WHERE episode_id=? AND turn_id=?""",
+            (episode_id, turn_id),
+        ).fetchone()
+        if linked is None:
+            ordinal = self._db.execute(
+                """SELECT COALESCE(MAX(ordinal), 0) + 1 FROM episode_turns
+                   WHERE episode_id=?""",
+                (episode_id,),
+            ).fetchone()[0]
+            self._db.execute(
+                """INSERT INTO episode_turns
+                   (episode_id, turn_id, ordinal, relation, unit_ids_json)
+                   VALUES (?, ?, ?, 'primary', '[]')""",
+                (episode_id, turn_id, ordinal),
+            )
+        self._db.execute(
+            "UPDATE conversation_episodes SET updated_at=? WHERE id=?",
+            (now, episode_id),
+        )
+        self._index_episode_terms(episode_id, title, *recall_values)
+        self._index_turn_episode_terms(turn_id)
+        return episode_id
+
+    def _backfill_episode_recall_terms(self) -> None:
+        episodes = self._db.execute(
+            """SELECT * FROM conversation_episodes AS e
+               WHERE NOT EXISTS (
+                   SELECT 1 FROM episode_recall_terms AS rt
+                   WHERE rt.episode_id=e.id
+               )"""
+        ).fetchall()
+        for row in episodes:
+            episode = self._episode_dict(row)
+            self._index_episode_terms(
+                str(episode["id"]),
+                episode["title"],
+                episode["working_summary"],
+                episode["summary"],
+                episode["topics"],
+                episode["entities"],
+                episode["open_loops"],
+            )
+        missing_messages = self._db.execute(
+            """SELECT et.episode_id, m.id, m.content
+               FROM episode_turns AS et
+               JOIN messages AS m ON m.turn_id=et.turn_id
+               WHERE NOT EXISTS (
+                   SELECT 1 FROM episode_message_recall_terms AS mrt
+                   WHERE mrt.episode_id=et.episode_id AND mrt.message_id=m.id
+               )"""
+        ).fetchall()
+        for message in missing_messages:
+            episode_id = str(message["episode_id"])
+            content = str(message["content"])
+            self._index_episode_terms(episode_id, content)
+            self._index_episode_message_terms(episode_id, int(message["id"]), content)
 
     def create_episode(
         self,
@@ -895,6 +1015,9 @@ class Store(MemoryStore, DeliveryStore):
                     now,
                 ),
             )
+            self._index_episode_terms(
+                episode_id, title, topics or [], entities or [], open_loops or []
+            )
         saved = self.episode(episode_id)
         if saved is None:
             raise RuntimeError("episode was not saved")
@@ -905,6 +1028,62 @@ class Store(MemoryStore, DeliveryStore):
             "SELECT * FROM conversation_episodes WHERE id=?", (episode_id,)
         ).fetchone()
         return self._episode_dict(row) if row else None
+
+    def recent_conversation_messages(
+        self, turn_limit: int, token_budget: int
+    ) -> list[dict[str, object]]:
+        if turn_limit <= 0 or token_budget <= 0:
+            return []
+        turns = self._db.execute(
+            """SELECT t.id, t.updated_at FROM turns AS t
+               WHERE t.state='completed' AND EXISTS (
+                   SELECT 1 FROM messages AS m
+                   WHERE m.turn_id=t.id
+                     AND NOT (
+                         m.role='assistant'
+                         AND m.content LIKE '[AUTONOMOUS %; not sent to the owner]%'
+                     )
+               )
+               ORDER BY t.updated_at DESC LIMIT ?""",
+            (turn_limit,),
+        ).fetchall()
+        if not turns:
+            return []
+        turn_ids = [str(row["id"]) for row in turns]
+        placeholders = ",".join("?" for _ in turn_ids)
+        rows = self._db.execute(
+            f"""SELECT m.id, m.turn_id, m.role, m.content, m.created_at
+                FROM messages AS m
+                WHERE m.turn_id IN ({placeholders})
+                  AND NOT (
+                      m.role='assistant'
+                      AND m.content LIKE '[AUTONOMOUS %; not sent to the owner]%'
+                  )
+                ORDER BY m.id""",
+            tuple(turn_ids),
+        ).fetchall()
+        by_turn: dict[str, list[dict[str, object]]] = {}
+        for row in rows:
+            by_turn.setdefault(str(row["turn_id"]), []).append(dict(row))
+        selected: list[list[dict[str, object]]] = []
+        used = 0
+        for turn_id in turn_ids:
+            group = by_turn.get(turn_id, [])
+            if not group:
+                continue
+            size = sum(estimate_tokens(str(item["content"])) for item in group)
+            if selected and used + size > token_budget:
+                break
+            if not selected and size > token_budget:
+                per_message = max(1, token_budget // len(group))
+                for item in group:
+                    item["content"] = truncate_tokens(
+                        str(item["content"]), per_message
+                    )
+                size = sum(estimate_tokens(str(item["content"])) for item in group)
+            selected.append(group)
+            used += size
+        return [item for group in reversed(selected) for item in group]
 
     def list_episode_candidates(self, limit: int = 20) -> list[dict[str, object]]:
         if limit <= 0:
@@ -918,58 +1097,101 @@ class Store(MemoryStore, DeliveryStore):
         ).fetchall()
         return [self._episode_dict(row) for row in rows]
 
-    def search_episodes(
-        self, query: str, max_results: int
-    ) -> list[dict[str, object]]:
+    def search_episodes(self, query: str, max_results: int) -> list[dict[str, object]]:
         if max_results <= 0:
             return []
         query_units = lexical_units(query)
-        ranked: list[tuple[float, sqlite3.Row]] = []
+        if not query_units:
+            return []
+        placeholders = ",".join("?" for _ in query_units)
+        ranked: list[tuple[float, float, sqlite3.Row]] = []
         rows = self._db.execute(
-            "SELECT * FROM conversation_episodes ORDER BY updated_at DESC"
+            f"""SELECT e.*, matched.overlap
+                FROM conversation_episodes AS e
+                JOIN (
+                    SELECT episode_id, COUNT(*) AS overlap
+                    FROM episode_recall_terms
+                    WHERE term IN ({placeholders})
+                    GROUP BY episode_id
+                ) AS matched ON matched.episode_id=e.id""",
+            tuple(query_units),
         ).fetchall()
         for row in rows:
-            units = lexical_units(
-                " ".join(
-                    str(row[name] or "")
-                    for name in (
-                        "title",
-                        "working_summary",
-                        "summary",
-                        "topics_json",
-                        "entities_json",
-                        "open_loops_json",
-                    )
-                )
+            overlap = int(row["overlap"])
+            score = overlap / len(query_units) + float(row["salience"]) * 0.1
+            ranked.append((score, float(row["updated_at"]), row))
+        ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        results: list[dict[str, object]] = []
+        for _, _, row in ranked[:max_results]:
+            episode = self._episode_dict(row)
+            episode["matches"] = self._episode_match_snippets(
+                str(episode["id"]), query_units
             )
-            overlap = len(query_units & units)
-            if overlap == 0:
-                continue
-            score = (
-                overlap / max(1, math.sqrt(len(query_units) * len(units)))
-                + float(row["salience"]) * 0.1
-            )
-            ranked.append((score, row))
-        ranked.sort(key=lambda item: item[0], reverse=True)
-        return [self._episode_dict(row) for _, row in ranked[:max_results]]
+            results.append(episode)
+        return results
+
+    def _episode_match_snippets(
+        self, episode_id: str, query_units: set[str], limit: int = 4
+    ) -> list[dict[str, object]]:
+        placeholders = ",".join("?" for _ in query_units)
+        rows = self._db.execute(
+            f"""SELECT m.id, m.turn_id, et.ordinal, m.role, m.content,
+                       m.created_at, COUNT(*) AS overlap
+                FROM episode_message_recall_terms AS mrt
+                JOIN messages AS m ON m.id=mrt.message_id
+                JOIN episode_turns AS et
+                  ON et.episode_id=mrt.episode_id AND et.turn_id=m.turn_id
+                WHERE mrt.episode_id=? AND mrt.term IN ({placeholders})
+                GROUP BY m.id, m.turn_id, et.ordinal, m.role, m.content, m.created_at
+                ORDER BY overlap DESC, et.ordinal DESC
+                LIMIT ?""",
+            (episode_id, *query_units, limit),
+        ).fetchall()
+        return [
+            {
+                **{
+                    name: row[name]
+                    for name in ("id", "turn_id", "ordinal", "role", "created_at")
+                },
+                "content": truncate_tokens(str(row["content"]), 500),
+            }
+            for row in rows
+        ]
 
     def conversation_episode(
-        self, episode_id: str, token_budget: int = 30000
+        self,
+        episode_id: str,
+        token_budget: int = 30000,
+        *,
+        before_ordinal: int | None = None,
     ) -> dict[str, object] | None:
         episode = self.episode(episode_id)
         if episode is None:
             return None
-        total = self._db.execute(
-            """SELECT COUNT(*) FROM episode_turns AS et
+        archived = self._db.execute(
+            """SELECT et.ordinal, m.content FROM episode_turns AS et
                JOIN messages AS m ON m.turn_id=et.turn_id
-               WHERE et.episode_id=?""",
-            (episode_id,),
-        ).fetchone()[0]
-        messages = self.episode_messages(episode_id, token_budget)
+               WHERE et.episode_id=?
+                 AND (? IS NULL OR et.ordinal<?)""",
+            (episode_id, before_ordinal, before_ordinal),
+        ).fetchall()
+        messages = self.episode_messages(
+            episode_id, token_budget, before_ordinal=before_ordinal
+        )
+        omitted_messages = len(messages) < len(archived)
+        content_truncated = (
+            sum(estimate_tokens(str(row["content"])) for row in archived) > token_budget
+        )
+        next_before_ordinal = (
+            min(int(message["ordinal"]) for message in messages)
+            if omitted_messages and messages
+            else None
+        )
         return {
             **episode,
             "messages": messages,
-            "truncated": len(messages) < int(total),
+            "truncated": omitted_messages or content_truncated,
+            "next_before_ordinal": next_before_ordinal,
         }
 
     def link_turn_to_episode(
@@ -1029,6 +1251,7 @@ class Store(MemoryStore, DeliveryStore):
                 "UPDATE conversation_episodes SET updated_at=? WHERE id=?",
                 (now, episode_id),
             )
+            self._index_turn_episode_terms(turn_id)
         return {
             "episode_id": episode_id,
             "turn_id": turn_id,
@@ -1051,7 +1274,13 @@ class Store(MemoryStore, DeliveryStore):
         ]
 
     def episode_messages(
-        self, episode_id: str, token_budget: int, *, after_ordinal: int = 0
+        self,
+        episode_id: str,
+        token_budget: int,
+        *,
+        after_ordinal: int = 0,
+        before_ordinal: int | None = None,
+        exclude_message_ids: set[int] | None = None,
     ) -> list[dict[str, object]]:
         if token_budget <= 0:
             return []
@@ -1060,12 +1289,16 @@ class Store(MemoryStore, DeliveryStore):
                FROM episode_turns AS et
                JOIN messages AS m ON m.turn_id=et.turn_id
                WHERE et.episode_id=? AND et.ordinal>?
+                 AND (? IS NULL OR et.ordinal<?)
                ORDER BY et.ordinal DESC, m.id""",
-            (episode_id, after_ordinal),
+            (episode_id, after_ordinal, before_ordinal, before_ordinal),
         ).fetchall()
+        excluded = exclude_message_ids or set()
         groups: list[list[dict[str, object]]] = []
         for row in rows:
             item = dict(row)
+            if int(item["id"]) in excluded:
+                continue
             if not groups or groups[-1][0]["turn_id"] != item["turn_id"]:
                 groups.append([])
             groups[-1].append(item)
@@ -1084,12 +1317,8 @@ class Store(MemoryStore, DeliveryStore):
                     )
                 per_message = max(1, token_budget // len(group))
                 for item in group:
-                    item["content"] = truncate_tokens(
-                        str(item["content"]), per_message
-                    )
-                size = sum(
-                    estimate_tokens(str(item["content"])) for item in group
-                )
+                    item["content"] = truncate_tokens(str(item["content"]), per_message)
+                size = sum(estimate_tokens(str(item["content"])) for item in group)
             selected.append(group)
             used += size
         return [item for group in reversed(selected) for item in group]
@@ -1126,9 +1355,8 @@ class Store(MemoryStore, DeliveryStore):
                 if len(ordinals) <= raw_tail_turns:
                     continue
                 tokens = sum(estimate_tokens(str(row["content"])) for row in rows)
-                if (
-                    len(ordinals) <= raw_tail_turns * 2
-                    and tokens <= math.ceil(raw_token_budget * 1.25)
+                if len(ordinals) <= raw_tail_turns * 2 and tokens <= math.ceil(
+                    raw_token_budget * 1.25
                 ):
                     continue
                 through = ordinals[-raw_tail_turns - 1]
@@ -1168,6 +1396,7 @@ class Store(MemoryStore, DeliveryStore):
             )
             if cursor.rowcount != 1:
                 raise ValueError("claimed episode summary was not found")
+            self._index_episode_terms(episode_id, working_summary)
 
     def release_episode_annealing(self, episode_id: str) -> None:
         with self._db:
@@ -1199,18 +1428,47 @@ class Store(MemoryStore, DeliveryStore):
                 (from_episode_id, to_episode_id, kind),
             )
 
-    def _apply_context_plan_episodes(self, turn_id: str, now: float) -> None:
+    @staticmethod
+    def _episode_title(text: str, fallback: str) -> str:
+        for line in text.splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and not line.startswith("["):
+                return line[:200]
+        return fallback
+
+    def _apply_context_plan_episodes(
+        self, turn_id: str, now: float, user_text: str
+    ) -> None:
         row = self._db.execute(
             """SELECT plan_json FROM context_plans
                WHERE turn_id=? AND state<>'superseded'
                ORDER BY revision DESC LIMIT 1""",
             (turn_id,),
         ).fetchone()
-        if row is None:
-            return
-        plan = json.loads(str(row["plan_json"]))
+        plan = json.loads(str(row["plan_json"])) if row is not None else {}
         bindings = plan.get("episode_bindings", [])
         links = plan.get("episode_links", [])
+        if not bindings:
+            fallback_id = uuid.uuid5(
+                uuid.NAMESPACE_URL, f"momoi:fallback-episode:{turn_id}"
+            ).hex
+            bindings = [
+                {
+                    "episode_id": fallback_id,
+                    "is_new": True,
+                    "title": self._episode_title(user_text, "Unplanned owner turn"),
+                    "relation": "primary",
+                    "unit_ids": [
+                        str(unit["id"])
+                        for unit in plan.get("intent_units", [])
+                        if isinstance(unit, dict) and unit.get("id")
+                    ],
+                    "topics": [],
+                    "entities": [],
+                    "open_loops": [],
+                    "salience": 0.5,
+                }
+            ]
         self._db.execute("DELETE FROM episode_turns WHERE turn_id=?", (turn_id,))
         for binding in bindings:
             episode_id = str(binding["episode_id"])
@@ -1219,7 +1477,11 @@ class Store(MemoryStore, DeliveryStore):
             ).fetchone()
             if episode is None:
                 if binding.get("is_new") is not True:
-                    raise RuntimeError("planned existing episode was not found")
+                    logger.warning(
+                        "Recreated missing planned episode id=%s turn=%s",
+                        episode_id,
+                        turn_id,
+                    )
                 self._db.execute(
                     """INSERT INTO conversation_episodes
                        (id, title, topics_json, entities_json, open_loops_json,
@@ -1236,6 +1498,13 @@ class Store(MemoryStore, DeliveryStore):
                         now,
                     ),
                 )
+            self._index_episode_terms(
+                episode_id,
+                binding["title"],
+                binding["topics"],
+                binding["entities"],
+                binding["open_loops"],
+            )
             ordinal = int(
                 self._db.execute(
                     """SELECT COALESCE(MAX(ordinal), 0) + 1 FROM episode_turns
@@ -1256,8 +1525,16 @@ class Store(MemoryStore, DeliveryStore):
                 ),
             )
             self._db.execute(
-                "UPDATE conversation_episodes SET updated_at=? WHERE id=?",
-                (now, episode_id),
+                """UPDATE conversation_episodes
+                   SET status=CASE WHEN ?='primary' THEN 'open' ELSE status END,
+                       closed_at=CASE WHEN ?='primary' THEN NULL ELSE closed_at END,
+                       updated_at=? WHERE id=?""",
+                (
+                    str(binding["relation"]),
+                    str(binding["relation"]),
+                    now,
+                    episode_id,
+                ),
             )
         for link in links:
             self._db.execute(
@@ -1628,6 +1905,37 @@ class Store(MemoryStore, DeliveryStore):
                     now,
                 ),
             )
+            heartbeat_record = (
+                "[AUTONOMOUS HEARTBEAT RECORD; not sent to the owner]\n"
+                f"Activity: {activity}\n"
+                f"Result: {result.strip() or '(no concrete result recorded)'}"
+            )
+            heartbeat_source = json.dumps([f"heartbeat-record:{turn_id}"])
+            self._db.execute(
+                """INSERT INTO messages
+                   (turn_id, role, content, created_at, source_event_ids_json)
+                   SELECT ?, 'assistant', ?, ?, ?
+                   WHERE NOT EXISTS (
+                       SELECT 1 FROM messages
+                       WHERE turn_id=? AND source_event_ids_json=?
+                   )""",
+                (
+                    turn_id,
+                    heartbeat_record,
+                    now,
+                    heartbeat_source,
+                    turn_id,
+                    heartbeat_source,
+                ),
+            )
+            self._ensure_autonomous_episode(
+                "heartbeat-life",
+                turn_id,
+                "Momoi autonomous life",
+                now,
+                activity,
+                result,
+            )
             if messages:
                 target_channel = (
                     str(pending["pending_reply_channel"] or "")
@@ -1979,9 +2287,7 @@ class Store(MemoryStore, DeliveryStore):
         ).fetchall()
         return [self._reminder_dict(row) for row in rows]
 
-    def search_reminders(
-        self, query: str, max_results: int
-    ) -> list[dict[str, object]]:
+    def search_reminders(self, query: str, max_results: int) -> list[dict[str, object]]:
         if max_results <= 0:
             return []
         query_units = lexical_units(query)
@@ -2255,6 +2561,13 @@ class Store(MemoryStore, DeliveryStore):
                     target_channel,
                 ),
             )
+            self._ensure_autonomous_episode(
+                f"reminder:{reminder_id}",
+                reminder_turn_id,
+                self._episode_title(str(row["text"]), "Reminder conversation"),
+                now,
+                row["text"],
+            )
         return True
 
     @staticmethod
@@ -2452,7 +2765,14 @@ class Store(MemoryStore, DeliveryStore):
         event_ids = [event.event_id for event in events]
         now = time.time()
         with self._db:
-            self._apply_context_plan_episodes(turn_id, now)
+            source_json = json.dumps(event_ids, ensure_ascii=False)
+            self._db.execute(
+                """INSERT OR IGNORE INTO turns
+                   (id, kind, source_ids_json, state, started_at, updated_at)
+                   VALUES (?, 'owner', ?, 'running', ?, ?)""",
+                (turn_id, source_json, now, now),
+            )
+            self._apply_context_plan_episodes(turn_id, now, user_text)
             self._db.execute(
                 """INSERT INTO messages
                    (turn_id, role, content, created_at, source_event_ids_json)
@@ -2461,7 +2781,7 @@ class Store(MemoryStore, DeliveryStore):
                     turn_id,
                     user_text,
                     now,
-                    json.dumps(event_ids, ensure_ascii=False),
+                    source_json,
                 ),
             )
             progress = self._db.execute(
@@ -2478,7 +2798,7 @@ class Store(MemoryStore, DeliveryStore):
                         turn_id,
                         row["text"],
                         row["created_at"],
-                        json.dumps(event_ids, ensure_ascii=False),
+                        source_json,
                     )
                     for row in progress
                 ),
@@ -2494,7 +2814,7 @@ class Store(MemoryStore, DeliveryStore):
                         turn_id,
                         assistant_text,
                         now,
-                        json.dumps(event_ids, ensure_ascii=False),
+                        source_json,
                     ),
                 )
                 self._db.execute(
@@ -2518,6 +2838,7 @@ class Store(MemoryStore, DeliveryStore):
                         target_channel,
                     ),
                 )
+            self._index_turn_episode_terms(turn_id)
             self._apply_mood_transition(reply.mood_transition, now)
             for memory in draft.memories if draft else []:
                 self._remember(memory, events, now)
@@ -2534,7 +2855,7 @@ class Store(MemoryStore, DeliveryStore):
             self._db.execute(
                 """UPDATE turns SET state='completed', stage='completed',
                    source_ids_json=?, failure_reason=NULL, updated_at=? WHERE id=?""",
-                (json.dumps(event_ids, ensure_ascii=False), now, turn_id),
+                (source_json, now, turn_id),
             )
         return turn_id
 
@@ -2562,6 +2883,40 @@ class Store(MemoryStore, DeliveryStore):
                        retry_at=NULL, failure_count=0, updated_at=?
                        WHERE id=? AND status IN ('active', 'waiting')""",
                     (next_review_at, now, goal_id),
+                )
+            current = self.goal(goal_id)
+            if current is not None:
+                goal_record = (
+                    "[AUTONOMOUS GOAL REVIEW RECORD; not sent to the owner]\n"
+                    f"Goal: {current['title']}\n"
+                    f"Status: {current['status']}\n"
+                    f"Latest result: {current['latest_result'] or '(none)'}\n"
+                    f"Next action: {current['next_action'] or '(none)'}"
+                )
+                goal_source = json.dumps([f"goal-record:{turn_id}"])
+                self._db.execute(
+                    """INSERT INTO messages
+                       (turn_id, role, content, created_at, source_event_ids_json)
+                       SELECT ?, 'assistant', ?, ?, ?
+                       WHERE NOT EXISTS (
+                           SELECT 1 FROM messages
+                           WHERE turn_id=? AND source_event_ids_json=?
+                       )""",
+                    (
+                        turn_id,
+                        goal_record,
+                        now,
+                        goal_source,
+                        turn_id,
+                        goal_source,
+                    ),
+                )
+                self._ensure_autonomous_episode(
+                    f"goal:{goal_id}",
+                    turn_id,
+                    str(current["title"]),
+                    now,
+                    goal_record,
                 )
             if draft.notification_messages:
                 self._db.execute(
@@ -2673,8 +3028,10 @@ class Store(MemoryStore, DeliveryStore):
                 if row["goal_id"] == "heartbeat"
                 else f"goal:{row['goal_id']}"
             )
+            visible_messages: list[str] = []
             for index, message in enumerate(messages):
                 visible, kind, path, payload = self._outbox_content(message)
+                visible_messages.append(visible)
                 self._db.execute(
                     """INSERT INTO messages
                        (turn_id, role, content, created_at, source_event_ids_json)
@@ -2700,6 +3057,19 @@ class Store(MemoryStore, DeliveryStore):
                         ),
                         target_channel,
                     ),
+                )
+            if visible_messages:
+                episode_key = (
+                    "heartbeat-life"
+                    if row["goal_id"] == "heartbeat"
+                    else f"goal:{row['goal_id']}"
+                )
+                self._ensure_autonomous_episode(
+                    episode_key,
+                    str(row["turn_id"]),
+                    self._episode_title(visible_messages[0], "Autonomous conversation"),
+                    now,
+                    visible_messages,
                 )
             self._db.execute(
                 """UPDATE notifications SET state='queued', claimed_at=NULL, queued_at=?

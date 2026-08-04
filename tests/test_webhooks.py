@@ -4,15 +4,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-
 from momoi.channel.napcat import NapCatConfig
 from momoi.config import (
     AppConfig,
     LLMConfig,
     WebhookConfig,
-)
-from momoi.runtime import (
-    MomoiDaemon,
 )
 from momoi.memory_tools import MemoryTools
 from momoi.models import (
@@ -21,6 +17,9 @@ from momoi.models import (
     ProviderResponse,
     ToolCall,
     TurnDraft,
+)
+from momoi.runtime import (
+    MomoiDaemon,
 )
 from momoi.storage import Store
 from momoi.webhooks import WebhookService, WorkflowError, bind_workflow, load_catalog
@@ -336,9 +335,7 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                     break
                 await asyncio.sleep(0.01)
             self.assertEqual(generated, ["门口检测到有人，请自然提醒我。"])
-            self.assertEqual(
-                rows[0].text, "门口好像有人，需要我继续帮你留意吗？"
-            )
+            self.assertEqual(rows[0].text, "门口好像有人，需要我继续帮你留意吗？")
             self.assertEqual(
                 store._db.execute(
                     "SELECT reply_expectation FROM outbox WHERE id=?", (rows[0].id,)
@@ -356,6 +353,13 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                        WHERE content='门口好像有人，需要我继续帮你留意吗？'"""
                 ).fetchone()[0],
                 webhook_turn_id,
+            )
+            episode = store.search_episodes("门口 继续留意", 3)[0]
+            self.assertIn(
+                "门口好像有人",
+                store.conversation_episode(str(episode["id"]))["messages"][0][
+                    "content"
+                ],
             )
             store.mark_sent(rows[0].id)
             await asyncio.wait_for(task, timeout=1)

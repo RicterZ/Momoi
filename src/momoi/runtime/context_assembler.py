@@ -7,6 +7,18 @@ from ..config import AppConfig
 from ..storage import Store, estimate_tokens, truncate_tokens
 
 
+def _merge_matches(target: dict[str, object], source: dict[str, object]) -> None:
+    existing = target.get("matches")
+    incoming = source.get("matches")
+    if not isinstance(existing, list) or not isinstance(incoming, list):
+        return
+    seen = {item.get("id") for item in existing if isinstance(item, dict)}
+    for item in incoming:
+        if isinstance(item, dict) and item.get("id") not in seen:
+            existing.append(item)
+            seen.add(item.get("id"))
+
+
 def _selected_by_unit(
     units: list[dict[str, Any]],
     search: Callable[[str, int], list[dict[str, object]]],
@@ -20,13 +32,15 @@ def _selected_by_unit(
         return []
     candidates: list[tuple[str, list[dict[str, object]]]] = []
     for unit in units:
-        seen: set[object] = set()
+        seen: dict[object, dict[str, object]] = {}
         rows: list[dict[str, object]] = []
         for query in unit["recall_queries"]:
             for row in search(str(query), max_results):
                 key = identity(row)
-                if key not in seen:
-                    seen.add(key)
+                if key in seen:
+                    _merge_matches(seen[key], row)
+                else:
+                    seen[key] = row
                     rows.append(row)
         candidates.append((str(unit["id"]), rows))
 
@@ -44,8 +58,9 @@ def _selected_by_unit(
                 unit_ids = existing["unit_ids"]
                 if unit_id not in unit_ids:
                     unit_ids.append(unit_id)
+                _merge_matches(existing, row)
                 continue
-            if len(selected) >= max_results:
+            if index > 0 and len(selected) >= max_results:
                 continue
             size = estimate_tokens(render(row))
             if used + size > token_budget:
@@ -65,6 +80,25 @@ def build_plan_retrieval(
     if not isinstance(units, list) or not isinstance(bindings, list):
         raise RuntimeError("context plan has invalid retrieval inputs")
 
+    core_confirmed = _selected_by_unit(
+        [{"id": "core", "recall_queries": [""]}],
+        lambda query, limit: store.search_memories(query, limit, include_core=True),
+        lambda row: row["id"],
+        lambda row: f"[{row['kind']}:{row['key']}] {row['content']}",
+        lambda row: {
+            "id": row["id"],
+            "kind": row["kind"],
+            "key": row["key"],
+            "content": row["content"],
+        },
+        config.memory_results,
+        config.memory_tokens,
+    )
+    core_ids = {item["id"] for item in core_confirmed}
+    core_tokens = sum(
+        estimate_tokens(f"[{item['kind']}:{item['key']}] {item['content']}")
+        for item in core_confirmed
+    )
     confirmed = _selected_by_unit(
         units,
         lambda query, limit: store.search_memories(query, limit),
@@ -77,8 +111,9 @@ def build_plan_retrieval(
             "content": row["content"],
         },
         config.memory_results,
-        config.memory_tokens,
+        max(0, config.memory_tokens - core_tokens),
     )
+    confirmed = [*core_confirmed, *(item for item in confirmed if item["id"] not in core_ids)]
     reflection_limit = (
         max(1, config.memory_results // 2) if config.memory_results else 0
     )
@@ -103,12 +138,16 @@ def build_plan_retrieval(
         lambda row: row["id"],
         lambda row: truncate_tokens(
             _episode_search_text(row),
-            max(1, config.summary_tokens // max(1, config.summary_results)),
+            max(
+                1,
+                config.summary_tokens // max(1, config.summary_results, len(units)),
+            ),
         ),
         lambda row: {
             "episode_id": row["id"],
             "relation": "recalled",
             "is_new": False,
+            "matches": row.get("matches", []),
         },
         config.summary_results,
         config.summary_tokens,
@@ -146,8 +185,7 @@ def build_plan_retrieval(
         lambda row: row["id"],
         lambda row: str(row["text"]),
         lambda row: {
-            name: row.get(name)
-            for name in ("id", "text", "fire_at", "schedule")
+            name: row.get(name) for name in ("id", "text", "fire_at", "schedule")
         },
         config.memory_results,
         agenda_budget,
@@ -175,6 +213,7 @@ def build_plan_retrieval(
     )
     episodes: dict[str, dict[str, object]] = {}
     new_episodes: list[dict[str, object]] = []
+    episode_limit = max(config.summary_results, len(units))
     for binding in bindings:
         item = {
             "episode_id": binding["episode_id"],
@@ -184,7 +223,7 @@ def build_plan_retrieval(
         }
         if binding["is_new"]:
             new_episodes.append(item)
-        elif len(episodes) < config.summary_results:
+        elif len(episodes) < episode_limit:
             episodes[str(binding["episode_id"])] = item
     for recalled in recalled_episodes:
         episode_id = str(recalled["episode_id"])
@@ -194,7 +233,8 @@ def build_plan_retrieval(
             for unit_id in recalled["unit_ids"]:
                 if unit_id not in existing_units:
                     existing_units.append(unit_id)
-        elif len(episodes) < config.summary_results:
+            existing["matches"] = recalled.get("matches", [])
+        elif len(episodes) < episode_limit:
             episodes[episode_id] = recalled
     return {
         "version": 2,
@@ -216,8 +256,7 @@ def _memory_lines(items: object) -> str:
     if not isinstance(items, list):
         return ""
     return "\n".join(
-        f"- [units={_supports(item)}] [{item['kind']}:{item['key']}] "
-        f"{item['content']}"
+        f"- [units={_supports(item)}] [{item['kind']}:{item['key']}] {item['content']}"
         for item in items
     )
 
@@ -232,6 +271,7 @@ def _episode_search_text(episode: dict[str, object]) -> str:
             "topics",
             "entities",
             "open_loops",
+            "matches",
         )
     )
 
@@ -284,6 +324,7 @@ def _episode_context(
     episodes: object,
     summary_token_budget: int,
     raw_token_budget: int,
+    exclude_message_ids: set[int] | None = None,
 ) -> str:
     if not isinstance(episodes, list):
         return ""
@@ -308,26 +349,54 @@ def _episode_context(
         ]
         summary = str(episode["summary"] or episode["working_summary"])
         if summary and summary_token_budget > 0:
-            lines.append(
-                f"summary: {truncate_tokens(summary, per_summary)}"
-            )
+            lines.append(f"summary: {truncate_tokens(summary, per_summary)}")
         if episode["topics"]:
-            lines.append(
-                f"topics: {json.dumps(episode['topics'], ensure_ascii=False)}"
-            )
+            lines.append(f"topics: {json.dumps(episode['topics'], ensure_ascii=False)}")
         if episode["open_loops"]:
             lines.append(
                 f"open_loops: {json.dumps(episode['open_loops'], ensure_ascii=False)}"
             )
+        remaining_raw = per_raw_tail if raw_token_budget > 0 else 0
+        matched_ids: set[int] = set()
+        matched_lines: list[str] = []
+        for message in selected.get("matches", []):
+            if not isinstance(message, dict) or remaining_raw <= 0:
+                continue
+            if isinstance(message.get("id"), int) and int(message["id"]) in (
+                exclude_message_ids or set()
+            ):
+                continue
+            prefix = (
+                f"  [{str(message.get('role') or '').upper()} "
+                f"turn={message.get('turn_id')} ordinal={message.get('ordinal')}] "
+            )
+            prefix_tokens = estimate_tokens(prefix)
+            if prefix_tokens >= remaining_raw:
+                break
+            content = truncate_tokens(
+                str(message.get("content") or ""), remaining_raw - prefix_tokens
+            )
+            line = prefix + content
+            matched_lines.append(line)
+            remaining_raw -= estimate_tokens(line)
+            if isinstance(message.get("id"), int):
+                matched_ids.add(int(message["id"]))
+        if matched_lines:
+            lines.append("matched_raw:")
+            lines.extend(matched_lines)
         messages = (
             store.episode_messages(
                 str(episode["id"]),
-                per_raw_tail,
+                remaining_raw,
                 after_ordinal=int(episode["summarized_through_ordinal"]),
+                exclude_message_ids=exclude_message_ids,
             )
-            if raw_token_budget > 0
+            if remaining_raw > 0
             else []
         )
+        messages = [
+            message for message in messages if int(message["id"]) not in matched_ids
+        ]
         if messages:
             lines.append("raw_tail:")
             lines.extend(
@@ -344,28 +413,37 @@ def assemble_main_context(
     retrieval: dict[str, object],
     summary_token_budget: int,
     raw_token_budget: int,
+    recent_turns: int = 0,
 ) -> dict[str, str]:
+    recent_messages = store.recent_conversation_messages(
+        recent_turns, raw_token_budget
+    )
+    recent = "\n".join(
+        f"[{str(message['role']).upper()} turn={message['turn_id']}] "
+        f"{message['content']}"
+        for message in recent_messages
+    )
+    recent_ids = {int(message["id"]) for message in recent_messages}
+    remaining_raw = max(0, raw_token_budget - estimate_tokens(recent)) if recent else raw_token_budget
     reflection = _memory_lines(retrieval.get("reflection_memories"))
     if reflection:
         reflection = (
             "These are fallible, lower-authority daily learnings.\n" + reflection
         )
     return {
+        "recent_conversation": recent,
         "episodes": _episode_context(
             store,
             retrieval.get("episodes"),
             summary_token_budget,
-            raw_token_budget,
+            remaining_raw,
+            recent_ids,
         ),
-        "confirmed_memories": _memory_lines(
-            retrieval.get("confirmed_memories")
-        ),
+        "confirmed_memories": _memory_lines(retrieval.get("confirmed_memories")),
         "reflection_memories": reflection,
         "goals": _goal_lines(retrieval.get("goals")),
         "reminders": _reminder_lines(retrieval.get("reminders")),
-        "memory_conflicts": _conflict_lines(
-            retrieval.get("memory_conflicts")
-        ),
+        "memory_conflicts": _conflict_lines(retrieval.get("memory_conflicts")),
     }
 
 
@@ -383,15 +461,17 @@ def recall_episode_context(
         [{"id": "query", "recall_queries": [query]}],
         store.search_episodes,
         lambda row: row["id"],
-        _episode_search_text,
+        lambda row: truncate_tokens(
+            _episode_search_text(row),
+            max(1, summary_token_budget // max(1, max_results)),
+        ),
         lambda row: {
             "episode_id": row["id"],
             "relation": "recalled",
             "is_new": False,
+            "matches": row.get("matches", []),
         },
         max_results,
         summary_token_budget,
     )
-    return _episode_context(
-        store, episodes, summary_token_budget, raw_token_budget
-    )
+    return _episode_context(store, episodes, summary_token_budget, raw_token_budget)

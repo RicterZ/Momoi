@@ -42,8 +42,8 @@ from .parsing import (
     parse_messages,
     parse_mood_decision,
     parse_mood_transition,
-    parse_reply_expectation,
     parse_reflection_finish,
+    parse_reply_expectation,
     parse_response,
     validate_delivery,
 )
@@ -64,15 +64,9 @@ HEARTBEAT_PROMPT_PATH = PROMPT_ROOT.joinpath("heartbeat.md")
 REFLECTION_PROMPT_PATH = PROMPT_ROOT.joinpath("reflection.md")
 CONTEXT_PLANNER_PROMPT_PATH = PROMPT_ROOT.joinpath("context_planner.md")
 EPISODE_SUMMARY_PROMPT_PATH = PROMPT_ROOT.joinpath("episode_summary.md")
-WEBHOOK_SYSTEM_PROMPT = (
-    WEBHOOK_PROMPT_PATH.read_text(encoding="utf-8").strip()
-)
-HEARTBEAT_SYSTEM_PROMPT = (
-    HEARTBEAT_PROMPT_PATH.read_text(encoding="utf-8").strip()
-)
-REFLECTION_SYSTEM_PROMPT = (
-    REFLECTION_PROMPT_PATH.read_text(encoding="utf-8").strip()
-)
+WEBHOOK_SYSTEM_PROMPT = WEBHOOK_PROMPT_PATH.read_text(encoding="utf-8").strip()
+HEARTBEAT_SYSTEM_PROMPT = HEARTBEAT_PROMPT_PATH.read_text(encoding="utf-8").strip()
+REFLECTION_SYSTEM_PROMPT = REFLECTION_PROMPT_PATH.read_text(encoding="utf-8").strip()
 CONTEXT_PLANNER_SYSTEM_PROMPT = CONTEXT_PLANNER_PROMPT_PATH.read_text(
     encoding="utf-8"
 ).strip()
@@ -143,7 +137,9 @@ class TurnRunner:
                 self._deferred_incoming.append(message)
         if updates:
             current_events.extend(updates)
-            logger.info("Injected owner updates into active Turn count=%d", len(updates))
+            logger.info(
+                "Injected owner updates into active Turn count=%d", len(updates)
+            )
         return updates
 
     def _owner_update_message(
@@ -180,6 +176,7 @@ class TurnRunner:
                             separators=(",", ":"),
                         ),
                     ),
+                    ("recent_conversation", recalled["recent_conversation"]),
                     ("recalled_episodes", recalled["episodes"]),
                     ("confirmed_owner_memory", recalled["confirmed_memories"]),
                     ("reflection_memory", recalled["reflection_memories"]),
@@ -218,15 +215,24 @@ class TurnRunner:
             return self._stored_context_plan(active)
 
         revision = self.store.next_context_plan_revision(turn_id)
-        candidates = self.store.list_episode_candidates(8)
+        owner_query = "\n".join(event.text for event in events)
+        candidates_by_id: dict[str, dict[str, object]] = {}
+        for candidate in [
+            *self.store.search_episodes(owner_query, 8),
+            *self.store.list_episode_candidates(12),
+        ]:
+            candidates_by_id.setdefault(str(candidate["id"]), candidate)
+            if len(candidates_by_id) == 12:
+                break
+        candidates = list(candidates_by_id.values())
         candidate_context = [
             {
                 "id": candidate["id"],
                 "status": candidate["status"],
                 "title": candidate["title"],
-                "summary": str(
-                    candidate["working_summary"] or candidate["summary"]
-                )[:600],
+                "summary": str(candidate["working_summary"] or candidate["summary"])[
+                    :600
+                ],
                 "topics": candidate["topics"],
                 "entities": candidate["entities"],
                 "open_loops": candidate["open_loops"],
@@ -256,10 +262,7 @@ class TurnRunner:
             for goal in self.store.list_goals()[:8]
         ]
         candidate_reminders = [
-            {
-                name: reminder.get(name)
-                for name in ("id", "text", "fire_at", "schedule")
-            }
+            {name: reminder.get(name) for name in ("id", "text", "fire_at", "schedule")}
             for reminder in self.store.list_reminders(8)
         ]
         request: list[dict[str, Any]] = [
@@ -279,9 +282,7 @@ class TurnRunner:
         ]
         last_error = "invalid_context_plan"
         for attempt in range(2):
-            self._check_turn_budget(
-                turn_id, CONTEXT_PLANNER_SYSTEM_PROMPT, request, []
-            )
+            self._check_turn_budget(turn_id, CONTEXT_PLANNER_SYSTEM_PROMPT, request, [])
             response = await self.provider.complete(
                 CONTEXT_PLANNER_SYSTEM_PROMPT, request, []
             )
@@ -344,9 +345,7 @@ class TurnRunner:
                     turn_id, revision, event_ids, plan, state="degraded"
                 )
                 return self._stored_context_plan(saved)
-            saved = self.store.save_context_plan(
-                turn_id, revision, event_ids, plan
-            )
+            saved = self.store.save_context_plan(turn_id, revision, event_ids, plan)
             units = plan.get("intent_units")
             bindings = plan.get("episode_bindings")
             logger.info(
@@ -383,6 +382,7 @@ class TurnRunner:
             retrieval,
             self.config.summary_tokens,
             self.config.recent_raw_tokens,
+            self.config.recent_turns,
         )
 
     async def _complete_webhook_turn(
@@ -599,6 +599,7 @@ class TurnRunner:
             ),
             ("runtime_directives", "\n\n".join(directives)),
             ("runtime_state", runtime_state),
+            ("recent_conversation", recalled["recent_conversation"]),
             ("recalled_episodes", recalled["episodes"]),
             ("confirmed_owner_memory", recalled["confirmed_memories"]),
             ("reflection_memory", recalled["reflection_memories"]),
@@ -619,9 +620,7 @@ class TurnRunner:
         ]
         for event in batch:
             current_content.extend(channel.content_blocks(event.segments))
-        messages: list[dict[str, Any]] = [
-            {"role": "user", "content": current_content}
-        ]
+        messages: list[dict[str, Any]] = [{"role": "user", "content": current_content}]
         draft = TurnDraft()
         tools = [
             self._send_message_tool_spec(),
@@ -1221,9 +1220,9 @@ class TurnRunner:
     @staticmethod
     def _artifact_path_allowed(call: ToolCall, root: Path) -> bool:
         try:
-            Path(str(call.arguments.get("path") or "")).expanduser().resolve().relative_to(
-                root.resolve()
-            )
+            Path(
+                str(call.arguments.get("path") or "")
+            ).expanduser().resolve().relative_to(root.resolve())
             return True
         except (OSError, ValueError):
             return False
@@ -1601,9 +1600,8 @@ class TurnRunner:
         pending = self.store.pending_owner_reply()
         if not pending or int(pending["heartbeat_checks"]) >= 3:
             return self.config.heartbeat.min_interval_seconds
-        return (
-            self.config.heartbeat.reply_initial_interval_seconds
-            * 2 ** int(pending["heartbeat_checks"])
+        return self.config.heartbeat.reply_initial_interval_seconds * 2 ** int(
+            pending["heartbeat_checks"]
         )
 
     async def _complete_heartbeat(
@@ -1894,9 +1892,7 @@ class TurnRunner:
             *self._system(),
             {
                 "type": "text",
-                "text": _live_prompt(
-                    REFLECTION_PROMPT_PATH, REFLECTION_SYSTEM_PROMPT
-                ),
+                "text": _live_prompt(REFLECTION_PROMPT_PATH, REFLECTION_SYSTEM_PROMPT),
                 "cache_control": {"type": "ephemeral"},
             },
         ]
@@ -2017,9 +2013,7 @@ class TurnRunner:
             .isoformat(timespec="seconds")
         )
         self_state = self.store.self_state_context()
-        memory_query = (
-            f"{goal['title']} {goal['next_action']} {goal['latest_result']}"
-        )
+        memory_query = f"{goal['title']} {goal['next_action']} {goal['latest_result']}"
         episodes = recall_episode_context(
             self.store,
             memory_query,

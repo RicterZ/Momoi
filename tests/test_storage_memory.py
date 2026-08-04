@@ -8,7 +8,6 @@ from pathlib import Path
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
-
 from momoi.agenda_tools import AGENDA_TOOL_POLICY, AGENDA_TOOL_SPECS, AgendaTools
 from momoi.builtin_tools import BuiltinTools
 from momoi.channel.napcat import NapCatConfig
@@ -18,15 +17,15 @@ from momoi.config import (
     LLMConfig,
     NotificationConfig,
 )
-from momoi.runtime import (
-    MomoiDaemon,
-)
 from momoi.memory_tools import MemoryTools
 from momoi.models import (
     AgentReply,
     IncomingMessage,
     ToolCall,
     TurnDraft,
+)
+from momoi.runtime import (
+    MomoiDaemon,
 )
 from momoi.storage import Store
 from momoi.storage.scheduling import next_schedule_at
@@ -96,13 +95,10 @@ class StorageMemoryTest(unittest.TestCase):
 
             store = Store(path)
             columns = {
-                row["name"]
-                for row in store._db.execute("PRAGMA table_info(messages)")
+                row["name"] for row in store._db.execute("PRAGMA table_info(messages)")
             }
             self.assertIn("turn_id", columns)
-            row = store._db.execute(
-                "SELECT content, turn_id FROM messages"
-            ).fetchone()
+            row = store._db.execute("SELECT content, turn_id FROM messages").fetchone()
             self.assertEqual(row["content"], "旧对话")
             self.assertTrue(row["turn_id"])
             episodes = store.search_episodes("旧对话", 3)
@@ -144,9 +140,7 @@ class StorageMemoryTest(unittest.TestCase):
                 {"units": [{"id": "unit-1", "query": "邮件"}]},
             )
             self.assertEqual(first["state"], "planned")
-            recalled = store.save_context_retrieval(
-                "turn-1", 1, {"memory_ids": [7]}
-            )
+            recalled = store.save_context_retrieval("turn-1", 1, {"memory_ids": [7]})
             self.assertEqual(recalled["state"], "recalled")
             self.assertEqual(recalled["retrieval"], {"memory_ids": [7]})
             second = store.save_context_plan(
@@ -202,9 +196,7 @@ class StorageMemoryTest(unittest.TestCase):
             store.close()
 
             reopened = Store(path)
-            self.assertEqual(
-                reopened.context_plan("turn-1", 2)["state"], "superseded"
-            )
+            self.assertEqual(reopened.context_plan("turn-1", 2)["state"], "superseded")
             self.assertEqual(
                 [item["ordinal"] for item in reopened.episode_turns("episode-mail")],
                 [1, 2],
@@ -216,6 +208,52 @@ class StorageMemoryTest(unittest.TestCase):
                 1,
             )
             reopened.close()
+
+    def test_conversation_read_pages_back_through_a_long_episode(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store.create_episode("很长的旧对话", episode_id="long-episode")
+            for ordinal in range(1, 5):
+                turn_id = f"long-turn-{ordinal}"
+                store.begin_turn(turn_id, "autonomous", [turn_id])
+                with store._db:
+                    store._db.execute(
+                        """INSERT INTO messages
+                           (turn_id, role, content, created_at, source_event_ids_json)
+                           VALUES (?, 'assistant', ?, ?, '[]')""",
+                        (turn_id, f"第{ordinal}页" + "细节" * 5000, ordinal),
+                    )
+                store.link_turn_to_episode("long-episode", turn_id)
+
+            first = MemoryTools(store).execute(
+                ToolCall(
+                    "read-newest",
+                    "conversation_read",
+                    {"episode_id": "long-episode"},
+                ),
+                [],
+                TurnDraft(),
+            )["episode"]
+            self.assertTrue(first["truncated"])
+            self.assertIsNotNone(first["next_before_ordinal"])
+            second = MemoryTools(store).execute(
+                ToolCall(
+                    "read-older",
+                    "conversation_read",
+                    {
+                        "episode_id": "long-episode",
+                        "before_ordinal": first["next_before_ordinal"],
+                    },
+                ),
+                [],
+                TurnDraft(),
+            )["episode"]
+            first_ordinals = {item["ordinal"] for item in first["messages"]}
+            second_ordinals = {item["ordinal"] for item in second["messages"]}
+            self.assertFalse(first_ordinals & second_ordinals)
+            self.assertEqual(first_ordinals | second_ordinals, {1, 2, 3, 4})
+            self.assertIsNone(second["next_before_ordinal"])
+            store.close()
 
     def test_emotion_paths_are_relative_and_old_workspace_paths_migrate(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -522,6 +560,15 @@ class StorageMemoryTest(unittest.TestCase):
                    WHERE content='检查完成\n\n目前正常' ORDER BY id DESC LIMIT 1"""
             ).fetchone()
             self.assertEqual(notification_message["turn_id"], notification["turn_id"])
+            episode = store.search_episodes("检查任务 本次检查正常", 3)[0]
+            archived = store.conversation_episode(str(episode["id"]))["messages"]
+            self.assertTrue(
+                any(
+                    "AUTONOMOUS GOAL REVIEW RECORD" in item["content"]
+                    for item in archived
+                )
+            )
+            self.assertTrue(any("检查完成" in item["content"] for item in archived))
             store.close()
 
     def test_one_time_reminder_fires_once_and_can_be_cancelled(self) -> None:
@@ -565,6 +612,13 @@ class StorageMemoryTest(unittest.TestCase):
             ).fetchone()
             self.assertEqual(reminder_message["turn_id"], reminder_outbox.turn_id)
             self.assertEqual(store.reminder(reminder_id)["status"], "fired")
+            reminder_episode = store.search_episodes("起来活动", 3)[0]
+            self.assertIn(
+                "该起来活动一下啦",
+                store.conversation_episode(str(reminder_episode["id"]))["messages"][0][
+                    "content"
+                ],
+            )
 
             cancel_event = IncomingMessage(
                 "qq:1:cancel-reminder", "cancel-reminder", "取消提醒", 2, 2
@@ -780,6 +834,14 @@ class StorageMemoryTest(unittest.TestCase):
                     messages=[],
                     reason="test",
                 )
+            episode = store.search_episodes("关卡灵感 点子", 3)[0]
+            self.assertEqual(len(store.episode_turns(str(episode["id"]))), 20)
+            self.assertIn(
+                "AUTONOMOUS HEARTBEAT RECORD",
+                store.conversation_episode(str(episode["id"]))["messages"][-1][
+                    "content"
+                ],
+            )
             store.close()
 
     def test_expected_reply_keeps_heartbeat_attention_until_owner_returns(self) -> None:
@@ -811,9 +873,7 @@ class StorageMemoryTest(unittest.TestCase):
             )
             self.assertEqual(store.next_heartbeat_due_at(False), 1060)
             self.assertIsNotNone(
-                store.claim_due_heartbeat(
-                    heartbeat, NotificationConfig(), now=1060
-                )
+                store.claim_due_heartbeat(heartbeat, NotificationConfig(), now=1060)
             )
 
             store.begin_turn("reply-check", "autonomous", ["heartbeat:1060"])
@@ -859,9 +919,7 @@ class StorageMemoryTest(unittest.TestCase):
             with patch("momoi.storage.delivery.time.time", return_value=1070):
                 self.assertTrue(store.mark_sent(stale_followup.id, 60))
             pending = store.pending_owner_reply(1070)
-            self.assertEqual(
-                pending["expected_response"], "主人是否需要帮忙挑晚餐"
-            )
+            self.assertEqual(pending["expected_response"], "主人是否需要帮忙挑晚餐")
             self.assertEqual(pending["heartbeat_checks"], 1)
             self.assertEqual(pending["delivered_followups"], 1)
             self.assertEqual(store.next_heartbeat_due_at(False), 1180)
@@ -920,7 +978,9 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertEqual(store.next_heartbeat_due_at(True), 1700)
             store.close()
 
-    def test_reply_attention_returns_to_ordinary_rhythm_after_three_checks(self) -> None:
+    def test_reply_attention_returns_to_ordinary_rhythm_after_three_checks(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
             store._db.execute(
@@ -959,9 +1019,7 @@ class StorageMemoryTest(unittest.TestCase):
                 ),
                 turn_id="question",
             )
-            store._db.execute(
-                "UPDATE self_state SET next_heartbeat_at=1030 WHERE id=1"
-            )
+            store._db.execute("UPDATE self_state SET next_heartbeat_at=1030 WHERE id=1")
             with patch("momoi.storage.delivery.time.time", return_value=1000):
                 self.assertTrue(store.mark_sent(store.due_outbox()[0].id, 60))
             self.assertEqual(store.next_heartbeat_due_at(False), 1030)
@@ -1728,7 +1786,9 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertEqual(summary_episode["summary"], "较早的项目邮件仍在等待")
             raw_episode = store.search_episodes("微博 猫", 3)[0]
             self.assertEqual(raw_episode["status"], "open")
-            self.assertIn("Imported extractive recall index", raw_episode["working_summary"])
+            self.assertIn(
+                "Imported extractive recall index", raw_episode["working_summary"]
+            )
             self.assertEqual(
                 [
                     item["content"]
@@ -1783,7 +1843,9 @@ class StorageMemoryTest(unittest.TestCase):
             )
             reopened.close()
 
-    def test_legacy_raw_turns_are_chunked_and_indexed_without_raw_injection(self) -> None:
+    def test_legacy_raw_turns_are_chunked_and_indexed_without_raw_injection(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "legacy.sqlite3"
             database = sqlite3.connect(path)

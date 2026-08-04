@@ -87,9 +87,7 @@ def response_plan() -> dict[str, object]:
 class ContextPlannerTest(unittest.TestCase):
     def test_parser_requires_event_coverage_and_normalizes_episode_refs(self) -> None:
         plan = response_plan()
-        parsed = parse_context_plan(
-            json.dumps(plan), ["event-1"], [], "turn-1", 1
-        )
+        parsed = parse_context_plan(json.dumps(plan), ["event-1"], [], "turn-1", 1)
         bindings = parsed["episode_bindings"]
         self.assertEqual(len(bindings), 2)
         self.assertTrue(all(item["is_new"] for item in bindings))
@@ -105,7 +103,13 @@ class ContextPlannerTest(unittest.TestCase):
 
     def test_degraded_plan_splits_message_segments_and_marks_uncertainty(self) -> None:
         plan = degraded_context_plan(
-            [{"event_id": "event-1", "channel": "napcat", "text": "先查邮件；再看微博。"}],
+            [
+                {
+                    "event_id": "event-1",
+                    "channel": "napcat",
+                    "text": "先查邮件；再看微博。",
+                }
+            ],
             "invalid_json",
         )
         self.assertEqual(len(plan["intent_units"]), 2)
@@ -114,7 +118,9 @@ class ContextPlannerTest(unittest.TestCase):
 
 
 class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
-    async def test_planner_runs_without_tools_before_main_and_commits_episodes(self) -> None:
+    async def test_planner_runs_without_tools_before_main_and_commits_episodes(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(app_config(directory))
             daemon.store.commit_turn(
@@ -139,13 +145,16 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual(tools, [])
                         payload = json.loads(str(messages[0]["content"]))
                         self.assertEqual(
-                            payload["owner_messages"][0]["text"], "刷微博，也看下之前等的邮件"
+                            payload["owner_messages"][0]["text"],
+                            "刷微博，也看下之前等的邮件",
                         )
                         return ProviderResponse(
                             [
                                 {
                                     "type": "text",
-                                    "text": json.dumps(response_plan(), ensure_ascii=False),
+                                    "text": json.dumps(
+                                        response_plan(), ensure_ascii=False
+                                    ),
                                 }
                             ],
                             [],
@@ -155,7 +164,7 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                     self.assertIn("<context_plan>", rendered)
                     self.assertNotIn("GLOBAL RAW MUST NOT LEAK", rendered)
                     self.assertEqual(len(messages), 1)
-                    self.assertEqual(daemon.store.list_episode_candidates(), [])
+                    self.assertEqual(len(daemon.store.list_episode_candidates()), 1)
                     call = ToolCall(
                         "respond",
                         "respond",
@@ -171,9 +180,7 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
 
             provider = Provider()
             daemon.provider = provider  # type: ignore[assignment]
-            event = IncomingMessage(
-                "event-1", "1", "刷微博，也看下之前等的邮件", 1, 1
-            )
+            event = IncomingMessage("event-1", "1", "刷微博，也看下之前等的邮件", 1, 1)
             daemon.store.add_event(event)
             turn_id = daemon._turn_id(event.event_id)
             await daemon._complete_batch_turn([event], asyncio.Event(), turn_id)
@@ -183,7 +190,7 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(stored["state"], "recalled")
             self.assertEqual(stored["retrieval"]["version"], 2)
             self.assertEqual(len(stored["plan"]["intent_units"]), 2)
-            self.assertEqual(len(daemon.store.list_episode_candidates()), 2)
+            self.assertEqual(len(daemon.store.list_episode_candidates()), 3)
             self.assertEqual(
                 daemon.store._db.execute(
                     "SELECT COUNT(*) FROM episode_turns WHERE turn_id=?", (turn_id,)
@@ -191,7 +198,9 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                 2,
             )
             self.assertEqual(
-                daemon.store._db.execute("SELECT COUNT(*) FROM episode_links").fetchone()[0],
+                daemon.store._db.execute(
+                    "SELECT COUNT(*) FROM episode_links"
+                ).fetchone()[0],
                 1,
             )
             daemon.store.close()
@@ -244,5 +253,10 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
             stored = daemon.store.context_plan(turn_id)
             self.assertEqual(stored["state"], "degraded")
             self.assertEqual(len(stored["plan"]["intent_units"]), 2)
-            self.assertEqual(daemon.store.list_episode_candidates(), [])
+            fallback = daemon.store.list_episode_candidates()
+            self.assertEqual(len(fallback), 1)
+            self.assertEqual(
+                daemon.store.episode_turns(str(fallback[0]["id"]))[0]["turn_id"],
+                turn_id,
+            )
             daemon.store.close()

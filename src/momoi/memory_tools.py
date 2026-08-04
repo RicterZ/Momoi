@@ -11,7 +11,6 @@ from .models import (
 )
 from .storage import MEMORY_KINDS, Store, lexical_units
 
-
 MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
     {
         "name": "memory_search",
@@ -72,7 +71,15 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 200,
-                }
+                },
+                "before_ordinal": {
+                    "type": "integer",
+                    "minimum": 2,
+                    "description": (
+                        "For an older page, pass next_before_ordinal from the "
+                        "previous result. Omit it for the newest page."
+                    ),
+                },
             },
             "required": ["episode_id"],
             "additionalProperties": False,
@@ -238,7 +245,16 @@ class MemoryTools:
         episode_id = arguments.get("episode_id")
         if not isinstance(episode_id, str) or not episode_id.strip():
             return {"ok": False, "error": "invalid_episode_id"}
-        episode = self.store.conversation_episode(episode_id.strip())
+        before_ordinal = arguments.get("before_ordinal")
+        if before_ordinal is not None and (
+            isinstance(before_ordinal, bool)
+            or not isinstance(before_ordinal, int)
+            or before_ordinal < 2
+        ):
+            return {"ok": False, "error": "invalid_before_ordinal"}
+        episode = self.store.conversation_episode(
+            episode_id.strip(), before_ordinal=before_ordinal
+        )
         if episode is None:
             return {"ok": False, "error": "episode_not_found"}
         return {"ok": True, "episode": episode}

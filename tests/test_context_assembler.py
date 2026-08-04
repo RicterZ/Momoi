@@ -1,5 +1,5 @@
-import time
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -62,6 +62,127 @@ def plan(query: str, episode_id: str = "episode-mail") -> dict[str, object]:
 
 
 class ContextAssemblerTest(unittest.TestCase):
+    def test_recent_turn_and_core_identity_survive_unrelated_degraded_recall(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            previous = IncomingMessage(
+                "previous", "previous", "把部署方式切换成蓝绿发布", 1, 1
+            )
+            store.add_event(previous)
+            store.commit_turn(
+                [previous],
+                previous.text,
+                AgentReply(["好，我接下来就按蓝绿发布处理"]),
+                turn_id="previous",
+            )
+            with store._db:
+                store._db.execute(
+                    """INSERT INTO memories
+                       (kind, key, content, authority, source_event_id,
+                        evidence_quote, importance, created_at, updated_at)
+                       VALUES ('profile', 'owner.name', '主人的名字是 Sakana',
+                               'owner', 'owner-name', '我叫 Sakana', 1, 1, 1)"""
+                )
+            degraded = {
+                "version": 1,
+                "intent_units": [
+                    {
+                        "id": "u1",
+                        "event_ids": ["current"],
+                        "text": "好，就这么做",
+                        "intent": "degraded_message_segment",
+                        "references": [],
+                        "recall_queries": ["好，就这么做"],
+                    }
+                ],
+                "episode_bindings": [],
+                "episode_links": [],
+                "uncertainty": ["planner failed"],
+            }
+
+            retrieval = build_plan_retrieval(store, degraded, config(directory))
+            assembled = assemble_main_context(
+                store, retrieval, 2000, 2000, recent_turns=1
+            )
+
+            self.assertIn("蓝绿发布", assembled["recent_conversation"])
+            self.assertIn("Sakana", assembled["confirmed_memories"])
+            store.close()
+
+    def test_raw_detail_remains_automatically_recallable_after_summary_omits_it(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store.create_episode("一次旧聊天", episode_id="episode-old")
+            event = IncomingMessage(
+                "rare-event",
+                "rare-event",
+                "蓝色保温杯藏在阁楼第三个纸箱里",
+                1,
+                1,
+            )
+            store.add_event(event)
+            store.begin_turn("rare-turn", "owner", [event.event_id])
+            store.commit_turn(
+                [event],
+                event.text,
+                AgentReply(["我记得这个位置了"]),
+                turn_id="rare-turn",
+            )
+            store.link_turn_to_episode("episode-old", "rare-turn")
+            store._db.execute(
+                """UPDATE conversation_episodes
+                   SET working_summary='聊过家中物品的位置',
+                       summarized_through_ordinal=1
+                   WHERE id='episode-old'"""
+            )
+
+            recalled = recall_episode_context(
+                store, "蓝色保温杯 第三个纸箱", 3, 1000, 1000
+            )
+            self.assertIn("聊过家中物品的位置", recalled)
+            self.assertIn("蓝色保温杯藏在阁楼第三个纸箱里", recalled)
+            self.assertIn("matched_raw", recalled)
+            store._db.execute("DELETE FROM episode_message_recall_terms")
+            store._db.execute("DELETE FROM episode_recall_terms")
+            store._db.commit()
+            store.close()
+
+            reopened = Store(Path(directory) / "momoi.sqlite3")
+            self.assertIn(
+                "蓝色保温杯藏在阁楼第三个纸箱里",
+                recall_episode_context(
+                    reopened, "蓝色保温杯 第三个纸箱", 3, 1000, 1000
+                ),
+            )
+            reopened.close()
+
+    def test_commit_without_a_context_plan_gets_a_searchable_fallback_episode(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            event = IncomingMessage(
+                "fallback", "fallback", "规划器失败时也别忘记我", 1, 1
+            )
+            store.add_event(event)
+            store.commit_turn(
+                [event], event.text, AgentReply(["这轮仍然会归档"]), turn_id="fallback"
+            )
+
+            episode = store.search_episodes("规划器失败 归档", 3)[0]
+            self.assertEqual(
+                store.episode_turns(str(episode["id"]))[0]["turn_id"], "fallback"
+            )
+            self.assertIn(
+                "这轮仍然会归档",
+                recall_episode_context(store, "规划器失败 归档", 3, 1000, 1000),
+            )
+            store.close()
+
     def test_recall_and_context_include_only_plan_relevant_records(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
@@ -206,9 +327,7 @@ class ContextAssemblerTest(unittest.TestCase):
                 [item["key"] for item in retrieval["confirmed_memories"]],
                 ["project.mail.waiting"],
             )
-            self.assertEqual(
-                [item["id"] for item in retrieval["goals"]], ["goal-mail"]
-            )
+            self.assertEqual([item["id"] for item in retrieval["goals"]], ["goal-mail"])
             self.assertEqual(
                 [item["id"] for item in retrieval["reminders"]],
                 ["reminder-mail"],
@@ -222,9 +341,7 @@ class ContextAssemblerTest(unittest.TestCase):
             self.assertNotIn("微博上有只猫", rendered)
             self.assertNotIn("goal-social", rendered)
             self.assertNotIn("reminder-social", rendered)
-            autonomous = recall_episode_context(
-                store, "等待 项目 邮件", 3, 2000, 2000
-            )
+            autonomous = recall_episode_context(store, "等待 项目 邮件", 3, 2000, 2000)
             self.assertIn("较早的项目邮件仍在等待", autonomous)
             self.assertNotIn("最近聊过微博上的猫", autonomous)
             bounded_tail = store.episode_messages("episode-mail", 5)
@@ -247,6 +364,8 @@ class ContextAssemblerTest(unittest.TestCase):
                     ("mail.one", "邮件事项一", 0.9, now, now),
                     ("mail.two", "邮件事项二", 0.8, now, now),
                     ("social.one", "微博事项", 0.7, now, now),
+                    ("weather.one", "天气事项", 0.7, now, now),
+                    ("music.one", "音乐事项", 0.7, now, now),
                 ],
             )
             store._db.commit()
@@ -261,15 +380,37 @@ class ContextAssemblerTest(unittest.TestCase):
                     "recall_queries": ["微博"],
                 }
             )
-            split_plan["episode_bindings"][0]["unit_ids"].append("social")
+            split_plan["intent_units"].extend(
+                [
+                    {
+                        "id": "weather",
+                        "event_ids": ["current"],
+                        "text": "天气",
+                        "intent": "weather",
+                        "references": [],
+                        "recall_queries": ["天气"],
+                    },
+                    {
+                        "id": "music",
+                        "event_ids": ["current"],
+                        "text": "音乐",
+                        "intent": "music",
+                        "references": [],
+                        "recall_queries": ["音乐"],
+                    },
+                ]
+            )
+            split_plan["episode_bindings"][0]["unit_ids"].extend(
+                ["social", "weather", "music"]
+            )
 
             retrieval = build_plan_retrieval(
                 store, split_plan, config(directory, memory_results=2)
             )
             memories = retrieval["confirmed_memories"]
-            self.assertEqual(len(memories), 2)
+            self.assertEqual(len(memories), 4)
             self.assertEqual(
                 {unit for item in memories for unit in item["unit_ids"]},
-                {"mail", "social"},
+                {"mail", "social", "weather", "music"},
             )
             store.close()
