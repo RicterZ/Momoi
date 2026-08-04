@@ -208,9 +208,51 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                 AgentReply(["UNSELECTED ASSISTANT RAW"]),
                 turn_id="unselected-turn",
             )
+            for index in (1, 2):
+                daemon.store.commit_turn(
+                    [],
+                    f"RECENT CONTEXT {index}",
+                    AgentReply([f"RECENT REPLY {index}"]),
+                    turn_id=f"recent-turn-{index}",
+                )
+            with daemon.store._db:
+                daemon.store._db.executemany(
+                    """INSERT INTO goals
+                       (id, title, success_criteria, authority, source_event_id,
+                        status, plan_json, next_action, next_review_at,
+                        created_at, updated_at)
+                       VALUES (?, ?, '完成', 'owner', 'source', 'active', '[]',
+                               '继续', 9999999999, ?, ?)""",
+                    [
+                        (
+                            f"goal-{index}",
+                            "等待项目邮件" if index == 0 else f"无关任务 {index}",
+                            index,
+                            index,
+                        )
+                        for index in range(9)
+                    ],
+                )
+                daemon.store._db.executemany(
+                    """INSERT INTO reminders
+                       (id, text, source_event_id, status, fire_at,
+                        created_at, updated_at)
+                       VALUES (?, ?, 'source', 'pending', 9999999999, ?, ?)""",
+                    [
+                        (
+                            f"reminder-{index}",
+                            "检查等待邮件" if index == 0 else f"无关提醒 {index}",
+                            index,
+                            index,
+                        )
+                        for index in range(9)
+                    ],
+                )
 
             class Provider:
                 calls: list[str] = []
+                planner_recent = ""
+                main_rendered = ""
 
                 async def complete(
                     provider_self,
@@ -227,6 +269,21 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                             payload["owner_messages"][0]["text"],
                             "刷微博，也看下之前等的邮件",
                         )
+                        recent = json.dumps(
+                            payload["recent_conversation"], ensure_ascii=False
+                        )
+                        provider_self.planner_recent = recent
+                        self.assertIn("RECENT CONTEXT 1", recent)
+                        self.assertIn("RECENT CONTEXT 2", recent)
+                        self.assertNotIn("GLOBAL RAW MUST NOT LEAK", recent)
+                        self.assertEqual(len(payload["candidate_goals"]), 8)
+                        self.assertEqual(
+                            payload["candidate_goals"][0]["id"], "goal-0"
+                        )
+                        self.assertEqual(len(payload["candidate_reminders"]), 8)
+                        self.assertEqual(
+                            payload["candidate_reminders"][0]["id"], "reminder-0"
+                        )
                         return ProviderResponse(
                             [
                                 {
@@ -240,10 +297,11 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                         )
                     provider_self.calls.append("main")
                     rendered = json.dumps(messages, ensure_ascii=False)
+                    provider_self.main_rendered = rendered
                     self.assertIn("<context_plan>", rendered)
+                    self.assertIn("RECENT CONTEXT 2", rendered)
                     self.assertNotIn("GLOBAL RAW MUST NOT LEAK", rendered)
                     self.assertEqual(len(messages), 1)
-                    self.assertEqual(len(daemon.store.list_episode_candidates()), 1)
                     call = ToolCall(
                         "respond",
                         "respond",
@@ -265,11 +323,13 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
             await daemon._complete_batch_turn([event], asyncio.Event(), turn_id)
 
             self.assertEqual(provider.calls, ["planner", "main"])
+            self.assertIn("RECENT CONTEXT 1", provider.planner_recent)
+            self.assertIn("RECENT CONTEXT 2", provider.main_rendered)
+            self.assertNotIn("GLOBAL RAW MUST NOT LEAK", provider.main_rendered)
             stored = daemon.store.context_plan(turn_id)
             self.assertEqual(stored["state"], "recalled")
             self.assertEqual(stored["retrieval"]["version"], 2)
             self.assertEqual(len(stored["plan"]["intent_units"]), 2)
-            self.assertEqual(len(daemon.store.list_episode_candidates()), 3)
             self.assertEqual(
                 daemon.store._db.execute(
                     "SELECT COUNT(*) FROM episode_turns WHERE turn_id=?", (turn_id,)

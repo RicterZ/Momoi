@@ -241,6 +241,9 @@ class TurnRunner:
             if len(candidates_by_id) == 64:
                 break
         candidates = list(candidates_by_id.values())
+        recent_conversation = self.store.recent_conversation_messages(
+            self.config.recent_turns, self.config.recent_raw_tokens
+        )
         candidate_context = [
             {
                 "id": candidate["id"],
@@ -263,6 +266,14 @@ class TurnRunner:
             }
             for event in events
         ]
+        goals_by_id: dict[str, dict[str, object]] = {}
+        for goal in [
+            *self.store.search_goals(owner_query, 8),
+            *self.store.list_goals(),
+        ]:
+            goals_by_id.setdefault(str(goal["id"]), goal)
+            if len(goals_by_id) == 8:
+                break
         candidate_goals = [
             {
                 name: goal.get(name)
@@ -275,11 +286,19 @@ class TurnRunner:
                     "latest_result",
                 )
             }
-            for goal in self.store.list_goals()[:8]
+            for goal in goals_by_id.values()
         ]
+        reminders_by_id: dict[str, dict[str, object]] = {}
+        for reminder in [
+            *self.store.search_reminders(owner_query, 8),
+            *self.store.list_reminders(8),
+        ]:
+            reminders_by_id.setdefault(str(reminder["id"]), reminder)
+            if len(reminders_by_id) == 8:
+                break
         candidate_reminders = [
             {name: reminder.get(name) for name in ("id", "text", "fire_at", "schedule")}
-            for reminder in self.store.list_reminders(8)
+            for reminder in reminders_by_id.values()
         ]
         request: list[dict[str, Any]] = [
             {
@@ -287,6 +306,7 @@ class TurnRunner:
                 "content": json.dumps(
                     {
                         "owner_messages": owner_messages,
+                        "recent_conversation": recent_conversation,
                         "candidate_episodes": candidate_context,
                         "candidate_goals": candidate_goals,
                         "candidate_reminders": candidate_reminders,

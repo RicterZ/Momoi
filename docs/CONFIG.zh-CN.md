@@ -183,6 +183,12 @@ momoi --workspace ~/.momoi run
 
 `max_input_tokens` 应低于 provider 真实的上下文窗口。这些数值是构建上下文的预算，不代表每个 provider 都会以相同方式计算 token。
 
+`recent_raw_tokens` 默认保持 32k。它不是把数据库历史硬裁到固定消息数，也不是把长期记忆降成 8k：Owner Turn 会先用这份预算保留最近 `recent_turns` 个完整交互，再把余额给当前规划命中的 Episode 原文。Planner 在主模型聊天前会先读取同一预算内的近期原文，把新消息拆成独立 intent、解析“刚才那个”一类指代，并生成多组 recall query。扩展后的 query 会搜索完整 Episode 索引，因此目标 Episode 即使不在最近 64 条目录候选中仍可召回；64 条只是给 Planner 直接复用 Episode id 的有界语义目录，不是长期历史边界。
+
+所有原始消息永久留在 SQLite。较旧 Episode 只把主模型的工作集退火成带 `message_id`、Turn ordinal 和精确原文引用的证据摘要；引用在提交前会回查原始消息。旧版本的自由摘要会标为 `UNVERIFIED`，不能作为事实使用。已确认送达、送达不确定、内部记录、排队和失败消息也分别保存，只有确认送达的助理消息能直接证明“主人看到了桃衣说的话”。
+
+Goal 和 Reminder 目录只帮助 Planner 识别当前指代：相关项优先且各最多 8 条；主模型上下文只注入当前 intent 实际召回的项。`done`/`cancelled` Goal 保留作审计，但默认不会注入。项目没有每日 token budget；`turn.max_seconds` 和 `turn.max_total_tokens` 只限制单个 Turn。
+
 将某个召回层的结果数量或 token 预算设为 `0` 可关闭该层自动召回。对应工具已启用时，显式记忆和对话搜索工具仍然可用。
 
 ## 存储

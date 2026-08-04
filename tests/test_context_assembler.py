@@ -62,6 +62,42 @@ def plan(query: str, episode_id: str = "episode-mail") -> dict[str, object]:
 
 
 class ContextAssemblerTest(unittest.TestCase):
+    def test_expanded_query_reaches_episode_outside_recent_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store.create_episode("旧暗号", episode_id="old-secret")
+            event = IncomingMessage(
+                "old-secret-event",
+                "old-secret-event",
+                "朱红钥匙藏在温室花盆下面",
+                1,
+                1,
+            )
+            store.add_event(event)
+            store.begin_turn("old-secret-turn", "owner", [event.event_id])
+            store.commit_turn(
+                [event], event.text, AgentReply(["记住了"]), turn_id="old-secret-turn"
+            )
+            store.link_turn_to_episode("old-secret", "old-secret-turn")
+            for index in range(65):
+                store.create_episode(f"较新的主题 {index}", episode_id=f"newer-{index}")
+            store.create_episode("当前话题", episode_id="current-topic")
+
+            self.assertNotIn(
+                "old-secret",
+                {item["id"] for item in store.list_episode_directory(64)},
+            )
+            expanded = plan("朱红钥匙 温室 花盆", "current-topic")
+            retrieval = build_plan_retrieval(store, expanded, config(directory))
+
+            self.assertIn(
+                "old-secret",
+                {item["episode_id"] for item in retrieval["episodes"]},
+            )
+            assembled = assemble_main_context(store, retrieval, 2000, 2000)
+            self.assertIn("朱红钥匙藏在温室花盆下面", assembled["episodes"])
+            store.close()
+
     def test_matched_raw_excerpt_is_centered_on_a_late_message_match(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
