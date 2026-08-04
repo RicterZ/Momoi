@@ -1594,6 +1594,15 @@ class TurnRunner:
         self, stop: asyncio.Event, target_channel: str | None = None
     ) -> None:
         state = self.store.self_state()
+        conversation = self.store.heartbeat_conversation_snapshot()
+        if conversation["owner_busy"]:
+            logger.info(
+                "Deferred heartbeat while owner conversation is active reason=%s",
+                conversation["blocked_by"],
+            )
+            self.store.release_heartbeat_claim(self._heartbeat_retry_delay())
+            self.agenda_changed.set()
+            return
         claim_kind = state.get("heartbeat_claim_kind")
         scheduled_at = (
             state.get("pending_reply_next_check_at")
@@ -1615,7 +1624,11 @@ class TurnRunner:
             self.store.release_heartbeat_claim(self._heartbeat_retry_delay())
             return
         try:
-            await self._complete_heartbeat(turn_id, target_channel)
+            await self._complete_heartbeat(
+                turn_id,
+                target_channel,
+                owner_event_revision=int(conversation["owner_event_revision"]),
+            )
         except ExternalToolTurnError:
             logger.exception("Heartbeat stopped after an autonomous artifact write")
             self.store.open_reconciliation(turn_id, "fatal_error_after_external_tool")
@@ -1656,7 +1669,11 @@ class TurnRunner:
         )
 
     async def _complete_heartbeat(
-        self, turn_id: str, target_channel: str | None = None
+        self,
+        turn_id: str,
+        target_channel: str | None = None,
+        *,
+        owner_event_revision: int,
     ) -> None:
         delivery_channel = self._channel_for(target_channel or self.channel.name)
         state = self.store.self_state()
@@ -1717,6 +1734,16 @@ class TurnRunner:
                 "pending_owner_reply",
                 json.dumps(pending_reply, ensure_ascii=False) if pending_reply else "",
             ),
+            (
+                "conversation_state",
+                json.dumps(
+                    {
+                        "owner_event_revision": owner_event_revision,
+                        "owner_turn_or_delivery_active": False,
+                    },
+                    separators=(",", ":"),
+                ),
+            ),
             ("emotion_catalog", emotions),
         )
         system = [
@@ -1770,8 +1797,9 @@ class TurnRunner:
         )
         if not isinstance(decision, dict):
             raise RuntimeError("Heartbeat Turn ended without heartbeat_finish")
-        self.store.commit_heartbeat(
+        committed_messages = self.store.commit_heartbeat(
             turn_id,
+            owner_event_revision=owner_event_revision,
             activity=decision["activity"],
             result=decision["result"],
             next_heartbeat_at=time.time() + decision["next_check_minutes"] * 60,
@@ -1790,12 +1818,12 @@ class TurnRunner:
             notification_channel=target_channel or "",
         )
         self.agenda_changed.set()
-        if decision["messages"]:
+        if committed_messages:
             self.outbox_changed.set()
         logger.info(
             "Committed heartbeat turn=%s messages=%d goals=%d next_minutes=%d",
             turn_id,
-            len(decision["messages"]),
+            committed_messages,
             len(draft.goals),
             decision["next_check_minutes"],
         )

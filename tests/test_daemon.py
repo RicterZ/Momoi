@@ -415,6 +415,39 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             daemon.store.close()
 
+    async def test_heartbeat_defers_while_owner_reply_is_in_flight(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(
+                AppConfig(
+                    llm=LLMConfig(
+                        "http://127.0.0.1", "test", "test", 100, 0, 1, 0
+                    ),
+                    channel=NapCatConfig(
+                        "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
+                    ),
+                    system_prompt="test",
+                    recent_raw_tokens=1000,
+                    recent_turns=2,
+                    memory_results=2,
+                    memory_tokens=1000,
+                    database=Path(directory) / "momoi.sqlite3",
+                    log_level="INFO",
+                )
+            )
+            daemon.store.commit_turn(
+                [], "", AgentReply(["正常的 Owner 回复"]), turn_id="owner-turn"
+            )
+            self.assertTrue(daemon.store.claim_manual_heartbeat(now=1000))
+
+            with patch.object(
+                daemon, "_complete_heartbeat", new_callable=AsyncMock
+            ) as complete:
+                await daemon._complete_heartbeat_turn(asyncio.Event())
+
+            complete.assert_not_awaited()
+            self.assertIsNone(daemon.store.self_state()["heartbeat_claimed_at"])
+            daemon.store.close()
+
     async def test_goal_commits_only_after_explicit_autonomous_finish(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(

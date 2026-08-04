@@ -744,6 +744,34 @@ class Store(MemoryStore, DeliveryStore):
         ).fetchall()
         return [self._incoming_message(row) for row in rows]
 
+    def heartbeat_conversation_snapshot(self) -> dict[str, object]:
+        revision = int(
+            self._db.execute("SELECT COALESCE(MAX(rowid), 0) FROM events").fetchone()[0]
+        )
+        if self._db.execute(
+            "SELECT 1 FROM events WHERE processed=0 LIMIT 1"
+        ).fetchone():
+            blocked_by = "pending_owner_event"
+        elif self._db.execute(
+            """SELECT 1 FROM turns
+               WHERE kind='owner' AND state='running' LIMIT 1"""
+        ).fetchone():
+            blocked_by = "running_owner_turn"
+        elif self._db.execute(
+            """SELECT 1 FROM outbox AS o
+               JOIN turns AS t ON t.id=o.turn_id
+               WHERE t.kind='owner'
+                 AND o.state IN ('pending', 'sending', 'ambiguous') LIMIT 1"""
+        ).fetchone():
+            blocked_by = "owner_reply_in_flight"
+        else:
+            blocked_by = ""
+        return {
+            "owner_event_revision": revision,
+            "owner_busy": bool(blocked_by),
+            "blocked_by": blocked_by,
+        }
+
     @staticmethod
     def _incoming_message(row: sqlite3.Row) -> IncomingMessage:
         raw = str(row["payload_json"] or "")
@@ -2350,6 +2378,7 @@ class Store(MemoryStore, DeliveryStore):
         self,
         turn_id: str,
         *,
+        owner_event_revision: int,
         activity: str,
         result: str,
         next_heartbeat_at: float,
@@ -2362,7 +2391,7 @@ class Store(MemoryStore, DeliveryStore):
         continue_waiting_for_reply: bool = False,
         reply_initial_interval_seconds: float = 60,
         notification_channel: str = "",
-    ) -> None:
+    ) -> int:
         now = time.time()
         current = self.self_state(now)
         with self._db:
@@ -2377,6 +2406,12 @@ class Store(MemoryStore, DeliveryStore):
                 and pending["pending_reply_turn_id"] == pending_reply_turn_id
             )
             if pending_reply_turn_id and not pending_reply_is_current:
+                messages = []
+            conversation = self.heartbeat_conversation_snapshot()
+            if (
+                int(conversation["owner_event_revision"]) != owner_event_revision
+                or conversation["owner_busy"]
+            ):
                 messages = []
             if pending_reply_is_current:
                 if continue_waiting_for_reply:
@@ -2504,6 +2539,7 @@ class Store(MemoryStore, DeliveryStore):
                    failure_reason=NULL, updated_at=? WHERE id=?""",
                 (now, turn_id),
             )
+        return len(messages)
 
     @staticmethod
     def _reflection_slot(

@@ -1032,6 +1032,7 @@ class StorageMemoryTest(unittest.TestCase):
                 )
                 store.commit_heartbeat(
                     turn_id,
+                    owner_event_revision=0,
                     activity="整理关卡灵感",
                     result="记录了一个点子",
                     next_heartbeat_at=now - 1,
@@ -1085,6 +1086,7 @@ class StorageMemoryTest(unittest.TestCase):
             with patch("momoi.storage.store.time.time", return_value=1060):
                 store.commit_heartbeat(
                     "reply-check",
+                    owner_event_revision=0,
                     activity="等主人选晚餐",
                     result="轻轻问了一次",
                     next_heartbeat_at=1660,
@@ -1198,6 +1200,7 @@ class StorageMemoryTest(unittest.TestCase):
             with patch("momoi.storage.store.time.time", return_value=1100):
                 store.commit_heartbeat(
                     "stop-waiting",
+                    owner_event_revision=0,
                     activity="做自己的事",
                     result="决定不再等待",
                     next_heartbeat_at=1700,
@@ -1226,6 +1229,7 @@ class StorageMemoryTest(unittest.TestCase):
             with patch("momoi.storage.store.time.time", return_value=1100):
                 store.commit_heartbeat(
                     "third-check",
+                    owner_event_revision=0,
                     activity="等主人回复",
                     result="继续等待",
                     next_heartbeat_at=2000,
@@ -1237,6 +1241,39 @@ class StorageMemoryTest(unittest.TestCase):
                 )
             self.assertEqual(store.pending_owner_reply(1100)["heartbeat_checks"], 3)
             self.assertEqual(store.next_heartbeat_due_at(False), 2000)
+            store.close()
+
+    def test_new_owner_event_suppresses_heartbeat_visible_reply(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            revision = int(
+                store.heartbeat_conversation_snapshot()["owner_event_revision"]
+            )
+            store.begin_turn("stale-heartbeat", "autonomous", ["heartbeat:1000"])
+            store.add_event(
+                IncomingMessage("new-owner", "new-owner", "嗯，我是 ISFJ", 1010, 1010)
+            )
+            committed = store.commit_heartbeat(
+                "stale-heartbeat",
+                owner_event_revision=revision,
+                activity="继续想刚才的游戏机制",
+                result="形成了一点看法",
+                next_heartbeat_at=2000,
+                mood_transition=None,
+                messages=["那就说得通了。", "你会舍不得开大，对不对？"],
+                reason="继续刚才的话题",
+            )
+
+            self.assertEqual(committed, 0)
+            self.assertEqual(
+                store._db.execute("SELECT COUNT(*) FROM notifications").fetchone()[0],
+                0,
+            )
+            internal = store._db.execute(
+                """SELECT delivery_state FROM messages
+                   WHERE turn_id='stale-heartbeat'"""
+            ).fetchall()
+            self.assertEqual([row["delivery_state"] for row in internal], ["internal"])
             store.close()
 
     def test_reply_attention_never_delays_an_earlier_heartbeat(self) -> None:

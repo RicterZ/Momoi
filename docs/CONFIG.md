@@ -358,6 +358,8 @@ Send `/heartbeat` in the private owner chat to trigger one evaluation immediatel
 
 When a delivered reply explicitly expects an owner response, Momoi raises its attention after `reply_initial_interval_seconds`, even if automatic heartbeats are disabled. Reply attention has its own schedule and never replaces the ordinary `next_heartbeat_at` rhythm. It performs three short checks at roughly 1, 3, and 7 minutes; the model independently decides whether to follow up and whether to keep waiting. After the third check, any continued waiting uses the ordinary heartbeat rhythm. Any owner message ends the old waiting state, cancels its scheduled check, and cancels an unsent follow-up.
 
+Owner Turns exclusively answer owner input. A heartbeat is deferred while owner events, an Owner Turn, or its outgoing reply are in flight. It records the owner-event revision it read and discards visible heartbeat output if the conversation changes before commit; internal heartbeat activity is still retained.
+
 ## Self-directed tool allowlist
 
 ```json
