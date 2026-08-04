@@ -319,12 +319,12 @@ These are safety budgets, not limits on the number of tool calls.
 | `timezone` | `UTC` | Valid IANA timezone used by schedules and quiet hours |
 | `quiet_start` | unset | Local `HH:MM` start of the quiet window |
 | `quiet_end` | unset | Local `HH:MM` end of the quiet window |
-| `cooldown_seconds` | `1800` | Minimum delay between queued notifications with the same key |
-| `pending_owner_delay_seconds` | `30` | Delay proactive delivery while an owner message is waiting |
+| `cooldown_seconds` | `1800` | Minimum interval between proactive contacts with the same key |
+| `pending_owner_delay_seconds` | `30` | Delay durable proactive delivery while an owner message is waiting |
 
 `quiet_start` and `quiet_end` must either both be omitted or both use distinct `HH:MM` values. Overnight windows are supported.
 
-This policy applies to proactive Goal and Heartbeat notifications. A fixed Reminder follows its requested schedule.
+This policy applies to proactive Goal and Heartbeat contacts. Goal notifications are durable and move to the next eligible time. Heartbeat conversation is ephemeral: if it is not eligible for immediate delivery, it stays silent instead of retaining text for later replay. A fixed Reminder follows its requested schedule.
 
 ## Autonomous heartbeat
 

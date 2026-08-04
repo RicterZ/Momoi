@@ -182,11 +182,13 @@ CREATE TABLE IF NOT EXISTS notifications (
     reason TEXT NOT NULL,
     messages_json TEXT NOT NULL,
     reply_expectation TEXT NOT NULL DEFAULT '',
-    state TEXT NOT NULL CHECK (state IN ('pending', 'queued')),
+    state TEXT NOT NULL CHECK (state IN ('pending', 'queued', 'superseded')),
     not_before REAL NOT NULL,
     claimed_at REAL,
     created_at REAL NOT NULL,
     queued_at REAL,
+    superseded_at REAL,
+    superseded_reason TEXT NOT NULL DEFAULT '',
     target_channel TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS notifications_due

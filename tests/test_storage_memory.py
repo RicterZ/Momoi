@@ -1033,6 +1033,7 @@ class StorageMemoryTest(unittest.TestCase):
                 store.commit_heartbeat(
                     turn_id,
                     owner_event_revision=0,
+                    notification_config=notifications,
                     activity="整理关卡灵感",
                     result="记录了一个点子",
                     next_heartbeat_at=now - 1,
@@ -1087,6 +1088,7 @@ class StorageMemoryTest(unittest.TestCase):
                 store.commit_heartbeat(
                     "reply-check",
                     owner_event_revision=0,
+                    notification_config=NotificationConfig(),
                     activity="等主人选晚餐",
                     result="轻轻问了一次",
                     next_heartbeat_at=1660,
@@ -1107,13 +1109,6 @@ class StorageMemoryTest(unittest.TestCase):
             ).fetchone()[0]
             self.assertEqual(key, "heartbeat.reply_followup")
 
-            policy = NotificationConfig()
-            notification = store.claim_due_notification(policy, now=1060)
-            self.assertTrue(
-                store.queue_notification(
-                    notification["id"], 1060, policy, primary_channel="napcat"
-                )
-            )
             stale_followup = store.due_outbox()[0]
             self.assertEqual(stale_followup.channel, "weixin")
             self.assertEqual(
@@ -1201,6 +1196,7 @@ class StorageMemoryTest(unittest.TestCase):
                 store.commit_heartbeat(
                     "stop-waiting",
                     owner_event_revision=0,
+                    notification_config=NotificationConfig(),
                     activity="做自己的事",
                     result="决定不再等待",
                     next_heartbeat_at=1700,
@@ -1230,6 +1226,7 @@ class StorageMemoryTest(unittest.TestCase):
                 store.commit_heartbeat(
                     "third-check",
                     owner_event_revision=0,
+                    notification_config=NotificationConfig(),
                     activity="等主人回复",
                     result="继续等待",
                     next_heartbeat_at=2000,
@@ -1256,6 +1253,7 @@ class StorageMemoryTest(unittest.TestCase):
             committed = store.commit_heartbeat(
                 "stale-heartbeat",
                 owner_event_revision=revision,
+                notification_config=NotificationConfig(),
                 activity="继续想刚才的游戏机制",
                 result="形成了一点看法",
                 next_heartbeat_at=2000,
@@ -1275,6 +1273,134 @@ class StorageMemoryTest(unittest.TestCase):
             ).fetchall()
             self.assertEqual([row["delivery_state"] for row in internal], ["internal"])
             store.close()
+
+    def test_heartbeat_cooldown_suppresses_instead_of_delaying_chat(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store._db.execute(
+                """INSERT INTO notifications
+                   (id, turn_id, goal_id, notification_key, priority, reason,
+                    messages_json, state, not_before, created_at, queued_at)
+                   VALUES ('previous', 'previous-turn', 'heartbeat',
+                           'heartbeat.chat', 'normal', 'previous', '["旧消息"]',
+                           'queued', 1000, 1000, 1000)"""
+            )
+            store.begin_turn("cooldown-heartbeat", "autonomous", ["heartbeat:1100"])
+            with patch("momoi.storage.store.time.time", return_value=1100):
+                committed = store.commit_heartbeat(
+                    "cooldown-heartbeat",
+                    owner_event_revision=0,
+                    notification_config=NotificationConfig(cooldown_seconds=1800),
+                    activity="继续想游戏机制",
+                    result="形成了一点看法",
+                    next_heartbeat_at=2000,
+                    mood_transition=None,
+                    messages=["这句现在不能发。"],
+                    reason="继续话题",
+                )
+
+            self.assertEqual(committed, 0)
+            self.assertEqual(
+                store._db.execute("SELECT COUNT(*) FROM notifications").fetchone()[0],
+                1,
+            )
+            self.assertEqual(store.due_outbox(), [])
+            store.close()
+
+    def test_owner_message_supersedes_queued_heartbeat_chat(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store.begin_turn("heartbeat-chat", "autonomous", ["heartbeat:1000"])
+            with patch("momoi.storage.store.time.time", return_value=1000):
+                committed = store.commit_heartbeat(
+                    "heartbeat-chat",
+                    owner_event_revision=0,
+                    notification_config=NotificationConfig(cooldown_seconds=0),
+                    activity="想起游戏机制",
+                    result="形成了一点看法",
+                    next_heartbeat_at=2000,
+                    mood_transition=None,
+                    messages=["这是一句瞬时聊天。"],
+                    reason="自然分享",
+                )
+            self.assertEqual(committed, 1)
+            self.assertEqual(store.due_outbox()[0].text, "这是一句瞬时聊天。")
+
+            store.add_event(
+                IncomingMessage("owner-moved-on", "owner-moved-on", "换个话题", 1010, 1010)
+            )
+
+            notification = store._db.execute(
+                "SELECT state, superseded_reason FROM notifications"
+            ).fetchone()
+            self.assertEqual(notification["state"], "superseded")
+            self.assertEqual(
+                notification["superseded_reason"],
+                "owner_message_superseded_heartbeat_contact",
+            )
+            self.assertEqual(
+                store._db.execute(
+                    "SELECT state FROM outbox WHERE turn_id='heartbeat-chat'"
+                ).fetchone()[0],
+                "superseded",
+            )
+            self.assertEqual(store.due_outbox(), [])
+            visible = store._db.execute(
+                """SELECT COUNT(*) FROM messages WHERE turn_id='heartbeat-chat'
+                   AND delivery_state<>'internal'"""
+            ).fetchone()[0]
+            self.assertEqual(visible, 0)
+            store.close()
+
+    def test_old_notification_schema_migrates_and_drops_stale_heartbeat_chat(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "momoi.sqlite3"
+            Store(path).close()
+            database = sqlite3.connect(path)
+            database.execute("DROP INDEX notifications_due")
+            database.execute("ALTER TABLE notifications RENAME TO notifications_new")
+            database.execute(
+                """CREATE TABLE notifications (
+                       id TEXT PRIMARY KEY,
+                       turn_id TEXT NOT NULL UNIQUE,
+                       goal_id TEXT NOT NULL,
+                       notification_key TEXT NOT NULL,
+                       priority TEXT NOT NULL CHECK (priority IN ('normal', 'urgent')),
+                       reason TEXT NOT NULL,
+                       messages_json TEXT NOT NULL,
+                       reply_expectation TEXT NOT NULL DEFAULT '',
+                       state TEXT NOT NULL CHECK (state IN ('pending', 'queued')),
+                       not_before REAL NOT NULL,
+                       claimed_at REAL,
+                       created_at REAL NOT NULL,
+                       queued_at REAL,
+                       target_channel TEXT NOT NULL DEFAULT ''
+                   )"""
+            )
+            database.execute(
+                """INSERT INTO notifications
+                   (id, turn_id, goal_id, notification_key, priority, reason,
+                    messages_json, state, not_before, created_at)
+                   VALUES ('stale', 'stale-turn', 'heartbeat', 'heartbeat.chat',
+                           'normal', 'old chat', '["旧对话"]', 'pending', 1, 1)"""
+            )
+            database.execute("DROP TABLE notifications_new")
+            database.commit()
+            database.close()
+
+            migrated = Store(path)
+            notification = migrated._db.execute(
+                """SELECT state, superseded_reason FROM notifications
+                   WHERE id='stale'"""
+            ).fetchone()
+            self.assertEqual(notification["state"], "superseded")
+            self.assertEqual(
+                notification["superseded_reason"],
+                "process_restart_invalidated_ephemeral_contact",
+            )
+            migrated.close()
 
     def test_reply_attention_never_delays_an_earlier_heartbeat(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

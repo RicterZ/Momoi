@@ -947,13 +947,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 daemon.store.claim_due_heartbeat(config.heartbeat, config.notifications)
             )
             await daemon._complete_heartbeat_turn(asyncio.Event())
-            notification = daemon.store.claim_due_notification(config.notifications)
-            self.assertIsNotNone(notification)
-            self.assertTrue(
-                daemon.store.queue_notification(
-                    str(notification["id"]), config=config.notifications
-                )
-            )
             self.assertEqual(daemon.store.due_outbox()[0].text, "刚想到一个关卡点子！")
             goal = daemon.store.list_goals()[0]
             self.assertEqual(goal["authority"], "agent")

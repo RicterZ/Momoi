@@ -1679,6 +1679,12 @@ class TurnRunner:
         state = self.store.self_state()
         self_context = self.store.self_state_context()
         pending_reply = self.store.pending_owner_reply()
+        notification_key = (
+            "heartbeat.reply_followup" if pending_reply else "heartbeat.chat"
+        )
+        contact_window = self.store.heartbeat_contact_window(
+            notification_key, self.config.notifications
+        )
         activity = str(state["activity"])
         attention_query = "\n".join(
             [
@@ -1740,6 +1746,8 @@ class TurnRunner:
                     {
                         "owner_event_revision": owner_event_revision,
                         "owner_turn_or_delivery_active": False,
+                        "owner_contact_allowed_now": contact_window["allowed"],
+                        "owner_contact_eligible_at": contact_window["eligible_at"],
                     },
                     separators=(",", ":"),
                 ),
@@ -1797,9 +1805,13 @@ class TurnRunner:
         )
         if not isinstance(decision, dict):
             raise RuntimeError("Heartbeat Turn ended without heartbeat_finish")
+        if not contact_window["allowed"]:
+            decision["messages"] = []
+            decision["reply_expectation"] = ""
         committed_messages = self.store.commit_heartbeat(
             turn_id,
             owner_event_revision=owner_event_revision,
+            notification_config=self.config.notifications,
             activity=decision["activity"],
             result=decision["result"],
             next_heartbeat_at=time.time() + decision["next_check_minutes"] * 60,

@@ -288,7 +288,7 @@ class DeliveryStore:
             f"SELECT state FROM outbox WHERE id IN ({placeholders})", ids
         ).fetchall()
         states = {str(row["state"]) for row in rows}
-        if len(rows) != len(ids) or "failed" in states:
+        if len(rows) != len(ids) or states & {"failed", "superseded"}:
             return "failed"
         return "succeeded" if states == {"sent"} else "pending"
 
@@ -368,7 +368,7 @@ class DeliveryStore:
                      SELECT 1 FROM outbox AS earlier
                      WHERE earlier.id < o.id
                        AND earlier.target_channel = o.target_channel
-                       AND earlier.state NOT IN ('sent', 'failed')
+                       AND earlier.state NOT IN ('sent', 'failed', 'superseded')
                  )
                ORDER BY o.id""",
             (time.time(),),

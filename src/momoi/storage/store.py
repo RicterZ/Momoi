@@ -90,6 +90,7 @@ class Store(MemoryStore, DeliveryStore):
             "sent": "delivered",
             "ambiguous": "uncertain",
             "failed": "failed",
+            "superseded": "failed",
         }.get(outbox_state, "queued")
 
     def _sync_outbox_message(self, outbox_id: int, outbox_state: str) -> None:
@@ -309,6 +310,63 @@ class Store(MemoryStore, DeliveryStore):
                 """ALTER TABLE notifications ADD COLUMN target_channel
                    TEXT NOT NULL DEFAULT ''"""
             )
+        for name, definition in (
+            ("superseded_at", "REAL"),
+            ("superseded_reason", "TEXT NOT NULL DEFAULT ''"),
+        ):
+            if name not in notification_columns:
+                self._db.execute(
+                    f"ALTER TABLE notifications ADD COLUMN {name} {definition}"
+                )
+        notification_schema = str(
+            self._db.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='notifications'"
+            ).fetchone()[0]
+        )
+        if "'superseded'" not in notification_schema:
+            self._db.execute("DROP INDEX IF EXISTS notifications_due")
+            self._db.execute(
+                "ALTER TABLE notifications RENAME TO notifications_legacy_state"
+            )
+            self._db.execute(
+                """CREATE TABLE notifications (
+                       id TEXT PRIMARY KEY,
+                       turn_id TEXT NOT NULL UNIQUE,
+                       goal_id TEXT NOT NULL,
+                       notification_key TEXT NOT NULL,
+                       priority TEXT NOT NULL CHECK (priority IN ('normal', 'urgent')),
+                       reason TEXT NOT NULL,
+                       messages_json TEXT NOT NULL,
+                       reply_expectation TEXT NOT NULL DEFAULT '',
+                       state TEXT NOT NULL CHECK (
+                           state IN ('pending', 'queued', 'superseded')
+                       ),
+                       not_before REAL NOT NULL,
+                       claimed_at REAL,
+                       created_at REAL NOT NULL,
+                       queued_at REAL,
+                       superseded_at REAL,
+                       superseded_reason TEXT NOT NULL DEFAULT '',
+                       target_channel TEXT NOT NULL DEFAULT ''
+                   )"""
+            )
+            self._db.execute(
+                """INSERT INTO notifications
+                   (id, turn_id, goal_id, notification_key, priority, reason,
+                    messages_json, reply_expectation, state, not_before, claimed_at,
+                    created_at, queued_at, superseded_at, superseded_reason,
+                    target_channel)
+                   SELECT id, turn_id, goal_id, notification_key, priority, reason,
+                          messages_json, reply_expectation, state, not_before,
+                          claimed_at, created_at, queued_at, superseded_at,
+                          superseded_reason, target_channel
+                   FROM notifications_legacy_state"""
+            )
+            self._db.execute("DROP TABLE notifications_legacy_state")
+            self._db.execute(
+                """CREATE INDEX notifications_due ON notifications(not_before)
+                   WHERE state='pending'"""
+            )
         episode_columns = {
             str(row["name"])
             for row in self._db.execute(
@@ -398,6 +456,11 @@ class Store(MemoryStore, DeliveryStore):
         self._db.execute("UPDATE reminders SET claimed_at=NULL WHERE status='pending'")
         self._db.execute(
             "UPDATE notifications SET claimed_at=NULL WHERE state='pending'"
+        )
+        self._supersede_heartbeat_contacts(
+            ("heartbeat.chat", "heartbeat.reply_followup"),
+            "process_restart_invalidated_ephemeral_contact",
+            now,
         )
         self._db.execute(
             """UPDATE self_state SET heartbeat_claimed_at=NULL,
@@ -716,27 +779,56 @@ class Store(MemoryStore, DeliveryStore):
                        updated_at=? WHERE id=1""",
                     (time.time(),),
                 )
-                self._db.execute(
-                    """DELETE FROM notifications
-                       WHERE notification_key='heartbeat.reply_followup'
-                         AND state='pending'"""
+                self._supersede_heartbeat_contacts(
+                    ("heartbeat.chat", "heartbeat.reply_followup"),
+                    "owner_message_superseded_heartbeat_contact",
+                    time.time(),
                 )
-                stale = self._db.execute(
-                    """SELECT id FROM outbox
-                       WHERE state='pending' AND turn_id IN (
-                           SELECT turn_id FROM notifications
-                           WHERE notification_key='heartbeat.reply_followup'
-                       )"""
-                ).fetchall()
-                for row in stale:
-                    outbox_id = int(row["id"])
-                    self._db.execute(
-                        """UPDATE outbox SET state='failed',
-                           last_error='owner_replied_before_followup' WHERE id=?""",
-                        (outbox_id,),
-                    )
-                    self._sync_outbox_message(outbox_id, "failed")
         return cursor.rowcount == 1
+
+    def _supersede_heartbeat_contacts(
+        self, keys: tuple[str, ...], reason: str, now: float
+    ) -> None:
+        placeholders = ",".join("?" for _ in keys)
+        stale = self._db.execute(
+            f"""SELECT o.id, o.state FROM outbox AS o
+                JOIN notifications AS n ON n.turn_id=o.turn_id
+                WHERE n.notification_key IN ({placeholders})
+                  AND o.state IN ('pending', 'ambiguous')""",
+            keys,
+        ).fetchall()
+        for row in stale:
+            outbox_id = int(row["id"])
+            episodes = self._db.execute(
+                """SELECT DISTINCT et.episode_id FROM messages AS m
+                   JOIN episode_turns AS et ON et.turn_id=m.turn_id
+                   WHERE m.outbox_id=?""",
+                (outbox_id,),
+            ).fetchall()
+            self._db.execute(
+                "UPDATE outbox SET state='superseded', last_error=? WHERE id=?",
+                (reason, outbox_id),
+            )
+            if row["state"] == "ambiguous":
+                self._sync_outbox_message(outbox_id, "ambiguous")
+            else:
+                self._db.execute("DELETE FROM messages WHERE outbox_id=?", (outbox_id,))
+                for episode in episodes:
+                    self._reindex_episode_terms(str(episode["episode_id"]))
+        self._db.execute(
+            f"""UPDATE notifications AS n
+                SET state='superseded', claimed_at=NULL,
+                    superseded_at=?, superseded_reason=?
+                WHERE notification_key IN ({placeholders})
+                  AND state IN ('pending', 'queued')
+                  AND (
+                      state='pending' OR EXISTS (
+                          SELECT 1 FROM outbox AS o
+                          WHERE o.turn_id=n.turn_id AND o.state='superseded'
+                      )
+                  )""",
+            (now, reason, *keys),
+        )
 
     def pending_events(self) -> list[IncomingMessage]:
         rows = self._db.execute(
@@ -2379,6 +2471,7 @@ class Store(MemoryStore, DeliveryStore):
         turn_id: str,
         *,
         owner_event_revision: int,
+        notification_config: NotificationConfig,
         activity: str,
         result: str,
         next_heartbeat_at: float,
@@ -2413,6 +2506,15 @@ class Store(MemoryStore, DeliveryStore):
                 or conversation["owner_busy"]
             ):
                 messages = []
+            notification_key = (
+                "heartbeat.reply_followup"
+                if pending_reply_is_current
+                else "heartbeat.chat"
+            )
+            if not self.heartbeat_contact_window(
+                notification_key, notification_config, now
+            )["allowed"]:
+                messages = []
             if pending_reply_is_current:
                 if continue_waiting_for_reply:
                     checks = int(pending["pending_reply_checks"] or 0) + 1
@@ -2435,26 +2537,11 @@ class Store(MemoryStore, DeliveryStore):
                            pending_reply_next_check_at=NULL
                            WHERE id=1"""
                     )
-                    self._db.execute(
-                        """DELETE FROM notifications
-                           WHERE notification_key='heartbeat.reply_followup'
-                             AND state='pending'"""
+                    self._supersede_heartbeat_contacts(
+                        ("heartbeat.reply_followup",),
+                        "reply_waiting_ended",
+                        now,
                     )
-                    stale = self._db.execute(
-                        """SELECT id FROM outbox
-                           WHERE state='pending' AND turn_id IN (
-                               SELECT turn_id FROM notifications
-                               WHERE notification_key='heartbeat.reply_followup'
-                           )"""
-                    ).fetchall()
-                    for row in stale:
-                        outbox_id = int(row["id"])
-                        self._db.execute(
-                            """UPDATE outbox SET state='failed',
-                               last_error='reply_waiting_ended' WHERE id=?""",
-                            (outbox_id,),
-                        )
-                        self._sync_outbox_message(outbox_id, "failed")
             self._apply_mood_transition(mood_transition, now)
             self._apply_goal_mutations(draft, now)
             activity_since = (
@@ -2515,25 +2602,29 @@ class Store(MemoryStore, DeliveryStore):
                     """INSERT OR IGNORE INTO notifications
                        (id, turn_id, goal_id, notification_key, priority, reason,
                         messages_json, reply_expectation, state, not_before, created_at,
-                        target_channel)
+                        claimed_at, target_channel)
                         VALUES (?, ?, 'heartbeat', ?, 'normal', ?, ?, ?,
-                               'pending', ?, ?, ?)""",
+                               'pending', ?, ?, ?, ?)""",
                     (
                         f"notification:{turn_id}",
                         turn_id,
-                        (
-                            "heartbeat.reply_followup"
-                            if pending_reply_is_current
-                            else "heartbeat.chat"
-                        ),
+                        notification_key,
                         reason[:500],
                         json.dumps(messages, ensure_ascii=False),
                         reply_expectation,
                         now,
                         now,
+                        now,
                         target_channel,
                     ),
                 )
+                notification = self._db.execute(
+                    """SELECT * FROM notifications
+                       WHERE id=? AND state='pending' AND claimed_at=?""",
+                    (f"notification:{turn_id}", now),
+                ).fetchone()
+                if notification is not None:
+                    self._queue_notification_row(notification, now, target_channel)
             self._db.execute(
                 """UPDATE turns SET state='completed', stage='completed',
                    failure_reason=NULL, updated_at=? WHERE id=?""",
@@ -2993,7 +3084,7 @@ class Store(MemoryStore, DeliveryStore):
                WHERE path=? AND (? IS NULL OR slug<>?)
                UNION ALL
                SELECT 1 FROM outbox
-               WHERE media_path=? AND state NOT IN ('sent', 'failed')
+               WHERE media_path=? AND state NOT IN ('sent', 'failed', 'superseded')
                UNION ALL
                SELECT 1 FROM notifications AS n
                JOIN emotions AS e ON e.path=?
@@ -3557,17 +3648,26 @@ class Store(MemoryStore, DeliveryStore):
             )
         return turn_id
 
-    def _notification_not_before(
-        self, row: sqlite3.Row, config: NotificationConfig, now: float
+    def _notification_key_not_before(
+        self,
+        priority: str,
+        notification_key: str,
+        config: NotificationConfig,
+        now: float,
     ) -> float:
-        priority = str(row["priority"])
         eligible = now
         if priority == "normal":
             eligible = max(eligible, quiet_until(now, config))
             last = self._db.execute(
-                """SELECT MAX(queued_at) FROM notifications
-                   WHERE state='queued' AND notification_key=?""",
-                (row["notification_key"],),
+                """SELECT MAX(n.queued_at) FROM notifications AS n
+                   WHERE n.notification_key=? AND (
+                       n.state='queued' OR EXISTS (
+                           SELECT 1 FROM outbox AS o
+                           WHERE o.turn_id=n.turn_id
+                             AND (o.state='sent' OR o.possible_duplicate=1)
+                       )
+                   )""",
+                (notification_key,),
             ).fetchone()[0]
             if last is not None:
                 eligible = max(eligible, float(last) + config.cooldown_seconds)
@@ -3576,6 +3676,25 @@ class Store(MemoryStore, DeliveryStore):
             ).fetchone():
                 eligible = max(eligible, now + config.pending_owner_delay_seconds)
         return eligible
+
+    def _notification_not_before(
+        self, row: sqlite3.Row, config: NotificationConfig, now: float
+    ) -> float:
+        return self._notification_key_not_before(
+            str(row["priority"]), str(row["notification_key"]), config, now
+        )
+
+    def heartbeat_contact_window(
+        self,
+        notification_key: str,
+        config: NotificationConfig,
+        now: float | None = None,
+    ) -> dict[str, object]:
+        now = time.time() if now is None else now
+        eligible_at = self._notification_key_not_before(
+            "normal", notification_key, config, now
+        )
+        return {"allowed": eligible_at <= now, "eligible_at": eligible_at}
 
     def claim_due_notification(
         self, config: NotificationConfig, now: float | None = None
@@ -3609,6 +3728,82 @@ class Store(MemoryStore, DeliveryStore):
         ).fetchone()
         return float(row[0]) if row and row[0] is not None else None
 
+    def _queue_notification_row(
+        self, row: sqlite3.Row, now: float, primary_channel: str
+    ) -> None:
+        messages = json.loads(str(row["messages_json"]))
+        target_channel = str(row["target_channel"] or primary_channel)
+        source = (
+            f"heartbeat:{row['turn_id']}"
+            if row["goal_id"] == "heartbeat"
+            else f"goal:{row['goal_id']}"
+        )
+        visible_messages: list[str] = []
+        for index, message in enumerate(messages):
+            visible, kind, path, payload = self._outbox_content(message)
+            visible_messages.append(visible)
+            dedupe_key = f"notification:{row['id']}:{index}"
+            outbox = self._db.execute(
+                """INSERT OR IGNORE INTO outbox
+                   (turn_id, dedupe_key, text, kind, media_path, payload_json,
+                    reply_expectation, target_channel)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    row["turn_id"],
+                    dedupe_key,
+                    visible,
+                    kind,
+                    path,
+                    json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+                    row["reply_expectation"] if index == len(messages) - 1 else "",
+                    target_channel,
+                ),
+            )
+            outbox_id = (
+                int(outbox.lastrowid)
+                if outbox.lastrowid
+                else int(
+                    self._db.execute(
+                        "SELECT id FROM outbox WHERE dedupe_key=?", (dedupe_key,)
+                    ).fetchone()["id"]
+                )
+            )
+            self._db.execute(
+                """INSERT INTO messages
+                   (turn_id, role, content, created_at, source_event_ids_json,
+                    outbox_id, delivery_state)
+                   SELECT ?, 'assistant', ?, ?, ?, ?, 'queued'
+                   WHERE NOT EXISTS (
+                       SELECT 1 FROM messages WHERE outbox_id=?
+                   )""",
+                (
+                    row["turn_id"],
+                    visible,
+                    now,
+                    json.dumps([source]),
+                    outbox_id,
+                    outbox_id,
+                ),
+            )
+        if visible_messages:
+            episode_key = (
+                "heartbeat-life"
+                if row["goal_id"] == "heartbeat"
+                else f"goal:{row['goal_id']}"
+            )
+            self._ensure_autonomous_episode(
+                episode_key,
+                str(row["turn_id"]),
+                self._episode_title(visible_messages[0], "Autonomous conversation"),
+                now,
+                visible_messages,
+            )
+        self._db.execute(
+            """UPDATE notifications SET state='queued', claimed_at=NULL, queued_at=?
+               WHERE id=?""",
+            (now, row["id"]),
+        )
+
     def queue_notification(
         self,
         notification_id: str,
@@ -3634,82 +3829,7 @@ class Store(MemoryStore, DeliveryStore):
                         (eligible, notification_id),
                     )
                     return False
-            messages = json.loads(str(row["messages_json"]))
-            target_channel = str(row["target_channel"] or primary_channel)
-            source = (
-                f"heartbeat:{row['turn_id']}"
-                if row["goal_id"] == "heartbeat"
-                else f"goal:{row['goal_id']}"
-            )
-            visible_messages: list[str] = []
-            for index, message in enumerate(messages):
-                visible, kind, path, payload = self._outbox_content(message)
-                visible_messages.append(visible)
-                dedupe_key = f"notification:{notification_id}:{index}"
-                outbox = self._db.execute(
-                    """INSERT OR IGNORE INTO outbox
-                       (turn_id, dedupe_key, text, kind, media_path, payload_json,
-                        reply_expectation, target_channel)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (
-                        row["turn_id"],
-                        dedupe_key,
-                        visible,
-                        kind,
-                        path,
-                        json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
-                        (
-                            row["reply_expectation"]
-                            if index == len(messages) - 1
-                            else ""
-                        ),
-                        target_channel,
-                    ),
-                )
-                outbox_id = (
-                    int(outbox.lastrowid)
-                    if outbox.lastrowid
-                    else int(
-                        self._db.execute(
-                            "SELECT id FROM outbox WHERE dedupe_key=?", (dedupe_key,)
-                        ).fetchone()["id"]
-                    )
-                )
-                self._db.execute(
-                    """INSERT INTO messages
-                       (turn_id, role, content, created_at, source_event_ids_json,
-                        outbox_id, delivery_state)
-                       SELECT ?, 'assistant', ?, ?, ?, ?, 'queued'
-                       WHERE NOT EXISTS (
-                           SELECT 1 FROM messages WHERE outbox_id=?
-                       )""",
-                    (
-                        row["turn_id"],
-                        visible,
-                        now,
-                        json.dumps([source]),
-                        outbox_id,
-                        outbox_id,
-                    ),
-                )
-            if visible_messages:
-                episode_key = (
-                    "heartbeat-life"
-                    if row["goal_id"] == "heartbeat"
-                    else f"goal:{row['goal_id']}"
-                )
-                self._ensure_autonomous_episode(
-                    episode_key,
-                    str(row["turn_id"]),
-                    self._episode_title(visible_messages[0], "Autonomous conversation"),
-                    now,
-                    visible_messages,
-                )
-            self._db.execute(
-                """UPDATE notifications SET state='queued', claimed_at=NULL, queued_at=?
-                   WHERE id=?""",
-                (now, notification_id),
-            )
+            self._queue_notification_row(row, now, primary_channel)
         return True
 
     def _apply_goal_mutations(self, draft: TurnDraft | None, now: float) -> None:

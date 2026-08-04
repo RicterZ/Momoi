@@ -319,12 +319,12 @@ MCP 环境值、远程 URL 和 header 支持从 Momoi 进程环境展开 `${VARI
 | `timezone` | `UTC` | 计划与静默时段使用的有效 IANA 时区 |
 | `quiet_start` | 未设置 | 本地静默时段的 `HH:MM` 开始时间 |
 | `quiet_end` | 未设置 | 本地静默时段的 `HH:MM` 结束时间 |
-| `cooldown_seconds` | `1800` | 具有相同 key 的排队通知之间的最小间隔 |
-| `pending_owner_delay_seconds` | `30` | 存在待处理主人消息时，主动通知延后投递的时间 |
+| `cooldown_seconds` | `1800` | 具有相同 key 的主动联系之间的最小间隔 |
+| `pending_owner_delay_seconds` | `30` | 存在待处理主人消息时，耐久主动通知延后投递的时间 |
 
 `quiet_start` 和 `quiet_end` 必须同时省略，或同时设为不同的 `HH:MM` 值。支持跨夜时段。
 
-该策略适用于主动的目标和心跳通知。固定提醒按请求的计划执行。
+该策略适用于主动的目标和心跳联系。Goal 通知是耐久的，会移动到下一个可投递时间；Heartbeat 对话是瞬时的，若当前不能立即投递就保持静默，不会保留文字稍后重放。固定提醒按请求的计划执行。
 
 ## 自主心跳
 
