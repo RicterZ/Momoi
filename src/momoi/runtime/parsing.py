@@ -1,7 +1,7 @@
 import re
 from typing import Any
 
-from ..channel import ChannelMessage, normalize_channel_message
+from ..channel import ChannelMessage, has_blank_line, normalize_channel_message
 from ..emotions import EMOTION_PREFIX
 from ..models import AgentReply
 from ..storage import MOOD_STATES, REFLECTION_MEMORY_KINDS
@@ -16,10 +16,11 @@ def parse_messages(
     messages: list[ChannelMessage] = []
     for item in raw_messages:
         if isinstance(item, str):
-            text = item.strip()
-            if not text:
+            if not item.strip():
                 return None, "messages_must_contain_non_empty_items"
-            messages.append(text)
+            if has_blank_line(item):
+                return None, "blank_lines_must_be_separate_messages"
+            messages.append(item.strip())
             continue
         try:
             message = normalize_channel_message(item)

@@ -305,11 +305,16 @@ class MessagingTest(unittest.TestCase):
         self.assertEqual(reply.messages, ["嘿嘿，没忘吧~", "晚上在忙什么呢？"])
         self.assertTrue(reply.expects_reply)
         self.assertEqual(reply.reply_expectation, "主人晚上的安排")
-        preserved, error = MomoiDaemon._parse_messages(
+        invalid_blank_lines, error = MomoiDaemon._parse_messages(
             {"messages": ["第一条。\n\n第二条。"]}
         )
+        self.assertIsNone(invalid_blank_lines)
+        self.assertEqual(error, "blank_lines_must_be_separate_messages")
+        single_line_break, error = MomoiDaemon._parse_messages(
+            {"messages": ["第一行。\n第二行。"]}
+        )
         self.assertIsNone(error)
-        self.assertEqual(preserved, ["第一条。\n\n第二条。"])
+        self.assertEqual(single_line_break, ["第一行。\n第二行。"])
         invalid, error = MomoiDaemon._parse_response(
             {
                 "messages": ["少了回复期待决策"],

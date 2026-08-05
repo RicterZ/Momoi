@@ -151,13 +151,17 @@ def _normalize_segments(value: object) -> list[dict[str, Any]]:
             text = data.get("text")
             if not isinstance(text, str) or not text.strip():
                 raise ValueError("invalid_text_segment")
-            if re.search(r"\n\s*\n", text):
+            if has_blank_line(text):
                 raise ValueError("blank_lines_must_be_separate_messages")
             data["text"] = text.strip()
         if kind in _MEDIA_TYPES and not isinstance(data.get("file"), str):
             raise ValueError("media_segment_requires_file")
         normalized.append({"type": kind, "data": data})
     return normalized
+
+
+def has_blank_line(text: str) -> bool:
+    return bool(re.search(r"\n\s*\n", text))
 
 
 def _normalize_node(value: object) -> dict[str, Any]:

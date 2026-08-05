@@ -31,7 +31,14 @@ SEGMENT_SCHEMA: dict[str, Any] = {
 }
 CHANNEL_MESSAGE_SCHEMA: dict[str, Any] = {
     "oneOf": [
-        {"type": "string", "minLength": 1},
+        {
+            "type": "string",
+            "minLength": 1,
+            "description": (
+                "One complete owner-visible message item. A single line break is "
+                "allowed, but blank lines must be separate array items."
+            ),
+        },
         {
             "type": "object",
             "properties": {
