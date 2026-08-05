@@ -56,10 +56,18 @@ Rules:
 
 - Cover every supplied event id in at least one intent unit. Use 1-12 units with
   unique short ids. Each unit needs 1-6 targeted recall queries even for casual
-  conversation; queries should retrieve useful continuity, not repeat the entire
-  owner batch mechanically.
-- `references` records explicit or implicit antecedents that recall must resolve.
-  Put unresolved ambiguity in `uncertainty`; never guess it away.
+  conversation; queries should retrieve useful continuity, not invent a prior
+  thread or repeat the entire owner batch mechanically.
+- `intent` and `salience` support retrieval and archiving only. They are not a reply
+  agenda or a measure of how much text Momoi should produce.
+- `references` records useful explicit or implicit antecedent resolutions, ideally
+  as `phrase -> referent`. Put unresolved ambiguity in `uncertainty`; never guess it
+  away.
+- `open_loops` is durable archival state, not a conversational hook. Add one only
+  for a concrete unfinished task, explicit promise, unanswered matter that must
+  remain pending beyond this Turn, or real waiting condition. Ordinary social
+  remarks, optional follow-up questions, and matters answerable in this Turn are
+  not open loops.
 - In recent conversation, assistant `delivery_state=uncertain` is not proof that
   the owner received the message; queued and failed assistant messages are omitted.
 - Bind every unit to at least one episode and include at least one `primary`

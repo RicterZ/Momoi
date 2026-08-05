@@ -298,7 +298,11 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                     provider_self.calls.append("main")
                     rendered = json.dumps(messages, ensure_ascii=False)
                     provider_self.main_rendered = rendered
-                    self.assertIn("<context_plan>", rendered)
+                    self.assertIn("<context_resolution>", rendered)
+                    self.assertNotIn("<context_plan>", rendered)
+                    self.assertNotIn("browse social feed", rendered)
+                    self.assertNotIn("episode_bindings", rendered)
+                    self.assertNotIn('"salience"', rendered)
                     self.assertIn("RECENT CONTEXT 2", rendered)
                     self.assertNotIn("GLOBAL RAW MUST NOT LEAK", rendered)
                     self.assertEqual(len(messages), 1)
@@ -365,7 +369,8 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                             [{"type": "text", "text": "not json"}], []
                         )
                     rendered = json.dumps(messages, ensure_ascii=False)
-                    self.assertIn("degraded_message_segment", rendered)
+                    self.assertNotIn("degraded_message_segment", rendered)
+                    self.assertIn("<context_resolution>", rendered)
                     self.assertIn("may miss references", rendered)
                     call = ToolCall(
                         "respond",

@@ -94,6 +94,22 @@ def _sections(*items: tuple[str, str]) -> str:
     )
 
 
+def _conversation_guidance(plan: dict[str, object]) -> str:
+    references = [
+        {"owner_text": unit["text"], "references": unit["references"]}
+        for unit in plan.get("intent_units", [])
+        if isinstance(unit, dict) and unit.get("references")
+    ]
+    uncertainty = plan.get("uncertainty", [])
+    if not references and not uncertainty:
+        return ""
+    return json.dumps(
+        {"reference_context": references, "uncertainty": uncertainty},
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+
+
 def _reconciliation_message(turn_id: str) -> str:
     short_id = turn_id[:12]
     return (
@@ -190,12 +206,8 @@ class TurnRunner:
                         ),
                     ),
                     (
-                        "context_plan",
-                        json.dumps(
-                            context_plan,
-                            ensure_ascii=False,
-                            separators=(",", ":"),
-                        ),
+                        "context_resolution",
+                        _conversation_guidance(context_plan),
                     ),
                     ("recent_conversation", recalled["recent_conversation"]),
                     ("recalled_episodes", recalled["episodes"]),
@@ -652,8 +664,8 @@ class TurnRunner:
         current_text = _sections(
             ("current_owner_messages", user_text),
             (
-                "context_plan",
-                json.dumps(context_plan, ensure_ascii=False, separators=(",", ":")),
+                "context_resolution",
+                _conversation_guidance(context_plan),
             ),
             ("runtime_directives", "\n\n".join(directives)),
             ("runtime_state", runtime_state),
