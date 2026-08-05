@@ -23,7 +23,7 @@ from .media import (
     read_source,
     safe_filename,
 )
-from ...models import IncomingMessage
+from ...models import IncomingMessage, OwnerInputStatus
 
 
 logger = logging.getLogger(__name__)
@@ -50,7 +50,7 @@ class WeixinChannel:
 
     async def run(
         self,
-        on_message: Callable[[IncomingMessage], Awaitable[None]],
+        on_event: Callable[[IncomingMessage | OwnerInputStatus], Awaitable[None]],
         stop: asyncio.Event,
     ) -> None:
         if self.state is None:
@@ -124,7 +124,7 @@ class WeixinChannel:
                     for raw in messages:
                         if not isinstance(raw, dict):
                             continue
-                        await self._accept(raw, on_message, session)
+                        await self._accept(raw, on_event, session)
                     cursor = response.get("get_updates_buf")
                     if (
                         isinstance(cursor, str)
@@ -141,7 +141,7 @@ class WeixinChannel:
     async def _accept(
         self,
         raw: dict[str, Any],
-        on_message: Callable[[IncomingMessage], Awaitable[None]],
+        on_event: Callable[[IncomingMessage | OwnerInputStatus], Awaitable[None]],
         session: aiohttp.ClientSession,
     ) -> None:
         state = self.state
@@ -164,7 +164,7 @@ class WeixinChannel:
         occurred_at = (
             float(created) / 1000 if isinstance(created, (int, float)) else time.time()
         )
-        await on_message(
+        await on_event(
             IncomingMessage(
                 event_id=f"weixin:{state.account_id}:{message_id}",
                 message_id=str(message_id),

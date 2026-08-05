@@ -18,7 +18,7 @@ from ..channel import (
 from ..config import AppConfig
 from ..memory_tools import MemoryTools
 from ..mcp_client import MCPManager
-from ..models import AgentReply, IncomingMessage
+from ..models import AgentReply, IncomingMessage, OwnerInputStatus
 from ..provider import AnthropicProvider, OpenAIProvider
 from ..storage import Store
 from ..webhooks import WebhookService
@@ -57,6 +57,8 @@ class MomoiDaemon(TurnRunner):
         self.mcp = MCPManager(config.mcp_config)
         self.incoming: asyncio.Queue[IncomingMessage] = asyncio.Queue()
         self._deferred_incoming: deque[IncomingMessage] = deque()
+        self._owner_quiet_until: dict[str, float] = {}
+        self._owner_activity_changed = asyncio.Event()
         self.webhook_requests: asyncio.Queue[
             tuple[str, str, asyncio.Future[AgentReply]]
         ] = asyncio.Queue()
@@ -141,7 +143,19 @@ class MomoiDaemon(TurnRunner):
         values.update(self.channel.workflow_variables())
         return values
 
-    async def _receive(self, message: IncomingMessage) -> None:
+    def _touch_owner_activity(self, channel_name: str) -> None:
+        channel = self._channel_for(channel_name)
+        self._owner_quiet_until[channel.name] = (
+            asyncio.get_running_loop().time() + channel.quiet_seconds
+        )
+        self._owner_activity_changed.set()
+
+    async def _receive(self, event: IncomingMessage | OwnerInputStatus) -> None:
+        if isinstance(event, OwnerInputStatus):
+            self._touch_owner_activity(event.channel)
+            logger.debug("Received owner input status channel=%s", event.channel)
+            return
+        message = event
         logger.debug(
             "Received owner message channel=%s message=%s",
             message.channel,
@@ -167,6 +181,7 @@ class MomoiDaemon(TurnRunner):
         if self.store.add_event(message):
             logger.info("Accepted owner message channel=%s", message.channel)
             await self.incoming.put(message)
+            self._touch_owner_activity(message.channel)
 
     async def _agent_worker(self, stop: asyncio.Event) -> None:
         batch: list[IncomingMessage] = []
@@ -249,9 +264,24 @@ class MomoiDaemon(TurnRunner):
                     now if immediate else now + channel.max_batch_seconds
                 )
                 continue
-            timeout = max(0.0, min(quiet_deadline, hard_deadline) - loop.time())
+            channel = self._channel_for(batch[0].channel)
+            quiet_deadline = min(
+                max(
+                    quiet_deadline,
+                    self._owner_quiet_until.get(channel.name, 0.0),
+                ),
+                hard_deadline,
+            )
+            timeout = max(0.0, quiet_deadline - loop.time())
             try:
-                message = await asyncio.wait_for(self.incoming.get(), timeout=timeout)
+                if self.incoming.empty():
+                    self._owner_activity_changed.clear()
+                    if self.incoming.empty():
+                        await asyncio.wait_for(
+                            self._owner_activity_changed.wait(), timeout=timeout
+                        )
+                        continue
+                message = self.incoming.get_nowait()
                 if message.text.strip() == "/stop":
                     self.store.discard_events(batch)
                     batch = [message]

@@ -17,7 +17,7 @@ from .. import (
     NotConnected,
     SendRejected,
 )
-from ...models import IncomingMessage
+from ...models import IncomingMessage, OwnerInputStatus
 from .face_names import QQ_FACE_NAMES
 
 logger = logging.getLogger(__name__)
@@ -79,7 +79,7 @@ class NapCatChannel:
 
     async def run(
         self,
-        on_message: Callable[[IncomingMessage], Awaitable[None]],
+        on_event: Callable[[IncomingMessage | OwnerInputStatus], Awaitable[None]],
         stop: asyncio.Event,
     ) -> None:
         timeout = aiohttp.ClientTimeout(total=None, connect=20)
@@ -113,7 +113,7 @@ class NapCatChannel:
                                 if self._resolve_response(payload):
                                     continue
                                 task = asyncio.create_task(
-                                    self._handle_payload(payload, on_message)
+                                    self._handle_payload(payload, on_event)
                                 )
                                 inbound_tasks.add(task)
                                 task.add_done_callback(finish_inbound)
@@ -167,8 +167,16 @@ class NapCatChannel:
     async def _handle_payload(
         self,
         payload: dict[str, Any],
-        on_message: Callable[[IncomingMessage], Awaitable[None]],
+        on_event: Callable[[IncomingMessage | OwnerInputStatus], Awaitable[None]],
     ) -> None:
+        if (
+            payload.get("post_type") == "notice"
+            and payload.get("notice_type") == "notify"
+            and payload.get("sub_type") == "input_status"
+            and str(payload.get("user_id")) == self.config.owner_qq
+        ):
+            await on_event(OwnerInputStatus(self.name))
+            return
         if (
             payload.get("post_type") != "message"
             or payload.get("message_type") != "private"
@@ -183,7 +191,7 @@ class NapCatChannel:
                 return
             self_id = str(payload.get("self_id", "unknown"))
             occurred_at = float(payload.get("time") or time.time())
-            await on_message(
+            await on_event(
                 IncomingMessage(
                     event_id=f"napcat:{self_id}:{message_id}",
                     message_id=message_id,

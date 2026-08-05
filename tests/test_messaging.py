@@ -30,6 +30,7 @@ from momoi.runtime import (
 from momoi.models import (
     AgentReply,
     IncomingMessage,
+    OwnerInputStatus,
     ProviderResponse,
     ToolCall,
 )
@@ -41,6 +42,48 @@ class MessagingTest(unittest.TestCase):
     def test_napcat_is_the_default_channel_plugin(self) -> None:
         config = NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20)
         self.assertIsInstance(create_channel(config), NapCatChannel)
+
+    def test_napcat_forwards_only_owner_input_status_notices(self) -> None:
+        async def run() -> None:
+            client = NapCatChannel(
+                NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20)
+            )
+            accepted: list[IncomingMessage | OwnerInputStatus] = []
+
+            async def receive(event: IncomingMessage | OwnerInputStatus) -> None:
+                accepted.append(event)
+
+            for event_type, status_text in ((1, "对方正在输入..."), (0, "")):
+                await client._handle_payload(
+                    {
+                        "post_type": "notice",
+                        "notice_type": "notify",
+                        "sub_type": "input_status",
+                        "self_id": 10000,
+                        "user_id": 20000,
+                        "event_type": event_type,
+                        "status_text": status_text,
+                    },
+                    receive,
+                )
+            await client._handle_payload(
+                {
+                    "post_type": "notice",
+                    "notice_type": "notify",
+                    "sub_type": "input_status",
+                    "self_id": 10000,
+                    "user_id": 30000,
+                    "event_type": 1,
+                },
+                receive,
+            )
+
+            self.assertEqual(
+                accepted,
+                [OwnerInputStatus("napcat"), OwnerInputStatus("napcat")],
+            )
+
+        asyncio.run(run())
 
     def test_renders_mixed_napcat_segments_without_losing_cards(self) -> None:
         payload = {

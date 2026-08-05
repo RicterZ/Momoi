@@ -14,6 +14,11 @@ class IncomingMessage:
 
 
 @dataclass(frozen=True)
+class OwnerInputStatus:
+    channel: str
+
+
+@dataclass(frozen=True)
 class OutboxMessage:
     id: int
     turn_id: str

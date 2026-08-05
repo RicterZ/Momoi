@@ -30,6 +30,7 @@ from momoi.runtime import (
 from momoi.models import (
     AgentReply,
     IncomingMessage,
+    OwnerInputStatus,
     ProviderResponse,
     ToolCall,
     TurnDraft,
@@ -182,6 +183,146 @@ class DaemonTest(unittest.TestCase):
 
 
 class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
+    async def test_input_status_extends_open_owner_batch(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(
+                AppConfig(
+                    llm=LLMConfig(
+                        "http://127.0.0.1", "test", "test", 100, 0, 1, 0
+                    ),
+                    channel=NapCatConfig(
+                        "ws://127.0.0.1", "20000", 0.1, 1, 30, 30, 20
+                    ),
+                    system_prompt="test",
+                    recent_raw_tokens=1000,
+                    recent_turns=2,
+                    memory_results=2,
+                    memory_tokens=1000,
+                    database=Path(directory) / "momoi.sqlite3",
+                    log_level="INFO",
+                )
+            )
+            stop = asyncio.Event()
+            completed = asyncio.Event()
+            captured: list[IncomingMessage] = []
+
+            async def complete(batch: list[IncomingMessage], *_: object) -> None:
+                captured.extend(batch)
+                completed.set()
+                stop.set()
+
+            daemon._complete_batch_turn = complete  # type: ignore[method-assign]
+            worker = asyncio.create_task(daemon._agent_worker(stop))
+            first = IncomingMessage(
+                "napcat:first", "first", "第一条", 1, 1, channel="napcat"
+            )
+            await daemon._receive(first)
+            first_deadline = daemon._owner_quiet_until["napcat"]
+            await asyncio.sleep(0.05)
+            await daemon._receive(OwnerInputStatus("napcat"))
+            extended_deadline = daemon._owner_quiet_until["napcat"]
+            self.assertGreater(extended_deadline, first_deadline)
+            await asyncio.sleep(
+                max(0.0, first_deadline - asyncio.get_running_loop().time() + 0.01)
+            )
+            self.assertFalse(completed.is_set())
+            await asyncio.wait_for(completed.wait(), timeout=0.2)
+            await worker
+
+            self.assertEqual(captured, [first])
+            daemon.store.close()
+
+    async def test_input_status_holds_stale_reply_for_owner_update(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(
+                AppConfig(
+                    llm=LLMConfig(
+                        "http://127.0.0.1", "test", "test", 100, 0, 1, 0
+                    ),
+                    channel=NapCatConfig(
+                        "ws://127.0.0.1", "20000", 0.05, 1, 30, 30, 20
+                    ),
+                    system_prompt="test",
+                    recent_raw_tokens=1000,
+                    recent_turns=2,
+                    memory_results=2,
+                    memory_tokens=1000,
+                    database=Path(directory) / "momoi.sqlite3",
+                    log_level="INFO",
+                )
+            )
+            stale_reply_started = asyncio.Event()
+            finish_stale_reply = asyncio.Event()
+
+            class Provider:
+                calls = 0
+
+                async def complete(
+                    provider_self,
+                    _: object,
+                    messages: list[dict[str, object]],
+                    __: object,
+                    **___: object,
+                ) -> ProviderResponse:
+                    provider_self.calls += 1
+                    if provider_self.calls == 1:
+                        stale_reply_started.set()
+                        await finish_stale_reply.wait()
+                        text = "只回应第一条"
+                    else:
+                        self.assertIn("第二条", json.dumps(messages, ensure_ascii=False))
+                        text = "合并两条后回复"
+                    call = ToolCall(
+                        f"respond-{provider_self.calls}",
+                        "respond",
+                        {
+                            "delivery": "根据当前完整输入回复",
+                            "expects_reply": False,
+                            "reply_expectation": "",
+                            "messages": [text],
+                            "mood": {"action": "keep"},
+                        },
+                    )
+                    return ProviderResponse(
+                        [
+                            {
+                                "type": "tool_use",
+                                "id": call.id,
+                                "name": call.name,
+                                "input": call.arguments,
+                            }
+                        ],
+                        [call],
+                    )
+
+            provider = Provider()
+            daemon.provider = with_context_planner(provider)  # type: ignore[assignment]
+            first = IncomingMessage(
+                "napcat:first", "first", "第一条", 1, 1, channel="napcat"
+            )
+            daemon.store.add_event(first)
+            turn_id = daemon._turn_id(first.event_id)
+            turn = asyncio.create_task(
+                daemon._complete_batch_turn([first], asyncio.Event(), turn_id)
+            )
+
+            await stale_reply_started.wait()
+            await daemon._receive(OwnerInputStatus("napcat"))
+            finish_stale_reply.set()
+            await asyncio.sleep(0.01)
+            second = IncomingMessage(
+                "napcat:second", "second", "第二条", 2, 2, channel="napcat"
+            )
+            await daemon._receive(second)
+            await asyncio.wait_for(turn, timeout=1)
+
+            self.assertEqual(provider.calls, 2)
+            self.assertEqual(
+                [row.text for row in daemon.store.due_outbox()], ["合并两条后回复"]
+            )
+            self.assertEqual(daemon.store.pending_events(), [])
+            daemon.store.close()
+
     async def test_owner_updates_interrupt_after_tool_and_before_respond(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(

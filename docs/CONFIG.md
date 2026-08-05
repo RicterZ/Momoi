@@ -132,6 +132,8 @@ All channel timing fields must be positive.
 
 Six seconds lets a natural sequence of short messages be handled together. Lower it to one second only when faster development feedback matters more than message collection.
 
+NapCat owner input-status notices refresh the same quiet window, including while an Owner Turn is already running. At model and tool boundaries, Momoi waits for the owner to remain quiet and folds any newly arrived message into that Turn, still bounded by `max_batch_seconds`. Input status is transient activity: it is never stored as a conversation message or sent to the model.
+
 ### Weixin (Tencent iLink)
 
 Authenticate once in the same workspace, then run the daemon:

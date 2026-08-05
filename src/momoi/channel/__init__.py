@@ -6,7 +6,7 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any, Protocol
 
-from ..models import IncomingMessage
+from ..models import IncomingMessage, OwnerInputStatus
 
 
 ChannelMessage = str | dict[str, Any]
@@ -38,7 +38,7 @@ class Channel(Protocol):
 
     async def run(
         self,
-        on_message: Callable[[IncomingMessage], Awaitable[None]],
+        on_event: Callable[[IncomingMessage | OwnerInputStatus], Awaitable[None]],
         stop: asyncio.Event,
     ) -> None: ...
 

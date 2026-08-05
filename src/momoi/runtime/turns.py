@@ -142,6 +142,29 @@ class TurnRunner:
             )
         return updates
 
+    async def _settle_owner_updates(
+        self, current_events: list[IncomingMessage], channel_name: str
+    ) -> list[IncomingMessage]:
+        channel = self._channel_for(channel_name)
+        loop = asyncio.get_running_loop()
+        hard_deadline = loop.time() + channel.max_batch_seconds
+        updates: list[IncomingMessage] = []
+        while True:
+            updates.extend(self._drain_owner_updates(current_events, channel.name))
+            deadline = min(
+                self._owner_quiet_until.get(channel.name, 0.0), hard_deadline
+            )
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                return updates
+            self._owner_activity_changed.clear()
+            try:
+                await asyncio.wait_for(
+                    self._owner_activity_changed.wait(), timeout=remaining
+                )
+            except TimeoutError:
+                pass
+
     def _owner_update_message(
         self,
         updates: list[IncomingMessage],
@@ -733,7 +756,9 @@ class TurnRunner:
         history_messages = max(0, len(messages) - 1)
         while True:
             updates = (
-                self._drain_owner_updates(current_events, delivery_channel.name)
+                await self._settle_owner_updates(
+                    current_events, delivery_channel.name
+                )
                 if accept_owner_updates
                 else []
             )
@@ -805,7 +830,9 @@ class TurnRunner:
             )
             self.store.record_turn_usage(turn_id, input_tokens, output_tokens)
             updates = (
-                self._drain_owner_updates(current_events, delivery_channel.name)
+                await self._settle_owner_updates(
+                    current_events, delivery_channel.name
+                )
                 if accept_owner_updates
                 else []
             )
@@ -1166,7 +1193,7 @@ class TurnRunner:
                     }
                 )
                 if accept_owner_updates:
-                    updates = self._drain_owner_updates(
+                    updates = await self._settle_owner_updates(
                         current_events, delivery_channel.name
                     )
                     if updates:
