@@ -1274,6 +1274,22 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertEqual([row["delivery_state"] for row in internal], ["internal"])
             store.close()
 
+    def test_orphaned_owner_turn_does_not_block_heartbeat(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store.begin_turn("orphaned-owner", "owner", ["missing-event"])
+            store.record_turn_failure("orphaned-owner", "ProviderError")
+
+            self.assertFalse(store.heartbeat_conversation_snapshot()["owner_busy"])
+
+            store.add_event(
+                IncomingMessage("current-owner", "current-owner", "还在吗", 1, 1)
+            )
+            snapshot = store.heartbeat_conversation_snapshot()
+            self.assertTrue(snapshot["owner_busy"])
+            self.assertEqual(snapshot["blocked_by"], "pending_owner_event")
+            store.close()
+
     def test_heartbeat_cooldown_suppresses_instead_of_delaying_chat(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")

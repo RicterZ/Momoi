@@ -845,11 +845,6 @@ class Store(MemoryStore, DeliveryStore):
         ).fetchone():
             blocked_by = "pending_owner_event"
         elif self._db.execute(
-            """SELECT 1 FROM turns
-               WHERE kind='owner' AND state='running' LIMIT 1"""
-        ).fetchone():
-            blocked_by = "running_owner_turn"
-        elif self._db.execute(
             """SELECT 1 FROM outbox AS o
                JOIN turns AS t ON t.id=o.turn_id
                WHERE t.kind='owner'
