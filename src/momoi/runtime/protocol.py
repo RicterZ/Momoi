@@ -158,8 +158,9 @@ SEND_MESSAGE_TOOL_SPEC: dict[str, Any] = {
         "Emit one or more owner-visible conversational beats now without ending the "
         "Turn. Use it whenever something naturally comes out before the Turn is done: "
         "an immediate verbal or nonverbal reaction, a live conversational beat, or a "
-        "worthwhile task update. If it conveys everything, close later with empty "
-        "respond messages; never repeat it in respond."
+        "worthwhile task update. An immediate reaction may precede analysis, but factual "
+        "claims must wait for evidence. If it conveys everything, close later with "
+        "empty respond messages; never repeat it in respond."
     ),
     "input_schema": {
         "type": "object",

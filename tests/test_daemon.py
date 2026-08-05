@@ -134,6 +134,7 @@ class DaemonTest(unittest.TestCase):
             "delivery", SEND_MESSAGE_TOOL_SPEC["input_schema"]["properties"]
         )
         self.assertIn("immediate", SEND_MESSAGE_TOOL_SPEC["description"])
+        self.assertIn("factual claims", SEND_MESSAGE_TOOL_SPEC["description"])
         self.assertIn("conversational Turn", RESPOND_TOOL_SPEC["description"])
         self.assertNotIn(
             "minItems", RESPOND_TOOL_SPEC["input_schema"]["properties"]["messages"]
