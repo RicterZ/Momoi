@@ -35,5 +35,6 @@ cyber_keyword_pre_hook = TextReplacementHook(
         (r"(?<![a-z])AV女优", "A-V女-优"),
         ("漏洞", "漏-洞"),
         ("后门", "后-门"),
+        ("情色", "情-色"),
     )
 )
