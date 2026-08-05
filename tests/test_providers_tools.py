@@ -475,7 +475,6 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                         "respond-corrected",
                         "respond",
                         {
-                            "delivery": "简短纠正协议错误",
                             "expects_reply": False,
                             "reply_expectation": "",
                             "messages": ["已纠正"],

@@ -212,7 +212,6 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "notify-owner",
                             "respond",
                             {
-                                "delivery": "自然提醒主人快递已经到达",
                                 "messages": ["有一个快递到了，取件码是 1234。"],
                                 "expects_reply": False,
                                 "reply_expectation": "",

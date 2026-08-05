@@ -40,13 +40,6 @@ def parse_messages(
     return messages, None
 
 
-def validate_delivery(arguments: dict[str, Any]) -> str | None:
-    delivery = arguments.get("delivery")
-    if not isinstance(delivery, str) or not delivery.strip() or len(delivery) > 200:
-        return "invalid_delivery"
-    return None
-
-
 def parse_reply_expectation(
     arguments: dict[str, Any], messages: list[ChannelMessage]
 ) -> tuple[tuple[bool, str] | None, str | None]:
@@ -67,9 +60,6 @@ def parse_reply_expectation(
 def parse_response(
     arguments: dict[str, Any],
 ) -> tuple[AgentReply | None, str | None]:
-    error = validate_delivery(arguments)
-    if error is not None:
-        return None, error
     messages, error = parse_messages(arguments, allow_empty=True)
     if messages is None:
         return None, error

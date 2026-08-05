@@ -295,7 +295,6 @@ class MessagingTest(unittest.TestCase):
     def test_validates_terminal_response_tool(self) -> None:
         reply, error = MomoiDaemon._parse_response(
             {
-                "delivery": "轻松接住话题，分成两句",
                 "expects_reply": True,
                 "reply_expectation": "主人晚上的安排",
                 "messages": ["嘿嘿，没忘吧~", "晚上在忙什么呢？"],
@@ -313,12 +312,12 @@ class MessagingTest(unittest.TestCase):
         self.assertEqual(preserved, ["第一条。\n\n第二条。"])
         invalid, error = MomoiDaemon._parse_response(
             {
-                "messages": ["少了表达决策"],
+                "messages": ["少了回复期待决策"],
                 "mood": {"action": "keep"},
             }
         )
         self.assertIsNone(invalid)
-        self.assertEqual(error, "invalid_delivery")
+        self.assertEqual(error, "invalid_expects_reply")
         rich, error = MomoiDaemon._parse_messages(
             {
                 "messages": [
@@ -433,7 +432,6 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                         "silent-close",
                         "respond",
                         {
-                            "delivery": "话题已经自然结束，不追加机械回应",
                             "expects_reply": False,
                             "reply_expectation": "",
                             "messages": [],
@@ -499,7 +497,6 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                                     "live-question",
                                     "send_message",
                                     {
-                                        "delivery": "先把问题发出去",
                                         "messages": ["老师会选哪一个？"],
                                     },
                                 )
@@ -512,7 +509,6 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "close-after-question",
                                 "respond",
                                 {
-                                    "delivery": "问题已经发完，直接收尾",
                                     "messages": [],
                                     "expects_reply": True,
                                     "reply_expectation": "老师的选择",
@@ -631,7 +627,6 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                         "image-response",
                         "respond",
                         {
-                            "delivery": "简单回应看到图片",
                             "expects_reply": False,
                             "reply_expectation": "",
                             "messages": ["看到了"],
@@ -702,7 +697,6 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                         "emotion-response",
                         "respond",
                         {
-                            "delivery": "先报喜，两个表情分别跟在对应的话后面",
                             "expects_reply": False,
                             "reply_expectation": "",
                             "messages": [
@@ -794,7 +788,6 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                         f"emotion-{self.calls}",
                         "respond",
                         {
-                            "delivery": "表情不可用时改成简短文字",
                             "expects_reply": False,
                             "reply_expectation": "",
                             "messages": [value],
@@ -997,7 +990,6 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                         )
                     if self.calls in {2, 3}:
                         arguments: dict[str, object] = {
-                            "delivery": "send a live beat",
                             "messages": [f"进度 {self.calls - 1}"],
                         }
                         if self.calls == 2:
@@ -1020,7 +1012,6 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 f"respond-{self.calls}",
                                 "respond",
                                 {
-                                    "delivery": "reply on the current channel",
                                     "expects_reply": False,
                                     "reply_expectation": "",
                                     "messages": [text],

@@ -45,7 +45,6 @@ from .parsing import (
     parse_reflection_finish,
     parse_reply_expectation,
     parse_response,
-    validate_delivery,
 )
 from .protocol import (
     AUTONOMOUS_FINISH_SPEC,
@@ -115,7 +114,6 @@ class TurnBudgetExceeded(RuntimeError):
 
 class TurnRunner:
     _parse_messages = staticmethod(parse_messages)
-    _validate_delivery = staticmethod(validate_delivery)
     _parse_response = staticmethod(parse_response)
     _parse_mood_decision = staticmethod(parse_mood_decision)
     _parse_mood_transition = staticmethod(parse_mood_transition)
@@ -919,8 +917,8 @@ class TurnRunner:
                             "role": "user",
                             "content": (
                                 "[Trusted runtime protocol error. The previous text was not "
-                                "delivered. Finish now by calling respond with a short delivery "
-                                "plan and messages as an array. Do not output plain assistant text.]"
+                                "delivered. Finish now by calling respond with messages as an "
+                                "array. Do not output plain assistant text.]"
                             ),
                         },
                     ]
@@ -1079,10 +1077,7 @@ class TurnRunner:
                         "error": "heartbeat_finish_must_be_the_only_terminal_tool",
                     }
                 elif call.name == "send_message":
-                    error = self._validate_delivery(call.arguments)
-                    progress = None
-                    if error is None:
-                        progress, error = self._parse_messages(call.arguments)
+                    progress, error = self._parse_messages(call.arguments)
                     if progress is not None:
                         error = self._validate_emotion_messages(progress)
                         if error is not None:
@@ -1100,7 +1095,6 @@ class TurnRunner:
                         if target is None:
                             result = {"ok": False, "error": "invalid_channel"}
                         else:
-                            external_tool_used = True
                             self.store.queue_progress(
                                 turn_id, call.id, progress, target.name
                             )

@@ -122,16 +122,18 @@ class DaemonTest(unittest.TestCase):
         self.assertNotIn(
             "continuity", RESPOND_TOOL_SPEC["input_schema"]["properties"]
         )
-        self.assertIn("delivery", RESPOND_TOOL_SPEC["input_schema"]["required"])
+        self.assertNotIn("delivery", RESPOND_TOOL_SPEC["input_schema"]["properties"])
         self.assertIn("expects_reply", RESPOND_TOOL_SPEC["input_schema"]["required"])
         self.assertIn(
-            "guided by her Soul",
+            "whole Turn",
             RESPOND_TOOL_SPEC["input_schema"]["properties"]["expects_reply"][
                 "description"
             ],
         )
-        self.assertIn("delivery", SEND_MESSAGE_TOOL_SPEC["input_schema"]["required"])
-        self.assertIn("natural turning point", SEND_MESSAGE_TOOL_SPEC["description"])
+        self.assertNotIn(
+            "delivery", SEND_MESSAGE_TOOL_SPEC["input_schema"]["properties"]
+        )
+        self.assertIn("immediate", SEND_MESSAGE_TOOL_SPEC["description"])
         self.assertIn("conversational Turn", RESPOND_TOOL_SPEC["description"])
         self.assertNotIn(
             "minItems", RESPOND_TOOL_SPEC["input_schema"]["properties"]["messages"]
@@ -276,7 +278,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         f"respond-{provider_self.calls}",
                         "respond",
                         {
-                            "delivery": "根据当前完整输入回复",
                             "expects_reply": False,
                             "reply_expectation": "",
                             "messages": [text],
@@ -378,7 +379,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "stale-respond",
                             "respond",
                             {
-                                "delivery": "报告上海天气",
                                 "expects_reply": False,
                                 "reply_expectation": "",
                                 "messages": ["上海天气晴"],
@@ -393,7 +393,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "final-respond",
                             "respond",
                             {
-                                "delivery": "确认采用最新要求",
                                 "expects_reply": False,
                                 "reply_expectation": "",
                                 "messages": ["收到，不查了"],
@@ -796,7 +795,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "failed-response",
                             "respond",
                             {
-                                "delivery": "简短说明创建失败",
                                 "expects_reply": False,
                                 "reply_expectation": "",
                                 "messages": ["创建任务失败：缺少有效的执行时间。"],
@@ -1334,7 +1332,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         "stop-response",
                         "respond",
                         {
-                            "delivery": "直接确认已经停下",
                             "expects_reply": False,
                             "reply_expectation": "",
                             "messages": ["已经停下来了"],
@@ -1415,7 +1412,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "stop-after-tool",
                             "respond",
                             {
-                                "delivery": "简短确认任务终止",
                                 "expects_reply": False,
                                 "reply_expectation": "",
                                 "messages": ["已经终止当前任务"],
@@ -1498,7 +1494,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "id": "progress-1",
                                 "name": "send_message",
                                 "input": {
-                                    "delivery": "自然告诉主人我已经开始处理",
                                     "messages": ["我先处理一下"],
                                 },
                             }
@@ -1532,7 +1527,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "id": "respond-1",
                             "name": "respond",
                             "input": {
-                                "delivery": "完成后简短收尾",
                                 "expects_reply": False,
                                 "reply_expectation": "",
                                 "messages": ["测试回复一", "测试回复二"],

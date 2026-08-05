@@ -110,29 +110,16 @@ MOOD_DECISION_SCHEMA: dict[str, Any] = {
         },
     ]
 }
-DELIVERY_SCHEMA: dict[str, Any] = {
-    "type": "string",
-    "minLength": 1,
-    "maxLength": 200,
-    "description": (
-        "Brief private expression plan made before messages: decide whether a visible "
-        "reply is natural; if speaking, choose the voice, scale, message rhythm, and "
-        "any emotion reaction and its position. It is not shown to the owner."
-    ),
-}
-
 RESPOND_TOOL_SPEC: dict[str, Any] = {
     "name": "respond",
     "description": (
         "Required terminal decision for every conversational Turn, called only after "
-        "all tool work is complete. It may carry no message when silence is natural, "
-        "and does not replace useful live check-ins through send_message during "
-        "substantial work."
+        "all tool work is complete. It may add final conversational beats or carry no "
+        "message when send_message already conveyed everything or silence is natural."
     ),
     "input_schema": {
         "type": "object",
         "properties": {
-            "delivery": DELIVERY_SCHEMA,
             "messages": {
                 "type": "array",
                 "items": CHANNEL_MESSAGE_SCHEMA,
@@ -140,23 +127,22 @@ RESPOND_TOOL_SPEC: dict[str, Any] = {
             "expects_reply": {
                 "type": "boolean",
                 "description": (
-                    "Whether Momoi, guided by her Soul, relationship with the owner, "
-                    "and current context, will genuinely wait for, look forward to, or "
-                    "keep attention on the owner's reply to these final messages."
+                    "Whether Momoi will genuinely keep attention on the owner's reply "
+                    "to the last visible message in this whole Turn, including an "
+                    "earlier send_message when messages is empty."
                 ),
             },
             "reply_expectation": {
                 "type": "string",
                 "maxLength": 300,
                 "description": (
-                    "Briefly state what Momoi is waiting for when expects_reply is true; "
-                    "otherwise use an empty string."
+                    "What Momoi is waiting for after the Turn's last visible message "
+                    "when expects_reply is true; otherwise use an empty string."
                 ),
             },
             "mood": MOOD_DECISION_SCHEMA,
         },
         "required": [
-            "delivery",
             "messages",
             "expects_reply",
             "reply_expectation",
@@ -169,24 +155,22 @@ RESPOND_TOOL_SPEC: dict[str, Any] = {
 SEND_MESSAGE_TOOL_SPEC: dict[str, Any] = {
     "name": "send_message",
     "description": (
-        "A live conversational beat with the owner that does not end the Turn. Use it "
-        "at a natural turning point before or during substantial multi-step work: a "
-        "brief initial plan when the task will take real time, or later an unexpected "
-        "error or retry, changed plan, meaningful discovery, intermediate result, or "
-        "real delay. It is not limited to post-tool results. React briefly in Momoi's "
-        "personal voice, skip routine steps, and never repeat it in the final respond."
+        "Emit one or more owner-visible conversational beats now without ending the "
+        "Turn. Use it whenever something naturally comes out before the Turn is done: "
+        "an immediate verbal or nonverbal reaction, a live conversational beat, or a "
+        "worthwhile task update. If it conveys everything, close later with empty "
+        "respond messages; never repeat it in respond."
     ),
     "input_schema": {
         "type": "object",
         "properties": {
-            "delivery": DELIVERY_SCHEMA,
             "messages": {
                 "type": "array",
                 "minItems": 1,
                 "items": CHANNEL_MESSAGE_SCHEMA,
             },
         },
-        "required": ["delivery", "messages"],
+        "required": ["messages"],
         "additionalProperties": False,
     },
 }

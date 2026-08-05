@@ -650,6 +650,35 @@ class StorageMemoryTest(unittest.TestCase):
             "write",
         )
 
+    def test_progress_message_crash_reuses_outbox_without_reconciliation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "momoi.sqlite3"
+            store = Store(path)
+            store.begin_turn("turn-progress", "owner", ["qq:1:progress"])
+            store.queue_progress(
+                "turn-progress", "progress-1", ["先说这一句"], "napcat"
+            )
+            store.close()
+
+            recovered = Store(path)
+            self.assertEqual(
+                recovered.begin_turn(
+                    "turn-progress", "owner", ["qq:1:progress"]
+                ),
+                "running",
+            )
+            recovered.queue_progress(
+                "turn-progress", "progress-1", ["先说这一句"], "napcat"
+            )
+            self.assertEqual(
+                recovered._db.execute(
+                    "SELECT COUNT(*) FROM outbox WHERE turn_id='turn-progress'"
+                ).fetchone()[0],
+                1,
+            )
+            self.assertEqual(recovered.open_reconciliations_context(), "")
+            recovered.close()
+
     def test_owner_can_resolve_or_resume_open_reconciliation_by_prefix(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(

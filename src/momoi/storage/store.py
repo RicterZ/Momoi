@@ -3400,8 +3400,7 @@ class Store(MemoryStore, DeliveryStore):
         now = time.time()
         with self._db:
             self._db.execute(
-                """UPDATE turns SET external_effect_started=1,
-                   stage='message_dispatch', updated_at=?
+                """UPDATE turns SET stage='message_dispatch', updated_at=?
                    WHERE id=? AND state='running'""",
                 (now, turn_id),
             )

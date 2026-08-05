@@ -306,7 +306,6 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                         "respond",
                         "respond",
                         {
-                            "delivery": "回应两个事项",
                             "messages": ["我分开看了这两件事。"],
                             "expects_reply": False,
                             "reply_expectation": "",
@@ -372,7 +371,6 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                         "respond",
                         "respond",
                         {
-                            "delivery": "正常回应并保留不确定性",
                             "messages": ["我先分别看邮件和微博。"],
                             "expects_reply": False,
                             "reply_expectation": "",
