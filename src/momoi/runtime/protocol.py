@@ -114,8 +114,9 @@ RESPOND_TOOL_SPEC: dict[str, Any] = {
     "name": "respond",
     "description": (
         "Required terminal decision for every conversational Turn, called only after "
-        "all tool work is complete. It may add final conversational beats or carry no "
-        "message when send_message already conveyed everything or silence is natural."
+        "all tool work is complete and always as the only tool call in its response. "
+        "It may add one final beat or carry no message when send_message already "
+        "completed the visible stream or silence is natural."
     ),
     "input_schema": {
         "type": "object",
@@ -156,11 +157,11 @@ SEND_MESSAGE_TOOL_SPEC: dict[str, Any] = {
     "name": "send_message",
     "description": (
         "Emit one or more owner-visible conversational beats now without ending the "
-        "Turn. Use it whenever something naturally comes out before the Turn is done: "
-        "an immediate verbal or nonverbal reaction, a live conversational beat, or a "
-        "worthwhile task update. An immediate reaction may precede analysis, but factual "
-        "claims must wait for evidence. If it conveys everything, close later with "
-        "empty respond messages; never repeat it in respond."
+        "Turn. Prefer it when a conversational reply has multiple beats or starts with "
+        "an immediate verbal or nonverbal reaction; also use it for a worthwhile live "
+        "task update. An immediate reaction may precede analysis, but factual claims "
+        "must wait for evidence. After its result is observed, finish the Turn with an "
+        "empty respond when the visible stream is complete; never repeat its content."
     ),
     "input_schema": {
         "type": "object",
