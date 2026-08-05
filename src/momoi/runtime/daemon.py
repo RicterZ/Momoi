@@ -76,6 +76,7 @@ class MomoiDaemon(TurnRunner):
                 self._request_webhook_turn,
                 self.outbox_changed.set,
                 self.channel.name,
+                config.heartbeat.reply_initial_interval_seconds,
             )
             if config.webhooks.enabled
             else None

@@ -147,6 +147,7 @@ class DeliveryStore:
         turn_id: str,
         reply: AgentReply,
         target_channel: str = "",
+        reply_initial_delay: float = 60,
     ) -> list[int]:
         step = self.webhook_step(run_id, step_index)
         if step is None:
@@ -208,11 +209,7 @@ class DeliveryStore:
                         kind,
                         path,
                         json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
-                        (
-                            reply.reply_expectation
-                            if reply.expects_reply and index == len(normalized) - 1
-                            else ""
-                        ),
+                        "",
                         target_channel,
                     ),
                 )
@@ -239,6 +236,10 @@ class DeliveryStore:
                     visible,
                 )
             self._apply_mood_transition(reply.mood_transition, now)
+            if reply.expects_reply:
+                self._bind_turn_reply_expectation(
+                    turn_id, reply.reply_expectation, reply_initial_delay
+                )
             outbox_ids = [
                 int(row["id"])
                 for row in self._db.execute(
@@ -447,58 +448,76 @@ class DeliveryStore:
             )
             self._sync_outbox_message(outbox_id, "sent")
             expectation = str(row["reply_expectation"] or "").strip() if row else ""
-            if (
-                expectation
-                and reply_initial_delay is not None
-                and self._db.execute(
-                    "SELECT 1 FROM events WHERE processed=0 LIMIT 1"
-                ).fetchone()
-                is None
-            ):
-                now = time.time()
-                state = self._db.execute(
-                    """SELECT pending_reply_expectation,
-                              pending_reply_next_check_at
-                       FROM self_state WHERE id=1"""
-                ).fetchone()
-                due = now + reply_initial_delay
-                already_waiting = bool(
-                    state and str(state["pending_reply_expectation"] or "").strip()
+            if expectation and reply_initial_delay is not None and row:
+                activated = self._activate_reply_expectation(
+                    str(row["turn_id"]),
+                    expectation,
+                    str(row["target_channel"] or ""),
+                    reply_initial_delay,
                 )
-                if already_waiting and state["pending_reply_next_check_at"] is not None:
-                    due = float(state["pending_reply_next_check_at"])
-                if already_waiting:
-                    self._db.execute(
-                        """UPDATE self_state SET pending_reply_turn_id=?,
-                           pending_reply_expectation=?, pending_reply_channel=?,
-                           pending_reply_next_check_at=?,
-                           updated_at=? WHERE id=1""",
-                        (
-                            row["turn_id"],
-                            expectation,
-                            row["target_channel"],
-                            due,
-                            now,
-                        ),
-                    )
-                else:
-                    self._db.execute(
-                        """UPDATE self_state SET pending_reply_turn_id=?,
-                           pending_reply_expectation=?, pending_reply_channel=?,
-                           pending_reply_since=?,
-                           pending_reply_checks=0, pending_reply_next_check_at=?,
-                           updated_at=? WHERE id=1""",
-                        (
-                            row["turn_id"],
-                            expectation,
-                            row["target_channel"],
-                            now,
-                            due,
-                            now,
-                        ),
-                    )
-                activated = True
         return activated
+
+    def _activate_reply_expectation(
+        self,
+        turn_id: str,
+        expectation: str,
+        target_channel: str,
+        reply_initial_delay: float,
+    ) -> bool:
+        if self._db.execute(
+            "SELECT 1 FROM events WHERE processed=0 LIMIT 1"
+        ).fetchone():
+            return False
+        now = time.time()
+        state = self._db.execute(
+            """SELECT pending_reply_expectation, pending_reply_next_check_at
+               FROM self_state WHERE id=1"""
+        ).fetchone()
+        due = now + reply_initial_delay
+        already_waiting = bool(
+            state and str(state["pending_reply_expectation"] or "").strip()
+        )
+        if already_waiting and state["pending_reply_next_check_at"] is not None:
+            due = float(state["pending_reply_next_check_at"])
+        if already_waiting:
+            self._db.execute(
+                """UPDATE self_state SET pending_reply_turn_id=?,
+                   pending_reply_expectation=?, pending_reply_channel=?,
+                   pending_reply_next_check_at=?, updated_at=? WHERE id=1""",
+                (turn_id, expectation, target_channel, due, now),
+            )
+        else:
+            self._db.execute(
+                """UPDATE self_state SET pending_reply_turn_id=?,
+                   pending_reply_expectation=?, pending_reply_channel=?,
+                   pending_reply_since=?, pending_reply_checks=0,
+                   pending_reply_next_check_at=?, updated_at=? WHERE id=1""",
+                (turn_id, expectation, target_channel, now, due, now),
+            )
+        return True
+
+    def _bind_turn_reply_expectation(
+        self, turn_id: str, expectation: str, reply_initial_delay: float
+    ) -> bool:
+        row = self._db.execute(
+            """SELECT id, state, target_channel FROM outbox
+               WHERE turn_id=? ORDER BY id DESC LIMIT 1""",
+            (turn_id,),
+        ).fetchone()
+        if row is None:
+            raise ValueError("reply expectation requires a visible message")
+        self._db.execute(
+            "UPDATE outbox SET reply_expectation=? WHERE id=?",
+            (expectation, row["id"]),
+        )
+        if row["state"] != "sent":
+            return False
+        return self._activate_reply_expectation(
+            turn_id,
+            expectation,
+            str(row["target_channel"] or ""),
+            reply_initial_delay,
+        )
 
     def mark_ambiguous(self, outbox_id: int, attempts: int, error: str) -> None:
         state = "ambiguous" if attempts < 2 else "failed"

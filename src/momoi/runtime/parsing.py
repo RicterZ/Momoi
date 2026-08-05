@@ -57,7 +57,7 @@ def parse_reply_expectation(
     if not isinstance(expectation, str) or len(expectation) > 300:
         return None, "invalid_reply_expectation"
     expectation = expectation.strip()
-    if expects_reply and (not messages or not expectation):
+    if expects_reply and not expectation:
         return None, "invalid_reply_expectation"
     if not expects_reply and expectation:
         return None, "invalid_reply_expectation"

@@ -1154,6 +1154,81 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertEqual(store.next_heartbeat_due_at(False), 1140)
             store.close()
 
+    def test_expected_reply_can_follow_an_already_sent_progress_message(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store.begin_turn("live-reply", "owner", ["owner-event"])
+            store.queue_progress(
+                "live-reply", "live-beat", ["还想听老师说后续"], "weixin"
+            )
+            outbox = store.due_outbox()[0]
+            with patch("momoi.storage.delivery.time.time", return_value=1000):
+                self.assertFalse(store.mark_sent(outbox.id, 60))
+
+            with patch("momoi.storage.delivery.time.time", return_value=1010):
+                store.commit_turn(
+                    [],
+                    "",
+                    AgentReply(
+                        [],
+                        expects_reply=True,
+                        reply_expectation="老师想说的后续",
+                    ),
+                    turn_id="live-reply",
+                    reply_initial_delay=75,
+                )
+
+            self.assertEqual(
+                store._db.execute(
+                    "SELECT reply_expectation FROM outbox WHERE id=?", (outbox.id,)
+                ).fetchone()[0],
+                "老师想说的后续",
+            )
+            pending = store.pending_owner_reply(1010)
+            self.assertEqual(pending["expected_response"], "老师想说的后续")
+            self.assertEqual(store.next_heartbeat_due_at(False), 1085)
+            store.close()
+
+    def test_expected_reply_follows_pending_progress_only_after_delivery(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store.begin_turn("queued-live-reply", "owner", ["owner-event"])
+            store.queue_progress(
+                "queued-live-reply", "live-beat", ["你会选哪一个？"], "napcat"
+            )
+            store.commit_turn(
+                [],
+                "",
+                AgentReply(
+                    [],
+                    expects_reply=True,
+                    reply_expectation="老师的选择",
+                ),
+                turn_id="queued-live-reply",
+            )
+            self.assertIsNone(store.pending_owner_reply())
+
+            with patch("momoi.storage.delivery.time.time", return_value=1000):
+                self.assertTrue(store.mark_sent(store.due_outbox()[0].id, 60))
+            self.assertEqual(store.next_heartbeat_due_at(False), 1060)
+            store.close()
+
+    def test_expected_reply_requires_a_visible_turn_message(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            with self.assertRaisesRegex(ValueError, "visible message"):
+                store.commit_turn(
+                    [],
+                    "",
+                    AgentReply(
+                        [],
+                        expects_reply=True,
+                        reply_expectation="不存在的消息",
+                    ),
+                    turn_id="silent-reply",
+                )
+            store.close()
+
     def test_owner_reply_cancels_only_reply_check_schedule(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")

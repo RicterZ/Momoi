@@ -3437,6 +3437,7 @@ class Store(MemoryStore, DeliveryStore):
         draft: TurnDraft | None = None,
         turn_id: str | None = None,
         target_channel: str = "",
+        reply_initial_delay: float = 60,
     ) -> str:
         assistant_messages = reply.messages
         normalized_messages = [
@@ -3514,12 +3515,7 @@ class Store(MemoryStore, DeliveryStore):
                         kind,
                         path,
                         json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
-                        (
-                            reply.reply_expectation
-                            if reply.expects_reply
-                            and index == len(normalized_messages) - 1
-                            else ""
-                        ),
+                        "",
                         target_channel,
                     ),
                 )
@@ -3550,6 +3546,10 @@ class Store(MemoryStore, DeliveryStore):
                 "UPDATE events SET processed=1 WHERE id=?",
                 ((event_id,) for event_id in event_ids),
             )
+            if reply.expects_reply:
+                self._bind_turn_reply_expectation(
+                    turn_id, reply.reply_expectation, reply_initial_delay
+                )
             self._db.execute(
                 """UPDATE turns SET state='completed', stage='completed',
                    source_ids_json=?, failure_reason=NULL, updated_at=? WHERE id=?""",

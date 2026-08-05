@@ -460,6 +460,87 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(daemon.store.pending_events(), [])
             daemon.store.close()
 
+    async def test_empty_respond_can_wait_for_a_send_message_reply(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(
+                AppConfig(
+                    llm=LLMConfig(
+                        "http://127.0.0.1", "test", "test", 100, 0, 1, 0
+                    ),
+                    channel=NapCatConfig(
+                        "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
+                    ),
+                    system_prompt="test",
+                    recent_raw_tokens=1000,
+                    recent_turns=2,
+                    memory_results=2,
+                    memory_tokens=1000,
+                    database=Path(directory) / "momoi.sqlite3",
+                    log_level="INFO",
+                )
+            )
+
+            class Provider:
+                calls = 0
+
+                async def complete(
+                    self,
+                    _: object,
+                    __: object,
+                    ___: object,
+                    **____: object,
+                ) -> ProviderResponse:
+                    self.calls += 1
+                    if self.calls == 1:
+                        return ProviderResponse(
+                            [],
+                            [
+                                ToolCall(
+                                    "live-question",
+                                    "send_message",
+                                    {
+                                        "delivery": "先把问题发出去",
+                                        "messages": ["老师会选哪一个？"],
+                                    },
+                                )
+                            ],
+                        )
+                    return ProviderResponse(
+                        [],
+                        [
+                            ToolCall(
+                                "close-after-question",
+                                "respond",
+                                {
+                                    "delivery": "问题已经发完，直接收尾",
+                                    "messages": [],
+                                    "expects_reply": True,
+                                    "reply_expectation": "老师的选择",
+                                    "mood": {"action": "keep"},
+                                },
+                            )
+                        ],
+                    )
+
+            daemon.provider = with_context_planner(Provider())  # type: ignore[assignment]
+            event = IncomingMessage(
+                "owner-live-question", "owner-live-question", "你觉得选哪个", 1, 1
+            )
+            daemon.store.add_event(event)
+            await daemon._complete_batch_turn(
+                [event], asyncio.Event(), daemon._turn_id(event.event_id)
+            )
+
+            outbox = daemon.store.due_outbox()
+            self.assertEqual([row.text for row in outbox], ["老师会选哪一个？"])
+            self.assertEqual(
+                daemon.store._db.execute(
+                    "SELECT reply_expectation FROM outbox WHERE id=?", (outbox[0].id,)
+                ).fetchone()[0],
+                "老师的选择",
+            )
+            daemon.store.close()
+
     async def test_outbox_does_not_wait_between_different_turns(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(

@@ -606,6 +606,7 @@ class TurnRunner:
             AgentReply([failure_message]),
             turn_id=turn_id,
             target_channel=channel.name,
+            reply_initial_delay=self.config.heartbeat.reply_initial_interval_seconds,
         )
         self.outbox_changed.set()
         self.store.record_turn_failure(turn_id, failure_reason)
@@ -714,6 +715,7 @@ class TurnRunner:
             draft,
             turn_id=turn_id,
             target_channel=channel.name,
+            reply_initial_delay=self.config.heartbeat.reply_initial_interval_seconds,
         )
         logger.info(
             "Committed owner turn=%s events=%d messages=%d",
@@ -754,6 +756,7 @@ class TurnRunner:
         force_heartbeat_finish = False
         failed_tool_rounds = 0
         history_messages = max(0, len(messages) - 1)
+        visible_since_owner_update = False
         while True:
             updates = (
                 await self._settle_owner_updates(
@@ -763,6 +766,7 @@ class TurnRunner:
                 else []
             )
             if updates:
+                visible_since_owner_update = False
                 context_plan, recalled = await self._prepare_owner_context(
                     current_events, turn_id
                 )
@@ -837,6 +841,7 @@ class TurnRunner:
                 else []
             )
             if updates:
+                visible_since_owner_update = False
                 messages.append({"role": "assistant", "content": response.content})
                 if response.tool_calls:
                     messages.append(
@@ -1010,6 +1015,14 @@ class TurnRunner:
                     error = self._validate_emotion_messages(reply.messages)
                     if error is not None:
                         reply = None
+                if (
+                    reply is not None
+                    and reply.expects_reply
+                    and not reply.messages
+                    and not visible_since_owner_update
+                ):
+                    reply = None
+                    error = "reply_expectation_without_visible_message"
                 if reply is not None:
                     logger.debug(
                         "LLM mood decision action=%s",
@@ -1091,6 +1104,7 @@ class TurnRunner:
                             self.store.queue_progress(
                                 turn_id, call.id, progress, target.name
                             )
+                            visible_since_owner_update = True
                             self.outbox_changed.set()
                             result = {
                                 "ok": True,
@@ -1215,6 +1229,7 @@ class TurnRunner:
                         break
             messages.append({"role": "user", "content": results})
             if updates:
+                visible_since_owner_update = False
                 context_plan, recalled = await self._prepare_owner_context(
                     current_events, turn_id
                 )
