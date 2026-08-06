@@ -60,9 +60,10 @@ class MemoryConflictCandidate:
 @dataclass(frozen=True)
 class AgentReply:
     messages: list[str | dict[str, Any]]
-    mood_transition: dict[str, Any] | None = None
+    mood_update: dict[str, Any] | None = None
     expects_reply: bool = False
     reply_expectation: str = ""
+    heartbeat: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)

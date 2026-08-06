@@ -81,7 +81,9 @@ class StorageMemoryTest(unittest.TestCase):
     def test_assistant_conversation_truth_follows_delivery_state(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
-            event = IncomingMessage("delivery-event", "delivery-event", "告诉我结果", 1, 1)
+            event = IncomingMessage(
+                "delivery-event", "delivery-event", "告诉我结果", 1, 1
+            )
             store.add_event(event)
             store.commit_turn(
                 [event],
@@ -100,7 +102,10 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertEqual(queued["delivery_state"], "queued")
             self.assertNotIn(
                 "这条消息等待投递",
-                [item["content"] for item in store.recent_conversation_messages(1, 1000)],
+                [
+                    item["content"]
+                    for item in store.recent_conversation_messages(1, 1000)
+                ],
             )
 
             store.mark_ambiguous(outbox_id, 1, "timeout")
@@ -134,7 +139,10 @@ class StorageMemoryTest(unittest.TestCase):
             store.mark_failed(failed_outbox_id, "not dispatched")
             self.assertNotIn(
                 "这条确定没有送达",
-                [item["content"] for item in store.recent_conversation_messages(2, 2000)],
+                [
+                    item["content"]
+                    for item in store.recent_conversation_messages(2, 2000)
+                ],
             )
             store.close()
 
@@ -301,9 +309,7 @@ class StorageMemoryTest(unittest.TestCase):
                        WHERE role='assistant'"""
                 ).fetchall()
             }
-            self.assertEqual(
-                assistants["无法证明送达的旧回复"], ("uncertain", None)
-            )
+            self.assertEqual(assistants["无法证明送达的旧回复"], ("uncertain", None))
             self.assertEqual(assistants["有出站证据的旧回复"][0], "delivered")
             self.assertIsNotNone(assistants["有出站证据的旧回复"][1])
             episodes = store.search_episodes("旧对话", 3)
@@ -708,9 +714,7 @@ class StorageMemoryTest(unittest.TestCase):
 
             recovered = Store(path)
             self.assertEqual(
-                recovered.begin_turn(
-                    "turn-progress", "owner", ["qq:1:progress"]
-                ),
+                recovered.begin_turn("turn-progress", "owner", ["qq:1:progress"]),
                 "running",
             )
             recovered.queue_progress(
@@ -943,7 +947,7 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertEqual(store.reminder(pending["id"])["status"], "cancelled")
             store.close()
 
-    def test_mood_transition_persists_and_settles_to_baseline(self) -> None:
+    def test_mood_update_persists_until_next_decision(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
             event = IncomingMessage("qq:1:mood", "mood", "今天真开心", 1, 1)
@@ -953,21 +957,17 @@ class StorageMemoryTest(unittest.TestCase):
                 event.text,
                 AgentReply(
                     ["我也是！"],
-                    mood_transition={
+                    mood_update={
                         "state": "excited",
                         "intensity": 0.8,
                         "cause": "一起分享了开心的事",
-                        "duration_minutes": 30,
                     },
                 ),
             )
             active = store.self_state()
             self.assertEqual(active["mood_state"], "excited")
-            settled = store.self_state(float(active["mood_settle_at"]) + 1)
-            self.assertEqual(settled["mood_state"], "calm")
-            self.assertEqual(settled["mood_intensity"], 0.35)
-            self.assertEqual(settled["mood_cause"], "resting baseline")
-            self.assertIsNone(settled["mood_settle_at"])
+            self.assertEqual(active["mood_intensity"], 0.8)
+            self.assertEqual(active["mood_cause"], "一起分享了开心的事")
             store.close()
 
     def test_old_default_self_state_migrates_to_neutral_baseline(self) -> None:
@@ -977,7 +977,7 @@ class StorageMemoryTest(unittest.TestCase):
             store._db.execute(
                 """UPDATE self_state
                    SET mood_state='cheerful', mood_intensity=0.55,
-                       mood_cause='personality baseline', mood_settle_at=NULL,
+                       mood_cause='personality baseline',
                        activity='自由安排自己的时间'
                    WHERE id=1"""
             )
@@ -1112,7 +1112,7 @@ class StorageMemoryTest(unittest.TestCase):
                     activity="整理关卡灵感",
                     result="记录了一个点子",
                     next_heartbeat_at=now - 1,
-                    mood_transition=None,
+                    mood_update=None,
                     messages=[],
                     reason="test",
                 )
@@ -1167,7 +1167,7 @@ class StorageMemoryTest(unittest.TestCase):
                     activity="等主人选晚餐",
                     result="轻轻问了一次",
                     next_heartbeat_at=1660,
-                    mood_transition=None,
+                    mood_update=None,
                     messages=["还没想好的话，我可以帮你挑两个呀。"],
                     reason="晚餐选择还需要主人回复",
                     reply_expectation="主人是否需要帮忙挑晚餐",
@@ -1350,7 +1350,7 @@ class StorageMemoryTest(unittest.TestCase):
                     activity="做自己的事",
                     result="决定不再等待",
                     next_heartbeat_at=1700,
-                    mood_transition=None,
+                    mood_update=None,
                     messages=[],
                     reason="这段等待已经自然结束",
                     pending_reply_turn_id="question",
@@ -1380,7 +1380,7 @@ class StorageMemoryTest(unittest.TestCase):
                     activity="等主人回复",
                     result="继续等待",
                     next_heartbeat_at=2000,
-                    mood_transition=None,
+                    mood_update=None,
                     messages=[],
                     reason="仍然想听主人回答",
                     pending_reply_turn_id="question",
@@ -1407,7 +1407,7 @@ class StorageMemoryTest(unittest.TestCase):
                 activity="继续想刚才的游戏机制",
                 result="形成了一点看法",
                 next_heartbeat_at=2000,
-                mood_transition=None,
+                mood_update=None,
                 messages=["那就说得通了。", "你会舍不得开大，对不对？"],
                 reason="继续刚才的话题",
             )
@@ -1422,6 +1422,46 @@ class StorageMemoryTest(unittest.TestCase):
                    WHERE turn_id='stale-heartbeat'"""
             ).fetchall()
             self.assertEqual([row["delivery_state"] for row in internal], ["internal"])
+            store.close()
+
+    def test_heartbeat_live_progress_uses_same_turn_history_and_outbox(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store.begin_turn("heartbeat-live", "autonomous", ["heartbeat:1000"])
+            store.queue_progress(
+                "heartbeat-live", "live-beat", ["先跟老师说一声"], "napcat"
+            )
+
+            committed = store.commit_heartbeat(
+                "heartbeat-live",
+                owner_event_revision=0,
+                notification_config=NotificationConfig(cooldown_seconds=0),
+                activity="整理自己的关卡灵感",
+                result="留下一个新点子",
+                next_heartbeat_at=2000,
+                mood_update=None,
+                messages=["最后再补一句。"],
+                reason="这次确实有值得分享的内容",
+                notification_channel="napcat",
+            )
+
+            self.assertEqual(committed, 2)
+            first = store.due_outbox()[0]
+            self.assertEqual(first.text, "先跟老师说一声")
+            store.mark_sent(first.id)
+            self.assertEqual(
+                [row.text for row in store.due_outbox()], ["最后再补一句。"]
+            )
+            visible = store._db.execute(
+                """SELECT content FROM messages
+                   WHERE turn_id='heartbeat-live' AND role='assistant'
+                     AND delivery_state<>'internal'
+                   ORDER BY id"""
+            ).fetchall()
+            self.assertEqual(
+                [row["content"] for row in visible],
+                ["先跟老师说一声", "最后再补一句。"],
+            )
             store.close()
 
     def test_orphaned_owner_turn_does_not_block_heartbeat(self) -> None:
@@ -1460,7 +1500,7 @@ class StorageMemoryTest(unittest.TestCase):
                     activity="继续想游戏机制",
                     result="形成了一点看法",
                     next_heartbeat_at=2000,
-                    mood_transition=None,
+                    mood_update=None,
                     messages=["这句现在不能发。"],
                     reason="继续话题",
                 )
@@ -1485,7 +1525,7 @@ class StorageMemoryTest(unittest.TestCase):
                     activity="想起游戏机制",
                     result="形成了一点看法",
                     next_heartbeat_at=2000,
-                    mood_transition=None,
+                    mood_update=None,
                     messages=["这是一句瞬时聊天。"],
                     reason="自然分享",
                 )
@@ -1493,7 +1533,9 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertEqual(store.due_outbox()[0].text, "这是一句瞬时聊天。")
 
             store.add_event(
-                IncomingMessage("owner-moved-on", "owner-moved-on", "换个话题", 1010, 1010)
+                IncomingMessage(
+                    "owner-moved-on", "owner-moved-on", "换个话题", 1010, 1010
+                )
             )
 
             notification = store._db.execute(

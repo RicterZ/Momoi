@@ -155,7 +155,6 @@ CREATE TABLE IF NOT EXISTS self_state (
     mood_intensity REAL NOT NULL,
     mood_cause TEXT NOT NULL,
     mood_updated_at REAL NOT NULL,
-    mood_settle_at REAL,
     activity TEXT NOT NULL,
     activity_result TEXT NOT NULL DEFAULT '',
     activity_since REAL NOT NULL,

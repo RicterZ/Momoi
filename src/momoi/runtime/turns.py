@@ -42,7 +42,7 @@ from .context_planner import (
 from .parsing import (
     parse_messages,
     parse_mood_decision,
-    parse_mood_transition,
+    parse_mood_update,
     parse_reflection_finish,
     parse_reply_expectation,
     parse_response,
@@ -50,9 +50,9 @@ from .parsing import (
 from .protocol import (
     AUTONOMOUS_FINISH_SPEC,
     CURL_TOOL_SPEC,
-    HEARTBEAT_FINISH_SPEC,
     REFLECTION_FINISH_SPEC,
     RESPOND_TOOL_SPEC,
+    heartbeat_respond_tool_spec,
     send_message_tool_spec,
 )
 
@@ -105,8 +105,7 @@ def _conversation_guidance(plan: dict[str, object]) -> str:
             **({"references": unit["references"]} if unit.get("references") else {}),
         }
         for unit in plan.get("intent_units", [])
-        if isinstance(unit, dict)
-        and (unit.get("speech_act") or unit.get("references"))
+        if isinstance(unit, dict) and (unit.get("speech_act") or unit.get("references"))
     ]
     uncertainty = plan.get("uncertainty", [])
     if not intent_units and not uncertainty:
@@ -140,7 +139,7 @@ class TurnRunner:
     _parse_messages = staticmethod(parse_messages)
     _parse_response = staticmethod(parse_response)
     _parse_mood_decision = staticmethod(parse_mood_decision)
-    _parse_mood_transition = staticmethod(parse_mood_transition)
+    _parse_mood_update = staticmethod(parse_mood_update)
     _parse_reply_expectation = staticmethod(parse_reply_expectation)
     _parse_reflection_finish = staticmethod(parse_reflection_finish)
 
@@ -262,7 +261,9 @@ class TurnRunner:
         try:
             value = json.loads(text)
         except (json.JSONDecodeError, TypeError) as error:
-            raise RuntimeError("episode summary provider returned invalid JSON") from error
+            raise RuntimeError(
+                "episode summary provider returned invalid JSON"
+            ) from error
         if (
             not isinstance(value, dict)
             or set(value) != {"version", "claims"}
@@ -773,6 +774,7 @@ class TurnRunner:
         require_response: bool,
         autonomous_goal_id: str | None = None,
         heartbeat_turn: bool = False,
+        heartbeat_owner_event_revision: int | None = None,
         allowed_capabilities: set[str] | None = None,
         artifact_root: Path | None = None,
         accept_owner_updates: bool = False,
@@ -781,15 +783,12 @@ class TurnRunner:
         external_tool_used = False
         force_response = False
         force_autonomous_finish = False
-        force_heartbeat_finish = False
         failed_tool_rounds = 0
         history_messages = max(0, len(messages) - 1)
         visible_since_owner_update = False
         while True:
             updates = (
-                await self._settle_owner_updates(
-                    current_events, delivery_channel.name
-                )
+                await self._settle_owner_updates(current_events, delivery_channel.name)
                 if accept_owner_updates
                 else []
             )
@@ -808,16 +807,11 @@ class TurnRunner:
                 source_event_id = updates[-1].event_id
                 force_response = False
                 force_autonomous_finish = False
-                force_heartbeat_finish = False
                 failed_tool_rounds = 0
             request_tools = (
-                [RESPOND_TOOL_SPEC]
+                [heartbeat_respond_tool_spec() if heartbeat_turn else RESPOND_TOOL_SPEC]
                 if force_response
-                else (
-                    [AUTONOMOUS_FINISH_SPEC]
-                    if force_autonomous_finish
-                    else ([HEARTBEAT_FINISH_SPEC] if force_heartbeat_finish else tools)
-                )
+                else ([AUTONOMOUS_FINISH_SPEC] if force_autonomous_finish else tools)
             )
             history_messages = self._fit_context(
                 system, messages, request_tools, history_messages
@@ -864,9 +858,7 @@ class TurnRunner:
             )
             self.store.record_turn_usage(turn_id, input_tokens, output_tokens)
             updates = (
-                await self._settle_owner_updates(
-                    current_events, delivery_channel.name
-                )
+                await self._settle_owner_updates(current_events, delivery_channel.name)
                 if accept_owner_updates
                 else []
             )
@@ -907,25 +899,9 @@ class TurnRunner:
                 source_event_id = updates[-1].event_id
                 force_response = False
                 force_autonomous_finish = False
-                force_heartbeat_finish = False
                 failed_tool_rounds = 0
                 continue
             if not response.tool_calls:
-                if heartbeat_turn:
-                    messages.extend(
-                        [
-                            {"role": "assistant", "content": response.content},
-                            {
-                                "role": "user",
-                                "content": (
-                                    "[Trusted runtime protocol error. Plain text was not "
-                                    "delivered. Finish now by calling heartbeat_finish alone.]"
-                                ),
-                            },
-                        ]
-                    )
-                    force_heartbeat_finish = True
-                    continue
                 if autonomous_goal_id:
                     messages.extend(
                         [
@@ -958,45 +934,6 @@ class TurnRunner:
                     ]
                 )
                 force_response = True
-                continue
-            if (
-                heartbeat_turn
-                and len(response.tool_calls) == 1
-                and response.tool_calls[0].name == "heartbeat_finish"
-            ):
-                decision, error = self._parse_heartbeat_finish(
-                    response.tool_calls[0].arguments
-                )
-                if decision is not None:
-                    logger.debug(
-                        "LLM heartbeat_finish arguments=%s",
-                        json.dumps(
-                            response.tool_calls[0].arguments,
-                            ensure_ascii=False,
-                            default=str,
-                        ),
-                    )
-                    return decision
-                messages.extend(
-                    [
-                        {"role": "assistant", "content": response.content},
-                        {
-                            "role": "user",
-                            "content": [
-                                {
-                                    "type": "tool_result",
-                                    "tool_use_id": response.tool_calls[0].id,
-                                    "content": json.dumps(
-                                        {"ok": False, "error": error},
-                                        ensure_ascii=False,
-                                    ),
-                                    "is_error": True,
-                                }
-                            ],
-                        },
-                    ]
-                )
-                force_heartbeat_finish = True
                 continue
             if (
                 autonomous_goal_id
@@ -1042,7 +979,20 @@ class TurnRunner:
                         default=str,
                     ),
                 )
-                reply, error = self._parse_response(response.tool_calls[0].arguments)
+                reply, error = self._parse_response(
+                    response.tool_calls[0].arguments,
+                    require_heartbeat=heartbeat_turn,
+                )
+                if reply is not None and heartbeat_turn and reply.heartbeat:
+                    minutes = int(reply.heartbeat["next_check_minutes"])
+                    seconds = minutes * 60
+                    if not (
+                        self.config.heartbeat.min_interval_seconds
+                        <= seconds
+                        <= self.config.heartbeat.max_interval_seconds
+                    ):
+                        reply = None
+                        error = "heartbeat_interval_out_of_range"
                 if reply is not None:
                     error = self._validate_emotion_messages(reply.messages)
                     if error is not None:
@@ -1057,8 +1007,8 @@ class TurnRunner:
                     error = "reply_expectation_without_visible_message"
                 if reply is not None:
                     logger.debug(
-                        "LLM mood decision action=%s",
-                        "transition" if reply.mood_transition else "keep",
+                        "LLM mood decision=%s",
+                        "updated" if reply.mood_update else "unchanged",
                     )
                     return reply
                 logger.debug("Rejected respond arguments error=%s", error)
@@ -1105,23 +1055,45 @@ class TurnRunner:
                         "ok": False,
                         "error": "autonomous_finish_must_be_the_only_terminal_tool",
                     }
-                elif call.name == "heartbeat_finish":
-                    result = {
-                        "ok": False,
-                        "error": "heartbeat_finish_must_be_the_only_terminal_tool",
-                    }
                 elif call.name == "send_message":
                     progress, error = self._parse_messages(call.arguments)
                     if progress is not None:
                         error = self._validate_emotion_messages(progress)
                         if error is not None:
                             progress = None
-                    if not require_response:
+                    if not (require_response or heartbeat_turn):
                         result = {"ok": False, "error": "tool_not_allowed"}
                     elif not call.id:
                         result = {"ok": False, "error": "missing_tool_call_id"}
                     elif progress is None:
                         result = {"ok": False, "error": error}
+                    elif heartbeat_turn and heartbeat_owner_event_revision is not None:
+                        contact_error = self._heartbeat_contact_error(
+                            heartbeat_owner_event_revision
+                        )
+                        if contact_error is not None:
+                            result = {"ok": False, "error": contact_error}
+                        else:
+                            target = self.channels.get(
+                                str(
+                                    call.arguments.get("channel")
+                                    or delivery_channel.name
+                                )
+                            )
+                            if target is None:
+                                result = {"ok": False, "error": "invalid_channel"}
+                            else:
+                                self.store.queue_progress(
+                                    turn_id, call.id, progress, target.name
+                                )
+                                visible_since_owner_update = True
+                                self.outbox_changed.set()
+                                result = {
+                                    "ok": True,
+                                    "state": "queued",
+                                    "channel": target.name,
+                                    "messages": len(progress),
+                                }
                     else:
                         target = self.channels.get(
                             str(call.arguments.get("channel") or self.channel.name)
@@ -1349,6 +1321,17 @@ class TurnRunner:
     def _send_message_tool_spec(self) -> dict[str, Any]:
         return send_message_tool_spec(list(self.channels), self.channel.name)
 
+    def _heartbeat_contact_error(self, owner_event_revision: int) -> str | None:
+        snapshot = self.store.heartbeat_conversation_snapshot()
+        if int(snapshot["owner_event_revision"]) != owner_event_revision:
+            return "heartbeat_superseded_by_owner_update"
+        if snapshot["owner_busy"]:
+            return "heartbeat_contact_unavailable"
+        pending = self.store.pending_owner_reply()
+        key = "heartbeat.reply_followup" if pending else "heartbeat.chat"
+        window = self.store.heartbeat_contact_window(key, self.config.notifications)
+        return None if window["allowed"] else "heartbeat_contact_unavailable"
+
     def _artifact_root(self) -> Path:
         return Path(self.config.workspace or self.config.database.parent) / "artifacts"
 
@@ -1467,9 +1450,7 @@ class TurnRunner:
                 "episode": {
                     "id": episode_id,
                     "title": episode["title"],
-                    "previous_verified_claims": episode[
-                        "working_summary_claims"
-                    ],
+                    "previous_verified_claims": episode["working_summary_claims"],
                 },
                 "new_messages": [
                     {
@@ -1547,15 +1528,19 @@ class TurnRunner:
         if soul_path is not None:
             system_prompt = _live_prompt(SYSTEM_PROMPT_PATH, system_prompt)
             soul_prompt = _live_prompt(soul_path, soul_prompt)
-        text = system_prompt.replace(
-            "{{SOUL}}", soul_prompt or "No additional Soul is configured."
-        ).replace(
-            "{{STYLE_CARD}}",
-            _live_prompt(STYLE_CARD_PROMPT_PATH, STYLE_CARD_SYSTEM_PROMPT),
-        ).replace(
-            "{{CAPABILITY_POLICIES}}",
-            "\n\n".join(policies)
-            or "Use only the tools supplied for this Turn and follow their schemas.",
+        text = (
+            system_prompt.replace(
+                "{{SOUL}}", soul_prompt or "No additional Soul is configured."
+            )
+            .replace(
+                "{{STYLE_CARD}}",
+                _live_prompt(STYLE_CARD_PROMPT_PATH, STYLE_CARD_SYSTEM_PROMPT),
+            )
+            .replace(
+                "{{CAPABILITY_POLICIES}}",
+                "\n\n".join(policies)
+                or "Use only the tools supplied for this Turn and follow their schemas.",
+            )
         )
         return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
 
@@ -1859,10 +1844,11 @@ class TurnRunner:
             *memory_search,
             *goal_create,
             *self._self_directed_tool_specs(),
-            HEARTBEAT_FINISH_SPEC,
+            self._send_message_tool_spec(),
+            heartbeat_respond_tool_spec(),
         ]
         draft = TurnDraft()
-        decision = await self._run_tool_loop(
+        reply = await self._run_tool_loop(
             system,
             messages,
             tools,
@@ -1872,14 +1858,22 @@ class TurnRunner:
             source_event_id=f"heartbeat:{turn_id}",
             allow_notify=False,
             turn_id=turn_id,
-            require_response=False,
+            require_response=True,
             heartbeat_turn=True,
+            heartbeat_owner_event_revision=owner_event_revision,
             allowed_capabilities={"read", "write"},
             artifact_root=artifact_root,
             delivery_channel=delivery_channel,
         )
-        if not isinstance(decision, dict):
-            raise RuntimeError("Heartbeat Turn ended without heartbeat_finish")
+        if not isinstance(reply, AgentReply) or reply.heartbeat is None:
+            raise RuntimeError("Heartbeat Turn ended without respond heartbeat state")
+        decision = {
+            **reply.heartbeat,
+            "messages": reply.messages,
+            "expects_reply": reply.expects_reply,
+            "reply_expectation": reply.reply_expectation,
+            "mood_update": reply.mood_update,
+        }
         if not contact_window["allowed"]:
             decision["messages"] = []
             decision["reply_expectation"] = ""
@@ -1890,7 +1884,7 @@ class TurnRunner:
             activity=decision["activity"],
             result=decision["result"],
             next_heartbeat_at=time.time() + decision["next_check_minutes"] * 60,
-            mood_transition=decision["mood_transition"],
+            mood_update=decision["mood_update"],
             messages=decision["messages"],
             reason=decision["reason"],
             reply_expectation=decision["reply_expectation"],
@@ -1902,7 +1896,7 @@ class TurnRunner:
             reply_initial_interval_seconds=(
                 self.config.heartbeat.reply_initial_interval_seconds
             ),
-            notification_channel=target_channel or "",
+            notification_channel=delivery_channel.name,
         )
         self.agenda_changed.set()
         if committed_messages:
@@ -1914,69 +1908,6 @@ class TurnRunner:
             len(draft.goals),
             decision["next_check_minutes"],
         )
-
-    def _parse_heartbeat_finish(
-        self, arguments: dict[str, Any]
-    ) -> tuple[dict[str, Any] | None, str | None]:
-        if not isinstance(arguments, dict):
-            return None, "invalid_heartbeat_finish"
-        raw_messages = arguments.get("messages")
-        if not isinstance(raw_messages, list) or len(raw_messages) > 3:
-            return None, "invalid_heartbeat_messages"
-        if raw_messages:
-            messages, error = self._parse_messages({"messages": raw_messages})
-            if messages is None:
-                return None, error
-            error = self._validate_emotion_messages(messages)
-            if error is not None:
-                return None, error
-        else:
-            messages = []
-        activity = arguments.get("activity")
-        result = arguments.get("result")
-        reason = arguments.get("reason")
-        minutes = arguments.get("next_check_minutes")
-        if (
-            not isinstance(activity, str)
-            or not activity.strip()
-            or len(activity) > 300
-            or not isinstance(result, str)
-            or len(result) > 2000
-            or not isinstance(reason, str)
-            or not reason.strip()
-            or len(reason) > 500
-            or isinstance(minutes, bool)
-            or not isinstance(minutes, int)
-        ):
-            return None, "invalid_heartbeat_finish"
-        seconds = minutes * 60
-        if not (
-            self.config.heartbeat.min_interval_seconds
-            <= seconds
-            <= self.config.heartbeat.max_interval_seconds
-        ):
-            return None, "heartbeat_interval_out_of_range"
-        mood, error = self._parse_mood_decision(arguments.get("mood"))
-        if error is not None:
-            return None, error
-        continue_waiting = arguments.get("continue_waiting_for_reply")
-        if not isinstance(continue_waiting, bool):
-            return None, "invalid_continue_waiting_for_reply"
-        reply_expectation, error = self._parse_reply_expectation(arguments, messages)
-        if reply_expectation is None:
-            return None, error
-        expects_reply, expectation = reply_expectation
-        return {
-            "messages": messages,
-            "expects_reply": expects_reply,
-            "reply_expectation": expectation,
-            "continue_waiting_for_reply": continue_waiting,
-            "activity": activity.strip(),
-            "result": result.strip(),
-            "next_check_minutes": minutes,
-            "reason": reason.strip(),
-            "mood_transition": mood,
-        }, None
 
     async def _complete_reflection_turn(
         self, local_date: str, stop: asyncio.Event

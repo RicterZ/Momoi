@@ -134,7 +134,9 @@ class MessagingTest(unittest.TestCase):
             "[QQ face id=999999]",
         )
         self.assertEqual(
-            render_segments([{"type": "face", "data": {"id": "32", "summary": "自定义名称"}}]),
+            render_segments(
+                [{"type": "face", "data": {"id": "32", "summary": "自定义名称"}}]
+            ),
             "[QQ face id=32 description=自定义名称]",
         )
 
@@ -293,13 +295,42 @@ class MessagingTest(unittest.TestCase):
                 "expects_reply": True,
                 "reply_expectation": "主人晚上的安排",
                 "messages": ["嘿嘿，没忘吧~", "晚上在忙什么呢？"],
-                "mood": {"action": "keep"},
+                "mood": {"decision": "unchanged"},
             }
         )
         self.assertIsNone(error)
         self.assertEqual(reply.messages, ["嘿嘿，没忘吧~", "晚上在忙什么呢？"])
         self.assertTrue(reply.expects_reply)
         self.assertEqual(reply.reply_expectation, "主人晚上的安排")
+        heartbeat, error = MomoiDaemon._parse_response(
+            {
+                "messages": [],
+                "expects_reply": False,
+                "reply_expectation": "",
+                "mood": {"decision": "unchanged"},
+                "heartbeat": {
+                    "continue_waiting_for_reply": False,
+                    "activity": "整理关卡灵感",
+                    "result": "记下一个点子",
+                    "next_check_minutes": 10,
+                    "reason": "有值得保留的想法",
+                },
+            },
+            require_heartbeat=True,
+        )
+        self.assertIsNone(error)
+        self.assertEqual(heartbeat.heartbeat["activity"], "整理关卡灵感")
+        invalid_heartbeat, error = MomoiDaemon._parse_response(
+            {
+                "messages": [],
+                "expects_reply": False,
+                "reply_expectation": "",
+                "mood": {"decision": "unchanged"},
+            },
+            require_heartbeat=True,
+        )
+        self.assertIsNone(invalid_heartbeat)
+        self.assertEqual(error, "invalid_heartbeat_state")
         invalid_blank_lines, error = MomoiDaemon._parse_messages(
             {"messages": ["第一条。\n\n第二条。"]}
         )
@@ -313,7 +344,7 @@ class MessagingTest(unittest.TestCase):
         invalid, error = MomoiDaemon._parse_response(
             {
                 "messages": ["少了回复期待决策"],
-                "mood": {"action": "keep"},
+                "mood": {"decision": "unchanged"},
             }
         )
         self.assertIsNone(invalid)
@@ -435,7 +466,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "expects_reply": False,
                             "reply_expectation": "",
                             "messages": [],
-                            "mood": {"action": "keep"},
+                            "mood": {"decision": "unchanged"},
                         },
                     )
                     return ProviderResponse([], [call])
@@ -462,12 +493,8 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(
                 AppConfig(
-                    llm=LLMConfig(
-                        "http://127.0.0.1", "test", "test", 100, 0, 1, 0
-                    ),
-                    channel=NapCatConfig(
-                        "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
-                    ),
+                    llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
+                    channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                     system_prompt="test",
                     recent_raw_tokens=1000,
                     recent_turns=2,
@@ -512,7 +539,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                                     "messages": [],
                                     "expects_reply": True,
                                     "reply_expectation": "老师的选择",
-                                    "mood": {"action": "keep"},
+                                    "mood": {"decision": "unchanged"},
                                 },
                             )
                         ],
@@ -630,7 +657,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "expects_reply": False,
                             "reply_expectation": "",
                             "messages": ["看到了"],
-                            "mood": {"action": "keep"},
+                            "mood": {"decision": "unchanged"},
                         },
                     )
                     return ProviderResponse(
@@ -705,7 +732,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "这次我可厉害了",
                                 "emotion://proud-1",
                             ],
-                            "mood": {"action": "keep"},
+                            "mood": {"decision": "unchanged"},
                         },
                     )
                     return ProviderResponse(
@@ -791,7 +818,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "expects_reply": False,
                             "reply_expectation": "",
                             "messages": [value],
-                            "mood": {"action": "keep"},
+                            "mood": {"decision": "unchanged"},
                         },
                     )
                     return ProviderResponse(
@@ -937,15 +964,11 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
     async def test_channels_share_context_but_reply_to_the_source(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            napcat = NapCatConfig(
-                "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
-            )
+            napcat = NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20)
             weixin = WeixinConfig.from_mapping({}, root)
             daemon = MomoiDaemon(
                 AppConfig(
-                    llm=LLMConfig(
-                        "http://127.0.0.1", "test", "test", 100, 0, 1, 0
-                    ),
+                    llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
                     channel=napcat,
                     channels=(napcat, weixin),
                     system_prompt="test",
@@ -986,7 +1009,8 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                             ["napcat", "weixin"],
                         )
                         case.assertEqual(
-                            channel["default"], "napcat"  # type: ignore[index]
+                            channel["default"],
+                            "napcat",  # type: ignore[index]
                         )
                     if self.calls in {2, 3}:
                         arguments: dict[str, object] = {
@@ -1015,7 +1039,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                                     "expects_reply": False,
                                     "reply_expectation": "",
                                     "messages": [text],
-                                    "mood": {"action": "keep"},
+                                    "mood": {"decision": "unchanged"},
                                 },
                             )
                         ],
@@ -1026,9 +1050,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                 IncomingMessage(
                     "napcat:1", "1", "QQ 上说过的事", 1, 1, channel="napcat"
                 ),
-                IncomingMessage(
-                    "weixin:2", "2", "接着刚才聊", 2, 2, channel="weixin"
-                ),
+                IncomingMessage("weixin:2", "2", "接着刚才聊", 2, 2, channel="weixin"),
             ):
                 daemon.store.add_event(event)
                 turn_id = daemon._turn_id(event.event_id)
@@ -1055,24 +1077,18 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             daemon.incoming.put_nowait(qq_update)
             daemon.incoming.put_nowait(weixin_update)
-            self.assertEqual(
-                daemon._drain_owner_updates([], "napcat"), [qq_update]
-            )
+            self.assertEqual(daemon._drain_owner_updates([], "napcat"), [qq_update])
             self.assertEqual(daemon._deferred_incoming.popleft(), weixin_update)
             daemon.store.close()
 
     async def test_disconnected_channel_does_not_block_another_channel(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            napcat = NapCatConfig(
-                "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
-            )
+            napcat = NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20)
             weixin = WeixinConfig.from_mapping({}, root)
             daemon = MomoiDaemon(
                 AppConfig(
-                    llm=LLMConfig(
-                        "http://127.0.0.1", "test", "test", 100, 0, 1, 0
-                    ),
+                    llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
                     channel=napcat,
                     channels=(napcat, weixin),
                     system_prompt="test",
@@ -1086,7 +1102,11 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                 )
             )
             daemon.store.commit_turn(
-                [], "", AgentReply(["QQ pending"]), turn_id="qq", target_channel="napcat"
+                [],
+                "",
+                AgentReply(["QQ pending"]),
+                turn_id="qq",
+                target_channel="napcat",
             )
             daemon.store.commit_turn(
                 [],

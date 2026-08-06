@@ -59,9 +59,7 @@ REFLECTION_MEMORY_KINDS = {
     "shared_experience",
     "practice",
 }
-UNVERIFIED_EPISODE_SUMMARY = (
-    "[UNVERIFIED legacy summary; use only as a retrieval hint and verify against raw messages.]"
-)
+UNVERIFIED_EPISODE_SUMMARY = "[UNVERIFIED legacy summary; use only as a retrieval hint and verify against raw messages.]"
 
 
 class Store(MemoryStore, DeliveryStore):
@@ -258,6 +256,8 @@ class Store(MemoryStore, DeliveryStore):
             str(row["name"])
             for row in self._db.execute("PRAGMA table_info(self_state)").fetchall()
         }
+        if "mood_settle_at" in self_state_columns:
+            self._db.execute("UPDATE self_state SET mood_settle_at=NULL")
         migrating_reply_schedule = (
             "pending_reply_next_check_at" not in self_state_columns
         )
@@ -408,7 +408,7 @@ class Store(MemoryStore, DeliveryStore):
         self._db.execute(
             """UPDATE self_state SET mood_state=?, mood_intensity=?, mood_cause=?
                WHERE mood_state='cheerful' AND mood_intensity=0.55
-                 AND mood_cause='personality baseline' AND mood_settle_at IS NULL""",
+                 AND mood_cause='personality baseline'""",
             (
                 BASELINE_MOOD_STATE,
                 BASELINE_MOOD_INTENSITY,
@@ -792,9 +792,16 @@ class Store(MemoryStore, DeliveryStore):
         placeholders = ",".join("?" for _ in keys)
         stale = self._db.execute(
             f"""SELECT o.id, o.state FROM outbox AS o
-                JOIN notifications AS n ON n.turn_id=o.turn_id
-                WHERE n.notification_key IN ({placeholders})
-                  AND o.state IN ('pending', 'ambiguous')""",
+                LEFT JOIN notifications AS n ON n.turn_id=o.turn_id
+                WHERE (
+                    n.notification_key IN ({placeholders}) OR EXISTS (
+                        SELECT 1 FROM turns AS t
+                        WHERE t.id=o.turn_id
+                          AND t.kind='autonomous'
+                          AND t.state='running'
+                          AND t.source_ids_json LIKE '%\"heartbeat:%'
+                    )
+                ) AND o.state IN ('pending', 'ambiguous')""",
             keys,
         ).fetchall()
         for row in stale:
@@ -1219,9 +1226,11 @@ class Store(MemoryStore, DeliveryStore):
             if unit_terms:
                 self._index_episode_terms(episode_id, *unit_values)
             for message in messages:
-                if message["role"] == "assistant" and message[
-                    "delivery_state"
-                ] not in {"delivered", "uncertain", "internal"}:
+                if message["role"] == "assistant" and message["delivery_state"] not in {
+                    "delivered",
+                    "uncertain",
+                    "internal",
+                }:
                     continue
                 content = str(message["content"])
                 content_terms = self._recall_terms(content)
@@ -1438,9 +1447,7 @@ class Store(MemoryStore, DeliveryStore):
             if not selected and size > token_budget:
                 per_message = max(1, token_budget // len(group))
                 for item in group:
-                    item["content"] = truncate_tokens(
-                        str(item["content"]), per_message
-                    )
+                    item["content"] = truncate_tokens(str(item["content"]), per_message)
                 size = sum(estimate_tokens(str(item["content"])) for item in group)
             selected.append(group)
             used += size
@@ -1941,9 +1948,7 @@ class Store(MemoryStore, DeliveryStore):
                      AND summarized_through_ordinal<?""",
                 (
                     working_summary,
-                    json.dumps(
-                        normalized, ensure_ascii=False, separators=(",", ":")
-                    ),
+                    json.dumps(normalized, ensure_ascii=False, separators=(",", ":")),
                     through_ordinal,
                     time.time(),
                     episode_id,
@@ -2032,9 +2037,7 @@ class Store(MemoryStore, DeliveryStore):
             if binding.get("relation") == "primary"
         ]
         primary_placeholders = ",".join("?" for _ in primary_ids)
-        excluded = (
-            f"AND id NOT IN ({primary_placeholders})" if primary_ids else ""
-        )
+        excluded = f"AND id NOT IN ({primary_placeholders})" if primary_ids else ""
         owner_episode = """AND id IN (
             SELECT et.episode_id FROM episode_turns AS et
             JOIN turns AS t ON t.id=et.turn_id WHERE t.kind='owner'
@@ -2204,41 +2207,15 @@ class Store(MemoryStore, DeliveryStore):
             "resolution": resolution[:2000],
         }
 
-    def self_state(self, now: float | None = None) -> dict[str, object]:
-        now = time.time() if now is None else now
+    def self_state(self) -> dict[str, object]:
         row = self._db.execute("SELECT * FROM self_state WHERE id=1").fetchone()
         if row is None:
             raise RuntimeError("self_state is not initialized")
-        state = dict(row)
-        settle_at = state.get("mood_settle_at")
-        if settle_at is not None and float(settle_at) <= now:
-            previous = str(state["mood_state"])
-            with self._db:
-                self._db.execute(
-                    """UPDATE self_state
-                       SET mood_state=?, mood_intensity=?, mood_cause=?, mood_updated_at=?,
-                           mood_settle_at=NULL, updated_at=? WHERE id=1""",
-                    (
-                        BASELINE_MOOD_STATE,
-                        BASELINE_MOOD_INTENSITY,
-                        BASELINE_MOOD_CAUSE,
-                        now,
-                        now,
-                    ),
-                )
-            state.update(
-                mood_state=BASELINE_MOOD_STATE,
-                mood_intensity=BASELINE_MOOD_INTENSITY,
-                mood_cause=BASELINE_MOOD_CAUSE,
-                mood_updated_at=now,
-                mood_settle_at=None,
-                updated_at=now,
-            )
-            logger.debug("Mood settled from=%s to=%s", previous, BASELINE_MOOD_STATE)
-        return state
+        return dict(row)
 
     def self_state_context(self, now: float | None = None) -> str:
-        state = self.self_state(now)
+        now = time.time() if now is None else now
+        state = self.self_state()
 
         def timestamp(value: object) -> str | None:
             return (
@@ -2256,7 +2233,9 @@ class Store(MemoryStore, DeliveryStore):
                     "intensity": state["mood_intensity"],
                     "cause": state["mood_cause"],
                     "updated_at": timestamp(state["mood_updated_at"]),
-                    "settle_at": timestamp(state["mood_settle_at"]),
+                    "age_minutes": max(
+                        0, int((now - float(state["mood_updated_at"])) / 60)
+                    ),
                 },
                 "activity": {
                     "text": state["activity"],
@@ -2303,35 +2282,32 @@ class Store(MemoryStore, DeliveryStore):
             "delivered_followups": int(followups or 0),
         }
 
-    def _apply_mood_transition(
-        self, transition: dict[str, object] | None, now: float
+    def _apply_mood_update(
+        self, update: dict[str, object] | None, now: float
     ) -> None:
-        if transition is None:
+        if update is None:
             return
         previous = self._db.execute(
             "SELECT mood_state, mood_intensity FROM self_state WHERE id=1"
         ).fetchone()
-        duration = int(transition["duration_minutes"])
         self._db.execute(
             """UPDATE self_state
                SET mood_state=?, mood_intensity=?, mood_cause=?,
-                   mood_updated_at=?, mood_settle_at=?, updated_at=? WHERE id=1""",
+                   mood_updated_at=?, updated_at=? WHERE id=1""",
             (
-                transition["state"],
-                transition["intensity"],
-                str(transition["cause"])[:300],
+                update["state"],
+                update["intensity"],
+                str(update["cause"])[:300],
                 now,
-                now + duration * 60,
                 now,
             ),
         )
         logger.debug(
-            "Mood changed from=%s to=%s intensity=%.2f duration_minutes=%d cause=%s",
+            "Mood changed from=%s to=%s intensity=%.2f cause=%s",
             previous["mood_state"] if previous else "unknown",
-            transition["state"],
-            float(transition["intensity"]),
-            duration,
-            str(transition["cause"]).replace("\n", " ")[:300],
+            update["state"],
+            float(update["intensity"]),
+            str(update["cause"]).replace("\n", " ")[:300],
         )
 
     def ensure_heartbeat(
@@ -2472,7 +2448,7 @@ class Store(MemoryStore, DeliveryStore):
         activity: str,
         result: str,
         next_heartbeat_at: float,
-        mood_transition: dict[str, object] | None,
+        mood_update: dict[str, object] | None,
         messages: list[ChannelMessage],
         reason: str,
         reply_expectation: str = "",
@@ -2483,7 +2459,7 @@ class Store(MemoryStore, DeliveryStore):
         notification_channel: str = "",
     ) -> int:
         now = time.time()
-        current = self.self_state(now)
+        current = self.self_state()
         with self._db:
             pending = self._db.execute(
                 """SELECT pending_reply_turn_id, pending_reply_checks,
@@ -2512,6 +2488,48 @@ class Store(MemoryStore, DeliveryStore):
                 notification_key, notification_config, now
             )["allowed"]:
                 messages = []
+            source_json = json.dumps([f"heartbeat:{turn_id}"])
+            progress_rows = self._db.execute(
+                """SELECT p.text, p.created_at, p.tool_call_id, p.part_index,
+                          o.id AS outbox_id, o.state, o.possible_duplicate,
+                          o.target_channel
+                   FROM turn_progress AS p
+                   LEFT JOIN outbox AS o
+                     ON o.dedupe_key = 'turn:' || p.turn_id || ':progress:' ||
+                        p.tool_call_id || ':' || p.part_index
+                   WHERE p.turn_id=?
+                   ORDER BY p.created_at, p.tool_call_id, p.part_index""",
+                (turn_id,),
+            ).fetchall()
+            progress_rows = [
+                row
+                for row in progress_rows
+                if row["outbox_id"] is not None
+                and str(row["state"] or "") != "superseded"
+            ]
+            for row in progress_rows:
+                if row["outbox_id"] is None:
+                    continue
+                self._db.execute(
+                    """INSERT INTO messages
+                       (turn_id, role, content, created_at, source_event_ids_json,
+                        outbox_id, delivery_state)
+                       SELECT ?, 'assistant', ?, ?, ?, ?, ?
+                       WHERE NOT EXISTS (
+                           SELECT 1 FROM messages WHERE outbox_id=?
+                       )""",
+                    (
+                        turn_id,
+                        row["text"],
+                        row["created_at"],
+                        source_json,
+                        row["outbox_id"],
+                        self._message_delivery_state(
+                            str(row["state"]), bool(row["possible_duplicate"])
+                        ),
+                        row["outbox_id"],
+                    ),
+                )
             if pending_reply_is_current:
                 if continue_waiting_for_reply:
                     checks = int(pending["pending_reply_checks"] or 0) + 1
@@ -2539,7 +2557,7 @@ class Store(MemoryStore, DeliveryStore):
                         "reply_waiting_ended",
                         now,
                     )
-            self._apply_mood_transition(mood_transition, now)
+            self._apply_mood_update(mood_update, now)
             self._apply_goal_mutations(draft, now)
             activity_since = (
                 current["activity_since"] if current["activity"] == activity else now
@@ -2588,13 +2606,82 @@ class Store(MemoryStore, DeliveryStore):
                 now,
                 activity,
                 result,
+                *(str(row["text"]) for row in progress_rows),
             )
-            if messages:
-                target_channel = (
-                    str(pending["pending_reply_channel"] or "")
-                    if pending_reply_is_current
-                    else notification_channel
+            target_channel = (
+                str(pending["pending_reply_channel"] or "")
+                if pending_reply_is_current
+                else notification_channel
+            )
+            if progress_rows and not pending_reply_is_current:
+                target_channel = str(
+                    progress_rows[-1]["target_channel"] or target_channel
                 )
+            if progress_rows:
+                normalized = [self._outbox_content(message) for message in messages]
+                for index, (text, kind, path, payload) in enumerate(normalized):
+                    self._db.execute(
+                        """INSERT OR IGNORE INTO outbox
+                           (turn_id, dedupe_key, text, kind, media_path, payload_json,
+                            reply_expectation, target_channel)
+                           VALUES (?, ?, ?, ?, ?, ?, '', ?)""",
+                        (
+                            turn_id,
+                            f"turn:{turn_id}:final:{index}",
+                            text,
+                            kind,
+                            path,
+                            json.dumps(
+                                payload, ensure_ascii=False, separators=(",", ":")
+                            ),
+                            target_channel,
+                        ),
+                    )
+                    outbox = self._db.execute(
+                        "SELECT id FROM outbox WHERE dedupe_key=?",
+                        (f"turn:{turn_id}:final:{index}",),
+                    ).fetchone()
+                    self._db.execute(
+                        """INSERT OR IGNORE INTO messages
+                           (turn_id, role, content, created_at, source_event_ids_json,
+                            outbox_id, delivery_state)
+                           VALUES (?, 'assistant', ?, ?, ?, ?, 'queued')""",
+                        (
+                            turn_id,
+                            text,
+                            now,
+                            source_json,
+                            outbox["id"],
+                        ),
+                    )
+                visible = [str(row["text"]) for row in progress_rows] + [
+                    text for text, _, _, _ in normalized
+                ]
+                self._db.execute(
+                    """INSERT OR IGNORE INTO notifications
+                       (id, turn_id, goal_id, notification_key, priority, reason,
+                        messages_json, reply_expectation, state, not_before, created_at,
+                        queued_at, target_channel)
+                       VALUES (?, ?, 'heartbeat', ?, 'normal', ?, ?, ?,
+                               'queued', ?, ?, ?, ?)""",
+                    (
+                        f"notification:{turn_id}",
+                        turn_id,
+                        notification_key,
+                        reason[:500],
+                        json.dumps(visible, ensure_ascii=False),
+                        reply_expectation,
+                        now,
+                        now,
+                        now,
+                        target_channel,
+                    ),
+                )
+                if reply_expectation:
+                    self._bind_turn_reply_expectation(
+                        turn_id, reply_expectation, reply_initial_interval_seconds
+                    )
+            elif messages:
                 self._db.execute(
                     """INSERT OR IGNORE INTO notifications
                        (id, turn_id, goal_id, notification_key, priority, reason,
@@ -2627,7 +2714,7 @@ class Store(MemoryStore, DeliveryStore):
                    failure_reason=NULL, updated_at=? WHERE id=?""",
                 (now, turn_id),
             )
-        return len(messages)
+        return len(messages) + len(progress_rows)
 
     @staticmethod
     def _reflection_slot(
@@ -3534,7 +3621,7 @@ class Store(MemoryStore, DeliveryStore):
                     ),
                 )
             self._index_turn_episode_terms(turn_id)
-            self._apply_mood_transition(reply.mood_transition, now)
+            self._apply_mood_update(reply.mood_update, now)
             for memory in draft.memories if draft else []:
                 self._remember(memory, events, now)
             for conflict in draft.memory_conflicts if draft else []:

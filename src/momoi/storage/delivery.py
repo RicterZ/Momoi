@@ -235,7 +235,7 @@ class DeliveryStore:
                     now,
                     visible,
                 )
-            self._apply_mood_transition(reply.mood_transition, now)
+            self._apply_mood_update(reply.mood_update, now)
             if reply.expects_reply:
                 self._bind_turn_reply_expectation(
                     turn_id, reply.reply_expectation, reply_initial_delay

@@ -529,7 +529,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "expects_reply": False,
                             "reply_expectation": "",
                             "messages": ["已纠正"],
-                            "mood": {"action": "keep"},
+                            "mood": {"decision": "unchanged"},
                         },
                     )
                     return ProviderResponse(

@@ -83,36 +83,33 @@ CHANNEL_MESSAGE_SCHEMA: dict[str, Any] = {
         },
     ]
 }
-MOOD_TRANSITION_SCHEMA: dict[str, Any] = {
+MOOD_UPDATE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "state": {"type": "string", "enum": sorted(MOOD_STATES)},
         "intensity": {"type": "number", "minimum": 0, "maximum": 1},
         "cause": {"type": "string", "minLength": 1, "maxLength": 300},
-        "duration_minutes": {
-            "type": "integer",
-            "minimum": 5,
-            "maximum": 1440,
-        },
     },
-    "required": ["state", "intensity", "cause", "duration_minutes"],
+    "required": ["state", "intensity", "cause"],
     "additionalProperties": False,
 }
 MOOD_DECISION_SCHEMA: dict[str, Any] = {
     "oneOf": [
         {
             "type": "object",
-            "properties": {"action": {"type": "string", "enum": ["keep"]}},
-            "required": ["action"],
+            "properties": {
+                "decision": {"type": "string", "enum": ["unchanged"]}
+            },
+            "required": ["decision"],
             "additionalProperties": False,
         },
         {
             "type": "object",
             "properties": {
-                "action": {"type": "string", "enum": ["transition"]},
-                **MOOD_TRANSITION_SCHEMA["properties"],
+                "decision": {"type": "string", "enum": ["updated"]},
+                **MOOD_UPDATE_SCHEMA["properties"],
             },
-            "required": ["action", *MOOD_TRANSITION_SCHEMA["required"]],
+            "required": ["decision", *MOOD_UPDATE_SCHEMA["required"]],
             "additionalProperties": False,
         },
     ]
@@ -159,6 +156,61 @@ RESPOND_TOOL_SPEC: dict[str, Any] = {
         "additionalProperties": False,
     },
 }
+
+HEARTBEAT_STATE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "continue_waiting_for_reply": {
+            "type": "boolean",
+            "description": (
+                "When pending_owner_reply exists, whether Momoi still genuinely "
+                "wants the runtime to keep checking for that reply. False releases "
+                "the waiting thread; use false when no reply is pending."
+            ),
+        },
+        "activity": {"type": "string", "minLength": 1, "maxLength": 300},
+        "result": {"type": "string", "maxLength": 2000},
+        "next_check_minutes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1440,
+        },
+        "reason": {"type": "string", "minLength": 1, "maxLength": 500},
+    },
+    "required": [
+        "continue_waiting_for_reply",
+        "activity",
+        "result",
+        "next_check_minutes",
+        "reason",
+    ],
+    "additionalProperties": False,
+}
+
+
+def heartbeat_respond_tool_spec() -> dict[str, Any]:
+    schema = RESPOND_TOOL_SPEC["input_schema"]
+    return {
+        **RESPOND_TOOL_SPEC,
+        "description": (
+            "Required terminal decision for this autonomous heartbeat Turn, called "
+            "only after all tool work and optional send_message calls are complete. "
+            "The heartbeat object records Momoi's activity and schedules her next Turn."
+        ),
+        "input_schema": {
+            **schema,
+            "properties": {
+                **schema["properties"],
+                "messages": {
+                    **schema["properties"]["messages"],
+                    "maxItems": 3,
+                },
+                "heartbeat": HEARTBEAT_STATE_SCHEMA,
+            },
+            "required": [*schema["required"], "heartbeat"],
+        },
+    }
+
 
 SEND_MESSAGE_TOOL_SPEC: dict[str, Any] = {
     "name": "send_message",
@@ -208,69 +260,6 @@ def send_message_tool_spec(
         },
     }
 
-
-HEARTBEAT_FINISH_SPEC: dict[str, Any] = {
-    "name": "heartbeat_finish",
-    "description": (
-        "Required terminal decision for a cognitive heartbeat. It atomically updates "
-        "Momoi's activity, optional mood, next heartbeat, and optional owner messages."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "messages": {
-                "type": "array",
-                "maxItems": 3,
-                "items": CHANNEL_MESSAGE_SCHEMA,
-            },
-            "expects_reply": {
-                "type": "boolean",
-                "description": (
-                    "Whether Momoi, guided by her Soul, relationship with the owner, "
-                    "and current context, will genuinely keep attention on a reply to "
-                    "these messages."
-                ),
-            },
-            "reply_expectation": {
-                "type": "string",
-                "maxLength": 300,
-                "description": (
-                    "What Momoi is waiting for when expects_reply is true; otherwise "
-                    "empty."
-                ),
-            },
-            "continue_waiting_for_reply": {
-                "type": "boolean",
-                "description": (
-                    "When pending_owner_reply exists, whether Momoi still genuinely "
-                    "wants the runtime to keep checking for that reply. False releases "
-                    "the waiting thread; use false when no reply is pending."
-                ),
-            },
-            "activity": {"type": "string", "minLength": 1, "maxLength": 300},
-            "result": {"type": "string", "maxLength": 2000},
-            "next_check_minutes": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 1440,
-            },
-            "reason": {"type": "string", "minLength": 1, "maxLength": 500},
-            "mood": MOOD_DECISION_SCHEMA,
-        },
-        "required": [
-            "messages",
-            "expects_reply",
-            "reply_expectation",
-            "continue_waiting_for_reply",
-            "activity",
-            "result",
-            "next_check_minutes",
-            "reason",
-            "mood",
-        ],
-        "additionalProperties": False,
-    },
-}
 
 AUTONOMOUS_FINISH_SPEC: dict[str, Any] = {
     "name": "autonomous_finish",

@@ -215,7 +215,7 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "messages": ["有一个快递到了，取件码是 1234。"],
                                 "expects_reply": False,
                                 "reply_expectation": "",
-                                "mood": {"action": "keep"},
+                                "mood": {"decision": "unchanged"},
                             },
                         )
                     return ProviderResponse(
@@ -291,11 +291,10 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                 store.begin_turn(turn_id, "autonomous", [turn_id])
                 return AgentReply(
                     ["门口好像有人，需要我继续帮你留意吗？"],
-                    mood_transition={
+                    mood_update={
                         "state": "focused",
                         "intensity": 0.5,
                         "cause": "门口出现需要关注的动态",
-                        "duration_minutes": 15,
                     },
                     expects_reply=True,
                     reply_expectation="主人是否需要继续留意门口",

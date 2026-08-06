@@ -91,7 +91,7 @@ She keeps working until the task is complete, genuinely blocked, or stopped by t
 
 ### Mood, activity, and expression
 
-Momoi has persistent mood and activity state. Events can change that state, time can soften it, and the result naturally influences tone and expression without changing facts or task discipline.
+Momoi has persistent mood and activity state. Each interaction or heartbeat can change or naturally soften that state, and the result influences tone and expression without changing facts or task discipline.
 
 Her personality lives in `SOUL.md`, while an emotion catalog gives her optional image reactions with semantic descriptions such as celebration, embarrassment, or mischief. She decides when a reaction adds something to the moment instead of attaching one to every reply.
 

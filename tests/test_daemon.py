@@ -21,10 +21,10 @@ from momoi.config import (
 )
 from momoi.runtime import (
     AUTONOMOUS_FINISH_SPEC,
-    HEARTBEAT_FINISH_SPEC,
     HEARTBEAT_QUEUE_ITEM,
     RESPOND_TOOL_SPEC,
     SEND_MESSAGE_TOOL_SPEC,
+    heartbeat_respond_tool_spec,
     MomoiDaemon,
 )
 from momoi.models import (
@@ -100,29 +100,27 @@ class DaemonTest(unittest.TestCase):
 
         self.assertEqual(daemon._system()[0]["text"], STYLE_CARD_SYSTEM_PROMPT)
 
-    def test_mood_transition_parser_rejects_invalid_state(self) -> None:
-        mood, error = MomoiDaemon._parse_mood_transition(
+    def test_mood_update_parser_rejects_invalid_state(self) -> None:
+        mood, error = MomoiDaemon._parse_mood_update(
             {
                 "state": "angry",
                 "intensity": 0.8,
                 "cause": "test",
-                "duration_minutes": 30,
             }
         )
         self.assertIsNone(mood)
-        self.assertEqual(error, "invalid_mood_transition")
+        self.assertEqual(error, "invalid_mood_update")
 
     def test_mood_decision_is_explicit_in_terminal_tools(self) -> None:
-        mood, error = MomoiDaemon._parse_mood_decision({"action": "keep"})
+        mood, error = MomoiDaemon._parse_mood_decision({"decision": "unchanged"})
         self.assertIsNone(mood)
         self.assertIsNone(error)
         mood, error = MomoiDaemon._parse_mood_decision(
             {
-                "action": "transition",
+                "decision": "updated",
                 "state": "excited",
                 "intensity": 0.8,
                 "cause": "完成新能力接入",
-                "duration_minutes": 30,
             }
         )
         self.assertEqual(mood["state"], "excited")
@@ -132,9 +130,7 @@ class DaemonTest(unittest.TestCase):
             (None, "invalid_mood_decision"),
         )
         self.assertIn("mood", RESPOND_TOOL_SPEC["input_schema"]["required"])
-        self.assertNotIn(
-            "continuity", RESPOND_TOOL_SPEC["input_schema"]["properties"]
-        )
+        self.assertNotIn("continuity", RESPOND_TOOL_SPEC["input_schema"]["properties"])
         self.assertNotIn("delivery", RESPOND_TOOL_SPEC["input_schema"]["properties"])
         self.assertIn("expects_reply", RESPOND_TOOL_SPEC["input_schema"]["required"])
         self.assertIn(
@@ -152,13 +148,13 @@ class DaemonTest(unittest.TestCase):
         self.assertNotIn(
             "minItems", RESPOND_TOOL_SPEC["input_schema"]["properties"]["messages"]
         )
-        self.assertIn("mood", HEARTBEAT_FINISH_SPEC["input_schema"]["required"])
-        self.assertIn(
-            "expects_reply", HEARTBEAT_FINISH_SPEC["input_schema"]["required"]
-        )
+        heartbeat_respond = heartbeat_respond_tool_spec()
+        self.assertEqual(heartbeat_respond["name"], "respond")
+        self.assertIn("heartbeat", heartbeat_respond["input_schema"]["required"])
+        self.assertIn("mood", heartbeat_respond["input_schema"]["required"])
         self.assertIn(
             "continue_waiting_for_reply",
-            HEARTBEAT_FINISH_SPEC["input_schema"]["required"],
+            heartbeat_respond["input_schema"]["properties"]["heartbeat"]["required"],
         )
 
     def test_context_budget_drops_old_history_and_truncates_tool_results(self) -> None:
@@ -203,12 +199,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(
                 AppConfig(
-                    llm=LLMConfig(
-                        "http://127.0.0.1", "test", "test", 100, 0, 1, 0
-                    ),
-                    channel=NapCatConfig(
-                        "ws://127.0.0.1", "20000", 0.1, 1, 30, 30, 20
-                    ),
+                    llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
+                    channel=NapCatConfig("ws://127.0.0.1", "20000", 0.1, 1, 30, 30, 20),
                     system_prompt="test",
                     recent_raw_tokens=1000,
                     recent_turns=2,
@@ -252,9 +244,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(
                 AppConfig(
-                    llm=LLMConfig(
-                        "http://127.0.0.1", "test", "test", 100, 0, 1, 0
-                    ),
+                    llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
                     channel=NapCatConfig(
                         "ws://127.0.0.1", "20000", 0.05, 1, 30, 30, 20
                     ),
@@ -286,7 +276,9 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         await finish_stale_reply.wait()
                         text = "只回应第一条"
                     else:
-                        self.assertIn("第二条", json.dumps(messages, ensure_ascii=False))
+                        self.assertIn(
+                            "第二条", json.dumps(messages, ensure_ascii=False)
+                        )
                         text = "合并两条后回复"
                     call = ToolCall(
                         f"respond-{provider_self.calls}",
@@ -295,7 +287,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "expects_reply": False,
                             "reply_expectation": "",
                             "messages": [text],
-                            "mood": {"action": "keep"},
+                            "mood": {"decision": "unchanged"},
                         },
                     )
                     return ProviderResponse(
@@ -342,12 +334,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(
                 AppConfig(
-                    llm=LLMConfig(
-                        "http://127.0.0.1", "test", "test", 100, 0, 1, 0
-                    ),
-                    channel=NapCatConfig(
-                        "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
-                    ),
+                    llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
+                    channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                     system_prompt="test",
                     recent_raw_tokens=1000,
                     recent_turns=2,
@@ -386,7 +374,9 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "weather-read", "read_file", {"path": "weather.txt"}
                         )
                     elif provider_self.calls == 2:
-                        self.assertIn("地址改成上海", json.dumps(messages, ensure_ascii=False))
+                        self.assertIn(
+                            "地址改成上海", json.dumps(messages, ensure_ascii=False)
+                        )
                         stale_respond_started.set()
                         await finish_stale_respond.wait()
                         call = ToolCall(
@@ -396,7 +386,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "expects_reply": False,
                                 "reply_expectation": "",
                                 "messages": ["上海天气晴"],
-                                "mood": {"action": "keep"},
+                                "mood": {"decision": "unchanged"},
                             },
                         )
                     else:
@@ -410,7 +400,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "expects_reply": False,
                                 "reply_expectation": "",
                                 "messages": ["收到，不查了"],
-                                "mood": {"action": "keep"},
+                                "mood": {"decision": "unchanged"},
                             },
                         )
                     return ProviderResponse(
@@ -448,7 +438,9 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
 
             self.assertEqual(provider.calls, 3)
             self.assertTrue(daemon.incoming.empty())
-            self.assertEqual([row.text for row in daemon.store.due_outbox()], ["收到，不查了"])
+            self.assertEqual(
+                [row.text for row in daemon.store.due_outbox()], ["收到，不查了"]
+            )
             stored = daemon.store._db.execute(
                 "SELECT content, source_event_ids_json FROM messages WHERE role='user'"
             ).fetchone()
@@ -489,16 +481,14 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(daemon.store.pending_events(), [])
             daemon.store.close()
 
-    async def test_manual_heartbeat_command_queues_once_even_when_disabled(self) -> None:
+    async def test_manual_heartbeat_command_queues_once_even_when_disabled(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(
                 AppConfig(
-                    llm=LLMConfig(
-                        "http://127.0.0.1", "test", "test", 100, 0, 1, 0
-                    ),
-                    channel=NapCatConfig(
-                        "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
-                    ),
+                    llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
+                    channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                     system_prompt="test",
                     recent_raw_tokens=1000,
                     recent_turns=2,
@@ -530,12 +520,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(
                 AppConfig(
-                    llm=LLMConfig(
-                        "http://127.0.0.1", "test", "test", 100, 0, 1, 0
-                    ),
-                    channel=NapCatConfig(
-                        "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
-                    ),
+                    llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
+                    channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                     system_prompt="test",
                     recent_raw_tokens=1000,
                     recent_turns=2,
@@ -573,12 +559,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(
                 AppConfig(
-                    llm=LLMConfig(
-                        "http://127.0.0.1", "test", "test", 100, 0, 1, 0
-                    ),
-                    channel=NapCatConfig(
-                        "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
-                    ),
+                    llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
+                    channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                     system_prompt="test",
                     recent_raw_tokens=1000,
                     recent_turns=2,
@@ -609,9 +591,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     llm=LLMConfig(
                         "http://127.0.0.1", "test", "test", 100, 0, 1, 0, "openai"
                     ),
-                    channel=NapCatConfig(
-                        "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
-                    ),
+                    channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                     system_prompt="test",
                     recent_raw_tokens=1000,
                     recent_turns=2,
@@ -678,7 +658,9 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 ) -> ProviderResponse:
                     self.calls += 1
                     if not kwargs.get("require_tool"):
-                        raise AssertionError("autonomous turns must require a terminal tool")
+                        raise AssertionError(
+                            "autonomous turns must require a terminal tool"
+                        )
                     if self.calls == 1:
                         request = json.dumps(messages, ensure_ascii=False)
                         if (
@@ -687,10 +669,14 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         ):
                             raise AssertionError(messages)
                         names = {str(tool["name"]) for tool in tools}
-                        if "mcp__test__read" not in names or {
-                            "mcp__test__write",
-                            "reminder_create",
-                        } & names:
+                        if (
+                            "mcp__test__read" not in names
+                            or {
+                                "mcp__test__write",
+                                "reminder_create",
+                            }
+                            & names
+                        ):
                             raise AssertionError(names)
                         if "write_file" not in names:
                             raise AssertionError(names)
@@ -748,7 +734,9 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             await daemon._complete_goal_turn(goal_id, asyncio.Event())
 
             self.assertEqual(provider.calls, 4)
-            self.assertEqual(daemon.store.goal(goal_id)["latest_result"], "本次检查正常")
+            self.assertEqual(
+                daemon.store.goal(goal_id)["latest_result"], "本次检查正常"
+            )
             notification = daemon.store._db.execute(
                 "SELECT state, messages_json FROM notifications WHERE goal_id=?",
                 (goal_id,),
@@ -812,7 +800,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "expects_reply": False,
                                 "reply_expectation": "",
                                 "messages": ["创建任务失败：缺少有效的执行时间。"],
-                                "mood": {"action": "keep"},
+                                "mood": {"decision": "unchanged"},
                             },
                         )
                     return ProviderResponse(
@@ -1002,7 +990,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "curl",
                             "read_file",
                             "write_file",
-                            "heartbeat_finish",
+                            "send_message",
+                            "respond",
                         }
                         if names != expected:
                             raise AssertionError(names)
@@ -1024,29 +1013,35 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 ).isoformat(),
                             },
                         )
-                    else:
-                        messages = (
-                            [] if self.calls == 2 else ["刚想到一个关卡点子！"]
+                    elif self.calls == 4:
+                        call = ToolCall(
+                            "heartbeat-live",
+                            "send_message",
+                            {"messages": ["刚想到一个关卡点子！"]},
                         )
+                    else:
+                        expects_reply = self.calls == 5
                         call = ToolCall(
                             f"heartbeat-{self.calls}",
-                            "heartbeat_finish",
+                            "respond",
                             {
-                                "messages": messages,
-                                "expects_reply": bool(messages),
+                                "messages": [],
+                                "expects_reply": expects_reply,
                                 "reply_expectation": (
-                                    "主人对关卡点子的回应" if messages else ""
+                                    "主人对关卡点子的回应" if expects_reply else ""
                                 ),
-                                "continue_waiting_for_reply": False,
-                                "activity": "整理小游戏关卡灵感",
-                                "result": (
-                                    "读完一条游戏新闻并记下玩法联想"
-                                    if self.calls == 2
-                                    else "已建立自己的关卡草案任务继续整理"
-                                ),
-                                "next_check_minutes": 2,
-                                "reason": "有具体的新点子才分享",
-                                "mood": {"action": "keep"},
+                                "mood": {"decision": "unchanged"},
+                                "heartbeat": {
+                                    "continue_waiting_for_reply": False,
+                                    "activity": "整理小游戏关卡灵感",
+                                    "result": (
+                                        "读完一条游戏新闻并记下玩法联想"
+                                        if self.calls == 2
+                                        else "已建立自己的关卡草案任务继续整理"
+                                    ),
+                                    "next_check_minutes": 2,
+                                    "reason": "有具体的新点子才分享",
+                                },
                             },
                         )
                     return ProviderResponse(
@@ -1104,7 +1099,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             goal = daemon.store.list_goals()[0]
             self.assertEqual(goal["authority"], "agent")
             self.assertEqual(goal["title"], "继续整理关卡点子")
-            self.assertEqual(provider.calls, 4)
+            self.assertEqual(provider.calls, 5)
             daemon.store.close()
 
     async def test_owner_turn_stops_cleanly_at_configured_token_budget(self) -> None:
@@ -1137,7 +1132,9 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             turn_id = daemon._turn_id(event.event_id)
             await daemon._complete_batch_turn([event], asyncio.Event(), turn_id)
             self.assertEqual(provider.calls, 0)
-            self.assertIn("per-turn processing limit", daemon.store.due_outbox()[0].text)
+            self.assertIn(
+                "per-turn processing limit", daemon.store.due_outbox()[0].text
+            )
             turn = daemon.store._db.execute(
                 "SELECT state, llm_calls FROM turns WHERE id=?", (turn_id,)
             ).fetchone()
@@ -1349,7 +1346,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "expects_reply": False,
                             "reply_expectation": "",
                             "messages": ["已经停下来了"],
-                            "mood": {"action": "keep"},
+                            "mood": {"decision": "unchanged"},
                         },
                     )
                     return ProviderResponse(
@@ -1429,7 +1426,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "expects_reply": False,
                                 "reply_expectation": "",
                                 "messages": ["已经终止当前任务"],
-                                "mood": {"action": "keep"},
+                                "mood": {"decision": "unchanged"},
                             },
                         )
                     return ProviderResponse(
@@ -1544,7 +1541,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "expects_reply": False,
                                 "reply_expectation": "",
                                 "messages": ["测试回复一", "测试回复二"],
-                                "mood": {"action": "keep"},
+                                "mood": {"decision": "unchanged"},
                             },
                         }
                     ],
@@ -1598,7 +1595,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         timeout_seconds=1,
                         max_retries=0,
                     ),
-                channel=NapCatConfig(
+                    channel=NapCatConfig(
                         url=str(napcat_server.make_url("/")).replace(
                             "http://", "ws://"
                         ),

@@ -59,11 +59,13 @@ def parse_reply_expectation(
 
 
 def parse_response(
-    arguments: dict[str, Any],
+    arguments: dict[str, Any], *, require_heartbeat: bool = False
 ) -> tuple[AgentReply | None, str | None]:
     messages, error = parse_messages(arguments, allow_empty=True)
     if messages is None:
         return None, error
+    if require_heartbeat and len(messages) > 3:
+        return None, "invalid_heartbeat_messages"
     mood, error = parse_mood_decision(arguments.get("mood"))
     if error is not None:
         return None, error
@@ -71,11 +73,47 @@ def parse_response(
     if reply_expectation is None:
         return None, error
     expects_reply, expectation = reply_expectation
+    heartbeat = arguments.get("heartbeat")
+    if require_heartbeat:
+        if not isinstance(heartbeat, dict):
+            return None, "invalid_heartbeat_state"
+        required = {
+            "continue_waiting_for_reply",
+            "activity",
+            "result",
+            "next_check_minutes",
+            "reason",
+        }
+        if set(heartbeat) != required:
+            return None, "invalid_heartbeat_state"
+        if (
+            not isinstance(heartbeat["continue_waiting_for_reply"], bool)
+            or not isinstance(heartbeat["activity"], str)
+            or not heartbeat["activity"].strip()
+            or len(heartbeat["activity"]) > 300
+            or not isinstance(heartbeat["result"], str)
+            or len(heartbeat["result"]) > 2000
+            or not isinstance(heartbeat["next_check_minutes"], int)
+            or isinstance(heartbeat["next_check_minutes"], bool)
+            or not isinstance(heartbeat["reason"], str)
+            or not heartbeat["reason"].strip()
+            or len(heartbeat["reason"]) > 500
+        ):
+            return None, "invalid_heartbeat_state"
+        heartbeat = {
+            **heartbeat,
+            "activity": heartbeat["activity"].strip(),
+            "result": heartbeat["result"].strip(),
+            "reason": heartbeat["reason"].strip(),
+        }
+    elif heartbeat is not None:
+        return None, "heartbeat_state_not_allowed"
     return AgentReply(
         messages,
-        mood_transition=mood,
+        mood_update=mood,
         expects_reply=expects_reply,
         reply_expectation=expectation,
+        heartbeat=heartbeat if require_heartbeat else None,
     ), None
 
 
@@ -84,54 +122,41 @@ def parse_mood_decision(
 ) -> tuple[dict[str, Any] | None, str | None]:
     if not isinstance(value, dict):
         return None, "invalid_mood_decision"
-    action = value.get("action")
-    if action == "keep" and set(value) == {"action"}:
+    decision = value.get("decision")
+    if decision == "unchanged" and set(value) == {"decision"}:
         return None, None
-    if action != "transition":
+    if decision != "updated":
         return None, "invalid_mood_decision"
-    transition = {key: item for key, item in value.items() if key != "action"}
-    mood, error = parse_mood_transition(transition)
+    update = {key: item for key, item in value.items() if key != "decision"}
+    mood, error = parse_mood_update(update)
     return mood, "invalid_mood_decision" if error else None
 
 
-def parse_mood_transition(
+def parse_mood_update(
     value: object,
 ) -> tuple[dict[str, Any] | None, str | None]:
     if value is None:
         return None, None
-    if not isinstance(value, dict) or set(value) != {
-        "state",
-        "intensity",
-        "cause",
-        "duration_minutes",
-    }:
-        return None, "invalid_mood_transition"
+    if not isinstance(value, dict) or set(value) != {"state", "intensity", "cause"}:
+        return None, "invalid_mood_update"
     state = value.get("state")
     cause = value.get("cause")
     intensity = value.get("intensity")
-    duration = value.get("duration_minutes")
     if (
         state not in MOOD_STATES
         or not isinstance(cause, str)
         or not cause.strip()
         or len(cause) > 300
     ):
-        return None, "invalid_mood_transition"
+        return None, "invalid_mood_update"
     if isinstance(intensity, bool) or not isinstance(intensity, (int, float)):
-        return None, "invalid_mood_transition"
+        return None, "invalid_mood_update"
     if not 0 <= float(intensity) <= 1:
-        return None, "invalid_mood_transition"
-    if (
-        isinstance(duration, bool)
-        or not isinstance(duration, int)
-        or not 5 <= duration <= 1440
-    ):
-        return None, "invalid_mood_transition"
+        return None, "invalid_mood_update"
     return {
         "state": state,
         "intensity": float(intensity),
         "cause": cause.strip()[:300],
-        "duration_minutes": duration,
     }, None
 
 
