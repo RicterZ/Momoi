@@ -19,6 +19,9 @@ MEMORY_KINDS = {
     "episodic",
     "routine",
 }
+MEMORY_ACTIVATIONS = {"always", "recent", "recall"}
+RECENT_MEMORY_WINDOW_SECONDS = 7 * 24 * 60 * 60
+ALWAYS_MEMORY_TOKEN_BUDGET = 1200
 CJK_STOP_CHARS = set("的了是在我你他她它们和就都也很还把被让要会呢吧啊哦呀")
 
 
@@ -130,10 +133,61 @@ def lexical_units(text: str, *, strict: bool = False) -> set[str]:
 
 
 class MemoryStore:
+    def _memory_rows(
+        self, activation: str, *, now: float | None = None
+    ) -> list[sqlite3.Row]:
+        if activation not in MEMORY_ACTIVATIONS:
+            raise ValueError("invalid memory activation")
+        now = time.time() if now is None else now
+        recent_cutoff = now - RECENT_MEMORY_WINDOW_SECONDS
+        return self._db.execute(
+            """SELECT id, kind, key, content, activation, importance, updated_at
+               FROM memories AS m
+               WHERE m.activation=? AND m.superseded_by IS NULL
+                 AND (m.expires_at IS NULL OR m.expires_at > ?)
+                 AND (m.activation<>'recent' OR m.updated_at>=?)
+                 AND NOT EXISTS (
+                     SELECT 1 FROM memory_tombstones AS t
+                     WHERE t.kind=m.kind AND t.key=m.key
+                 )
+               ORDER BY m.importance DESC, m.updated_at DESC, m.id DESC""",
+            (activation, now, recent_cutoff),
+        ).fetchall()
+
+    @staticmethod
+    def _compact_memory_context(
+        label: str, rows: list[sqlite3.Row], token_budget: int
+    ) -> str:
+        if token_budget <= 0 or not rows:
+            return ""
+        contents: list[str] = []
+        seen: set[str] = set()
+        for row in rows:
+            content = " ".join(str(row["content"]).split())
+            if not content or content in seen:
+                continue
+            seen.add(content)
+            contents.append(content)
+        if not contents:
+            return ""
+        return truncate_tokens(
+            f"{label}：" + "；".join(contents), token_budget
+        )
+
+    def always_memory_context(self, token_budget: int = ALWAYS_MEMORY_TOKEN_BUDGET) -> str:
+        return self._compact_memory_context(
+            "老师的固定偏好与约束", self._memory_rows("always"), token_budget
+        )
+
+    def recent_memory_context(self, token_budget: int) -> str:
+        return self._compact_memory_context(
+            "老师近期需要保持的上下文", self._memory_rows("recent"), token_budget
+        )
+
     def memory_context(self, query: str, max_results: int, token_budget: int) -> str:
         if max_results <= 0 or token_budget <= 0:
             return ""
-        rows = self.search_memories(query, max_results, include_core=True)
+        rows = self.search_memories(query, max_results, activation="recall")
 
         lines: list[str] = []
         used_tokens = 0
@@ -208,7 +262,7 @@ class MemoryStore:
         query_units = lexical_units(query)
         ranked: list[tuple[float, sqlite3.Row]] = []
         for row in self._db.execute(
-            """SELECT c.id, c.kind, c.key, c.candidate_content,
+            """SELECT c.id, c.kind, c.key, c.activation, c.candidate_content,
                       m.content AS existing_content
                FROM memory_conflicts AS c
                JOIN memories AS m ON m.id=c.existing_memory_id
@@ -230,7 +284,7 @@ class MemoryStore:
         if token_budget <= 0:
             return ""
         rows = self._db.execute(
-            """SELECT c.id, c.kind, c.key, c.candidate_content,
+            """SELECT c.id, c.kind, c.key, c.activation, c.candidate_content,
                       m.content AS existing_content
                FROM memory_conflicts AS c
                JOIN memories AS m ON m.id=c.existing_memory_id
@@ -251,23 +305,31 @@ class MemoryStore:
         return "\n".join(lines)
 
     def search_memories(
-        self, query: str, max_results: int, *, include_core: bool = False
+        self,
+        query: str,
+        max_results: int,
+        *,
+        include_core: bool = False,
+        activation: str | None = None,
     ) -> list[dict[str, object]]:
         if max_results <= 0:
             return []
+        if activation is not None and activation not in MEMORY_ACTIVATIONS:
+            raise ValueError("invalid memory activation")
         rows = self._db.execute(
             """SELECT id, kind, key, content, authority, evidence_quote,
-                      importance, updated_at,
+                      activation, importance, updated_at,
                       (SELECT COUNT(*) FROM memory_evidence AS e
                        WHERE e.memory_id=memories.id) AS evidence_count
                FROM memories
                WHERE superseded_by IS NULL
                  AND (expires_at IS NULL OR expires_at > ?)
+                 AND (? IS NULL OR activation=?)
                  AND NOT EXISTS (
                      SELECT 1 FROM memory_tombstones AS t
                      WHERE t.kind=memories.kind AND t.key=memories.key
                  )""",
-            (time.time(),),
+            (time.time(), activation, activation),
         ).fetchall()
         query_units = lexical_units(query)
         core_kinds = {"profile", "relationship", "shared"}
@@ -328,6 +390,7 @@ class MemoryStore:
         )
         if (
             memory.kind not in MEMORY_KINDS
+            or memory.activation not in MEMORY_ACTIVATIONS
             or not all((memory.key, memory.content, memory.evidence))
             or source_event is None
             or len(memory.key) > 200
@@ -349,10 +412,12 @@ class MemoryStore:
         if old and old["content"] == memory.content:
             self._db.execute(
                 """UPDATE memories SET source_event_id=?, evidence_quote=?,
-                   importance=MAX(importance, ?), updated_at=? WHERE id=?""",
+                   activation=?, importance=MAX(importance, ?), updated_at=?
+                   WHERE id=?""",
                 (
                     source_event_id,
                     memory.evidence,
+                    memory.activation,
                     memory.importance,
                     now,
                     old["id"],
@@ -368,13 +433,14 @@ class MemoryStore:
             return
         cursor = self._db.execute(
             """INSERT INTO memories
-               (kind, key, content, authority, source_event_id, evidence_quote,
-                importance, created_at, updated_at)
-               VALUES (?, ?, ?, 'owner', ?, ?, ?, ?, ?)""",
+               (kind, key, content, activation, authority, source_event_id,
+                evidence_quote, importance, created_at, updated_at)
+               VALUES (?, ?, ?, ?, 'owner', ?, ?, ?, ?, ?)""",
             (
                 memory.kind,
                 memory.key,
                 memory.content,
+                memory.activation,
                 source_event_id,
                 memory.evidence,
                 memory.importance,
@@ -415,6 +481,8 @@ class MemoryStore:
                     conflict.content,
                     conflict.evidence,
                     conflict.importance,
+                    False,
+                    conflict.activation,
                 ),
                 events,
                 now,
@@ -428,12 +496,14 @@ class MemoryStore:
         )
         self._db.execute(
             """INSERT INTO memory_conflicts
-               (kind, key, existing_memory_id, candidate_content, source_event_id,
-                evidence_quote, importance, status, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)""",
+               (kind, key, activation, existing_memory_id, candidate_content,
+                source_event_id, evidence_quote, importance, status, created_at,
+                updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)""",
             (
                 conflict.kind,
                 conflict.key,
+                conflict.activation,
                 existing["id"],
                 conflict.content,
                 source_event.event_id,

@@ -81,9 +81,11 @@ def build_plan_retrieval(
     if not isinstance(units, list) or not isinstance(bindings, list):
         raise RuntimeError("context plan has invalid retrieval inputs")
 
-    core_confirmed = _selected_by_unit(
-        [{"id": "core", "recall_queries": [""]}],
-        lambda query, limit: store.search_memories(query, limit, include_core=True),
+    confirmed = _selected_by_unit(
+        units,
+        lambda query, limit: store.search_memories(
+            query, limit, activation="recall"
+        ),
         lambda row: row["id"],
         lambda row: f"[{row['kind']}:{row['key']}] {row['content']}",
         lambda row: {
@@ -95,26 +97,6 @@ def build_plan_retrieval(
         config.memory_results,
         config.memory_tokens,
     )
-    core_ids = {item["id"] for item in core_confirmed}
-    core_tokens = sum(
-        estimate_tokens(f"[{item['kind']}:{item['key']}] {item['content']}")
-        for item in core_confirmed
-    )
-    confirmed = _selected_by_unit(
-        units,
-        lambda query, limit: store.search_memories(query, limit),
-        lambda row: row["id"],
-        lambda row: f"[{row['kind']}:{row['key']}] {row['content']}",
-        lambda row: {
-            "id": row["id"],
-            "kind": row["kind"],
-            "key": row["key"],
-            "content": row["content"],
-        },
-        config.memory_results,
-        max(0, config.memory_tokens - core_tokens),
-    )
-    confirmed = [*core_confirmed, *(item for item in confirmed if item["id"] not in core_ids)]
     reflection_limit = (
         max(1, config.memory_results // 2) if config.memory_results else 0
     )
@@ -260,6 +242,10 @@ def build_plan_retrieval(
         "version": 2,
         "episodes": [*episodes.values(), *new_episodes],
         "confirmed_memories": confirmed,
+        "owner_preferences": store.always_memory_context(),
+        "recent_memories": store.recent_memory_context(
+            max(100, config.memory_tokens // 8)
+        ),
         "reflection_memories": reflection,
         "goals": goals,
         "reminders": reminders,
@@ -474,6 +460,8 @@ def assemble_main_context(
             recent_ids,
         ),
         "confirmed_memories": _memory_lines(retrieval.get("confirmed_memories")),
+        "owner_preferences": str(retrieval.get("owner_preferences") or ""),
+        "recent_memories": str(retrieval.get("recent_memories") or ""),
         "reflection_memories": reflection,
         "goals": _goal_lines(retrieval.get("goals")),
         "reminders": _reminder_lines(retrieval.get("reminders")),

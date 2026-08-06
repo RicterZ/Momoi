@@ -69,6 +69,9 @@ CREATE TABLE IF NOT EXISTS memories (
     kind TEXT NOT NULL,
     key TEXT NOT NULL,
     content TEXT NOT NULL,
+    activation TEXT NOT NULL DEFAULT 'recall' CHECK (
+        activation IN ('always', 'recent', 'recall')
+    ),
     authority TEXT NOT NULL CHECK (authority = 'owner'),
     source_event_id TEXT NOT NULL,
     evidence_quote TEXT NOT NULL,
@@ -100,6 +103,9 @@ CREATE TABLE IF NOT EXISTS memory_conflicts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     kind TEXT NOT NULL,
     key TEXT NOT NULL,
+    activation TEXT NOT NULL DEFAULT 'recall' CHECK (
+        activation IN ('always', 'recent', 'recall')
+    ),
     existing_memory_id INTEGER NOT NULL,
     candidate_content TEXT NOT NULL,
     source_event_id TEXT NOT NULL,

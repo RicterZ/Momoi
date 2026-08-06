@@ -1,4 +1,5 @@
 from .memory import (
+    MEMORY_ACTIVATIONS,
     MEMORY_KINDS,
     estimate_tokens,
     excerpt_tokens,
@@ -13,6 +14,7 @@ from .store import (
 )
 
 __all__ = [
+    "MEMORY_ACTIVATIONS",
     "MEMORY_KINDS",
     "MOOD_STATES",
     "REFLECTION_MEMORY_KINDS",

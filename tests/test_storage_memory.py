@@ -2335,6 +2335,67 @@ class StorageMemoryTest(unittest.TestCase):
                 self.assertEqual(result["error"], error)
             store.close()
 
+    def test_memory_activation_layers_are_compact_and_queryable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            tools = MemoryTools(store)
+            cases = [
+                (
+                    "always",
+                    "communication.punctuation.tilde",
+                    "老师不喜欢日常聊天使用波浪号",
+                    "不要用波浪号",
+                ),
+                (
+                    "recent",
+                    "current.recovery",
+                    "老师这几天在恢复身体状态",
+                    "这几天在恢复身体状态",
+                ),
+                (
+                    "recall",
+                    "hobby.cycling",
+                    "老师喜欢骑车",
+                    "喜欢骑车",
+                ),
+            ]
+            for index, (activation, key, content, evidence) in enumerate(cases):
+                event = IncomingMessage(
+                    f"activation-{index}", f"activation-{index}", evidence, 1, 1
+                )
+                store.add_event(event)
+                draft = TurnDraft()
+                result = tools.execute(
+                    ToolCall(
+                        f"remember-{index}",
+                        "memory_remember",
+                        {
+                            "kind": "preference",
+                            "key": key,
+                            "content": content,
+                            "evidence": evidence,
+                            "activation": activation,
+                        },
+                    ),
+                    [event],
+                    draft,
+                )
+                self.assertTrue(result["ok"])
+                store.commit_turn([event], event.text, AgentReply(["记住了"]), draft)
+
+            always = store.always_memory_context()
+            recent = store.recent_memory_context(500)
+            recalled = store.memory_context("骑车", 6, 1000)
+            self.assertIn("波浪号", always)
+            self.assertNotIn("骑车", always)
+            self.assertIn("恢复身体", recent)
+            self.assertNotIn("波浪号", recent)
+            self.assertIn("喜欢骑车", recalled)
+            self.assertNotIn("波浪号", recalled)
+            self.assertNotIn("恢复身体", recalled)
+            self.assertEqual(always.count("波浪号"), 1)
+            store.close()
+
     def test_legacy_summaries_become_closed_episodes_without_losing_raw(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "legacy.sqlite3"

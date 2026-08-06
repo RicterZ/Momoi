@@ -238,6 +238,34 @@ class Store(MemoryStore, DeliveryStore):
                 """ALTER TABLE tool_audit ADD COLUMN capability TEXT NOT NULL
                    DEFAULT 'external_effect'"""
             )
+        memory_columns = {
+            str(row["name"])
+            for row in self._db.execute("PRAGMA table_info(memories)").fetchall()
+        }
+        if "activation" not in memory_columns:
+            self._db.execute(
+                """ALTER TABLE memories ADD COLUMN activation TEXT NOT NULL
+                   DEFAULT 'recall'"""
+            )
+            self._db.execute(
+                "UPDATE memories SET activation='always' WHERE kind='preference'"
+            )
+        self._db.execute(
+            """CREATE INDEX IF NOT EXISTS memories_activation
+               ON memories(activation, updated_at DESC)
+               WHERE superseded_by IS NULL"""
+        )
+        conflict_columns = {
+            str(row["name"])
+            for row in self._db.execute(
+                "PRAGMA table_info(memory_conflicts)"
+            ).fetchall()
+        }
+        if "activation" not in conflict_columns:
+            self._db.execute(
+                """ALTER TABLE memory_conflicts ADD COLUMN activation TEXT NOT NULL
+                   DEFAULT 'recall'"""
+            )
         goal_columns = {
             str(row["name"])
             for row in self._db.execute("PRAGMA table_info(goals)").fetchall()

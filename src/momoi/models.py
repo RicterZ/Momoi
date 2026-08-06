@@ -39,6 +39,7 @@ class MemoryCandidate:
     evidence: str
     importance: float = 0.5
     replace_confirmed: bool = False
+    activation: str = "recall"
 
 
 @dataclass(frozen=True)
@@ -55,6 +56,7 @@ class MemoryConflictCandidate:
     content: str
     evidence: str
     importance: float = 0.5
+    activation: str = "recall"
 
 
 @dataclass(frozen=True)

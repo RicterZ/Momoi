@@ -230,10 +230,10 @@ class ContextAssemblerTest(unittest.TestCase):
             with store._db:
                 store._db.execute(
                     """INSERT INTO memories
-                       (kind, key, content, authority, source_event_id,
+                       (kind, key, content, activation, authority, source_event_id,
                         evidence_quote, importance, created_at, updated_at)
                        VALUES ('profile', 'owner.name', '主人的名字是 Sakana',
-                               'owner', 'owner-name', '我叫 Sakana', 1, 1, 1)"""
+                               'always', 'owner', 'owner-name', '我叫 Sakana', 1, 1, 1)"""
                 )
             degraded = {
                 "version": 1,
@@ -258,7 +258,7 @@ class ContextAssemblerTest(unittest.TestCase):
             )
 
             self.assertIn("蓝绿发布", assembled["recent_conversation"])
-            self.assertIn("Sakana", assembled["confirmed_memories"])
+            self.assertIn("Sakana", assembled["owner_preferences"])
             store.close()
 
     def test_raw_detail_remains_automatically_recallable_after_summary_omits_it(

@@ -9,7 +9,7 @@ from .models import (
     ToolCall,
     TurnDraft,
 )
-from .storage import MEMORY_KINDS, Store, lexical_units
+from .storage import MEMORY_ACTIVATIONS, MEMORY_KINDS, Store, lexical_units
 
 MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
     {
@@ -123,6 +123,14 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
                     "type": "string",
                     "description": "Faithful concise canonicalization of the user's statement.",
                 },
+                "activation": {
+                    "type": "string",
+                    "enum": sorted(MEMORY_ACTIVATIONS),
+                    "description": (
+                        "always only for preferences or constraints that affect every Turn; "
+                        "recent for a current time-bounded thread; recall for everything else."
+                    ),
+                },
                 "evidence": {
                     "type": "string",
                     "description": "Exact contiguous quote from one current user message.",
@@ -142,7 +150,7 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
                     ),
                 },
             },
-            "required": ["kind", "key", "content", "evidence"],
+            "required": ["kind", "key", "content", "evidence", "activation"],
             "additionalProperties": False,
         },
     },
@@ -179,7 +187,9 @@ MEMORY_TOOL_POLICY = """### Memory tools
   Use them when factual memory is insufficient to reconstruct an older episode.
 - `memory_remember` stages durable memory for this Turn. When the user explicitly
   says to remember something, states a stable preference/relationship/routine,
-  or corrects an existing fact, call it before the final reply.
+  or corrects an existing fact, call it before the final reply. Set `activation`
+  to `always` only for a rule that should affect every response, `recent` for a
+  current bounded thread, and `recall` by default.
 - A correction reuses the existing stable key. Set `replace_confirmed=true` only
   when the current user explicitly confirms the replacement. Otherwise a
   different value becomes a pending conflict and the older memory stays active;
@@ -309,8 +319,11 @@ class MemoryTools:
         key = str(arguments.get("key") or "").strip()
         content = str(arguments.get("content") or "").strip()
         evidence = str(arguments.get("evidence") or "").strip()
+        activation = str(arguments.get("activation") or "recall").strip()
         if kind not in MEMORY_KINDS:
             return {"ok": False, "error": "invalid_kind"}
+        if activation not in MEMORY_ACTIVATIONS:
+            return {"ok": False, "error": "invalid_activation"}
         if not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,199}", key):
             return {"ok": False, "error": "invalid_key"}
         if not content or len(content) > 2000:
@@ -332,7 +345,7 @@ class MemoryTools:
         existing = self.store.active_memory(kind, key)
         if existing and existing["content"] != content and not replace_confirmed:
             candidate = MemoryConflictCandidate(
-                kind, key, content, evidence, importance
+                kind, key, content, evidence, importance, activation
             )
             draft.memory_conflicts = [
                 conflict
@@ -357,7 +370,7 @@ class MemoryTools:
             }
 
         candidate = MemoryCandidate(
-            kind, key, content, evidence, importance, replace_confirmed
+            kind, key, content, evidence, importance, replace_confirmed, activation
         )
         draft.memories = [
             memory
@@ -378,7 +391,12 @@ class MemoryTools:
         return {
             "ok": True,
             "state": "staged",
-            "memory": {"kind": kind, "key": key, "content": content},
+            "memory": {
+                "kind": kind,
+                "key": key,
+                "content": content,
+                "activation": activation,
+            },
         }
 
     def _forget(
