@@ -38,7 +38,10 @@ from momoi.models import (
 from momoi.provider import (
     ProviderError,
 )
-from momoi.runtime.turns import CONTEXT_PLANNER_SYSTEM_PROMPT
+from momoi.runtime.turns import (
+    CONTEXT_PLANNER_SYSTEM_PROMPT,
+    STYLE_CARD_SYSTEM_PROMPT,
+)
 from momoi.storage import estimate_tokens
 from tests.support import context_plan_response, with_context_planner
 
@@ -86,6 +89,16 @@ class DaemonTest(unittest.TestCase):
             self.assertNotIn(
                 "# Workspace heartbeat guidance", daemon._heartbeat_system_prompt()
             )
+
+    def test_shared_style_card_is_injected(self) -> None:
+        daemon = object.__new__(MomoiDaemon)
+        daemon.config = SimpleNamespace(
+            system_prompt="{{STYLE_CARD}}",
+            soul_prompt="Test soul",
+        )
+        daemon.mcp = SimpleNamespace(tool_specs=[])
+
+        self.assertEqual(daemon._system()[0]["text"], STYLE_CARD_SYSTEM_PROMPT)
 
     def test_mood_transition_parser_rejects_invalid_state(self) -> None:
         mood, error = MomoiDaemon._parse_mood_transition(
