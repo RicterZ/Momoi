@@ -308,6 +308,7 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                     rendered = json.dumps(messages, ensure_ascii=False)
                     provider_self.main_rendered = rendered
                     self.assertIn("<context_resolution>", rendered)
+                    self.assertIn('"speech_act":"casual_share"', rendered)
                     self.assertNotIn("<context_plan>", rendered)
                     self.assertNotIn("browse social feed", rendered)
                     self.assertNotIn("episode_bindings", rendered)
