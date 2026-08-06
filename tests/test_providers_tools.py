@@ -332,48 +332,103 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
             ["mcp__search__first"],
         )
 
-    async def test_mcp_reports_failure_and_recovers_connection_for_next_call(
+    async def test_mcp_recreates_invalid_session_without_stopping_other_servers(
         self,
     ) -> None:
+        generations: dict[str, int] = {}
+        calls: dict[tuple[str, int], int] = {}
+        owners: dict[str, asyncio.Task[object] | None] = {}
+        test_case = self
+
         class Result:
-            def __init__(self, is_error: bool, text: str) -> None:
+            def __init__(self, is_error: bool = False) -> None:
                 self.isError = is_error
-                self.text = text
 
             def model_dump(self, **_: object) -> dict[str, object]:
-                return {"isError": self.isError, "content": [{"text": self.text}]}
+                return {"isError": self.isError, "content": [{"text": "ok"}]}
 
-        class FailingSession:
-            def __init__(self) -> None:
-                self.calls = 0
+        class Transport:
+            def __init__(self, server: str, generation: int) -> None:
+                self.server = server
+                self.generation = generation
+                self.owner: asyncio.Task[object] | None = None
+
+            async def __aenter__(self) -> tuple[object, object]:
+                self.owner = asyncio.current_task()
+                owners[f"{self.server}:{self.generation}"] = self.owner
+                return (self.server, self.generation), object()
+
+            async def __aexit__(self, *_: object) -> None:
+                test_case.assertIs(asyncio.current_task(), self.owner)
+                if self.server == "stale" and self.generation == 1:
+                    raise asyncio.CancelledError("stale session cleanup")
+
+        class Session:
+            def __init__(self, read: tuple[str, int], *_: object, **__: object) -> None:
+                self.server, self.generation = read
+                self.owner: asyncio.Task[object] | None = None
+
+            async def __aenter__(self) -> "Session":
+                self.owner = asyncio.current_task()
+                return self
+
+            async def __aexit__(self, *_: object) -> None:
+                test_case.assertIs(asyncio.current_task(), self.owner)
+
+            async def initialize(self) -> None:
+                return None
+
+            async def list_tools(self, _: str | None) -> SimpleNamespace:
+                return SimpleNamespace(
+                    tools=[
+                        SimpleNamespace(
+                            name="work",
+                            description="work",
+                            inputSchema={"type": "object"},
+                        )
+                    ],
+                    nextCursor=None,
+                )
 
             async def call_tool(self, *_: object) -> Result:
-                self.calls += 1
-                if self.calls == 1:
-                    return Result(True, "server rejected call")
-                raise ConnectionError("disconnected")
+                key = (self.server, self.generation)
+                calls[key] = calls.get(key, 0) + 1
+                if key == ("stale", 1):
+                    if calls[key] == 1:
+                        return Result(True)
+                    raise ConnectionError("missing session")
+                return Result()
 
-        class RecoveredSession:
-            async def call_tool(self, *_: object) -> Result:
-                return Result(False, "recovered")
+        def make_transport(parameters: object) -> Transport:
+            server = str(getattr(parameters, "command"))
+            generations[server] = generations.get(server, 0) + 1
+            return Transport(server, generations[server])
 
         manager = MCPManager(None)
-        manager.configs = {"server": {"command": "unused"}}
-        manager._tools["mcp__server__work"] = ("server", "work")
-        manager._sessions["server"] = FailingSession()  # type: ignore[assignment]
+        manager.configs = {
+            "stale": {"command": "stale"},
+            "healthy": {"command": "healthy"},
+        }
+        with (
+            patch("momoi.mcp_client.stdio_client", side_effect=make_transport),
+            patch("momoi.mcp_client.ClientSession", Session),
+        ):
+            async with manager:
+                rejected = await manager.call("mcp__stale__work", {})
+                stale = await manager.call("mcp__stale__work", {})
+                healthy = await manager.call("mcp__healthy__work", {})
+                recovered = await manager.call("mcp__stale__work", {})
 
-        async def reconnect(name: str, _: dict[str, object]) -> None:
-            manager._sessions[name] = RecoveredSession()  # type: ignore[assignment]
-
-        manager._connect = reconnect  # type: ignore[method-assign]
-        rejected = await manager.call("mcp__server__work", {})
         self.assertFalse(rejected["ok"])
         self.assertNotIn("ambiguous", rejected)
-        disconnected = await manager.call("mcp__server__work", {})
-        self.assertTrue(disconnected["ambiguous"])
-        self.assertTrue(disconnected["connection_recovered"])
-        recovered = await manager.call("mcp__server__work", {})
+        self.assertFalse(stale["ok"])
+        self.assertTrue(stale["ambiguous"])
+        self.assertTrue(stale["connection_recovered"])
+        self.assertTrue(healthy["ok"])
         self.assertTrue(recovered["ok"])
+        self.assertEqual(generations["stale"], 2)
+        self.assertEqual(generations["healthy"], 1)
+        self.assertIsNot(owners["stale:1"], owners["healthy:1"])
 
     async def test_openai_provider_retries_server_error_and_reports_client_error(
         self,

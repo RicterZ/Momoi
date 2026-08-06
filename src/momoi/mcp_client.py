@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -14,6 +15,7 @@ from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamable_http_client
 
 logger = logging.getLogger(__name__)
+MCPRequest = tuple[str, dict[str, Any], asyncio.Future[dict[str, Any]]]
 
 MCP_TOOL_POLICY = """### External MCP tools
 
@@ -60,11 +62,23 @@ class MCPManager:
         self._capabilities: dict[str, str] = {}
         self._sessions: dict[str, ClientSession] = {}
         self._stacks: dict[str, AsyncExitStack] = {}
+        self._queues: dict[str, asyncio.Queue[MCPRequest]] = {}
+        self._workers: dict[str, asyncio.Task[None]] = {}
+        self._closing = False
 
     async def __aenter__(self) -> "MCPManager":
+        self._closing = False
+        loop = asyncio.get_running_loop()
         for name, config in self.configs.items():
+            queue: asyncio.Queue[MCPRequest] = asyncio.Queue()
+            ready: asyncio.Future[None] = loop.create_future()
+            self._queues[name] = queue
+            self._workers[name] = asyncio.create_task(
+                self._serve(name, config, queue, ready),
+                name=f"momoi-mcp-{name}",
+            )
             try:
-                await self._connect(name, config)
+                await ready
             except Exception as error:
                 logger.error(
                     "MCP connection failed server=%s error=%s",
@@ -74,8 +88,152 @@ class MCPManager:
         return self
 
     async def __aexit__(self, *_: object) -> None:
-        for stack in reversed(list(self._stacks.values())):
+        self._closing = True
+        workers = list(self._workers.values())
+        for worker in workers:
+            worker.cancel()
+        results = await asyncio.gather(*workers, return_exceptions=True)
+        for name, result in zip(self._workers, results, strict=False):
+            if isinstance(result, BaseException) and not isinstance(
+                result, asyncio.CancelledError
+            ):
+                logger.warning(
+                    "MCP worker stopped with error server=%s error=%s",
+                    name,
+                    type(result).__name__,
+                )
+        self._workers.clear()
+        self._queues.clear()
+        if not workers:
+            for name in list(self._stacks):
+                await self._disconnect(name)
+
+    async def _serve(
+        self,
+        name: str,
+        config: dict[str, Any],
+        queue: asyncio.Queue[MCPRequest],
+        ready: asyncio.Future[None],
+    ) -> None:
+        try:
+            try:
+                await self._connect(name, config)
+            except (KeyboardInterrupt, SystemExit):
+                raise
+            except BaseException as error:
+                if not ready.done():
+                    ready.set_exception(RuntimeError(type(error).__name__))
+                return
+            if not ready.done():
+                ready.set_result(None)
+            connected = True
+            while True:
+                try:
+                    request = await queue.get()
+                except asyncio.CancelledError:
+                    if self._closing:
+                        raise
+                    logger.warning("MCP connection interrupted server=%s", name)
+                    await self._disconnect(name)
+                    connected = False
+                    continue
+                tool, arguments, future = request
+                started = monotonic()
+                if future.cancelled():
+                    continue
+                if not connected:
+                    connected = await self._try_connect(name, config)
+                    if not connected:
+                        if not future.done():
+                            future.set_result(
+                                {
+                                    "ok": False,
+                                    "error": "mcp_unavailable",
+                                    "ambiguous": True,
+                                    "connection_recovered": False,
+                                }
+                            )
+                        continue
+                try:
+                    result = await self._invoke(name, tool, arguments)
+                except (KeyboardInterrupt, SystemExit):
+                    raise
+                except BaseException as error:
+                    if self._closing:
+                        raise
+                    logger.warning(
+                        "MCP tool failed server=%s tool=%s error=%s",
+                        name,
+                        tool,
+                        type(error).__name__,
+                    )
+                    await self._disconnect(name)
+                    connected = await self._try_connect(name, config)
+                    result = {
+                        "ok": False,
+                        "error": type(error).__name__,
+                        "ambiguous": True,
+                        "connection_recovered": connected,
+                    }
+                if not future.done():
+                    future.set_result(result)
+                logger.debug(
+                    "MCP completed tool=%s ok=%s elapsed_ms=%d",
+                    self._wire_name(name, tool),
+                    result["ok"],
+                    int((monotonic() - started) * 1000),
+                )
+        finally:
+            await self._disconnect(name)
+
+    async def _try_connect(self, name: str, config: dict[str, Any]) -> bool:
+        try:
+            await self._connect(name, config)
+            return True
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except BaseException as error:
+            logger.warning(
+                "MCP reconnect failed server=%s error=%s",
+                name,
+                type(error).__name__,
+            )
+            return False
+
+    async def _disconnect(self, name: str) -> None:
+        self._sessions.pop(name, None)
+        stack = self._stacks.pop(name, None)
+        if stack is None:
+            return
+        await self._close_stack(name, stack, "disconnect")
+
+    @staticmethod
+    async def _close_stack(name: str, stack: AsyncExitStack, phase: str) -> None:
+        try:
             await stack.aclose()
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except BaseException as error:
+            logger.warning(
+                "MCP cleanup failed server=%s phase=%s error=%s",
+                name,
+                phase,
+                type(error).__name__,
+            )
+
+    async def _invoke(
+        self, server: str, tool: str, arguments: dict[str, Any]
+    ) -> dict[str, Any]:
+        result = await self._sessions[server].call_tool(tool, arguments)
+        payload = result.model_dump(mode="json", by_alias=True, exclude_none=True)
+        serialized = json.dumps(payload, ensure_ascii=False)
+        if len(serialized) > 30_000:
+            payload = {"truncated": True, "content": serialized[:30_000]}
+        return {
+            "ok": not bool(result.isError),
+            "truncated": bool(payload.get("truncated", False)),
+            "result": payload,
+        }
 
     async def _connect(self, name: str, config: dict[str, Any]) -> None:
         stack = AsyncExitStack()
@@ -176,17 +334,10 @@ class MCPManager:
             self._sessions[name] = session
             self._stacks[name] = stack
             if old_stack is not None:
-                try:
-                    await old_stack.aclose()
-                except Exception as error:
-                    logger.warning(
-                        "MCP old connection close failed server=%s error=%s",
-                        name,
-                        type(error).__name__,
-                    )
+                await self._close_stack(name, old_stack, "replace")
             logger.info("MCP connected server=%s tools=%d", name, len(tools))
         except BaseException:
-            await stack.aclose()
+            await self._close_stack(name, stack, "failed_connect")
             raise
 
     def _wire_name(self, server: str, tool: str) -> str:
@@ -214,39 +365,12 @@ class MCPManager:
         if target is None:
             return {"ok": False, "error": "tool_not_allowed"}
         server, tool = target
-        started = monotonic()
-        try:
-            result = await self._sessions[server].call_tool(tool, arguments)
-            payload = result.model_dump(mode="json", by_alias=True, exclude_none=True)
-            serialized = json.dumps(payload, ensure_ascii=False)
-            if len(serialized) > 30_000:
-                payload = {"truncated": True, "content": serialized[:30_000]}
-            response = {
-                "ok": not bool(result.isError),
-                "truncated": bool(payload.get("truncated", False)),
-                "result": payload,
-            }
-        except Exception as error:
-            recovered = False
-            try:
-                await self._connect(server, self.configs[server])
-                recovered = True
-            except Exception as reconnect_error:
-                logger.error(
-                    "MCP reconnect failed server=%s error=%s",
-                    server,
-                    type(reconnect_error).__name__,
-                )
-            response = {
-                "ok": False,
-                "error": type(error).__name__,
-                "ambiguous": True,
-                "connection_recovered": recovered,
-            }
-        logger.debug(
-            "MCP completed tool=%s ok=%s elapsed_ms=%d",
-            name,
-            response["ok"],
-            int((monotonic() - started) * 1000),
+        queue = self._queues.get(server)
+        worker = self._workers.get(server)
+        if queue is None or worker is None or worker.done():
+            return {"ok": False, "error": "mcp_unavailable"}
+        future: asyncio.Future[dict[str, Any]] = (
+            asyncio.get_running_loop().create_future()
         )
-        return response
+        await queue.put((tool, arguments, future))
+        return await asyncio.shield(future)
