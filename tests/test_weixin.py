@@ -177,6 +177,9 @@ class WeixinTest(unittest.TestCase):
                         item for item in requests if item[0].endswith("getupdates")
                     )
                     self.assertEqual(poll[1]["get_updates_buf"], "")
+                    self.assertTrue(
+                        str(poll[1]["base_info"]["bot_agent"]).startswith("Momoi/")
+                    )  # type: ignore[index]
                     self.assertEqual(poll[2]["Authorization"], "Bearer token")
                     self.assertEqual(poll[2]["iLink-App-Id"], "bot")
             finally:
