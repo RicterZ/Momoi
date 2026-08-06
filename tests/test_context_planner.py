@@ -13,7 +13,6 @@ from momoi.runtime.context_planner import (
     ContextPlanError,
     degraded_context_plan,
     is_light_social_plan,
-    is_social_plan,
     parse_context_plan,
 )
 from momoi.runtime.turns import CONTEXT_PLANNER_SYSTEM_PROMPT
@@ -158,71 +157,6 @@ class ContextPlannerTest(unittest.TestCase):
                 ],
                 [],
             )
-            self.assertEqual(
-                [spec["name"] for spec in daemon._owner_tool_specs(plan)],
-                ["send_message", "memory_remember", "memory_forget", "respond"],
-            )
-            daemon.store.close()
-
-    def test_social_scene_recall_keeps_context_without_task_or_core_injection(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            config = app_config(directory)
-            daemon = MomoiDaemon(config)
-            daemon.store.create_episode(
-                "老师到公司后摸鱼",
-                episode_id="at-work",
-                topics=["公司", "摸鱼"],
-            )
-            now = 1.0
-            daemon.store._db.execute(
-                """INSERT INTO memories
-                   (kind, key, content, authority, source_event_id, evidence_quote,
-                    importance, created_at, updated_at)
-                   VALUES ('shared', 'shared.unrelated', '无关核心记忆', 'owner',
-                           'old-event', '旧消息', 1, ?, ?)""",
-                (now, now),
-            )
-            daemon.store._db.commit()
-            plan = {
-                "version": 1,
-                "intent_units": [
-                    {
-                        "id": "u1",
-                        "event_ids": ["event-1"],
-                        "text": "困",
-                        "intent": "share current sleepiness",
-                        "speech_act": "casual_share",
-                        "references": ["当前场景 -> 老师仍在公司"],
-                        "recall_queries": ["老师 公司 摸鱼"],
-                    }
-                ],
-                "episode_bindings": [
-                    {
-                        "episode_id": "at-work",
-                        "is_new": False,
-                        "relation": "primary",
-                        "unit_ids": ["u1"],
-                        "topics": [],
-                        "entities": [],
-                        "open_loops": [],
-                        "salience": 0.5,
-                    }
-                ],
-                "episode_links": [],
-                "uncertainty": [],
-            }
-            retrieval = build_plan_retrieval(daemon.store, plan, config)
-            self.assertTrue(is_social_plan(plan))
-            self.assertFalse(is_light_social_plan(plan))
-            self.assertEqual(
-                [item["episode_id"] for item in retrieval["episodes"]],
-                ["at-work"],
-            )
-            self.assertEqual(retrieval["confirmed_memories"], [])
-            self.assertEqual(retrieval["reflection_memories"], [])
-            self.assertEqual(retrieval["goals"], [])
             self.assertEqual(
                 [spec["name"] for spec in daemon._owner_tool_specs(plan)],
                 ["send_message", "memory_remember", "memory_forget", "respond"],

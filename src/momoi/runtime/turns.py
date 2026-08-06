@@ -37,7 +37,6 @@ from .context_planner import (
     ContextPlanError,
     degraded_context_plan,
     is_light_social_plan,
-    is_social_plan,
     parse_context_plan,
 )
 from .parsing import (
@@ -144,7 +143,7 @@ class TurnRunner:
     _parse_reflection_finish = staticmethod(parse_reflection_finish)
 
     def _owner_tool_specs(self, plan: dict[str, object]) -> list[dict[str, Any]]:
-        if is_social_plan(plan):
+        if is_light_social_plan(plan):
             memory_specs = [
                 spec
                 for spec in MEMORY_TOOL_SPECS

@@ -1,4 +1,3 @@
-import json
 import tempfile
 import time
 import unittest
@@ -63,95 +62,6 @@ def plan(query: str, episode_id: str = "episode-mail") -> dict[str, object]:
 
 
 class ContextAssemblerTest(unittest.TestCase):
-    def test_social_scene_recall_uses_owner_evidence_not_old_assistant_style(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            store = Store(Path(directory) / "momoi.sqlite3")
-            store.create_episode("老师到公司后摸鱼", episode_id="at-work")
-            event = IncomingMessage(
-                "at-work-event", "at-work-event", "到公司了，先摸会儿鱼", 1, 1
-            )
-            store.add_event(event)
-            store.begin_turn("at-work-turn", "owner", [event.event_id])
-            store.commit_turn(
-                [event],
-                event.text,
-                AgentReply(["公司副本开启，省电模式运转"]),
-                turn_id="at-work-turn",
-            )
-            store.link_turn_to_episode("at-work", "at-work-turn")
-            rows = store._db.execute(
-                "SELECT id, role, delivery_state FROM messages WHERE turn_id=? "
-                "ORDER BY id",
-                ("at-work-turn",),
-            ).fetchall()
-            store._db.execute(
-                """UPDATE conversation_episodes
-                   SET working_summary=?, working_summary_claims_json=?,
-                       summarized_through_ordinal=?
-                   WHERE id=?""",
-                (
-                    '- [source OWNER] "到公司了，先摸会儿鱼"\n'
-                    '- [source MOMOI delivery=delivered] "公司副本开启，省电模式运转"',
-                    json.dumps(
-                        [
-                            {
-                                "message_id": int(rows[0]["id"]),
-                                "turn_id": "at-work-turn",
-                                "ordinal": 1,
-                                "role": "user",
-                                "delivery_state": "delivered",
-                                "quote": "到公司了，先摸会儿鱼",
-                            },
-                            {
-                                "message_id": int(rows[1]["id"]),
-                                "turn_id": "at-work-turn",
-                                "ordinal": 1,
-                                "role": "assistant",
-                                "delivery_state": "delivered",
-                                "quote": "公司副本开启，省电模式运转",
-                            },
-                        ],
-                        ensure_ascii=False,
-                    ),
-                    1,
-                    "at-work",
-                ),
-            )
-            store._db.commit()
-            scene_plan = {
-                "version": 1,
-                "intent_units": [
-                    {
-                        "id": "scene",
-                        "event_ids": ["current"],
-                        "text": "困",
-                        "intent": "share current sleepiness",
-                        "speech_act": "casual_share",
-                        "references": ["当前场景 -> 老师仍在公司"],
-                        "recall_queries": ["老师 公司 摸鱼"],
-                    }
-                ],
-                "episode_bindings": [
-                    {
-                        "episode_id": "at-work",
-                        "is_new": False,
-                        "relation": "primary",
-                        "unit_ids": ["scene"],
-                        "topics": ["公司", "摸鱼"],
-                        "entities": ["老师"],
-                        "open_loops": [],
-                        "salience": 0.5,
-                    }
-                ],
-                "episode_links": [],
-                "uncertainty": [],
-            }
-            retrieval = build_plan_retrieval(store, scene_plan, config(directory))
-            assembled = assemble_main_context(store, retrieval, 1000, 1000)
-            self.assertIn("到公司了，先摸会儿鱼", assembled["episodes"])
-            self.assertNotIn("公司副本开启", assembled["episodes"])
-            store.close()
-
     def test_expanded_query_reaches_episode_outside_recent_directory(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")

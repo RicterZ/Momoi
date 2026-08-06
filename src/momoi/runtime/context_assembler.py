@@ -5,7 +5,7 @@ from typing import Any
 
 from ..config import AppConfig
 from ..storage import Store, estimate_tokens, truncate_tokens
-from .context_planner import is_light_social_plan, is_social_plan
+from .context_planner import is_light_social_plan
 
 
 def _merge_matches(target: dict[str, object], source: dict[str, object]) -> None:
@@ -80,10 +80,8 @@ def build_plan_retrieval(
     bindings = plan.get("episode_bindings")
     if not isinstance(units, list) or not isinstance(bindings, list):
         raise RuntimeError("context plan has invalid retrieval inputs")
-    social_plan = is_social_plan(plan)
-    task_units = [] if social_plan else units
 
-    core_confirmed = [] if social_plan else _selected_by_unit(
+    core_confirmed = _selected_by_unit(
         [{"id": "core", "recall_queries": [""]}],
         lambda query, limit: store.search_memories(query, limit, include_core=True),
         lambda row: row["id"],
@@ -121,7 +119,7 @@ def build_plan_retrieval(
         max(1, config.memory_results // 2) if config.memory_results else 0
     )
     reflection = _selected_by_unit(
-        task_units,
+        units,
         lambda query, limit: store.search_reflection_memories(query, limit),
         lambda row: row["id"],
         lambda row: f"[{row['kind']}:{row['key']}] {row['content']}",
@@ -151,14 +149,13 @@ def build_plan_retrieval(
             "relation": "recalled",
             "is_new": False,
             "matches": row.get("matches", []),
-            "scene_only": social_plan,
         },
         config.summary_results,
         config.summary_tokens,
     )
     agenda_budget = config.memory_tokens // 2
     goals = _selected_by_unit(
-        task_units,
+        units,
         store.search_goals,
         lambda row: row["id"],
         lambda row: " ".join(
@@ -184,7 +181,7 @@ def build_plan_retrieval(
         agenda_budget,
     )
     reminders = _selected_by_unit(
-        task_units,
+        units,
         store.search_reminders,
         lambda row: row["id"],
         lambda row: str(row["text"]),
@@ -195,7 +192,7 @@ def build_plan_retrieval(
         agenda_budget,
     )
     conflicts = _selected_by_unit(
-        task_units,
+        units,
         store.search_memory_conflicts,
         lambda row: row["id"],
         lambda row: (
@@ -230,7 +227,6 @@ def build_plan_retrieval(
             "relation": binding["relation"],
             "unit_ids": list(binding["unit_ids"]),
             "is_new": binding["is_new"],
-            "scene_only": social_plan,
         }
         if binding["is_new"]:
             new_episodes.append(item)
@@ -258,9 +254,6 @@ def build_plan_retrieval(
                 if unit_id not in existing_units:
                     existing_units.append(unit_id)
             existing["matches"] = recalled.get("matches", [])
-            existing["scene_only"] = existing.get("scene_only") or recalled.get(
-                "scene_only", False
-            )
         elif len(episodes) < episode_limit:
             episodes[episode_id] = recalled
     return {
@@ -300,20 +293,6 @@ def _episode_search_text(episode: dict[str, object]) -> str:
             "open_loops",
             "matches",
         )
-    )
-
-
-def _scene_summary(episode: dict[str, object]) -> str:
-    claims = episode.get("working_summary_claims")
-    if not isinstance(claims, list):
-        return ""
-    return "\n".join(
-        str(claim["quote"])
-        for claim in claims
-        if isinstance(claim, dict)
-        and claim.get("role") == "user"
-        and isinstance(claim.get("quote"), str)
-        and claim["quote"].strip()
     )
 
 
@@ -398,11 +377,7 @@ def _episode_context(
             f"relation={selected['relation']} status={episode['status']}]",
             f"title: {episode['title']}",
         ]
-        summary = (
-            _scene_summary(episode)
-            if selected.get("scene_only") is True
-            else str(episode["summary"] or episode["working_summary"])
-        )
+        summary = str(episode["summary"] or episode["working_summary"])
         if summary and summary_token_budget > 0:
             lines.append(f"summary: {truncate_tokens(summary, per_summary)}")
         if episode["topics"]:
@@ -412,13 +387,10 @@ def _episode_context(
                 f"open_loops: {json.dumps(episode['open_loops'], ensure_ascii=False)}"
             )
         remaining_raw = per_raw_tail if raw_token_budget > 0 else 0
-        scene_only = selected.get("scene_only") is True
         matched_ids: set[int] = set()
         matched_lines: list[str] = []
         for message in selected.get("matches", []):
             if not isinstance(message, dict) or remaining_raw <= 0:
-                continue
-            if scene_only and message.get("role") != "user":
                 continue
             if isinstance(message.get("id"), int) and int(message["id"]) in (
                 exclude_message_ids or set()
@@ -455,8 +427,6 @@ def _episode_context(
         messages = [
             message for message in messages if int(message["id"]) not in matched_ids
         ]
-        if scene_only:
-            messages = [message for message in messages if message["role"] == "user"]
         if messages:
             lines.append("raw_tail:")
             lines.extend(
