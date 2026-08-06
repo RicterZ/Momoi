@@ -164,11 +164,12 @@ SEND_MESSAGE_TOOL_SPEC: dict[str, Any] = {
     "name": "send_message",
     "description": (
         "Emit one or more owner-visible conversational beats now without ending the "
-        "Turn. Prefer it when a conversational reply has multiple beats or starts with "
-        "an immediate verbal or nonverbal reaction; also use it for a worthwhile live "
-        "task update. An immediate reaction may precede analysis, but factual claims "
-        "must wait for evidence. After its result is observed, finish the Turn with an "
-        "empty respond when the visible stream is complete; never repeat its content."
+        "Turn. Use it for an immediate genuine conversational reaction or a meaningful live "
+        "task update, not routine status. A pre-work update is optional and should be "
+        "one brief sentence about the goal or expected wait, never a narration of "
+        "internal workflow. factual claims must wait for evidence. After its result "
+        "is observed, finish the Turn with an empty respond when the visible stream "
+        "is complete; never repeat its content."
     ),
     "input_schema": {
         "type": "object",
