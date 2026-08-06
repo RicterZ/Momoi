@@ -25,6 +25,7 @@ Return exactly one JSON object and no Markdown or commentary. Its exact shape is
       "event_ids": ["event-id"],
       "text": "the relevant owner statement",
       "intent": "short semantic intent",
+      "speech_act": "casual_share",
       "references": ["what words such as it, before, that issue, or a name refer to"],
       "recall_queries": ["specific query for prior conversation or durable memory"]
     }
@@ -55,9 +56,15 @@ Return exactly one JSON object and no Markdown or commentary. Its exact shape is
 Rules:
 
 - Cover every supplied event id in at least one intent unit. Use 1-12 units with
-  unique short ids. Each unit needs 1-6 targeted recall queries even for casual
-  conversation; queries should retrieve useful continuity, not invent a prior
-  thread or repeat the entire owner batch mechanically.
+  unique short ids. Set `speech_act` to exactly one of `request`, `question`,
+  `correction`, `emotional_share`, `casual_share`, `banter`, `acknowledgment`,
+  or `closing`. Use `casual_share` for a simple status or mood update, even when
+  it mentions something that could become a task later.
+- Each unit may have 0-6 targeted recall queries. Use an empty list for
+  `casual_share`, `banter`, `acknowledgment`, or `closing` when continuity is not
+  needed; never invent a prior thread merely to fill the list. Use recall for a
+  request, question, correction, or a social share that clearly refers to a
+  specific earlier matter.
 - `intent` and `salience` support retrieval and archiving only. They are not a reply
   agenda or a measure of how much text Momoi should produce.
 - `references` records useful explicit or implicit antecedent resolutions, ideally
@@ -67,7 +74,8 @@ Rules:
   for a concrete unfinished task, explicit promise, unanswered matter that must
   remain pending beyond this Turn, or real waiting condition. Ordinary social
   remarks, optional follow-up questions, and matters answerable in this Turn are
-  not open loops.
+  not open loops. In particular, “饭后再说/之后再弄” is not an open loop unless
+  the owner explicitly asks Momoi to remind them or continue it later.
 - In recent conversation, assistant `delivery_state=uncertain` is not proof that
   the owner received the message; queued and failed assistant messages are omitted.
 - Bind every unit to at least one episode and include at least one `primary`

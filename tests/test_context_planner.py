@@ -39,14 +39,16 @@ def response_plan() -> dict[str, object]:
                 "event_ids": ["event-1"],
                 "text": "刷微博",
                 "intent": "browse social feed",
+                "speech_act": "casual_share",
                 "references": [],
-                "recall_queries": ["owner recent Weibo interests"],
+                "recall_queries": [],
             },
             {
                 "id": "mail",
                 "event_ids": ["event-1"],
                 "text": "看邮件",
                 "intent": "check mail",
+                "speech_act": "request",
                 "references": ["之前等的邮件"],
                 "recall_queries": ["pending expected email thread"],
             },
@@ -100,6 +102,13 @@ class ContextPlannerTest(unittest.TestCase):
         plan["intent_units"][0]["event_ids"] = ["unknown"]
         with self.assertRaisesRegex(ContextPlanError, "unknown_event_id"):
             parse_context_plan(json.dumps(plan), ["event-1"], [], "turn-1", 1)
+
+    def test_casual_units_can_skip_recall_and_do_not_create_open_loops(self) -> None:
+        plan = response_plan()
+        plan["episode_bindings"][0]["open_loops"] = ["饭后再弄"]
+        parsed = parse_context_plan(json.dumps(plan), ["event-1"], [], "turn-1", 1)
+        self.assertEqual(parsed["intent_units"][0]["recall_queries"], [])
+        self.assertEqual(parsed["episode_bindings"][0]["open_loops"], [])
 
     def test_degraded_plan_splits_message_segments_and_marks_uncertainty(self) -> None:
         plan = degraded_context_plan(

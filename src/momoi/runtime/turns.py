@@ -95,16 +95,21 @@ def _sections(*items: tuple[str, str]) -> str:
 
 
 def _conversation_guidance(plan: dict[str, object]) -> str:
-    references = [
-        {"owner_text": unit["text"], "references": unit["references"]}
+    intent_units = [
+        {
+            "owner_text": unit["text"],
+            "speech_act": unit.get("speech_act", "unknown"),
+            **({"references": unit["references"]} if unit.get("references") else {}),
+        }
         for unit in plan.get("intent_units", [])
-        if isinstance(unit, dict) and unit.get("references")
+        if isinstance(unit, dict)
+        and (unit.get("speech_act") or unit.get("references"))
     ]
     uncertainty = plan.get("uncertainty", [])
-    if not references and not uncertainty:
+    if not intent_units and not uncertainty:
         return ""
     return json.dumps(
-        {"reference_context": references, "uncertainty": uncertainty},
+        {"owner_intent_units": intent_units, "uncertainty": uncertainty},
         ensure_ascii=False,
         separators=(",", ":"),
     )

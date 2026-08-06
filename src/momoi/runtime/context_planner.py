@@ -8,6 +8,26 @@ class ContextPlanError(ValueError):
     pass
 
 
+SPEECH_ACTS = {
+    "request",
+    "question",
+    "correction",
+    "emotional_share",
+    "casual_share",
+    "banter",
+    "acknowledgment",
+    "closing",
+    "unknown",
+}
+NON_OPEN_LOOP_SPEECH_ACTS = {
+    "emotional_share",
+    "casual_share",
+    "banter",
+    "acknowledgment",
+    "closing",
+}
+
+
 def _strings(
     value: object,
     name: str,
@@ -66,14 +86,18 @@ def parse_context_plan(
     unit_ids: set[str] = set()
     units: list[dict[str, object]] = []
     for raw in raw_units:
-        if not isinstance(raw, dict) or set(raw) != {
+        legacy_keys = {
             "id",
             "event_ids",
             "text",
             "intent",
             "references",
             "recall_queries",
-        }:
+        }
+        if not isinstance(raw, dict) or set(raw) not in (
+            legacy_keys,
+            {*legacy_keys, "speech_act"},
+        ):
             raise ContextPlanError("invalid_intent_unit")
         unit_id = _text(raw["id"], "unit_id", 40)
         if not re.fullmatch(r"[A-Za-z0-9_-]+", unit_id) or unit_id in unit_ids:
@@ -89,12 +113,16 @@ def parse_context_plan(
             raise ContextPlanError("unknown_event_id")
         unit_ids.add(unit_id)
         covered_events.update(source_ids)
+        speech_act = raw.get("speech_act", "unknown")
+        if not isinstance(speech_act, str) or speech_act not in SPEECH_ACTS:
+            raise ContextPlanError("invalid_speech_act")
         units.append(
             {
                 "id": unit_id,
                 "event_ids": source_ids,
                 "text": _text(raw["text"], "unit_text", 2000),
                 "intent": _text(raw["intent"], "unit_intent", 200),
+                "speech_act": speech_act,
                 "references": _strings(
                     raw["references"],
                     "unit_references",
@@ -104,7 +132,7 @@ def parse_context_plan(
                 "recall_queries": _strings(
                     raw["recall_queries"],
                     "unit_recall_queries",
-                    minimum=1,
+                    minimum=0,
                     maximum=6,
                     max_length=500,
                 ),
@@ -170,6 +198,19 @@ def parse_context_plan(
             else episode_ref
         )
         bound_units.update(binding_units)
+        open_loops = _strings(
+            raw["open_loops"],
+            "episode_open_loops",
+            maximum=8,
+            max_length=500,
+        )
+        bound_speech_acts = {
+            str(unit["speech_act"])
+            for unit in units
+            if str(unit["id"]) in binding_units
+        }
+        if bound_speech_acts and bound_speech_acts <= NON_OPEN_LOOP_SPEECH_ACTS:
+            open_loops = []
         bindings.append(
             {
                 "episode_id": actual_id,
@@ -183,12 +224,7 @@ def parse_context_plan(
                 "entities": _strings(
                     raw["entities"], "episode_entities", maximum=20, max_length=200
                 ),
-                "open_loops": _strings(
-                    raw["open_loops"],
-                    "episode_open_loops",
-                    maximum=8,
-                    max_length=500,
-                ),
+                "open_loops": open_loops,
                 "salience": float(salience),
                 "_ref": episode_ref,
             }
@@ -284,6 +320,7 @@ def degraded_context_plan(
                 "event_ids": source_ids,
                 "text": part[:2000],
                 "intent": "degraded_message_segment",
+                "speech_act": "unknown",
                 "references": [],
                 "recall_queries": [part[:500]],
             }
