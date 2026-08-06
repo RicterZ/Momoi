@@ -8,9 +8,11 @@ from momoi.channel.napcat import NapCatConfig
 from momoi.config import AppConfig, LLMConfig
 from momoi.models import AgentReply, IncomingMessage, ProviderResponse, ToolCall
 from momoi.runtime import MomoiDaemon
+from momoi.runtime.context_assembler import build_plan_retrieval
 from momoi.runtime.context_planner import (
     ContextPlanError,
     degraded_context_plan,
+    is_light_social_plan,
     parse_context_plan,
 )
 from momoi.runtime.turns import CONTEXT_PLANNER_SYSTEM_PROMPT
@@ -109,6 +111,57 @@ class ContextPlannerTest(unittest.TestCase):
         parsed = parse_context_plan(json.dumps(plan), ["event-1"], [], "turn-1", 1)
         self.assertEqual(parsed["intent_units"][0]["recall_queries"], [])
         self.assertEqual(parsed["episode_bindings"][0]["open_loops"], [])
+
+    def test_light_social_plan_does_not_inject_bound_episode_or_task_tools(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(app_config(directory))
+            daemon.store.create_episode(
+                "HHKB键盘电池更换",
+                episode_id="hhkb",
+                open_loops=["饭后再处理"],
+            )
+            plan = {
+                "version": 1,
+                "intent_units": [
+                    {
+                        "id": "u1",
+                        "event_ids": ["event-1"],
+                        "text": "先玩手机",
+                        "intent": "share current activity",
+                        "speech_act": "casual_share",
+                        "references": [],
+                        "recall_queries": [],
+                    }
+                ],
+                "episode_bindings": [
+                    {
+                        "episode_id": "hhkb",
+                        "is_new": False,
+                        "relation": "primary",
+                        "unit_ids": ["u1"],
+                        "topics": [],
+                        "entities": [],
+                        "open_loops": [],
+                        "salience": 0.5,
+                    }
+                ],
+                "episode_links": [],
+                "uncertainty": [],
+            }
+            self.assertTrue(is_light_social_plan(plan))
+            self.assertEqual(
+                build_plan_retrieval(daemon.store, plan, app_config(directory))[
+                    "episodes"
+                ],
+                [],
+            )
+            self.assertEqual(
+                [spec["name"] for spec in daemon._owner_tool_specs(plan)],
+                ["send_message", "memory_remember", "memory_forget", "respond"],
+            )
+            daemon.store.close()
 
     def test_degraded_plan_splits_message_segments_and_marks_uncertainty(self) -> None:
         plan = degraded_context_plan(

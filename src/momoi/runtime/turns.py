@@ -36,6 +36,7 @@ from .context_assembler import (
 from .context_planner import (
     ContextPlanError,
     degraded_context_plan,
+    is_light_social_plan,
     parse_context_plan,
 )
 from .parsing import (
@@ -140,6 +141,23 @@ class TurnRunner:
     _parse_mood_transition = staticmethod(parse_mood_transition)
     _parse_reply_expectation = staticmethod(parse_reply_expectation)
     _parse_reflection_finish = staticmethod(parse_reflection_finish)
+
+    def _owner_tool_specs(self, plan: dict[str, object]) -> list[dict[str, Any]]:
+        if is_light_social_plan(plan):
+            memory_specs = [
+                spec
+                for spec in MEMORY_TOOL_SPECS
+                if spec["name"] in {"memory_remember", "memory_forget"}
+            ]
+            return [self._send_message_tool_spec(), *memory_specs, RESPOND_TOOL_SPEC]
+        return [
+            self._send_message_tool_spec(),
+            *MEMORY_TOOL_SPECS,
+            *AGENDA_TOOL_SPECS,
+            *BUILTIN_TOOL_SPECS,
+            *self.mcp.tool_specs,
+            RESPOND_TOOL_SPEC,
+        ]
 
     def _drain_owner_updates(
         self, current_events: list[IncomingMessage], channel_name: str
@@ -697,14 +715,7 @@ class TurnRunner:
             current_content.extend(channel.content_blocks(event.segments))
         messages: list[dict[str, Any]] = [{"role": "user", "content": current_content}]
         draft = TurnDraft()
-        tools = [
-            self._send_message_tool_spec(),
-            *MEMORY_TOOL_SPECS,
-            *AGENDA_TOOL_SPECS,
-            *BUILTIN_TOOL_SPECS,
-            *self.mcp.tool_specs,
-            RESPOND_TOOL_SPEC,
-        ]
+        tools = self._owner_tool_specs(context_plan)
         reply = await self._run_tool_loop(
             system,
             messages,
@@ -785,6 +796,8 @@ class TurnRunner:
                 context_plan, recalled = await self._prepare_owner_context(
                     current_events, turn_id
                 )
+                if authority == "owner":
+                    tools = self._owner_tool_specs(context_plan)
                 messages.append(
                     self._owner_update_message(
                         updates, delivery_channel, context_plan, recalled
@@ -882,6 +895,8 @@ class TurnRunner:
                 context_plan, recalled = await self._prepare_owner_context(
                     current_events, turn_id
                 )
+                if authority == "owner":
+                    tools = self._owner_tool_specs(context_plan)
                 messages.append(
                     self._owner_update_message(
                         updates, delivery_channel, context_plan, recalled
@@ -1244,6 +1259,8 @@ class TurnRunner:
                 context_plan, recalled = await self._prepare_owner_context(
                     current_events, turn_id
                 )
+                if authority == "owner":
+                    tools = self._owner_tool_specs(context_plan)
                 messages.append(
                     self._owner_update_message(
                         updates, delivery_channel, context_plan, recalled

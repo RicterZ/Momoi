@@ -5,6 +5,7 @@ from typing import Any
 
 from ..config import AppConfig
 from ..storage import Store, estimate_tokens, truncate_tokens
+from .context_planner import is_light_social_plan
 
 
 def _merge_matches(target: dict[str, object], source: dict[str, object]) -> None:
@@ -214,6 +215,12 @@ def build_plan_retrieval(
     episodes: dict[str, dict[str, object]] = {}
     new_episodes: list[dict[str, object]] = []
     episode_limit = max(config.summary_results, len(units))
+    light_social = is_light_social_plan(plan)
+    unit_by_id = {
+        str(unit["id"]): unit
+        for unit in units
+        if isinstance(unit, dict) and unit.get("id")
+    }
     for binding in bindings:
         item = {
             "episode_id": binding["episode_id"],
@@ -223,6 +230,19 @@ def build_plan_retrieval(
         }
         if binding["is_new"]:
             new_episodes.append(item)
+        elif light_social and all(
+            str(unit_id) in unit_by_id
+            and unit_by_id[str(unit_id)].get("speech_act")
+            in {
+                "emotional_share",
+                "casual_share",
+                "banter",
+                "acknowledgment",
+                "closing",
+            }
+            for unit_id in binding["unit_ids"]
+        ):
+            continue
         elif len(episodes) < episode_limit:
             episodes[str(binding["episode_id"])] = item
     for recalled in recalled_episodes:
