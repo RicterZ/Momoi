@@ -42,11 +42,17 @@ from momoi.runtime.turns import (
     CONTEXT_PLANNER_SYSTEM_PROMPT,
     STYLE_CARD_SYSTEM_PROMPT,
 )
+from momoi.runtime.daemon import _message_gap_bounds
 from momoi.storage import estimate_tokens
 from tests.support import context_plan_response, with_context_planner
 
 
 class DaemonTest(unittest.TestCase):
+    def test_message_gap_scales_with_length_within_bounds(self) -> None:
+        self.assertEqual(_message_gap_bounds("短句"), (4.0, 5.0))
+        self.assertEqual(_message_gap_bounds("中等长度" * 8), (5.0, 6.0))
+        self.assertEqual(_message_gap_bounds("长消息" * 30), (6.0, 7.0))
+
     def test_specialized_system_omits_unavailable_tool_policies(self) -> None:
         daemon = object.__new__(MomoiDaemon)
         daemon.config = SimpleNamespace(
@@ -708,7 +714,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "notify",
                             "owner_notify",
                             {
-                                "text": "检查完成，目前正常",
+                                "messages": ["检查完成，目前正常"],
                                 "reason": "任务阶段结果",
                                 "key": "service.check",
                             },

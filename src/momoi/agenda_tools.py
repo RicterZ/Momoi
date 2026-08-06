@@ -26,8 +26,10 @@ AGENDA_TOOL_POLICY = """### Agenda tools
 - Submit independent reminder calls together in one response.
 - `owner_notify` is available only during autonomous work. Use it only for a
   useful result, a needed decision, or a meaningful failure; otherwise finish
-  the autonomous Turn silently. Give it a stable category `key`; use urgent
-  priority only for a decision or failure that should bypass normal quiet rules.
+  the autonomous Turn silently. Give it one to three separate short `messages`
+  beats when the notification has distinct parts; use a single item when it is
+  one thought. Give it a stable category `key`; use urgent priority only for a
+  decision or failure that should bypass normal quiet rules.
 """
 
 
@@ -163,11 +165,20 @@ AGENDA_TOOL_SPECS: list[dict[str, Any]] = [
 
 OWNER_NOTIFY_SPEC: dict[str, Any] = {
     "name": "owner_notify",
-    "description": "Send one useful notification to the owner from an autonomous Turn.",
+    "description": (
+        "Send one useful notification to the owner from an autonomous Turn. "
+        "Use messages as one to three separate short conversational beats; do not "
+        "pack independent sentences into one item."
+    ),
     "input_schema": {
         "type": "object",
         "properties": {
-            "text": {"type": "string"},
+            "messages": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 3,
+                "items": {"type": "string", "minLength": 1, "maxLength": 500},
+            },
             "reason": {"type": "string"},
             "key": {
                 "type": "string",
@@ -179,7 +190,7 @@ OWNER_NOTIFY_SPEC: dict[str, Any] = {
                 "default": "normal",
             },
         },
-        "required": ["text", "reason", "key"],
+        "required": ["messages", "reason", "key"],
         "additionalProperties": False,
     },
 }
@@ -392,17 +403,28 @@ class AgendaTools:
         return {"ok": True, "state": "staged", "goal": goal}
 
     def _notify(self, arguments: dict[str, Any], draft: TurnDraft) -> dict[str, Any]:
-        text = str(arguments.get("text") or "").strip()
+        raw_messages = arguments.get("messages")
         reason = str(arguments.get("reason") or "").strip()
         key = str(arguments.get("key") or "").strip()
         priority = str(arguments.get("priority", "normal"))
-        if not text or not reason or not re.fullmatch(
-            r"[a-z0-9][a-z0-9_.-]{0,99}", key
+        if (
+            not isinstance(raw_messages, list)
+            or not 1 <= len(raw_messages) <= 3
+            or any(
+                not isinstance(item, str)
+                or not item.strip()
+                or len(item.strip()) > 500
+                for item in raw_messages
+            )
+            or not reason
+            or not re.fullmatch(
+                r"[a-z0-9][a-z0-9_.-]{0,99}", key
+            )
         ):
-            raise ValueError("text, reason, and a stable lowercase key are required")
+            raise ValueError("messages, reason, and a stable lowercase key are required")
         if priority not in {"normal", "urgent"}:
             raise ValueError("priority must be normal or urgent")
-        messages = [text]
+        messages = [item.strip() for item in raw_messages]
         for message in messages:
             if message.startswith(EMOTION_PREFIX):
                 slug = emotion_slug(message)

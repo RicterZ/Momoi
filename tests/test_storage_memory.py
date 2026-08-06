@@ -820,7 +820,7 @@ class StorageMemoryTest(unittest.TestCase):
                         "notify",
                         "owner_notify",
                         {
-                            "text": "检查完成\n\n目前正常",
+                            "messages": ["检查完成", "目前正常"],
                             "reason": "任务阶段结果",
                             "key": "service.check",
                         },
@@ -838,12 +838,14 @@ class StorageMemoryTest(unittest.TestCase):
             notification = store.claim_due_notification(NotificationConfig())
             self.assertIsNotNone(notification)
             self.assertTrue(store.queue_notification(str(notification["id"])))
-            self.assertEqual(store.due_outbox()[0].text, "检查完成\n\n目前正常")
+            self.assertEqual(store.due_outbox()[0].text, "检查完成")
             notification_message = store._db.execute(
                 """SELECT turn_id FROM messages
-                   WHERE content='检查完成\n\n目前正常' ORDER BY id DESC LIMIT 1"""
+                   WHERE content='检查完成' ORDER BY id DESC LIMIT 1"""
             ).fetchone()
             self.assertEqual(notification_message["turn_id"], notification["turn_id"])
+            store.mark_sent(store.due_outbox()[0].id)
+            self.assertEqual(store.due_outbox()[0].text, "目前正常")
             episode = store.search_episodes("检查任务 本次检查正常", 3)[0]
             archived = store.conversation_episode(str(episode["id"]))["messages"]
             self.assertTrue(

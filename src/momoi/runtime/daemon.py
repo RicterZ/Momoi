@@ -28,6 +28,24 @@ logger = logging.getLogger(__name__)
 HEARTBEAT_QUEUE_ITEM = "__momoi_heartbeat__"
 REFLECTION_QUEUE_PREFIX = "__momoi_reflection__:"
 AGENDA_POLL_SECONDS = 5
+MESSAGE_GAP_MIN_SECONDS = 4.0
+MESSAGE_GAP_MAX_SECONDS = 7.0
+MESSAGE_GAP_MIN_CHARS = 4
+MESSAGE_GAP_SATURATION_CHARS = 60
+
+
+def _message_gap_bounds(text: str) -> tuple[float, float]:
+    ratio = min(
+        1.0,
+        max(
+            0.0,
+            (len(text.strip()) - MESSAGE_GAP_MIN_CHARS)
+            / (MESSAGE_GAP_SATURATION_CHARS - MESSAGE_GAP_MIN_CHARS),
+        ),
+    )
+    lower = MESSAGE_GAP_MIN_SECONDS + 2 * ratio
+    upper = lower + 1
+    return lower, min(MESSAGE_GAP_MAX_SECONDS, upper)
 
 
 class MomoiDaemon(TurnRunner):
@@ -492,7 +510,7 @@ class MomoiDaemon(TurnRunner):
                     continue
                 delivery = (row.channel, row.turn_id)
                 if delivery == previous_delivery:
-                    delay = random.uniform(2, 4)
+                    delay = random.uniform(*_message_gap_bounds(row.text))
                     logger.debug(
                         "Waiting %.2fs before next message channel=%s",
                         delay,
