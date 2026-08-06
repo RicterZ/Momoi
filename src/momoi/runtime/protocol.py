@@ -215,8 +215,9 @@ def heartbeat_respond_tool_spec() -> dict[str, Any]:
 SEND_MESSAGE_TOOL_SPEC: dict[str, Any] = {
     "name": "send_message",
     "description": (
-        "Emit one or more owner-visible conversational beats now without ending the "
-        "Turn. Use it for an immediate genuine conversational reaction or a meaningful live "
+        "Emit one or more separate owner-visible conversational beats now without ending the "
+        "Turn. Each array item is one complete beat and is delivered with a natural pause; "
+        "do not combine independent sentences into one item. Use it for an immediate genuine conversational reaction or a meaningful live "
         "task update, not routine status. A pre-work update is optional and should be "
         "one brief sentence about the goal or expected wait, never a narration of "
         "internal workflow. factual claims must wait for evidence. After its result "
