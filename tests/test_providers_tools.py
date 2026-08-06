@@ -240,7 +240,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                         {
                             "role": "user",
                             "content": [
-                                {"type": "text", "text": "看图，超市后门"},
+                                {"type": "text", "text": "看图，测试入口"},
                                 {
                                     "type": "image",
                                     "source": {
@@ -262,7 +262,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(attempts, 3)
         self.assertEqual(
             requests[0]["messages"][0]["content"][0]["text"],  # type: ignore[index]
-            "看图，超市后-门",
+            "看图，测试入口",
         )
         self.assertEqual(
             requests[0]["messages"][0]["content"][1],  # type: ignore[index]
@@ -417,7 +417,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
         try:
             async with provider:
                 response = await provider.complete(
-                    "system", [{"role": "user", "content": "超市后门"}]
+                    "system", [{"role": "user", "content": "测试入口"}]
                 )
                 self.assertEqual(response.content[0]["text"], "ok")
                 with self.assertRaisesRegex(ProviderError, "bad request"):
@@ -431,10 +431,6 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
         finally:
             await server.close()
         self.assertEqual(attempts, 4)
-        self.assertEqual(
-            requests[0]["messages"][1]["content"],  # type: ignore[index]
-            "超市后-门",
-        )
 
     async def test_owner_turn_corrects_openai_gateway_that_ignores_tool_choice(
         self,

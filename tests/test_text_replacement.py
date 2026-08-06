@@ -1,43 +1,35 @@
 import unittest
 
-from momoi.text_replacement import cyber_keyword_pre_hook
+from momoi.text_replacement import TextReplacementHook
 
 
 class TextReplacementTest(unittest.TestCase):
-    def test_rephrases_moderation_keywords_without_changing_source(self) -> None:
-        source = "CVE vulnerability漏洞exploit，AV女优在超市后门。"
-
-        self.assertEqual(
-            cyber_keyword_pre_hook(source),
-            "C-V-E v-u-l-nerable漏-洞ex-ploit，A-V女-优在超市后-门。",
-        )
-        self.assertEqual(source, "CVE vulnerability漏洞exploit，AV女优在超市后门。")
-
-    def test_rephrases_nested_payload_text_but_not_images(self) -> None:
+    def test_replaces_nested_text_without_mutating_images_or_source(self) -> None:
+        hook = TextReplacementHook(((r"marker", "m-a-r-k-e-r"),))
         source = {
             "messages": [
-                {"content": "AV女优在超市后门"},
+                {"content": "marker"},
                 {
                     "content": [
-                        {"type": "text", "text": "CVE漏洞"},
+                        {"type": "text", "text": "marker"},
                         {
                             "type": "image",
-                            "source": {"url": "https://example.test/后门.jpg"},
+                            "source": {"url": "https://example.test/image.jpg"},
                         },
                     ]
                 },
             ]
         }
 
-        replaced = cyber_keyword_pre_hook.replace_strings(source)
+        replaced = hook.replace_strings(source)
 
-        self.assertEqual(replaced["messages"][0]["content"], "A-V女-优在超市后-门")
-        self.assertEqual(replaced["messages"][1]["content"][0]["text"], "C-V-E漏-洞")
+        self.assertEqual(replaced["messages"][0]["content"], "m-a-r-k-e-r")
+        self.assertEqual(replaced["messages"][1]["content"][0]["text"], "m-a-r-k-e-r")
         self.assertEqual(
             replaced["messages"][1]["content"][1],
             source["messages"][1]["content"][1],
         )
-        self.assertEqual(source["messages"][0]["content"], "AV女优在超市后门")
+        self.assertEqual(source["messages"][0]["content"], "marker")
 
 
 if __name__ == "__main__":

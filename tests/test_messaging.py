@@ -10,7 +10,6 @@ from unittest.mock import patch
 from momoi.channel import (
     NotConnected,
     SendRejected,
-    create_channel,
 )
 from momoi.channel.napcat import (
     NapCatChannel,
@@ -39,10 +38,6 @@ from tests.support import with_context_planner
 
 
 class MessagingTest(unittest.TestCase):
-    def test_napcat_is_the_default_channel_plugin(self) -> None:
-        config = NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20)
-        self.assertIsInstance(create_channel(config), NapCatChannel)
-
     def test_napcat_forwards_only_owner_input_status_notices(self) -> None:
         async def run() -> None:
             client = NapCatChannel(

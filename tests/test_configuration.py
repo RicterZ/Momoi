@@ -198,15 +198,18 @@ class ConfigurationTest(unittest.TestCase):
             self.assertFalse(managed.exists())
 
     def test_cli_workspace_defaults_and_can_be_overridden(self) -> None:
-        with patch("sys.argv", ["momoi", "run"]):
-            self.assertEqual(parse_args().workspace, Path.home() / ".momoi")
-        with (
-            tempfile.TemporaryDirectory() as directory,
-            patch("sys.argv", ["momoi", "--workspace", directory, "emotion", "list"]),
-        ):
-            self.assertEqual(parse_args().workspace, Path(directory))
-        with patch("sys.argv", ["momoi", "channel", "login", "weixin"]):
-            self.assertEqual(parse_args().channel_name, "weixin")
+        with patch("momoi.__main__.version", return_value="0.1.0"):
+            with patch("sys.argv", ["momoi", "run"]):
+                self.assertEqual(parse_args().workspace, Path.home() / ".momoi")
+            with (
+                tempfile.TemporaryDirectory() as directory,
+                patch(
+                    "sys.argv", ["momoi", "--workspace", directory, "emotion", "list"]
+                ),
+            ):
+                self.assertEqual(parse_args().workspace, Path(directory))
+            with patch("sys.argv", ["momoi", "channel", "login", "weixin"]):
+                self.assertEqual(parse_args().channel_name, "weixin")
 
     def test_goal_cli_add_list_and_delete(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

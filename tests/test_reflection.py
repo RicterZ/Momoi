@@ -10,18 +10,9 @@ from momoi.channel.napcat import NapCatConfig
 from momoi.config import AppConfig, LLMConfig, NotificationConfig, ReflectionConfig
 from momoi.runtime import REFLECTION_FINISH_SPEC, MomoiDaemon
 from momoi.models import ProviderResponse, ToolCall
-from momoi.text_replacement import TextReplacementHook, cyber_keyword_pre_hook
 
 
 class ReflectionTest(unittest.IsolatedAsyncioTestCase):
-    def test_text_replacement_hook_is_independent(self) -> None:
-        hook = TextReplacementHook(((r"cat", "dog"),))
-        self.assertEqual(hook("Cat catalog"), "dog dogalog")
-        self.assertEqual(
-            cyber_keyword_pre_hook("CVE vulnerability漏洞exploit"),
-            "C-V-E v-u-l-nerable漏-洞ex-ploit",
-        )
-
     async def test_daily_reflection_promotes_only_evidence_backed_learning(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
@@ -55,8 +46,8 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                    VALUES ('user', ?, ?, '[]')""",
                 (
                     (
-                        "# Current owner messages\n我不吃香菜，今天看了CVE "
-                        "vulnerability漏洞exploit。回答直接说结论就好。"
+                        "# Current owner messages\n我不吃香菜，今天看了项目资料。"
+                        "回答直接说结论就好。"
                     ),
                     occurred,
                 ),
@@ -73,7 +64,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                     result_json, ok, started_at, completed_at, capability)
                    VALUES ('tool-turn', 'mail-search', 'mcp__gog__gmail_search',
                            'hash', 'completed', ?, 1, ?, ?, 'read')""",
-                ('{"subject":"CVE exploit details"}', occurred, occurred),
+                ('{"subject":"project summary"}', occurred, occurred),
             )
             daemon.store._db.commit()
 
@@ -89,9 +80,6 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                     request = json.dumps(_messages, ensure_ascii=False)
                     assert "<daily_reflection_record>" in request
                     assert "<runtime_state>" in request
-                    assert "CVE exploit details" not in request
-                    assert "CVE vulnerability漏洞exploit" not in request
-                    assert "C-V-E v-u-l-nerable漏-洞ex-ploit" in request
                     assert (
                         "state=completed ok=true capability=read" in request
                     )
