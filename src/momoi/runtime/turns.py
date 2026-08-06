@@ -59,13 +59,11 @@ from .protocol import (
 logger = logging.getLogger(__name__)
 PROMPT_ROOT = files("momoi").joinpath("prompts")
 SYSTEM_PROMPT_PATH = PROMPT_ROOT.joinpath("system.md")
-STYLE_CARD_PROMPT_PATH = PROMPT_ROOT.joinpath("style_card.md")
 WEBHOOK_PROMPT_PATH = PROMPT_ROOT.joinpath("webhook.md")
 HEARTBEAT_PROMPT_PATH = PROMPT_ROOT.joinpath("heartbeat.md")
 REFLECTION_PROMPT_PATH = PROMPT_ROOT.joinpath("reflection.md")
 CONTEXT_PLANNER_PROMPT_PATH = PROMPT_ROOT.joinpath("context_planner.md")
 EPISODE_SUMMARY_PROMPT_PATH = PROMPT_ROOT.joinpath("episode_summary.md")
-STYLE_CARD_SYSTEM_PROMPT = STYLE_CARD_PROMPT_PATH.read_text(encoding="utf-8").strip()
 WEBHOOK_SYSTEM_PROMPT = WEBHOOK_PROMPT_PATH.read_text(encoding="utf-8").strip()
 HEARTBEAT_SYSTEM_PROMPT = HEARTBEAT_PROMPT_PATH.read_text(encoding="utf-8").strip()
 REFLECTION_SYSTEM_PROMPT = REFLECTION_PROMPT_PATH.read_text(encoding="utf-8").strip()
@@ -1549,9 +1547,6 @@ class TurnRunner:
             soul_prompt = _live_prompt(soul_path, soul_prompt)
         text = system_prompt.replace(
             "{{SOUL}}", soul_prompt or "No additional Soul is configured."
-        ).replace(
-            "{{STYLE_CARD}}",
-            _live_prompt(STYLE_CARD_PROMPT_PATH, STYLE_CARD_SYSTEM_PROMPT),
         ).replace(
             "{{CAPABILITY_POLICIES}}",
             "\n\n".join(policies)
