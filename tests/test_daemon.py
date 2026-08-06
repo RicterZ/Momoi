@@ -47,7 +47,7 @@ class DaemonTest(unittest.TestCase):
     def test_specialized_system_omits_unavailable_tool_policies(self) -> None:
         daemon = object.__new__(MomoiDaemon)
         daemon.config = SimpleNamespace(
-            system_prompt="{{SOUL}}\n{{CAPABILITY_POLICIES}}",
+            system_prompt="{{SOUL}}\n{{STYLE_CARD}}\n{{CAPABILITY_POLICIES}}",
             soul_prompt="Test soul",
         )
         daemon.mcp = SimpleNamespace(tool_specs=[])
@@ -56,6 +56,8 @@ class DaemonTest(unittest.TestCase):
         owner = daemon._system(include_tool_policies=True)[0]["text"]
 
         self.assertIn("Use only the tools supplied", specialized)
+        self.assertIn("Choose the response before choosing the wording", specialized)
+        self.assertNotIn("{{STYLE_CARD}}", specialized)
         self.assertNotIn("Memory tools", specialized)
         self.assertIn("Memory tools", owner)
 
