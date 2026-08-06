@@ -56,7 +56,7 @@ class DaemonTest(unittest.TestCase):
         owner = daemon._system(include_tool_policies=True)[0]["text"]
 
         self.assertIn("Use only the tools supplied", specialized)
-        self.assertIn("Choose the response before choosing the wording", specialized)
+        self.assertIn("Key qualities: present, direct, informal", specialized)
         self.assertNotIn("{{STYLE_CARD}}", specialized)
         self.assertNotIn("Memory tools", specialized)
         self.assertIn("Memory tools", owner)
