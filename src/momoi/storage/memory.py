@@ -116,14 +116,15 @@ def token_chunk(text: str, offset: int, token_budget: int) -> tuple[str, int | N
     return remaining[:low] + marker, offset + low
 
 
-def lexical_units(text: str) -> set[str]:
+def lexical_units(text: str, *, strict: bool = False) -> set[str]:
     normalized = text.casefold()
     units = set(re.findall(r"[a-z0-9_]{2,}", normalized))
     for run in re.findall(r"[\u3400-\u9fff]+", normalized):
-        units.update(char for char in run if char not in CJK_STOP_CHARS)
         if len(run) == 1:
             units.add(run)
         else:
+            if not strict:
+                units.update(char for char in run if char not in CJK_STOP_CHARS)
             units.update(run[index : index + 2] for index in range(len(run) - 1))
     return units
 
@@ -173,7 +174,7 @@ class MemoryStore:
     ) -> list[dict[str, object]]:
         if max_results <= 0:
             return []
-        query_units = lexical_units(query)
+        query_units = lexical_units(query, strict=True)
         core_kinds = {"owner_profile", "self_insight", "relationship", "practice"}
         ranked: list[tuple[float, sqlite3.Row]] = []
         for row in self._db.execute(
@@ -183,7 +184,13 @@ class MemoryStore:
             units = lexical_units(f"{row['key']} {row['content']}")
             overlap = len(query_units & units)
             core = include_core and row["kind"] in core_kinds
-            if not core and overlap == 0:
+            if (
+                not core
+                and (
+                    overlap == 0
+                    or overlap / max(1, len(query_units)) < 0.1
+                )
+            ):
                 continue
             lexical_score = overlap / max(1, math.sqrt(len(query_units) * len(units)))
             score = (

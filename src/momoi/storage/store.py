@@ -1478,7 +1478,7 @@ class Store(MemoryStore, DeliveryStore):
     def search_episodes(self, query: str, max_results: int) -> list[dict[str, object]]:
         if max_results <= 0:
             return []
-        query_units = lexical_units(query)
+        query_units = lexical_units(query, strict=True)
         if not query_units:
             return []
         placeholders = ",".join("?" for _ in query_units)
@@ -1496,6 +1496,8 @@ class Store(MemoryStore, DeliveryStore):
         ).fetchall()
         for row in rows:
             overlap = int(row["overlap"])
+            if overlap / max(1, len(query_units)) < 0.1:
+                continue
             score = overlap / len(query_units) + float(row["salience"]) * 0.1
             ranked.append((score, float(row["updated_at"]), row))
         ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
