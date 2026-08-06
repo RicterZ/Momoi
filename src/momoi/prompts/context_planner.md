@@ -65,6 +65,12 @@ Rules:
   needed; never invent a prior thread merely to fill the list. Use recall for a
   request, question, correction, or a social share that clearly refers to a
   specific earlier matter.
+- A short social update may still depend on the owner's live scene even without an
+  explicit pronoun. If its natural meaning changes with a recently established
+  location, activity, or ongoing mood, record that implicit scene in `references`
+  and use one compact recall query for the relevant scene episode. Prefer owner
+  facts from the current day; do not retrieve old style feedback, assistant
+  wording, generic relationship history, or finished tasks as scene continuity.
 - `intent` and `salience` support retrieval and archiving only. They are not a reply
   agenda or a measure of how much text Momoi should produce.
 - `references` records useful explicit or implicit antecedent resolutions, ideally

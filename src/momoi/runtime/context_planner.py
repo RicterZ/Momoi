@@ -28,11 +28,19 @@ NON_OPEN_LOOP_SPEECH_ACTS = {
 }
 
 
-def is_light_social_plan(plan: dict[str, object]) -> bool:
+def is_social_plan(plan: dict[str, object]) -> bool:
     units = plan.get("intent_units")
     return bool(units) and all(
         isinstance(unit, dict)
         and unit.get("speech_act") in NON_OPEN_LOOP_SPEECH_ACTS
+        for unit in units
+    )
+
+
+def is_light_social_plan(plan: dict[str, object]) -> bool:
+    units = plan.get("intent_units")
+    return is_social_plan(plan) and all(
+        isinstance(unit, dict)
         and not unit.get("references")
         and not unit.get("recall_queries")
         for unit in units
