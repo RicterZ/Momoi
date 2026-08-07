@@ -373,7 +373,6 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                         "respond",
                         "respond",
                         {
-                            "messages": ["我分开看了这两件事。"],
                             "expects_reply": False,
                             "reply_expectation": "",
                             "mood": {"decision": "unchanged"},
@@ -439,7 +438,6 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                         "respond",
                         "respond",
                         {
-                            "messages": ["我先分别看邮件和微博。"],
                             "expects_reply": False,
                             "reply_expectation": "",
                             "mood": {"decision": "unchanged"},

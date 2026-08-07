@@ -143,16 +143,19 @@ class TurnRunner:
     _parse_reply_expectation = staticmethod(parse_reply_expectation)
     _parse_reflection_finish = staticmethod(parse_reflection_finish)
 
-    def _owner_tool_specs(self, plan: dict[str, object]) -> list[dict[str, Any]]:
+    def _owner_tool_specs(
+        self, plan: dict[str, object], channel_name: str | None = None
+    ) -> list[dict[str, Any]]:
+        send_message = self._send_message_tool_spec(channel_name)
         if is_light_social_plan(plan):
             memory_specs = [
                 spec
                 for spec in MEMORY_TOOL_SPECS
                 if spec["name"] in {"memory_remember", "memory_forget"}
             ]
-            return [self._send_message_tool_spec(), *memory_specs, RESPOND_TOOL_SPEC]
+            return [send_message, *memory_specs, RESPOND_TOOL_SPEC]
         return [
-            self._send_message_tool_spec(),
+            send_message,
             *MEMORY_TOOL_SPECS,
             *AGENDA_TOOL_SPECS,
             *BUILTIN_TOOL_SPECS,
@@ -558,7 +561,11 @@ class TurnRunner:
         reply = await self._run_tool_loop(
             system,
             messages,
-            [self._send_message_tool_spec(), CURL_TOOL_SPEC, RESPOND_TOOL_SPEC],
+            [
+                self._send_message_tool_spec(channel.name),
+                CURL_TOOL_SPEC,
+                RESPOND_TOOL_SPEC,
+            ],
             [],
             TurnDraft(),
             authority="webhook",
@@ -728,7 +735,7 @@ class TurnRunner:
             current_content.extend(channel.content_blocks(event.segments))
         messages: list[dict[str, Any]] = [{"role": "user", "content": current_content}]
         draft = TurnDraft()
-        tools = self._owner_tool_specs(context_plan)
+        tools = self._owner_tool_specs(context_plan, channel.name)
         reply = await self._run_tool_loop(
             system,
             messages,
@@ -808,7 +815,7 @@ class TurnRunner:
                     current_events, turn_id
                 )
                 if authority == "owner":
-                    tools = self._owner_tool_specs(context_plan)
+                    tools = self._owner_tool_specs(context_plan, delivery_channel.name)
                 messages.append(
                     self._owner_update_message(
                         updates, delivery_channel, context_plan, recalled
@@ -818,8 +825,11 @@ class TurnRunner:
                 force_response = False
                 force_autonomous_finish = False
                 failed_tool_rounds = 0
+            terminal_tool = (
+                heartbeat_respond_tool_spec() if heartbeat_turn else RESPOND_TOOL_SPEC
+            )
             request_tools = (
-                [heartbeat_respond_tool_spec() if heartbeat_turn else RESPOND_TOOL_SPEC]
+                [self._send_message_tool_spec(delivery_channel.name), terminal_tool]
                 if force_response
                 else ([AUTONOMOUS_FINISH_SPEC] if force_autonomous_finish else tools)
             )
@@ -900,7 +910,7 @@ class TurnRunner:
                     current_events, turn_id
                 )
                 if authority == "owner":
-                    tools = self._owner_tool_specs(context_plan)
+                    tools = self._owner_tool_specs(context_plan, delivery_channel.name)
                 messages.append(
                     self._owner_update_message(
                         updates, delivery_channel, context_plan, recalled
@@ -1107,7 +1117,7 @@ class TurnRunner:
                                 }
                     else:
                         target = self.channels.get(
-                            str(call.arguments.get("channel") or self.channel.name)
+                            str(call.arguments.get("channel") or delivery_channel.name)
                         )
                         if target is None:
                             result = {"ok": False, "error": "invalid_channel"}
@@ -1245,7 +1255,7 @@ class TurnRunner:
                     current_events, turn_id
                 )
                 if authority == "owner":
-                    tools = self._owner_tool_specs(context_plan)
+                    tools = self._owner_tool_specs(context_plan, delivery_channel.name)
                 messages.append(
                     self._owner_update_message(
                         updates, delivery_channel, context_plan, recalled
@@ -1269,8 +1279,8 @@ class TurnRunner:
                     "content": (
                         "[Trusted runtime protocol stop. Tool calls failed validation "
                         "three consecutive times. Do not retry tools in this Turn. "
-                        "Call respond now and briefly tell the owner the last concrete "
-                        "failure reason.]"
+                        "Use send_message for the last concrete failure reason, then "
+                        "call respond to close the Turn.]"
                     ),
                 }
             )
@@ -1329,8 +1339,12 @@ class TurnRunner:
             if spec["name"] in allowed
         ]
 
-    def _send_message_tool_spec(self) -> dict[str, Any]:
-        return send_message_tool_spec(list(self.channels), self.channel.name)
+    def _send_message_tool_spec(
+        self, channel_name: str | None = None
+    ) -> dict[str, Any]:
+        return send_message_tool_spec(
+            list(self.channels), channel_name or self.channel.name
+        )
 
     def _heartbeat_contact_error(self, owner_event_revision: int) -> str | None:
         snapshot = self.store.heartbeat_conversation_snapshot()
@@ -1861,7 +1875,7 @@ class TurnRunner:
             *memory_search,
             *goal_create,
             *self._self_directed_tool_specs(),
-            self._send_message_tool_spec(),
+            self._send_message_tool_spec(delivery_channel.name),
             heartbeat_respond_tool_spec(),
         ]
         draft = TurnDraft()

@@ -559,16 +559,22 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                         return ProviderResponse(
                             [{"type": "text", "text": "ignored protocol"}], []
                         )
-                    call = ToolCall(
-                        "respond-corrected",
-                        "respond",
-                        {
-                            "expects_reply": False,
-                            "reply_expectation": "",
-                            "messages": ["已纠正"],
-                            "mood": {"decision": "unchanged"},
-                        },
-                    )
+                    if len(self.calls) == 2:
+                        call = ToolCall(
+                            "send-corrected",
+                            "send_message",
+                            {"messages": ["已纠正"]},
+                        )
+                    else:
+                        call = ToolCall(
+                            "respond-corrected",
+                            "respond",
+                            {
+                                "expects_reply": False,
+                                "reply_expectation": "",
+                                "mood": {"decision": "unchanged"},
+                            },
+                        )
                     return ProviderResponse(
                         [
                             {
@@ -591,7 +597,8 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                 [event], asyncio.Event(), daemon._turn_id(event.event_id)
             )
             self.assertGreater(len(fake.calls[0]), 1)
-            self.assertEqual(fake.calls[1], ["respond"])
+            self.assertEqual(fake.calls[1], ["send_message", "respond"])
+            self.assertEqual(fake.calls[2], ["send_message", "respond"])
             self.assertEqual(daemon.store.due_outbox()[0].text, "已纠正")
             daemon.store.close()
 
@@ -614,7 +621,11 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                                         "function": {
                                             "name": "respond",
                                             "arguments": json.dumps(
-                                                {"messages": ["完成啦"]},
+                                                {
+                                                    "expects_reply": False,
+                                                    "reply_expectation": "",
+                                                    "mood": {"decision": "unchanged"},
+                                                },
                                                 ensure_ascii=False,
                                             ),
                                         },
@@ -695,7 +706,11 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "description": "Finish the Turn.",
                             "input_schema": {
                                 "type": "object",
-                                "properties": {"messages": {"type": "array"}},
+                                "properties": {
+                                    "expects_reply": {"type": "boolean"},
+                                    "reply_expectation": {"type": "string"},
+                                    "mood": {"type": "object"},
+                                },
                             },
                         }
                     ],
@@ -705,7 +720,14 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
             await server.close()
 
         self.assertEqual(response.tool_calls[0].name, "respond")
-        self.assertEqual(response.tool_calls[0].arguments, {"messages": ["完成啦"]})
+        self.assertEqual(
+            response.tool_calls[0].arguments,
+            {
+                "expects_reply": False,
+                "reply_expectation": "",
+                "mood": {"decision": "unchanged"},
+            },
+        )
         payload, authorization = requests[0]
         self.assertEqual(authorization, "Bearer openai-test-key")
         self.assertEqual(

@@ -279,20 +279,26 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         stale_reply_started.set()
                         await finish_stale_reply.wait()
                         text = "只回应第一条"
-                    else:
+                        tool_name = "send_message"
+                        arguments = {"messages": [text]}
+                    elif provider_self.calls == 2:
                         self.assertIn(
                             "第二条", json.dumps(messages, ensure_ascii=False)
                         )
                         text = "合并两条后回复"
-                    call = ToolCall(
-                        f"respond-{provider_self.calls}",
-                        "respond",
-                        {
+                        tool_name = "send_message"
+                        arguments = {"messages": [text]}
+                    else:
+                        tool_name = "respond"
+                        arguments = {
                             "expects_reply": False,
                             "reply_expectation": "",
-                            "messages": [text],
                             "mood": {"decision": "unchanged"},
-                        },
+                        }
+                    call = ToolCall(
+                        f"respond-{provider_self.calls}",
+                        tool_name,
+                        arguments,
                     )
                     return ProviderResponse(
                         [
@@ -327,7 +333,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             await daemon._receive(second)
             await asyncio.wait_for(turn, timeout=1)
 
-            self.assertEqual(provider.calls, 2)
+            self.assertEqual(provider.calls, 3)
             self.assertEqual(
                 [row.text for row in daemon.store.due_outbox()], ["合并两条后回复"]
             )
@@ -384,26 +390,26 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         stale_respond_started.set()
                         await finish_stale_respond.wait()
                         call = ToolCall(
-                            "stale-respond",
-                            "respond",
-                            {
-                                "expects_reply": False,
-                                "reply_expectation": "",
-                                "messages": ["上海天气晴"],
-                                "mood": {"decision": "unchanged"},
-                            },
+                            "stale-message",
+                            "send_message",
+                            {"messages": ["上海天气晴"]},
                         )
-                    else:
+                    elif provider_self.calls == 3:
                         rendered = json.dumps(messages, ensure_ascii=False)
                         self.assertIn("不用查天气了", rendered)
                         self.assertIn("superseded_by_owner_update", rendered)
+                        call = ToolCall(
+                            "final-message",
+                            "send_message",
+                            {"messages": ["收到，不查了"]},
+                        )
+                    else:
                         call = ToolCall(
                             "final-respond",
                             "respond",
                             {
                                 "expects_reply": False,
                                 "reply_expectation": "",
-                                "messages": ["收到，不查了"],
                                 "mood": {"decision": "unchanged"},
                             },
                         )
@@ -440,7 +446,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             finish_stale_respond.set()
             await turn
 
-            self.assertEqual(provider.calls, 3)
+            self.assertEqual(provider.calls, 4)
             self.assertTrue(daemon.incoming.empty())
             self.assertEqual(
                 [row.text for row in daemon.store.due_outbox()], ["收到，不查了"]
@@ -795,15 +801,23 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "next_review_at": "",
                             },
                         )
+                    elif self.calls == 4:
+                        self.assert_terminal_tools(tools)
+                        call = ToolCall(
+                            "failed-message",
+                            "send_message",
+                            {
+                                "messages": ["创建任务失败：缺少有效的执行时间。"],
+                            },
+                        )
                     else:
-                        self.assert_respond_only(tools)
+                        self.assert_terminal_tools(tools)
                         call = ToolCall(
                             "failed-response",
                             "respond",
                             {
                                 "expects_reply": False,
                                 "reply_expectation": "",
-                                "messages": ["创建任务失败：缺少有效的执行时间。"],
                                 "mood": {"decision": "unchanged"},
                             },
                         )
@@ -820,8 +834,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     )
 
                 @staticmethod
-                def assert_respond_only(tools: list[dict[str, object]]) -> None:
-                    if [tool["name"] for tool in tools] != ["respond"]:
+                def assert_terminal_tools(tools: list[dict[str, object]]) -> None:
+                    if [tool["name"] for tool in tools] != ["send_message", "respond"]:
                         raise AssertionError(tools)
 
             provider = Provider()
@@ -832,7 +846,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 await daemon._complete_batch_turn(
                     [event], asyncio.Event(), daemon._turn_id(event.event_id)
                 )
-            self.assertEqual(provider.calls, 4)
+            self.assertEqual(provider.calls, 5)
             self.assertIn("缺少有效的执行时间", daemon.store.due_outbox()[0].text)
             self.assertTrue(
                 any("Invalid isoformat string" in message for message in logs.output)
@@ -1029,7 +1043,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             f"heartbeat-{self.calls}",
                             "respond",
                             {
-                                "messages": [],
                                 "expects_reply": expects_reply,
                                 "reply_expectation": (
                                     "主人对关卡点子的回应" if expects_reply else ""
@@ -1343,16 +1356,22 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     if self.calls == 1:
                         started.set()
                         await asyncio.Future()
-                    call = ToolCall(
-                        "stop-response",
-                        "respond",
-                        {
-                            "expects_reply": False,
-                            "reply_expectation": "",
-                            "messages": ["已经停下来了"],
-                            "mood": {"decision": "unchanged"},
-                        },
-                    )
+                    if self.calls == 2:
+                        call = ToolCall(
+                            "stop-message",
+                            "send_message",
+                            {"messages": ["已经停下来了"]},
+                        )
+                    else:
+                        call = ToolCall(
+                            "stop-response",
+                            "respond",
+                            {
+                                "expects_reply": False,
+                                "reply_expectation": "",
+                                "mood": {"decision": "unchanged"},
+                            },
+                        )
                     return ProviderResponse(
                         [
                             {
@@ -1422,6 +1441,14 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "write_file",
                             {"path": "/tmp/momoi-stop-test", "content": "test"},
                         )
+                    elif self.calls == 2:
+                        call = ToolCall(
+                            "stop-message",
+                            "send_message",
+                            {
+                                "messages": ["已经终止当前任务"],
+                            },
+                        )
                     else:
                         call = ToolCall(
                             "stop-after-tool",
@@ -1429,7 +1456,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             {
                                 "expects_reply": False,
                                 "reply_expectation": "",
-                                "messages": ["已经终止当前任务"],
                                 "mood": {"decision": "unchanged"},
                             },
                         )
@@ -1533,6 +1559,20 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 return web.json_response(
                     {"content": [{"type": "text", "text": "这段 raw text 不应发送"}]}
                 )
+            if main_call == 6:
+                return web.json_response(
+                    {
+                        "stop_reason": "tool_use",
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "id": "send-final",
+                                "name": "send_message",
+                                "input": {"messages": ["测试回复一", "测试回复二"]},
+                            }
+                        ],
+                    }
+                )
             return web.json_response(
                 {
                     "stop_reason": "tool_use",
@@ -1544,7 +1584,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "input": {
                                 "expects_reply": False,
                                 "reply_expectation": "",
-                                "messages": ["测试回复一", "测试回复二"],
                                 "mood": {"decision": "unchanged"},
                             },
                         }
@@ -1625,7 +1664,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             await llm_server.close()
 
         self.assertEqual(sent, ["我先处理一下", "测试回复一", "测试回复二"])
-        self.assertEqual(len(llm_requests), 7)
+        self.assertEqual(len(llm_requests), 8)
         self.assertNotIn("tools", llm_requests[0])
         self.assertIn("Context planning protocol", llm_requests[0]["system"])
         self.assertIn("tools", llm_requests[1])
@@ -1633,9 +1672,10 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             "send_message", [tool["name"] for tool in llm_requests[1]["tools"]]
         )
         self.assertEqual(
-            [tool["name"] for tool in llm_requests[6]["tools"]], ["respond"]
+            [tool["name"] for tool in llm_requests[7]["tools"]],
+            ["send_message", "respond"],
         )
-        self.assertNotIn("tool_choice", llm_requests[6])
+        self.assertNotIn("tool_choice", llm_requests[7])
         self.assertEqual(
             llm_requests[1]["system"][0]["cache_control"], {"type": "ephemeral"}
         )

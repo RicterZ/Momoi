@@ -657,7 +657,6 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                         {
                             "expects_reply": False,
                             "reply_expectation": "",
-                            "messages": ["看到了"],
                             "mood": {"decision": "unchanged"},
                         },
                     )
@@ -712,6 +711,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             class Provider:
                 def __init__(self) -> None:
                     self.messages: list[dict[str, object]] = []
+                    self.calls = 0
 
                 async def complete(
                     self,
@@ -721,19 +721,28 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                     **___: object,
                 ) -> ProviderResponse:
                     self.messages = messages
+                    self.calls += 1
+                    if self.calls > 1:
+                        call = ToolCall(
+                            "emotion-close",
+                            "respond",
+                            {
+                                "expects_reply": False,
+                                "reply_expectation": "",
+                                "mood": {"decision": "unchanged"},
+                            },
+                        )
+                        return ProviderResponse([], [call])
                     call = ToolCall(
                         "emotion-response",
-                        "respond",
+                        "send_message",
                         {
-                            "expects_reply": False,
-                            "reply_expectation": "",
                             "messages": [
                                 "太好了",
                                 "emotion://happy-1",
                                 "这次我可厉害了",
                                 "emotion://proud-1",
                             ],
-                            "mood": {"decision": "unchanged"},
                         },
                     )
                     return ProviderResponse(
@@ -811,16 +820,21 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                     self.calls += 1
                     if self.calls > 1:
                         self.errors.append(json.dumps(messages[-1], ensure_ascii=False))
-                    value = "emotion://missing" if self.calls == 1 else "改成文字回复"
-                    call = ToolCall(
-                        f"emotion-{self.calls}",
-                        "respond",
-                        {
+                    if self.calls <= 2:
+                        value = "emotion://missing" if self.calls == 1 else "改成文字回复"
+                        tool_name = "send_message"
+                        arguments = {"messages": [value]}
+                    else:
+                        tool_name = "respond"
+                        arguments = {
                             "expects_reply": False,
                             "reply_expectation": "",
-                            "messages": [value],
                             "mood": {"decision": "unchanged"},
-                        },
+                        }
+                    call = ToolCall(
+                        f"emotion-{self.calls}",
+                        tool_name,
+                        arguments,
                     )
                     return ProviderResponse(
                         [
@@ -841,7 +855,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             turn_id = daemon._turn_id(event.event_id)
             daemon.store.begin_turn(turn_id, "owner", [event.event_id])
             await daemon._complete_batch([event], turn_id)
-            self.assertEqual(provider.calls, 2)
+            self.assertEqual(provider.calls, 3)
             self.assertIn("unknown_emotion_slug", provider.errors[0])
             self.assertEqual(daemon.store.due_outbox()[0].text, "改成文字回复")
             daemon.store.close()
@@ -996,7 +1010,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                 ) -> ProviderResponse:
                     self.calls += 1
                     serialized = json.dumps(messages, ensure_ascii=False)
-                    if self.calls == 2:
+                    if self.calls == 3:
                         case.assertIn("QQ 上说过的事", serialized)
                         case.assertIn("Channel: weixin", serialized)
                         spec = next(
@@ -1011,14 +1025,20 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                         )
                         case.assertEqual(
                             channel["default"],
-                            "napcat",  # type: ignore[index]
+                            "weixin",  # type: ignore[index]
                         )
-                    if self.calls in {2, 3}:
+                    if self.calls in {1, 3, 4, 5}:
+                        text = {
+                            1: "QQ 回复",
+                            3: "进度 1",
+                            4: "进度 2",
+                            5: "微信回复",
+                        }[self.calls]
                         arguments: dict[str, object] = {
-                            "messages": [f"进度 {self.calls - 1}"],
+                            "messages": [text],
                         }
-                        if self.calls == 2:
-                            arguments["channel"] = "weixin"
+                        if self.calls == 3:
+                            arguments["channel"] = "napcat"
                         return ProviderResponse(
                             [],
                             [
@@ -1029,7 +1049,6 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 )
                             ],
                         )
-                    text = "QQ 回复" if self.calls == 1 else "微信回复"
                     return ProviderResponse(
                         [],
                         [
@@ -1039,7 +1058,6 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 {
                                     "expects_reply": False,
                                     "reply_expectation": "",
-                                    "messages": [text],
                                     "mood": {"decision": "unchanged"},
                                 },
                             )
@@ -1065,8 +1083,8 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                 [(row["text"], row["target_channel"]) for row in rows],
                 [
                     ("QQ 回复", "napcat"),
-                    ("进度 1", "weixin"),
-                    ("进度 2", "napcat"),
+                    ("进度 1", "napcat"),
+                    ("进度 2", "weixin"),
                     ("微信回复", "weixin"),
                 ],
             )

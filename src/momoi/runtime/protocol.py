@@ -187,7 +187,7 @@ def heartbeat_respond_tool_spec() -> dict[str, Any]:
     return {
         **RESPOND_TOOL_SPEC,
         "description": (
-            "Required terminal decision for this autonomous heartbeat Turn, called "
+            "Required terminal state update for this autonomous heartbeat Turn, called "
             "only after all tool work and optional send_message calls are complete. "
             "It never sends owner-visible messages. The heartbeat object records "
             "Momoi's activity and schedules her next Turn."

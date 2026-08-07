@@ -206,13 +206,20 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "curl",
                             {"url": "http://static.test/package_state.json"},
                         )
-                    else:
+                    elif self.calls == 2:
                         self.assert_tool_result(messages)
                         call = ToolCall(
                             "notify-owner",
-                            "respond",
+                            "send_message",
                             {
                                 "messages": ["有一个快递到了，取件码是 1234。"],
+                            },
+                        )
+                    else:
+                        call = ToolCall(
+                            "finish",
+                            "respond",
+                            {
                                 "expects_reply": False,
                                 "reply_expectation": "",
                                 "mood": {"decision": "unchanged"},
@@ -259,8 +266,8 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             reply = await daemon._complete_webhook_turn(
                 "回家时检查快递状态并根据结果提醒我。", "webhook:test:0"
             )
-            self.assertEqual(reply.messages, ["有一个快递到了，取件码是 1234。"])
-            self.assertEqual(provider.calls, 2)
+            self.assertEqual(reply.messages, [])
+            self.assertEqual(provider.calls, 3)
             self.assertEqual(
                 provider.tool_names[0], ["send_message", "curl", "respond"]
             )
