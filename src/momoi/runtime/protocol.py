@@ -124,26 +124,17 @@ RESPOND_TOOL_SPEC: dict[str, Any] = {
     "input_schema": {
         "type": "object",
         "properties": {
-            "expects_reply": {
-                "type": "boolean",
-                "description": (
-                    "Whether Momoi will genuinely keep attention on the owner's reply "
-                    "to the last visible message in this whole Turn, including an "
-                    "earlier send_message when messages is empty."
-                ),
-            },
             "reply_expectation": {
                 "type": "string",
                 "maxLength": 300,
                 "description": (
-                    "What Momoi is waiting for after the Turn's last visible message "
-                    "when expects_reply is true; otherwise use an empty string."
+                    "What Momoi is genuinely waiting for after the Turn's last visible "
+                    "message. Use an empty string when no reply is expected."
                 ),
             },
             "mood": MOOD_DECISION_SCHEMA,
         },
         "required": [
-            "expects_reply",
             "reply_expectation",
             "mood",
         ],

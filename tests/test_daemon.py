@@ -138,13 +138,9 @@ class DaemonTest(unittest.TestCase):
         self.assertIn("mood", RESPOND_TOOL_SPEC["input_schema"]["required"])
         self.assertNotIn("continuity", RESPOND_TOOL_SPEC["input_schema"]["properties"])
         self.assertNotIn("delivery", RESPOND_TOOL_SPEC["input_schema"]["properties"])
-        self.assertIn("expects_reply", RESPOND_TOOL_SPEC["input_schema"]["required"])
-        self.assertIn(
-            "whole Turn",
-            RESPOND_TOOL_SPEC["input_schema"]["properties"]["expects_reply"][
-                "description"
-            ],
-        )
+        self.assertNotIn("expects_reply", RESPOND_TOOL_SPEC["input_schema"]["properties"])
+        self.assertNotIn("segments", RESPOND_TOOL_SPEC["input_schema"]["properties"])
+        self.assertNotIn("forward", RESPOND_TOOL_SPEC["input_schema"]["properties"])
         self.assertNotIn(
             "delivery", SEND_MESSAGE_TOOL_SPEC["input_schema"]["properties"]
         )

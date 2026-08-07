@@ -354,7 +354,7 @@ class MessagingTest(unittest.TestCase):
             }
         )
         self.assertIsNone(invalid)
-        self.assertEqual(error, "invalid_expects_reply")
+        self.assertEqual(error, "invalid_reply_expectation")
         rich, error = MomoiDaemon._parse_messages(
             {
                 "messages": [

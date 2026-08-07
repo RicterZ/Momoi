@@ -42,20 +42,13 @@ def parse_messages(
 
 
 def parse_reply_expectation(
-    arguments: dict[str, Any], messages: list[ChannelMessage]
+    arguments: dict[str, Any]
 ) -> tuple[tuple[bool, str] | None, str | None]:
-    expects_reply = arguments.get("expects_reply")
     expectation = arguments.get("reply_expectation")
-    if not isinstance(expects_reply, bool):
-        return None, "invalid_expects_reply"
     if not isinstance(expectation, str) or len(expectation) > 300:
         return None, "invalid_reply_expectation"
     expectation = expectation.strip()
-    if expects_reply and not expectation:
-        return None, "invalid_reply_expectation"
-    if not expects_reply and expectation:
-        return None, "invalid_reply_expectation"
-    return (expects_reply, expectation), None
+    return (bool(expectation), expectation), None
 
 
 def parse_response(
@@ -68,7 +61,7 @@ def parse_response(
     mood, error = parse_mood_decision(arguments.get("mood"))
     if error is not None:
         return None, error
-    reply_expectation, error = parse_reply_expectation(arguments, messages)
+    reply_expectation, error = parse_reply_expectation(arguments)
     if reply_expectation is None:
         return None, error
     expects_reply, expectation = reply_expectation
