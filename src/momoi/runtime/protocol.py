@@ -117,18 +117,13 @@ MOOD_DECISION_SCHEMA: dict[str, Any] = {
 RESPOND_TOOL_SPEC: dict[str, Any] = {
     "name": "respond",
     "description": (
-        "Required terminal decision for every conversational Turn, called only after "
-        "all tool work is complete and always as the only tool call in its response. "
-        "It may add one final beat or carry no message when send_message already "
-        "completed the visible stream or silence is natural."
+        "Required terminal state update for every conversational Turn, called only "
+        "after all tool work and send_message calls are complete and always as the "
+        "only tool call in its response. It never sends owner-visible messages."
     ),
     "input_schema": {
         "type": "object",
         "properties": {
-            "messages": {
-                "type": "array",
-                "items": CHANNEL_MESSAGE_SCHEMA,
-            },
             "expects_reply": {
                 "type": "boolean",
                 "description": (
@@ -148,7 +143,6 @@ RESPOND_TOOL_SPEC: dict[str, Any] = {
             "mood": MOOD_DECISION_SCHEMA,
         },
         "required": [
-            "messages",
             "expects_reply",
             "reply_expectation",
             "mood",
@@ -195,16 +189,13 @@ def heartbeat_respond_tool_spec() -> dict[str, Any]:
         "description": (
             "Required terminal decision for this autonomous heartbeat Turn, called "
             "only after all tool work and optional send_message calls are complete. "
-            "The heartbeat object records Momoi's activity and schedules her next Turn."
+            "It never sends owner-visible messages. The heartbeat object records "
+            "Momoi's activity and schedules her next Turn."
         ),
         "input_schema": {
             **schema,
             "properties": {
                 **schema["properties"],
-                "messages": {
-                    **schema["properties"]["messages"],
-                    "maxItems": 3,
-                },
                 "heartbeat": HEARTBEAT_STATE_SCHEMA,
             },
             "required": [*schema["required"], "heartbeat"],

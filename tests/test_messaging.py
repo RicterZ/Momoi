@@ -294,17 +294,25 @@ class MessagingTest(unittest.TestCase):
             {
                 "expects_reply": True,
                 "reply_expectation": "主人晚上的安排",
-                "messages": ["嘿嘿，没忘吧~", "晚上在忙什么呢？"],
                 "mood": {"decision": "unchanged"},
             }
         )
         self.assertIsNone(error)
-        self.assertEqual(reply.messages, ["嘿嘿，没忘吧~", "晚上在忙什么呢？"])
+        self.assertEqual(reply.messages, [])
         self.assertTrue(reply.expects_reply)
         self.assertEqual(reply.reply_expectation, "主人晚上的安排")
+        legacy, error = MomoiDaemon._parse_response(
+            {
+                "messages": ["旧协议消息"],
+                "expects_reply": False,
+                "reply_expectation": "",
+                "mood": {"decision": "unchanged"},
+            }
+        )
+        self.assertIsNone(legacy)
+        self.assertEqual(error, "messages_not_allowed_in_respond")
         heartbeat, error = MomoiDaemon._parse_response(
             {
-                "messages": [],
                 "expects_reply": False,
                 "reply_expectation": "",
                 "mood": {"decision": "unchanged"},
@@ -322,7 +330,6 @@ class MessagingTest(unittest.TestCase):
         self.assertEqual(heartbeat.heartbeat["activity"], "整理关卡灵感")
         invalid_heartbeat, error = MomoiDaemon._parse_response(
             {
-                "messages": [],
                 "expects_reply": False,
                 "reply_expectation": "",
                 "mood": {"decision": "unchanged"},
@@ -343,7 +350,6 @@ class MessagingTest(unittest.TestCase):
         self.assertEqual(single_line_break, ["第一行。\n第二行。"])
         invalid, error = MomoiDaemon._parse_response(
             {
-                "messages": ["少了回复期待决策"],
                 "mood": {"decision": "unchanged"},
             }
         )
@@ -455,17 +461,13 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                     **___: object,
                 ) -> ProviderResponse:
                     respond = next(tool for tool in tools if tool["name"] == "respond")
-                    case.assertNotIn(
-                        "minItems",
-                        respond["input_schema"]["properties"]["messages"],
-                    )
+                    case.assertNotIn("messages", respond["input_schema"]["properties"])
                     call = ToolCall(
                         "silent-close",
                         "respond",
                         {
                             "expects_reply": False,
                             "reply_expectation": "",
-                            "messages": [],
                             "mood": {"decision": "unchanged"},
                         },
                     )
@@ -536,7 +538,6 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "close-after-question",
                                 "respond",
                                 {
-                                    "messages": [],
                                     "expects_reply": True,
                                     "reply_expectation": "老师的选择",
                                     "mood": {"decision": "unchanged"},

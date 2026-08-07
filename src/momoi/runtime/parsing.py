@@ -61,11 +61,10 @@ def parse_reply_expectation(
 def parse_response(
     arguments: dict[str, Any], *, require_heartbeat: bool = False
 ) -> tuple[AgentReply | None, str | None]:
-    messages, error = parse_messages(arguments, allow_empty=True)
-    if messages is None:
-        return None, error
-    if require_heartbeat and len(messages) > 3:
-        return None, "invalid_heartbeat_messages"
+    if "messages" in arguments:
+        return None, "messages_not_allowed_in_respond"
+    messages: list[ChannelMessage] = []
+    error: str | None = None
     mood, error = parse_mood_decision(arguments.get("mood"))
     if error is not None:
         return None, error

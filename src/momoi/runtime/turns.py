@@ -937,8 +937,9 @@ class TurnRunner:
                             "role": "user",
                             "content": (
                                 "[Trusted runtime protocol error. The previous text was not "
-                                "delivered. Finish now by calling respond with messages as an "
-                                "array. Do not output plain assistant text.]"
+                                "delivered. Send any owner-visible reply with send_message, "
+                                "then finish by calling respond for the Turn state. Do not "
+                                "output plain assistant text.]"
                             ),
                         },
                     ]

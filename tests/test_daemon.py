@@ -151,9 +151,7 @@ class DaemonTest(unittest.TestCase):
         self.assertIn("immediate", SEND_MESSAGE_TOOL_SPEC["description"])
         self.assertIn("factual claims", SEND_MESSAGE_TOOL_SPEC["description"])
         self.assertIn("conversational Turn", RESPOND_TOOL_SPEC["description"])
-        self.assertNotIn(
-            "minItems", RESPOND_TOOL_SPEC["input_schema"]["properties"]["messages"]
-        )
+        self.assertNotIn("messages", RESPOND_TOOL_SPEC["input_schema"]["properties"])
         heartbeat_respond = heartbeat_respond_tool_spec()
         self.assertEqual(heartbeat_respond["name"], "respond")
         self.assertIn("heartbeat", heartbeat_respond["input_schema"]["required"])
