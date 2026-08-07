@@ -12,8 +12,6 @@ from .storage.scheduling import next_schedule_at, normalize_schedule
 
 AGENDA_TOOL_POLICY = """### Agenda tools
 
-- Create a goal only for work that must continue across Turns or wait until a
-  future time. Do not create goals for ordinary chat or work completed now.
 - Every active goal needs a concrete next action and future review time.
 - A recurring goal may use an interval or daily `schedule`. The runtime computes
   each next review. Keep it active after one occurrence; finish or cancel it only

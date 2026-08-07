@@ -206,14 +206,8 @@ def heartbeat_respond_tool_spec() -> dict[str, Any]:
 SEND_MESSAGE_TOOL_SPEC: dict[str, Any] = {
     "name": "send_message",
     "description": (
-        "Emit one or more separate owner-visible conversational beats now without ending the "
-        "Turn. Each array item is one complete beat and is delivered with a natural pause; "
-        "do not combine independent sentences into one item. Use it for an immediate genuine conversational reaction or a meaningful live "
-        "task update, not routine status. A pre-work update is optional and should be "
-        "one brief sentence about the goal or expected wait, never a narration of "
-        "internal workflow. factual claims must wait for evidence. After its result "
-        "is observed, finish the Turn with an empty respond when the visible stream "
-        "is complete; never repeat its content."
+        "Emit non-empty owner-visible beats without ending the Turn. Keep each item "
+        "as one complete beat; after the result, call respond to close the Turn."
     ),
     "input_schema": {
         "type": "object",
