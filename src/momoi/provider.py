@@ -17,6 +17,10 @@ class ProviderError(RuntimeError):
     pass
 
 
+class ProviderResponseError(ProviderError):
+    """The endpoint returned a successful but unusable response."""
+
+
 def _api_url(base_url: str, path: str) -> str:
     base = base_url.rstrip("/")
     return f"{base}{path}" if base.endswith("/v1") else f"{base}/v1{path}"
@@ -369,10 +373,14 @@ class OpenAIProvider:
                     _log_usage(data)
                     choices = data.get("choices")
                     if not isinstance(choices, list) or not choices:
-                        raise ProviderError("OpenAI-compatible endpoint returned no choices")
+                        raise ProviderResponseError(
+                            "OpenAI-compatible endpoint returned no choices"
+                        )
                     message = choices[0].get("message")
                     if not isinstance(message, dict):
-                        raise ProviderError("OpenAI-compatible endpoint returned no message")
+                        raise ProviderResponseError(
+                            "OpenAI-compatible endpoint returned no message"
+                        )
                     content: list[dict[str, Any]] = []
                     text = message.get("content")
                     if isinstance(text, str) and text.strip():
@@ -409,9 +417,23 @@ class OpenAIProvider:
                         )
                         return ProviderResponse(content, tool_calls, usage_metrics(data))
                     if not content:
-                        raise ProviderError("OpenAI-compatible endpoint returned no text content")
+                        raise ProviderResponseError(
+                            "OpenAI-compatible endpoint returned no text content"
+                        )
                     logger.debug("LLM response text=%s", json.dumps(text, ensure_ascii=False))
                     return ProviderResponse(content, [], usage_metrics(data))
+            except ProviderResponseError as error:
+                last_error = error
+                if attempt < self.config.max_retries:
+                    logger.warning(
+                        "OpenAI-compatible endpoint returned an unusable response; retrying attempt=%d/%d error=%s",
+                        attempt + 1,
+                        self.config.max_retries,
+                        error,
+                    )
+                    await asyncio.sleep(min(2**attempt, 5))
+                    continue
+                raise
             except (aiohttp.ClientError, asyncio.TimeoutError) as error:
                 last_error = error
                 if attempt < self.config.max_retries:

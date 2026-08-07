@@ -487,6 +487,43 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
             await server.close()
         self.assertEqual(attempts, 4)
 
+    async def test_openai_provider_retries_unusable_success_response(self) -> None:
+        attempts = 0
+
+        async def completion(_request: web.Request) -> web.Response:
+            nonlocal attempts
+            attempts += 1
+            if attempts <= 3:
+                return web.json_response({"choices": []})
+            return web.json_response(
+                {"choices": [{"message": {"role": "assistant", "content": "ok"}}]}
+            )
+
+        server = TestServer(web.Application())
+        server.app.router.add_post("/v1/chat/completions", completion)
+        await server.start_server()
+        provider = OpenAIProvider(
+            LLMConfig(
+                base_url=str(server.make_url("/")).rstrip("/"),
+                api_key="test",
+                model="test",
+                max_tokens=100,
+                temperature=0,
+                timeout_seconds=1,
+                max_retries=3,
+                api_format="openai",
+            )
+        )
+        try:
+            async with provider:
+                response = await provider.complete(
+                    "system", [{"role": "user", "content": "测试入口"}]
+                )
+                self.assertEqual(response.content[0]["text"], "ok")
+        finally:
+            await server.close()
+        self.assertEqual(attempts, 4)
+
     async def test_owner_turn_corrects_openai_gateway_that_ignores_tool_choice(
         self,
     ) -> None:

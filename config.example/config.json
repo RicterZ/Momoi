@@ -7,7 +7,7 @@
     "max_tokens": 4096,
     "temperature": 0.6,
     "timeout_seconds": 120,
-    "max_retries": 2
+    "max_retries": 3
   },
   "channels": {
     "primary": "napcat",

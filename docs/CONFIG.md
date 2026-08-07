@@ -64,7 +64,7 @@ This makes the workspace relocatable. Absolute paths are also accepted where a p
     "max_tokens": 4096,
     "temperature": 0.6,
     "timeout_seconds": 120,
-    "max_retries": 2
+    "max_retries": 3
   }
 }
 ```
@@ -78,7 +78,7 @@ This makes the workspace relocatable. Absolute paths are also accepted where a p
 | `max_tokens` | No | `2048` | Maximum output tokens for one model call |
 | `temperature` | No | `0.6` | Sampling temperature |
 | `timeout_seconds` | No | `120` | Positive request timeout |
-| `max_retries` | No | `2` | Retries for transient connection and server errors |
+| `max_retries` | No | `3` | Retries for transient connection, server, and unusable successful responses |
 
 For Anthropic-compatible providers, Momoi calls `/v1/messages`. For OpenAI-compatible providers, a host-only URL receives `/v1/chat/completions`; a URL that already contains a gateway path receives `/chat/completions` below that path.
 

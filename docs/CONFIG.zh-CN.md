@@ -64,7 +64,7 @@ MCP 是添加由模型控制能力的常规方式。工作流用于事件驱动�
     "max_tokens": 4096,
     "temperature": 0.6,
     "timeout_seconds": 120,
-    "max_retries": 2
+    "max_retries": 3
   }
 }
 ```
@@ -78,7 +78,7 @@ MCP 是添加由模型控制能力的常规方式。工作流用于事件驱动�
 | `max_tokens` | 否 | `2048` | 单次模型调用的最大输出 token 数 |
 | `temperature` | 否 | `0.6` | 采样温度 |
 | `timeout_seconds` | 否 | `120` | 必须为正数的请求超时时间 |
-| `max_retries` | 否 | `2` | 短暂连接错误和服务端错误的重试次数 |
+| `max_retries` | 否 | `3` | 短暂连接错误、服务端错误和成功但不可用响应的重试次数 |
 
 对于 Anthropic 兼容 provider，Momoi 请求 `/v1/messages`。对于 OpenAI 兼容 provider，只含 host 的 URL 会请求 `/v1/chat/completions`；已经包含网关路径的 URL 则在该路径下请求 `/chat/completions`。
 

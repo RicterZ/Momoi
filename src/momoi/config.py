@@ -277,7 +277,7 @@ def load_config(path: str | Path) -> AppConfig:
             max_tokens=int(llm_raw.get("max_tokens", 2048)),
             temperature=float(llm_raw.get("temperature", 0.6)),
             timeout_seconds=_positive(llm_raw.get("timeout_seconds", 120), "llm.timeout_seconds"),
-            max_retries=max(0, int(llm_raw.get("max_retries", 2))),
+            max_retries=max(0, int(llm_raw.get("max_retries", 3))),
             api_format=api_format,
         ),
         channel=channel_config,
