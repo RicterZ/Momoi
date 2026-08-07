@@ -31,6 +31,7 @@ from ..text_replacement import cyber_keyword_pre_hook
 from .context_assembler import (
     assemble_main_context,
     build_plan_retrieval,
+    _historical_content,
     recall_episode_context,
 )
 from .context_planner import (
@@ -305,9 +306,12 @@ class TurnRunner:
             if len(candidates_by_id) == 64:
                 break
         candidates = list(candidates_by_id.values())
-        recent_conversation = self.store.recent_conversation_messages(
-            self.config.recent_turns, self.config.recent_raw_tokens
-        )
+        recent_conversation = [
+            {**message, "content": _historical_content(message.get("content"))}
+            for message in self.store.recent_conversation_messages(
+                self.config.recent_turns, self.config.recent_raw_tokens
+            )
+        ]
         candidate_context = [
             {
                 "id": candidate["id"],
@@ -595,7 +599,7 @@ class TurnRunner:
             self.store.discard_events(batch)
             return
         if state == "needs_reconciliation":
-            owner_content = f"# Current owner messages\n{self._render_batch(batch)}"
+            owner_content = self._render_batch(batch)
             self.store.commit_turn(
                 batch,
                 owner_content,
@@ -650,7 +654,7 @@ class TurnRunner:
                 "automatically."
             )
             failure_reason = type(error).__name__
-        owner_content = f"# Current owner messages\n{self._render_batch(batch)}"
+        owner_content = self._render_batch(batch)
         self.store.commit_turn(
             batch,
             owner_content,
@@ -753,7 +757,7 @@ class TurnRunner:
         if reply is None:
             raise RuntimeError("Owner Turn ended without respond")
 
-        owner_content = f"# Current owner messages\n{self._render_batch(batch)}"
+        owner_content = self._render_batch(batch)
         self.store.commit_turn(
             batch,
             owner_content,

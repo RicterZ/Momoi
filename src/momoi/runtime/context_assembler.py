@@ -8,6 +8,15 @@ from ..storage import Store, estimate_tokens, truncate_tokens
 from .context_planner import is_light_social_plan
 
 
+_LEGACY_OWNER_HEADER = "# Current owner messages\n"
+
+
+def _historical_content(value: object) -> str:
+    """Remove the legacy owner wrapper before showing persisted history."""
+    text = str(value or "")
+    return text.removeprefix(_LEGACY_OWNER_HEADER)
+
+
 def _merge_matches(target: dict[str, object], source: dict[str, object]) -> None:
     existing = target.get("matches")
     incoming = source.get("matches")
@@ -390,7 +399,8 @@ def _episode_context(
             if prefix_tokens >= remaining_raw:
                 break
             content = truncate_tokens(
-                str(message.get("content") or ""), remaining_raw - prefix_tokens
+                _historical_content(message.get("content")),
+                remaining_raw - prefix_tokens,
             )
             line = prefix + content
             matched_lines.append(line)
@@ -417,7 +427,8 @@ def _episode_context(
             lines.append("raw_tail:")
             lines.extend(
                 f"  [{_message_role(message)} turn={message['turn_id']} "
-                f"ordinal={message['ordinal']}] {message['content']}"
+                f"ordinal={message['ordinal']}] "
+                f"{_historical_content(message['content'])}"
                 for message in messages
             )
         sections.append("\n".join(lines))
@@ -436,7 +447,7 @@ def assemble_main_context(
     )
     recent = "\n".join(
         f"[{_message_role(message)} turn={message['turn_id']}] "
-        f"{message['content']}"
+        f"{_historical_content(message['content'])}"
         for message in recent_messages
     )
     recent_ids = {int(message["id"]) for message in recent_messages}
