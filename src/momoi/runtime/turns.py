@@ -118,14 +118,6 @@ def _conversation_guidance(plan: dict[str, object]) -> str:
     )
 
 
-def _emotion_review_candidate(plan: dict[str, object]) -> bool:
-    return any(
-        isinstance(unit, dict)
-        and unit.get("speech_act") in {"emotional_share", "banter"}
-        for unit in plan.get("intent_units", [])
-    )
-
-
 def _reconciliation_message(turn_id: str) -> str:
     short_id = turn_id[:12]
     return (
@@ -760,7 +752,6 @@ class TurnRunner:
             turn_id=turn_id,
             require_response=True,
             accept_owner_updates=True,
-            emotion_review=_emotion_review_candidate(context_plan),
             delivery_channel=channel,
         )
         if reply is None:
@@ -808,7 +799,6 @@ class TurnRunner:
         allowed_capabilities: set[str] | None = None,
         artifact_root: Path | None = None,
         accept_owner_updates: bool = False,
-        emotion_review: bool = False,
         delivery_channel: Channel,
     ) -> AgentReply | dict[str, Any] | None:
         external_tool_used = False
@@ -817,8 +807,6 @@ class TurnRunner:
         failed_tool_rounds = 0
         history_messages = max(0, len(messages) - 1)
         visible_since_owner_update = False
-        visible_messages: list[ChannelMessage] = []
-        emotion_review_attempted = False
         while True:
             updates = (
                 await self._settle_owner_updates(current_events, delivery_channel.name)
@@ -827,14 +815,11 @@ class TurnRunner:
             )
             if updates:
                 visible_since_owner_update = False
-                visible_messages = []
-                emotion_review_attempted = False
                 context_plan, recalled = await self._prepare_owner_context(
                     current_events, turn_id
                 )
                 if authority == "owner":
                     tools = self._owner_tool_specs(context_plan, delivery_channel.name)
-                    emotion_review = _emotion_review_candidate(context_plan)
                 messages.append(
                     self._owner_update_message(
                         updates, delivery_channel, context_plan, recalled
@@ -1039,20 +1024,6 @@ class TurnRunner:
                         reply = None
                 if (
                     reply is not None
-                    and emotion_review
-                    and visible_messages
-                    and not emotion_review_attempted
-                    and not any(
-                        emotion_slug(message)
-                        for message in visible_messages
-                        if isinstance(message, str)
-                    )
-                ):
-                    reply = None
-                    error = "emotion_review_required"
-                    emotion_review_attempted = True
-                if (
-                    reply is not None
                     and reply.expects_reply
                     and not reply.messages
                     and not visible_since_owner_update
@@ -1066,13 +1037,6 @@ class TurnRunner:
                     )
                     return reply
                 logger.debug("Rejected respond arguments error=%s", error)
-                rejection = {"ok": False, "error": error}
-                if error == "emotion_review_required":
-                    rejection["instruction"] = (
-                        "Reconsider the Emotion catalog for this vivid social move. "
-                        "Use one fitting emotion:// asset only if it adds a distinct "
-                        "reaction; otherwise call respond again without repeating text."
-                    )
                 messages.extend(
                     [
                         {"role": "assistant", "content": response.content},
@@ -1082,7 +1046,10 @@ class TurnRunner:
                                 {
                                     "type": "tool_result",
                                     "tool_use_id": response.tool_calls[0].id,
-                                    "content": json.dumps(rejection, ensure_ascii=False),
+                                    "content": json.dumps(
+                                        {"ok": False, "error": error},
+                                        ensure_ascii=False,
+                                    ),
                                     "is_error": True,
                                 }
                             ],
@@ -1144,7 +1111,6 @@ class TurnRunner:
                                 self.store.queue_progress(
                                     turn_id, call.id, progress, target.name
                                 )
-                                visible_messages.extend(progress)
                                 visible_since_owner_update = True
                                 self.outbox_changed.set()
                                 result = {
@@ -1163,7 +1129,6 @@ class TurnRunner:
                             self.store.queue_progress(
                                 turn_id, call.id, progress, target.name
                             )
-                            visible_messages.extend(progress)
                             visible_since_owner_update = True
                             self.outbox_changed.set()
                             result = {
