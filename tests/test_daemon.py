@@ -27,6 +27,7 @@ from momoi.runtime import (
     heartbeat_respond_tool_spec,
     MomoiDaemon,
 )
+from momoi.runtime.protocol import MOOD_UPDATE_SCHEMA
 from momoi.models import (
     AgentReply,
     IncomingMessage,
@@ -106,7 +107,7 @@ class DaemonTest(unittest.TestCase):
 
         self.assertEqual(daemon._system()[0]["text"], STYLE_CARD_SYSTEM_PROMPT)
 
-    def test_mood_update_parser_rejects_invalid_state(self) -> None:
+    def test_mood_update_parser_accepts_open_state_labels(self) -> None:
         mood, error = MomoiDaemon._parse_mood_update(
             {
                 "state": "angry",
@@ -114,8 +115,20 @@ class DaemonTest(unittest.TestCase):
                 "cause": "test",
             }
         )
+        self.assertEqual(mood["state"], "angry")
+        self.assertIsNone(error)
+        mood, error = MomoiDaemon._parse_mood_update(
+            {
+                "state": "very angry!",
+                "intensity": 0.8,
+                "cause": "test",
+            }
+        )
         self.assertIsNone(mood)
         self.assertEqual(error, "invalid_mood_update")
+        state_schema = MOOD_UPDATE_SCHEMA["properties"]["state"]
+        self.assertNotIn("enum", state_schema)
+        self.assertEqual(state_schema["pattern"], "^[a-z][a-z0-9_-]{0,31}$")
 
     def test_mood_decision_is_explicit_in_terminal_tools(self) -> None:
         mood, error = MomoiDaemon._parse_mood_decision({"decision": "unchanged"})

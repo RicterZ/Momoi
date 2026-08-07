@@ -37,15 +37,6 @@ from .scheduling import next_schedule_at, quiet_until
 logger = logging.getLogger(__name__)
 
 
-MOOD_STATES = {
-    "cheerful",
-    "excited",
-    "calm",
-    "focused",
-    "tired",
-    "down",
-    "frustrated",
-}
 BASELINE_MOOD_STATE = "calm"
 BASELINE_MOOD_INTENSITY = 0.35
 BASELINE_MOOD_CAUSE = "resting baseline"

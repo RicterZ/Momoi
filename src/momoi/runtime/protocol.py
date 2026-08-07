@@ -1,7 +1,7 @@
 from typing import Any
 
 from ..builtin_tools import BUILTIN_TOOL_SPECS
-from ..storage import MOOD_STATES, REFLECTION_MEMORY_KINDS
+from ..storage import REFLECTION_MEMORY_KINDS
 
 CURL_TOOL_SPEC = next(spec for spec in BUILTIN_TOOL_SPECS if spec["name"] == "curl")
 
@@ -86,7 +86,17 @@ CHANNEL_MESSAGE_SCHEMA: dict[str, Any] = {
 MOOD_UPDATE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
-        "state": {"type": "string", "enum": sorted(MOOD_STATES)},
+        "state": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,31}$",
+            "description": (
+                "Short lowercase mood label. Familiar choices include cheerful, "
+                "excited, playful, affectionate, content, proud, hopeful, relieved, "
+                "curious, thoughtful, calm, focused, tired, down, frustrated, "
+                "worried, anxious, embarrassed, lonely, bored, restless, and angry; "
+                "use another concise label when it fits better."
+            ),
+        },
         "intensity": {"type": "number", "minimum": 0, "maximum": 1},
         "cause": {"type": "string", "minLength": 1, "maxLength": 300},
     },

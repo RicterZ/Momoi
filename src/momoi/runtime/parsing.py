@@ -4,7 +4,7 @@ from typing import Any
 from ..channel import ChannelMessage, has_blank_line, normalize_channel_message
 from ..emotions import EMOTION_PREFIX
 from ..models import AgentReply
-from ..storage import MOOD_STATES, REFLECTION_MEMORY_KINDS
+from ..storage import REFLECTION_MEMORY_KINDS
 
 
 def parse_messages(
@@ -135,7 +135,8 @@ def parse_mood_update(
     cause = value.get("cause")
     intensity = value.get("intensity")
     if (
-        state not in MOOD_STATES
+        not isinstance(state, str)
+        or re.fullmatch(r"[a-z][a-z0-9_-]{0,31}", state) is None
         or not isinstance(cause, str)
         or not cause.strip()
         or len(cause) > 300
