@@ -2355,7 +2355,7 @@ class Store(MemoryStore, DeliveryStore):
                 return None
             waiting = bool(str(row["pending_reply_expectation"] or "").strip())
             due: list[tuple[float, str]] = []
-            if (config.enabled or waiting) and float(row["next_heartbeat_at"] or 0) > 0:
+            if config.enabled and float(row["next_heartbeat_at"] or 0) > 0:
                 due.append((float(row["next_heartbeat_at"]), "ordinary"))
             if waiting and row["pending_reply_next_check_at"] is not None:
                 due.append((float(row["pending_reply_next_check_at"]), "reply"))
@@ -2413,7 +2413,7 @@ class Store(MemoryStore, DeliveryStore):
             return None
         waiting = bool(str(row["pending_reply_expectation"] or "").strip())
         due: list[float] = []
-        if (enabled or waiting) and float(row["next_heartbeat_at"] or 0) > 0:
+        if enabled and float(row["next_heartbeat_at"] or 0) > 0:
             due.append(float(row["next_heartbeat_at"]))
         if waiting and row["pending_reply_next_check_at"] is not None:
             due.append(float(row["pending_reply_next_check_at"]))
@@ -2458,6 +2458,39 @@ class Store(MemoryStore, DeliveryStore):
                    heartbeat_claim_kind=NULL WHERE id=1"""
             )
 
+    def commit_reply_wait(
+        self,
+        turn_id: str,
+        *,
+        owner_event_revision: int,
+        notification_config: NotificationConfig,
+        pending_reply_turn_id: str,
+        continue_waiting: bool,
+        reason: str,
+        mood_update: dict[str, object] | None,
+        initial_interval_seconds: float,
+        max_interval_seconds: float,
+        notification_channel: str = "",
+    ) -> int:
+        state = self.self_state()
+        return self._commit_scheduled_turn(
+            turn_id,
+            owner_event_revision=owner_event_revision,
+            notification_config=notification_config,
+            activity=str(state["activity"]),
+            result=str(state.get("activity_result") or ""),
+            next_heartbeat_at=float(state["next_heartbeat_at"]),
+            mood_update=mood_update,
+            messages=[],
+            reason=reason,
+            pending_reply_turn_id=pending_reply_turn_id,
+            continue_reply_wait=continue_waiting,
+            reply_initial_interval_seconds=initial_interval_seconds,
+            reply_max_interval_seconds=max_interval_seconds,
+            notification_channel=notification_channel,
+            reply_wait_only=True,
+        )
+
     def commit_heartbeat(
         self,
         turn_id: str,
@@ -2472,10 +2505,45 @@ class Store(MemoryStore, DeliveryStore):
         reason: str,
         reply_expectation: str = "",
         draft: TurnDraft | None = None,
-        pending_reply_turn_id: str | None = None,
-        continue_waiting_for_reply: bool = False,
         reply_initial_interval_seconds: float = 60,
         notification_channel: str = "",
+    ) -> int:
+        return self._commit_scheduled_turn(
+            turn_id,
+            owner_event_revision=owner_event_revision,
+            notification_config=notification_config,
+            activity=activity,
+            result=result,
+            next_heartbeat_at=next_heartbeat_at,
+            mood_update=mood_update,
+            messages=messages,
+            reason=reason,
+            reply_expectation=reply_expectation,
+            draft=draft,
+            reply_initial_interval_seconds=reply_initial_interval_seconds,
+            notification_channel=notification_channel,
+        )
+
+    def _commit_scheduled_turn(
+        self,
+        turn_id: str,
+        *,
+        owner_event_revision: int,
+        notification_config: NotificationConfig,
+        activity: str,
+        result: str,
+        next_heartbeat_at: float,
+        mood_update: dict[str, object] | None,
+        messages: list[ChannelMessage],
+        reason: str,
+        reply_expectation: str = "",
+        draft: TurnDraft | None = None,
+        pending_reply_turn_id: str | None = None,
+        continue_reply_wait: bool = False,
+        reply_initial_interval_seconds: float = 60,
+        reply_max_interval_seconds: float | None = None,
+        notification_channel: str = "",
+        reply_wait_only: bool = False,
     ) -> int:
         now = time.time()
         current = self.self_state()
@@ -2507,7 +2575,9 @@ class Store(MemoryStore, DeliveryStore):
                 notification_key, notification_config, now
             )["allowed"]:
                 messages = []
-            source_json = json.dumps([f"heartbeat:{turn_id}"])
+            source_json = json.dumps(
+                [f"{'reply-wait' if reply_wait_only else 'heartbeat'}:{turn_id}"]
+            )
             progress_rows = self._db.execute(
                 """SELECT p.text, p.created_at, p.tool_call_id, p.part_index,
                           o.id AS outbox_id, o.state, o.possible_duplicate,
@@ -2550,12 +2620,12 @@ class Store(MemoryStore, DeliveryStore):
                     ),
                 )
             if pending_reply_is_current:
-                if continue_waiting_for_reply:
+                if continue_reply_wait:
                     checks = int(pending["pending_reply_checks"] or 0) + 1
-                    next_reply_check_at = (
-                        now + reply_initial_interval_seconds * 2**checks
-                        if checks < 3
-                        else None
+                    delay = reply_initial_interval_seconds * 2**checks
+                    next_reply_check_at = now + min(
+                        delay,
+                        reply_max_interval_seconds or delay,
                     )
                     self._db.execute(
                         """UPDATE self_state SET
@@ -2577,56 +2647,66 @@ class Store(MemoryStore, DeliveryStore):
                         now,
                     )
             self._apply_mood_update(mood_update, now)
-            self._apply_goal_mutations(draft, now)
-            activity_since = (
-                current["activity_since"] if current["activity"] == activity else now
-            )
-            self._db.execute(
-                """UPDATE self_state SET activity=?, activity_result=?, activity_since=?,
-                   last_heartbeat_at=?, next_heartbeat_at=?, heartbeat_claimed_at=NULL,
-                   heartbeat_claim_kind=NULL, updated_at=? WHERE id=1""",
-                (
+            if reply_wait_only:
+                self._db.execute(
+                    """UPDATE self_state SET heartbeat_claimed_at=NULL,
+                       heartbeat_claim_kind=NULL, updated_at=? WHERE id=1""",
+                    (now,),
+                )
+            else:
+                self._apply_goal_mutations(draft, now)
+                activity_since = (
+                    current["activity_since"]
+                    if current["activity"] == activity
+                    else now
+                )
+                self._db.execute(
+                    """UPDATE self_state SET activity=?, activity_result=?,
+                       activity_since=?, last_heartbeat_at=?, next_heartbeat_at=?,
+                       heartbeat_claimed_at=NULL, heartbeat_claim_kind=NULL,
+                       updated_at=? WHERE id=1""",
+                    (
+                        activity,
+                        result[:2000],
+                        activity_since,
+                        now,
+                        next_heartbeat_at,
+                        now,
+                    ),
+                )
+                heartbeat_record = (
+                    "[AUTONOMOUS HEARTBEAT RECORD; not sent to the owner]\n"
+                    f"Activity: {activity}\n"
+                    f"Result: {result.strip() or '(no concrete result recorded)'}"
+                )
+                heartbeat_source = json.dumps([f"heartbeat-record:{turn_id}"])
+                self._db.execute(
+                    """INSERT INTO messages
+                       (turn_id, role, content, created_at, source_event_ids_json,
+                        delivery_state)
+                       SELECT ?, 'assistant', ?, ?, ?, 'internal'
+                       WHERE NOT EXISTS (
+                           SELECT 1 FROM messages
+                           WHERE turn_id=? AND source_event_ids_json=?
+                       )""",
+                    (
+                        turn_id,
+                        heartbeat_record,
+                        now,
+                        heartbeat_source,
+                        turn_id,
+                        heartbeat_source,
+                    ),
+                )
+                self._ensure_autonomous_episode(
+                    "heartbeat-life",
+                    turn_id,
+                    "Momoi autonomous life",
+                    now,
                     activity,
-                    result[:2000],
-                    activity_since,
-                    now,
-                    next_heartbeat_at,
-                    now,
-                ),
-            )
-            heartbeat_record = (
-                "[AUTONOMOUS HEARTBEAT RECORD; not sent to the owner]\n"
-                f"Activity: {activity}\n"
-                f"Result: {result.strip() or '(no concrete result recorded)'}"
-            )
-            heartbeat_source = json.dumps([f"heartbeat-record:{turn_id}"])
-            self._db.execute(
-                """INSERT INTO messages
-                   (turn_id, role, content, created_at, source_event_ids_json,
-                    delivery_state)
-                   SELECT ?, 'assistant', ?, ?, ?, 'internal'
-                   WHERE NOT EXISTS (
-                       SELECT 1 FROM messages
-                       WHERE turn_id=? AND source_event_ids_json=?
-                   )""",
-                (
-                    turn_id,
-                    heartbeat_record,
-                    now,
-                    heartbeat_source,
-                    turn_id,
-                    heartbeat_source,
-                ),
-            )
-            self._ensure_autonomous_episode(
-                "heartbeat-life",
-                turn_id,
-                "Momoi autonomous life",
-                now,
-                activity,
-                result,
-                *(str(row["text"]) for row in progress_rows),
-            )
+                    result,
+                    *(str(row["text"]) for row in progress_rows),
+                )
             target_channel = (
                 str(pending["pending_reply_channel"] or "")
                 if pending_reply_is_current

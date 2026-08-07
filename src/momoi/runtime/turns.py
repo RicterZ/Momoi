@@ -54,6 +54,7 @@ from .protocol import (
     REFLECTION_FINISH_SPEC,
     RESPOND_TOOL_SPEC,
     heartbeat_respond_tool_spec,
+    reply_wait_respond_tool_spec,
     send_message_tool_spec,
 )
 
@@ -63,12 +64,14 @@ SYSTEM_PROMPT_PATH = PROMPT_ROOT.joinpath("system.md")
 STYLE_CARD_PROMPT_PATH = PROMPT_ROOT.joinpath("style_card.md")
 WEBHOOK_PROMPT_PATH = PROMPT_ROOT.joinpath("webhook.md")
 HEARTBEAT_PROMPT_PATH = PROMPT_ROOT.joinpath("heartbeat.md")
+REPLY_WAIT_PROMPT_PATH = PROMPT_ROOT.joinpath("reply_wait.md")
 REFLECTION_PROMPT_PATH = PROMPT_ROOT.joinpath("reflection.md")
 CONTEXT_PLANNER_PROMPT_PATH = PROMPT_ROOT.joinpath("context_planner.md")
 EPISODE_SUMMARY_PROMPT_PATH = PROMPT_ROOT.joinpath("episode_summary.md")
 STYLE_CARD_SYSTEM_PROMPT = STYLE_CARD_PROMPT_PATH.read_text(encoding="utf-8").strip()
 WEBHOOK_SYSTEM_PROMPT = WEBHOOK_PROMPT_PATH.read_text(encoding="utf-8").strip()
 HEARTBEAT_SYSTEM_PROMPT = HEARTBEAT_PROMPT_PATH.read_text(encoding="utf-8").strip()
+REPLY_WAIT_SYSTEM_PROMPT = REPLY_WAIT_PROMPT_PATH.read_text(encoding="utf-8").strip()
 REFLECTION_SYSTEM_PROMPT = REFLECTION_PROMPT_PATH.read_text(encoding="utf-8").strip()
 CONTEXT_PLANNER_SYSTEM_PROMPT = CONTEXT_PLANNER_PROMPT_PATH.read_text(
     encoding="utf-8"
@@ -795,7 +798,9 @@ class TurnRunner:
         require_response: bool,
         autonomous_goal_id: str | None = None,
         heartbeat_turn: bool = False,
+        reply_wait_turn: bool = False,
         heartbeat_owner_event_revision: int | None = None,
+        heartbeat_notification_key: str = "heartbeat.chat",
         allowed_capabilities: set[str] | None = None,
         artifact_root: Path | None = None,
         accept_owner_updates: bool = False,
@@ -830,7 +835,13 @@ class TurnRunner:
                 force_autonomous_finish = False
                 failed_tool_rounds = 0
             terminal_tool = (
-                heartbeat_respond_tool_spec() if heartbeat_turn else RESPOND_TOOL_SPEC
+                reply_wait_respond_tool_spec()
+                if reply_wait_turn
+                else (
+                    heartbeat_respond_tool_spec()
+                    if heartbeat_turn
+                    else RESPOND_TOOL_SPEC
+                )
             )
             request_tools = (
                 [self._send_message_tool_spec(delivery_channel.name), terminal_tool]
@@ -841,7 +852,9 @@ class TurnRunner:
                 system, messages, request_tools, history_messages
             )
             self._check_turn_budget(turn_id, system, messages, request_tools)
-            require_tool = bool(autonomous_goal_id or heartbeat_turn) or (
+            require_tool = bool(
+                autonomous_goal_id or heartbeat_turn or reply_wait_turn
+            ) or (
                 require_response and self.config.llm.api_format == "openai"
             )
             try:
@@ -1007,6 +1020,7 @@ class TurnRunner:
                 reply, error = self._parse_response(
                     response.tool_calls[0].arguments,
                     require_heartbeat=heartbeat_turn,
+                    require_reply_wait=reply_wait_turn,
                 )
                 if reply is not None and heartbeat_turn and reply.heartbeat:
                     minutes = int(reply.heartbeat["next_check_minutes"])
@@ -1092,9 +1106,13 @@ class TurnRunner:
                         result = {"ok": False, "error": "missing_tool_call_id"}
                     elif progress is None:
                         result = {"ok": False, "error": error}
-                    elif heartbeat_turn and heartbeat_owner_event_revision is not None:
+                    elif (
+                        (heartbeat_turn or reply_wait_turn)
+                        and heartbeat_owner_event_revision is not None
+                    ):
                         contact_error = self._heartbeat_contact_error(
-                            heartbeat_owner_event_revision
+                            heartbeat_owner_event_revision,
+                            heartbeat_notification_key,
                         )
                         if contact_error is not None:
                             result = {"ok": False, "error": contact_error}
@@ -1350,15 +1368,17 @@ class TurnRunner:
             list(self.channels), channel_name or self.channel.name
         )
 
-    def _heartbeat_contact_error(self, owner_event_revision: int) -> str | None:
+    def _heartbeat_contact_error(
+        self, owner_event_revision: int, notification_key: str
+    ) -> str | None:
         snapshot = self.store.heartbeat_conversation_snapshot()
         if int(snapshot["owner_event_revision"]) != owner_event_revision:
             return "heartbeat_superseded_by_owner_update"
         if snapshot["owner_busy"]:
             return "heartbeat_contact_unavailable"
-        pending = self.store.pending_owner_reply()
-        key = "heartbeat.reply_followup" if pending else "heartbeat.chat"
-        window = self.store.heartbeat_contact_window(key, self.config.notifications)
+        window = self.store.heartbeat_contact_window(
+            notification_key, self.config.notifications
+        )
         return None if window["allowed"] else "heartbeat_contact_unavailable"
 
     def _artifact_root(self) -> Path:
@@ -1585,6 +1605,9 @@ class TurnRunner:
             prompt += "\n\n# Workspace heartbeat guidance\n\n" + workspace_prompt
         return prompt
 
+    def _reply_wait_system_prompt(self) -> str:
+        return _live_prompt(REPLY_WAIT_PROMPT_PATH, REPLY_WAIT_SYSTEM_PROMPT)
+
     async def _complete_goal_turn(self, goal_id: str, stop: asyncio.Event) -> None:
         goal = self.store.goal(goal_id)
         turn_id = self._turn_id(
@@ -1689,7 +1712,11 @@ class TurnRunner:
                 "Deferred heartbeat while owner conversation is active reason=%s",
                 conversation["blocked_by"],
             )
-            self.store.release_heartbeat_claim(self._heartbeat_retry_delay())
+            self.store.release_heartbeat_claim(
+                self._heartbeat_retry_delay(
+                    str(self.store.self_state().get("heartbeat_claim_kind") or "")
+                )
+            )
             self.agenda_changed.set()
             return
         claim_kind = state.get("heartbeat_claim_kind")
@@ -1702,18 +1729,24 @@ class TurnRunner:
                 else state.get("next_heartbeat_at")
             )
         )
-        turn_id = self._turn_id("heartbeat", scheduled_at)
+        turn_kind = "reply-wait" if claim_kind == "reply" else "heartbeat"
+        turn_id = self._turn_id(turn_kind, scheduled_at)
         turn_state = self.store.begin_turn(
-            turn_id, "autonomous", [f"heartbeat:{scheduled_at}"]
+            turn_id, "autonomous", [f"{turn_kind}:{scheduled_at}"]
         )
         if turn_state in {"completed", "cancelled"}:
             self.store.clear_heartbeat_claim()
             return
         if turn_state == "needs_reconciliation" or stop.is_set():
-            self.store.release_heartbeat_claim(self._heartbeat_retry_delay())
+            self.store.release_heartbeat_claim(self._heartbeat_retry_delay(str(claim_kind)))
             return
         try:
-            await self._complete_heartbeat(
+            complete = (
+                self._complete_reply_wait
+                if claim_kind == "reply"
+                else self._complete_heartbeat
+            )
+            await complete(
                 turn_id,
                 target_channel,
                 owner_event_revision=int(conversation["owner_event_revision"]),
@@ -1734,7 +1767,7 @@ class TurnRunner:
                 turn_id=turn_id,
                 notification_channel=target_channel or "",
             )
-            self.store.release_heartbeat_claim(self._heartbeat_retry_delay())
+            self.store.release_heartbeat_claim(self._heartbeat_retry_delay(str(claim_kind)))
             self.store.record_turn_failure(turn_id, "fatal_error_after_external_tool")
             self.agenda_changed.set()
         except asyncio.CancelledError:
@@ -1746,16 +1779,130 @@ class TurnRunner:
                 "Heartbeat turn failed error=%s", type(error).__name__, exc_info=True
             )
             self.store.record_turn_failure(turn_id, type(error).__name__)
-            self.store.release_heartbeat_claim(self._heartbeat_retry_delay())
+            self.store.release_heartbeat_claim(self._heartbeat_retry_delay(str(claim_kind)))
             self.agenda_changed.set()
 
-    def _heartbeat_retry_delay(self) -> float:
+    def _heartbeat_retry_delay(self, claim_kind: str = "") -> float:
         pending = self.store.pending_owner_reply()
-        if not pending or int(pending["heartbeat_checks"]) >= 3:
+        if claim_kind != "reply" or not pending:
             return self.config.heartbeat.min_interval_seconds
-        return self.config.heartbeat.reply_initial_interval_seconds * 2 ** int(
-            pending["heartbeat_checks"]
+        return min(
+            self.config.heartbeat.reply_initial_interval_seconds
+            * 2 ** int(pending["heartbeat_checks"]),
+            self.config.heartbeat.max_interval_seconds,
         )
+
+    async def _complete_reply_wait(
+        self,
+        turn_id: str,
+        target_channel: str | None = None,
+        *,
+        owner_event_revision: int,
+    ) -> None:
+        pending = self.store.pending_owner_reply()
+        if pending is None:
+            self.store.clear_heartbeat_claim()
+            self.store.cancel_turn(turn_id)
+            return
+        delivery_channel = self._channel_for(
+            target_channel or str(pending.get("channel") or self.channel.name)
+        )
+        notification_key = "heartbeat.reply_followup"
+        contact_window = self.store.heartbeat_contact_window(
+            notification_key, self.config.notifications
+        )
+        recent = [
+            {
+                "turn_id": message["turn_id"],
+                "role": message["role"],
+                "delivery_state": message["delivery_state"],
+                "content": _historical_content(message["content"]),
+            }
+            for message in self.store.recent_conversation_messages(
+                self.config.recent_turns, self.config.recent_raw_tokens
+            )
+        ]
+        current_input = _sections(
+            ("pending_owner_reply", json.dumps(pending, ensure_ascii=False)),
+            (
+                "runtime_state",
+                (
+                    f"Current local time: {datetime.now().astimezone().isoformat(timespec='seconds')}\n"
+                    f"Current self state: {self.store.self_state_context()}"
+                ),
+            ),
+            ("recent_conversation", json.dumps(recent, ensure_ascii=False)),
+            (
+                "conversation_state",
+                json.dumps(
+                    {
+                        "owner_event_revision": owner_event_revision,
+                        "owner_turn_or_delivery_active": False,
+                        "owner_contact_allowed_now": contact_window["allowed"],
+                        "owner_contact_eligible_at": contact_window["eligible_at"],
+                    },
+                    separators=(",", ":"),
+                ),
+            ),
+            ("emotion_catalog", self.store.emotion_context()),
+        )
+        system = [
+            *self._system(),
+            {
+                "type": "text",
+                "text": self._reply_wait_system_prompt(),
+                "cache_control": {"type": "ephemeral"},
+            },
+        ]
+        messages: list[dict[str, Any]] = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": current_input,
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ],
+            }
+        ]
+        reply = await self._run_tool_loop(
+            system,
+            messages,
+            [
+                self._send_message_tool_spec(delivery_channel.name),
+                reply_wait_respond_tool_spec(),
+            ],
+            [],
+            TurnDraft(),
+            authority="agent",
+            source_event_id=f"reply-wait:{turn_id}",
+            allow_notify=False,
+            turn_id=turn_id,
+            require_response=True,
+            reply_wait_turn=True,
+            heartbeat_owner_event_revision=owner_event_revision,
+            heartbeat_notification_key=notification_key,
+            delivery_channel=delivery_channel,
+        )
+        if not isinstance(reply, AgentReply) or reply.reply_wait is None:
+            raise RuntimeError("Reply wait Turn ended without reply_wait state")
+        self.store.commit_reply_wait(
+            turn_id,
+            owner_event_revision=owner_event_revision,
+            notification_config=self.config.notifications,
+            pending_reply_turn_id=str(pending["source_turn"]),
+            continue_waiting=bool(reply.reply_wait["continue_waiting"]),
+            reason=str(reply.reply_wait["reason"]),
+            mood_update=reply.mood_update,
+            initial_interval_seconds=(
+                self.config.heartbeat.reply_initial_interval_seconds
+            ),
+            max_interval_seconds=self.config.heartbeat.max_interval_seconds,
+            notification_channel=delivery_channel.name,
+        )
+        self.agenda_changed.set()
+        self.outbox_changed.set()
 
     async def _complete_heartbeat(
         self,
@@ -1767,10 +1914,7 @@ class TurnRunner:
         delivery_channel = self._channel_for(target_channel or self.channel.name)
         state = self.store.self_state()
         self_context = self.store.self_state_context()
-        pending_reply = self.store.pending_owner_reply()
-        notification_key = (
-            "heartbeat.reply_followup" if pending_reply else "heartbeat.chat"
-        )
+        notification_key = "heartbeat.chat"
         contact_window = self.store.heartbeat_contact_window(
             notification_key, self.config.notifications
         )
@@ -1779,9 +1923,6 @@ class TurnRunner:
             [
                 activity,
                 str(state.get("activity_result") or ""),
-                str(pending_reply.get("expected_response") or "")
-                if pending_reply
-                else "",
             ]
         )[-12000:]
         episodes = recall_episode_context(
@@ -1831,10 +1972,6 @@ class TurnRunner:
             ("confirmed_owner_memory", memories),
             ("reflection_memory", learned),
             ("active_goals", goals),
-            (
-                "pending_owner_reply",
-                json.dumps(pending_reply, ensure_ascii=False) if pending_reply else "",
-            ),
             (
                 "conversation_state",
                 json.dumps(
@@ -1896,6 +2033,7 @@ class TurnRunner:
             require_response=True,
             heartbeat_turn=True,
             heartbeat_owner_event_revision=owner_event_revision,
+            heartbeat_notification_key=notification_key,
             allowed_capabilities={"read", "write"},
             artifact_root=artifact_root,
             delivery_channel=delivery_channel,
@@ -1924,10 +2062,6 @@ class TurnRunner:
             reason=decision["reason"],
             reply_expectation=decision["reply_expectation"],
             draft=draft,
-            pending_reply_turn_id=(
-                str(pending_reply["source_turn"]) if pending_reply else None
-            ),
-            continue_waiting_for_reply=decision["continue_waiting_for_reply"],
             reply_initial_interval_seconds=(
                 self.config.heartbeat.reply_initial_interval_seconds
             ),

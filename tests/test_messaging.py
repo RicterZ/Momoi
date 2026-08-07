@@ -317,7 +317,6 @@ class MessagingTest(unittest.TestCase):
                 "reply_expectation": "",
                 "mood": {"decision": "unchanged"},
                 "heartbeat": {
-                    "continue_waiting_for_reply": False,
                     "activity": "整理关卡灵感",
                     "result": "记下一个点子",
                     "next_check_minutes": 10,
@@ -338,6 +337,31 @@ class MessagingTest(unittest.TestCase):
         )
         self.assertIsNone(invalid_heartbeat)
         self.assertEqual(error, "invalid_heartbeat_state")
+        reply_wait, error = MomoiDaemon._parse_response(
+            {
+                "reply_wait": {
+                    "continue_waiting": True,
+                    "reason": "还想听主人回答",
+                },
+                "mood": {"decision": "unchanged"},
+            },
+            require_reply_wait=True,
+        )
+        self.assertIsNone(error)
+        self.assertTrue(reply_wait.reply_wait["continue_waiting"])
+        invalid_reply_wait, error = MomoiDaemon._parse_response(
+            {
+                "reply_wait": {
+                    "continue_waiting": True,
+                    "reason": "还想听主人回答",
+                },
+                "reply_expectation": "不应混入等待协议",
+                "mood": {"decision": "unchanged"},
+            },
+            require_reply_wait=True,
+        )
+        self.assertIsNone(invalid_reply_wait)
+        self.assertEqual(error, "invalid_reply_wait_state")
         invalid_blank_lines, error = MomoiDaemon._parse_messages(
             {"messages": ["第一条。\n\n第二条。"]}
         )

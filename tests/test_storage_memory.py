@@ -1160,22 +1160,24 @@ class StorageMemoryTest(unittest.TestCase):
                 store.claim_due_heartbeat(heartbeat, NotificationConfig(), now=1060)
             )
 
-            store.begin_turn("reply-check", "autonomous", ["heartbeat:1060"])
+            store.begin_turn("reply-check", "autonomous", ["reply-wait:1060"])
+            store.queue_progress(
+                "reply-check",
+                "follow-up",
+                ["还没想好的话，我可以帮你挑两个呀。"],
+                "weixin",
+            )
             with patch("momoi.storage.store.time.time", return_value=1060):
-                store.commit_heartbeat(
+                store.commit_reply_wait(
                     "reply-check",
                     owner_event_revision=0,
                     notification_config=NotificationConfig(),
-                    activity="等主人选晚餐",
-                    result="轻轻问了一次",
-                    next_heartbeat_at=1660,
                     mood_update=None,
-                    messages=["还没想好的话，我可以帮你挑两个呀。"],
                     reason="晚餐选择还需要主人回复",
-                    reply_expectation="主人是否需要帮忙挑晚餐",
                     pending_reply_turn_id="owner-question",
-                    continue_waiting_for_reply=True,
-                    reply_initial_interval_seconds=60,
+                    continue_waiting=True,
+                    initial_interval_seconds=60,
+                    max_interval_seconds=600,
                 )
             self.assertEqual(store.next_heartbeat_due_at(False), 1180)
             pending = store.pending_owner_reply(1060)
@@ -1193,12 +1195,12 @@ class StorageMemoryTest(unittest.TestCase):
                     "SELECT reply_expectation FROM outbox WHERE id=?",
                     (stale_followup.id,),
                 ).fetchone()[0],
-                "主人是否需要帮忙挑晚餐",
+                "",
             )
             with patch("momoi.storage.delivery.time.time", return_value=1070):
-                self.assertTrue(store.mark_sent(stale_followup.id, 60))
+                self.assertFalse(store.mark_sent(stale_followup.id, 60))
             pending = store.pending_owner_reply(1070)
-            self.assertEqual(pending["expected_response"], "主人是否需要帮忙挑晚餐")
+            self.assertEqual(pending["expected_response"], "主人对晚餐的选择")
             self.assertEqual(pending["heartbeat_checks"], 1)
             self.assertEqual(pending["delivered_followups"], 1)
             self.assertEqual(store.next_heartbeat_due_at(False), 1180)
@@ -1207,12 +1209,12 @@ class StorageMemoryTest(unittest.TestCase):
             store.add_event(answer)
             self.assertIsNone(store.pending_owner_reply(1071))
             self.assertIsNone(store.next_heartbeat_due_at(False))
-            self.assertEqual(store.next_heartbeat_due_at(True), 1660)
+            self.assertIsNone(store.next_heartbeat_due_at(True))
             self.assertEqual(
                 store._db.execute(
                     "SELECT next_heartbeat_at FROM self_state WHERE id=1"
                 ).fetchone()[0],
-                1660,
+                0,
             )
             self.assertFalse(store.mark_sending(stale_followup.id))
             store.commit_turn(
@@ -1334,7 +1336,7 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertEqual(store.next_heartbeat_due_at(True), 4900)
             store.close()
 
-    def test_heartbeat_can_stop_reply_annealing_without_owner_input(self) -> None:
+    def test_reply_wait_can_stop_without_changing_heartbeat_state(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
             store._db.execute(
@@ -1343,28 +1345,32 @@ class StorageMemoryTest(unittest.TestCase):
                    pending_reply_since=1000, pending_reply_checks=2,
                    next_heartbeat_at=1100 WHERE id=1"""
             )
-            store.begin_turn("stop-waiting", "autonomous", ["heartbeat:1100"])
+            before = store.self_state()
+            store.begin_turn("stop-waiting", "autonomous", ["reply-wait:1100"])
             with patch("momoi.storage.store.time.time", return_value=1100):
-                store.commit_heartbeat(
+                store.commit_reply_wait(
                     "stop-waiting",
                     owner_event_revision=0,
                     notification_config=NotificationConfig(),
-                    activity="做自己的事",
-                    result="决定不再等待",
-                    next_heartbeat_at=1700,
                     mood_update=None,
-                    messages=[],
                     reason="这段等待已经自然结束",
                     pending_reply_turn_id="question",
-                    continue_waiting_for_reply=False,
+                    continue_waiting=False,
+                    initial_interval_seconds=60,
+                    max_interval_seconds=600,
                 )
             self.assertIsNone(store.pending_owner_reply(1100))
-            self.assertEqual(store.next_heartbeat_due_at(True), 1700)
+            after = store.self_state()
+            for key in (
+                "activity",
+                "activity_result",
+                "last_heartbeat_at",
+                "next_heartbeat_at",
+            ):
+                self.assertEqual(after[key], before[key])
             store.close()
 
-    def test_reply_attention_returns_to_ordinary_rhythm_after_three_checks(
-        self,
-    ) -> None:
+    def test_reply_wait_anneals_beyond_three_checks_with_interval_cap(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
             store._db.execute(
@@ -1373,23 +1379,37 @@ class StorageMemoryTest(unittest.TestCase):
                    pending_reply_since=1000, pending_reply_checks=2,
                    next_heartbeat_at=1100 WHERE id=1"""
             )
-            store.begin_turn("third-check", "autonomous", ["heartbeat:1100"])
+            store.begin_turn("third-check", "autonomous", ["reply-wait:1100"])
             with patch("momoi.storage.store.time.time", return_value=1100):
-                store.commit_heartbeat(
+                store.commit_reply_wait(
                     "third-check",
                     owner_event_revision=0,
                     notification_config=NotificationConfig(),
-                    activity="等主人回复",
-                    result="继续等待",
-                    next_heartbeat_at=2000,
                     mood_update=None,
-                    messages=[],
                     reason="仍然想听主人回答",
                     pending_reply_turn_id="question",
-                    continue_waiting_for_reply=True,
+                    continue_waiting=True,
+                    initial_interval_seconds=60,
+                    max_interval_seconds=600,
                 )
             self.assertEqual(store.pending_owner_reply(1100)["heartbeat_checks"], 3)
-            self.assertEqual(store.next_heartbeat_due_at(False), 2000)
+            self.assertEqual(store.next_heartbeat_due_at(False), 1580)
+
+            store.begin_turn("fourth-check", "autonomous", ["reply-wait:1580"])
+            with patch("momoi.storage.store.time.time", return_value=1580):
+                store.commit_reply_wait(
+                    "fourth-check",
+                    owner_event_revision=0,
+                    notification_config=NotificationConfig(),
+                    mood_update=None,
+                    reason="仍然想听主人回答",
+                    pending_reply_turn_id="question",
+                    continue_waiting=True,
+                    initial_interval_seconds=60,
+                    max_interval_seconds=600,
+                )
+            self.assertEqual(store.pending_owner_reply(1580)["heartbeat_checks"], 4)
+            self.assertEqual(store.next_heartbeat_due_at(False), 2180)
             store.close()
 
     def test_new_owner_event_suppresses_heartbeat_visible_reply(self) -> None:
@@ -1628,7 +1648,8 @@ class StorageMemoryTest(unittest.TestCase):
             store._db.execute("UPDATE self_state SET next_heartbeat_at=1030 WHERE id=1")
             with patch("momoi.storage.delivery.time.time", return_value=1000):
                 self.assertTrue(store.mark_sent(store.due_outbox()[0].id, 60))
-            self.assertEqual(store.next_heartbeat_due_at(False), 1030)
+            self.assertEqual(store.next_heartbeat_due_at(False), 1060)
+            self.assertEqual(store.next_heartbeat_due_at(True), 1030)
             store.close()
 
     def test_recurring_goal_persists_schedule_and_advances_after_review(self) -> None:

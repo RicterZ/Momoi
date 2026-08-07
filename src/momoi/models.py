@@ -66,6 +66,7 @@ class AgentReply:
     expects_reply: bool = False
     reply_expectation: str = ""
     heartbeat: dict[str, Any] | None = None
+    reply_wait: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)

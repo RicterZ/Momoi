@@ -155,14 +155,6 @@ RESPOND_TOOL_SPEC: dict[str, Any] = {
 HEARTBEAT_STATE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
-        "continue_waiting_for_reply": {
-            "type": "boolean",
-            "description": (
-                "When pending_owner_reply exists, whether Momoi still genuinely "
-                "wants the runtime to keep checking for that reply. False releases "
-                "the waiting thread; use false when no reply is pending."
-            ),
-        },
         "activity": {"type": "string", "minLength": 1, "maxLength": 300},
         "result": {"type": "string", "maxLength": 2000},
         "next_check_minutes": {
@@ -173,12 +165,26 @@ HEARTBEAT_STATE_SCHEMA: dict[str, Any] = {
         "reason": {"type": "string", "minLength": 1, "maxLength": 500},
     },
     "required": [
-        "continue_waiting_for_reply",
         "activity",
         "result",
         "next_check_minutes",
         "reason",
     ],
+    "additionalProperties": False,
+}
+
+REPLY_WAIT_STATE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "continue_waiting": {
+            "type": "boolean",
+            "description": (
+                "Whether Momoi still genuinely wants to wait for the pending reply."
+            ),
+        },
+        "reason": {"type": "string", "minLength": 1, "maxLength": 500},
+    },
+    "required": ["continue_waiting", "reason"],
     "additionalProperties": False,
 }
 
@@ -200,6 +206,25 @@ def heartbeat_respond_tool_spec() -> dict[str, Any]:
                 "heartbeat": HEARTBEAT_STATE_SCHEMA,
             },
             "required": [*schema["required"], "heartbeat"],
+        },
+    }
+
+
+def reply_wait_respond_tool_spec() -> dict[str, Any]:
+    return {
+        "name": "respond",
+        "description": (
+            "Required terminal state update for a pending-reply wait Turn. It never "
+            "sends messages; use send_message first for an optional follow-up."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "reply_wait": REPLY_WAIT_STATE_SCHEMA,
+                "mood": MOOD_DECISION_SCHEMA,
+            },
+            "required": ["reply_wait", "mood"],
+            "additionalProperties": False,
         },
     }
 

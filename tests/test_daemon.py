@@ -25,6 +25,7 @@ from momoi.runtime import (
     RESPOND_TOOL_SPEC,
     SEND_MESSAGE_TOOL_SPEC,
     heartbeat_respond_tool_spec,
+    reply_wait_respond_tool_spec,
     MomoiDaemon,
 )
 from momoi.runtime.protocol import MOOD_UPDATE_SCHEMA
@@ -165,9 +166,13 @@ class DaemonTest(unittest.TestCase):
         self.assertEqual(heartbeat_respond["name"], "respond")
         self.assertIn("heartbeat", heartbeat_respond["input_schema"]["required"])
         self.assertIn("mood", heartbeat_respond["input_schema"]["required"])
-        self.assertIn(
+        self.assertNotIn(
             "continue_waiting_for_reply",
-            heartbeat_respond["input_schema"]["properties"]["heartbeat"]["required"],
+            heartbeat_respond["input_schema"]["properties"]["heartbeat"]["properties"],
+        )
+        reply_wait_respond = reply_wait_respond_tool_spec()
+        self.assertEqual(
+            reply_wait_respond["input_schema"]["required"], ["reply_wait", "mood"]
         )
 
     def test_context_budget_drops_old_history_and_truncates_tool_results(self) -> None:
@@ -565,13 +570,73 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
 
             with patch.object(
-                daemon, "_complete_heartbeat", new_callable=AsyncMock
+                daemon, "_complete_reply_wait", new_callable=AsyncMock
             ) as complete:
                 await daemon._complete_heartbeat_turn(asyncio.Event())
 
             self.assertEqual(
-                complete.await_args.args[0], daemon._turn_id("heartbeat", 1060.0)
+                complete.await_args.args[0], daemon._turn_id("reply-wait", 1060.0)
             )
+            daemon.store.close()
+
+    async def test_reply_wait_turn_has_only_wait_tools_and_preserves_heartbeat(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(
+                AppConfig(
+                    llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
+                    channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                    system_prompt="test",
+                    recent_raw_tokens=1000,
+                    recent_turns=2,
+                    memory_results=2,
+                    memory_tokens=1000,
+                    database=Path(directory) / "momoi.sqlite3",
+                    log_level="INFO",
+                )
+            )
+            daemon.store._db.execute(
+                """UPDATE self_state SET activity='看小说', activity_result='读到第三章',
+                   last_heartbeat_at=900, next_heartbeat_at=1660,
+                   pending_reply_turn_id='question',
+                   pending_reply_expectation='主人是否愿意继续聊',
+                   pending_reply_since=1000, pending_reply_next_check_at=1060
+                   WHERE id=1"""
+            )
+            daemon.store.begin_turn(
+                "reply-wait-turn", "autonomous", ["reply-wait:1060"]
+            )
+            before = daemon.store.self_state()
+            terminal = AgentReply(
+                [],
+                reply_wait={
+                    "continue_waiting": False,
+                    "reason": "这段等待自然冷却了",
+                },
+            )
+            with patch.object(
+                daemon, "_run_tool_loop", new_callable=AsyncMock, return_value=terminal
+            ) as run:
+                await daemon._complete_reply_wait(
+                    "reply-wait-turn", "napcat", owner_event_revision=0
+                )
+
+            tools = run.await_args.args[2]
+            self.assertEqual([tool["name"] for tool in tools], ["send_message", "respond"])
+            self.assertTrue(run.await_args.kwargs["reply_wait_turn"])
+            request = json.dumps(run.await_args.args[:2], ensure_ascii=False)
+            self.assertIn("<pending_owner_reply>", request)
+            self.assertNotIn("<autonomous_heartbeat>", request)
+            after = daemon.store.self_state()
+            for key in (
+                "activity",
+                "activity_result",
+                "last_heartbeat_at",
+                "next_heartbeat_at",
+            ):
+                self.assertEqual(after[key], before[key])
+            self.assertIsNone(daemon.store.pending_owner_reply())
             daemon.store.close()
 
     async def test_heartbeat_defers_while_owner_reply_is_in_flight(self) -> None:
@@ -1009,6 +1074,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         if (
                             "<autonomous_heartbeat>" not in request
                             or "<runtime_state>" not in request
+                            or "<pending_owner_reply>" in request
+                            or "reply_wait" in system_request
                         ):
                             raise AssertionError(__)
                         expected = {
@@ -1058,7 +1125,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 ),
                                 "mood": {"decision": "unchanged"},
                                 "heartbeat": {
-                                    "continue_waiting_for_reply": False,
                                     "activity": "整理小游戏关卡灵感",
                                     "result": (
                                         "读完一条游戏新闻并记下玩法联想"

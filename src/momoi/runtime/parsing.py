@@ -52,8 +52,15 @@ def parse_reply_expectation(
 
 
 def parse_response(
-    arguments: dict[str, Any], *, require_heartbeat: bool = False
+    arguments: dict[str, Any],
+    *,
+    require_heartbeat: bool = False,
+    require_reply_wait: bool = False,
 ) -> tuple[AgentReply | None, str | None]:
+    if require_heartbeat and require_reply_wait:
+        return None, "conflicting_terminal_state"
+    if require_reply_wait and set(arguments) != {"reply_wait", "mood"}:
+        return None, "invalid_reply_wait_state"
     if "messages" in arguments:
         return None, "messages_not_allowed_in_respond"
     messages: list[ChannelMessage] = []
@@ -61,16 +68,19 @@ def parse_response(
     mood, error = parse_mood_decision(arguments.get("mood"))
     if error is not None:
         return None, error
-    reply_expectation, error = parse_reply_expectation(arguments)
-    if reply_expectation is None:
-        return None, error
-    expects_reply, expectation = reply_expectation
+    if require_reply_wait:
+        expects_reply, expectation = False, ""
+    else:
+        reply_expectation, error = parse_reply_expectation(arguments)
+        if reply_expectation is None:
+            return None, error
+        expects_reply, expectation = reply_expectation
     heartbeat = arguments.get("heartbeat")
+    reply_wait = arguments.get("reply_wait")
     if require_heartbeat:
         if not isinstance(heartbeat, dict):
             return None, "invalid_heartbeat_state"
         required = {
-            "continue_waiting_for_reply",
             "activity",
             "result",
             "next_check_minutes",
@@ -79,8 +89,7 @@ def parse_response(
         if set(heartbeat) != required:
             return None, "invalid_heartbeat_state"
         if (
-            not isinstance(heartbeat["continue_waiting_for_reply"], bool)
-            or not isinstance(heartbeat["activity"], str)
+            not isinstance(heartbeat["activity"], str)
             or not heartbeat["activity"].strip()
             or len(heartbeat["activity"]) > 300
             or not isinstance(heartbeat["result"], str)
@@ -100,12 +109,29 @@ def parse_response(
         }
     elif heartbeat is not None:
         return None, "heartbeat_state_not_allowed"
+    if require_reply_wait:
+        if (
+            not isinstance(reply_wait, dict)
+            or set(reply_wait) != {"continue_waiting", "reason"}
+            or not isinstance(reply_wait["continue_waiting"], bool)
+            or not isinstance(reply_wait["reason"], str)
+            or not reply_wait["reason"].strip()
+            or len(reply_wait["reason"]) > 500
+        ):
+            return None, "invalid_reply_wait_state"
+        reply_wait = {
+            **reply_wait,
+            "reason": reply_wait["reason"].strip(),
+        }
+    elif reply_wait is not None:
+        return None, "reply_wait_state_not_allowed"
     return AgentReply(
         messages,
         mood_update=mood,
         expects_reply=expects_reply,
         reply_expectation=expectation,
         heartbeat=heartbeat if require_heartbeat else None,
+        reply_wait=reply_wait if require_reply_wait else None,
     ), None
 
 
