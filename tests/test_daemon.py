@@ -750,6 +750,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         if (
                             "<due_goal>" not in request
                             or "<runtime_state>" not in request
+                            or "<recent_conversation>" not in request
+                            or "<conversation_state>" not in request
                         ):
                             raise AssertionError(messages)
                         names = {str(tool["name"]) for tool in tools}

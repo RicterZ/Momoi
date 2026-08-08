@@ -165,6 +165,8 @@ OWNER_NOTIFY_SPEC: dict[str, Any] = {
     "name": "owner_notify",
     "description": (
         "Send one useful notification to the owner from an autonomous Turn. "
+        "Check the supplied current conversation first; do not notify when the "
+        "result is already covered or stale. "
         "Use messages as one to three separate short conversational beats; do not "
         "pack independent sentences into one item."
     ),
