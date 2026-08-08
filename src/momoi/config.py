@@ -23,6 +23,7 @@ class LLMConfig:
     timeout_seconds: float
     max_retries: int
     api_format: str = "anthropic"
+    dump_prompts: bool = False
 
 
 @dataclass(frozen=True)
@@ -148,6 +149,7 @@ def load_config(path: str | Path) -> AppConfig:
     api_format = str(llm_raw.get("api_format", "anthropic")).lower()
     if api_format not in {"anthropic", "openai"}:
         raise ConfigError("llm.api_format must be anthropic or openai")
+    dump_prompts = _boolean(llm_raw.get("dump_prompts", False), "llm.dump_prompts")
 
     if "channel" in raw and "channels" in raw:
         raise ConfigError("configure either channel or channels, not both")
@@ -279,6 +281,7 @@ def load_config(path: str | Path) -> AppConfig:
             timeout_seconds=_positive(llm_raw.get("timeout_seconds", 120), "llm.timeout_seconds"),
             max_retries=max(0, int(llm_raw.get("max_retries", 3))),
             api_format=api_format,
+            dump_prompts=dump_prompts,
         ),
         channel=channel_config,
         system_prompt=system_prompt,

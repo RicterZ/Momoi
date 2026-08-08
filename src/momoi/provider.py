@@ -1,6 +1,9 @@
 import asyncio
 import json
 import logging
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -111,6 +114,39 @@ def _log_usage(data: dict[str, Any]) -> None:
         )
 
 
+def _dump_request(
+    dump_dir: Path | None,
+    enabled: bool,
+    provider: str,
+    payload: dict[str, Any],
+    require_tool: bool,
+) -> None:
+    if not enabled or dump_dir is None:
+        return
+    try:
+        timestamp = datetime.now(timezone.utc)
+        dump_dir.mkdir(parents=True, exist_ok=True)
+        path = dump_dir / (
+            f"{timestamp.strftime('%Y%m%dT%H%M%S.%fZ')}-{uuid.uuid4().hex}.json"
+        )
+        path.write_text(
+            json.dumps(
+                {
+                    "timestamp": timestamp.isoformat(),
+                    "provider": provider,
+                    "require_tool": require_tool,
+                    "payload": payload,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+    except (OSError, TypeError, ValueError):
+        logger.warning("failed to dump LLM request", exc_info=True)
+
+
 async def _http_error(response: aiohttp.ClientResponse, protocol: str) -> ProviderError:
     body = await response.text()
     try:
@@ -123,8 +159,9 @@ async def _http_error(response: aiohttp.ClientResponse, protocol: str) -> Provid
 
 
 class AnthropicProvider:
-    def __init__(self, config: LLMConfig) -> None:
+    def __init__(self, config: LLMConfig, dump_dir: Path | None = None) -> None:
         self.config = config
+        self.dump_dir = dump_dir
         self._session: aiohttp.ClientSession | None = None
 
     async def __aenter__(self) -> "AnthropicProvider":
@@ -158,6 +195,7 @@ class AnthropicProvider:
             if require_tool:
                 payload["tool_choice"] = {"type": "any"}
         payload = cyber_keyword_pre_hook.replace_strings(payload)
+        _dump_request(self.dump_dir, self.config.dump_prompts, "anthropic", payload, require_tool)
         headers = {
             "x-api-key": self.config.api_key,
             "anthropic-version": "2023-06-01",
@@ -300,8 +338,9 @@ def _openai_messages(
 
 
 class OpenAIProvider:
-    def __init__(self, config: LLMConfig) -> None:
+    def __init__(self, config: LLMConfig, dump_dir: Path | None = None) -> None:
         self.config = config
+        self.dump_dir = dump_dir
         self._session: aiohttp.ClientSession | None = None
 
     async def __aenter__(self) -> "OpenAIProvider":
@@ -345,6 +384,7 @@ class OpenAIProvider:
             if require_tool:
                 payload["tool_choice"] = "required"
         payload = cyber_keyword_pre_hook.replace_strings(payload)
+        _dump_request(self.dump_dir, self.config.dump_prompts, "openai", payload, require_tool)
         headers = {
             "authorization": f"Bearer {self.config.api_key}",
             "content-type": "application/json",

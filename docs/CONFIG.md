@@ -64,7 +64,8 @@ This makes the workspace relocatable. Absolute paths are also accepted where a p
     "max_tokens": 4096,
     "temperature": 0.6,
     "timeout_seconds": 120,
-    "max_retries": 3
+    "max_retries": 3,
+    "dump_prompts": false
   }
 }
 ```
@@ -79,6 +80,7 @@ This makes the workspace relocatable. Absolute paths are also accepted where a p
 | `temperature` | No | `0.6` | Sampling temperature |
 | `timeout_seconds` | No | `120` | Positive request timeout |
 | `max_retries` | No | `3` | Retries for transient connection, server, and unusable successful responses |
+| `dump_prompts` | No | `false` | Save complete LLM requests under `llm-dumps/` in the workspace for diagnostics and prompt review |
 
 For Anthropic-compatible providers, Momoi calls `/v1/messages`. For OpenAI-compatible providers, a host-only URL receives `/v1/chat/completions`; a URL that already contains a gateway path receives `/chat/completions` below that path.
 

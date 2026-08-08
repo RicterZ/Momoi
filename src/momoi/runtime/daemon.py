@@ -67,10 +67,11 @@ class MomoiDaemon(TurnRunner):
             raise ValueError("channel plugin names must be unique")
         primary_name = str(getattr(config.channel, "plugin", ""))
         self.channel = self.channels.get(primary_name) or created[0]
+        dump_dir = config.workspace / "llm-dumps" if config.workspace else None
         self.provider = (
-            OpenAIProvider(config.llm)
+            OpenAIProvider(config.llm, dump_dir)
             if config.llm.api_format == "openai"
-            else AnthropicProvider(config.llm)
+            else AnthropicProvider(config.llm, dump_dir)
         )
         self.mcp = MCPManager(config.mcp_config)
         self.incoming: asyncio.Queue[IncomingMessage] = asyncio.Queue()

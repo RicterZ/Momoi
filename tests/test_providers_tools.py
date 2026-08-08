@@ -198,6 +198,52 @@ class ProvidersToolsTest(unittest.TestCase):
 
 
 class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
+    async def test_openai_provider_dumps_final_request_when_enabled(self) -> None:
+        requests: list[dict[str, object]] = []
+
+        async def completion(request: web.Request) -> web.Response:
+            requests.append(await request.json())
+            return web.json_response(
+                {"choices": [{"message": {"role": "assistant", "content": "ok"}}]}
+            )
+
+        server = TestServer(web.Application())
+        server.app.router.add_post("/v1/chat/completions", completion)
+        await server.start_server()
+        with tempfile.TemporaryDirectory() as directory:
+            dump_dir = Path(directory) / "llm-dumps"
+            provider = OpenAIProvider(
+                LLMConfig(
+                    base_url=str(server.make_url("/")).rstrip("/"),
+                    api_key="test",
+                    model="test",
+                    max_tokens=100,
+                    temperature=0,
+                    timeout_seconds=1,
+                    max_retries=0,
+                    api_format="openai",
+                    dump_prompts=True,
+                ),
+                dump_dir,
+            )
+            try:
+                async with provider:
+                    await provider.complete(
+                        "system",
+                        [{"role": "user", "content": "测试"}],
+                        [{"name": "respond", "input_schema": {"type": "object"}}],
+                        require_tool=True,
+                    )
+            finally:
+                await server.close()
+            dumps = list(dump_dir.glob("*.json"))
+            self.assertEqual(len(dumps), 1)
+            dumped = json.loads(dumps[0].read_text())
+            self.assertEqual(dumped["provider"], "openai")
+            self.assertEqual(dumped["payload"], requests[0])
+            self.assertEqual(dumped["payload"]["messages"][0]["role"], "system")
+            self.assertIn("tools", dumped["payload"])
+
     async def test_anthropic_provider_retries_server_error_and_reports_client_error(
         self,
     ) -> None:

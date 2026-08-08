@@ -51,6 +51,7 @@ class ConfigurationTest(unittest.TestCase):
             path.write_text(json.dumps(value))
             config = load_config(path)
             self.assertIsInstance(config.channel, NapCatConfig)
+            self.assertFalse(config.llm.dump_prompts)
             self.assertEqual(
                 [type(item) for item in config.channel_configs],
                 [NapCatConfig, WeixinConfig],
