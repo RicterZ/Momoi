@@ -128,7 +128,8 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
                     "enum": sorted(MEMORY_ACTIVATIONS),
                     "description": (
                         "always only for preferences or constraints that affect every Turn; "
-                        "recent for a current time-bounded thread; recall for everything else."
+                        "recent for a current time-bounded thread or owner state that can "
+                        "change autonomous task applicability; recall for everything else."
                     ),
                 },
                 "evidence": {
@@ -189,7 +190,13 @@ MEMORY_TOOL_POLICY = """### Memory tools
   says to remember something, states a stable preference/relationship/routine,
   or corrects an existing fact, call it before the final reply. Set `activation`
   to `always` only for a rule that should affect every response, `recent` for a
-  current bounded thread, and `recall` by default.
+  current bounded thread or a clearly stated owner state that can affect whether
+  autonomous work is still applicable, and `recall` by default.
+- In particular, remember clearly stated, time-sensitive owner state such as a
+  current situation, travel or schedule change, availability, or physical state
+  when it could change a later Goal or Webhook decision, even if it was shared
+  casually. Use a stable state key and exact evidence; do not store every passing
+  remark as active context.
 - A correction reuses the existing stable key. Set `replace_confirmed=true` only
   when the current user explicitly confirms the replacement. Otherwise a
   different value becomes a pending conflict and the older memory stays active;
