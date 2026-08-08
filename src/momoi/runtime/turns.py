@@ -518,6 +518,18 @@ class TurnRunner:
         recent_memories = self.store.recent_memory_context(
             max(100, self.config.memory_tokens // 8)
         )
+        recent_conversation = [
+            {
+                "turn_id": message["turn_id"],
+                "role": message["role"],
+                "delivery_state": message["delivery_state"],
+                "content": _historical_content(message["content"]),
+            }
+            for message in self.store.recent_conversation_messages(
+                self.config.recent_turns, self.config.recent_raw_tokens
+            )
+        ]
+        conversation = self.store.heartbeat_conversation_snapshot()
         self_state = self.store.self_state_context()
         emotions = self.store.emotion_context()
         runtime_state = (
@@ -538,6 +550,21 @@ class TurnRunner:
                 ),
             ),
             ("runtime_state", f"{runtime_state}\nCurrent self state: {self_state}"),
+            (
+                "recent_conversation",
+                json.dumps(recent_conversation, ensure_ascii=False),
+            ),
+            (
+                "conversation_state",
+                json.dumps(
+                    {
+                        "owner_event_revision": conversation["owner_event_revision"],
+                        "owner_turn_or_delivery_active": conversation["owner_busy"],
+                        "blocked_by": conversation["blocked_by"],
+                    },
+                    separators=(",", ":"),
+                ),
+            ),
             ("recalled_episodes", episodes),
             ("owner_preferences", owner_preferences),
             ("recent_memories", recent_memories),
