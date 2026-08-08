@@ -26,7 +26,7 @@ from ..mcp_client import MCP_TOOL_POLICY
 from ..memory_tools import MEMORY_TOOL_POLICY, MEMORY_TOOL_SPECS
 from ..models import AgentReply, IncomingMessage, ToolCall, TurnDraft
 from ..provider import ProviderError
-from ..storage import estimate_tokens
+from ..storage import estimate_tokens, truncate_tokens
 from ..text_replacement import cyber_keyword_pre_hook
 from .context_assembler import (
     assemble_main_context,
@@ -1971,6 +1971,26 @@ class TurnRunner:
         recent_memories = self.store.recent_memory_context(
             max(100, self.config.memory_tokens // 8)
         )
+        recent_topics: list[dict[str, object]] = []
+        topic_tokens = 0
+        for episode in self.store.list_episode_candidates(
+            min(6, max(1, self.config.recent_turns))
+        ):
+            topic = {
+                "title": episode["title"],
+                "summary": truncate_tokens(
+                    str(episode["summary"] or episode["working_summary"] or ""),
+                    160,
+                ),
+                "topics": episode["topics"],
+                "entities": episode["entities"],
+                "open_loops": episode["open_loops"],
+            }
+            size = estimate_tokens(json.dumps(topic, ensure_ascii=False))
+            if recent_topics and topic_tokens + size > 1200:
+                break
+            recent_topics.append(topic)
+            topic_tokens += size
         goals = self.store.active_goals_context(authority="agent")
         emotions = self.store.emotion_context()
         artifact_root = self._artifact_root().resolve()
@@ -1992,6 +2012,10 @@ class TurnRunner:
                     f"Current local time: {datetime.now().astimezone().isoformat(timespec='seconds')}\n"
                     f"Current self state: {self_context}"
                 ),
+            ),
+            (
+                "recent_topic_reference",
+                json.dumps(recent_topics, ensure_ascii=False),
             ),
             ("recalled_episodes", episodes),
             ("owner_preferences", owner_preferences),

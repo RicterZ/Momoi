@@ -1055,6 +1055,12 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             daemon = MomoiDaemon(config)
             self.assertTrue((Path(directory) / "artifacts").is_dir())
+            daemon.store.create_episode(
+                "最近的聊天话题",
+                topics=["聊天"],
+                entities=["Owner"],
+                open_loops=["等待反馈"],
+            )
 
             class Provider:
                 calls = 0
@@ -1076,6 +1082,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         if (
                             "<autonomous_heartbeat>" not in request
                             or "<runtime_state>" not in request
+                            or "<recent_topic_reference>" not in request
+                            or "最近的聊天话题" not in request
                             or "<pending_owner_reply>" in request
                             or "reply_wait" in system_request
                         ):
