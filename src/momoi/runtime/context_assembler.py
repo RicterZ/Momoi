@@ -441,9 +441,10 @@ def assemble_main_context(
     summary_token_budget: int,
     raw_token_budget: int,
     recent_turns: int = 0,
+    recent_before_timestamp: float | None = None,
 ) -> dict[str, str]:
     recent_messages = store.recent_conversation_messages(
-        recent_turns, raw_token_budget
+        recent_turns, raw_token_budget, recent_before_timestamp
     )
     recent = "\n".join(
         f"[{_message_role(message)} turn={message['turn_id']}] "

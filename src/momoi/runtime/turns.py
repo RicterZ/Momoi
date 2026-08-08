@@ -171,6 +171,12 @@ class TurnRunner:
         self, current_events: list[IncomingMessage], channel_name: str
     ) -> list[IncomingMessage]:
         updates: list[IncomingMessage] = []
+        for _ in range(len(self._deferred_incoming)):
+            message = self._deferred_incoming.popleft()
+            if self._channel_for(message.channel).name == channel_name:
+                updates.append(message)
+            else:
+                self._deferred_incoming.append(message)
         while True:
             try:
                 message = self.incoming.get_nowait()
@@ -312,7 +318,9 @@ class TurnRunner:
         recent_conversation = [
             {**message, "content": _historical_content(message.get("content"))}
             for message in self.store.recent_conversation_messages(
-                self.config.recent_turns, self.config.recent_raw_tokens
+                self.config.recent_turns,
+                self.config.recent_raw_tokens,
+                min(event.received_at for event in events),
             )
         ]
         candidate_context = [
@@ -490,6 +498,7 @@ class TurnRunner:
             self.config.summary_tokens,
             self.config.recent_raw_tokens,
             self.config.recent_turns,
+            min(event.received_at for event in events),
         )
 
     async def _complete_webhook_turn(

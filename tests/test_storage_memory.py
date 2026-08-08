@@ -146,6 +146,26 @@ class StorageMemoryTest(unittest.TestCase):
             )
             store.close()
 
+    def test_recent_conversation_stops_before_current_owner_event(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store.commit_turn([], "较早的聊天", AgentReply([]), turn_id="older")
+            store.commit_turn([], "后来才发生的聊天", AgentReply([]), turn_id="later")
+            with store._db:
+                store._db.execute(
+                    "UPDATE turns SET updated_at=100 WHERE id='older'"
+                )
+                store._db.execute(
+                    "UPDATE turns SET updated_at=300 WHERE id='later'"
+                )
+
+            messages = store.recent_conversation_messages(
+                10, 2000, before_timestamp=200
+            )
+
+            self.assertEqual([item["content"] for item in messages], ["较早的聊天"])
+            store.close()
+
     def test_episode_metadata_updates_and_owner_focus_ages_out(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")

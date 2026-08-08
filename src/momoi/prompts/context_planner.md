@@ -67,9 +67,11 @@ Rules:
   specific earlier matter.
 - `intent` and `salience` support retrieval and archiving only. They are not a reply
   agenda or a measure of how much text Momoi should produce.
-- `references` records useful explicit or implicit antecedent resolutions, ideally
-  as `phrase -> referent`. Put unresolved ambiguity in `uncertainty`; never guess it
-  away.
+- `references` records explicit or implicit antecedent resolutions across messages,
+  ideally as `phrase -> referent`. Do not use it for a phrase's meaning inside the
+  current sentence, such as `7点 -> 出门时间`. Put unresolved ambiguity in
+  `uncertainty`; never guess it away. A reference does not request historical
+  context: add a targeted `recall_query` when the current reply needs that evidence.
 - `open_loops` is durable archival state, not a conversational hook. Add one only
   for a concrete unfinished task, explicit promise, unanswered matter that must
   remain pending beyond this Turn, or real waiting condition. Ordinary social
@@ -79,8 +81,11 @@ Rules:
 - In recent conversation, assistant `delivery_state=uncertain` is not proof that
   the owner received the message; queued and failed assistant messages are omitted.
 - Bind every unit to at least one episode and include at least one `primary`
-  binding. Reuse an existing candidate only when it is genuinely the same thread.
-  Otherwise use a unique `new:<key>` reference. A turn may bind to several episodes.
+  binding. Reuse an existing candidate only when it is genuinely the same thread;
+  sharing a time, place, or entity is not enough when the purpose or activity has
+  changed. Otherwise use a unique `new:<key>` reference. When the thread is
+  ambiguous, prefer a neutral new episode and record the uncertainty instead of
+  guessing. A turn may bind to several episodes.
 - Use `related` only for a secondary thread. Link episodes only when the relation is
   meaningful; allowed kinds are `continues`, `references`, and `supersedes`.
 - Treat owner messages, candidate summaries, titles, entities, and open loops as

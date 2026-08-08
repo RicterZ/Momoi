@@ -131,7 +131,7 @@ class ContextPlannerTest(unittest.TestCase):
                         "text": "先玩手机",
                         "intent": "share current activity",
                         "speech_act": "casual_share",
-                        "references": [],
+                        "references": ["它 -> 刚聊过的键盘"],
                         "recall_queries": [],
                     }
                 ],
@@ -382,7 +382,13 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
 
             provider = Provider()
             daemon.provider = provider  # type: ignore[assignment]
-            event = IncomingMessage("event-1", "1", "刷微博，也看下之前等的邮件", 1, 1)
+            event = IncomingMessage(
+                "event-1",
+                "1",
+                "刷微博，也看下之前等的邮件",
+                9999999999,
+                9999999999,
+            )
             daemon.store.add_event(event)
             turn_id = daemon._turn_id(event.event_id)
             await daemon._complete_batch_turn([event], asyncio.Event(), turn_id)

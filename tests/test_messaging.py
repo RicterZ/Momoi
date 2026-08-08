@@ -1122,6 +1122,18 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             daemon.incoming.put_nowait(weixin_update)
             self.assertEqual(daemon._drain_owner_updates([], "napcat"), [qq_update])
             self.assertEqual(daemon._deferred_incoming.popleft(), weixin_update)
+
+            older_qq = IncomingMessage(
+                "napcat:older", "5", "较早的 QQ 补充", 5, 5, channel="napcat"
+            )
+            newer_qq = IncomingMessage(
+                "napcat:newer", "6", "较新的 QQ 补充", 6, 6, channel="napcat"
+            )
+            daemon._deferred_incoming.append(older_qq)
+            daemon.incoming.put_nowait(newer_qq)
+            self.assertEqual(
+                daemon._drain_owner_updates([], "napcat"), [older_qq, newer_qq]
+            )
             daemon.store.close()
 
     async def test_disconnected_channel_does_not_block_another_channel(self) -> None:

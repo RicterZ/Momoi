@@ -33,7 +33,6 @@ def is_light_social_plan(plan: dict[str, object]) -> bool:
     return bool(units) and all(
         isinstance(unit, dict)
         and unit.get("speech_act") in NON_OPEN_LOOP_SPEECH_ACTS
-        and not unit.get("references")
         and not unit.get("recall_queries")
         for unit in units
     )

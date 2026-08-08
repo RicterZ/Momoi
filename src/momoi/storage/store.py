@@ -1424,7 +1424,10 @@ class Store(MemoryStore, DeliveryStore):
         return self._episode_dict(row) if row else None
 
     def recent_conversation_messages(
-        self, turn_limit: int, token_budget: int
+        self,
+        turn_limit: int,
+        token_budget: int,
+        before_timestamp: float | None = None,
     ) -> list[dict[str, object]]:
         if turn_limit <= 0 or token_budget <= 0:
             return []
@@ -1435,8 +1438,9 @@ class Store(MemoryStore, DeliveryStore):
                    WHERE m.turn_id=t.id
                      AND (m.role='user' OR m.delivery_state IN ('delivered', 'uncertain'))
                )
+                 AND (? IS NULL OR t.updated_at < ?)
                ORDER BY t.updated_at DESC LIMIT ?""",
-            (turn_limit,),
+            (before_timestamp, before_timestamp, turn_limit),
         ).fetchall()
         if not turns:
             return []
