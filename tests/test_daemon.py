@@ -1095,6 +1095,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "read_file",
                             "write_file",
                             "send_message",
+                            "reply_expectation_close",
                             "respond",
                         }
                         if names != expected:

@@ -94,3 +94,4 @@ class TurnDraft:
     notification_key: str = ""
     notification_priority: str = "normal"
     notification_reason: str = ""
+    close_reply_expectation: bool = False

@@ -249,6 +249,15 @@ SEND_MESSAGE_TOOL_SPEC: dict[str, Any] = {
     },
 }
 
+REPLY_EXPECTATION_CLOSE_SPEC: dict[str, Any] = {
+    "name": "reply_expectation_close",
+    "description": (
+        "Close the cooled owner-reply expectation when the conversation has answered it "
+        "or it no longer matters. This only changes private relationship state."
+    ),
+    "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
+}
+
 
 def send_message_tool_spec(
     channel_names: list[str], primary_channel: str

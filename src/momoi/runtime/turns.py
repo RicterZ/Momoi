@@ -52,6 +52,7 @@ from .protocol import (
     AUTONOMOUS_FINISH_SPEC,
     CURL_TOOL_SPEC,
     REFLECTION_FINISH_SPEC,
+    REPLY_EXPECTATION_CLOSE_SPEC,
     RESPOND_TOOL_SPEC,
     heartbeat_respond_tool_spec,
     reply_wait_respond_tool_spec,
@@ -157,13 +158,19 @@ class TurnRunner:
                 for spec in MEMORY_TOOL_SPECS
                 if spec["name"] in {"memory_remember", "memory_forget"}
             ]
-            return [send_message, *memory_specs, RESPOND_TOOL_SPEC]
+            return [
+                send_message,
+                *memory_specs,
+                REPLY_EXPECTATION_CLOSE_SPEC,
+                RESPOND_TOOL_SPEC,
+            ]
         return [
             send_message,
             *MEMORY_TOOL_SPECS,
             *AGENDA_TOOL_SPECS,
             *BUILTIN_TOOL_SPECS,
             *self.mcp.tool_specs,
+            REPLY_EXPECTATION_CLOSE_SPEC,
             RESPOND_TOOL_SPEC,
         ]
 
@@ -255,6 +262,10 @@ class TurnRunner:
                     ("pending_memory_conflicts", conflicts),
                     ("active_goals", recalled["goals"]),
                     ("pending_reminders", recalled["reminders"]),
+                    (
+                        "cooled_reply_expectation",
+                        self.store.cooled_reply_expectation_context(),
+                    ),
                 ),
                 "cache_control": {"type": "ephemeral"},
             }
@@ -762,6 +773,10 @@ class TurnRunner:
             ("pending_memory_conflicts", memory_conflicts),
             ("active_goals", recalled["goals"]),
             ("pending_reminders", recalled["reminders"]),
+            (
+                "cooled_reply_expectation",
+                self.store.cooled_reply_expectation_context(),
+            ),
             ("open_reconciliations", reconciliations),
             ("emotion_catalog", emotions),
         )
@@ -1191,6 +1206,12 @@ class TurnRunner:
                                 "channel": target.name,
                                 "messages": len(progress),
                             }
+                elif call.name == "reply_expectation_close":
+                    if reply_wait_turn or authority not in {"owner", "agent"}:
+                        result = {"ok": False, "error": "tool_not_allowed"}
+                    else:
+                        draft.close_reply_expectation = True
+                        result = {"ok": True, "state": "closed"}
                 elif self.mcp.has_tool(call.name) or self.builtin_tools.has_tool(
                     call.name
                 ):
@@ -1251,7 +1272,8 @@ class TurnRunner:
                 if "provenance" not in result:
                     source = (
                         "runtime"
-                        if call.name in {"respond", "send_message"}
+                        if call.name
+                        in {"respond", "send_message", "reply_expectation_close"}
                         else (
                             "agenda"
                             if self.agenda_tools.has_tool(
@@ -1822,11 +1844,10 @@ class TurnRunner:
         pending = self.store.pending_owner_reply()
         if claim_kind != "reply" or not pending:
             return self.config.heartbeat.min_interval_seconds
-        return min(
-            self.config.heartbeat.reply_initial_interval_seconds
-            * 2 ** int(pending["heartbeat_checks"]),
-            self.config.heartbeat.max_interval_seconds,
-        )
+        checks = min(int(pending["heartbeat_checks"]), 2)
+        return self.config.heartbeat.reply_initial_interval_seconds * (1, 3, 6)[
+            checks
+        ]
 
     async def _complete_reply_wait(
         self,
@@ -2026,6 +2047,10 @@ class TurnRunner:
                 "recent_topic_reference",
                 json.dumps(recent_topics, ensure_ascii=False),
             ),
+            (
+                "cooled_reply_expectation",
+                self.store.cooled_reply_expectation_context(),
+            ),
             ("recalled_episodes", episodes),
             ("owner_preferences", owner_preferences),
             ("recent_memories", recent_memories),
@@ -2076,6 +2101,7 @@ class TurnRunner:
             *memory_search,
             *goal_create,
             *self._self_directed_tool_specs(),
+            REPLY_EXPECTATION_CLOSE_SPEC,
             self._send_message_tool_spec(delivery_channel.name),
             heartbeat_respond_tool_spec(),
         ]

@@ -159,7 +159,13 @@ class ContextPlannerTest(unittest.TestCase):
             )
             self.assertEqual(
                 [spec["name"] for spec in daemon._owner_tool_specs(plan)],
-                ["send_message", "memory_remember", "memory_forget", "respond"],
+                [
+                    "send_message",
+                    "memory_remember",
+                    "memory_forget",
+                    "reply_expectation_close",
+                    "respond",
+                ],
             )
             daemon.store.close()
 
