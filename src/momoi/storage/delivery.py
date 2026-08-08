@@ -491,6 +491,7 @@ class DeliveryStore:
                 """UPDATE self_state SET pending_reply_turn_id=?,
                    pending_reply_expectation=?, pending_reply_channel=?,
                    pending_reply_since=?, pending_reply_checks=0,
+                   pending_reply_last_reason='',
                    pending_reply_next_check_at=?, updated_at=? WHERE id=1""",
                 (turn_id, expectation, target_channel, now, due, now),
             )

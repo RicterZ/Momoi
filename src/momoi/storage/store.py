@@ -293,6 +293,7 @@ class Store(MemoryStore, DeliveryStore):
             ("pending_reply_expectation", "TEXT NOT NULL DEFAULT ''"),
             ("pending_reply_since", "REAL"),
             ("pending_reply_checks", "INTEGER NOT NULL DEFAULT 0"),
+            ("pending_reply_last_reason", "TEXT NOT NULL DEFAULT ''"),
             ("pending_reply_channel", "TEXT NOT NULL DEFAULT ''"),
             ("pending_reply_next_check_at", "REAL"),
             ("cooled_reply_expectation", "TEXT NOT NULL DEFAULT ''"),
@@ -801,7 +802,8 @@ class Store(MemoryStore, DeliveryStore):
                 self._db.execute(
                     """UPDATE self_state SET pending_reply_turn_id=NULL,
                        pending_reply_expectation='', pending_reply_since=NULL,
-                       pending_reply_checks=0, pending_reply_channel='',
+                       pending_reply_checks=0, pending_reply_last_reason='',
+                       pending_reply_channel='',
                        pending_reply_next_check_at=NULL,
                        updated_at=? WHERE id=1""",
                     (now,),
@@ -2379,7 +2381,7 @@ class Store(MemoryStore, DeliveryStore):
         row = self._db.execute(
             """SELECT pending_reply_turn_id, pending_reply_expectation,
                       pending_reply_since, pending_reply_checks,
-                      pending_reply_channel
+                      pending_reply_last_reason, pending_reply_channel
                FROM self_state WHERE id=1"""
         ).fetchone()
         if row is None or not str(row["pending_reply_expectation"] or "").strip():
@@ -2419,6 +2421,7 @@ class Store(MemoryStore, DeliveryStore):
             .isoformat(timespec="seconds"),
             "waiting_minutes": max(0, int((now - since) / 60)),
             "heartbeat_checks": int(row["pending_reply_checks"] or 0),
+            "previous_check_reason": str(row["pending_reply_last_reason"] or ""),
             "check_index": int(row["pending_reply_checks"] or 0) + 1,
             "max_checks": 3,
             "stage_delay_minutes": (1, 3, 6)[
@@ -2755,15 +2758,17 @@ class Store(MemoryStore, DeliveryStore):
                     self._db.execute(
                         """UPDATE self_state SET
                            pending_reply_checks=pending_reply_checks+1,
+                           pending_reply_last_reason=?,
                            pending_reply_next_check_at=? WHERE id=1""",
-                        (next_reply_check_at,),
+                        (reason[:500], next_reply_check_at),
                     )
                 else:
                     self._cool_active_reply(now, reason)
                     self._db.execute(
                         """UPDATE self_state SET pending_reply_turn_id=NULL,
                            pending_reply_expectation='', pending_reply_since=NULL,
-                           pending_reply_checks=0, pending_reply_channel='',
+                           pending_reply_checks=0, pending_reply_last_reason='',
+                           pending_reply_channel='',
                            pending_reply_next_check_at=NULL
                            WHERE id=1"""
                     )

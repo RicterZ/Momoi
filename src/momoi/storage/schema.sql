@@ -174,6 +174,7 @@ CREATE TABLE IF NOT EXISTS self_state (
     pending_reply_expectation TEXT NOT NULL DEFAULT '',
     pending_reply_since REAL,
     pending_reply_checks INTEGER NOT NULL DEFAULT 0,
+    pending_reply_last_reason TEXT NOT NULL DEFAULT '',
     pending_reply_channel TEXT NOT NULL DEFAULT '',
     pending_reply_next_check_at REAL,
     cooled_reply_expectation TEXT NOT NULL DEFAULT '',

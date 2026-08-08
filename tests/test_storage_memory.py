@@ -1203,6 +1203,9 @@ class StorageMemoryTest(unittest.TestCase):
             pending = store.pending_owner_reply(1060)
             self.assertEqual(pending["expected_response"], "主人对晚餐的选择")
             self.assertEqual(pending["heartbeat_checks"], 1)
+            self.assertEqual(
+                pending["previous_check_reason"], "晚餐选择还需要主人回复"
+            )
             key = store._db.execute(
                 "SELECT notification_key FROM notifications WHERE turn_id='reply-check'"
             ).fetchone()[0]
