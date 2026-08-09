@@ -55,7 +55,7 @@ class DaemonTest(unittest.TestCase):
         self.assertEqual(_message_gap_bounds("中等长度" * 8), (5.0, 6.0))
         self.assertEqual(_message_gap_bounds("长消息" * 30), (6.0, 7.0))
 
-    def test_specialized_system_omits_unavailable_tool_policies(self) -> None:
+    def test_system_tool_policies_follow_available_tools(self) -> None:
         daemon = object.__new__(MomoiDaemon)
         daemon.config = SimpleNamespace(
             system_prompt="{{SOUL}}\n{{CAPABILITY_POLICIES}}",
@@ -63,12 +63,26 @@ class DaemonTest(unittest.TestCase):
         )
         daemon.mcp = SimpleNamespace(tool_specs=[])
 
-        specialized = daemon._system()[0]["text"]
-        owner = daemon._system(include_tool_policies=True)[0]["text"]
+        base = daemon._system()
+        specialized = daemon._system_with_tool_policies(
+            base, [{"name": "send_message"}, {"name": "memory_remember"}]
+        )
+        owner = daemon._system_with_tool_policies(
+            base,
+            [
+                {"name": "memory_search"},
+                {"name": "curl"},
+                {"name": "goal_create"},
+            ],
+        )
 
-        self.assertIn("Use only the tools supplied", specialized)
-        self.assertNotIn("Memory tools", specialized)
-        self.assertIn("Memory tools", owner)
+        self.assertEqual(len(specialized), 1)
+        self.assertEqual(specialized[0], base[0])
+        self.assertNotIn("Memory tools", specialized[0]["text"])
+        self.assertEqual(len(owner), 2)
+        self.assertIn("Memory tools", owner[1]["text"])
+        self.assertIn("Built-in runtime tools", owner[1]["text"])
+        self.assertIn("Agenda tools", owner[1]["text"])
 
     def test_workspace_prompts_hot_reload_between_turns(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1769,7 +1783,13 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(
             llm_requests[1]["system"][0]["text"].rstrip().endswith("You are Momoi.")
         )
-        self.assertEqual(len(llm_requests[1]["system"]), 1)
+        self.assertEqual(len(llm_requests[1]["system"]), 2)
+        self.assertIn("Memory tools", llm_requests[1]["system"][1]["text"])
+        self.assertEqual(len(llm_requests[7]["system"]), 1)
+        self.assertEqual(
+            llm_requests[1]["system"][0]["text"],
+            llm_requests[7]["system"][0]["text"],
+        )
         self.assertEqual(
             llm_requests[2]["messages"][-1]["content"][0]["type"], "tool_result"
         )

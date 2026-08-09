@@ -81,6 +81,21 @@ EPISODE_SUMMARY_SYSTEM_PROMPT = EPISODE_SUMMARY_PROMPT_PATH.read_text(
     encoding="utf-8"
 ).strip()
 MAX_CONSECUTIVE_TOOL_FAILURES = 3
+MEMORY_POLICY_TOOLS = frozenset({"memory_search", "conversation_search"})
+BUILTIN_POLICY_TOOLS = frozenset(
+    {"curl", "read_file", "write_file", "apply_patch", "sleep"}
+)
+AGENDA_POLICY_TOOLS = frozenset(
+    {
+        "goal_create",
+        "goal_update",
+        "goal_finish",
+        "goal_cancel",
+        "reminder_create",
+        "reminder_cancel",
+        "owner_notify",
+    }
+)
 
 
 def _live_prompt(path: Any, fallback: str, *, optional: bool = False) -> str:
@@ -780,7 +795,7 @@ class TurnRunner:
             ("open_reconciliations", reconciliations),
             ("emotion_catalog", emotions),
         )
-        system = self._system(include_tool_policies=True)
+        system = self._system()
 
         current_content: list[dict[str, Any]] = [
             {
@@ -806,6 +821,7 @@ class TurnRunner:
             turn_id=turn_id,
             require_response=True,
             accept_owner_updates=True,
+            dynamic_tool_policies=True,
             delivery_channel=channel,
         )
         if reply is None:
@@ -855,6 +871,7 @@ class TurnRunner:
         allowed_capabilities: set[str] | None = None,
         artifact_root: Path | None = None,
         accept_owner_updates: bool = False,
+        dynamic_tool_policies: bool = False,
         delivery_channel: Channel,
     ) -> AgentReply | dict[str, Any] | None:
         external_tool_used = False
@@ -899,10 +916,15 @@ class TurnRunner:
                 if force_response
                 else ([AUTONOMOUS_FINISH_SPEC] if force_autonomous_finish else tools)
             )
-            history_messages = self._fit_context(
-                system, messages, request_tools, history_messages
+            request_system = (
+                self._system_with_tool_policies(system, request_tools)
+                if dynamic_tool_policies
+                else system
             )
-            self._check_turn_budget(turn_id, system, messages, request_tools)
+            history_messages = self._fit_context(
+                request_system, messages, request_tools, history_messages
+            )
+            self._check_turn_budget(turn_id, request_system, messages, request_tools)
             require_tool = bool(
                 autonomous_goal_id or heartbeat_turn or reply_wait_turn
             ) or (
@@ -910,7 +932,7 @@ class TurnRunner:
             )
             try:
                 response = await self.provider.complete(
-                    system,
+                    request_system,
                     messages,
                     request_tools,
                     require_tool=require_tool,
@@ -926,7 +948,7 @@ class TurnRunner:
                     estimate_tokens(
                         json.dumps(
                             {
-                                "system": system,
+                                "system": request_system,
                                 "messages": messages,
                                 "tools": request_tools,
                             },
@@ -1619,16 +1641,7 @@ class TurnRunner:
                 self.store.release_episode_annealing(episode_id)
                 raise
 
-    def _system(self, *, include_tool_policies: bool = False) -> list[dict[str, Any]]:
-        policies: list[str] = []
-        if include_tool_policies:
-            policies = [
-                MEMORY_TOOL_POLICY.strip(),
-                BUILTIN_TOOL_POLICY.strip(),
-                AGENDA_TOOL_POLICY.strip(),
-            ]
-            if self.mcp.tool_specs:
-                policies.append(MCP_TOOL_POLICY.strip())
+    def _system(self) -> list[dict[str, Any]]:
         system_prompt = self.config.system_prompt
         soul_prompt = self.config.soul_prompt
         soul_path = getattr(self.config, "soul_prompt_path", None)
@@ -1643,13 +1656,34 @@ class TurnRunner:
                 "{{STYLE_CARD}}",
                 _live_prompt(STYLE_CARD_PROMPT_PATH, STYLE_CARD_SYSTEM_PROMPT),
             )
-            .replace(
-                "{{CAPABILITY_POLICIES}}",
-                "\n\n".join(policies)
-                or "Use only the tools supplied for this Turn and follow their schemas.",
-            )
+            .replace("{{CAPABILITY_POLICIES}}", "")
         )
         return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
+
+    def _system_with_tool_policies(
+        self, system: list[dict[str, Any]], tools: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        names = {str(tool.get("name") or "") for tool in tools}
+        policies: list[str] = []
+        if names & MEMORY_POLICY_TOOLS:
+            policies.append(MEMORY_TOOL_POLICY.strip())
+        if names & BUILTIN_POLICY_TOOLS:
+            policies.append(BUILTIN_TOOL_POLICY.strip())
+        if names & AGENDA_POLICY_TOOLS:
+            policies.append(AGENDA_TOOL_POLICY.strip())
+        mcp_names = {str(tool.get("name") or "") for tool in self.mcp.tool_specs}
+        if names & mcp_names:
+            policies.append(MCP_TOOL_POLICY.strip())
+        if not policies:
+            return system
+        return [
+            *system,
+            {
+                "type": "text",
+                "text": "# Available capability guidance\n\n"
+                + "\n\n".join(policies),
+            },
+        ]
 
     def _heartbeat_system_prompt(self) -> str:
         prompt = _live_prompt(HEARTBEAT_PROMPT_PATH, HEARTBEAT_SYSTEM_PROMPT)
@@ -2498,6 +2532,7 @@ class TurnRunner:
             turn_id=turn_id,
             require_response=False,
             autonomous_goal_id=goal_id,
+            dynamic_tool_policies=True,
             allowed_capabilities={"read", "write"} if agent_owned else None,
             artifact_root=self._artifact_root() if agent_owned else None,
             delivery_channel=self.channel,
