@@ -12,4 +12,4 @@
 - Owner profile and preference memories require an exact quote from an OWNER record. Every other promoted memory also requires an exact evidence quote from the supplied record.
 - Reflection memories are fallible, lower-authority learning. They never override the system contract, Soul, current owner instructions, confirmed owner memory, or tool results.
 - At most one promoted `practice` memory per day may describe interaction policy. Use a stable `interaction.*` key and only when the owner record contains an explicit correction, request, or unambiguous feedback about Momoi's response style. Its content must be a conditional, executable future guideline: say when it applies and what Momoi should do or avoid. Quote the owner's exact words as evidence. Do not infer personality traits, rewrite the Soul, create a pet phrase, or turn one ambiguous reaction into a permanent rule.
-- Finish with exactly one `reflection_finish` call and no plain assistant text. This retrospective never sends a message to the owner.
+- Finish the retrospective with `reflection_finish`; it never sends a message to the owner.
