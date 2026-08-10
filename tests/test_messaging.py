@@ -115,7 +115,7 @@ class MessagingTest(unittest.TestCase):
         }
         rendered = render_segments(incoming_segments(payload))
         self.assertIn("先开灯", rendered)
-        self.assertIn("https://img.example/a.jpg", rendered)
+        self.assertIn("source=remote", rendered)
         self.assertIn("，卧室的", rendered)
         self.assertIn("天气卡片", rendered)
         self.assertIn("今天有雨", rendered)
@@ -123,6 +123,86 @@ class MessagingTest(unittest.TestCase):
         self.assertIn("QQ sticker", rendered)
         self.assertIn("动画表情", rendered)
         self.assertIn("戳一戳", rendered)
+
+    def test_materializes_remote_napcat_images_within_limit(self) -> None:
+        parsed = NapCatConfig.from_mapping(
+            {
+                "url": "ws://127.0.0.1",
+                "owner_qq": "20000",
+                "media_max_bytes": 4,
+                "media_download_timeout_seconds": 2,
+            }
+        )
+        self.assertEqual((parsed.media_max_bytes, parsed.media_download_timeout_seconds), (4, 2))
+
+        class Content:
+            async def iter_chunked(self, _size: int):
+                yield b"image-bytes"
+
+        class Response:
+            status = 200
+            content_length = len(b"image-bytes")
+            headers = {"Content-Type": "image/png"}
+            content = Content()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_: object) -> None:
+                return None
+
+        class Session:
+            def get(self, source: str, *, timeout: object):
+                self.source = source
+                self.timeout = timeout
+                return Response()
+
+        async def run() -> None:
+            client = NapCatChannel(
+                NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20)
+            )
+            client._session = Session()  # type: ignore[assignment]
+            segments = await client._enrich_segments(
+                (
+                    {
+                        "type": "image",
+                        "data": {"url": "https://img.example/image.png"},
+                    },
+                )
+            )
+            block = image_blocks(segments)[0]
+            self.assertEqual(block["source"]["type"], "base64")
+            self.assertEqual(block["source"]["media_type"], "image/png")
+            self.assertEqual(
+                block["source"]["data"], base64.b64encode(b"image-bytes").decode()
+            )
+            self.assertIn("source=embedded", render_segments(segments))
+
+            limited = NapCatChannel(
+                NapCatConfig(
+                    "ws://127.0.0.1",
+                    "20000",
+                    1,
+                    60,
+                    30,
+                    30,
+                    20,
+                    media_max_bytes=4,
+                )
+            )
+            limited._session = Session()  # type: ignore[assignment]
+            unavailable = await limited._enrich_segments(
+                (
+                    {
+                        "type": "image",
+                        "data": {"url": "https://img.example/large.png"},
+                    },
+                )
+            )
+            self.assertEqual(image_blocks(unavailable), [])
+            self.assertIn("source=unavailable", render_segments(unavailable))
+
+        asyncio.run(run())
 
     def test_renders_napcat_face_names_with_unknown_fallback(self) -> None:
         self.assertEqual(
@@ -661,7 +741,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                 receive,
             )
             self.assertEqual(len(accepted), 1)
-            self.assertIn("owner.jpg", accepted[0].text)
+            self.assertIn("source=remote", accepted[0].text)
 
             class Provider:
                 def __init__(self) -> None:

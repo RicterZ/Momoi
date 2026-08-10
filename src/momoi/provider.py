@@ -129,13 +129,14 @@ def _dump_request(
         path = dump_dir / (
             f"{timestamp.strftime('%Y%m%dT%H%M%S.%fZ')}-{uuid.uuid4().hex}.json"
         )
+        safe_payload = _redact_dump_media(payload)
         path.write_text(
             json.dumps(
                 {
                     "timestamp": timestamp.isoformat(),
                     "provider": provider,
                     "require_tool": require_tool,
-                    "payload": payload,
+                    "payload": safe_payload,
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -145,6 +146,24 @@ def _dump_request(
         )
     except (OSError, TypeError, ValueError):
         logger.warning("failed to dump LLM request", exc_info=True)
+
+
+def _redact_dump_media(value: Any) -> Any:
+    if isinstance(value, list):
+        return [_redact_dump_media(item) for item in value]
+    if isinstance(value, dict):
+        redacted = {key: _redact_dump_media(item) for key, item in value.items()}
+        if redacted.get("type") == "base64" and isinstance(redacted.get("data"), str):
+            redacted["data"] = f"[omitted {len(redacted['data'])} base64 chars]"
+        return redacted
+    if (
+        isinstance(value, str)
+        and value.startswith("data:image/")
+        and ";base64," in value
+    ):
+        prefix, encoded = value.split(",", 1)
+        return f"{prefix},[omitted {len(encoded)} base64 chars]"
+    return value
 
 
 async def _http_error(response: aiohttp.ClientResponse, protocol: str) -> ProviderError:

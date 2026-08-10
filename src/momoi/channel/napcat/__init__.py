@@ -33,6 +33,8 @@ class NapCatConfig:
     heartbeat_seconds: float
     reconnect_max_seconds: float
     send_timeout_seconds: float
+    media_max_bytes: int = 20 * 1024 * 1024
+    media_download_timeout_seconds: float = 15
 
     @classmethod
     def from_mapping(cls, value: object) -> "NapCatConfig":
@@ -48,6 +50,10 @@ class NapCatConfig:
                 raise ValueError(f"channel.settings.{name} must be positive")
             return number
 
+        media_max_bytes = int(value.get("media_max_bytes", 20 * 1024 * 1024))
+        if media_max_bytes <= 0:
+            raise ValueError("channel.settings.media_max_bytes must be positive")
+
         url = str(value.get("url") or "")
         if not url:
             raise ValueError("channel.settings.url is required")
@@ -59,6 +65,10 @@ class NapCatConfig:
             heartbeat_seconds=positive("heartbeat_seconds", 30),
             reconnect_max_seconds=positive("reconnect_max_seconds", 30),
             send_timeout_seconds=positive("send_timeout_seconds", 20),
+            media_max_bytes=media_max_bytes,
+            media_download_timeout_seconds=positive(
+                "media_download_timeout_seconds", 15
+            ),
         )
 
 
@@ -215,7 +225,77 @@ class NapCatChannel:
                 await self._enrich_reply(segment)
             elif segment["type"] == "forward":
                 await self._enrich_forward(segment)
+        await self._materialize_images(enriched)
         return tuple(enriched)
+
+    async def _materialize_images(self, segments: list[dict[str, Any]]) -> None:
+        if self._session is None:
+            return
+        for segment in segments:
+            data = segment.get("data")
+            if not isinstance(data, dict):
+                continue
+            if segment.get("type") == "reply":
+                quoted = data.get("_quoted")
+                if isinstance(quoted, dict) and isinstance(
+                    quoted.get("segments"), list
+                ):
+                    await self._materialize_images(quoted["segments"])
+            elif segment.get("type") == "forward":
+                nodes = data.get("_forward")
+                if isinstance(nodes, list):
+                    for node in nodes:
+                        if isinstance(node, dict) and isinstance(
+                            node.get("segments"), list
+                        ):
+                            await self._materialize_images(node["segments"])
+            if segment.get("type") not in {"image", "mface"}:
+                continue
+            source = data.get("url") or data.get("file")
+            if not isinstance(source, str) or not source.startswith(
+                ("http://", "https://")
+            ):
+                continue
+            materialized = await self._download_image(source)
+            if materialized is None:
+                for key in ("url", "file"):
+                    value = data.get(key)
+                    if isinstance(value, str) and value.startswith(
+                        ("http://", "https://")
+                    ):
+                        data.pop(key)
+                data["_media_unavailable"] = True
+                continue
+            encoded, media_type = materialized
+            data["url"] = "base64://" + encoded
+            data["media_type"] = media_type
+
+    async def _download_image(self, source: str) -> tuple[str, str] | None:
+        session = self._session
+        if session is None:
+            return None
+        try:
+            timeout = aiohttp.ClientTimeout(
+                total=self.config.media_download_timeout_seconds
+            )
+            async with session.get(source, timeout=timeout) as response:
+                if response.status >= 400:
+                    raise ValueError(f"HTTP {response.status}")
+                declared = response.content_length
+                if declared is not None and declared > self.config.media_max_bytes:
+                    raise ValueError("content too large")
+                content = bytearray()
+                async for chunk in response.content.iter_chunked(64 * 1024):
+                    content.extend(chunk)
+                    if len(content) > self.config.media_max_bytes:
+                        raise ValueError("content too large")
+                content_type = response.headers.get("Content-Type", "").split(";", 1)[0]
+                if not content_type.startswith("image/"):
+                    content_type = "image/jpeg"
+                return base64.b64encode(content).decode("ascii"), content_type
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as error:
+            logger.debug("Could not materialize NapCat image: %s", type(error).__name__)
+            return None
 
     async def _enrich_reply(self, segment: dict[str, Any]) -> None:
         message_id = segment["data"].get("id")
@@ -508,6 +588,12 @@ def image_blocks(
 
 def _describe_media(kind: str, data: dict[str, Any]) -> str:
     source = str(data.get("url") or data.get("file") or "unknown")
+    if data.get("_media_unavailable"):
+        source = "unavailable"
+    elif source.startswith("base64://"):
+        source = "embedded"
+    elif source.startswith(("http://", "https://")):
+        source = "remote"
     if len(source) > 500:
         source = source[:500] + "...[truncated]"
     label = data.get("summary") or data.get("name")

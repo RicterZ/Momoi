@@ -26,6 +26,7 @@ from momoi.provider import (
     OpenAIProvider,
     ProviderError,
     _openai_messages,
+    _redact_dump_media,
     usage_metrics,
 )
 from momoi.runtime import (
@@ -132,6 +133,24 @@ class ProvidersToolsTest(unittest.TestCase):
             messages[1]["content"][2]["image_url"]["url"],
             "data:image/png;base64,aW1hZ2U=",
         )
+
+    def test_prompt_dump_redacts_embedded_image_bytes(self) -> None:
+        payload = {
+            "anthropic": {"type": "base64", "data": "aW1hZ2U="},
+            "openai": "data:image/png;base64,aW1hZ2U=",
+        }
+        redacted = _redact_dump_media(payload)
+        self.assertEqual(
+            redacted,
+            {
+                "anthropic": {
+                    "type": "base64",
+                    "data": "[omitted 8 base64 chars]",
+                },
+                "openai": "data:image/png;base64,[omitted 8 base64 chars]",
+            },
+        )
+        self.assertEqual(payload["anthropic"]["data"], "aW1hZ2U=")
 
     def test_calculates_provider_token_usage_and_cache_rate(self) -> None:
         metrics = usage_metrics(
