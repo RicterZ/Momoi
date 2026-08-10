@@ -563,7 +563,9 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
             nonlocal attempts
             attempts += 1
             if attempts <= 3:
-                return web.json_response({"choices": []})
+                return web.json_response(
+                    {"choices": [], "error": {"message": "upstream overloaded"}}
+                )
             return web.json_response(
                 {"choices": [{"message": {"role": "assistant", "content": "ok"}}]}
             )
@@ -585,10 +587,13 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
         )
         try:
             async with provider:
-                response = await provider.complete(
-                    "system", [{"role": "user", "content": "测试入口"}]
-                )
+                with self.assertLogs("momoi.provider", level="WARNING") as logs:
+                    response = await provider.complete(
+                        "system", [{"role": "user", "content": "测试入口"}]
+                    )
                 self.assertEqual(response.content[0]["text"], "ok")
+                self.assertTrue(any("upstream overloaded" in item for item in logs.output))
+                self.assertTrue(any("body_preview" in item for item in logs.output))
         finally:
             await server.close()
         self.assertEqual(attempts, 4)

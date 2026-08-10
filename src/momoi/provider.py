@@ -166,6 +166,45 @@ def _redact_dump_media(value: Any) -> Any:
     return value
 
 
+def _response_preview(value: Any, limit: int = 1000) -> str:
+    if isinstance(value, str):
+        return value.replace("\n", "\\n")[:limit]
+    try:
+        rendered = json.dumps(value, ensure_ascii=False, default=str)
+    except (TypeError, ValueError):
+        rendered = repr(value)
+    return rendered[:limit]
+
+
+def _log_openai_unusable_response(
+    response: aiohttp.ClientResponse,
+    data: Any,
+    reason: str,
+) -> None:
+    if isinstance(data, dict):
+        choices = data.get("choices")
+        choices_type = type(choices).__name__
+        choices_length = len(choices) if isinstance(choices, list) else -1
+        keys = ",".join(sorted(str(key) for key in data)) or "<none>"
+        error = data.get("error")
+    else:
+        choices_type = "<unknown>"
+        choices_length = -1
+        keys = "<non-object>"
+        error = None
+    logger.warning(
+        "OpenAI-compatible response unusable status=%d reason=%s keys=%s "
+        "choices_type=%s choices_len=%d error=%s body_preview=%s",
+        response.status,
+        reason,
+        keys,
+        choices_type,
+        choices_length,
+        _response_preview(error),
+        _response_preview(data),
+    )
+
+
 async def _http_error(response: aiohttp.ClientResponse, protocol: str) -> ProviderError:
     body = await response.text()
     try:
@@ -466,15 +505,29 @@ class OpenAIProvider:
                         continue
                     if response.status != 200:
                         raise await _http_error(response, "OpenAI-compatible")
-                    data = await response.json()
+                    try:
+                        data = await response.json()
+                    except (aiohttp.ClientError, ValueError) as error:
+                        body = await response.text()
+                        _log_openai_unusable_response(response, body, "invalid_json")
+                        raise ProviderResponseError(
+                            f"OpenAI-compatible endpoint returned invalid JSON: {type(error).__name__}"
+                        ) from error
+                    if not isinstance(data, dict):
+                        _log_openai_unusable_response(response, data, "non_object_json")
+                        raise ProviderResponseError(
+                            "OpenAI-compatible endpoint returned non-object JSON"
+                        )
                     _log_usage(data)
                     choices = data.get("choices")
                     if not isinstance(choices, list) or not choices:
+                        _log_openai_unusable_response(response, data, "no_choices")
                         raise ProviderResponseError(
                             "OpenAI-compatible endpoint returned no choices"
                         )
                     message = choices[0].get("message")
                     if not isinstance(message, dict):
+                        _log_openai_unusable_response(response, data, "no_message")
                         raise ProviderResponseError(
                             "OpenAI-compatible endpoint returned no message"
                         )
