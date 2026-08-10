@@ -1454,7 +1454,9 @@ class TurnRunner:
         if snapshot["owner_busy"]:
             return "heartbeat_contact_unavailable"
         window = self.store.heartbeat_contact_window(
-            notification_key, self.config.notifications
+            notification_key,
+            self.config.notifications,
+            apply_cooldown=notification_key != "heartbeat.reply_followup",
         )
         return None if window["allowed"] else "heartbeat_contact_unavailable"
 
@@ -1897,7 +1899,9 @@ class TurnRunner:
         )
         notification_key = "heartbeat.reply_followup"
         contact_window = self.store.heartbeat_contact_window(
-            notification_key, self.config.notifications
+            notification_key,
+            self.config.notifications,
+            apply_cooldown=False,
         )
         recent = [
             {

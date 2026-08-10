@@ -1586,6 +1586,32 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertEqual(store.due_outbox(), [])
             store.close()
 
+    def test_reply_followup_contact_bypasses_normal_notification_cooldown(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store._db.execute(
+                """INSERT INTO notifications
+                   (id, turn_id, goal_id, notification_key, priority, reason,
+                    messages_json, state, not_before, created_at, queued_at)
+                   VALUES ('previous-reply', 'previous-reply-turn', 'heartbeat',
+                           'heartbeat.reply_followup', 'normal', 'previous',
+                           '[\"旧催促\"]', 'queued', 1000, 1000, 1000)"""
+            )
+            store._db.commit()
+            config = NotificationConfig(cooldown_seconds=1800)
+
+            ordinary = store.heartbeat_contact_window(
+                "heartbeat.reply_followup", config, now=1100
+            )
+            reply_followup = store.heartbeat_contact_window(
+                "heartbeat.reply_followup", config, now=1100, apply_cooldown=False
+            )
+
+            self.assertFalse(ordinary["allowed"])
+            self.assertTrue(reply_followup["allowed"])
+            self.assertEqual(reply_followup["eligible_at"], 1100)
+            store.close()
+
     def test_owner_message_supersedes_queued_heartbeat_chat(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")

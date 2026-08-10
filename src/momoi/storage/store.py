@@ -2703,7 +2703,10 @@ class Store(MemoryStore, DeliveryStore):
                 else "heartbeat.chat"
             )
             if not self.heartbeat_contact_window(
-                notification_key, notification_config, now
+                notification_key,
+                notification_config,
+                now,
+                apply_cooldown=not pending_reply_is_current,
             )["allowed"]:
                 messages = []
             source_json = json.dumps(
@@ -3970,6 +3973,8 @@ class Store(MemoryStore, DeliveryStore):
         notification_key: str,
         config: NotificationConfig,
         now: float,
+        *,
+        apply_cooldown: bool = True,
     ) -> float:
         eligible = now
         if priority == "normal":
@@ -3985,7 +3990,7 @@ class Store(MemoryStore, DeliveryStore):
                    )""",
                 (notification_key,),
             ).fetchone()[0]
-            if last is not None:
+            if apply_cooldown and last is not None:
                 eligible = max(eligible, float(last) + config.cooldown_seconds)
             if self._db.execute(
                 "SELECT 1 FROM events WHERE processed=0 LIMIT 1"
@@ -4005,10 +4010,16 @@ class Store(MemoryStore, DeliveryStore):
         notification_key: str,
         config: NotificationConfig,
         now: float | None = None,
+        *,
+        apply_cooldown: bool = True,
     ) -> dict[str, object]:
         now = time.time() if now is None else now
         eligible_at = self._notification_key_not_before(
-            "normal", notification_key, config, now
+            "normal",
+            notification_key,
+            config,
+            now,
+            apply_cooldown=apply_cooldown,
         )
         return {"allowed": eligible_at <= now, "eligible_at": eligible_at}
 
