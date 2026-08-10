@@ -202,20 +202,20 @@ class AnthropicProvider:
             "content-type": "application/json",
         }
         logger.debug(
-            "LLM request model=%s messages=%d tools=%d max_attempts=%d",
+            "LLM request model=%s messages=%d tools=%d",
             self.config.model,
             len(messages),
             len(tools or []),
-            self.config.max_retries + 1,
         )
         last_error: Exception | None = None
         for attempt in range(self.config.max_retries + 1):
-            logger.debug(
-                "LLM request attempt=%d/%d model=%s",
-                attempt + 1,
-                self.config.max_retries + 1,
-                self.config.model,
-            )
+            if attempt:
+                logger.debug(
+                    "LLM retry request retry=%d/%d model=%s",
+                    attempt,
+                    self.config.max_retries,
+                    self.config.model,
+                )
             try:
                 async with self._session.post(
                     _api_url(self.config.base_url, "/messages"), json=payload, headers=headers
@@ -224,9 +224,9 @@ class AnthropicProvider:
                         await response.read()
                         delay = min(2**attempt, 5)
                         logger.warning(
-                            "Anthropic-compatible request retrying attempt=%d/%d status=%d delay_seconds=%d",
-                            attempt + 2,
-                            self.config.max_retries + 1,
+                            "Anthropic-compatible request retrying retry=%d/%d status=%d delay_seconds=%d",
+                            attempt + 1,
+                            self.config.max_retries,
                             response.status,
                             delay,
                         )
@@ -272,9 +272,9 @@ class AnthropicProvider:
                 if attempt < self.config.max_retries:
                     delay = min(2**attempt, 5)
                     logger.warning(
-                        "Anthropic-compatible request retrying attempt=%d/%d error=%s delay_seconds=%d",
-                        attempt + 2,
-                        self.config.max_retries + 1,
+                        "Anthropic-compatible request retrying retry=%d/%d error=%s delay_seconds=%d",
+                        attempt + 1,
+                        self.config.max_retries,
                         type(error).__name__,
                         delay,
                     )
@@ -413,20 +413,20 @@ class OpenAIProvider:
             "content-type": "application/json",
         }
         logger.debug(
-            "LLM request model=%s messages=%d tools=%d max_attempts=%d",
+            "LLM request model=%s messages=%d tools=%d",
             self.config.model,
             len(messages),
             len(tools or []),
-            self.config.max_retries + 1,
         )
         last_error: Exception | None = None
         for attempt in range(self.config.max_retries + 1):
-            logger.debug(
-                "LLM request attempt=%d/%d model=%s",
-                attempt + 1,
-                self.config.max_retries + 1,
-                self.config.model,
-            )
+            if attempt:
+                logger.debug(
+                    "LLM retry request retry=%d/%d model=%s",
+                    attempt,
+                    self.config.max_retries,
+                    self.config.model,
+                )
             try:
                 async with self._session.post(
                     _openai_url(self.config.base_url),
@@ -437,9 +437,9 @@ class OpenAIProvider:
                         await response.read()
                         delay = min(2**attempt, 5)
                         logger.warning(
-                            "OpenAI-compatible request retrying attempt=%d/%d status=%d delay_seconds=%d",
-                            attempt + 2,
-                            self.config.max_retries + 1,
+                            "OpenAI-compatible request retrying retry=%d/%d status=%d delay_seconds=%d",
+                            attempt + 1,
+                            self.config.max_retries,
                             response.status,
                             delay,
                         )
@@ -503,13 +503,15 @@ class OpenAIProvider:
             except ProviderResponseError as error:
                 last_error = error
                 if attempt < self.config.max_retries:
+                    delay = min(2**attempt, 5)
                     logger.warning(
-                        "OpenAI-compatible endpoint returned an unusable response; retrying attempt=%d/%d error=%s",
+                        "OpenAI-compatible request retrying retry=%d/%d error=%s delay_seconds=%d",
                         attempt + 1,
                         self.config.max_retries,
                         error,
+                        delay,
                     )
-                    await asyncio.sleep(min(2**attempt, 5))
+                    await asyncio.sleep(delay)
                     continue
                 raise
             except (aiohttp.ClientError, asyncio.TimeoutError) as error:
@@ -517,9 +519,9 @@ class OpenAIProvider:
                 if attempt < self.config.max_retries:
                     delay = min(2**attempt, 5)
                     logger.warning(
-                        "OpenAI-compatible request retrying attempt=%d/%d error=%s delay_seconds=%d",
-                        attempt + 2,
-                        self.config.max_retries + 1,
+                        "OpenAI-compatible request retrying retry=%d/%d error=%s delay_seconds=%d",
+                        attempt + 1,
+                        self.config.max_retries,
                         type(error).__name__,
                         delay,
                     )

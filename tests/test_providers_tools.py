@@ -517,10 +517,14 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
         )
         try:
             async with provider:
-                response = await provider.complete(
-                    "system", [{"role": "user", "content": "测试入口"}]
-                )
+                with self.assertLogs("momoi.provider", level="DEBUG") as logs:
+                    response = await provider.complete(
+                        "system", [{"role": "user", "content": "测试入口"}]
+                    )
                 self.assertEqual(response.content[0]["text"], "ok")
+                self.assertTrue(any("LLM request model=test" in item for item in logs.output))
+                self.assertTrue(any("retry=1/1" in item for item in logs.output))
+                self.assertFalse(any("attempt=1/2" in item for item in logs.output))
                 with self.assertRaisesRegex(ProviderError, "bad request"):
                     await provider.complete(
                         "system", [{"role": "user", "content": "bad"}]
