@@ -705,10 +705,7 @@ class TurnRunner:
             raise
         except ProviderError as error:
             logger.error("Owner turn stopped after Provider failure: %s", error)
-            failure_message = (
-                "The model service failed during this turn. I stopped without "
-                "repeated retries; please try again later."
-            )
+            failure_message = "The model service failed during this turn. Please try again later."
             failure_reason = type(error).__name__
         except Exception as error:
             logger.exception(

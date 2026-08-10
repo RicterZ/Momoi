@@ -202,20 +202,35 @@ class AnthropicProvider:
             "content-type": "application/json",
         }
         logger.debug(
-            "LLM request model=%s messages=%d tools=%d",
+            "LLM request model=%s messages=%d tools=%d max_attempts=%d",
             self.config.model,
             len(messages),
             len(tools or []),
+            self.config.max_retries + 1,
         )
         last_error: Exception | None = None
         for attempt in range(self.config.max_retries + 1):
+            logger.debug(
+                "LLM request attempt=%d/%d model=%s",
+                attempt + 1,
+                self.config.max_retries + 1,
+                self.config.model,
+            )
             try:
                 async with self._session.post(
                     _api_url(self.config.base_url, "/messages"), json=payload, headers=headers
                 ) as response:
                     if response.status >= 500 and attempt < self.config.max_retries:
                         await response.read()
-                        await asyncio.sleep(min(2**attempt, 5))
+                        delay = min(2**attempt, 5)
+                        logger.warning(
+                            "Anthropic-compatible request retrying attempt=%d/%d status=%d delay_seconds=%d",
+                            attempt + 2,
+                            self.config.max_retries + 1,
+                            response.status,
+                            delay,
+                        )
+                        await asyncio.sleep(delay)
                         continue
                     if response.status != 200:
                         raise await _http_error(response, "Anthropic-compatible")
@@ -255,7 +270,15 @@ class AnthropicProvider:
             except (aiohttp.ClientError, asyncio.TimeoutError) as error:
                 last_error = error
                 if attempt < self.config.max_retries:
-                    await asyncio.sleep(min(2**attempt, 5))
+                    delay = min(2**attempt, 5)
+                    logger.warning(
+                        "Anthropic-compatible request retrying attempt=%d/%d error=%s delay_seconds=%d",
+                        attempt + 2,
+                        self.config.max_retries + 1,
+                        type(error).__name__,
+                        delay,
+                    )
+                    await asyncio.sleep(delay)
                     continue
         raise ProviderError(f"Anthropic-compatible request failed: {type(last_error).__name__}")
 
@@ -390,13 +413,20 @@ class OpenAIProvider:
             "content-type": "application/json",
         }
         logger.debug(
-            "LLM request model=%s messages=%d tools=%d",
+            "LLM request model=%s messages=%d tools=%d max_attempts=%d",
             self.config.model,
             len(messages),
             len(tools or []),
+            self.config.max_retries + 1,
         )
         last_error: Exception | None = None
         for attempt in range(self.config.max_retries + 1):
+            logger.debug(
+                "LLM request attempt=%d/%d model=%s",
+                attempt + 1,
+                self.config.max_retries + 1,
+                self.config.model,
+            )
             try:
                 async with self._session.post(
                     _openai_url(self.config.base_url),
@@ -405,7 +435,15 @@ class OpenAIProvider:
                 ) as response:
                     if response.status >= 500 and attempt < self.config.max_retries:
                         await response.read()
-                        await asyncio.sleep(min(2**attempt, 5))
+                        delay = min(2**attempt, 5)
+                        logger.warning(
+                            "OpenAI-compatible request retrying attempt=%d/%d status=%d delay_seconds=%d",
+                            attempt + 2,
+                            self.config.max_retries + 1,
+                            response.status,
+                            delay,
+                        )
+                        await asyncio.sleep(delay)
                         continue
                     if response.status != 200:
                         raise await _http_error(response, "OpenAI-compatible")
@@ -477,6 +515,14 @@ class OpenAIProvider:
             except (aiohttp.ClientError, asyncio.TimeoutError) as error:
                 last_error = error
                 if attempt < self.config.max_retries:
-                    await asyncio.sleep(min(2**attempt, 5))
+                    delay = min(2**attempt, 5)
+                    logger.warning(
+                        "OpenAI-compatible request retrying attempt=%d/%d error=%s delay_seconds=%d",
+                        attempt + 2,
+                        self.config.max_retries + 1,
+                        type(error).__name__,
+                        delay,
+                    )
+                    await asyncio.sleep(delay)
                     continue
         raise ProviderError(f"OpenAI-compatible request failed: {type(last_error).__name__}")
