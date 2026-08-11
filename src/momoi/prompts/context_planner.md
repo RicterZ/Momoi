@@ -65,6 +65,13 @@ Rules:
   needed; never invent a prior thread merely to fill the list. Use recall for a
   request, question, correction, or a social share that clearly refers to a
   specific earlier matter.
+- Treat a standalone sticker, reaction image, face, or other nonverbal media as a
+  low-information social cue by default. Unless accompanying text or clearly
+  observable content gives it unambiguous meaning, infer only a broad interactional
+  function such as acknowledgment, light banter, emotional emphasis, or closing.
+  Do not assign it a specific claim, emotion, intention, or referent; keep real
+  ambiguity in `uncertainty`, leave `recall_queries` and `open_loops` empty, and do
+  not turn it into a new topic.
 - `intent` and `salience` support retrieval and archiving only. They are not a reply
   agenda or a measure of how much text Momoi should produce.
 - `references` records explicit or implicit antecedent resolutions across messages,

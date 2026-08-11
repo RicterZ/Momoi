@@ -89,6 +89,18 @@ def response_plan() -> dict[str, object]:
 
 
 class ContextPlannerTest(unittest.TestCase):
+    def test_standalone_media_guidance_limits_semantic_inference(self) -> None:
+        self.assertIn("low-information social cue", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn(
+            "Do not assign it a specific claim, emotion, intention, or referent",
+            CONTEXT_PLANNER_SYSTEM_PROMPT,
+        )
+        self.assertIn(
+            "leave `recall_queries` and `open_loops` empty",
+            CONTEXT_PLANNER_SYSTEM_PROMPT,
+        )
+        self.assertIn("new topic.", CONTEXT_PLANNER_SYSTEM_PROMPT)
+
     def test_parser_requires_event_coverage_and_normalizes_episode_refs(self) -> None:
         plan = response_plan()
         parsed = parse_context_plan(json.dumps(plan), ["event-1"], [], "turn-1", 1)

@@ -122,6 +122,19 @@ class DaemonTest(unittest.TestCase):
 
         self.assertEqual(daemon._system()[0]["text"], STYLE_CARD_SYSTEM_PROMPT)
 
+    def test_style_card_calibrates_standalone_sticker_replies(self) -> None:
+        self.assertIn(
+            "standalone sticker or reaction image", STYLE_CARD_SYSTEM_PROMPT
+        )
+        self.assertIn("quiet end", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn(
+            "Do not reply merely to prove it was noticed", STYLE_CARD_SYSTEM_PROMPT
+        )
+        self.assertIn(
+            "explicit request genuinely depends on its content",
+            STYLE_CARD_SYSTEM_PROMPT,
+        )
+
     def test_mood_update_parser_accepts_open_state_labels(self) -> None:
         mood, error = MomoiDaemon._parse_mood_update(
             {
