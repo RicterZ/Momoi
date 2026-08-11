@@ -148,6 +148,13 @@ def _reconciliation_message(turn_id: str) -> str:
     )
 
 
+def _provider_failure_message(error: ProviderError) -> str:
+    detail = " ".join(str(error).split()) or type(error).__name__
+    if len(detail) > 300:
+        detail = detail[:297].rstrip() + "..."
+    return f"The model service failed during this turn. Reason: {detail}"
+
+
 class ExternalToolTurnError(RuntimeError):
     pass
 
@@ -714,7 +721,7 @@ class TurnRunner:
             raise
         except ProviderError as error:
             logger.error("Owner turn stopped after Provider failure: %s", error)
-            failure_message = "The model service failed during this turn. Please try again later."
+            failure_message = _provider_failure_message(error)
             failure_reason = type(error).__name__
         except Exception as error:
             logger.exception(

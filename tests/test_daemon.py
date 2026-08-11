@@ -1315,8 +1315,10 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
 
             self.assertEqual(provider.calls, 1)
-            self.assertIn("model service failed", daemon.store.due_outbox()[0].text)
-            self.assertNotIn("without repeated retries", daemon.store.due_outbox()[0].text)
+            failure = daemon.store.due_outbox()[0].text
+            self.assertIn("model service failed", failure)
+            self.assertIn("Reason: model engine error", failure)
+            self.assertNotIn("without repeated retries", failure)
             turn = daemon.store._db.execute(
                 "SELECT state, failure_reason FROM turns WHERE id=?", (turn_id,)
             ).fetchone()
