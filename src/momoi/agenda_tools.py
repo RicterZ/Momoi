@@ -14,11 +14,10 @@ AGENDA_TOOL_POLICY = """### Agenda tools
 
 - Every active goal needs a concrete next action and future review time.
 - A recurring goal may use an interval or daily `schedule`. The runtime computes
-  each next review. After a normal occurrence, use `goal_update` to record the
-  result and keep the recurrence active. Use `goal_finish` only when the Goal's
-  overall success criteria are fully achieved and the whole recurrence should end.
-  Use `goal_cancel` when the Goal is abandoned, obsolete, or explicitly stopped
-  without achieving those criteria.
+  each next review while the Goal remains open.
+- `goal_update` keeps a Goal open with its latest state. `goal_finish` closes it as
+  successfully completed when its success criteria are satisfied. `goal_cancel`
+  closes it without claiming success when it should no longer be pursued.
 - When reviewing a due goal, update, finish, or cancel it before the Turn ends.
 - Use `reminder_create` for a one-time reminder. Its `text` is the exact message
   delivered at `fire_at`, without another LLM call. A fixed recurring reminder
@@ -104,8 +103,7 @@ AGENDA_TOOL_SPECS: list[dict[str, Any]] = [
         "name": "goal_finish",
         "description": (
             "Permanently close a goal as successfully completed because its overall "
-            "success criteria are fully achieved. For a recurring goal this ends all "
-            "future occurrences; use goal_update after an ordinary occurrence."
+            "success criteria are fully achieved."
         ),
         "input_schema": {
             "type": "object",
@@ -118,8 +116,7 @@ AGENDA_TOOL_SPECS: list[dict[str, Any]] = [
         "name": "goal_cancel",
         "description": (
             "Permanently close a goal without success because it is abandoned, "
-            "obsolete, or explicitly stopped. For a recurring goal this ends all "
-            "future occurrences."
+            "obsolete, or explicitly stopped."
         ),
         "input_schema": {
             "type": "object",
