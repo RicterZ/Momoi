@@ -516,12 +516,29 @@ class MomoiDaemon(TurnRunner):
                 continue
             goal = self.store.claim_due_goal()
             if goal is not None:
+                log_event(
+                    logger,
+                    logging.INFO,
+                    "goal_queued",
+                    stage="scheduler",
+                    goal_id=goal["id"],
+                    title=goal["title"],
+                    next_review_at=goal.get("next_review_timestamp"),
+                    schedule=goal.get("schedule"),
+                )
                 await self.autonomous.put(str(goal["id"]))
                 continue
             reflection = self.store.claim_due_reflection(
                 self.config.reflection, self.config.notifications.timezone
             )
             if reflection is not None:
+                log_event(
+                    logger,
+                    logging.INFO,
+                    "reflection_queued",
+                    stage="scheduler",
+                    local_date=reflection["local_date"],
+                )
                 await self.autonomous.put(
                     REFLECTION_QUEUE_PREFIX + str(reflection["local_date"])
                 )
@@ -530,6 +547,12 @@ class MomoiDaemon(TurnRunner):
                 self.config.heartbeat, self.config.notifications
             )
             if heartbeat is not None:
+                log_event(
+                    logger,
+                    logging.DEBUG,
+                    "heartbeat_queued",
+                    stage="scheduler",
+                )
                 await self.autonomous.put(HEARTBEAT_QUEUE_ITEM)
                 continue
             due_times = [

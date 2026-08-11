@@ -970,6 +970,22 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     for record in logs.records
                 )
             )
+            tool_starts = [
+                record
+                for record in logs.records
+                if getattr(record, "momoi_event", "") == "tool_start"
+            ]
+            tool_ends = [
+                record
+                for record in logs.records
+                if getattr(record, "momoi_event", "") == "tool_end"
+            ]
+            self.assertTrue(tool_starts)
+            self.assertTrue(tool_ends)
+            self.assertTrue(
+                all("arguments" in record.momoi_fields for record in tool_starts)
+            )
+            self.assertTrue(all("result" in record.momoi_fields for record in tool_ends))
             daemon.store.close()
 
     async def test_due_goal_stays_ahead_of_queued_heartbeat(self) -> None:

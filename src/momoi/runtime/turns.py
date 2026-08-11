@@ -1328,6 +1328,7 @@ class TurnRunner:
                     channel=delivery_channel.name,
                     tool_call_id=call.id,
                     tool_name=call.name,
+                    arguments=safe_preview(call.arguments, 1000),
                 )
                 if call.name not in allowed_tool_names:
                     result = {"ok": False, "error": "tool_not_allowed"}
@@ -1513,6 +1514,7 @@ class TurnRunner:
                     tool_name=call.name,
                     ok=bool(result.get("ok")),
                     error=result.get("error"),
+                    result=safe_preview(result, 1000),
                     result_message=(
                         safe_preview(log_message, 500)
                         if log_message is not None
@@ -2763,6 +2765,10 @@ class TurnRunner:
             f"Recurring schedule: {json.dumps(goal['schedule'], ensure_ascii=False) if goal['schedule'] else 'none'}\n"
             f"Scheduled review time: {review_at}\n"
             "Continue only this due goal. Before finishing, update, finish, or cancel it. "
+            "For a recurring goal, an ordinary occurrence ends with goal_update so the "
+            "schedule remains active. Use goal_finish only when the overall success "
+            "criteria are fully achieved and the entire recurrence should end. Use "
+            "goal_cancel only when abandoning or explicitly stopping it without success. "
             "Before any task-specific tool call or owner_notify, check whether the owner's "
             "current situation still makes this Goal applicable. The Goal title, plan, fixed "
             "parameters, schedule, and previous result describe its purpose, not current facts. "

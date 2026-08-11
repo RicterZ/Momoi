@@ -1764,6 +1764,54 @@ class StorageMemoryTest(unittest.TestCase):
             store.commit_turn([event], event.text, AgentReply(["会定期检查"]), draft)
             self.assertEqual(store.goal(goal_id)["schedule"]["kind"], "interval")
 
+            occurrence_draft = TurnDraft()
+            occurrence = tools.execute(
+                ToolCall(
+                    "goal-update-occurrence",
+                    "goal_update",
+                    {
+                        "goal_id": goal_id,
+                        "status": "active",
+                        "latest_result": "本次检查正常",
+                    },
+                ),
+                occurrence_draft,
+                authority="agent",
+                source_event_id="goal-review",
+                allow_notify=True,
+            )
+            self.assertTrue(occurrence["ok"], occurrence)
+            self.assertEqual(occurrence["goal"]["status"], "active")
+            self.assertIsNotNone(occurrence["goal"]["next_review_at"])
+
+            finished = tools.execute(
+                ToolCall(
+                    "goal-finish-overall",
+                    "goal_finish",
+                    {"goal_id": goal_id, "result": "总体成功标准已达成"},
+                ),
+                TurnDraft(),
+                authority="agent",
+                source_event_id="goal-review",
+                allow_notify=True,
+            )
+            self.assertTrue(finished["ok"], finished)
+            self.assertEqual(finished["goal"]["status"], "done")
+
+            cancelled = tools.execute(
+                ToolCall(
+                    "goal-cancel-overall",
+                    "goal_cancel",
+                    {"goal_id": goal_id, "reason": "周期任务已明确停止"},
+                ),
+                TurnDraft(),
+                authority="owner",
+                source_event_id="owner-stop",
+                allow_notify=False,
+            )
+            self.assertTrue(cancelled["ok"], cancelled)
+            self.assertEqual(cancelled["goal"]["status"], "cancelled")
+
             store._db.execute(
                 "UPDATE goals SET next_review_at=? WHERE id=?",
                 (time.time() - 1, goal_id),
