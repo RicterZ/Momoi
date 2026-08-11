@@ -768,6 +768,14 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             or "<conversation_state>" not in request
                         ):
                             raise AssertionError(messages)
+                        if (
+                            "Turn identity: Goal review" not in request
+                            or "not an ordinary heartbeat" not in request
+                            or "Missing or imprecise current context alone is not a reason to skip"
+                            not in request
+                            or "overrides a stored plan step" not in request
+                        ):
+                            raise AssertionError(request)
                         names = {str(tool["name"]) for tool in tools}
                         if (
                             "mcp__test__read" not in names
