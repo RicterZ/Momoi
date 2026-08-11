@@ -12,6 +12,7 @@ from urllib.parse import quote, urlparse
 import aiohttp
 
 from .. import AmbiguousSend, NotConnected, SendRejected
+from ...logging_context import log_event
 from .api import WeixinAPI, WeixinHTTPError
 from .config import WeixinConfig, WeixinState
 from .media import (
@@ -66,7 +67,13 @@ class WeixinChannel:
             )
             await self._notify(api, "notifystart")
             self._ready.set()
-            logger.info("Weixin connected account=%s", self.state.account_id)
+            log_event(
+                logger,
+                logging.INFO,
+                "channel_connected",
+                channel="weixin",
+                account=self.state.account_id,
+            )
             failures = 0
             next_timeout = 35.0
             try:
@@ -90,7 +97,14 @@ class WeixinChannel:
                         raise
                     except (aiohttp.ClientError, RuntimeError) as error:
                         failures += 1
-                        logger.warning("Weixin poll failed: %s", type(error).__name__)
+                        log_event(
+                            logger,
+                            logging.WARNING,
+                            "channel_poll_failure",
+                            channel="weixin",
+                            attempt=failures,
+                            error_type=type(error).__name__,
+                        )
                         await _wait(
                             stop,
                             self.config.reconnect_max_seconds if failures >= 3 else 2,
@@ -105,11 +119,24 @@ class WeixinChannel:
                     result = int(response.get("errcode") or response.get("ret") or 0)
                     if result == -14:
                         self._paused_until = time.monotonic() + 3600
-                        logger.error("Weixin session is stale; pausing for one hour")
+                        log_event(
+                            logger,
+                            logging.ERROR,
+                            "channel_session_stale",
+                            channel="weixin",
+                            pause_seconds=3600,
+                        )
                         continue
                     if result:
                         failures += 1
-                        logger.warning("Weixin getupdates rejected ret=%d", result)
+                        log_event(
+                            logger,
+                            logging.WARNING,
+                            "channel_poll_rejected",
+                            channel="weixin",
+                            attempt=failures,
+                            result_code=result,
+                        )
                         await _wait(
                             stop,
                             self.config.reconnect_max_seconds if failures >= 3 else 2,
@@ -150,7 +177,13 @@ class WeixinChannel:
             return
         message_id = raw.get("message_id") or raw.get("client_id") or raw.get("seq")
         if message_id in (None, ""):
-            logger.warning("Dropping Weixin message without a stable id")
+            log_event(
+                logger,
+                logging.WARNING,
+                "channel_message_dropped",
+                channel="weixin",
+                reason="missing_message_id",
+            )
             return
         context_token = raw.get("context_token")
         if isinstance(context_token, str) and context_token:
@@ -256,8 +289,14 @@ class WeixinChannel:
             ValueError,
             OSError,
         ) as error:
-            logger.warning(
-                "Weixin %s media unavailable: %s", segment_type, type(error).__name__
+            log_event(
+                logger,
+                logging.WARNING,
+                "channel_media_failure",
+                channel="weixin",
+                media_type=segment_type,
+                message_id=message_id,
+                error_type=type(error).__name__,
             )
             data = {
                 "name": str(value.get("file_name") or segment_type),
@@ -486,8 +525,15 @@ class WeixinChannel:
                 {"base_info": api.base_info()},
                 timeout=min(self.config.send_timeout_seconds, 10),
             )
-        except (aiohttp.ClientError, asyncio.TimeoutError, RuntimeError):
-            logger.debug("Weixin %s failed", operation)
+        except (aiohttp.ClientError, asyncio.TimeoutError, RuntimeError) as error:
+            log_event(
+                logger,
+                logging.DEBUG,
+                "channel_notify_failure",
+                channel="weixin",
+                operation=operation,
+                error_type=type(error).__name__,
+            )
 
     def content_blocks(
         self, segments: tuple[dict[str, Any], ...]

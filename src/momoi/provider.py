@@ -4,12 +4,14 @@ import logging
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from time import monotonic
 from typing import Any
 from urllib.parse import urlsplit
 
 import aiohttp
 
 from .config import LLMConfig
+from .logging_context import log_event, safe_preview
 from .models import ProviderResponse, ToolCall
 from .text_replacement import cyber_keyword_pre_hook
 
@@ -89,29 +91,35 @@ def usage_metrics(data: dict[str, Any]) -> dict[str, float | int | bool] | None:
     }
 
 
-def _log_usage(data: dict[str, Any]) -> None:
+def _log_usage(
+    data: dict[str, Any], *, protocol: str, duration_ms: int
+) -> None:
     metrics = usage_metrics(data)
     if not metrics:
-        logger.debug("LLM usage unavailable")
-    elif metrics["cache_reported"]:
-        logger.debug(
-            "LLM usage input=%d uncached=%d cache_read=%d cache_write=%d "
-            "output=%d total=%d cache_hit=%.1f%%",
-            metrics["input"],
-            metrics["uncached"],
-            metrics["cache_read"],
-            metrics["cache_write"],
-            metrics["output"],
-            metrics["total"],
-            metrics["cache_hit_rate"],
+        log_event(
+            logger,
+            logging.DEBUG,
+            "llm_usage",
+            protocol=protocol,
+            available=False,
+            duration_ms=duration_ms,
         )
-    else:
-        logger.debug(
-            "LLM usage input=%d output=%d total=%d cache=not_reported",
-            metrics["input"],
-            metrics["output"],
-            metrics["total"],
-        )
+        return
+    log_event(
+        logger,
+        logging.DEBUG,
+        "llm_usage",
+        protocol=protocol,
+        duration_ms=duration_ms,
+        input=metrics["input"],
+        uncached=metrics["uncached"],
+        cache_read=metrics["cache_read"],
+        cache_write=metrics["cache_write"],
+        output=metrics["output"],
+        total=metrics["total"],
+        cache_hit=round(float(metrics["cache_hit_rate"]), 1),
+        cache_reported=metrics["cache_reported"],
+    )
 
 
 def _dump_request(
@@ -144,8 +152,14 @@ def _dump_request(
             + "\n",
             encoding="utf-8",
         )
-    except (OSError, TypeError, ValueError):
-        logger.warning("failed to dump LLM request", exc_info=True)
+    except (OSError, TypeError, ValueError) as error:
+        log_event(
+            logger,
+            logging.WARNING,
+            "llm_dump_failed",
+            error_type=type(error).__name__,
+            exc_info=True,
+        )
 
 
 def _redact_dump_media(value: Any) -> Any:
@@ -200,16 +214,18 @@ def _log_openai_unusable_response(
         choices_length = -1
         keys = "<non-object>"
         error = None
-    logger.warning(
-        "OpenAI-compatible response unusable status=%d reason=%s keys=%s "
-        "choices_type=%s choices_len=%d error=%s body_preview=%s",
-        response.status,
-        reason,
-        keys,
-        choices_type,
-        choices_length,
-        _response_preview(error),
-        _response_preview(data),
+    log_event(
+        logger,
+        logging.WARNING,
+        "llm_response_unusable",
+        protocol="openai",
+        status=response.status,
+        reason=reason,
+        keys=keys,
+        choices_type=choices_type,
+        choices_count=choices_length,
+        error=safe_preview(error, 300),
+        body=safe_preview(data, 1000),
     )
 
 
@@ -267,21 +283,21 @@ class AnthropicProvider:
             "anthropic-version": "2023-06-01",
             "content-type": "application/json",
         }
-        logger.debug(
-            "LLM request model=%s messages=%d tools=%d",
-            self.config.model,
-            len(messages),
-            len(tools or []),
-        )
         last_error: Exception | None = None
         for attempt in range(self.config.max_retries + 1):
-            if attempt:
-                logger.debug(
-                    "LLM retry request retry=%d/%d model=%s",
-                    attempt,
-                    self.config.max_retries,
-                    self.config.model,
-                )
+            attempt_started = monotonic()
+            log_event(
+                logger,
+                logging.DEBUG,
+                "llm_request",
+                protocol="anthropic",
+                model=self.config.model,
+                messages=len(messages),
+                tools=len(tools or []),
+                require_tool=require_tool,
+                attempt=attempt + 1,
+                attempt_max=self.config.max_retries + 1,
+            )
             try:
                 async with self._session.post(
                     _api_url(self.config.base_url, "/messages"), json=payload, headers=headers
@@ -289,19 +305,39 @@ class AnthropicProvider:
                     if response.status >= 500 and attempt < self.config.max_retries:
                         await response.read()
                         delay = min(2**attempt, 5)
-                        logger.warning(
-                            "Anthropic-compatible request retrying retry=%d/%d status=%d delay_seconds=%d",
-                            attempt + 1,
-                            self.config.max_retries,
-                            response.status,
-                            delay,
+                        log_event(
+                            logger,
+                            logging.WARNING,
+                            "llm_retry",
+                            protocol="anthropic",
+                            attempt=attempt + 1,
+                            attempt_max=self.config.max_retries + 1,
+                            next_attempt=attempt + 2,
+                            status=response.status,
+                            delay_seconds=delay,
                         )
                         await asyncio.sleep(delay)
                         continue
                     if response.status != 200:
-                        raise await _http_error(response, "Anthropic-compatible")
+                        error = await _http_error(response, "Anthropic-compatible")
+                        log_event(
+                            logger,
+                            logging.ERROR,
+                            "llm_failure",
+                            protocol="anthropic",
+                            attempt=attempt + 1,
+                            attempt_max=self.config.max_retries + 1,
+                            status=response.status,
+                            error_type=type(error).__name__,
+                            reason=safe_preview(str(error), 300),
+                            duration_ms=int((monotonic() - attempt_started) * 1000),
+                        )
+                        raise error
                     data = await response.json()
-                    _log_usage(data)
+                    duration_ms = int((monotonic() - attempt_started) * 1000)
+                    _log_usage(
+                        data, protocol="anthropic", duration_ms=duration_ms
+                    )
                     content = [
                         block
                         for block in data.get("content", [])
@@ -317,9 +353,15 @@ class AnthropicProvider:
                         if block.get("type") == "tool_use"
                     ]
                     if tool_calls:
-                        logger.debug(
-                            "LLM requested tools=%s",
-                            ",".join(call.name for call in tool_calls),
+                        log_event(
+                            logger,
+                            logging.DEBUG,
+                            "llm_response",
+                            protocol="anthropic",
+                            response_kind="tools",
+                            tool_count=len(tool_calls),
+                            tool_names=",".join(call.name for call in tool_calls),
+                            duration_ms=duration_ms,
                         )
                         return ProviderResponse(content, tool_calls, usage_metrics(data))
                     text = "\n".join(
@@ -328,22 +370,58 @@ class AnthropicProvider:
                         if block.get("type") == "text"
                     ).strip()
                     if not text:
-                        raise ProviderError("Anthropic-compatible endpoint returned no text content")
-                    logger.debug("LLM response text=%s", _compact_response_text(text))
+                        error = ProviderError(
+                            "Anthropic-compatible endpoint returned no text content"
+                        )
+                        log_event(
+                            logger,
+                            logging.ERROR,
+                            "llm_failure",
+                            protocol="anthropic",
+                            attempt=attempt + 1,
+                            attempt_max=self.config.max_retries + 1,
+                            error_type=type(error).__name__,
+                            reason=str(error),
+                            duration_ms=duration_ms,
+                        )
+                        raise error
+                    log_event(
+                        logger,
+                        logging.DEBUG,
+                        "llm_response",
+                        protocol="anthropic",
+                        response_kind="text",
+                        text=_compact_response_text(text),
+                        duration_ms=duration_ms,
+                    )
                     return ProviderResponse(content, [], usage_metrics(data))
             except (aiohttp.ClientError, asyncio.TimeoutError) as error:
                 last_error = error
                 if attempt < self.config.max_retries:
                     delay = min(2**attempt, 5)
-                    logger.warning(
-                        "Anthropic-compatible request retrying retry=%d/%d error=%s delay_seconds=%d",
-                        attempt + 1,
-                        self.config.max_retries,
-                        type(error).__name__,
-                        delay,
+                    log_event(
+                        logger,
+                        logging.WARNING,
+                        "llm_retry",
+                        protocol="anthropic",
+                        attempt=attempt + 1,
+                        attempt_max=self.config.max_retries + 1,
+                        next_attempt=attempt + 2,
+                        error_type=type(error).__name__,
+                        delay_seconds=delay,
                     )
                     await asyncio.sleep(delay)
                     continue
+                log_event(
+                    logger,
+                    logging.ERROR,
+                    "llm_failure",
+                    protocol="anthropic",
+                    attempt=attempt + 1,
+                    attempt_max=self.config.max_retries + 1,
+                    error_type=type(error).__name__,
+                    duration_ms=int((monotonic() - attempt_started) * 1000),
+                )
         raise ProviderError(f"Anthropic-compatible request failed: {type(last_error).__name__}")
 
 
@@ -476,21 +554,22 @@ class OpenAIProvider:
             "authorization": f"Bearer {self.config.api_key}",
             "content-type": "application/json",
         }
-        logger.debug(
-            "LLM request model=%s messages=%d tools=%d",
-            self.config.model,
-            len(messages),
-            len(tools or []),
-        )
         last_error: Exception | None = None
         for attempt in range(self.config.max_retries + 1):
-            if attempt:
-                logger.debug(
-                    "LLM retry request retry=%d/%d model=%s",
-                    attempt,
-                    self.config.max_retries,
-                    self.config.model,
-                )
+            attempt_started = monotonic()
+            log_event(
+                logger,
+                logging.DEBUG,
+                "llm_request",
+                protocol="openai",
+                model=self.config.model,
+                messages=len(messages),
+                tools=len(tools or []),
+                require_tool=require_tool,
+                tool_choice=payload.get("tool_choice"),
+                attempt=attempt + 1,
+                attempt_max=self.config.max_retries + 1,
+            )
             try:
                 async with self._session.post(
                     _openai_url(self.config.base_url),
@@ -500,17 +579,34 @@ class OpenAIProvider:
                     if response.status >= 500 and attempt < self.config.max_retries:
                         await response.read()
                         delay = min(2**attempt, 5)
-                        logger.warning(
-                            "OpenAI-compatible request retrying retry=%d/%d status=%d delay_seconds=%d",
-                            attempt + 1,
-                            self.config.max_retries,
-                            response.status,
-                            delay,
+                        log_event(
+                            logger,
+                            logging.WARNING,
+                            "llm_retry",
+                            protocol="openai",
+                            attempt=attempt + 1,
+                            attempt_max=self.config.max_retries + 1,
+                            next_attempt=attempt + 2,
+                            status=response.status,
+                            delay_seconds=delay,
                         )
                         await asyncio.sleep(delay)
                         continue
                     if response.status != 200:
-                        raise await _http_error(response, "OpenAI-compatible")
+                        error = await _http_error(response, "OpenAI-compatible")
+                        log_event(
+                            logger,
+                            logging.ERROR,
+                            "llm_failure",
+                            protocol="openai",
+                            attempt=attempt + 1,
+                            attempt_max=self.config.max_retries + 1,
+                            status=response.status,
+                            error_type=type(error).__name__,
+                            reason=safe_preview(str(error), 300),
+                            duration_ms=int((monotonic() - attempt_started) * 1000),
+                        )
+                        raise error
                     try:
                         data = await response.json()
                     except (aiohttp.ClientError, ValueError) as error:
@@ -524,7 +620,8 @@ class OpenAIProvider:
                         raise ProviderResponseError(
                             "OpenAI-compatible endpoint returned non-object JSON"
                         )
-                    _log_usage(data)
+                    duration_ms = int((monotonic() - attempt_started) * 1000)
+                    _log_usage(data, protocol="openai", duration_ms=duration_ms)
                     choices = data.get("choices")
                     if not isinstance(choices, list) or not choices:
                         _log_openai_unusable_response(response, data, "no_choices")
@@ -567,42 +664,86 @@ class OpenAIProvider:
                             }
                         )
                     if tool_calls:
-                        logger.debug(
-                            "LLM requested tools=%s",
-                            ",".join(call.name for call in tool_calls),
+                        log_event(
+                            logger,
+                            logging.DEBUG,
+                            "llm_response",
+                            protocol="openai",
+                            response_kind="tools",
+                            tool_count=len(tool_calls),
+                            tool_names=",".join(call.name for call in tool_calls),
+                            duration_ms=duration_ms,
                         )
                         return ProviderResponse(content, tool_calls, usage_metrics(data))
                     if not content:
                         raise ProviderResponseError(
                             "OpenAI-compatible endpoint returned no text content"
                         )
-                    logger.debug("LLM response text=%s", _compact_response_text(text))
+                    log_event(
+                        logger,
+                        logging.DEBUG,
+                        "llm_response",
+                        protocol="openai",
+                        response_kind="text",
+                        text=_compact_response_text(text),
+                        duration_ms=duration_ms,
+                    )
                     return ProviderResponse(content, [], usage_metrics(data))
             except ProviderResponseError as error:
                 last_error = error
                 if attempt < self.config.max_retries:
                     delay = min(2**attempt, 5)
-                    logger.warning(
-                        "OpenAI-compatible request retrying retry=%d/%d error=%s delay_seconds=%d",
-                        attempt + 1,
-                        self.config.max_retries,
-                        error,
-                        delay,
+                    log_event(
+                        logger,
+                        logging.WARNING,
+                        "llm_retry",
+                        protocol="openai",
+                        attempt=attempt + 1,
+                        attempt_max=self.config.max_retries + 1,
+                        next_attempt=attempt + 2,
+                        error_type=type(error).__name__,
+                        reason=safe_preview(str(error), 300),
+                        delay_seconds=delay,
                     )
                     await asyncio.sleep(delay)
                     continue
+                log_event(
+                    logger,
+                    logging.ERROR,
+                    "llm_failure",
+                    protocol="openai",
+                    attempt=attempt + 1,
+                    attempt_max=self.config.max_retries + 1,
+                    error_type=type(error).__name__,
+                    reason=safe_preview(str(error), 300),
+                    duration_ms=int((monotonic() - attempt_started) * 1000),
+                )
                 raise
             except (aiohttp.ClientError, asyncio.TimeoutError) as error:
                 last_error = error
                 if attempt < self.config.max_retries:
                     delay = min(2**attempt, 5)
-                    logger.warning(
-                        "OpenAI-compatible request retrying retry=%d/%d error=%s delay_seconds=%d",
-                        attempt + 1,
-                        self.config.max_retries,
-                        type(error).__name__,
-                        delay,
+                    log_event(
+                        logger,
+                        logging.WARNING,
+                        "llm_retry",
+                        protocol="openai",
+                        attempt=attempt + 1,
+                        attempt_max=self.config.max_retries + 1,
+                        next_attempt=attempt + 2,
+                        error_type=type(error).__name__,
+                        delay_seconds=delay,
                     )
                     await asyncio.sleep(delay)
                     continue
+                log_event(
+                    logger,
+                    logging.ERROR,
+                    "llm_failure",
+                    protocol="openai",
+                    attempt=attempt + 1,
+                    attempt_max=self.config.max_retries + 1,
+                    error_type=type(error).__name__,
+                    duration_ms=int((monotonic() - attempt_started) * 1000),
+                )
         raise ProviderError(f"OpenAI-compatible request failed: {type(last_error).__name__}")

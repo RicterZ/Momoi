@@ -960,7 +960,15 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(provider.calls, 5)
             self.assertIn("缺少有效的执行时间", daemon.store.due_outbox()[0].text)
             self.assertTrue(
-                any("Invalid isoformat string" in message for message in logs.output)
+                any(
+                    "Invalid isoformat string"
+                    in str(
+                        getattr(record, "momoi_fields", {}).get(
+                            "result_message", ""
+                        )
+                    )
+                    for record in logs.records
+                )
             )
             daemon.store.close()
 

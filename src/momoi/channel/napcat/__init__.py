@@ -17,6 +17,7 @@ from .. import (
     NotConnected,
     SendRejected,
 )
+from ...logging_context import log_event
 from ...models import IncomingMessage, OwnerInputStatus
 from .face_names import QQ_FACE_NAMES
 
@@ -105,14 +106,22 @@ class NapCatChannel:
                         self._ws = ws
                         self._ready.set()
                         delay = 1.0
-                        logger.info("NapCat connected")
+                        log_event(
+                            logger,
+                            logging.INFO,
+                            "channel_connected",
+                            channel="napcat",
+                        )
 
                         def finish_inbound(task: asyncio.Task[None]) -> None:
                             inbound_tasks.discard(task)
                             if not task.cancelled() and task.exception() is not None:
-                                logger.error(
-                                    "NapCat inbound message failed: %s",
-                                    type(task.exception()).__name__,
+                                log_event(
+                                    logger,
+                                    logging.ERROR,
+                                    "channel_inbound_failure",
+                                    channel="napcat",
+                                    error_type=type(task.exception()).__name__,
                                 )
 
                         async for frame in ws:
@@ -140,7 +149,14 @@ class NapCatChannel:
                 except asyncio.CancelledError:
                     raise
                 except (aiohttp.ClientError, asyncio.TimeoutError) as error:
-                    logger.warning("NapCat disconnected: %s", type(error).__name__)
+                    log_event(
+                        logger,
+                        logging.WARNING,
+                        "channel_disconnected",
+                        channel="napcat",
+                        error_type=type(error).__name__,
+                        reconnect_delay_seconds=delay,
+                    )
                 finally:
                     self._ready.clear()
                     self._ws = None
@@ -161,7 +177,13 @@ class NapCatChannel:
         try:
             payload = json.loads(raw)
         except json.JSONDecodeError:
-            logger.warning("NapCat sent invalid JSON")
+            log_event(
+                logger,
+                logging.WARNING,
+                "channel_frame_invalid",
+                channel="napcat",
+                reason="invalid_json",
+            )
             return None
         return payload if isinstance(payload, dict) else None
 
@@ -294,7 +316,14 @@ class NapCatChannel:
                     content_type = "image/jpeg"
                 return base64.b64encode(content).decode("ascii"), content_type
         except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as error:
-            logger.debug("Could not materialize NapCat image: %s", type(error).__name__)
+            log_event(
+                logger,
+                logging.DEBUG,
+                "channel_media_failure",
+                channel="napcat",
+                media_type="image",
+                error_type=type(error).__name__,
+            )
             return None
 
     async def _enrich_reply(self, segment: dict[str, Any]) -> None:
@@ -306,7 +335,14 @@ class NapCatChannel:
                 "get_msg", {"message_id": int(message_id)}
             )
         except (ValueError, ChannelError):
-            logger.debug("Could not resolve quoted QQ message id=%s", message_id)
+            log_event(
+                logger,
+                logging.DEBUG,
+                "channel_reference_failure",
+                channel="napcat",
+                message_id=message_id,
+                reference_kind="quote",
+            )
             return
         data = response.get("data")
         if not isinstance(data, dict):
@@ -331,7 +367,14 @@ class NapCatChannel:
                 "get_forward_msg", {"message_id": str(message_id)}
             )
         except ChannelError:
-            logger.debug("Could not resolve forwarded QQ message id=%s", message_id)
+            log_event(
+                logger,
+                logging.DEBUG,
+                "channel_reference_failure",
+                channel="napcat",
+                message_id=message_id,
+                reference_kind="forward",
+            )
             return
         data = response.get("data")
         nodes = data.get("messages") if isinstance(data, dict) else None

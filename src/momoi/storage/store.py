@@ -19,6 +19,7 @@ from ..channel import (
 from ..config import HeartbeatConfig, NotificationConfig, ReflectionConfig
 from ..context_time import context_timestamp
 from ..emotions import emotion_slug, valid_emotion_slug
+from ..logging_context import log_event, safe_preview
 from ..models import (
     AgentReply,
     IncomingMessage,
@@ -2199,10 +2200,13 @@ class Store(MemoryStore, DeliveryStore):
             ).fetchone()
             if episode is None:
                 if binding.get("is_new") is not True:
-                    logger.warning(
-                        "Recreated missing planned episode id=%s turn=%s",
-                        episode_id,
-                        turn_id,
+                    log_event(
+                        logger,
+                        logging.WARNING,
+                        "episode_recreated",
+                        stage="storage",
+                        turn_id=turn_id,
+                        episode_id=episode_id,
                     )
                 self._db.execute(
                     """INSERT INTO conversation_episodes
@@ -2456,12 +2460,14 @@ class Store(MemoryStore, DeliveryStore):
                 now,
             ),
         )
-        logger.debug(
-            "Mood changed from=%s to=%s intensity=%.2f cause=%s",
-            previous["mood_state"] if previous else "unknown",
-            update["state"],
-            float(update["intensity"]),
-            str(update["cause"]).replace("\n", " ")[:300],
+        log_event(
+            logger,
+            logging.DEBUG,
+            "mood_changed",
+            previous_state=previous["mood_state"] if previous else "unknown",
+            state=update["state"],
+            intensity=round(float(update["intensity"]), 2),
+            cause=safe_preview(update["cause"], 300),
         )
 
     def ensure_heartbeat(

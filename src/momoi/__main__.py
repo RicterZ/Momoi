@@ -12,6 +12,7 @@ from pathlib import Path
 from .agenda_tools import AgendaTools
 from .channel import login_channel
 from .config import ConfigError, load_config
+from .logging_context import configure_logging, log_event
 from .runtime import MomoiDaemon
 from .models import ToolCall, TurnDraft
 from .storage import Store
@@ -205,10 +206,7 @@ def goal(args: argparse.Namespace) -> None:
 
 async def run(config_path: str | Path) -> None:
     config = load_config(config_path)
-    logging.basicConfig(
-        level=getattr(logging, config.log_level, logging.INFO),
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-    )
+    configure_logging(getattr(logging, config.log_level, logging.INFO))
     for noisy_logger in ("httpx", "httpcore", "mcp"):
         logging.getLogger(noisy_logger).setLevel(logging.WARNING)
     stop = asyncio.Event()
@@ -216,14 +214,16 @@ async def run(config_path: str | Path) -> None:
     for name in ("SIGINT", "SIGTERM"):
         if sig := getattr(signal, name, None):
             loop.add_signal_handler(sig, stop.set)
-    logging.getLogger(__name__).info(
-        "Starting Momoi model=%s channels=%s primary=%s",
-        config.llm.model,
-        ",".join(
+    log_event(
+        logging.getLogger(__name__),
+        logging.INFO,
+        "service_start",
+        model=config.llm.model,
+        channels=",".join(
             str(getattr(item, "plugin", "unknown"))
             for item in config.channel_configs
         ),
-        getattr(config.channel, "plugin", "unknown"),
+        primary_channel=getattr(config.channel, "plugin", "unknown"),
     )
     await MomoiDaemon(config).run(stop)
 

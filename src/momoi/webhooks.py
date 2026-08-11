@@ -8,6 +8,7 @@ import re
 import signal
 from collections.abc import Awaitable, Callable
 from pathlib import Path
+from time import monotonic
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -15,6 +16,7 @@ import yaml
 from aiohttp import web
 
 from .config import WebhookConfig
+from .logging_context import log_context, log_event
 from .models import AgentReply
 from .storage import Store
 
@@ -184,10 +186,13 @@ def load_catalog(
                     )
                     or match.group(1) == "inputs"
                 ):
-                    logger.warning(
-                        "Skipping incompatible workflow executor %s: argv[%d] has an invalid template",
-                        executor_id,
-                        index,
+                    log_event(
+                        logger,
+                        logging.WARNING,
+                        "workflow_executor_skipped",
+                        executor_id=executor_id,
+                        argument_index=index,
+                        reason="invalid_template",
                     )
                     incompatible = True
                     break
@@ -212,10 +217,13 @@ def load_catalog(
                     )
                     or match.group(1) == "inputs"
                 ):
-                    logger.warning(
-                        "Skipping incompatible workflow executor %s: env.%s has an invalid template",
-                        executor_id,
-                        key,
+                    log_event(
+                        logger,
+                        logging.WARNING,
+                        "workflow_executor_skipped",
+                        executor_id=executor_id,
+                        environment_key=key,
+                        reason="invalid_template",
                     )
                     incompatible = True
                     break
@@ -300,10 +308,13 @@ def load_catalog(
             )
             executor = executors.get(executor_id)
             if executor is None:
-                logger.warning(
-                    "Skipping incompatible workflow %s: executor %s is unavailable",
-                    workflow_id,
-                    executor_id,
+                log_event(
+                    logger,
+                    logging.WARNING,
+                    "workflow_skipped",
+                    workflow_id=workflow_id,
+                    executor_id=executor_id,
+                    reason="executor_unavailable",
                 )
                 incompatible = True
                 break
@@ -340,7 +351,12 @@ def load_catalog(
             continue
         workflows[workflow_id] = {"id": workflow_id, "inputs": inputs, "steps": steps}
     if not workflows:
-        logger.warning("No valid workflow YAML files found in %s", workflows_path)
+        log_event(
+            logger,
+            logging.WARNING,
+            "workflow_catalog_empty",
+            path=str(workflows_path),
+        )
     return workflows, executors
 
 
@@ -456,8 +472,12 @@ class WebhookService:
         await runner.setup()
         site = web.TCPSite(runner, self.config.host, self.config.port)
         await site.start()
-        logger.info(
-            "Webhook API listening host=%s port=%d", self.config.host, self.config.port
+        log_event(
+            logger,
+            logging.INFO,
+            "webhook_api_started",
+            host=self.config.host,
+            port=self.config.port,
         )
         try:
             await stop.wait()
@@ -477,12 +497,21 @@ class WebhookService:
                 not key or len(key) > 200 or any(ord(char) < 32 for char in key)
             ):
                 raise WorkflowError("Idempotency-Key is invalid")
-            run, _ = self.store.create_webhook_run(workflow_id, key, plan)
+            run, created = self.store.create_webhook_run(workflow_id, key, plan)
         except (json.JSONDecodeError, WorkflowError, TypeError, ValueError) as error:
             return web.json_response(
                 {"error": "invalid_request", "detail": str(error)}, status=400
             )
         self.changed.set()
+        log_event(
+            logger,
+            logging.INFO,
+            "webhook_run_accepted",
+            workflow_id=workflow_id,
+            run_id=run["id"],
+            created=created,
+            state=run["state"],
+        )
         return web.json_response(
             {
                 "run_id": run["id"],
@@ -513,14 +542,24 @@ class WebhookService:
             except asyncio.CancelledError:
                 raise
             except Exception as error:
-                logger.exception("Webhook run failed run=%s", run["id"])
+                log_event(
+                    logger,
+                    logging.ERROR,
+                    "webhook_run_failure",
+                    workflow_id=run["workflow_id"],
+                    run_id=run["id"],
+                    error_type=type(error).__name__,
+                    exc_info=True,
+                )
                 self.store.fail_webhook_run(str(run["id"]), type(error).__name__)
 
     async def _execute(self, run: dict[str, Any], stop: asyncio.Event) -> None:
         run_id = str(run["id"])
+        workflow_id = str(run["workflow_id"])
         steps = run["plan"]["steps"]
         for index in range(int(run["current_step"]), len(steps)):
             step = steps[index]
+            step_started = monotonic()
             record = self.store.webhook_step(run_id, index)
             if record is None:
                 raise RuntimeError("webhook step missing")
@@ -530,7 +569,26 @@ class WebhookService:
                 if record["state"] != "waiting_delivery":
                     self.store.start_webhook_step(run_id, index)
                     turn_id = f"webhook:{run_id}:{index}"
-                    reply = await self.complete_turn(str(step["prompt"]), turn_id)
+                    log_event(
+                        logger,
+                        logging.DEBUG,
+                        "webhook_step_start",
+                        stage="webhook",
+                        workflow_id=workflow_id,
+                        run_id=run_id,
+                        step_index=index,
+                        step_id=step["id"],
+                        turn_id=turn_id,
+                        step_kind="message",
+                    )
+                    with log_context(
+                        stage="webhook",
+                        workflow_id=workflow_id,
+                        run_id=run_id,
+                        step_index=index,
+                        turn_id=turn_id,
+                    ):
+                        reply = await self.complete_turn(str(step["prompt"]), turn_id)
                     outbox_ids = self.store.commit_webhook_reply(
                         run_id,
                         index,
@@ -546,22 +604,47 @@ class WebhookService:
                     return
             else:
                 self.store.start_webhook_step(run_id, index)
-                logger.debug(
-                    "Executing internal workflow executor run=%s name=%s",
-                    run_id,
-                    step["executor"],
+                log_event(
+                    logger,
+                    logging.DEBUG,
+                    "webhook_step_start",
+                    stage="webhook",
+                    workflow_id=workflow_id,
+                    run_id=run_id,
+                    step_index=index,
+                    step_id=step["id"],
+                    step_kind="exec",
+                    executor_id=step["executor"],
                 )
                 state, result, error = await self._run_exec(step)
                 self.store.finish_webhook_step(run_id, index, state, result, error)
-                logger.debug(
-                    "Internal workflow executor completed run=%s name=%s state=%s",
-                    run_id,
-                    step["executor"],
-                    state,
+                log_event(
+                    logger,
+                    logging.DEBUG,
+                    "webhook_step_end",
+                    stage="webhook",
+                    workflow_id=workflow_id,
+                    run_id=run_id,
+                    step_index=index,
+                    step_id=step["id"],
+                    executor_id=step["executor"],
+                    state=state,
+                    ok=state == "succeeded",
+                    error=error,
+                    duration_ms=int((monotonic() - step_started) * 1000),
                 )
                 if state != "succeeded":
                     return
         self.store.complete_webhook_run(run_id)
+        log_event(
+            logger,
+            logging.INFO,
+            "webhook_run_complete",
+            stage="webhook",
+            workflow_id=workflow_id,
+            run_id=run_id,
+            steps=len(steps),
+        )
 
     async def _wait_delivery(
         self, run_id: str, step_index: int, stop: asyncio.Event
@@ -572,10 +655,31 @@ class WebhookService:
                 self.store.finish_webhook_step(
                     run_id, step_index, "succeeded", {}, None
                 )
+                log_event(
+                    logger,
+                    logging.DEBUG,
+                    "webhook_delivery_end",
+                    stage="webhook",
+                    run_id=run_id,
+                    step_index=step_index,
+                    state=state,
+                    ok=True,
+                )
                 return True
             if state == "failed":
                 self.store.finish_webhook_step(
                     run_id, step_index, "failed", {}, "message_delivery_failed"
+                )
+                log_event(
+                    logger,
+                    logging.WARNING,
+                    "webhook_delivery_end",
+                    stage="webhook",
+                    run_id=run_id,
+                    step_index=step_index,
+                    state=state,
+                    ok=False,
+                    reason="message_delivery_failed",
                 )
                 return False
             await asyncio.sleep(0.5)

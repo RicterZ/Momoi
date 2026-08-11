@@ -1,9 +1,9 @@
 import asyncio
-import json
 import logging
 import random
 from collections import deque
 from datetime import datetime
+from time import monotonic
 from typing import Any
 
 from ..agenda_tools import AgendaTools
@@ -16,6 +16,7 @@ from ..channel import (
     create_channel,
 )
 from ..config import AppConfig
+from ..logging_context import log_event, safe_preview
 from ..memory_tools import MemoryTools
 from ..mcp_client import MCPManager
 from ..models import AgentReply, IncomingMessage, OwnerInputStatus
@@ -126,19 +127,27 @@ class MomoiDaemon(TurnRunner):
                 self.store.close()
 
     async def _run_channel(self, channel: Channel, stop: asyncio.Event) -> None:
-        logger.info("Channel started name=%s", channel.name)
+        log_event(logger, logging.INFO, "channel_start", channel=channel.name)
         try:
             await channel.run(self._receive, stop)
             if not stop.is_set():
-                logger.error("Channel stopped unexpectedly name=%s", channel.name)
+                log_event(
+                    logger,
+                    logging.ERROR,
+                    "channel_stop",
+                    channel=channel.name,
+                    reason="unexpected_return",
+                )
                 await stop.wait()
         except asyncio.CancelledError:
             raise
         except Exception as error:
-            logger.error(
-                "Channel stopped name=%s error=%s",
-                channel.name,
-                type(error).__name__,
+            log_event(
+                logger,
+                logging.ERROR,
+                "channel_stop",
+                channel=channel.name,
+                error_type=type(error).__name__,
                 exc_info=True,
             )
             await stop.wait()
@@ -173,13 +182,18 @@ class MomoiDaemon(TurnRunner):
     async def _receive(self, event: IncomingMessage | OwnerInputStatus) -> None:
         if isinstance(event, OwnerInputStatus):
             self._touch_owner_activity(event.channel)
-            logger.debug("Received owner input status channel=%s", event.channel)
+            log_event(
+                logger, logging.DEBUG, "owner_input_status", channel=event.channel
+            )
             return
         message = event
-        logger.debug(
-            "Received owner message channel=%s message=%s",
-            message.channel,
-            json.dumps(message.text, ensure_ascii=False),
+        log_event(
+            logger,
+            logging.DEBUG,
+            "owner_message_received",
+            channel=message.channel,
+            event_id=message.event_id,
+            content=safe_preview(message.text, 500),
         )
         if message.text.strip() == "/stop":
             active = self._active_turn
@@ -187,19 +201,47 @@ class MomoiDaemon(TurnRunner):
                 self._stop_requested = True
                 active.cancel()
             if self.store.add_event(message):
-                logger.info("Accepted /stop owner command")
+                log_event(
+                    logger,
+                    logging.INFO,
+                    "owner_command_accepted",
+                    channel=message.channel,
+                    event_id=message.event_id,
+                    command="stop",
+                )
                 await self.incoming.put(message)
             return
         if message.text.strip() == "/heartbeat":
             if self.store.claim_manual_heartbeat():
-                logger.info("Accepted manual heartbeat command")
+                log_event(
+                    logger,
+                    logging.INFO,
+                    "owner_command_accepted",
+                    channel=message.channel,
+                    event_id=message.event_id,
+                    command="heartbeat",
+                )
                 self._manual_heartbeat_channel = message.channel
                 await self.autonomous.put(HEARTBEAT_QUEUE_ITEM)
             else:
-                logger.info("Ignored manual heartbeat command: heartbeat already active")
+                log_event(
+                    logger,
+                    logging.INFO,
+                    "owner_command_ignored",
+                    channel=message.channel,
+                    event_id=message.event_id,
+                    command="heartbeat",
+                    reason="heartbeat_already_active",
+                )
             return
         if self.store.add_event(message):
-            logger.info("Accepted owner message channel=%s", message.channel)
+            log_event(
+                logger,
+                logging.INFO,
+                "owner_message_accepted",
+                channel=message.channel,
+                event_id=message.event_id,
+            )
             await self.incoming.put(message)
             self._touch_owner_activity(message.channel)
 
@@ -253,20 +295,35 @@ class MomoiDaemon(TurnRunner):
                             self.store.release_heartbeat_claim(
                                 self._heartbeat_retry_delay()
                             )
-                            logger.info("Active heartbeat turn stopped")
+                            log_event(
+                                logger,
+                                logging.INFO,
+                                "turn_cancelled",
+                                stage="heartbeat",
+                                reason="owner_stop",
+                            )
                         elif goal_id.startswith(REFLECTION_QUEUE_PREFIX):
                             local_date = goal_id.removeprefix(REFLECTION_QUEUE_PREFIX)
                             self.store.release_reflection(
                                 local_date, "owner_stop", delay_seconds=3600
                             )
-                            logger.info(
-                                "Active daily reflection stopped date=%s", local_date
+                            log_event(
+                                logger,
+                                logging.INFO,
+                                "turn_cancelled",
+                                stage="reflection",
+                                local_date=local_date,
+                                reason="owner_stop",
                             )
                         else:
                             self.store.release_goal_claim(goal_id, defer_seconds=900)
-                            logger.info(
-                                "Active autonomous turn stopped goal=%s",
-                                goal_id,
+                            log_event(
+                                logger,
+                                logging.INFO,
+                                "turn_cancelled",
+                                stage="goal",
+                                goal_id=goal_id,
+                                reason="owner_stop",
                             )
                     finally:
                         self._active_turn = None
@@ -338,7 +395,17 @@ class MomoiDaemon(TurnRunner):
                     self.store.cancel_turn(
                         self._turn_id(*(event.event_id for event in sealed)), sealed
                     )
-                    logger.info("Active owner turn stopped")
+                    log_event(
+                        logger,
+                        logging.INFO,
+                        "turn_cancelled",
+                        stage="owner",
+                        turn_id=self._turn_id(
+                            *(event.event_id for event in sealed)
+                        ),
+                        channel=sealed[0].channel,
+                        reason="owner_stop",
+                    )
                 finally:
                     self._active_turn = None
                     self._stop_requested = False
@@ -424,7 +491,12 @@ class MomoiDaemon(TurnRunner):
                 if self.store.fire_reminder(
                     str(reminder["id"]), self.config.notifications, self.channel.name
                 ):
-                    logger.info("Fired reminder id=%s", reminder["id"])
+                    log_event(
+                        logger,
+                        logging.INFO,
+                        "reminder_fired",
+                        reminder_id=reminder["id"],
+                    )
                     self.outbox_changed.set()
                 continue
             notification = self.store.claim_due_notification(self.config.notifications)
@@ -434,7 +506,12 @@ class MomoiDaemon(TurnRunner):
                     config=self.config.notifications,
                     primary_channel=self.channel.name,
                 ):
-                    logger.info("Queued owner notification id=%s", notification["id"])
+                    log_event(
+                        logger,
+                        logging.INFO,
+                        "notification_queued",
+                        notification_id=notification["id"],
+                    )
                     self.outbox_changed.set()
                 continue
             goal = self.store.claim_due_goal()
@@ -502,31 +579,48 @@ class MomoiDaemon(TurnRunner):
                 try:
                     channel = self._channel_for(row.channel)
                 except ValueError:
-                    logger.error(
-                        "Outbox target channel is not configured channel=%s outbox=%d",
-                        row.channel,
-                        row.id,
+                    log_event(
+                        logger,
+                        logging.ERROR,
+                        "outbox_failure",
+                        stage="delivery",
+                        turn_id=row.turn_id,
+                        channel=row.channel,
+                        outbox_id=row.id,
+                        reason="channel_not_configured",
                     )
                     self.store.mark_not_dispatched(row.id, "ChannelNotConfigured")
                     continue
                 delivery = (row.channel, row.turn_id)
                 if delivery == previous_delivery:
                     delay = random.uniform(*_message_gap_bounds(row.text))
-                    logger.debug(
-                        "Waiting %.2fs before next message channel=%s",
-                        delay,
-                        channel.name,
+                    log_event(
+                        logger,
+                        logging.DEBUG,
+                        "outbox_delay",
+                        stage="delivery",
+                        turn_id=row.turn_id,
+                        channel=channel.name,
+                        outbox_id=row.id,
+                        delay_ms=int(delay * 1000),
                     )
                     await asyncio.sleep(delay)
                 if not self.store.mark_sending(row.id):
                     continue
                 attempt = row.attempts + 1
+                send_started = monotonic()
                 try:
-                    logger.debug(
-                        "Sending message channel=%s kind=%s content=%s",
-                        channel.name,
-                        row.kind,
-                        json.dumps(row.text, ensure_ascii=False),
+                    log_event(
+                        logger,
+                        logging.DEBUG,
+                        "outbox_send",
+                        stage="delivery",
+                        turn_id=row.turn_id,
+                        channel=channel.name,
+                        outbox_id=row.id,
+                        attempt=attempt,
+                        kind=row.kind,
+                        content=safe_preview(row.text, 500),
                     )
                     await channel.send_message(
                         row.payload
@@ -537,16 +631,47 @@ class MomoiDaemon(TurnRunner):
                     )
                 except NotConnected as error:
                     self.store.mark_not_dispatched(row.id, type(error).__name__)
+                    log_event(
+                        logger,
+                        logging.WARNING,
+                        "outbox_retry",
+                        stage="delivery",
+                        turn_id=row.turn_id,
+                        channel=channel.name,
+                        outbox_id=row.id,
+                        attempt=attempt,
+                        error_type=type(error).__name__,
+                        duration_ms=int((monotonic() - send_started) * 1000),
+                    )
                     continue
                 except AmbiguousSend as error:
                     self.store.mark_ambiguous(row.id, attempt, type(error).__name__)
+                    log_event(
+                        logger,
+                        logging.WARNING,
+                        "outbox_ambiguous",
+                        stage="delivery",
+                        turn_id=row.turn_id,
+                        channel=channel.name,
+                        outbox_id=row.id,
+                        attempt=attempt,
+                        error_type=type(error).__name__,
+                        duration_ms=int((monotonic() - send_started) * 1000),
+                    )
                 except SendRejected as error:
                     self.store.mark_failed(row.id, str(error))
-                    logger.warning(
-                        "Channel send rejected channel=%s outbox=%d error=%s",
-                        channel.name,
-                        row.id,
-                        str(error),
+                    log_event(
+                        logger,
+                        logging.WARNING,
+                        "outbox_failure",
+                        stage="delivery",
+                        turn_id=row.turn_id,
+                        channel=channel.name,
+                        outbox_id=row.id,
+                        attempt=attempt,
+                        error_type=type(error).__name__,
+                        reason=safe_preview(str(error), 300),
+                        duration_ms=int((monotonic() - send_started) * 1000),
                     )
                 else:
                     reply_waiting = self.store.mark_sent(
@@ -556,4 +681,14 @@ class MomoiDaemon(TurnRunner):
                     if reply_waiting:
                         self.agenda_changed.set()
                     previous_delivery = delivery
-                    logger.info("Sent outbox id=%d", row.id)
+                    log_event(
+                        logger,
+                        logging.INFO,
+                        "outbox_sent",
+                        stage="delivery",
+                        turn_id=row.turn_id,
+                        channel=channel.name,
+                        outbox_id=row.id,
+                        attempt=attempt,
+                        duration_ms=int((monotonic() - send_started) * 1000),
+                    )

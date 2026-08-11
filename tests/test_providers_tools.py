@@ -549,9 +549,20 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                         "system", [{"role": "user", "content": "测试入口"}]
                     )
                 self.assertEqual(response.content[0]["text"], "ok")
-                self.assertTrue(any("LLM request model=test" in item for item in logs.output))
-                self.assertTrue(any("retry=1/1" in item for item in logs.output))
-                self.assertFalse(any("attempt=1/2" in item for item in logs.output))
+                requests = [
+                    record
+                    for record in logs.records
+                    if getattr(record, "momoi_event", "") == "llm_request"
+                ]
+                retries = [
+                    record
+                    for record in logs.records
+                    if getattr(record, "momoi_event", "") == "llm_retry"
+                ]
+                self.assertEqual(requests[0].momoi_fields["model"], "test")
+                self.assertEqual(requests[0].momoi_fields["attempt"], 1)
+                self.assertEqual(requests[1].momoi_fields["attempt"], 2)
+                self.assertEqual(retries[0].momoi_fields["attempt_max"], 2)
                 with self.assertRaisesRegex(ProviderError, "bad request"):
                     await provider.complete(
                         "system", [{"role": "user", "content": "bad"}]
@@ -600,8 +611,15 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                         "system", [{"role": "user", "content": "测试入口"}]
                     )
                 self.assertEqual(response.content[0]["text"], "ok")
-                self.assertTrue(any("upstream overloaded" in item for item in logs.output))
-                self.assertTrue(any("body_preview" in item for item in logs.output))
+                unusable = [
+                    record
+                    for record in logs.records
+                    if getattr(record, "momoi_event", "")
+                    == "llm_response_unusable"
+                ]
+                self.assertEqual(len(unusable), 3)
+                self.assertIn("upstream overloaded", unusable[0].momoi_fields["body"])
+                self.assertIn("body", unusable[0].momoi_fields)
         finally:
             await server.close()
         self.assertEqual(attempts, 4)

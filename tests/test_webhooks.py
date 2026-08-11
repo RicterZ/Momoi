@@ -116,10 +116,19 @@ steps:
                 )
             self.assertEqual(set(workflows), {"event-message"})
             self.assertEqual(executors, {})
-            self.assertIn(
-                "Skipping incompatible workflow executor napcat-send", logs.output[0]
+            self.assertEqual(
+                logs.records[0].momoi_event, "workflow_executor_skipped"
             )
-            self.assertTrue(any("camera-event" in item for item in logs.output))
+            self.assertEqual(
+                logs.records[0].momoi_fields["executor_id"], "napcat-send"
+            )
+            self.assertTrue(
+                any(
+                    getattr(record, "momoi_fields", {}).get("workflow_id")
+                    == "camera-event"
+                    for record in logs.records
+                )
+            )
 
 
 class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):

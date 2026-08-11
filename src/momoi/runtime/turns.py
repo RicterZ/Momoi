@@ -23,6 +23,7 @@ from ..builtin_tools import (
 from ..channel import Channel, ChannelMessage
 from ..context_time import context_timestamp
 from ..emotions import EMOTION_PREFIX, emotion_slug
+from ..logging_context import log_context, log_event, new_trace_id, safe_preview
 from ..mcp_client import MCP_TOOL_POLICY
 from ..memory_tools import MEMORY_TOOL_POLICY, MEMORY_TOOL_SPECS
 from ..models import AgentReply, IncomingMessage, ToolCall, TurnDraft
@@ -105,7 +106,14 @@ def _live_prompt(path: Any, fallback: str, *, optional: bool = False) -> str:
             return ""
         text = path.read_text(encoding="utf-8").strip()
     except OSError as error:
-        logger.warning("Could not reload prompt path=%s error=%s", path, error)
+        log_event(
+            logger,
+            logging.WARNING,
+            "prompt_reload_failed",
+            path=str(path),
+            error_type=type(error).__name__,
+            reason=safe_preview(str(error), 300),
+        )
         return "" if optional else fallback
     return text if text or optional else fallback
 
@@ -218,8 +226,12 @@ class TurnRunner:
                 self._deferred_incoming.append(message)
         if updates:
             current_events.extend(updates)
-            logger.info(
-                "Injected owner updates into active Turn count=%d", len(updates)
+            log_event(
+                logger,
+                logging.INFO,
+                "owner_updates_injected",
+                count=len(updates),
+                channel=channel_name,
             )
         return updates
 
@@ -438,10 +450,20 @@ class TurnRunner:
         ]
         last_error = "invalid_context_plan"
         for attempt in range(2):
-            self._check_turn_budget(turn_id, CONTEXT_PLANNER_SYSTEM_PROMPT, request, [])
-            response = await self.provider.complete(
-                CONTEXT_PLANNER_SYSTEM_PROMPT, request, []
-            )
+            call_started = time.monotonic()
+            call_id = new_trace_id()
+            with log_context(
+                stage="context_plan",
+                turn_id=turn_id,
+                call_id=call_id,
+                round=attempt + 1,
+            ):
+                self._check_turn_budget(
+                    turn_id, CONTEXT_PLANNER_SYSTEM_PROMPT, request, []
+                )
+                response = await self.provider.complete(
+                    CONTEXT_PLANNER_SYSTEM_PROMPT, request, []
+                )
             metrics = response.usage or {}
             self.store.record_turn_usage(
                 turn_id,
@@ -475,6 +497,18 @@ class TurnRunner:
                 )
             except ContextPlanError as error:
                 last_error = str(error)
+                log_event(
+                    logger,
+                    logging.WARNING,
+                    "context_plan_invalid",
+                    stage="context_plan",
+                    turn_id=turn_id,
+                    call_id=call_id,
+                    round=attempt + 1,
+                    revision=revision,
+                    reason=last_error,
+                    duration_ms=int((time.monotonic() - call_started) * 1000),
+                )
                 if attempt == 0:
                     request.extend(
                         [
@@ -491,11 +525,17 @@ class TurnRunner:
                     )
                     continue
                 plan = degraded_context_plan(owner_messages, last_error)
-                logger.warning(
-                    "Context planner degraded turn=%s revision=%d error=%s",
-                    turn_id,
-                    revision,
-                    last_error,
+                log_event(
+                    logger,
+                    logging.WARNING,
+                    "context_plan_degraded",
+                    stage="context_plan",
+                    turn_id=turn_id,
+                    call_id=call_id,
+                    round=attempt + 1,
+                    revision=revision,
+                    reason=last_error,
+                    duration_ms=int((time.monotonic() - call_started) * 1000),
                 )
                 saved = self.store.save_context_plan(
                     turn_id, revision, event_ids, plan, state="degraded"
@@ -504,12 +544,18 @@ class TurnRunner:
             saved = self.store.save_context_plan(turn_id, revision, event_ids, plan)
             units = plan.get("intent_units")
             bindings = plan.get("episode_bindings")
-            logger.info(
-                "Planned owner context turn=%s revision=%d units=%d episodes=%d",
-                turn_id,
-                revision,
-                len(units) if isinstance(units, list) else 0,
-                len(bindings) if isinstance(bindings, list) else 0,
+            log_event(
+                logger,
+                logging.INFO,
+                "context_plan_complete",
+                stage="context_plan",
+                turn_id=turn_id,
+                call_id=call_id,
+                round=attempt + 1,
+                revision=revision,
+                units=len(units) if isinstance(units, list) else 0,
+                episodes=len(bindings) if isinstance(bindings, list) else 0,
+                duration_ms=int((time.monotonic() - call_started) * 1000),
             )
             return self._stored_context_plan(saved)
         raise RuntimeError("context planner retry loop ended unexpectedly")
@@ -706,12 +752,30 @@ class TurnRunner:
                 raise
             return
         except ExternalToolTurnError:
-            logger.exception("Owner turn stopped after an external tool call")
+            log_event(
+                logger,
+                logging.ERROR,
+                "turn_failure",
+                stage="owner",
+                turn_id=turn_id,
+                channel=channel.name,
+                reason="fatal_error_after_external_tool",
+                exc_info=True,
+            )
             self.store.open_reconciliation(turn_id, "fatal_error_after_external_tool")
             failure_message = _reconciliation_message(turn_id)
             failure_reason = "fatal_error_after_external_tool"
         except TurnBudgetExceeded as error:
-            logger.warning("Owner turn budget exhausted: %s", error)
+            log_event(
+                logger,
+                logging.WARNING,
+                "turn_failure",
+                stage="owner",
+                turn_id=turn_id,
+                channel=channel.name,
+                error_type=type(error).__name__,
+                reason=safe_preview(str(error), 300),
+            )
             failure_message = (
                 "This task reached its per-turn processing limit, so I stopped to "
                 "avoid further usage. Ask me to continue when ready."
@@ -720,12 +784,30 @@ class TurnRunner:
         except asyncio.CancelledError:
             raise
         except ProviderError as error:
-            logger.error("Owner turn stopped after Provider failure: %s", error)
+            log_event(
+                logger,
+                logging.ERROR,
+                "turn_failure",
+                stage="owner",
+                turn_id=turn_id,
+                channel=channel.name,
+                layer="provider",
+                error_type=type(error).__name__,
+                reason=safe_preview(str(error), 300),
+            )
             failure_message = _provider_failure_message(error)
             failure_reason = type(error).__name__
         except Exception as error:
-            logger.exception(
-                "Owner turn stopped by fatal error: %s", type(error).__name__
+            log_event(
+                logger,
+                logging.ERROR,
+                "turn_failure",
+                stage="owner",
+                turn_id=turn_id,
+                channel=channel.name,
+                layer="runtime",
+                error_type=type(error).__name__,
+                exc_info=True,
             )
             failure_message = (
                 "This turn stopped because of an internal error and was not retried "
@@ -850,18 +932,30 @@ class TurnRunner:
             target_channel=channel.name,
             reply_initial_delay=self.config.heartbeat.reply_initial_interval_seconds,
         )
-        logger.info(
-            "Committed owner turn=%s events=%d messages=%d",
-            turn_id,
-            len(batch),
-            len(reply.messages),
+        log_event(
+            logger,
+            logging.INFO,
+            "turn_commit",
+            stage="owner",
+            turn_id=turn_id,
+            channel=channel.name,
+            events=len(batch),
+            messages=len(reply.messages),
         )
         self.outbox_changed.set()
         self.agenda_changed.set()
         try:
             await self._anneal_episode_history(turn_id)
         except Exception as error:
-            logger.warning("Episode annealing failed: %s", type(error).__name__)
+            log_event(
+                logger,
+                logging.WARNING,
+                "episode_anneal_failure",
+                stage="episode_anneal",
+                turn_id=turn_id,
+                error_type=type(error).__name__,
+                reason=safe_preview(str(error), 300),
+            )
 
     async def _run_tool_loop(
         self,
@@ -893,6 +987,16 @@ class TurnRunner:
         failed_tool_rounds = 0
         history_messages = max(0, len(messages) - 1)
         visible_since_owner_update = False
+        llm_round = 0
+        stage = (
+            "reply_wait"
+            if reply_wait_turn
+            else (
+                "heartbeat"
+                if heartbeat_turn
+                else ("goal" if autonomous_goal_id else authority)
+            )
+        )
         while True:
             updates = (
                 await self._settle_owner_updates(current_events, delivery_channel.name)
@@ -934,22 +1038,42 @@ class TurnRunner:
                 if dynamic_tool_policies
                 else system
             )
-            history_messages = self._fit_context(
-                request_system, messages, request_tools, history_messages
-            )
-            self._check_turn_budget(turn_id, request_system, messages, request_tools)
+            llm_round += 1
+            call_id = new_trace_id()
+            with log_context(
+                stage=stage,
+                turn_id=turn_id,
+                call_id=call_id,
+                round=llm_round,
+                channel=delivery_channel.name,
+                goal_id=autonomous_goal_id,
+            ):
+                history_messages = self._fit_context(
+                    request_system, messages, request_tools, history_messages
+                )
+                self._check_turn_budget(
+                    turn_id, request_system, messages, request_tools
+                )
             require_tool = bool(
                 autonomous_goal_id or heartbeat_turn or reply_wait_turn
             ) or (
                 require_response and self.config.llm.api_format == "openai"
             )
             try:
-                response = await self.provider.complete(
-                    request_system,
-                    messages,
-                    request_tools,
-                    require_tool=require_tool,
-                )
+                with log_context(
+                    stage=stage,
+                    turn_id=turn_id,
+                    call_id=call_id,
+                    round=llm_round,
+                    channel=delivery_channel.name,
+                    goal_id=autonomous_goal_id,
+                ):
+                    response = await self.provider.complete(
+                        request_system,
+                        messages,
+                        request_tools,
+                        require_tool=require_tool,
+                    )
             except Exception as error:
                 if external_tool_used:
                     raise ExternalToolTurnError(type(error).__name__) from error
@@ -1042,7 +1166,16 @@ class TurnRunner:
                     continue
                 if not require_response:
                     return None
-                logger.debug("Rejected plain LLM response error=respond_tool_required")
+                log_event(
+                    logger,
+                    logging.DEBUG,
+                    "llm_protocol_rejected",
+                    stage=stage,
+                    turn_id=turn_id,
+                    call_id=call_id,
+                    round=llm_round,
+                    reason="respond_tool_required",
+                )
                 messages.extend(
                     [
                         {"role": "assistant", "content": response.content},
@@ -1095,13 +1228,16 @@ class TurnRunner:
                 and len(response.tool_calls) == 1
                 and response.tool_calls[0].name == "respond"
             ):
-                logger.debug(
-                    "LLM respond arguments=%s",
-                    json.dumps(
-                        response.tool_calls[0].arguments,
-                        ensure_ascii=False,
-                        default=str,
-                    ),
+                log_event(
+                    logger,
+                    logging.DEBUG,
+                    "respond_received",
+                    stage=stage,
+                    turn_id=turn_id,
+                    call_id=call_id,
+                    round=llm_round,
+                    channel=delivery_channel.name,
+                    arguments=safe_preview(response.tool_calls[0].arguments, 1000),
                 )
                 reply, error = self._parse_response(
                     response.tool_calls[0].arguments,
@@ -1131,12 +1267,29 @@ class TurnRunner:
                     reply = None
                     error = "reply_expectation_without_visible_message"
                 if reply is not None:
-                    logger.debug(
-                        "LLM mood decision=%s",
-                        "updated" if reply.mood_update else "unchanged",
+                    log_event(
+                        logger,
+                        logging.DEBUG,
+                        "respond_accepted",
+                        stage=stage,
+                        turn_id=turn_id,
+                        call_id=call_id,
+                        round=llm_round,
+                        mood_decision=(
+                            "updated" if reply.mood_update else "unchanged"
+                        ),
                     )
                     return reply
-                logger.debug("Rejected respond arguments error=%s", error)
+                log_event(
+                    logger,
+                    logging.DEBUG,
+                    "respond_rejected",
+                    stage=stage,
+                    turn_id=turn_id,
+                    call_id=call_id,
+                    round=llm_round,
+                    reason=error,
+                )
                 messages.extend(
                     [
                         {"role": "assistant", "content": response.content},
@@ -1163,7 +1316,19 @@ class TurnRunner:
             updates = []
             allowed_tool_names = {str(spec["name"]) for spec in request_tools}
             for index, call in enumerate(response.tool_calls):
-                logger.debug("Executing tool name=%s", call.name)
+                tool_started = time.monotonic()
+                log_event(
+                    logger,
+                    logging.DEBUG,
+                    "tool_start",
+                    stage=stage,
+                    turn_id=turn_id,
+                    call_id=call_id,
+                    round=llm_round,
+                    channel=delivery_channel.name,
+                    tool_call_id=call.id,
+                    tool_name=call.name,
+                )
                 if call.name not in allowed_tool_names:
                     result = {"ok": False, "error": "tool_not_allowed"}
                 elif call.name == "respond":
@@ -1285,11 +1450,21 @@ class TurnRunner:
                                 capability,
                             )
                             if result is None:
-                                result = (
-                                    await self.mcp.call(call.name, call.arguments)
-                                    if self.mcp.has_tool(call.name)
-                                    else await self.builtin_tools.execute(call)
-                                )
+                                with log_context(
+                                    stage=stage,
+                                    turn_id=turn_id,
+                                    call_id=call_id,
+                                    round=llm_round,
+                                    channel=delivery_channel.name,
+                                    goal_id=autonomous_goal_id,
+                                    tool_call_id=call.id,
+                                    tool_name=call.name,
+                                ):
+                                    result = (
+                                        await self.mcp.call(call.name, call.arguments)
+                                        if self.mcp.has_tool(call.name)
+                                        else await self.builtin_tools.execute(call)
+                                    )
                                 result = self._normalize_tool_result(
                                     call, result, source
                                 )
@@ -1325,14 +1500,25 @@ class TurnRunner:
                     and provenance.get("source") in {"agenda", "memory", "runtime"}
                     else None
                 )
-                logger.debug(
-                    "Tool completed name=%s ok=%s error=%s message=%s",
-                    call.name,
-                    bool(result.get("ok")),
-                    result.get("error"),
-                    str(log_message).replace("\n", " ")[:500]
-                    if log_message is not None
-                    else None,
+                log_event(
+                    logger,
+                    logging.DEBUG,
+                    "tool_end",
+                    stage=stage,
+                    turn_id=turn_id,
+                    call_id=call_id,
+                    round=llm_round,
+                    channel=delivery_channel.name,
+                    tool_call_id=call.id,
+                    tool_name=call.name,
+                    ok=bool(result.get("ok")),
+                    error=result.get("error"),
+                    result_message=(
+                        safe_preview(log_message, 500)
+                        if log_message is not None
+                        else None
+                    ),
+                    duration_ms=int((time.monotonic() - tool_started) * 1000),
                 )
                 results.append(
                     {
@@ -1549,17 +1735,21 @@ class TurnRunner:
                         result = result[: max(1000, len(result) // 2)]
                         block["content"] = result + "\n[truncated by context budget]"
                         estimated = size()
-        logger.debug(
-            "LLM context estimated_input=%d limit=%d history_dropped=%d",
-            estimated,
-            self.config.max_input_tokens,
-            dropped,
+        log_event(
+            logger,
+            logging.DEBUG,
+            "llm_context_fit",
+            estimated_input=estimated,
+            input_limit=self.config.max_input_tokens,
+            history_dropped=dropped,
         )
         if estimated > self.config.max_input_tokens:
-            logger.warning(
-                "LLM context remains above configured input limit estimated=%d limit=%d",
-                estimated,
-                self.config.max_input_tokens,
+            log_event(
+                logger,
+                logging.WARNING,
+                "llm_context_oversize",
+                estimated_input=estimated,
+                input_limit=self.config.max_input_tokens,
             )
         return history_messages
 
@@ -1582,7 +1772,7 @@ class TurnRunner:
         return uuid.uuid5(uuid.NAMESPACE_URL, f"momoi:{seed}").hex
 
     async def _anneal_episode_history(self, turn_id: str) -> None:
-        for _ in range(2):
+        for anneal_round in range(1, 3):
             candidate = self.store.claim_episode_annealing_candidate(
                 self.config.recent_turns, self.config.recent_raw_tokens
             )
@@ -1618,9 +1808,17 @@ class TurnRunner:
                 }
             ]
             try:
-                response = await self.provider.complete(
-                    EPISODE_SUMMARY_SYSTEM_PROMPT, request, []
-                )
+                call_id = new_trace_id()
+                with log_context(
+                    stage="episode_anneal",
+                    turn_id=turn_id,
+                    call_id=call_id,
+                    round=anneal_round,
+                    episode_id=episode_id,
+                ):
+                    response = await self.provider.complete(
+                        EPISODE_SUMMARY_SYSTEM_PROMPT, request, []
+                    )
                 summary = self._context_plan_response_text(response.content)
                 summary = re.sub(
                     r"<think>.*?</think>", "", summary, flags=re.DOTALL
@@ -1647,11 +1845,17 @@ class TurnRunner:
                     ),
                     int(metrics.get("output", estimate_tokens(summary))),
                 )
-                logger.info(
-                    "Annealed episode=%s through_ordinal=%d summary_tokens=%d",
-                    episode_id,
-                    candidate["through_ordinal"],
-                    estimate_tokens(working_summary),
+                log_event(
+                    logger,
+                    logging.INFO,
+                    "episode_anneal_complete",
+                    stage="episode_anneal",
+                    turn_id=turn_id,
+                    call_id=call_id,
+                    round=anneal_round,
+                    episode_id=episode_id,
+                    through_ordinal=candidate["through_ordinal"],
+                    summary_tokens=estimate_tokens(working_summary),
                 )
             except Exception:
                 self.store.release_episode_annealing(episode_id)
@@ -1754,8 +1958,15 @@ class TurnRunner:
                 raise
             return
         except ExternalToolTurnError:
-            logger.exception(
-                "Autonomous turn stopped after an external tool call goal=%s", goal_id
+            log_event(
+                logger,
+                logging.ERROR,
+                "turn_failure",
+                stage="goal",
+                turn_id=turn_id,
+                goal_id=goal_id,
+                reason="fatal_error_after_external_tool",
+                exc_info=True,
             )
             self.store.open_reconciliation(turn_id, "fatal_error_after_external_tool")
             draft = TurnDraft(
@@ -1766,8 +1977,15 @@ class TurnRunner:
             )
             failure_reason = "fatal_error_after_external_tool"
         except TurnBudgetExceeded as error:
-            logger.warning(
-                "Autonomous turn budget exhausted goal=%s: %s", goal_id, error
+            log_event(
+                logger,
+                logging.WARNING,
+                "turn_failure",
+                stage="goal",
+                turn_id=turn_id,
+                goal_id=goal_id,
+                error_type=type(error).__name__,
+                reason=safe_preview(str(error), 300),
             )
             draft = TurnDraft(
                 notification_messages=[
@@ -1783,26 +2001,54 @@ class TurnRunner:
                 self.store.cancel_turn(turn_id)
             raise
         except ProviderError as error:
-            logger.error(
-                "Autonomous turn stopped after Provider failure goal=%s: %s",
-                goal_id,
-                error,
+            log_event(
+                logger,
+                logging.ERROR,
+                "turn_failure",
+                stage="goal",
+                turn_id=turn_id,
+                goal_id=goal_id,
+                layer="provider",
+                error_type=type(error).__name__,
+                reason=safe_preview(str(error), 300),
             )
             retry_at = self.store.defer_goal_failure(goal_id)
             self.store.record_turn_failure(turn_id, type(error).__name__)
             self.agenda_changed.set()
-            logger.info("Deferred autonomous goal=%s retry_at=%s", goal_id, retry_at)
+            log_event(
+                logger,
+                logging.INFO,
+                "goal_deferred",
+                stage="goal",
+                turn_id=turn_id,
+                goal_id=goal_id,
+                retry_at=retry_at,
+            )
             return
         except Exception as error:
-            logger.exception(
-                "Autonomous turn stopped by fatal error goal=%s error=%s",
-                goal_id,
-                type(error).__name__,
+            log_event(
+                logger,
+                logging.ERROR,
+                "turn_failure",
+                stage="goal",
+                turn_id=turn_id,
+                goal_id=goal_id,
+                layer="runtime",
+                error_type=type(error).__name__,
+                exc_info=True,
             )
             retry_at = self.store.defer_goal_failure(goal_id)
             self.store.record_turn_failure(turn_id, type(error).__name__)
             self.agenda_changed.set()
-            logger.info("Deferred autonomous goal=%s retry_at=%s", goal_id, retry_at)
+            log_event(
+                logger,
+                logging.INFO,
+                "goal_deferred",
+                stage="goal",
+                turn_id=turn_id,
+                goal_id=goal_id,
+                retry_at=retry_at,
+            )
             return
         self.store.commit_autonomous_turn(goal_id, draft, turn_id=turn_id)
         if draft.notification_messages:
@@ -1816,9 +2062,12 @@ class TurnRunner:
         state = self.store.self_state()
         conversation = self.store.heartbeat_conversation_snapshot()
         if conversation["owner_busy"]:
-            logger.info(
-                "Deferred heartbeat while owner conversation is active reason=%s",
-                conversation["blocked_by"],
+            log_event(
+                logger,
+                logging.INFO,
+                "heartbeat_deferred",
+                stage="heartbeat",
+                reason=conversation["blocked_by"],
             )
             self.store.release_heartbeat_claim(
                 self._heartbeat_retry_delay(
@@ -1860,7 +2109,16 @@ class TurnRunner:
                 owner_event_revision=int(conversation["owner_event_revision"]),
             )
         except ExternalToolTurnError:
-            logger.exception("Heartbeat stopped after an autonomous artifact write")
+            log_event(
+                logger,
+                logging.ERROR,
+                "turn_failure",
+                stage=turn_kind.replace("-", "_"),
+                turn_id=turn_id,
+                channel=target_channel,
+                reason="fatal_error_after_external_tool",
+                exc_info=True,
+            )
             self.store.open_reconciliation(turn_id, "fatal_error_after_external_tool")
             self.store.commit_autonomous_turn(
                 "heartbeat",
@@ -1883,8 +2141,15 @@ class TurnRunner:
                 self.store.cancel_turn(turn_id)
             raise
         except Exception as error:
-            logger.error(
-                "Heartbeat turn failed error=%s", type(error).__name__, exc_info=True
+            log_event(
+                logger,
+                logging.ERROR,
+                "turn_failure",
+                stage=turn_kind.replace("-", "_"),
+                turn_id=turn_id,
+                channel=target_channel,
+                error_type=type(error).__name__,
+                exc_info=True,
             )
             self.store.record_turn_failure(turn_id, type(error).__name__)
             self.store.release_heartbeat_claim(self._heartbeat_retry_delay(str(claim_kind)))
@@ -2211,12 +2476,16 @@ class TurnRunner:
         self.agenda_changed.set()
         if committed_messages:
             self.outbox_changed.set()
-        logger.info(
-            "Committed heartbeat turn=%s messages=%d goals=%d next_minutes=%d",
-            turn_id,
-            committed_messages,
-            len(draft.goals),
-            decision["next_check_minutes"],
+        log_event(
+            logger,
+            logging.INFO,
+            "turn_commit",
+            stage="heartbeat",
+            turn_id=turn_id,
+            channel=delivery_channel.name,
+            messages=committed_messages,
+            goals=len(draft.goals),
+            next_minutes=decision["next_check_minutes"],
         )
 
     async def _complete_reflection_turn(
@@ -2240,10 +2509,14 @@ class TurnRunner:
                 self.store.record_turn_failure(turn_id, "owner_stop")
             raise
         except Exception as error:
-            logger.error(
-                "Daily reflection failed date=%s error=%s",
-                local_date,
-                type(error).__name__,
+            log_event(
+                logger,
+                logging.ERROR,
+                "turn_failure",
+                stage="reflection",
+                turn_id=turn_id,
+                local_date=local_date,
+                error_type=type(error).__name__,
                 exc_info=True,
             )
             self.store.record_turn_failure(turn_id, type(error).__name__)
@@ -2322,12 +2595,21 @@ class TurnRunner:
             }
         ]
         tools = [REFLECTION_FINISH_SPEC]
+        reflection_round = 0
         while True:
-            self._fit_context(system, messages, tools, 0)
-            self._check_turn_budget(turn_id, system, messages, tools)
-            response = await self.provider.complete(
-                system, messages, tools, require_tool=True
-            )
+            reflection_round += 1
+            call_id = new_trace_id()
+            with log_context(
+                stage="reflection",
+                turn_id=turn_id,
+                call_id=call_id,
+                round=reflection_round,
+            ):
+                self._fit_context(system, messages, tools, 0)
+                self._check_turn_budget(turn_id, system, messages, tools)
+                response = await self.provider.complete(
+                    system, messages, tools, require_tool=True
+                )
             metrics = response.usage or {}
             self.store.record_turn_usage(
                 turn_id,
@@ -2376,10 +2658,16 @@ class TurnRunner:
                         decision["memories"],
                     )
                     self.agenda_changed.set()
-                    logger.info(
-                        "Committed daily reflection date=%s memories=%d",
-                        local_date,
-                        len(decision["memories"]),
+                    log_event(
+                        logger,
+                        logging.INFO,
+                        "turn_commit",
+                        stage="reflection",
+                        turn_id=turn_id,
+                        call_id=call_id,
+                        round=reflection_round,
+                        local_date=local_date,
+                        memories=len(decision["memories"]),
                     )
                     return
             else:
@@ -2564,11 +2852,14 @@ class TurnRunner:
             delivery_channel=self.channel,
         )
         self.store.commit_autonomous_turn(goal_id, draft, turn_id=turn_id)
-        logger.info(
-            "Committed autonomous turn=%s goal=%s notified=%s",
-            turn_id,
-            goal_id,
-            bool(draft.notification_messages),
+        log_event(
+            logger,
+            logging.INFO,
+            "turn_commit",
+            stage="goal",
+            turn_id=turn_id,
+            goal_id=goal_id,
+            notified=bool(draft.notification_messages),
         )
         self.agenda_changed.set()
 
