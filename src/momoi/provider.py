@@ -176,6 +176,14 @@ def _response_preview(value: Any, limit: int = 1000) -> str:
     return rendered[:limit]
 
 
+def _compact_response_text(text: str) -> str:
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError:
+        return json.dumps(text, ensure_ascii=False)
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
 def _log_openai_unusable_response(
     response: aiohttp.ClientResponse,
     data: Any,
@@ -321,9 +329,7 @@ class AnthropicProvider:
                     ).strip()
                     if not text:
                         raise ProviderError("Anthropic-compatible endpoint returned no text content")
-                    logger.debug(
-                        "LLM response text=%s", json.dumps(text, ensure_ascii=False)
-                    )
+                    logger.debug("LLM response text=%s", _compact_response_text(text))
                     return ProviderResponse(content, [], usage_metrics(data))
             except (aiohttp.ClientError, asyncio.TimeoutError) as error:
                 last_error = error
@@ -570,7 +576,7 @@ class OpenAIProvider:
                         raise ProviderResponseError(
                             "OpenAI-compatible endpoint returned no text content"
                         )
-                    logger.debug("LLM response text=%s", json.dumps(text, ensure_ascii=False))
+                    logger.debug("LLM response text=%s", _compact_response_text(text))
                     return ProviderResponse(content, [], usage_metrics(data))
             except ProviderResponseError as error:
                 last_error = error

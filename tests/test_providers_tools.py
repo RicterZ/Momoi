@@ -25,6 +25,7 @@ from momoi.provider import (
     AnthropicProvider,
     OpenAIProvider,
     ProviderError,
+    _compact_response_text,
     _openai_messages,
     _redact_dump_media,
     usage_metrics,
@@ -37,6 +38,13 @@ from tests.support import with_context_planner
 
 
 class ProvidersToolsTest(unittest.TestCase):
+    def test_compacts_structured_response_text_for_single_line_logs(self) -> None:
+        self.assertEqual(
+            _compact_response_text('{\n  "version": 1,\n  "items": ["a", "b"]\n}'),
+            '{"version":1,"items":["a","b"]}',
+        )
+        self.assertEqual(_compact_response_text("普通\n文本"), '"普通\\n文本"')
+
     def test_openai_system_blocks_keep_a_clear_boundary(self) -> None:
         messages = _openai_messages(
             [
