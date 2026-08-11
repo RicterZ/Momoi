@@ -61,7 +61,7 @@ MCP 是添加由模型控制能力的常规方式。工作流用于事件驱动�
     "base_url": "https://llm.example.com",
     "api_key": "replace-me",
     "model": "model-name",
-    "max_tokens": 4096,
+    "max_tokens": 8192,
     "temperature": 0.6,
     "timeout_seconds": 120,
     "max_retries": 3,
@@ -77,7 +77,7 @@ MCP 是添加由模型控制能力的常规方式。工作流用于事件驱动�
 | `base_url` | 是 | — | 兼容 API 的基础 URL |
 | `api_key` | 是 | — | API 凭据，不能为空 |
 | `model` | 是 | — | 发送给 provider 的模型标识 |
-| `max_tokens` | 否 | `2048` | 单次模型调用的最大输出 token 数 |
+| `max_tokens` | 否 | `8192` | 单次模型调用的最大输出 token 数 |
 | `temperature` | 否 | `0.6` | 采样温度 |
 | `timeout_seconds` | 否 | `120` | 必须为正数的请求超时时间 |
 | `max_retries` | 否 | `3` | 短暂连接错误、服务端错误和成功但不可用响应的重试次数 |

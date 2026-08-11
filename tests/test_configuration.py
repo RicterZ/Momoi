@@ -53,6 +53,7 @@ class ConfigurationTest(unittest.TestCase):
             self.assertIsInstance(config.channel, NapCatConfig)
             self.assertFalse(config.llm.dump_prompts)
             self.assertTrue(config.llm.tool_choice)
+            self.assertEqual(config.llm.max_tokens, 8192)
             self.assertEqual(
                 [type(item) for item in config.channel_configs],
                 [NapCatConfig, WeixinConfig],

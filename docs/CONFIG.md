@@ -61,7 +61,7 @@ This makes the workspace relocatable. Absolute paths are also accepted where a p
     "base_url": "https://llm.example.com",
     "api_key": "replace-me",
     "model": "model-name",
-    "max_tokens": 4096,
+    "max_tokens": 8192,
     "temperature": 0.6,
     "timeout_seconds": 120,
     "max_retries": 3,
@@ -77,7 +77,7 @@ This makes the workspace relocatable. Absolute paths are also accepted where a p
 | `base_url` | Yes | — | Compatible API base URL |
 | `api_key` | Yes | — | API credential; must not be empty |
 | `model` | Yes | — | Model identifier sent to the provider |
-| `max_tokens` | No | `2048` | Maximum output tokens for one model call |
+| `max_tokens` | No | `8192` | Maximum output tokens for one model call |
 | `temperature` | No | `0.6` | Sampling temperature |
 | `timeout_seconds` | No | `120` | Positive request timeout |
 | `max_retries` | No | `3` | Retries for transient connection, server, and unusable successful responses |

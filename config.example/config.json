@@ -4,7 +4,7 @@
     "base_url": "https://api.example.com",
     "api_key": "replace-me",
     "model": "model-name",
-    "max_tokens": 4096,
+    "max_tokens": 8192,
     "temperature": 0.6,
     "timeout_seconds": 120,
     "max_retries": 3,
