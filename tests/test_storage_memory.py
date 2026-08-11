@@ -32,6 +32,266 @@ from momoi.storage.scheduling import next_schedule_at
 
 
 class StorageMemoryTest(unittest.TestCase):
+    def test_recall_index_migration_failure_preserves_legacy_tables(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "momoi.sqlite3"
+            database = sqlite3.connect(path)
+            database.executescript(
+                """
+                CREATE TABLE episode_recall_terms (
+                    episode_id TEXT NOT NULL,
+                    term TEXT NOT NULL,
+                    PRIMARY KEY (episode_id, term)
+                );
+                CREATE INDEX episode_recall_terms_lookup
+                    ON episode_recall_terms(term, episode_id);
+                CREATE TABLE episode_message_recall_terms (
+                    episode_id TEXT NOT NULL,
+                    message_id INTEGER NOT NULL,
+                    term TEXT NOT NULL,
+                    PRIMARY KEY (episode_id, message_id, term)
+                );
+                CREATE INDEX episode_message_recall_terms_lookup
+                    ON episode_message_recall_terms(term, episode_id, message_id);
+                INSERT INTO episode_recall_terms VALUES ('missing', '词');
+                INSERT INTO episode_message_recall_terms
+                    VALUES ('missing', 999, '词');
+                """
+            )
+            database.close()
+
+            with self.assertRaisesRegex(RuntimeError, "row count mismatch"):
+                Store(path)
+
+            checked = sqlite3.connect(path)
+            self.assertEqual(
+                {
+                    str(row[1])
+                    for row in checked.execute(
+                        "PRAGMA table_info(episode_recall_terms)"
+                    ).fetchall()
+                },
+                {"episode_id", "term"},
+            )
+            self.assertEqual(
+                checked.execute(
+                    "SELECT COUNT(*) FROM episode_recall_terms"
+                ).fetchone()[0],
+                1,
+            )
+            self.assertIsNone(
+                checked.execute(
+                    """SELECT 1 FROM sqlite_master
+                       WHERE type='table' AND name='episode_recall_terms_v2'"""
+                ).fetchone()
+            )
+            checked.close()
+
+    def test_legacy_recall_index_migrates_without_changing_results(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "momoi.sqlite3"
+            store = Store(path)
+            episode_id = "migration-episode"
+            store.create_episode(
+                "蓝色保温杯位置",
+                episode_id=episode_id,
+                topics=["阁楼", "纸箱"],
+            )
+            now = time.time()
+            with store._db:
+                store._db.execute(
+                    """INSERT INTO turns
+                       (id, kind, source_ids_json, state, started_at, updated_at)
+                       VALUES ('migration-turn', 'owner', '[]', 'completed', ?, ?)""",
+                    (now, now),
+                )
+                message_id = int(
+                    store._db.execute(
+                        """INSERT INTO messages
+                           (turn_id, role, content, created_at,
+                            source_event_ids_json, delivery_state)
+                           VALUES ('migration-turn', 'user',
+                                   '蓝色保温杯在阁楼第三个纸箱里',
+                                   ?, '[]', 'delivered')""",
+                        (now,),
+                    ).lastrowid
+                )
+                store._db.execute(
+                    """INSERT INTO episode_turns
+                       (episode_id, turn_id, ordinal, relation, unit_ids_json)
+                       VALUES (?, 'migration-turn', 1, 'primary', '[]')""",
+                    (episode_id,),
+                )
+                store._reindex_episode_terms(episode_id)
+
+            expected = store.search_episodes("蓝色保温杯 第三个纸箱", 3)
+            self.assertEqual([item["id"] for item in expected], [episode_id])
+            self.assertEqual(expected[0]["matches"][0]["id"], message_id)
+            expected_episode_terms = {
+                (str(row["episode_id"]), str(row["term"]))
+                for row in store._db.execute(
+                    """SELECT rei.episode_id, terms.term
+                       FROM episode_recall_terms AS rt
+                       JOIN recall_episode_ids AS rei ON rei.id=rt.episode_key
+                       JOIN recall_terms AS terms ON terms.id=rt.term_id"""
+                ).fetchall()
+            }
+            expected_message_terms = {
+                (
+                    str(row["episode_id"]),
+                    int(row["message_id"]),
+                    str(row["term"]),
+                )
+                for row in store._db.execute(
+                    """SELECT rei.episode_id, mrt.message_id, terms.term
+                       FROM episode_message_recall_terms AS mrt
+                       JOIN recall_episode_ids AS rei ON rei.id=mrt.episode_key
+                       JOIN recall_terms AS terms ON terms.id=mrt.term_id"""
+                ).fetchall()
+            }
+
+            with store._db:
+                store._db.execute(
+                    """CREATE TABLE episode_recall_terms_legacy (
+                           episode_id TEXT NOT NULL,
+                           term TEXT NOT NULL,
+                           PRIMARY KEY (episode_id, term),
+                           FOREIGN KEY (episode_id)
+                               REFERENCES conversation_episodes(id) ON DELETE CASCADE
+                       )"""
+                )
+                store._db.execute(
+                    """INSERT INTO episode_recall_terms_legacy
+                       SELECT rei.episode_id, terms.term
+                       FROM episode_recall_terms AS rt
+                       JOIN recall_episode_ids AS rei ON rei.id=rt.episode_key
+                       JOIN recall_terms AS terms ON terms.id=rt.term_id"""
+                )
+                store._db.execute(
+                    """CREATE TABLE episode_message_recall_terms_legacy (
+                           episode_id TEXT NOT NULL,
+                           message_id INTEGER NOT NULL,
+                           term TEXT NOT NULL,
+                           PRIMARY KEY (episode_id, message_id, term),
+                           FOREIGN KEY (episode_id)
+                               REFERENCES conversation_episodes(id) ON DELETE CASCADE,
+                           FOREIGN KEY (message_id)
+                               REFERENCES messages(id) ON DELETE CASCADE
+                       )"""
+                )
+                store._db.execute(
+                    """INSERT INTO episode_message_recall_terms_legacy
+                       SELECT rei.episode_id, mrt.message_id, terms.term
+                       FROM episode_message_recall_terms AS mrt
+                       JOIN recall_episode_ids AS rei ON rei.id=mrt.episode_key
+                       JOIN recall_terms AS terms ON terms.id=mrt.term_id"""
+                )
+                store._db.execute("DROP INDEX episode_recall_terms_lookup")
+                store._db.execute("DROP INDEX episode_message_recall_terms_lookup")
+                store._db.execute("DROP TABLE episode_recall_terms")
+                store._db.execute("DROP TABLE episode_message_recall_terms")
+                store._db.execute("DROP TABLE recall_episode_ids")
+                store._db.execute("DROP TABLE recall_terms")
+                store._db.execute(
+                    """ALTER TABLE episode_recall_terms_legacy
+                       RENAME TO episode_recall_terms"""
+                )
+                store._db.execute(
+                    """ALTER TABLE episode_message_recall_terms_legacy
+                       RENAME TO episode_message_recall_terms"""
+                )
+                store._db.execute(
+                    """CREATE INDEX episode_recall_terms_lookup
+                       ON episode_recall_terms(term, episode_id)"""
+                )
+                store._db.execute(
+                    """CREATE INDEX episode_message_recall_terms_lookup
+                       ON episode_message_recall_terms
+                          (term, episode_id, message_id)"""
+                )
+            store.close()
+            legacy_size = path.stat().st_size
+
+            migrated = Store(path)
+            self.assertEqual(
+                {
+                    str(row["name"])
+                    for row in migrated._db.execute(
+                        "PRAGMA table_info(episode_recall_terms)"
+                    ).fetchall()
+                },
+                {"episode_key", "term_id"},
+            )
+            self.assertEqual(
+                [item["id"] for item in migrated.search_episodes(
+                    "蓝色保温杯 第三个纸箱", 3
+                )],
+                [episode_id],
+            )
+            actual_episode_terms = {
+                (str(row["episode_id"]), str(row["term"]))
+                for row in migrated._db.execute(
+                    """SELECT rei.episode_id, terms.term
+                       FROM episode_recall_terms AS rt
+                       JOIN recall_episode_ids AS rei ON rei.id=rt.episode_key
+                       JOIN recall_terms AS terms ON terms.id=rt.term_id"""
+                ).fetchall()
+            }
+            actual_message_terms = {
+                (
+                    str(row["episode_id"]),
+                    int(row["message_id"]),
+                    str(row["term"]),
+                )
+                for row in migrated._db.execute(
+                    """SELECT rei.episode_id, mrt.message_id, terms.term
+                       FROM episode_message_recall_terms AS mrt
+                       JOIN recall_episode_ids AS rei ON rei.id=mrt.episode_key
+                       JOIN recall_terms AS terms ON terms.id=mrt.term_id"""
+                ).fetchall()
+            }
+            self.assertEqual(actual_episode_terms, expected_episode_terms)
+            self.assertEqual(actual_message_terms, expected_message_terms)
+            self.assertIsNone(
+                migrated._db.execute(
+                    """SELECT 1 FROM schema_metadata
+                       WHERE key='recall_index_v2_vacuum_pending'"""
+                ).fetchone()
+            )
+            migrated.close()
+            self.assertLessEqual(path.stat().st_size, legacy_size)
+
+            reopened = Store(path)
+            self.assertEqual(
+                [item["id"] for item in reopened.search_episodes("阁楼纸箱", 3)],
+                [episode_id],
+            )
+            with reopened._db:
+                reopened._db.execute(
+                    "DELETE FROM conversation_episodes WHERE id=?", (episode_id,)
+                )
+            self.assertIsNone(
+                reopened._db.execute(
+                    "SELECT 1 FROM recall_episode_ids WHERE episode_id=?",
+                    (episode_id,),
+                ).fetchone()
+            )
+            self.assertEqual(
+                reopened._db.execute(
+                    "SELECT COUNT(*) FROM episode_recall_terms"
+                ).fetchone()[0],
+                0,
+            )
+            reopened.close()
+            cleaned = Store(path)
+            self.assertEqual(
+                cleaned._db.execute(
+                    "SELECT COUNT(*) FROM recall_terms"
+                ).fetchone()[0],
+                0,
+            )
+            cleaned.close()
+
     def test_long_recall_queries_ignore_single_term_episode_and_reflection_hits(
         self,
     ) -> None:

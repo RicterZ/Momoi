@@ -64,6 +64,7 @@ class Store(MemoryStore, DeliveryStore):
         self._db.execute("PRAGMA journal_mode=WAL")
         self._db.execute("PRAGMA foreign_keys=ON")
         self._migrate()
+        self._compact_recall_index_if_pending()
         self._migrate_emotion_paths()
         self._recover_outbox()
         self._recover_webhooks()
@@ -110,6 +111,7 @@ class Store(MemoryStore, DeliveryStore):
     def _migrate(self) -> None:
         import_unassigned_messages = not self._table_exists("conversation_episodes")
         self._db.executescript(Path(__file__).with_name("schema.sql").read_text())
+        self._migrate_recall_index()
         outbox_columns = {
             str(row["name"])
             for row in self._db.execute("PRAGMA table_info(outbox)").fetchall()
@@ -499,6 +501,212 @@ class Store(MemoryStore, DeliveryStore):
         )
         self._db.execute("UPDATE conversation_episodes SET summary_claimed_at=NULL")
         self._db.commit()
+
+    def _migrate_recall_index(self) -> None:
+        columns = {
+            str(row["name"])
+            for row in self._db.execute(
+                "PRAGMA table_info(episode_recall_terms)"
+            ).fetchall()
+        }
+        if columns == {"episode_key", "term_id"}:
+            self._create_recall_lookup_indexes()
+            return
+        if columns != {"episode_id", "term"}:
+            raise RuntimeError("unsupported episode recall index schema")
+
+        message_columns = {
+            str(row["name"])
+            for row in self._db.execute(
+                "PRAGMA table_info(episode_message_recall_terms)"
+            ).fetchall()
+        }
+        if message_columns != {"episode_id", "message_id", "term"}:
+            raise RuntimeError("unsupported episode message recall index schema")
+
+        started = time.monotonic()
+        old_episode_rows = int(
+            self._db.execute(
+                "SELECT COUNT(*) FROM episode_recall_terms"
+            ).fetchone()[0]
+        )
+        old_message_rows = int(
+            self._db.execute(
+                "SELECT COUNT(*) FROM episode_message_recall_terms"
+            ).fetchone()[0]
+        )
+        log_event(
+            logger,
+            logging.INFO,
+            "recall_index_migration_start",
+            episode_rows=old_episode_rows,
+            message_rows=old_message_rows,
+        )
+        try:
+            self._db.execute("BEGIN IMMEDIATE")
+            try:
+                for statement in (
+                    "DROP TABLE IF EXISTS episode_recall_terms_v2",
+                    "DROP TABLE IF EXISTS episode_message_recall_terms_v2",
+                    """CREATE TABLE episode_recall_terms_v2 (
+                        episode_key INTEGER NOT NULL,
+                        term_id INTEGER NOT NULL,
+                        PRIMARY KEY (episode_key, term_id),
+                        FOREIGN KEY (episode_key)
+                            REFERENCES recall_episode_ids(id) ON DELETE CASCADE,
+                        FOREIGN KEY (term_id)
+                            REFERENCES recall_terms(id) ON DELETE CASCADE
+                    ) WITHOUT ROWID""",
+                    """CREATE TABLE episode_message_recall_terms_v2 (
+                        episode_key INTEGER NOT NULL,
+                        message_id INTEGER NOT NULL,
+                        term_id INTEGER NOT NULL,
+                        PRIMARY KEY (episode_key, message_id, term_id),
+                        FOREIGN KEY (episode_key)
+                            REFERENCES recall_episode_ids(id) ON DELETE CASCADE,
+                        FOREIGN KEY (message_id)
+                            REFERENCES messages(id) ON DELETE CASCADE,
+                        FOREIGN KEY (term_id)
+                            REFERENCES recall_terms(id) ON DELETE CASCADE
+                    ) WITHOUT ROWID""",
+                    """INSERT OR IGNORE INTO recall_episode_ids (episode_id)
+                       SELECT id FROM conversation_episodes""",
+                    """INSERT OR IGNORE INTO recall_terms (term)
+                        SELECT term FROM episode_recall_terms
+                        UNION
+                        SELECT term FROM episode_message_recall_terms""",
+                    """INSERT INTO episode_recall_terms_v2 (episode_key, term_id)
+                        SELECT rei.id, terms.id
+                        FROM episode_recall_terms AS old
+                        JOIN recall_episode_ids AS rei
+                          ON rei.episode_id=old.episode_id
+                        JOIN recall_terms AS terms ON terms.term=old.term""",
+                    """INSERT INTO episode_message_recall_terms_v2
+                        (episode_key, message_id, term_id)
+                        SELECT rei.id, old.message_id, terms.id
+                        FROM episode_message_recall_terms AS old
+                        JOIN recall_episode_ids AS rei
+                          ON rei.episode_id=old.episode_id
+                        JOIN recall_terms AS terms ON terms.term=old.term""",
+                ):
+                    self._db.execute(statement)
+                new_episode_rows = int(
+                    self._db.execute(
+                        "SELECT COUNT(*) FROM episode_recall_terms_v2"
+                    ).fetchone()[0]
+                )
+                new_message_rows = int(
+                    self._db.execute(
+                        "SELECT COUNT(*) FROM episode_message_recall_terms_v2"
+                    ).fetchone()[0]
+                )
+                if (
+                    new_episode_rows != old_episode_rows
+                    or new_message_rows != old_message_rows
+                ):
+                    raise RuntimeError("recall index migration row count mismatch")
+                for statement in (
+                    "DROP INDEX IF EXISTS episode_recall_terms_lookup",
+                    "DROP INDEX IF EXISTS episode_message_recall_terms_lookup",
+                    "DROP TABLE episode_recall_terms",
+                    "DROP TABLE episode_message_recall_terms",
+                    """ALTER TABLE episode_recall_terms_v2
+                       RENAME TO episode_recall_terms""",
+                    """ALTER TABLE episode_message_recall_terms_v2
+                       RENAME TO episode_message_recall_terms""",
+                    """CREATE INDEX episode_recall_terms_lookup
+                       ON episode_recall_terms(term_id, episode_key)""",
+                    """CREATE INDEX episode_message_recall_terms_lookup
+                        ON episode_message_recall_terms
+                           (term_id, episode_key, message_id)""",
+                    """INSERT OR REPLACE INTO schema_metadata (key, value)
+                       VALUES ('recall_index_v2_vacuum_pending', '1')""",
+                ):
+                    self._db.execute(statement)
+            except Exception:
+                self._db.rollback()
+                raise
+            else:
+                self._db.commit()
+        except Exception as error:
+            log_event(
+                logger,
+                logging.ERROR,
+                "recall_index_migration_failure",
+                error_type=type(error).__name__,
+                reason=safe_preview(str(error), 300),
+                duration_ms=int((time.monotonic() - started) * 1000),
+            )
+            raise
+        log_event(
+            logger,
+            logging.INFO,
+            "recall_index_migration_complete",
+            episode_rows=old_episode_rows,
+            message_rows=old_message_rows,
+            duration_ms=int((time.monotonic() - started) * 1000),
+        )
+
+    def _create_recall_lookup_indexes(self) -> None:
+        self._db.execute(
+            """CREATE INDEX IF NOT EXISTS episode_recall_terms_lookup
+               ON episode_recall_terms(term_id, episode_key)"""
+        )
+        self._db.execute(
+            """CREATE INDEX IF NOT EXISTS episode_message_recall_terms_lookup
+               ON episode_message_recall_terms
+                  (term_id, episode_key, message_id)"""
+        )
+
+    def _compact_recall_index_if_pending(self) -> None:
+        pending = self._db.execute(
+            """SELECT 1 FROM schema_metadata
+               WHERE key='recall_index_v2_vacuum_pending'"""
+        ).fetchone()
+        if pending is None:
+            return
+        self._db.commit()
+        before_bytes = int(
+            self._db.execute("PRAGMA page_count").fetchone()[0]
+        ) * int(self._db.execute("PRAGMA page_size").fetchone()[0])
+        started = time.monotonic()
+        log_event(
+            logger,
+            logging.INFO,
+            "recall_index_compaction_start",
+            before_bytes=before_bytes,
+        )
+        try:
+            self._db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            self._db.execute("VACUUM")
+            self._db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            self._db.execute(
+                """DELETE FROM schema_metadata
+                   WHERE key='recall_index_v2_vacuum_pending'"""
+            )
+            self._db.commit()
+        except Exception as error:
+            log_event(
+                logger,
+                logging.ERROR,
+                "recall_index_compaction_failure",
+                error_type=type(error).__name__,
+                reason=safe_preview(str(error), 300),
+                duration_ms=int((time.monotonic() - started) * 1000),
+            )
+            raise
+        after_bytes = int(
+            self._db.execute("PRAGMA page_count").fetchone()[0]
+        ) * int(self._db.execute("PRAGMA page_size").fetchone()[0])
+        log_event(
+            logger,
+            logging.INFO,
+            "recall_index_compaction_complete",
+            before_bytes=before_bytes,
+            after_bytes=after_bytes,
+            saved_bytes=max(0, before_bytes - after_bytes),
+            duration_ms=int((time.monotonic() - started) * 1000),
+        )
 
     def _table_exists(self, name: str) -> bool:
         return (
@@ -1283,10 +1491,47 @@ class Store(MemoryStore, DeliveryStore):
             )
         )
 
+    def _episode_recall_key(self, episode_id: str) -> int:
+        self._db.execute(
+            """INSERT OR IGNORE INTO recall_episode_ids (episode_id)
+               VALUES (?)""",
+            (episode_id,),
+        )
+        row = self._db.execute(
+            "SELECT id FROM recall_episode_ids WHERE episode_id=?",
+            (episode_id,),
+        ).fetchone()
+        if row is None:
+            raise RuntimeError("episode recall id was not created")
+        return int(row["id"])
+
+    def _recall_term_ids(self, terms: set[str], *, create: bool) -> dict[str, int]:
+        if not terms:
+            return {}
+        ordered = sorted(terms)
+        if create:
+            self._db.executemany(
+                "INSERT OR IGNORE INTO recall_terms (term) VALUES (?)",
+                ((term,) for term in ordered),
+            )
+        resolved: dict[str, int] = {}
+        for offset in range(0, len(ordered), 500):
+            chunk = ordered[offset : offset + 500]
+            placeholders = ",".join("?" for _ in chunk)
+            rows = self._db.execute(
+                f"SELECT id, term FROM recall_terms WHERE term IN ({placeholders})",
+                chunk,
+            ).fetchall()
+            resolved.update({str(row["term"]): int(row["id"]) for row in rows})
+        return resolved
+
     def _index_episode_terms(self, episode_id: str, *values: object) -> None:
+        episode_key = self._episode_recall_key(episode_id)
+        term_ids = self._recall_term_ids(self._recall_terms(*values), create=True)
         self._db.executemany(
-            "INSERT OR IGNORE INTO episode_recall_terms (episode_id, term) VALUES (?, ?)",
-            ((episode_id, term) for term in self._recall_terms(*values)),
+            """INSERT OR IGNORE INTO episode_recall_terms
+               (episode_key, term_id) VALUES (?, ?)""",
+            ((episode_key, term_id) for term_id in term_ids.values()),
         )
 
     def _index_episode_message_terms(
@@ -1297,10 +1542,15 @@ class Store(MemoryStore, DeliveryStore):
         terms: set[str] | None = None,
     ) -> None:
         terms = self._recall_terms(content) if terms is None else terms
+        episode_key = self._episode_recall_key(episode_id)
+        term_ids = self._recall_term_ids(terms, create=True)
         self._db.executemany(
             """INSERT OR IGNORE INTO episode_message_recall_terms
-               (episode_id, message_id, term) VALUES (?, ?, ?)""",
-            ((episode_id, message_id, term) for term in terms),
+               (episode_key, message_id, term_id) VALUES (?, ?, ?)""",
+            (
+                (episode_key, message_id, term_id)
+                for term_id in term_ids.values()
+            ),
         )
 
     def _index_turn_episode_terms(self, turn_id: str) -> None:
@@ -1344,12 +1594,13 @@ class Store(MemoryStore, DeliveryStore):
                     )
                 )
             )
+            episode_key = self._episode_recall_key(episode_id)
             self._db.execute(
                 """DELETE FROM episode_message_recall_terms
-                   WHERE episode_id=? AND message_id IN (
+                   WHERE episode_key=? AND message_id IN (
                        SELECT id FROM messages WHERE turn_id=?
                    )""",
-                (episode_id, turn_id),
+                (episode_key, turn_id),
             )
             if unit_terms:
                 self._index_episode_terms(episode_id, *unit_values)
@@ -1379,11 +1630,13 @@ class Store(MemoryStore, DeliveryStore):
         episode = self.episode(episode_id)
         if episode is None:
             return
+        episode_key = self._episode_recall_key(episode_id)
         self._db.execute(
-            "DELETE FROM episode_recall_terms WHERE episode_id=?", (episode_id,)
+            "DELETE FROM episode_recall_terms WHERE episode_key=?", (episode_key,)
         )
         self._db.execute(
-            "DELETE FROM episode_message_recall_terms WHERE episode_id=?", (episode_id,)
+            "DELETE FROM episode_message_recall_terms WHERE episode_key=?",
+            (episode_key,),
         )
         self._index_episode_terms(
             episode_id,
@@ -1453,8 +1706,9 @@ class Store(MemoryStore, DeliveryStore):
         episodes = self._db.execute(
             """SELECT * FROM conversation_episodes AS e
                WHERE NOT EXISTS (
-                   SELECT 1 FROM episode_recall_terms AS rt
-                   WHERE rt.episode_id=e.id
+                   SELECT 1 FROM recall_episode_ids AS rei
+                   JOIN episode_recall_terms AS rt ON rt.episode_key=rei.id
+                   WHERE rei.episode_id=e.id
                )"""
         ).fetchall()
         for row in episodes:
@@ -1473,12 +1727,25 @@ class Store(MemoryStore, DeliveryStore):
                FROM episode_turns AS et
                JOIN messages AS m ON m.turn_id=et.turn_id
                WHERE NOT EXISTS (
-                   SELECT 1 FROM episode_message_recall_terms AS mrt
-                   WHERE mrt.episode_id=et.episode_id AND mrt.message_id=m.id
+                   SELECT 1 FROM recall_episode_ids AS rei
+                   JOIN episode_message_recall_terms AS mrt
+                     ON mrt.episode_key=rei.id
+                   WHERE rei.episode_id=et.episode_id AND mrt.message_id=m.id
                )"""
         ).fetchall()
         for turn in missing_turns:
             self._index_turn_episode_terms(str(turn["turn_id"]))
+        self._db.execute(
+            """DELETE FROM recall_terms
+               WHERE NOT EXISTS (
+                   SELECT 1 FROM episode_recall_terms AS rt
+                   WHERE rt.term_id=recall_terms.id
+               )
+                 AND NOT EXISTS (
+                   SELECT 1 FROM episode_message_recall_terms AS mrt
+                   WHERE mrt.term_id=recall_terms.id
+               )"""
+        )
 
     def create_episode(
         self,
@@ -1622,18 +1889,24 @@ class Store(MemoryStore, DeliveryStore):
         query_units = lexical_units(query, strict=True)
         if not query_units:
             return []
-        placeholders = ",".join("?" for _ in query_units)
+        query_term_ids = tuple(
+            self._recall_term_ids(query_units, create=False).values()
+        )
+        if not query_term_ids:
+            return []
+        placeholders = ",".join("?" for _ in query_term_ids)
         ranked: list[tuple[float, float, sqlite3.Row]] = []
         rows = self._db.execute(
             f"""SELECT e.*, matched.overlap
                 FROM conversation_episodes AS e
                 JOIN (
-                    SELECT episode_id, COUNT(*) AS overlap
-                    FROM episode_recall_terms
-                    WHERE term IN ({placeholders})
-                    GROUP BY episode_id
+                    SELECT rei.episode_id, COUNT(*) AS overlap
+                    FROM episode_recall_terms AS rt
+                    JOIN recall_episode_ids AS rei ON rei.id=rt.episode_key
+                    WHERE rt.term_id IN ({placeholders})
+                    GROUP BY rt.episode_key
                 ) AS matched ON matched.episode_id=e.id""",
-            tuple(query_units),
+            query_term_ids,
         ).fetchall()
         for row in rows:
             overlap = int(row["overlap"])
@@ -1654,21 +1927,27 @@ class Store(MemoryStore, DeliveryStore):
     def _episode_match_snippets(
         self, episode_id: str, query_units: set[str], limit: int = 4
     ) -> list[dict[str, object]]:
-        placeholders = ",".join("?" for _ in query_units)
+        query_term_ids = tuple(
+            self._recall_term_ids(query_units, create=False).values()
+        )
+        if not query_term_ids:
+            return []
+        placeholders = ",".join("?" for _ in query_term_ids)
         rows = self._db.execute(
             f"""SELECT m.id, m.turn_id, et.ordinal, m.role, m.content,
                        m.created_at, m.delivery_state, COUNT(*) AS overlap
                 FROM episode_message_recall_terms AS mrt
+                JOIN recall_episode_ids AS rei ON rei.id=mrt.episode_key
                 JOIN messages AS m ON m.id=mrt.message_id
                 JOIN episode_turns AS et
-                  ON et.episode_id=mrt.episode_id AND et.turn_id=m.turn_id
-                WHERE mrt.episode_id=? AND mrt.term IN ({placeholders})
+                  ON et.episode_id=rei.episode_id AND et.turn_id=m.turn_id
+                WHERE rei.episode_id=? AND mrt.term_id IN ({placeholders})
                   AND (m.role='user' OR m.delivery_state IN
                        ('delivered', 'uncertain', 'internal'))
                 GROUP BY m.id, m.turn_id, et.ordinal, m.role, m.content, m.created_at
                 ORDER BY overlap DESC, et.ordinal DESC
                 LIMIT ?""",
-            (episode_id, *query_units, limit),
+            (episode_id, *query_term_ids, limit),
         ).fetchall()
         return [
             {

@@ -1,3 +1,7 @@
+CREATE TABLE IF NOT EXISTS schema_metadata (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS events (
     id TEXT PRIMARY KEY,
     message_id TEXT NOT NULL,
@@ -267,24 +271,31 @@ CREATE TABLE IF NOT EXISTS conversation_episodes (
 );
 CREATE INDEX IF NOT EXISTS conversation_episodes_candidates
     ON conversation_episodes(status, salience DESC, updated_at DESC);
-CREATE TABLE IF NOT EXISTS episode_recall_terms (
-    episode_id TEXT NOT NULL,
-    term TEXT NOT NULL,
-    PRIMARY KEY (episode_id, term),
+CREATE TABLE IF NOT EXISTS recall_episode_ids (
+    id INTEGER PRIMARY KEY,
+    episode_id TEXT NOT NULL UNIQUE,
     FOREIGN KEY (episode_id) REFERENCES conversation_episodes(id) ON DELETE CASCADE
 );
-CREATE INDEX IF NOT EXISTS episode_recall_terms_lookup
-    ON episode_recall_terms(term, episode_id);
-CREATE TABLE IF NOT EXISTS episode_message_recall_terms (
-    episode_id TEXT NOT NULL,
-    message_id INTEGER NOT NULL,
-    term TEXT NOT NULL,
-    PRIMARY KEY (episode_id, message_id, term),
-    FOREIGN KEY (episode_id) REFERENCES conversation_episodes(id) ON DELETE CASCADE,
-    FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
+CREATE TABLE IF NOT EXISTS recall_terms (
+    id INTEGER PRIMARY KEY,
+    term TEXT NOT NULL UNIQUE
 );
-CREATE INDEX IF NOT EXISTS episode_message_recall_terms_lookup
-    ON episode_message_recall_terms(term, episode_id, message_id);
+CREATE TABLE IF NOT EXISTS episode_recall_terms (
+    episode_key INTEGER NOT NULL,
+    term_id INTEGER NOT NULL,
+    PRIMARY KEY (episode_key, term_id),
+    FOREIGN KEY (episode_key) REFERENCES recall_episode_ids(id) ON DELETE CASCADE,
+    FOREIGN KEY (term_id) REFERENCES recall_terms(id) ON DELETE CASCADE
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS episode_message_recall_terms (
+    episode_key INTEGER NOT NULL,
+    message_id INTEGER NOT NULL,
+    term_id INTEGER NOT NULL,
+    PRIMARY KEY (episode_key, message_id, term_id),
+    FOREIGN KEY (episode_key) REFERENCES recall_episode_ids(id) ON DELETE CASCADE,
+    FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE,
+    FOREIGN KEY (term_id) REFERENCES recall_terms(id) ON DELETE CASCADE
+) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS episode_turns (
     episode_id TEXT NOT NULL,
     turn_id TEXT NOT NULL,
