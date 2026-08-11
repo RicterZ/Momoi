@@ -790,6 +790,32 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                     ],
                     require_tool=True,
                 )
+            provider_without_tool_choice = OpenAIProvider(
+                LLMConfig(
+                    base_url=str(server.make_url("/")).rstrip("/"),
+                    api_key="openai-test-key",
+                    model="thinking-model",
+                    max_tokens=100,
+                    temperature=0,
+                    timeout_seconds=1,
+                    max_retries=0,
+                    api_format="openai",
+                    tool_choice=False,
+                )
+            )
+            async with provider_without_tool_choice:
+                await provider_without_tool_choice.complete(
+                    "system",
+                    [{"role": "user", "content": "测试"}],
+                    [
+                        {
+                            "name": "respond",
+                            "description": "Finish the Turn.",
+                            "input_schema": {"type": "object"},
+                        }
+                    ],
+                    require_tool=True,
+                )
         finally:
             await server.close()
 
@@ -819,6 +845,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["tools"][0]["type"], "function")
         self.assertEqual(payload["tools"][0]["function"]["name"], "respond")
         self.assertEqual(payload["tool_choice"], "required")
+        self.assertNotIn("tool_choice", requests[1][0])
 
     async def test_builtin_http_file_patch_and_sleep_tools(self) -> None:
         async def endpoint(_: web.Request) -> web.Response:

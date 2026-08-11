@@ -462,7 +462,7 @@ class OpenAIProvider:
                 }
                 for tool in tools
             ]
-            if require_tool:
+            if require_tool and self.config.tool_choice:
                 payload["tool_choice"] = "required"
         payload = cyber_keyword_pre_hook.replace_strings(payload)
         _dump_request(self.dump_dir, self.config.dump_prompts, "openai", payload, require_tool)

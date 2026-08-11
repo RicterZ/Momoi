@@ -8,7 +8,8 @@
     "temperature": 0.6,
     "timeout_seconds": 120,
     "max_retries": 3,
-    "dump_prompts": false
+    "dump_prompts": false,
+    "tool_choice": true
   },
   "channels": {
     "primary": "napcat",

@@ -24,6 +24,7 @@ class LLMConfig:
     max_retries: int
     api_format: str = "anthropic"
     dump_prompts: bool = False
+    tool_choice: bool = True
 
 
 @dataclass(frozen=True)
@@ -150,6 +151,7 @@ def load_config(path: str | Path) -> AppConfig:
     if api_format not in {"anthropic", "openai"}:
         raise ConfigError("llm.api_format must be anthropic or openai")
     dump_prompts = _boolean(llm_raw.get("dump_prompts", False), "llm.dump_prompts")
+    tool_choice = _boolean(llm_raw.get("tool_choice", True), "llm.tool_choice")
 
     if "channel" in raw and "channels" in raw:
         raise ConfigError("configure either channel or channels, not both")
@@ -282,6 +284,7 @@ def load_config(path: str | Path) -> AppConfig:
             max_retries=max(0, int(llm_raw.get("max_retries", 3))),
             api_format=api_format,
             dump_prompts=dump_prompts,
+            tool_choice=tool_choice,
         ),
         channel=channel_config,
         system_prompt=system_prompt,

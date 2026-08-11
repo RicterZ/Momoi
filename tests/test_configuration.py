@@ -52,10 +52,15 @@ class ConfigurationTest(unittest.TestCase):
             config = load_config(path)
             self.assertIsInstance(config.channel, NapCatConfig)
             self.assertFalse(config.llm.dump_prompts)
+            self.assertTrue(config.llm.tool_choice)
             self.assertEqual(
                 [type(item) for item in config.channel_configs],
                 [NapCatConfig, WeixinConfig],
             )
+
+            value["llm"]["tool_choice"] = False  # type: ignore[index]
+            path.write_text(json.dumps(value))
+            self.assertFalse(load_config(path).llm.tool_choice)
 
             value["channels"]["primary"] = "missing"  # type: ignore[index]
             path.write_text(json.dumps(value))
