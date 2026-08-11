@@ -1,9 +1,9 @@
 import json
 from collections.abc import Callable
-from datetime import datetime
 from typing import Any
 
 from ..config import AppConfig
+from ..context_time import context_timestamp
 from ..storage import Store, estimate_tokens, truncate_tokens
 from .context_planner import is_light_social_plan
 
@@ -164,7 +164,9 @@ def build_plan_retrieval(
                 "blocked_reason",
                 "latest_result",
                 "next_review_at",
+                "next_review_timestamp",
                 "retry_at",
+                "retry_timestamp",
                 "schedule",
             )
         },
@@ -177,7 +179,8 @@ def build_plan_retrieval(
         lambda row: row["id"],
         lambda row: str(row["text"]),
         lambda row: {
-            name: row.get(name) for name in ("id", "text", "fire_at", "schedule")
+            name: row.get(name)
+            for name in ("id", "text", "fire_at", "fire_timestamp", "schedule")
         },
         config.memory_results,
         agenda_budget,
@@ -299,7 +302,8 @@ def _goal_lines(items: object) -> str:
         f"title={item['title']} next_action={item.get('next_action') or 'none'} "
         f"waiting_for={item.get('waiting_for') or 'none'} "
         f"latest_result={item.get('latest_result') or 'none'} "
-        f"next_review_at={item.get('next_review_at') or 'none'}"
+        f"next_review_at={item.get('next_review_timestamp') or 'none'} "
+        f"retry_at={item.get('retry_timestamp') or 'none'}"
         for item in items
     )
 
@@ -309,14 +313,11 @@ def _reminder_lines(items: object) -> str:
         return ""
     lines = []
     for item in items:
-        fire_at = item.get("fire_at")
-        when = (
-            datetime.fromtimestamp(float(fire_at)).astimezone().isoformat()
-            if fire_at is not None
-            else "none"
-        )
+        when = item.get("fire_timestamp")
+        if not when and item.get("fire_at") is not None:
+            when = context_timestamp(item["fire_at"])
         lines.append(
-            f"- [units={_supports(item)}] id={item['id']} fire_at={when} "
+            f"- [units={_supports(item)}] id={item['id']} fire_at={when or 'none'} "
             f"schedule={json.dumps(item.get('schedule'), ensure_ascii=False)} "
             f"text={item['text']}"
         )
@@ -369,7 +370,9 @@ def _episode_context(
             continue
         lines = [
             f"[episode id={episode['id']} units={_supports(selected)} "
-            f"relation={selected['relation']} status={episode['status']}]",
+            f"relation={selected['relation']} status={episode['status']} "
+            f"created={episode.get('created_timestamp') or 'unknown'} "
+            f"updated={episode.get('updated_timestamp') or 'unknown'}]",
             f"title: {episode['title']}",
         ]
         summary = str(episode["summary"] or episode["working_summary"])
@@ -393,6 +396,7 @@ def _episode_context(
                 continue
             prefix = (
                 f"  [{_message_role(message)} "
+                f"timestamp={message.get('timestamp') or context_timestamp(message['created_at'])} "
                 f"turn={message.get('turn_id')} ordinal={message.get('ordinal')}] "
             )
             prefix_tokens = estimate_tokens(prefix)
@@ -426,7 +430,9 @@ def _episode_context(
         if messages:
             lines.append("raw_tail:")
             lines.extend(
-                f"  [{_message_role(message)} turn={message['turn_id']} "
+                f"  [{_message_role(message)} "
+                f"timestamp={message.get('timestamp') or context_timestamp(message['created_at'])} "
+                f"turn={message['turn_id']} "
                 f"ordinal={message['ordinal']}] "
                 f"{_historical_content(message['content'])}"
                 for message in messages
@@ -447,7 +453,9 @@ def assemble_main_context(
         recent_turns, raw_token_budget, recent_before_timestamp
     )
     recent = "\n".join(
-        f"[{_message_role(message)} turn={message['turn_id']}] "
+        f"[{_message_role(message)} "
+        f"timestamp={message.get('timestamp') or context_timestamp(message['created_at'])} "
+        f"turn={message['turn_id']}] "
         f"{_historical_content(message['content'])}"
         for message in recent_messages
     )

@@ -337,6 +337,10 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                             payload["owner_messages"][0]["text"],
                             "刷微博，也看下之前等的邮件",
                         )
+                        self.assertRegex(
+                            payload["owner_messages"][0]["timestamp"],
+                            r"^\d{4}-\d{2}-\d{2}T",
+                        )
                         recent = json.dumps(
                             payload["recent_conversation"], ensure_ascii=False
                         )
@@ -402,6 +406,7 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(provider.calls, ["planner", "main"])
             self.assertIn("RECENT CONTEXT 1", provider.planner_recent)
             self.assertIn("RECENT CONTEXT 2", provider.main_rendered)
+            self.assertIn("2286-11-21T", provider.main_rendered)
             self.assertNotIn("GLOBAL RAW MUST NOT LEAK", provider.main_rendered)
             stored = daemon.store.context_plan(turn_id)
             self.assertEqual(stored["state"], "recalled")

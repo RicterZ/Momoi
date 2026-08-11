@@ -128,6 +128,7 @@ class ContextAssemblerTest(unittest.TestCase):
 
             self.assertIn("matched_raw", recalled)
             self.assertIn(secret, recalled)
+            self.assertRegex(recalled, r"timestamp=\d{4}-\d{2}-\d{2}T")
             store.close()
 
     def test_multi_intent_turn_indexes_only_its_bound_episode_units(self) -> None:

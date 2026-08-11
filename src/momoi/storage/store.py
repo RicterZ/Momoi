@@ -17,6 +17,7 @@ from ..channel import (
     render_channel_message,
 )
 from ..config import HeartbeatConfig, NotificationConfig, ReflectionConfig
+from ..context_time import context_timestamp
 from ..emotions import emotion_slug, valid_emotion_slug
 from ..models import (
     AgentReply,
@@ -852,7 +853,7 @@ class Store(MemoryStore, DeliveryStore):
             return ""
         source_turn = str(row["cooled_reply_source_turn_id"] or "")
         source_rows = self._db.execute(
-            """SELECT role, content, delivery_state FROM messages
+            """SELECT role, content, created_at, delivery_state FROM messages
                WHERE turn_id=? AND (role='user' OR delivery_state IN ('delivered','uncertain'))
                ORDER BY id""",
             (source_turn,),
@@ -862,6 +863,7 @@ class Store(MemoryStore, DeliveryStore):
                 "role": str(item["role"]),
                 "content": str(item["content"]),
                 "delivery_state": str(item["delivery_state"]),
+                "timestamp": context_timestamp(item["created_at"]),
             }
             for item in source_rows
         ]
@@ -872,17 +874,13 @@ class Store(MemoryStore, DeliveryStore):
                 "expected_response": expectation,
                 "source_turn": source_turn,
                 "source_messages": source_messages,
-                "cooled_at": datetime.fromtimestamp(
-                    float(row["cooled_reply_since"] or now)
-                ).astimezone().isoformat(timespec="seconds"),
+                "cooled_at": context_timestamp(row["cooled_reply_since"] or now),
                 "age_minutes": max(
                     0,
                     int((now - float(row["cooled_reply_since"] or now)) / 60),
                 ),
                 "cleanup_due": now >= review_at,
-                "review_at": datetime.fromtimestamp(review_at)
-                .astimezone()
-                .isoformat(timespec="seconds"),
+                "review_at": context_timestamp(review_at),
                 "review_count": int(row["cooled_reply_checks"] or 0),
                 "reason": str(row["cooled_reply_reason"] or ""),
             },
@@ -1253,6 +1251,11 @@ class Store(MemoryStore, DeliveryStore):
     def _episode_dict(row: sqlite3.Row) -> dict[str, object]:
         episode = dict(row)
         episode.pop("overlap", None)
+        for name in ("created_at", "updated_at", "closed_at"):
+            if episode.get(name) is not None:
+                episode[f"{name.removesuffix('_at')}_timestamp"] = context_timestamp(
+                    episode[name]
+                )
         try:
             claims = json.loads(str(episode.pop("working_summary_claims_json")))
         except (json.JSONDecodeError, TypeError):
@@ -1562,7 +1565,9 @@ class Store(MemoryStore, DeliveryStore):
         ).fetchall()
         by_turn: dict[str, list[dict[str, object]]] = {}
         for row in rows:
-            by_turn.setdefault(str(row["turn_id"]), []).append(dict(row))
+            item = dict(row)
+            item["timestamp"] = context_timestamp(item["created_at"])
+            by_turn.setdefault(str(row["turn_id"]), []).append(item)
         selected: list[list[dict[str, object]]] = []
         used = 0
         for turn_id in turn_ids:
@@ -1677,6 +1682,7 @@ class Store(MemoryStore, DeliveryStore):
                         "delivery_state",
                     )
                 },
+                "timestamp": context_timestamp(row["created_at"]),
                 "content": excerpt_tokens(str(row["content"]), query_units, 500),
             }
             for row in rows
@@ -1714,6 +1720,7 @@ class Store(MemoryStore, DeliveryStore):
                     "delivery_state",
                 )
             },
+            "timestamp": context_timestamp(row["created_at"]),
             "content": content,
             "content_offset": content_offset,
             "next_content_offset": next_offset,
@@ -1874,6 +1881,7 @@ class Store(MemoryStore, DeliveryStore):
         groups: list[list[dict[str, object]]] = []
         for row in rows:
             item = dict(row)
+            item["timestamp"] = context_timestamp(item["created_at"])
             if int(item["id"]) in excluded:
                 continue
             if not groups or groups[-1][0]["turn_id"] != item["turn_id"]:
@@ -1961,7 +1969,10 @@ class Store(MemoryStore, DeliveryStore):
                         break
                     if compact and compact_tokens + group_tokens > raw_token_budget:
                         break
-                    compact.extend(dict(row) for row in group)
+                    for row in group:
+                        item = dict(row)
+                        item["timestamp"] = context_timestamp(item["created_at"])
+                        compact.append(item)
                     compact_tokens += group_tokens
                     through = ordinal
                 if not compact:
@@ -2346,13 +2357,7 @@ class Store(MemoryStore, DeliveryStore):
         state = self.self_state()
 
         def timestamp(value: object) -> str | None:
-            return (
-                datetime.fromtimestamp(float(value))
-                .astimezone()
-                .isoformat(timespec="seconds")
-                if value is not None
-                else None
-            )
+            return context_timestamp(value) if value is not None else None
 
         return json.dumps(
             {
@@ -2404,9 +2409,10 @@ class Store(MemoryStore, DeliveryStore):
                 "role": str(item["role"]),
                 "content": str(item["content"]),
                 "delivery_state": str(item["delivery_state"]),
+                "timestamp": context_timestamp(item["created_at"]),
             }
             for item in self._db.execute(
-                """SELECT role, content, delivery_state FROM messages
+                """SELECT role, content, created_at, delivery_state FROM messages
                    WHERE turn_id=? AND (role='user' OR delivery_state IN ('delivered','uncertain'))
                    ORDER BY id""",
                 (source_turn,),
@@ -2416,9 +2422,7 @@ class Store(MemoryStore, DeliveryStore):
             "source_turn": source_turn,
             "source_messages": source_messages,
             "expected_response": str(row["pending_reply_expectation"]),
-            "waiting_since": datetime.fromtimestamp(since)
-            .astimezone()
-            .isoformat(timespec="seconds"),
+            "waiting_since": context_timestamp(since),
             "waiting_minutes": max(0, int((now - since) / 60)),
             "heartbeat_checks": int(row["pending_reply_checks"] or 0),
             "previous_check_reason": str(row["pending_reply_last_reason"] or ""),
@@ -3107,7 +3111,8 @@ class Store(MemoryStore, DeliveryStore):
             used += size
         selected.reverse()
         text = "\n\n".join(
-            f"[{label}]\n{content}" for _, label, content, _, _ in selected
+            f"[{context_timestamp(occurred_at)} {label}]\n{content}"
+            for occurred_at, label, content, _, _ in selected
         )
         owner_text = "\n".join(content for _, _, content, owner, _ in selected if owner)
         knowledge_text = "\n".join(
@@ -3238,17 +3243,11 @@ class Store(MemoryStore, DeliveryStore):
         lines = []
         for row in rows:
             goal = self._goal_dict(row)
-            review = (
-                datetime.fromtimestamp(float(goal["next_review_at"]))
-                .astimezone()
-                .isoformat(timespec="seconds")
-                if goal["next_review_at"] is not None
-                else "none"
-            )
             lines.append(
                 f"- id={goal['id']} status={goal['status']} title={goal['title']} "
-                f"next_action={goal['next_action'] or 'none'} next_review_at={review} "
-                f"retry_at={goal.get('retry_at') or 'none'} "
+                f"next_action={goal['next_action'] or 'none'} "
+                f"next_review_at={goal.get('next_review_timestamp') or 'none'} "
+                f"retry_at={goal.get('retry_timestamp') or 'none'} "
                 f"schedule={json.dumps(goal['schedule'], ensure_ascii=False) if goal['schedule'] else 'none'}"
             )
         return "\n".join(lines)
@@ -3259,8 +3258,7 @@ class Store(MemoryStore, DeliveryStore):
                WHERE status='pending' ORDER BY fire_at LIMIT 20"""
         ).fetchall()
         return "\n".join(
-            f"- id={row['id']} fire_at="
-            f"{datetime.fromtimestamp(row['fire_at']).astimezone().isoformat(timespec='seconds')} "
+            f"- id={row['id']} fire_at={context_timestamp(row['fire_at'])} "
             f"schedule={row['schedule_json'] or 'none'} text={row['text']}"
             for row in rows
         )
@@ -3460,6 +3458,11 @@ class Store(MemoryStore, DeliveryStore):
     @staticmethod
     def _reminder_dict(row: sqlite3.Row) -> dict[str, object]:
         reminder = dict(row)
+        for name in ("fire_at", "created_at", "updated_at"):
+            if reminder.get(name) is not None:
+                reminder[f"{name.removesuffix('_at')}_timestamp"] = context_timestamp(
+                    reminder[name]
+                )
         schedule_json = str(reminder.pop("schedule_json", ""))
         reminder["schedule"] = json.loads(schedule_json) if schedule_json else None
         return reminder
@@ -3578,6 +3581,16 @@ class Store(MemoryStore, DeliveryStore):
     @staticmethod
     def _goal_dict(row: sqlite3.Row) -> dict[str, object]:
         goal = dict(row)
+        for name in (
+            "next_review_at",
+            "retry_at",
+            "created_at",
+            "updated_at",
+        ):
+            if goal.get(name) is not None:
+                goal[f"{name.removesuffix('_at')}_timestamp"] = context_timestamp(
+                    goal[name]
+                )
         goal["plan"] = json.loads(str(goal.pop("plan_json")))
         schedule_json = str(goal.pop("schedule_json", ""))
         goal["schedule"] = json.loads(schedule_json) if schedule_json else None

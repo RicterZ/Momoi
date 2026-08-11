@@ -164,6 +164,7 @@ class StorageMemoryTest(unittest.TestCase):
             )
 
             self.assertEqual([item["content"] for item in messages], ["较早的聊天"])
+            self.assertRegex(messages[0]["timestamp"], r"^\d{4}-\d{2}-\d{2}T")
             store.close()
 
     def test_episode_metadata_updates_and_owner_focus_ages_out(self) -> None:

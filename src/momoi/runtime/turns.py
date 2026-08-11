@@ -21,6 +21,7 @@ from ..builtin_tools import (
     SELF_DIRECTED_BUILTIN_TOOL_SPECS,
 )
 from ..channel import Channel, ChannelMessage
+from ..context_time import context_timestamp
 from ..emotions import EMOTION_PREFIX, emotion_slug
 from ..mcp_client import MCP_TOOL_POLICY
 from ..memory_tools import MEMORY_TOOL_POLICY, MEMORY_TOOL_SPECS
@@ -354,6 +355,8 @@ class TurnRunner:
                 "id": candidate["id"],
                 "status": candidate["status"],
                 "title": candidate["title"],
+                "created_timestamp": candidate.get("created_timestamp"),
+                "updated_timestamp": candidate.get("updated_timestamp"),
                 "summary": str(candidate["working_summary"] or candidate["summary"])[
                     :400
                 ],
@@ -367,6 +370,7 @@ class TurnRunner:
             {
                 "event_id": event.event_id,
                 "channel": event.channel,
+                "timestamp": context_timestamp(event.occurred_at),
                 "text": event.text,
             }
             for event in events
@@ -389,6 +393,7 @@ class TurnRunner:
                     "next_action",
                     "waiting_for",
                     "latest_result",
+                    "next_review_timestamp",
                 )
             }
             for goal in goals_by_id.values()
@@ -402,7 +407,10 @@ class TurnRunner:
             if len(reminders_by_id) == 8:
                 break
         candidate_reminders = [
-            {name: reminder.get(name) for name in ("id", "text", "fire_at", "schedule")}
+            {
+                name: reminder.get(name)
+                for name in ("id", "text", "fire_timestamp", "schedule")
+            }
             for reminder in reminders_by_id.values()
         ]
         request: list[dict[str, Any]] = [
@@ -558,6 +566,7 @@ class TurnRunner:
                 "turn_id": message["turn_id"],
                 "role": message["role"],
                 "delivery_state": message["delivery_state"],
+                "timestamp": message["timestamp"],
                 "content": _historical_content(message["content"]),
             }
             for message in self.store.recent_conversation_messages(
@@ -1587,6 +1596,7 @@ class TurnRunner:
                         "ordinal": message["ordinal"],
                         "role": message["role"],
                         "delivery_state": message["delivery_state"],
+                        "timestamp": message["timestamp"],
                         "content": message["content"],
                     }
                     for message in candidate["messages"]
@@ -1908,6 +1918,7 @@ class TurnRunner:
                 "turn_id": message["turn_id"],
                 "role": message["role"],
                 "delivery_state": message["delivery_state"],
+                "timestamp": message["timestamp"],
                 "content": _historical_content(message["content"]),
             }
             for message in self.store.recent_conversation_messages(
@@ -2043,6 +2054,8 @@ class TurnRunner:
         ):
             topic = {
                 "title": episode["title"],
+                "created_timestamp": episode.get("created_timestamp"),
+                "updated_timestamp": episode.get("updated_timestamp"),
                 "summary": truncate_tokens(
                     str(episode["summary"] or episode["working_summary"] or ""),
                     160,
@@ -2400,11 +2413,7 @@ class TurnRunner:
             self.store.release_goal_claim(goal_id)
             return
         now = datetime.now().astimezone().isoformat(timespec="seconds")
-        review_at = (
-            datetime.fromtimestamp(float(goal["next_review_at"]))
-            .astimezone()
-            .isoformat(timespec="seconds")
-        )
+        review_at = context_timestamp(goal["next_review_at"])
         self_state = self.store.self_state_context()
         memory_query = f"{goal['title']} {goal['next_action']} {goal['latest_result']}"
         episodes = recall_episode_context(
@@ -2431,6 +2440,7 @@ class TurnRunner:
                 "turn_id": message["turn_id"],
                 "role": message["role"],
                 "delivery_state": message["delivery_state"],
+                "timestamp": message["timestamp"],
                 "content": _historical_content(message["content"]),
             }
             for message in self.store.recent_conversation_messages(
@@ -2554,8 +2564,10 @@ class TurnRunner:
             "as one evolving intent; later messages may correct or extend earlier ones.]"
         ]
         for message in batch:
-            local_time = datetime.fromtimestamp(message.occurred_at).astimezone()
-            lines.append(f"{local_time:%H:%M:%S} [{message.channel}] {message.text}")
+            lines.append(
+                f"{context_timestamp(message.occurred_at)} "
+                f"[{message.channel}] {message.text}"
+            )
         return "\n".join(lines)
 
     def _apply_reconciliation_commands(self, batch: list[IncomingMessage]) -> str:
