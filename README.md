@@ -58,14 +58,13 @@ Replies are shaped for private chat:
 - When a finished exchange needs no new reply, Momoi may simply stay silent.
 - Text, images, replies, forwards, cards, files, video, and voice can retain their message meaning.
 - Image-capable models can understand images from the conversation.
-- Stickers and reaction images can simply carry the mood or close a beat without being over-explained or forced into a new topic.
 - Useful progress can be sent while a longer task is still running.
 
 ### Context that survives
 
 Momoi combines several kinds of context instead of relying on a fixed message count:
 
-- Recent conversation in its original form
+- Recent conversation in its original form across conversational and autonomous Turns
 - The current topic and unresolved threads
 - Searchable older conversation episodes
 - Durable facts, preferences, routines, and relationship memories
@@ -75,8 +74,6 @@ Momoi combines several kinds of context instead of relying on a fixed message co
 Only relevant older material is recalled. This keeps long-running use from becoming either amnesia or an ever-growing context bomb.
 
 Durable memory is grounded in things the owner actually said. When two values conflict, Momoi asks for confirmation instead of silently rewriting history.
-
-Recent conversation follows Momoi into owner messages, Goals, Webhooks, reply follow-ups, and Heartbeats. Confirmed delivery records tell later conversations what she actually sent; uncertain or failed delivery is not treated as shared fact.
 
 ### Agentic task execution
 
@@ -107,7 +104,6 @@ Momoi separates different kinds of future behavior:
 | Reminder | “Remind me to stretch in one hour” | Delivers known content at the requested time |
 | Goal | “Every morning, check the weather and give me a riding recommendation” | Wakes up, gathers fresh information, reasons, and continues the task |
 | Heartbeat | Momoi's own activity and initiative | May use allowed tools, create her own Goal, share a useful result, or remain silent |
-| Reply follow-up | Momoi genuinely expects an answer | Waits briefly and may send a small, context-specific follow-up without opening a new topic |
 | Reflection | Form durable learning each day | Reviews the day that just ended without sending a message |
 | Webhook | An external event happened | Handles the predefined event workflow in Momoi's normal voice |
 
