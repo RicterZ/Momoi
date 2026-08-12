@@ -379,11 +379,14 @@ class MomoiDaemon(TurnRunner):
                 sealed = batch
                 batch = []
                 self._stop_requested = False
+                sealed_turn_id = self._turn_id(
+                    *(event.event_id for event in sealed)
+                )
                 self._active_turn = asyncio.create_task(
                     self._complete_batch_turn(
                         sealed,
                         stop,
-                        self._turn_id(*(event.event_id for event in sealed)),
+                        sealed_turn_id,
                         self._channel_for(sealed[0].channel),
                     )
                 )
@@ -392,17 +395,13 @@ class MomoiDaemon(TurnRunner):
                 except asyncio.CancelledError:
                     if not self._stop_requested:
                         raise
-                    self.store.cancel_turn(
-                        self._turn_id(*(event.event_id for event in sealed)), sealed
-                    )
+                    self.store.cancel_turn(sealed_turn_id, sealed)
                     log_event(
                         logger,
                         logging.INFO,
                         "turn_cancelled",
                         stage="owner",
-                        turn_id=self._turn_id(
-                            *(event.event_id for event in sealed)
-                        ),
+                        turn_id=sealed_turn_id,
                         channel=sealed[0].channel,
                         reason="owner_stop",
                     )

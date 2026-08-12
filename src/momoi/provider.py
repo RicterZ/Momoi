@@ -26,6 +26,59 @@ class ProviderResponseError(ProviderError):
     """The endpoint returned a successful but unusable response."""
 
 
+def _retry_delay(attempt: int) -> int:
+    return min(2**attempt, 5)
+
+
+def _log_retry(
+    protocol: str,
+    attempt: int,
+    max_retries: int,
+    delay: int,
+    *,
+    status: int | None = None,
+    error: Exception | None = None,
+    reason: str | None = None,
+) -> None:
+    log_event(
+        logger,
+        logging.WARNING,
+        "llm_retry",
+        protocol=protocol,
+        attempt=attempt + 1,
+        attempt_max=max_retries + 1,
+        next_attempt=attempt + 2,
+        status=status,
+        error_type=type(error).__name__ if error is not None else None,
+        reason=reason,
+        delay_seconds=delay,
+    )
+
+
+def _log_failure(
+    protocol: str,
+    attempt: int,
+    max_retries: int,
+    duration_ms: int,
+    error: Exception,
+    *,
+    status: int | None = None,
+    reason: str | None = None,
+) -> None:
+    log_event(
+        logger,
+        logging.ERROR,
+        "llm_failure",
+        protocol=protocol,
+        attempt=attempt + 1,
+        attempt_max=max_retries + 1,
+        status=status,
+        error_type=type(error).__name__,
+        reason=reason,
+        duration_ms=duration_ms,
+    )
+
+
 def _api_url(base_url: str, path: str) -> str:
     base = base_url.rstrip("/")
     return f"{base}{path}" if base.endswith("/v1") else f"{base}/v1{path}"
@@ -180,16 +233,6 @@ def _redact_dump_media(value: Any) -> Any:
     return value
 
 
-def _response_preview(value: Any, limit: int = 1000) -> str:
-    if isinstance(value, str):
-        return value.replace("\n", "\\n")[:limit]
-    try:
-        rendered = json.dumps(value, ensure_ascii=False, default=str)
-    except (TypeError, ValueError):
-        rendered = repr(value)
-    return rendered[:limit]
-
-
 def _compact_response_text(text: str) -> str:
     try:
         value = json.loads(text)
@@ -304,33 +347,26 @@ class AnthropicProvider:
                 ) as response:
                     if response.status >= 500 and attempt < self.config.max_retries:
                         await response.read()
-                        delay = min(2**attempt, 5)
-                        log_event(
-                            logger,
-                            logging.WARNING,
-                            "llm_retry",
-                            protocol="anthropic",
-                            attempt=attempt + 1,
-                            attempt_max=self.config.max_retries + 1,
-                            next_attempt=attempt + 2,
+                        delay = _retry_delay(attempt)
+                        _log_retry(
+                            "anthropic",
+                            attempt,
+                            self.config.max_retries,
+                            delay,
                             status=response.status,
-                            delay_seconds=delay,
                         )
                         await asyncio.sleep(delay)
                         continue
                     if response.status != 200:
                         error = await _http_error(response, "Anthropic-compatible")
-                        log_event(
-                            logger,
-                            logging.ERROR,
-                            "llm_failure",
-                            protocol="anthropic",
-                            attempt=attempt + 1,
-                            attempt_max=self.config.max_retries + 1,
+                        _log_failure(
+                            "anthropic",
+                            attempt,
+                            self.config.max_retries,
+                            int((monotonic() - attempt_started) * 1000),
+                            error,
                             status=response.status,
-                            error_type=type(error).__name__,
                             reason=safe_preview(str(error), 300),
-                            duration_ms=int((monotonic() - attempt_started) * 1000),
                         )
                         raise error
                     data = await response.json()
@@ -373,16 +409,13 @@ class AnthropicProvider:
                         error = ProviderError(
                             "Anthropic-compatible endpoint returned no text content"
                         )
-                        log_event(
-                            logger,
-                            logging.ERROR,
-                            "llm_failure",
-                            protocol="anthropic",
-                            attempt=attempt + 1,
-                            attempt_max=self.config.max_retries + 1,
-                            error_type=type(error).__name__,
+                        _log_failure(
+                            "anthropic",
+                            attempt,
+                            self.config.max_retries,
+                            duration_ms,
+                            error,
                             reason=str(error),
-                            duration_ms=duration_ms,
                         )
                         raise error
                     log_event(
@@ -398,29 +431,22 @@ class AnthropicProvider:
             except (aiohttp.ClientError, asyncio.TimeoutError) as error:
                 last_error = error
                 if attempt < self.config.max_retries:
-                    delay = min(2**attempt, 5)
-                    log_event(
-                        logger,
-                        logging.WARNING,
-                        "llm_retry",
-                        protocol="anthropic",
-                        attempt=attempt + 1,
-                        attempt_max=self.config.max_retries + 1,
-                        next_attempt=attempt + 2,
-                        error_type=type(error).__name__,
-                        delay_seconds=delay,
+                    delay = _retry_delay(attempt)
+                    _log_retry(
+                        "anthropic",
+                        attempt,
+                        self.config.max_retries,
+                        delay,
+                        error=error,
                     )
                     await asyncio.sleep(delay)
                     continue
-                log_event(
-                    logger,
-                    logging.ERROR,
-                    "llm_failure",
-                    protocol="anthropic",
-                    attempt=attempt + 1,
-                    attempt_max=self.config.max_retries + 1,
-                    error_type=type(error).__name__,
-                    duration_ms=int((monotonic() - attempt_started) * 1000),
+                _log_failure(
+                    "anthropic",
+                    attempt,
+                    self.config.max_retries,
+                    int((monotonic() - attempt_started) * 1000),
+                    error,
                 )
         raise ProviderError(f"Anthropic-compatible request failed: {type(last_error).__name__}")
 
@@ -578,33 +604,26 @@ class OpenAIProvider:
                 ) as response:
                     if response.status >= 500 and attempt < self.config.max_retries:
                         await response.read()
-                        delay = min(2**attempt, 5)
-                        log_event(
-                            logger,
-                            logging.WARNING,
-                            "llm_retry",
-                            protocol="openai",
-                            attempt=attempt + 1,
-                            attempt_max=self.config.max_retries + 1,
-                            next_attempt=attempt + 2,
+                        delay = _retry_delay(attempt)
+                        _log_retry(
+                            "openai",
+                            attempt,
+                            self.config.max_retries,
+                            delay,
                             status=response.status,
-                            delay_seconds=delay,
                         )
                         await asyncio.sleep(delay)
                         continue
                     if response.status != 200:
                         error = await _http_error(response, "OpenAI-compatible")
-                        log_event(
-                            logger,
-                            logging.ERROR,
-                            "llm_failure",
-                            protocol="openai",
-                            attempt=attempt + 1,
-                            attempt_max=self.config.max_retries + 1,
+                        _log_failure(
+                            "openai",
+                            attempt,
+                            self.config.max_retries,
+                            int((monotonic() - attempt_started) * 1000),
+                            error,
                             status=response.status,
-                            error_type=type(error).__name__,
                             reason=safe_preview(str(error), 300),
-                            duration_ms=int((monotonic() - attempt_started) * 1000),
                         )
                         raise error
                     try:
@@ -692,58 +711,44 @@ class OpenAIProvider:
             except ProviderResponseError as error:
                 last_error = error
                 if attempt < self.config.max_retries:
-                    delay = min(2**attempt, 5)
-                    log_event(
-                        logger,
-                        logging.WARNING,
-                        "llm_retry",
-                        protocol="openai",
-                        attempt=attempt + 1,
-                        attempt_max=self.config.max_retries + 1,
-                        next_attempt=attempt + 2,
-                        error_type=type(error).__name__,
+                    delay = _retry_delay(attempt)
+                    _log_retry(
+                        "openai",
+                        attempt,
+                        self.config.max_retries,
+                        delay,
+                        error=error,
                         reason=safe_preview(str(error), 300),
-                        delay_seconds=delay,
                     )
                     await asyncio.sleep(delay)
                     continue
-                log_event(
-                    logger,
-                    logging.ERROR,
-                    "llm_failure",
-                    protocol="openai",
-                    attempt=attempt + 1,
-                    attempt_max=self.config.max_retries + 1,
-                    error_type=type(error).__name__,
+                _log_failure(
+                    "openai",
+                    attempt,
+                    self.config.max_retries,
+                    int((monotonic() - attempt_started) * 1000),
+                    error,
                     reason=safe_preview(str(error), 300),
-                    duration_ms=int((monotonic() - attempt_started) * 1000),
                 )
                 raise
             except (aiohttp.ClientError, asyncio.TimeoutError) as error:
                 last_error = error
                 if attempt < self.config.max_retries:
-                    delay = min(2**attempt, 5)
-                    log_event(
-                        logger,
-                        logging.WARNING,
-                        "llm_retry",
-                        protocol="openai",
-                        attempt=attempt + 1,
-                        attempt_max=self.config.max_retries + 1,
-                        next_attempt=attempt + 2,
-                        error_type=type(error).__name__,
-                        delay_seconds=delay,
+                    delay = _retry_delay(attempt)
+                    _log_retry(
+                        "openai",
+                        attempt,
+                        self.config.max_retries,
+                        delay,
+                        error=error,
                     )
                     await asyncio.sleep(delay)
                     continue
-                log_event(
-                    logger,
-                    logging.ERROR,
-                    "llm_failure",
-                    protocol="openai",
-                    attempt=attempt + 1,
-                    attempt_max=self.config.max_retries + 1,
-                    error_type=type(error).__name__,
-                    duration_ms=int((monotonic() - attempt_started) * 1000),
+                _log_failure(
+                    "openai",
+                    attempt,
+                    self.config.max_retries,
+                    int((monotonic() - attempt_started) * 1000),
+                    error,
                 )
         raise ProviderError(f"OpenAI-compatible request failed: {type(last_error).__name__}")

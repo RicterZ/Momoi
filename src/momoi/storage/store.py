@@ -55,6 +55,16 @@ REFLECTION_MEMORY_KINDS = {
 UNVERIFIED_EPISODE_SUMMARY = "[UNVERIFIED legacy summary; use only as a retrieval hint and verify against raw messages.]"
 
 
+def _add_context_timestamps(
+    value: dict[str, object], fields: tuple[str, ...]
+) -> None:
+    for name in fields:
+        if value.get(name) is not None:
+            value[f"{name.removesuffix('_at')}_timestamp"] = context_timestamp(
+                value[name]
+            )
+
+
 class Store(MemoryStore, DeliveryStore):
     def __init__(self, path: Path, workspace: Path | None = None) -> None:
         database = Path(path).expanduser().resolve()
@@ -1460,11 +1470,9 @@ class Store(MemoryStore, DeliveryStore):
     def _episode_dict(row: sqlite3.Row) -> dict[str, object]:
         episode = dict(row)
         episode.pop("overlap", None)
-        for name in ("created_at", "updated_at", "closed_at"):
-            if episode.get(name) is not None:
-                episode[f"{name.removesuffix('_at')}_timestamp"] = context_timestamp(
-                    episode[name]
-                )
+        _add_context_timestamps(
+            episode, ("created_at", "updated_at", "closed_at")
+        )
         try:
             claims = json.loads(str(episode.pop("working_summary_claims_json")))
         except (json.JSONDecodeError, TypeError):
@@ -3743,11 +3751,7 @@ class Store(MemoryStore, DeliveryStore):
     @staticmethod
     def _reminder_dict(row: sqlite3.Row) -> dict[str, object]:
         reminder = dict(row)
-        for name in ("fire_at", "created_at", "updated_at"):
-            if reminder.get(name) is not None:
-                reminder[f"{name.removesuffix('_at')}_timestamp"] = context_timestamp(
-                    reminder[name]
-                )
+        _add_context_timestamps(reminder, ("fire_at", "created_at", "updated_at"))
         schedule_json = str(reminder.pop("schedule_json", ""))
         reminder["schedule"] = json.loads(schedule_json) if schedule_json else None
         return reminder
@@ -3866,16 +3870,10 @@ class Store(MemoryStore, DeliveryStore):
     @staticmethod
     def _goal_dict(row: sqlite3.Row) -> dict[str, object]:
         goal = dict(row)
-        for name in (
-            "next_review_at",
-            "retry_at",
-            "created_at",
-            "updated_at",
-        ):
-            if goal.get(name) is not None:
-                goal[f"{name.removesuffix('_at')}_timestamp"] = context_timestamp(
-                    goal[name]
-                )
+        _add_context_timestamps(
+            goal,
+            ("next_review_at", "retry_at", "created_at", "updated_at"),
+        )
         goal["plan"] = json.loads(str(goal.pop("plan_json")))
         schedule_json = str(goal.pop("schedule_json", ""))
         goal["schedule"] = json.loads(schedule_json) if schedule_json else None

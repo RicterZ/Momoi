@@ -61,7 +61,6 @@ def excerpt_tokens(text: str, terms: set[str], token_budget: int) -> str:
     ]
     if not matches:
         return truncate_tokens(text, token_budget)
-    positions = [position for position, _ in matches]
     anchor = max(
         matches,
         key=lambda match: (

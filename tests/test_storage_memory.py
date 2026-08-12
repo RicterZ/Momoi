@@ -492,6 +492,16 @@ class StorageMemoryTest(unittest.TestCase):
             spec["input_schema"]["oneOf"],
             [{"required": ["fire_at"]}, {"required": ["schedule"]}],
         )
+        schedules = [
+            item["input_schema"]["properties"]["schedule"]
+            for item in AGENDA_TOOL_SPECS
+            if item["name"] in {"goal_create", "goal_update", "reminder_create"}
+        ]
+        self.assertEqual(
+            [schedule["properties"] for schedule in schedules],
+            [schedules[0]["properties"]] * 3,
+        )
+        self.assertEqual(len({id(schedule) for schedule in schedules}), 3)
         self.assertIn("calls together in one response", AGENDA_TOOL_POLICY)
 
     def test_legacy_outbox_migrates_to_typed_messages(self) -> None:
@@ -655,7 +665,7 @@ class StorageMemoryTest(unittest.TestCase):
             mail = store.create_episode(
                 "邮件跟进", episode_id="episode-mail", topics=["邮件"], salience=0.8
             )
-            social = store.create_episode(
+            store.create_episode(
                 "微博浏览", episode_id="episode-social", topics=["微博"]
             )
             self.assertEqual(mail["topics"], ["邮件"])

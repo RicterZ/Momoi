@@ -5,7 +5,7 @@ from typing import Any
 from ..config import AppConfig
 from ..context_time import context_timestamp
 from ..storage import Store, estimate_tokens, truncate_tokens
-from .context_planner import is_light_social_plan
+from .context_planner import NON_OPEN_LOOP_SPEECH_ACTS, is_light_social_plan
 
 
 _LEGACY_OWNER_HEADER = "# Current owner messages\n"
@@ -227,13 +227,7 @@ def build_plan_retrieval(
         elif light_social and all(
             str(unit_id) in unit_by_id
             and unit_by_id[str(unit_id)].get("speech_act")
-            in {
-                "emotional_share",
-                "casual_share",
-                "banter",
-                "acknowledgment",
-                "closing",
-            }
+            in NON_OPEN_LOOP_SPEECH_ACTS
             for unit_id in binding["unit_ids"]
         ):
             continue

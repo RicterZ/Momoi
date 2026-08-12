@@ -127,6 +127,20 @@ def _templates(text: str, *, source: str, names: set[str], name: str) -> None:
             raise WorkflowError(f"{name} references unknown {scope}.{key}")
 
 
+def _executor_template_valid(
+    text: str, parameter_names: set[str], config_names: set[str]
+) -> bool:
+    if "${" not in text:
+        return True
+    match = _TEMPLATE.fullmatch(text)
+    if match is None:
+        return False
+    source, name = match.groups()
+    return (source == "args" and name in parameter_names) or (
+        source == "config" and name in config_names
+    )
+
+
 def _load_yaml(path: Path) -> dict[str, Any]:
     try:
         value = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -164,6 +178,7 @@ def load_catalog(
                 item.get("parameters", {}), f"executor {executor_id}.parameters"
             ).items()
         }
+        parameter_names = set(parameters)
         argv = item.get("argv")
         if (
             not isinstance(argv, list)
@@ -175,27 +190,17 @@ def load_catalog(
             )
         incompatible = False
         for index, arg in enumerate(argv):
-            if "${" in arg:
-                match = _TEMPLATE.fullmatch(arg)
-                if (
-                    match is None
-                    or (match.group(1) == "args" and match.group(2) not in parameters)
-                    or (
-                        match.group(1) == "config"
-                        and match.group(2) not in config_names
-                    )
-                    or match.group(1) == "inputs"
-                ):
-                    log_event(
-                        logger,
-                        logging.WARNING,
-                        "workflow_executor_skipped",
-                        executor_id=executor_id,
-                        argument_index=index,
-                        reason="invalid_template",
-                    )
-                    incompatible = True
-                    break
+            if not _executor_template_valid(arg, parameter_names, config_names):
+                log_event(
+                    logger,
+                    logging.WARNING,
+                    "workflow_executor_skipped",
+                    executor_id=executor_id,
+                    argument_index=index,
+                    reason="invalid_template",
+                )
+                incompatible = True
+                break
         if incompatible:
             continue
         env = _mapping(item.get("env", {}), f"executor {executor_id}.env")
@@ -206,27 +211,17 @@ def load_catalog(
                 raise WorkflowError(
                     f"executor {executor_id}.env has an invalid variable name"
                 )
-            if "${" in value:
-                match = _TEMPLATE.fullmatch(value)
-                if (
-                    match is None
-                    or (match.group(1) == "args" and match.group(2) not in parameters)
-                    or (
-                        match.group(1) == "config"
-                        and match.group(2) not in config_names
-                    )
-                    or match.group(1) == "inputs"
-                ):
-                    log_event(
-                        logger,
-                        logging.WARNING,
-                        "workflow_executor_skipped",
-                        executor_id=executor_id,
-                        environment_key=key,
-                        reason="invalid_template",
-                    )
-                    incompatible = True
-                    break
+            if not _executor_template_valid(value, parameter_names, config_names):
+                log_event(
+                    logger,
+                    logging.WARNING,
+                    "workflow_executor_skipped",
+                    executor_id=executor_id,
+                    environment_key=key,
+                    reason="invalid_template",
+                )
+                incompatible = True
+                break
         if incompatible:
             continue
         timeout = float(item.get("timeout_seconds", 180))

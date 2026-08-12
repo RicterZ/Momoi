@@ -295,7 +295,7 @@ class WeixinChannel:
                 "channel_media_failure",
                 channel="weixin",
                 media_type=segment_type,
-                message_id=message_id,
+                message_id=stem,
                 error_type=type(error).__name__,
             )
             data = {

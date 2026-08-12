@@ -127,6 +127,19 @@ def _sections(*items: tuple[str, str]) -> str:
     )
 
 
+def _tool_result_block(call_id: str, result: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "type": "tool_result",
+        "tool_use_id": call_id,
+        "content": json.dumps(result, ensure_ascii=False),
+        "is_error": not bool(result.get("ok")),
+    }
+
+
+def _tool_error_block(call_id: str, error: object) -> dict[str, Any]:
+    return _tool_result_block(call_id, {"ok": False, "error": error})
+
+
 def _conversation_guidance(plan: dict[str, object]) -> str:
     intent_units = [
         {
@@ -1109,18 +1122,9 @@ class TurnRunner:
                         {
                             "role": "user",
                             "content": [
-                                {
-                                    "type": "tool_result",
-                                    "tool_use_id": call.id,
-                                    "content": json.dumps(
-                                        {
-                                            "ok": False,
-                                            "error": "superseded_by_owner_update",
-                                        },
-                                        ensure_ascii=False,
-                                    ),
-                                    "is_error": True,
-                                }
+                                _tool_error_block(
+                                    call.id, "superseded_by_owner_update"
+                                )
                                 for call in response.tool_calls
                             ],
                         }
@@ -1197,18 +1201,10 @@ class TurnRunner:
                         {
                             "role": "user",
                             "content": [
-                                {
-                                    "type": "tool_result",
-                                    "tool_use_id": response.tool_calls[0].id,
-                                    "content": json.dumps(
-                                        {
-                                            "ok": False,
-                                            "error": "goal_must_be_updated_before_finish",
-                                        },
-                                        ensure_ascii=False,
-                                    ),
-                                    "is_error": True,
-                                }
+                                _tool_error_block(
+                                    response.tool_calls[0].id,
+                                    "goal_must_be_updated_before_finish",
+                                )
                             ],
                         },
                     ]
@@ -1288,15 +1284,9 @@ class TurnRunner:
                         {
                             "role": "user",
                             "content": [
-                                {
-                                    "type": "tool_result",
-                                    "tool_use_id": response.tool_calls[0].id,
-                                    "content": json.dumps(
-                                        {"ok": False, "error": error},
-                                        ensure_ascii=False,
-                                    ),
-                                    "is_error": True,
-                                }
+                                _tool_error_block(
+                                    response.tool_calls[0].id, error
+                                )
                             ],
                         },
                     ]
@@ -1514,32 +1504,16 @@ class TurnRunner:
                     ),
                     duration_ms=int((time.monotonic() - tool_started) * 1000),
                 )
-                results.append(
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": call.id,
-                        "content": json.dumps(result, ensure_ascii=False),
-                        "is_error": not bool(result.get("ok")),
-                    }
-                )
+                results.append(_tool_result_block(call.id, result))
                 if accept_owner_updates:
                     updates = await self._settle_owner_updates(
                         current_events, delivery_channel.name
                     )
                     if updates:
                         results.extend(
-                            {
-                                "type": "tool_result",
-                                "tool_use_id": pending.id,
-                                "content": json.dumps(
-                                    {
-                                        "ok": False,
-                                        "error": "superseded_by_owner_update",
-                                    },
-                                    ensure_ascii=False,
-                                ),
-                                "is_error": True,
-                            }
+                            _tool_error_block(
+                                pending.id, "superseded_by_owner_update"
+                            )
                             for pending in response.tool_calls[index + 1 :]
                         )
                         break
@@ -2670,15 +2644,7 @@ class TurnRunner:
                     {
                         "role": "user",
                         "content": [
-                            {
-                                "type": "tool_result",
-                                "tool_use_id": call.id,
-                                "content": json.dumps(
-                                    {"ok": False, "error": error},
-                                    ensure_ascii=False,
-                                ),
-                                "is_error": True,
-                            }
+                            _tool_error_block(call.id, error)
                             for call in response.tool_calls
                         ],
                     }

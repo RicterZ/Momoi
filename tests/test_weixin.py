@@ -40,6 +40,47 @@ class WeixinTest(unittest.TestCase):
     def config(self, directory: str) -> WeixinConfig:
         return WeixinConfig.from_mapping({}, Path(directory))
 
+    def test_media_download_failure_returns_unavailable_segment(self) -> None:
+        async def run() -> None:
+            with tempfile.TemporaryDirectory() as directory:
+                channel = WeixinChannel(self.config(directory))
+                async with aiohttp.ClientSession() as session:
+                    with (
+                        patch(
+                            "momoi.channel.weixin.channel.download_item",
+                            side_effect=ValueError("bad media"),
+                        ),
+                        self.assertLogs(
+                            "momoi.channel.weixin.channel", level="WARNING"
+                        ) as logs,
+                    ):
+                        segments = await channel._item_segment(
+                            {
+                                "type": 2,
+                                "image_item": {"file_name": "broken.jpg"},
+                            },
+                            session,
+                            "message-1-image-0",
+                        )
+                self.assertEqual(
+                    segments,
+                    [
+                        {
+                            "type": "image",
+                            "data": {
+                                "name": "broken.jpg",
+                                "unavailable": True,
+                            },
+                        }
+                    ],
+                )
+                self.assertEqual(
+                    logs.records[0].momoi_fields["message_id"],
+                    "message-1-image-0",
+                )
+
+        asyncio.run(run())
+
     def test_config_state_and_aes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = self.config(directory)

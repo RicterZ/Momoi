@@ -33,6 +33,23 @@ AGENDA_TOOL_POLICY = """### Agenda tools
 """
 
 
+def _schedule_schema(description: str | None = None) -> dict[str, Any]:
+    schema: dict[str, Any] = {
+        "type": "object",
+        "properties": {
+            "kind": {"type": "string", "enum": ["interval", "daily"]},
+            "timezone": {"type": "string"},
+            "every_seconds": {"type": "integer", "minimum": 60},
+            "at": {"type": "string"},
+        },
+        "required": ["kind", "timezone"],
+        "additionalProperties": False,
+    }
+    if description:
+        schema["description"] = description
+    return schema
+
+
 AGENDA_TOOL_SPECS: list[dict[str, Any]] = [
     {
         "name": "goal_create",
@@ -48,21 +65,10 @@ AGENDA_TOOL_SPECS: list[dict[str, Any]] = [
                     "type": "string",
                     "description": "ISO 8601 timestamp with timezone.",
                 },
-                "schedule": {
-                    "type": "object",
-                    "description": (
-                        "Recurring interval or daily local-time schedule. Use instead "
-                        "of next_review_at."
-                    ),
-                    "properties": {
-                        "kind": {"type": "string", "enum": ["interval", "daily"]},
-                        "timezone": {"type": "string"},
-                        "every_seconds": {"type": "integer", "minimum": 60},
-                        "at": {"type": "string"},
-                    },
-                    "required": ["kind", "timezone"],
-                    "additionalProperties": False,
-                },
+                "schedule": _schedule_schema(
+                    "Recurring interval or daily local-time schedule. Use instead "
+                    "of next_review_at."
+                ),
             },
             "required": ["title", "success_criteria", "next_action"],
             "additionalProperties": False,
@@ -82,17 +88,7 @@ AGENDA_TOOL_SPECS: list[dict[str, Any]] = [
                 "blocked_reason": {"type": "string"},
                 "latest_result": {"type": "string"},
                 "next_review_at": {"type": "string"},
-                "schedule": {
-                    "type": "object",
-                    "properties": {
-                        "kind": {"type": "string", "enum": ["interval", "daily"]},
-                        "timezone": {"type": "string"},
-                        "every_seconds": {"type": "integer", "minimum": 60},
-                        "at": {"type": "string"},
-                    },
-                    "required": ["kind", "timezone"],
-                    "additionalProperties": False,
-                },
+                "schedule": _schedule_schema(),
                 "clear_schedule": {"type": "boolean"},
             },
             "required": ["goal_id", "status"],
@@ -136,18 +132,9 @@ AGENDA_TOOL_SPECS: list[dict[str, Any]] = [
                     "type": "string",
                     "description": "Future ISO 8601 timestamp with timezone.",
                 },
-                "schedule": {
-                    "type": "object",
-                    "description": "Recurring interval or daily local-time schedule.",
-                    "properties": {
-                        "kind": {"type": "string", "enum": ["interval", "daily"]},
-                        "timezone": {"type": "string"},
-                        "every_seconds": {"type": "integer", "minimum": 60},
-                        "at": {"type": "string"},
-                    },
-                    "required": ["kind", "timezone"],
-                    "additionalProperties": False,
-                },
+                "schedule": _schedule_schema(
+                    "Recurring interval or daily local-time schedule."
+                ),
             },
             "required": ["text"],
             "oneOf": [
