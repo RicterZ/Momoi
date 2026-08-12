@@ -199,11 +199,7 @@ Protocol-specific parsing, content rendering, and connection logs belong in that
 
 Set `max_input_tokens` below the provider's real context window. These are context-building budgets, not a promise that every provider counts tokens identically.
 
-`recent_raw_tokens` remains 32k by default. It is neither a hard database message limit nor an 8k long-term-memory window: an Owner Turn first preserves up to the latest `recent_turns` complete interactions within this budget, then gives the remainder to raw evidence from Episodes selected by the current plan. Before the main model chats, the Planner reads recent raw conversation under the same configured budget, splits new input into independent intents, resolves references such as “that one”, and generates several recall queries. Expanded queries search the complete Episode index, so they can recover an Episode outside the latest 64 directory candidates; 64 is only the bounded semantic directory for direct Episode-id reuse, not a long-term-history boundary.
-
-All raw messages remain permanently archived in SQLite. Older Episodes anneal only their main-model working set into evidence summaries carrying a `message_id`, Turn ordinal, and exact source quote; every citation is checked against raw history before commit. Free-form summaries from older versions are marked `UNVERIFIED` and cannot be used as facts. Confirmed delivery, uncertain delivery, internal records, queued messages, and failed messages are stored separately, and only a confirmed assistant delivery directly proves that the owner saw what Momoi said.
-
-Goal and Reminder directories exist only to help the Planner resolve the current reference: relevant items are preferred and each directory is capped at eight; the main model receives only items actually recalled for the current intent. `done` and `cancelled` Goals remain for audit but are not injected by default. There is no daily token budget; `turn.max_seconds` and `turn.max_total_tokens` limit one Turn only.
+`recent_raw_tokens` limits recent conversation kept in original form, and `recent_turns` limits how many completed conversation Turns are considered. The memory and summary fields independently control durable-memory recall and older-conversation recall.
 
 Set a recall result count or token budget to `0` to disable that automatic recall layer. Explicit memory and conversation search tools remain available to the agent when their tool is enabled.
 
