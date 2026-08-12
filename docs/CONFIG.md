@@ -80,7 +80,7 @@ This makes the workspace relocatable. Absolute paths are also accepted where a p
 | `max_tokens` | No | `8192` | Maximum output tokens for one model call |
 | `temperature` | No | `0.6` | Sampling temperature |
 | `timeout_seconds` | No | `120` | Positive request timeout |
-| `max_retries` | No | `3` | Retries for transient connection, server, and unusable successful responses |
+| `max_retries` | No | `3` | Retries for transient connection and server errors; OpenAI-compatible endpoints also retry unusable successful responses |
 | `dump_prompts` | No | `false` | Save complete LLM requests under `llm-dumps/` in the workspace for diagnostics and prompt review |
 | `tool_choice` | No | `true` | Require tool use in OpenAI-compatible requests; set to `false` for models such as Thinking mode that reject `tool_choice` |
 
@@ -126,15 +126,17 @@ Momoi can run multiple Channel plugins at once. They share one conversation, mem
 | --- | --- | --- | --- |
 | `url` | Yes | — | NapCat WebSocket URL |
 | `owner_qq` | Yes | — | Digits-only QQ ID accepted as the owner |
-| `quiet_seconds` | No | `6` | Wait after the latest owner message before starting; a new message resets the wait |
+| `quiet_seconds` | No | `1` | Wait after the latest owner message before starting; a new message resets the wait |
 | `max_batch_seconds` | No | `60` | Maximum time a continuously growing message batch may wait |
 | `heartbeat_seconds` | No | `30` | NapCat connection heartbeat interval |
 | `reconnect_max_seconds` | No | `30` | Maximum reconnect backoff |
 | `send_timeout_seconds` | No | `20` | Timeout for one outbound NapCat request |
+| `media_max_bytes` | No | `20971520` | Maximum size of one remote inbound image materialized for model input |
+| `media_download_timeout_seconds` | No | `15` | Timeout for downloading one remote inbound image |
 
 All channel timing fields must be positive.
 
-Six seconds lets a natural sequence of short messages be handled together. Lower it to one second only when faster development feedback matters more than message collection.
+The starter template uses six seconds so a natural sequence of short messages can be handled together. Omitting the field uses the one-second runtime default.
 
 NapCat owner input-status notices refresh the same quiet window, including while an Owner Turn is already running. At model and tool boundaries, Momoi waits for the owner to remain quiet and folds any newly arrived message into that Turn, still bounded by `max_batch_seconds`. Input status is transient activity: it is never stored as a conversation message or sent to the model.
 
@@ -150,6 +152,14 @@ momoi --workspace ~/.momoi run
 The login command prints a QR code in the terminal. Credentials, the update cursor, and the latest conversation context token are stored atomically with mode `0600` in `channel/weixin/state.json`. Decrypted inbound attachments are stored in `channel/weixin/media/inbound/`; protect and back up these files as part of the workspace.
 
 Weixin receives text, quotes, images, video, files, and voice. Images are supplied to vision-capable models; other media are represented by local attachment descriptions. Server voice transcription is preferred, with raw SILK retained when no transcript is available. It sends text, images, video, and files; outbound audio is sent as a file attachment. `media_max_bytes` is a positive byte limit for inbound downloads and outbound local, HTTP(S), or `base64://` sources.
+
+| Field | Default | Description |
+| --- | --- | --- |
+| `quiet_seconds` | `6` | Wait after the latest owner message before starting |
+| `max_batch_seconds` | `60` | Maximum time a continuously growing message batch may wait |
+| `reconnect_max_seconds` | `30` | Maximum delay after repeated update failures |
+| `send_timeout_seconds` | `20` | Timeout for one outbound request |
+| `media_max_bytes` | `104857600` | Maximum size of one inbound or outbound media item |
 
 This implementation follows Tencent's MIT-licensed [`@tencent-weixin/openclaw-weixin` 2.4.6](https://github.com/Tencent/openclaw-weixin) protocol behavior. Use of Weixin and iLink remains subject to the applicable Tencent and Weixin service terms. Momoi supports one linked account and its single scanning owner, not groups or multiple simultaneous accounts.
 
@@ -180,7 +190,7 @@ Protocol-specific parsing, content rendering, and connection logs belong in that
 | --- | --- | --- |
 | `soul_prompt` | `prompts/SOUL.md` | Persona file, relative to the workspace |
 | `recent_raw_tokens` | `32000` | Budget for recent conversation in original form |
-| `recent_turns` | `6` | Minimum recent owner interactions retained even when trimming history |
+| `recent_turns` | `6` | Maximum recent completed conversation Turns kept in raw form |
 | `memory_results` | `6` | Maximum durable memories recalled automatically |
 | `memory_tokens` | `8000` | Token budget for recalled durable memory |
 | `max_input_tokens` | `96000` | Target ceiling for the complete model input, including tool schemas |
@@ -189,7 +199,7 @@ Protocol-specific parsing, content rendering, and connection logs belong in that
 
 Set `max_input_tokens` below the provider's real context window. These are context-building budgets, not a promise that every provider counts tokens identically.
 
-`recent_raw_tokens` remains 32k by default. It is neither a hard database message limit nor an 8k long-term-memory window: an Owner Turn first preserves the latest `recent_turns` complete interactions within this budget, then gives the remainder to raw evidence from Episodes selected by the current plan. Before the main model chats, the Planner reads recent raw conversation under the same configured budget, splits new input into independent intents, resolves references such as “that one”, and generates several recall queries. Expanded queries search the complete Episode index, so they can recover an Episode outside the latest 64 directory candidates; 64 is only the bounded semantic directory for direct Episode-id reuse, not a long-term-history boundary.
+`recent_raw_tokens` remains 32k by default. It is neither a hard database message limit nor an 8k long-term-memory window: an Owner Turn first preserves up to the latest `recent_turns` complete interactions within this budget, then gives the remainder to raw evidence from Episodes selected by the current plan. Before the main model chats, the Planner reads recent raw conversation under the same configured budget, splits new input into independent intents, resolves references such as “that one”, and generates several recall queries. Expanded queries search the complete Episode index, so they can recover an Episode outside the latest 64 directory candidates; 64 is only the bounded semantic directory for direct Episode-id reuse, not a long-term-history boundary.
 
 All raw messages remain permanently archived in SQLite. Older Episodes anneal only their main-model working set into evidence summaries carrying a `message_id`, Turn ordinal, and exact source quote; every citation is checked against raw history before commit. Free-form summaries from older versions are marked `UNVERIFIED` and cannot be used as facts. Confirmed delivery, uncertain delivery, internal records, queued messages, and failed messages are stored separately, and only a confirmed assistant delivery directly proves that the owner saw what Momoi said.
 
@@ -362,7 +372,7 @@ A heartbeat may use explicitly allowed read-only tools, search memory, create fi
 
 Send `/heartbeat` in the private owner chat to trigger one evaluation immediately, even when automatic heartbeat scheduling is disabled. A command received while another heartbeat is queued or running is deduplicated.
 
-When a delivered reply explicitly expects an owner response, Momoi raises its attention after `reply_initial_interval_seconds`, even if automatic heartbeats are disabled. Reply attention has its own schedule and never replaces the ordinary `next_heartbeat_at` rhythm. It performs three short checks at roughly 1, 3, and 7 minutes; the model independently decides whether to follow up and whether to keep waiting. After the third check, any continued waiting uses the ordinary heartbeat rhythm. Any owner message ends the old waiting state, cancels its scheduled check, and cancels an unsent follow-up.
+When a delivered reply explicitly expects an owner response, Momoi raises its attention after `reply_initial_interval_seconds`, even if automatic heartbeats are disabled. Reply attention has its own schedule and never replaces the ordinary `next_heartbeat_at` rhythm. It uses three short checks separated by roughly 1, 3, and 6 minutes; the model independently decides whether to follow up and whether to keep waiting. After the third check, any continued waiting uses the ordinary heartbeat rhythm. Any owner message ends the old waiting state, cancels its scheduled check, and cancels an unsent follow-up.
 
 Owner Turns exclusively answer owner input. A heartbeat is deferred while owner events, an Owner Turn, or its outgoing reply are in flight. It records the owner-event revision it read and discards visible heartbeat output if the conversation changes before commit; internal heartbeat activity is still retained.
 
@@ -433,6 +443,10 @@ Use a long random token and place a TLS reverse proxy in front of Momoi when the
   }
 }
 ```
+
+| Field | Default | Description |
+| --- | --- | --- |
+| `level` | `DEBUG` | Python logging level; the starter template sets `INFO` |
 
 Use `INFO` for normal operation and `DEBUG` for development. DEBUG logs may contain owner messages, model output, and tool status; treat them as private data.
 

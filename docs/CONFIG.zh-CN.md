@@ -80,7 +80,7 @@ MCP 是添加由模型控制能力的常规方式。工作流用于事件驱动�
 | `max_tokens` | 否 | `8192` | 单次模型调用的最大输出 token 数 |
 | `temperature` | 否 | `0.6` | 采样温度 |
 | `timeout_seconds` | 否 | `120` | 必须为正数的请求超时时间 |
-| `max_retries` | 否 | `3` | 短暂连接错误、服务端错误和成功但不可用响应的重试次数 |
+| `max_retries` | 否 | `3` | 短暂连接和服务端错误的重试次数；OpenAI 兼容端点还会重试成功但不可用的响应 |
 | `dump_prompts` | 否 | `false` | 将发送给 LLM 的完整请求保存到 workspace 的 `llm-dumps/`，用于排查和提示词 review |
 | `tool_choice` | 否 | `true` | OpenAI 兼容请求要求模型调用工具；Thinking mode 等不支持 `tool_choice` 的模型需设为 `false` |
 
@@ -126,15 +126,17 @@ Momoi 可以同时运行多个 Channel 插件。它们共享同一段对话、�
 | --- | --- | --- | --- |
 | `url` | 是 | — | NapCat WebSocket URL |
 | `owner_qq` | 是 | — | 仅包含数字、被认可为主人的 QQ 号 |
-| `quiet_seconds` | 否 | `6` | 收到主人最新消息后等待的时间；新消息会重新计时 |
+| `quiet_seconds` | 否 | `1` | 收到主人最新消息后等待的时间；新消息会重新计时 |
 | `max_batch_seconds` | 否 | `60` | 持续增长的消息批次最长可等待的时间 |
 | `heartbeat_seconds` | 否 | `30` | NapCat 连接心跳间隔 |
 | `reconnect_max_seconds` | 否 | `30` | 重连退避的最大时间 |
 | `send_timeout_seconds` | 否 | `20` | 单次 NapCat 出站请求的超时时间 |
+| `media_max_bytes` | 否 | `20971520` | 为模型输入物化单张远程入站图片时允许的最大大小 |
+| `media_download_timeout_seconds` | 否 | `15` | 下载单张远程入站图片的超时时间 |
 
 所有渠道时间字段都必须为正数。
 
-6 秒可以把一组自然连续的短消息一起处理。只有在开发时更看重反馈速度而不是消息收集时，才建议降到 1 秒。
+初始模板显式使用 6 秒，以便把一组自然连续的短消息一起处理；省略该字段时，运行时默认值为 1 秒。
 
 NapCat 的主人输入状态通知会刷新同一个安静窗口，即使 Owner Turn 已经开始运行也一样。在模型和工具调用边界，Momoi 会等待主人停止输入，并把这期间真正到达的消息合并进当前 Turn；等待仍受 `max_batch_seconds` 限制。输入状态只是瞬时活动信号，不会作为对话消息持久化，也不会发送给模型。
 
@@ -150,6 +152,14 @@ momoi --workspace ~/.momoi run
 登录命令会在终端打印二维码。凭据、更新游标和最新对话 context token 会以原子写入、权限 `0600` 的方式保存在 `channel/weixin/state.json`。解密后的入站附件保存在 `channel/weixin/media/inbound/`；它们都属于需要保护和备份的 workspace 数据。
 
 微信渠道可接收文本、引用、图片、视频、文件和语音。图片会交给支持视觉的模型，其他媒体以本地附件描述进入上下文；优先使用服务端语音转写，无转写时保留原始 SILK。可发送文本、图片、视频和文件；出站音频按文件附件发送。`media_max_bytes` 是入站下载，以及出站本地路径、HTTP(S) 或 `base64://` 来源的正整数大小上限。
+
+| 字段 | 默认值 | 说明 |
+| --- | --- | --- |
+| `quiet_seconds` | `6` | 收到主人最新消息后开始处理前的等待时间 |
+| `max_batch_seconds` | `60` | 持续增长的消息批次最长可等待的时间 |
+| `reconnect_max_seconds` | `30` | 连续更新失败后的最大等待时间 |
+| `send_timeout_seconds` | `20` | 单次出站请求的超时时间 |
+| `media_max_bytes` | `104857600` | 单个入站或出站媒体允许的最大大小 |
 
 该实现按腾讯 MIT 许可的 [`@tencent-weixin/openclaw-weixin` 2.4.6](https://github.com/Tencent/openclaw-weixin) 协议行为实现。使用微信与 iLink 仍须遵守适用的腾讯及微信服务条款。Momoi 仅支持一个已绑定账号及扫码的唯一主人，不支持群聊或多账号同时在线。
 
@@ -180,7 +190,7 @@ momoi --workspace ~/.momoi run
 | --- | --- | --- |
 | `soul_prompt` | `prompts/SOUL.md` | 相对于 workspace 的人格文件 |
 | `recent_raw_tokens` | `32000` | 以原始形式保留近期对话的预算 |
-| `recent_turns` | `6` | 即使裁剪历史也会保留的最少近期主人交互数 |
+| `recent_turns` | `6` | 以原始形式保留的近期已完成对话回合上限 |
 | `memory_results` | `6` | 自动召回的持久记忆最大数量 |
 | `memory_tokens` | `8000` | 召回持久记忆的 token 预算 |
 | `max_input_tokens` | `96000` | 包括工具 schema 在内的完整模型输入目标上限 |
@@ -189,7 +199,7 @@ momoi --workspace ~/.momoi run
 
 `max_input_tokens` 应低于 provider 真实的上下文窗口。这些数值是构建上下文的预算，不代表每个 provider 都会以相同方式计算 token。
 
-`recent_raw_tokens` 默认保持 32k。它不是把数据库历史硬裁到固定消息数，也不是把长期记忆降成 8k：Owner Turn 会先用这份预算保留最近 `recent_turns` 个完整交互，再把余额给当前规划命中的 Episode 原文。Planner 在主模型聊天前会先读取同一预算内的近期原文，把新消息拆成独立 intent、解析“刚才那个”一类指代，并生成多组 recall query。扩展后的 query 会搜索完整 Episode 索引，因此目标 Episode 即使不在最近 64 条目录候选中仍可召回；64 条只是给 Planner 直接复用 Episode id 的有界语义目录，不是长期历史边界。
+`recent_raw_tokens` 默认保持 32k。它不是把数据库历史硬裁到固定消息数，也不是把长期记忆降成 8k：Owner Turn 会先用这份预算保留最多 `recent_turns` 个近期完整交互，再把余额给当前规划命中的 Episode 原文。Planner 在主模型聊天前会先读取同一预算内的近期原文，把新消息拆成独立 intent、解析“刚才那个”一类指代，并生成多组 recall query。扩展后的 query 会搜索完整 Episode 索引，因此目标 Episode 即使不在最近 64 条目录候选中仍可召回；64 条只是给 Planner 直接复用 Episode id 的有界语义目录，不是长期历史边界。
 
 所有原始消息永久留在 SQLite。较旧 Episode 只把主模型的工作集退火成带 `message_id`、Turn ordinal 和精确原文引用的证据摘要；引用在提交前会回查原始消息。旧版本的自由摘要会标为 `UNVERIFIED`，不能作为事实使用。已确认送达、送达不确定、内部记录、排队和失败消息也分别保存，只有确认送达的助理消息能直接证明“主人看到了桃衣说的话”。
 
@@ -362,7 +372,7 @@ MCP 环境值、远程 URL 和 header 支持从 Momoi 进程环境展开 `${VARI
 
 在主人私聊中发送 `/heartbeat` 可以立即触发一次心跳，即使自动心跳没有开启。已有心跳正在排队或执行时，重复命令会自动去重。
 
-当一条已送达回复明确期待主人回应时，Momoi 会在 `reply_initial_interval_seconds` 后提高注意力，即使自动心跳未开启。回复关注使用独立时钟，不会覆盖普通的 `next_heartbeat_at` 节奏。程序会在约第 1、3、7 分钟做三次短时检查；模型每次独立判断是否跟进以及是否继续等待。第三次之后即使仍在等待，也会恢复普通心跳节奏。主人发来任何新消息都会结束旧的等待状态、取消已安排的检查，并取消尚未送达的跟进。
+当一条已送达回复明确期待主人回应时，Momoi 会在 `reply_initial_interval_seconds` 后提高注意力，即使自动心跳未开启。回复关注使用独立时钟，不会覆盖普通的 `next_heartbeat_at` 节奏。程序会以约 1、3、6 分钟的间隔做三次短时检查；模型每次独立判断是否跟进以及是否继续等待。第三次之后即使仍在等待，也会恢复普通心跳节奏。主人发来任何新消息都会结束旧的等待状态、取消已安排的检查，并取消尚未送达的跟进。
 
 Owner Turn 独占对主人输入的回复权。存在未处理的主人消息、正在执行的 Owner Turn，或尚未送达的 Owner 回复时，心跳会被推迟。心跳会记录自己读取的主人事件版本；若提交前对话已经变化，可见输出会被丢弃，内部心跳活动仍会保留。
 
@@ -433,6 +443,10 @@ Owner Turn 独占对主人输入的回复权。存在未处理的主人消息、
   }
 }
 ```
+
+| 字段 | 默认值 | 说明 |
+| --- | --- | --- |
+| `level` | `DEBUG` | Python 日志级别；初始模板设置为 `INFO` |
 
 正常运行使用 `INFO`，开发时使用 `DEBUG`。DEBUG 日志可能包含主人消息、模型输出和工具状态，应当作私密数据保护。
 
