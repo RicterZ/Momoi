@@ -48,52 +48,19 @@ They share the same identity and relevant context. A webhook notification should
 
 ### Natural private conversation
 
-Momoi treats consecutive messages as one evolving thought. If you send a correction or an extra detail before she starts, it becomes part of the same request.
-
-Replies are shaped for private chat:
-
-- One message is the natural default.
-- Longer replies may become several conversational bubbles.
-- The first bubble is sent immediately; later bubbles keep a human rhythm.
-- When a finished exchange needs no new reply, Momoi may simply stay silent.
-- Text, images, replies, forwards, cards, files, video, and voice can retain their message meaning.
-- Image-capable models can understand images from the conversation.
-- Useful progress can be sent while a longer task is still running.
+Momoi follows the rhythm of private chat instead of treating every message as an isolated request. Consecutive thoughts, corrections, and extra details can become one coherent conversation. Replies stay natural to the moment, common chat media keeps its meaning, longer work can surface useful progress, and silence remains valid when the exchange is already complete.
 
 ### Context that survives
 
-Momoi combines several kinds of context instead of relying on a fixed message count:
-
-- Recent conversation in its original form across conversational and autonomous Turns
-- The current topic and unresolved threads
-- Searchable older conversation episodes
-- Durable facts, preferences, routines, and relationship memories
-- Active goals and pending reminders
-- Current mood and activity
-
-Only relevant older material is recalled. This keeps long-running use from becoming either amnesia or an ever-growing context bomb.
-
-Durable memory is grounded in things the owner actually said. When two values conflict, Momoi asks for confirmation instead of silently rewriting history.
+Momoi carries recent conversation, shared history, stable preferences, ongoing commitments, mood, and activity across ordinary and autonomous moments. Older material returns when it is relevant, while durable memory stays grounded in what the owner actually said.
 
 ### Agentic task execution
 
-Simple conversation stays simple. Real tasks can use memory search, HTTP, files, MCP servers, and other connected capabilities.
-
-A longer task can naturally unfold like this:
-
-1. Momoi acknowledges what she is going to do.
-2. She searches, reads, calls tools, or controls a connected service.
-3. She reports meaningful progress when there is something worth saying.
-4. She validates the result.
-5. She returns the useful outcome and preserves anything that must continue later.
-
-She keeps working until the task is complete, genuinely blocked, or stopped by the owner.
+Simple conversation stays simple. When a request needs action, Momoi can use connected tools and services, share meaningful progress, verify the result, and preserve work that must continue later. She keeps going until the task is complete, genuinely blocked, or stopped by the owner.
 
 ### Mood, activity, and expression
 
-Momoi has persistent mood and activity state. Each interaction or heartbeat can change or naturally soften that state, and the result influences tone and expression without changing facts or task discipline.
-
-Her personality lives in `SOUL.md`, while an emotion catalog gives her optional image reactions with semantic descriptions such as celebration, embarrassment, or mischief. She decides when a reaction adds something to the moment instead of attaching one to every reply.
+Momoi's personality, mood, activity, and relationship continue over time and naturally influence her tone without changing facts or task discipline. Optional image reactions add expression only when they fit the moment.
 
 ### Proactive without being needy
 
@@ -111,22 +78,14 @@ Goal and Heartbeat notifications respect quiet hours, cooldowns, and pending own
 
 ## What Momoi can do today
 
-- Hold natural private conversations with one trusted owner
-- Remember stable preferences, relationships, routines, and shared facts
-- Search older memories and conversation episodes when context is vague
-- Use general-purpose MCP servers, including Home Assistant integrations
-- Fetch web and private-network HTTP resources
-- Read, write, and patch files
-- Create one-time and recurring reminders
-- Create and progressively execute persistent goals
-- Receive event workflows from Home Assistant, Jellyfin, cameras, and other services
-- Send text, channel-native media, and managed image reactions
-- Maintain mood and activity across conversations
-- Reflect daily on the owner, the world, herself, and execution lessons, then retain sourced learning
-- Do bounded self-directed work and proactively speak through heartbeats
-- Stop active work with `/stop`
-- Trigger one heartbeat with `/heartbeat`
-- Recover safely when an external action has an uncertain outcome
+- Hold one continuous private conversation across QQ and Weixin
+- Carry relevant context, memories, preferences, and commitments over time
+- Use connected tools and services to complete real tasks
+- Manage one-time reminders and work that continues or repeats
+- Respond naturally to events from the home and other services
+- Exchange chat media and use optional image reactions
+- Maintain mood, activity, reflection, and bounded initiative
+- Stop work or recover safely when an external result is uncertain
 
 ## Getting started
 
