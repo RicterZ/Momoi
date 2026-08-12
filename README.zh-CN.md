@@ -224,7 +224,6 @@ momoi goal del <goal-id-or-prefix> --reason "No longer needed"
 
 - 仅支持一位可信主人，可同时使用多个私聊渠道
 - 不支持群聊或多用户隔离
-- 没有 TUI 或 Web 管理界面
 - 面向可信的个人环境设计
 - 已连接工具会获得实际授予它们的访问权限
 

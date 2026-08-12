@@ -224,7 +224,6 @@ When `/resolve` or `/resume` is needed, Momoi sends a recovery message that incl
 
 - One trusted owner across one or more private-chat channels
 - No group-chat or multi-user isolation
-- No TUI or web administration interface
 - Designed for a trusted personal environment
 - Connected tools receive the real access granted to them
 
