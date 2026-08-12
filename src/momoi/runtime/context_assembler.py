@@ -441,16 +441,14 @@ def _episode_context(
     return "\n\n".join(sections)
 
 
-def assemble_main_context(
+def assemble_recent_conversation(
     store: Store,
-    retrieval: dict[str, object],
-    summary_token_budget: int,
-    raw_token_budget: int,
-    recent_turns: int = 0,
-    recent_before_timestamp: float | None = None,
-) -> dict[str, str]:
+    turn_limit: int,
+    token_budget: int,
+    before_timestamp: float | None = None,
+) -> tuple[str, set[int]]:
     recent_messages = store.recent_conversation_messages(
-        recent_turns, raw_token_budget, recent_before_timestamp
+        turn_limit, token_budget, before_timestamp
     )
     recent = "\n".join(
         f"[{_message_role(message)} "
@@ -459,7 +457,21 @@ def assemble_main_context(
         f"{_historical_content(message['content'])}"
         for message in recent_messages
     )
-    recent_ids = {int(message["id"]) for message in recent_messages}
+    return recent, {int(message["id"]) for message in recent_messages}
+
+
+def assemble_main_context(
+    store: Store,
+    retrieval: dict[str, object],
+    summary_token_budget: int,
+    raw_token_budget: int,
+    recent_turns: int = 0,
+    recent_before_timestamp: float | None = None,
+) -> dict[str, str]:
+    recent, recent_ids = assemble_recent_conversation(
+        store,
+        recent_turns, raw_token_budget, recent_before_timestamp
+    )
     remaining_raw = (
         max(0, raw_token_budget - estimate_tokens(recent))
         if recent

@@ -1120,6 +1120,23 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 entities=["Owner"],
                 open_loops=["等待反馈"],
             )
+            now = time.time()
+            with daemon.store._db:
+                daemon.store._db.execute(
+                    """INSERT INTO turns
+                       (id, kind, source_ids_json, state, started_at, updated_at)
+                       VALUES ('recent-goal-turn', 'autonomous', '[]',
+                               'completed', ?, ?)""",
+                    (now, now),
+                )
+                daemon.store._db.execute(
+                    """INSERT INTO messages
+                       (turn_id, role, content, created_at,
+                        source_event_ids_json, delivery_state)
+                       VALUES ('recent-goal-turn', 'assistant',
+                               '天气 Goal 已触发并成功送达', ?, '[]', 'delivered')""",
+                    (now,),
+                )
 
             class Provider:
                 calls = 0
@@ -1142,7 +1159,9 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "<autonomous_heartbeat>" not in request
                             or "<runtime_state>" not in request
                             or "<recent_topic_reference>" not in request
+                            or "<recent_conversation>" not in request
                             or "最近的聊天话题" not in request
+                            or "天气 Goal 已触发并成功送达" not in request
                             or "<pending_owner_reply>" in request
                             or "reply_wait" in system_request
                         ):
