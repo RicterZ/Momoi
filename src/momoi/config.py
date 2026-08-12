@@ -278,7 +278,7 @@ def load_config(path: str | Path) -> AppConfig:
             base_url=str(llm_raw["base_url"]).rstrip("/"),
             api_key=api_key,
             model=model,
-            max_tokens=int(llm_raw.get("max_tokens", 8192)),
+            max_tokens=int(llm_raw.get("max_tokens", 16384)),
             temperature=float(llm_raw.get("temperature", 0.6)),
             timeout_seconds=_positive(llm_raw.get("timeout_seconds", 120), "llm.timeout_seconds"),
             max_retries=max(0, int(llm_raw.get("max_retries", 3))),
