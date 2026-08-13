@@ -7,7 +7,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 ARG NAP_MSG_COMMIT=f0e789d0134375faf5e56de2673139f685a0c7cf
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates ffmpeg nodejs npm tzdata \
+    && apt-get install -y --no-install-recommends ca-certificates ffmpeg git nodejs npm tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

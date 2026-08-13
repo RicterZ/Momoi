@@ -932,25 +932,25 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(large["body"]), 200_000)
 
             with tempfile.TemporaryDirectory() as directory:
+                workspace_tools = BuiltinTools(Path(directory))
                 path = Path(directory) / "note.txt"
-                written = await tools.execute(
+                written = await workspace_tools.execute(
                     ToolCall(
                         "write-1",
                         "write_file",
-                        {"path": str(path), "content": "old\n"},
+                        {"path": "note.txt", "content": "old\n"},
                     )
                 )
                 self.assertTrue(written["ok"])
-                read = await tools.execute(
-                    ToolCall("read-1", "read_file", {"path": str(path)})
+                read = await workspace_tools.execute(
+                    ToolCall("read-1", "read_file", {"path": "note.txt"})
                 )
                 self.assertEqual(read["content"], "old\n")
-                patched = await tools.execute(
+                patched = await workspace_tools.execute(
                     ToolCall(
                         "patch-1",
                         "apply_patch",
                         {
-                            "cwd": directory,
                             "patch": (
                                 "--- a/note.txt\n"
                                 "+++ b/note.txt\n"

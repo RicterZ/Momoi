@@ -114,6 +114,10 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
                 "kind": {
                     "type": "string",
                     "enum": sorted(MEMORY_KINDS),
+                    "description": (
+                        "Memory category such as episodic, preference, or routine. "
+                        "This is not recency; use activation for always, recent, or recall."
+                    ),
                 },
                 "key": {
                     "type": "string",

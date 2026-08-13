@@ -1752,12 +1752,11 @@ class TurnRunner:
             "content": payload_text[: self.config.tool_result_max_chars],
         }
 
-    @staticmethod
-    def _artifact_path_allowed(call: ToolCall, root: Path) -> bool:
+    def _artifact_path_allowed(self, call: ToolCall, root: Path) -> bool:
         try:
-            Path(
-                str(call.arguments.get("path") or "")
-            ).expanduser().resolve().relative_to(root.resolve())
+            self.builtin_tools.resolve_path(
+                call.arguments.get("path")
+            ).relative_to(root.resolve())
             return True
         except (OSError, ValueError):
             return False

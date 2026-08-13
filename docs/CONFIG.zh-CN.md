@@ -233,6 +233,8 @@ momoi --workspace ~/.momoi run
 | `mcp_config` | `mcp.json` | 标准 MCP 服务器配置；使用 `null` 或空字符串关闭 MCP 加载 |
 | `result_max_chars` | `30000` | 返回给模型的归一化工具结果最大长度，最小值为 `1000` |
 
+内置文件工具会从 workspace 解析相对路径，同时仍支持绝对路径。
+
 ### 配置 stdio MCP 服务器
 
 ```json

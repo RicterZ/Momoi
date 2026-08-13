@@ -233,6 +233,8 @@ Back up the complete workspace to preserve conversation history, memory, goals, 
 | `mcp_config` | `mcp.json` | Standard MCP server configuration; use `null` or an empty string to disable MCP loading |
 | `result_max_chars` | `30000` | Maximum normalized tool-result size returned to the model; minimum `1000` |
 
+Built-in file tools resolve relative paths from the workspace. Absolute paths remain supported.
+
 ### Configure a stdio MCP server
 
 ```json

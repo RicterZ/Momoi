@@ -62,7 +62,10 @@ BUILTIN_TOOL_SPECS: list[dict[str, Any]] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "path": {"type": "string"},
+                "path": {
+                    "type": "string",
+                    "description": "Absolute path or path relative to the Momoi workspace.",
+                },
                 "start_line": {"type": "integer", "minimum": 1, "default": 1},
                 "max_lines": {
                     "type": "integer",
@@ -84,7 +87,10 @@ BUILTIN_TOOL_SPECS: list[dict[str, Any]] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "path": {"type": "string"},
+                "path": {
+                    "type": "string",
+                    "description": "Absolute path or path relative to the Momoi workspace.",
+                },
                 "content": {"type": "string"},
                 "create_parents": {"type": "boolean", "default": False},
                 "expected_sha256": {"type": "string"},
@@ -106,7 +112,10 @@ BUILTIN_TOOL_SPECS: list[dict[str, Any]] = [
                 "patch": {"type": "string"},
                 "cwd": {
                     "type": "string",
-                    "description": "Directory paths in the patch are relative to.",
+                    "description": (
+                        "Directory paths in the patch are relative to. Defaults to "
+                        "the Momoi workspace; a relative value is resolved from it."
+                    ),
                 },
             },
             "required": ["patch"],
@@ -144,6 +153,17 @@ SELF_DIRECTED_BUILTIN_TOOL_SPECS[0]["input_schema"]["properties"]["method"]["enu
 
 
 class BuiltinTools:
+    def __init__(self, workspace: Path | None = None) -> None:
+        self.workspace = (
+            workspace.expanduser().resolve() if workspace is not None else Path.cwd()
+        )
+
+    def resolve_path(self, value: object) -> Path:
+        path = Path(str(value or "")).expanduser()
+        if not path.is_absolute():
+            path = self.workspace / path
+        return path.resolve()
+
     @staticmethod
     def has_tool(name: str) -> bool:
         return any(spec["name"] == name for spec in BUILTIN_TOOL_SPECS)
@@ -217,9 +237,8 @@ class BuiltinTools:
                     "truncated": len(raw) > 200_000,
                 }
 
-    @staticmethod
-    def _read_file(arguments: dict[str, Any]) -> dict[str, Any]:
-        path = Path(str(arguments.get("path") or "")).expanduser().resolve()
+    def _read_file(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        path = self.resolve_path(arguments.get("path"))
         if path.stat().st_size > 2_000_000:
             raise ValueError("file exceeds 2 MB read limit")
         content = path.read_text(encoding="utf-8")
@@ -240,9 +259,8 @@ class BuiltinTools:
             "truncated": char_truncated or start - 1 + limit < len(lines),
         }
 
-    @staticmethod
-    def _write_file(arguments: dict[str, Any]) -> dict[str, Any]:
-        path = Path(str(arguments.get("path") or "")).expanduser().resolve()
+    def _write_file(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        path = self.resolve_path(arguments.get("path"))
         content = str(arguments.get("content") or "")
         if len(content.encode()) > 2_000_000:
             raise ValueError("content exceeds 2 MB write limit")
@@ -278,14 +296,13 @@ class BuiltinTools:
             "sha256": hashlib.sha256(content.encode()).hexdigest(),
         }
 
-    @staticmethod
-    def _apply_patch(arguments: dict[str, Any]) -> dict[str, Any]:
+    def _apply_patch(self, arguments: dict[str, Any]) -> dict[str, Any]:
         patch = str(arguments.get("patch") or "")
         if not patch.strip():
             raise ValueError("patch is required")
         if len(patch.encode()) > 500_000:
             raise ValueError("patch exceeds 500 KB limit")
-        cwd = Path(str(arguments.get("cwd") or Path.cwd())).expanduser().resolve()
+        cwd = self.resolve_path(arguments.get("cwd"))
         if not cwd.is_dir():
             raise FileNotFoundError(f"cwd does not exist: {cwd}")
         command = ["git", "-C", str(cwd), "apply", "--recount", "--whitespace=nowarn", "-"]

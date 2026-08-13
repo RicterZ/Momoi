@@ -57,7 +57,7 @@ class MomoiDaemon(TurnRunner):
         self.store.ensure_heartbeat(config.heartbeat)
         self.agenda_tools = AgendaTools(self.store)
         self.memory_tools = MemoryTools(self.store)
-        self.builtin_tools = BuiltinTools()
+        self.builtin_tools = BuiltinTools(config.workspace or config.database.parent)
         created = (
             (channel,)
             if channel is not None
