@@ -6,7 +6,7 @@
     "model": "model-name",
     "max_tokens": 16384,
     "temperature": 0.6,
-    "timeout_seconds": 120,
+    "timeout_seconds": 300,
     "max_retries": 3,
     "dump_prompts": false,
     "tool_choice": true

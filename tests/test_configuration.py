@@ -54,6 +54,7 @@ class ConfigurationTest(unittest.TestCase):
             self.assertFalse(config.llm.dump_prompts)
             self.assertTrue(config.llm.tool_choice)
             self.assertEqual(config.llm.max_tokens, 16384)
+            self.assertEqual(config.llm.timeout_seconds, 300)
             self.assertTrue(config.episode_annealing.enabled)
             self.assertEqual(config.episode_annealing.idle_seconds, 60)
             self.assertEqual(config.episode_annealing.max_seconds, 300)

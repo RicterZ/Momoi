@@ -63,7 +63,7 @@ This makes the workspace relocatable. Absolute paths are also accepted where a p
     "model": "model-name",
     "max_tokens": 16384,
     "temperature": 0.6,
-    "timeout_seconds": 120,
+    "timeout_seconds": 300,
     "max_retries": 3,
     "dump_prompts": false,
     "tool_choice": true
@@ -79,7 +79,7 @@ This makes the workspace relocatable. Absolute paths are also accepted where a p
 | `model` | Yes | — | Model identifier sent to the provider |
 | `max_tokens` | No | `16384` | Maximum output tokens for one model call |
 | `temperature` | No | `0.6` | Sampling temperature |
-| `timeout_seconds` | No | `120` | Positive request timeout |
+| `timeout_seconds` | No | `300` | Positive request timeout |
 | `max_retries` | No | `3` | Retries for transient connection and server errors; OpenAI-compatible endpoints also retry unusable successful responses |
 | `dump_prompts` | No | `false` | Save complete LLM requests under `llm-dumps/` in the workspace for diagnostics and prompt review |
 | `tool_choice` | No | `true` | Require tool use in OpenAI-compatible requests; set to `false` for models such as Thinking mode that reject `tool_choice` |
