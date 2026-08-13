@@ -385,6 +385,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 [row.text for row in daemon.store.due_outbox()], ["合并两条后回复"]
             )
+            self.assertEqual(daemon.episode_annealing.get_nowait(), turn_id)
             self.assertEqual(daemon.store.pending_events(), [])
             daemon.store.close()
 
@@ -541,6 +542,66 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 1,
             )
             self.assertEqual(daemon.store.pending_events(), [])
+            daemon.store.close()
+
+    async def test_episode_annealing_is_cancelled_for_new_owner_message(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(
+                AppConfig(
+                    llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
+                    channel=NapCatConfig(
+                        "ws://127.0.0.1", "20000", 0.01, 1, 30, 30, 20
+                    ),
+                    system_prompt="test",
+                    recent_raw_tokens=1000,
+                    recent_turns=2,
+                    memory_results=2,
+                    memory_tokens=1000,
+                    database=Path(directory) / "momoi.sqlite3",
+                    log_level="INFO",
+                )
+            )
+            started = asyncio.Event()
+            cancelled = asyncio.Event()
+
+            async def anneal(_turn_id: str) -> None:
+                started.set()
+                try:
+                    await asyncio.Event().wait()
+                except asyncio.CancelledError:
+                    cancelled.set()
+                    raise
+
+            daemon._anneal_episode_history = anneal  # type: ignore[method-assign]
+            worker = asyncio.create_task(
+                daemon._episode_annealing_worker(asyncio.Event())
+            )
+            daemon.episode_annealing.put_nowait("owner-turn")
+            await started.wait()
+
+            await daemon._receive(
+                IncomingMessage(
+                    "owner-update",
+                    "owner-update",
+                    "新消息优先",
+                    1,
+                    1,
+                    channel="napcat",
+                )
+            )
+            await asyncio.wait_for(cancelled.wait(), timeout=1)
+            for _ in range(10):
+                if daemon._active_annealing is None:
+                    break
+                await asyncio.sleep(0)
+            self.assertIsNone(daemon._active_annealing)
+            self.assertEqual((await daemon.incoming.get()).text, "新消息优先")
+
+            worker.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await worker
             daemon.store.close()
 
     async def test_manual_heartbeat_command_queues_once_even_when_disabled(

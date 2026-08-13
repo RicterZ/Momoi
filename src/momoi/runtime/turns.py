@@ -1064,18 +1064,7 @@ class TurnRunner:
         )
         self.outbox_changed.set()
         self.agenda_changed.set()
-        try:
-            await self._anneal_episode_history(turn_id)
-        except Exception as error:
-            log_event(
-                logger,
-                logging.WARNING,
-                "episode_anneal_failure",
-                stage="episode_anneal",
-                turn_id=turn_id,
-                error_type=type(error).__name__,
-                reason=safe_preview(str(error), 300),
-            )
+        self.episode_annealing.put_nowait(turn_id)
 
     async def _run_tool_loop(
         self,
@@ -1975,6 +1964,9 @@ class TurnRunner:
                     through_ordinal=candidate["through_ordinal"],
                     summary_tokens=estimate_tokens(working_summary),
                 )
+            except asyncio.CancelledError:
+                self.store.release_episode_annealing(episode_id, failed=False)
+                raise
             except Exception:
                 self.store.release_episode_annealing(episode_id)
                 raise

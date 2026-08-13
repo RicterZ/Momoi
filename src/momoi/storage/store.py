@@ -2387,8 +2387,18 @@ class Store(MemoryStore, DeliveryStore):
             self._reindex_episode_terms(episode_id)
         return working_summary
 
-    def release_episode_annealing(self, episode_id: str) -> None:
+    def release_episode_annealing(
+        self, episode_id: str, *, failed: bool = True
+    ) -> None:
         with self._db:
+            if not failed:
+                self._db.execute(
+                    """UPDATE conversation_episodes
+                       SET summary_claimed_at=NULL
+                       WHERE id=? AND summary_claimed_at IS NOT NULL""",
+                    (episode_id,),
+                )
+                return
             row = self._db.execute(
                 """SELECT summary_failure_count FROM conversation_episodes
                    WHERE id=? AND summary_claimed_at IS NOT NULL""",

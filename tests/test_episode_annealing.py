@@ -1,3 +1,4 @@
+import asyncio
 import json
 import tempfile
 import unittest
@@ -46,6 +47,33 @@ def add_turn(daemon: MomoiDaemon, ordinal: int) -> None:
 
 
 class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
+    async def test_cancelled_annealing_releases_claim_without_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(config(directory))
+            daemon.store.create_episode("长期项目", episode_id="episode-main")
+            for ordinal in range(1, 6):
+                add_turn(daemon, ordinal)
+            started = asyncio.Event()
+
+            class Provider:
+                async def complete(self, *_: object, **__: object) -> ProviderResponse:
+                    started.set()
+                    await asyncio.Event().wait()
+                    raise AssertionError("unreachable")
+
+            daemon.provider = Provider()  # type: ignore[assignment]
+            task = asyncio.create_task(daemon._anneal_episode_history("turn-5"))
+            await started.wait()
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+
+            episode = daemon.store.episode("episode-main")
+            self.assertIsNone(episode["summary_claimed_at"])
+            self.assertEqual(episode["summary_failure_count"], 0)
+            self.assertIsNone(episode["summary_retry_at"])
+            daemon.store.close()
+
     async def test_annealing_claims_only_one_bounded_prefix_batch(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(config(directory))
