@@ -304,6 +304,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             stale_reply_started = asyncio.Event()
             finish_stale_reply = asyncio.Event()
+            stale_reply_cancelled = asyncio.Event()
 
             class Provider:
                 calls = 0
@@ -318,7 +319,11 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     provider_self.calls += 1
                     if provider_self.calls == 1:
                         stale_reply_started.set()
-                        await finish_stale_reply.wait()
+                        try:
+                            await finish_stale_reply.wait()
+                        except asyncio.CancelledError:
+                            stale_reply_cancelled.set()
+                            raise
                         text = "只回应第一条"
                         tool_name = "send_message"
                         arguments = {"messages": [text]}
@@ -366,12 +371,13 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
 
             await stale_reply_started.wait()
             await daemon._receive(OwnerInputStatus("napcat"))
-            finish_stale_reply.set()
             await asyncio.sleep(0.01)
+            self.assertFalse(stale_reply_cancelled.is_set())
             second = IncomingMessage(
                 "napcat:second", "second", "第二条", 2, 2, channel="napcat"
             )
             await daemon._receive(second)
+            await asyncio.wait_for(stale_reply_cancelled.wait(), timeout=1)
             await asyncio.wait_for(turn, timeout=1)
 
             self.assertEqual(provider.calls, 3)
@@ -400,6 +406,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             finish_tool = asyncio.Event()
             stale_respond_started = asyncio.Event()
             finish_stale_respond = asyncio.Event()
+            stale_respond_cancelled = asyncio.Event()
 
             async def execute_tool(call: ToolCall) -> dict[str, object]:
                 self.assertEqual(call.name, "read_file")
@@ -429,7 +436,11 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "地址改成上海", json.dumps(messages, ensure_ascii=False)
                         )
                         stale_respond_started.set()
-                        await finish_stale_respond.wait()
+                        try:
+                            await finish_stale_respond.wait()
+                        except asyncio.CancelledError:
+                            stale_respond_cancelled.set()
+                            raise
                         call = ToolCall(
                             "stale-message",
                             "send_message",
@@ -438,7 +449,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     elif provider_self.calls == 3:
                         rendered = json.dumps(messages, ensure_ascii=False)
                         self.assertIn("不用查天气了", rendered)
-                        self.assertIn("superseded_by_owner_update", rendered)
                         call = ToolCall(
                             "final-message",
                             "send_message",
@@ -484,7 +494,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             finish_tool.set()
             await stale_respond_started.wait()
             await daemon._receive(second_update)
-            finish_stale_respond.set()
+            await asyncio.wait_for(stale_respond_cancelled.wait(), timeout=1)
             await turn
 
             self.assertEqual(provider.calls, 4)

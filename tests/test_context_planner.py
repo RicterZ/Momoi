@@ -2,6 +2,7 @@ import asyncio
 import json
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from momoi.channel.napcat import NapCatConfig
@@ -198,6 +199,112 @@ class ContextPlannerTest(unittest.TestCase):
 
 
 class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
+    async def test_new_owner_message_cancels_and_restarts_context_planner(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            config = app_config(directory)
+            config = replace(
+                config,
+                channel=replace(config.channel, quiet_seconds=0.01),
+            )
+            daemon = MomoiDaemon(config)
+            started = asyncio.Event()
+            cancelled = asyncio.Event()
+
+            class Provider:
+                calls = 0
+
+                async def complete(
+                    provider_self,
+                    system: object,
+                    messages: list[dict[str, object]],
+                    _tools: list[dict[str, object]],
+                    **_: object,
+                ) -> ProviderResponse:
+                    self.assertEqual(system, CONTEXT_PLANNER_SYSTEM_PROMPT)
+                    provider_self.calls += 1
+                    if provider_self.calls == 1:
+                        started.set()
+                        try:
+                            await asyncio.Event().wait()
+                        except asyncio.CancelledError:
+                            cancelled.set()
+                            raise
+                    rendered = json.dumps(messages, ensure_ascii=False)
+                    self.assertIn("第二条", rendered)
+                    plan = {
+                        "version": 1,
+                        "intent_units": [
+                            {
+                                "id": "u1",
+                                "event_ids": ["event-1", "event-2"],
+                                "text": "第一条；第二条",
+                                "intent": "combined owner update",
+                                "speech_act": "casual_share",
+                                "references": [],
+                                "recall_queries": [],
+                            }
+                        ],
+                        "episode_bindings": [
+                            {
+                                "episode_ref": "new:combined",
+                                "title": "合并消息",
+                                "relation": "primary",
+                                "unit_ids": ["u1"],
+                                "topics": [],
+                                "entities": [],
+                                "open_loops": [],
+                                "salience": 0.2,
+                            }
+                        ],
+                        "episode_links": [],
+                        "uncertainty": [],
+                    }
+                    return ProviderResponse(
+                        [{"type": "text", "text": json.dumps(plan)}], []
+                    )
+
+            provider = Provider()
+            daemon.provider = provider  # type: ignore[assignment]
+            first = IncomingMessage(
+                "event-1", "message-1", "第一条", 1, 1, channel="napcat"
+            )
+            daemon.store.add_event(first)
+            events = [first]
+            turn_id = daemon._turn_id(first.event_id)
+            daemon.store.begin_turn(turn_id, "owner", [first.event_id])
+            with self.assertLogs("momoi.runtime.turns", level="INFO") as logs:
+                planning = asyncio.create_task(
+                    daemon._prepare_owner_context(events, turn_id)
+                )
+                await started.wait()
+                await daemon._receive(
+                    IncomingMessage(
+                        "event-2",
+                        "message-2",
+                        "第二条",
+                        2,
+                        2,
+                        channel="napcat",
+                    )
+                )
+                plan, _ = await asyncio.wait_for(planning, timeout=1)
+
+            self.assertTrue(cancelled.is_set())
+            self.assertEqual(provider.calls, 2)
+            self.assertEqual(len(events), 2)
+            self.assertEqual(
+                plan["intent_units"][0]["event_ids"], ["event-1", "event-2"]
+            )
+            self.assertTrue(
+                any(
+                    getattr(record, "momoi_event", "") == "llm_cancelled"
+                    for record in logs.records
+                )
+            )
+            daemon.store.close()
+
     async def test_closed_episode_directory_allows_semantic_planner_binding(
         self,
     ) -> None:

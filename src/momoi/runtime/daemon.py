@@ -79,6 +79,7 @@ class MomoiDaemon(TurnRunner):
         self._deferred_incoming: deque[IncomingMessage] = deque()
         self._owner_quiet_until: dict[str, float] = {}
         self._owner_activity_changed = asyncio.Event()
+        self._owner_message_changed = asyncio.Event()
         self.webhook_requests: asyncio.Queue[
             tuple[str, str, asyncio.Future[AgentReply]]
         ] = asyncio.Queue()
@@ -243,6 +244,7 @@ class MomoiDaemon(TurnRunner):
                 event_id=message.event_id,
             )
             await self.incoming.put(message)
+            self._owner_message_changed.set()
             self._touch_owner_activity(message.channel)
 
     async def _agent_worker(self, stop: asyncio.Event) -> None:

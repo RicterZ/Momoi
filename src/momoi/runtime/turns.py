@@ -26,7 +26,7 @@ from ..emotions import EMOTION_PREFIX, emotion_slug
 from ..logging_context import log_context, log_event, new_trace_id, safe_preview
 from ..mcp_client import MCP_TOOL_POLICY
 from ..memory_tools import MEMORY_TOOL_POLICY, MEMORY_TOOL_SPECS
-from ..models import AgentReply, IncomingMessage, ToolCall, TurnDraft
+from ..models import AgentReply, IncomingMessage, ProviderResponse, ToolCall, TurnDraft
 from ..provider import ProviderError
 from ..storage import estimate_tokens, truncate_tokens
 from ..text_replacement import cyber_keyword_pre_hook
@@ -185,6 +185,12 @@ class TurnBudgetExceeded(RuntimeError):
     pass
 
 
+class OwnerMessagesChanged(RuntimeError):
+    def __init__(self, updates: list[IncomingMessage]) -> None:
+        super().__init__("owner_messages_changed")
+        self.updates = updates
+
+
 class TurnRunner:
     _parse_messages = staticmethod(parse_messages)
     _parse_response = staticmethod(parse_response)
@@ -271,6 +277,80 @@ class TurnRunner:
                 )
             except TimeoutError:
                 pass
+
+    async def _complete_with_owner_interrupt(
+        self,
+        system: str | list[dict[str, Any]],
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        *,
+        require_tool: bool,
+        current_events: list[IncomingMessage],
+        channel_name: str,
+    ) -> ProviderResponse:
+        initial = self._drain_owner_updates(current_events, channel_name)
+        if initial:
+            log_event(
+                logger,
+                logging.INFO,
+                "llm_skipped",
+                reason="owner_update",
+                updates=len(initial),
+            )
+            raise OwnerMessagesChanged(initial)
+
+        provider_task = asyncio.create_task(
+            self.provider.complete(
+                system,
+                messages,
+                tools,
+                require_tool=require_tool,
+            )
+        )
+        try:
+            while True:
+                self._owner_message_changed.clear()
+                updates = self._drain_owner_updates(current_events, channel_name)
+                if updates:
+                    provider_task.cancel()
+                    await asyncio.gather(provider_task, return_exceptions=True)
+                    log_event(
+                        logger,
+                        logging.INFO,
+                        "llm_cancelled",
+                        reason="owner_update",
+                        updates=len(updates),
+                    )
+                    raise OwnerMessagesChanged(updates)
+                if provider_task.done():
+                    return provider_task.result()
+
+                changed = asyncio.create_task(self._owner_message_changed.wait())
+                done, _ = await asyncio.wait(
+                    {provider_task, changed},
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if changed not in done:
+                    changed.cancel()
+                    await asyncio.gather(changed, return_exceptions=True)
+                updates = self._drain_owner_updates(current_events, channel_name)
+                if updates:
+                    provider_task.cancel()
+                    await asyncio.gather(provider_task, return_exceptions=True)
+                    log_event(
+                        logger,
+                        logging.INFO,
+                        "llm_cancelled",
+                        reason="owner_update",
+                        updates=len(updates),
+                    )
+                    raise OwnerMessagesChanged(updates)
+                if provider_task in done:
+                    return provider_task.result()
+        except asyncio.CancelledError:
+            provider_task.cancel()
+            await asyncio.gather(provider_task, return_exceptions=True)
+            raise
 
     def _owner_update_message(
         self,
@@ -475,8 +555,13 @@ class TurnRunner:
                 self._check_turn_budget(
                     turn_id, CONTEXT_PLANNER_SYSTEM_PROMPT, request, []
                 )
-                response = await self.provider.complete(
-                    CONTEXT_PLANNER_SYSTEM_PROMPT, request, []
+                response = await self._complete_with_owner_interrupt(
+                    CONTEXT_PLANNER_SYSTEM_PROMPT,
+                    request,
+                    [],
+                    require_tool=False,
+                    current_events=events,
+                    channel_name=self._channel_for(events[0].channel).name,
                 )
             metrics = response.usage or {}
             self.store.record_turn_usage(
@@ -577,7 +662,14 @@ class TurnRunner:
     async def _prepare_owner_context(
         self, events: list[IncomingMessage], turn_id: str
     ) -> tuple[dict[str, object], dict[str, str]]:
-        plan = await self._plan_owner_context(events, turn_id)
+        while True:
+            try:
+                plan = await self._plan_owner_context(events, turn_id)
+                break
+            except OwnerMessagesChanged:
+                await self._settle_owner_updates(
+                    events, self._channel_for(events[0].channel).name
+                )
         record = self.store.context_plan(turn_id)
         if record is None:
             raise RuntimeError("active context plan was not saved")
@@ -1073,12 +1165,47 @@ class TurnRunner:
                     channel=delivery_channel.name,
                     goal_id=autonomous_goal_id,
                 ):
-                    response = await self.provider.complete(
-                        request_system,
-                        messages,
-                        request_tools,
-                        require_tool=require_tool,
+                    if accept_owner_updates:
+                        response = await self._complete_with_owner_interrupt(
+                            request_system,
+                            messages,
+                            request_tools,
+                            require_tool=require_tool,
+                            current_events=current_events,
+                            channel_name=delivery_channel.name,
+                        )
+                    else:
+                        response = await self.provider.complete(
+                            request_system,
+                            messages,
+                            request_tools,
+                            require_tool=require_tool,
+                        )
+            except OwnerMessagesChanged as interruption:
+                updates = list(interruption.updates)
+                updates.extend(
+                    await self._settle_owner_updates(
+                        current_events, delivery_channel.name
                     )
+                )
+                visible_since_owner_update = False
+                context_plan, recalled = await self._prepare_owner_context(
+                    current_events, turn_id
+                )
+                if authority == "owner":
+                    tools = self._owner_tool_specs(
+                        context_plan, delivery_channel.name
+                    )
+                messages.append(
+                    self._owner_update_message(
+                        updates, delivery_channel, context_plan, recalled
+                    )
+                )
+                source_event_id = updates[-1].event_id
+                force_response = False
+                force_autonomous_finish = False
+                failed_tool_rounds = 0
+                continue
             except Exception as error:
                 if external_tool_used:
                     raise ExternalToolTurnError(type(error).__name__) from error
