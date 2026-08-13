@@ -70,7 +70,7 @@ class ReflectionConfig:
 class EpisodeAnnealingConfig:
     enabled: bool = True
     idle_seconds: float = 60
-    max_seconds: float = 90
+    max_seconds: float = 300
 
 
 @dataclass(frozen=True)
@@ -373,7 +373,7 @@ def load_config(path: str | Path) -> AppConfig:
                 "episode_annealing.idle_seconds",
             ),
             max_seconds=_positive(
-                annealing_raw.get("max_seconds", 90),
+                annealing_raw.get("max_seconds", 300),
                 "episode_annealing.max_seconds",
             ),
         ),

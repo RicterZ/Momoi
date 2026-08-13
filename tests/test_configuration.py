@@ -56,7 +56,7 @@ class ConfigurationTest(unittest.TestCase):
             self.assertEqual(config.llm.max_tokens, 16384)
             self.assertTrue(config.episode_annealing.enabled)
             self.assertEqual(config.episode_annealing.idle_seconds, 60)
-            self.assertEqual(config.episode_annealing.max_seconds, 90)
+            self.assertEqual(config.episode_annealing.max_seconds, 300)
             self.assertEqual(
                 [type(item) for item in config.channel_configs],
                 [NapCatConfig, WeixinConfig],

@@ -411,7 +411,7 @@ Owner Turn 独占对主人输入的回复权。存在未处理的主人消息、
   "episode_annealing": {
     "enabled": true,
     "idle_seconds": 60,
-    "max_seconds": 90
+    "max_seconds": 300
   }
 }
 ```
@@ -420,7 +420,7 @@ Owner Turn 独占对主人输入的回复权。存在未处理的主人消息、
 | --- | --- | --- |
 | `enabled` | `true` | 在后台维护较早的对话 Episode |
 | `idle_seconds` | `60` | 开始维护前要求主人保持空闲的时间 |
-| `max_seconds` | `90` | 单次维护允许使用模型的最长时间 |
+| `max_seconds` | `300` | 单次维护允许使用模型的最长时间 |
 
 维护请求会自动合并，并且一次只处理一个 Episode 批次。新的主人消息会取消正在进行的维护且不计为失败；主人再次空闲后，该工作可以重新领取。
 
