@@ -110,6 +110,9 @@ class ContextPlannerTest(unittest.TestCase):
     def test_context_plan_shape_lives_in_tool_schema(self) -> None:
         self.assertIn(CONTEXT_PLAN_TOOL_NAME, CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertNotIn('"intent_units"', CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertNotIn("1-12", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertNotIn("0-6", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertNotIn("allowed kinds", CONTEXT_PLANNER_SYSTEM_PROMPT)
         schema = CONTEXT_PLAN_TOOL_SPEC["input_schema"]
         self.assertEqual(
             schema["required"],  # type: ignore[index]
