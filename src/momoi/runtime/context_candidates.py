@@ -11,10 +11,18 @@ class EpisodeCandidatePolicy:
     total_limit: int = 64
 
 
+DEFAULT_EPISODE_CANDIDATE_POLICY = EpisodeCandidatePolicy(
+    search_limit=8,
+    active_limit=2,
+    directory_limit=8,
+    total_limit=18,
+)
+
+
 def collect_episode_candidates(
     store: Store,
     query: str,
-    policy: EpisodeCandidatePolicy = EpisodeCandidatePolicy(),
+    policy: EpisodeCandidatePolicy = DEFAULT_EPISODE_CANDIDATE_POLICY,
 ) -> list[dict[str, object]]:
     candidates: dict[str, dict[str, object]] = {}
     for candidate in [

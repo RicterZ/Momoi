@@ -37,7 +37,12 @@ from .context_assembler import (
     _historical_content,
     recall_episode_context,
 )
-from .context_candidates import collect_episode_candidates, full_candidate_context
+from .context_candidates import (
+    DEFAULT_EPISODE_CANDIDATE_POLICY,
+    EpisodeCandidatePolicy,
+    collect_episode_candidates,
+    full_candidate_context,
+)
 from .context_planner import (
     CONTEXT_PLAN_TOOL_NAME,
     CONTEXT_PLAN_TOOL_SPEC,
@@ -439,7 +444,10 @@ class TurnRunner:
         return plan
 
     async def _plan_owner_context(
-        self, events: list[IncomingMessage], turn_id: str
+        self,
+        events: list[IncomingMessage],
+        turn_id: str,
+        candidate_policy: EpisodeCandidatePolicy = DEFAULT_EPISODE_CANDIDATE_POLICY,
     ) -> dict[str, object]:
         event_ids = [event.event_id for event in events]
         active = self.store.context_plan(turn_id)
@@ -448,7 +456,9 @@ class TurnRunner:
 
         revision = self.store.next_context_plan_revision(turn_id)
         owner_query = "\n".join(event.text for event in events)
-        candidates = collect_episode_candidates(self.store, owner_query)
+        candidates = collect_episode_candidates(
+            self.store, owner_query, candidate_policy
+        )
         recent_conversation = [
             {**message, "content": _historical_content(message.get("content"))}
             for message in self.store.recent_conversation_messages(

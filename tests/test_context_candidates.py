@@ -1,6 +1,7 @@
 import unittest
 
 from momoi.runtime.context_candidates import (
+    DEFAULT_EPISODE_CANDIDATE_POLICY,
     EpisodeCandidatePolicy,
     collect_episode_candidates,
     full_candidate_context,
@@ -8,6 +9,12 @@ from momoi.runtime.context_candidates import (
 
 
 class ContextCandidatesTest(unittest.TestCase):
+    def test_default_policy_uses_evaluated_limits(self) -> None:
+        self.assertEqual(
+            DEFAULT_EPISODE_CANDIDATE_POLICY,
+            EpisodeCandidatePolicy(8, 2, 8, 18),
+        )
+
     def test_collects_in_priority_order_and_deduplicates(self) -> None:
         class Store:
             def search_episodes(self, _query: str, _limit: int):
