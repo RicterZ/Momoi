@@ -1,0 +1,49 @@
+from dataclasses import dataclass
+
+from ..storage import Store
+
+
+@dataclass(frozen=True)
+class EpisodeCandidatePolicy:
+    search_limit: int = 8
+    active_limit: int = 12
+    directory_limit: int = 64
+    total_limit: int = 64
+
+
+def collect_episode_candidates(
+    store: Store,
+    query: str,
+    policy: EpisodeCandidatePolicy = EpisodeCandidatePolicy(),
+) -> list[dict[str, object]]:
+    candidates: dict[str, dict[str, object]] = {}
+    for candidate in [
+        *store.search_episodes(query, policy.search_limit),
+        *store.list_episode_candidates(policy.active_limit),
+        *store.list_episode_directory(policy.directory_limit),
+    ]:
+        candidates.setdefault(str(candidate["id"]), candidate)
+        if len(candidates) >= policy.total_limit:
+            break
+    return list(candidates.values())
+
+
+def full_candidate_context(
+    candidates: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    return [
+        {
+            "id": candidate["id"],
+            "status": candidate["status"],
+            "title": candidate["title"],
+            "created_timestamp": candidate.get("created_timestamp"),
+            "updated_timestamp": candidate.get("updated_timestamp"),
+            "summary": str(candidate["working_summary"] or candidate["summary"])[
+                :400
+            ],
+            "topics": candidate["topics"],
+            "entities": candidate["entities"],
+            "open_loops": candidate["open_loops"],
+        }
+        for candidate in candidates
+    ]

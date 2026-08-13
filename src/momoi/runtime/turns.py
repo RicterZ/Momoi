@@ -37,6 +37,7 @@ from .context_assembler import (
     _historical_content,
     recall_episode_context,
 )
+from .context_candidates import collect_episode_candidates, full_candidate_context
 from .context_planner import (
     CONTEXT_PLAN_TOOL_NAME,
     CONTEXT_PLAN_TOOL_SPEC,
@@ -447,16 +448,7 @@ class TurnRunner:
 
         revision = self.store.next_context_plan_revision(turn_id)
         owner_query = "\n".join(event.text for event in events)
-        candidates_by_id: dict[str, dict[str, object]] = {}
-        for candidate in [
-            *self.store.search_episodes(owner_query, 8),
-            *self.store.list_episode_candidates(12),
-            *self.store.list_episode_directory(64),
-        ]:
-            candidates_by_id.setdefault(str(candidate["id"]), candidate)
-            if len(candidates_by_id) == 64:
-                break
-        candidates = list(candidates_by_id.values())
+        candidates = collect_episode_candidates(self.store, owner_query)
         recent_conversation = [
             {**message, "content": _historical_content(message.get("content"))}
             for message in self.store.recent_conversation_messages(
@@ -465,22 +457,7 @@ class TurnRunner:
                 min(event.received_at for event in events),
             )
         ]
-        candidate_context = [
-            {
-                "id": candidate["id"],
-                "status": candidate["status"],
-                "title": candidate["title"],
-                "created_timestamp": candidate.get("created_timestamp"),
-                "updated_timestamp": candidate.get("updated_timestamp"),
-                "summary": str(candidate["working_summary"] or candidate["summary"])[
-                    :400
-                ],
-                "topics": candidate["topics"],
-                "entities": candidate["entities"],
-                "open_loops": candidate["open_loops"],
-            }
-            for candidate in candidates
-        ]
+        candidate_context = full_candidate_context(candidates)
         owner_messages = [
             {
                 "event_id": event.event_id,
