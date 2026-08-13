@@ -38,6 +38,8 @@ from .context_assembler import (
     recall_episode_context,
 )
 from .context_planner import (
+    CONTEXT_PLAN_TOOL_NAME,
+    CONTEXT_PLAN_TOOL_SPEC,
     ContextPlanError,
     degraded_context_plan,
     is_light_social_plan,
@@ -543,6 +545,7 @@ class TurnRunner:
             }
         ]
         last_error = "invalid_context_plan"
+        planner_tools = [CONTEXT_PLAN_TOOL_SPEC]
         for attempt in range(2):
             call_started = time.monotonic()
             call_id = new_trace_id()
@@ -553,13 +556,16 @@ class TurnRunner:
                 round=attempt + 1,
             ):
                 self._check_turn_budget(
-                    turn_id, CONTEXT_PLANNER_SYSTEM_PROMPT, request, []
+                    turn_id,
+                    CONTEXT_PLANNER_SYSTEM_PROMPT,
+                    request,
+                    planner_tools,
                 )
                 response = await self._complete_with_owner_interrupt(
                     CONTEXT_PLANNER_SYSTEM_PROMPT,
                     request,
-                    [],
-                    require_tool=False,
+                    planner_tools,
+                    require_tool=True,
                     current_events=events,
                     channel_name=self._channel_for(events[0].channel).name,
                 )
@@ -574,6 +580,7 @@ class TurnRunner:
                                 {
                                     "system": CONTEXT_PLANNER_SYSTEM_PROMPT,
                                     "messages": request,
+                                    "tools": planner_tools,
                                 },
                                 ensure_ascii=False,
                             )
@@ -589,10 +596,18 @@ class TurnRunner:
                     )
                 ),
             )
-            response_text = self._context_plan_response_text(response.content)
             try:
+                if (
+                    len(response.tool_calls) != 1
+                    or response.tool_calls[0].name != CONTEXT_PLAN_TOOL_NAME
+                ):
+                    raise ContextPlanError("context_plan_tool_required")
                 plan = parse_context_plan(
-                    response_text, event_ids, candidates, turn_id, revision
+                    response.tool_calls[0].arguments,
+                    event_ids,
+                    candidates,
+                    turn_id,
+                    revision,
                 )
             except ContextPlanError as error:
                 last_error = str(error)
@@ -609,16 +624,24 @@ class TurnRunner:
                     duration_ms=int((time.monotonic() - call_started) * 1000),
                 )
                 if attempt == 0:
+                    correction = (
+                        "[Trusted protocol correction: the previous context plan "
+                        f"failed validation with {last_error}. Call "
+                        f"{CONTEXT_PLAN_TOOL_NAME} exactly once with corrected arguments.]"
+                    )
+                    correction_content = [
+                        *[
+                            _tool_error_block(call.id, last_error)
+                            for call in response.tool_calls
+                        ],
+                        {"type": "text", "text": correction},
+                    ]
                     request.extend(
                         [
                             {"role": "assistant", "content": response.content},
                             {
                                 "role": "user",
-                                "content": (
-                                    "[Trusted protocol correction: the previous context "
-                                    f"plan failed validation with {last_error}. Return only "
-                                    "one corrected JSON object matching the system protocol.]"
-                                ),
+                                "content": correction_content,
                             },
                         ]
                     )

@@ -11,6 +11,8 @@ from momoi.models import AgentReply, IncomingMessage, ProviderResponse, ToolCall
 from momoi.runtime import MomoiDaemon
 from momoi.runtime.context_assembler import build_plan_retrieval
 from momoi.runtime.context_planner import (
+    CONTEXT_PLAN_TOOL_NAME,
+    CONTEXT_PLAN_TOOL_SPEC,
     ContextPlanError,
     degraded_context_plan,
     is_light_social_plan,
@@ -89,7 +91,37 @@ def response_plan() -> dict[str, object]:
     }
 
 
+def tool_plan_response(plan: dict[str, object]) -> ProviderResponse:
+    call = ToolCall("context-plan", CONTEXT_PLAN_TOOL_NAME, plan)
+    return ProviderResponse(
+        [
+            {
+                "type": "tool_use",
+                "id": call.id,
+                "name": call.name,
+                "input": call.arguments,
+            }
+        ],
+        [call],
+    )
+
+
 class ContextPlannerTest(unittest.TestCase):
+    def test_context_plan_shape_lives_in_tool_schema(self) -> None:
+        self.assertIn(CONTEXT_PLAN_TOOL_NAME, CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertNotIn('"intent_units"', CONTEXT_PLANNER_SYSTEM_PROMPT)
+        schema = CONTEXT_PLAN_TOOL_SPEC["input_schema"]
+        self.assertEqual(
+            schema["required"],  # type: ignore[index]
+            [
+                "version",
+                "intent_units",
+                "episode_bindings",
+                "episode_links",
+                "uncertainty",
+            ],
+        )
+
     def test_standalone_media_guidance_limits_semantic_inference(self) -> None:
         self.assertIn("low-information social cue", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertIn(
@@ -285,6 +317,8 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                     **_: object,
                 ) -> ProviderResponse:
                     self.assertEqual(system, CONTEXT_PLANNER_SYSTEM_PROMPT)
+                    self.assertEqual(_tools, [CONTEXT_PLAN_TOOL_SPEC])
+                    self.assertTrue(_["require_tool"])
                     provider_self.calls += 1
                     if provider_self.calls == 1:
                         started.set()
@@ -323,9 +357,7 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                         "episode_links": [],
                         "uncertainty": [],
                     }
-                    return ProviderResponse(
-                        [{"type": "text", "text": json.dumps(plan)}], []
-                    )
+                    return tool_plan_response(plan)
 
             provider = Provider()
             daemon.provider = provider  # type: ignore[assignment]
@@ -425,10 +457,7 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                         "episode_links": [],
                         "uncertainty": [],
                     }
-                    return ProviderResponse(
-                        [{"type": "text", "text": json.dumps(plan, ensure_ascii=False)}],
-                        [],
-                    )
+                    return tool_plan_response(plan)
 
             daemon.provider = Provider()  # type: ignore[assignment]
             event = IncomingMessage(
@@ -512,7 +541,7 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                 ) -> ProviderResponse:
                     if system == CONTEXT_PLANNER_SYSTEM_PROMPT:
                         provider_self.calls.append("planner")
-                        self.assertEqual(tools, [])
+                        self.assertEqual(tools, [CONTEXT_PLAN_TOOL_SPEC])
                         payload = json.loads(str(messages[0]["content"]))
                         self.assertEqual(
                             payload["owner_messages"][0]["text"],
@@ -537,17 +566,7 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual(
                             payload["candidate_reminders"][0]["id"], "reminder-0"
                         )
-                        return ProviderResponse(
-                            [
-                                {
-                                    "type": "text",
-                                    "text": json.dumps(
-                                        response_plan(), ensure_ascii=False
-                                    ),
-                                }
-                            ],
-                            [],
-                        )
+                        return tool_plan_response(response_plan())
                     provider_self.calls.append("main")
                     rendered = json.dumps(messages, ensure_ascii=False)
                     provider_self.main_rendered = rendered
@@ -624,7 +643,10 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                     provider_self.calls += 1
                     if system == CONTEXT_PLANNER_SYSTEM_PROMPT:
                         if provider_self.calls == 2:
-                            self.assertIn("invalid_json", str(messages[-1]["content"]))
+                            self.assertIn(
+                                "context_plan_tool_required",
+                                str(messages[-1]["content"]),
+                            )
                         return ProviderResponse(
                             [{"type": "text", "text": "not json"}], []
                         )

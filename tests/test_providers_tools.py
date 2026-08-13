@@ -38,6 +38,40 @@ from tests.support import with_context_planner
 
 
 class ProvidersToolsTest(unittest.TestCase):
+    def test_openai_adapter_orders_tool_result_before_correction_text(self) -> None:
+        messages = _openai_messages(
+            "system",
+            [
+                {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "plan-1",
+                            "name": "submit_context_plan",
+                            "input": {},
+                        }
+                    ],
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "plan-1",
+                            "content": '{"ok":false}',
+                            "is_error": True,
+                        },
+                        {"type": "text", "text": "Call the tool again."},
+                    ],
+                },
+            ],
+        )
+        self.assertEqual(
+            [message["role"] for message in messages],
+            ["system", "assistant", "tool", "user"],
+        )
+
     def test_compacts_structured_response_text_for_single_line_logs(self) -> None:
         self.assertEqual(
             _compact_response_text('{\n  "version": 1,\n  "items": ["a", "b"]\n}'),

@@ -31,6 +31,141 @@ NON_OPEN_LOOP_SPEECH_ACTS = {
     "acknowledgment",
     "closing",
 }
+CONTEXT_PLAN_TOOL_NAME = "submit_context_plan"
+CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
+    "name": CONTEXT_PLAN_TOOL_NAME,
+    "description": "Submit the complete context plan for the current owner input.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "version": {"type": "integer", "enum": [1]},
+            "intent_units": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 12,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "event_ids": {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": {"type": "string"},
+                        },
+                        "text": {"type": "string"},
+                        "intent": {"type": "string"},
+                        "speech_act": {
+                            "type": "string",
+                            "enum": sorted(SPEECH_ACTS - {"unknown"}),
+                        },
+                        "references": {
+                            "type": "array",
+                            "maxItems": 8,
+                            "items": {"type": "string"},
+                        },
+                        "recall_queries": {
+                            "type": "array",
+                            "maxItems": 6,
+                            "items": {"type": "string"},
+                        },
+                    },
+                    "required": [
+                        "id",
+                        "event_ids",
+                        "text",
+                        "intent",
+                        "speech_act",
+                        "references",
+                        "recall_queries",
+                    ],
+                    "additionalProperties": False,
+                },
+            },
+            "episode_bindings": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 12,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "episode_ref": {"type": "string"},
+                        "title": {"type": "string"},
+                        "relation": {
+                            "type": "string",
+                            "enum": ["primary", "related"],
+                        },
+                        "unit_ids": {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": {"type": "string"},
+                        },
+                        "topics": {
+                            "type": "array",
+                            "maxItems": 12,
+                            "items": {"type": "string"},
+                        },
+                        "entities": {
+                            "type": "array",
+                            "maxItems": 20,
+                            "items": {"type": "string"},
+                        },
+                        "open_loops": {
+                            "type": "array",
+                            "maxItems": 8,
+                            "items": {"type": "string"},
+                        },
+                        "salience": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1,
+                        },
+                    },
+                    "required": [
+                        "episode_ref",
+                        "title",
+                        "relation",
+                        "unit_ids",
+                        "topics",
+                        "entities",
+                        "open_loops",
+                        "salience",
+                    ],
+                    "additionalProperties": False,
+                },
+            },
+            "episode_links": {
+                "type": "array",
+                "maxItems": 20,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "from_episode_ref": {"type": "string"},
+                        "to_episode_ref": {"type": "string"},
+                        "kind": {
+                            "type": "string",
+                            "enum": ["continues", "references", "supersedes"],
+                        },
+                    },
+                    "required": ["from_episode_ref", "to_episode_ref", "kind"],
+                    "additionalProperties": False,
+                },
+            },
+            "uncertainty": {
+                "type": "array",
+                "maxItems": 8,
+                "items": {"type": "string"},
+            },
+        },
+        "required": [
+            "version",
+            "intent_units",
+            "episode_bindings",
+            "episode_links",
+            "uncertainty",
+        ],
+        "additionalProperties": False,
+    },
+}
 
 
 def is_light_social_plan(plan: dict[str, object]) -> bool:
@@ -84,16 +219,19 @@ def _merge_unique(
 
 
 def parse_context_plan(
-    text: str,
+    text: str | dict[str, object],
     event_ids: list[str],
     candidates: list[dict[str, object]],
     turn_id: str,
     revision: int,
 ) -> dict[str, object]:
-    try:
-        value = json.loads(text)
-    except (json.JSONDecodeError, TypeError) as error:
-        raise ContextPlanError("invalid_json") from error
+    if isinstance(text, dict):
+        value = text
+    else:
+        try:
+            value = json.loads(text)
+        except (json.JSONDecodeError, TypeError) as error:
+            raise ContextPlanError("invalid_json") from error
     if not isinstance(value, dict) or set(value) != {
         "version",
         "intent_units",

@@ -41,6 +41,7 @@ from momoi.provider import (
     ProviderError,
 )
 from momoi.runtime.turns import (
+    CONTEXT_PLAN_TOOL_NAME,
     CONTEXT_PLANNER_SYSTEM_PROMPT,
     STYLE_CARD_SYSTEM_PROMPT,
 )
@@ -1701,7 +1702,11 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             if payload.get("system") == CONTEXT_PLANNER_SYSTEM_PROMPT:
                 planned = context_plan_response(payload["messages"])
                 return web.json_response({"content": planned.content})
-            main_call = sum("tools" in item for item in llm_requests)
+            main_call = sum(
+                "tools" in item
+                and item.get("system") != CONTEXT_PLANNER_SYSTEM_PROMPT
+                for item in llm_requests
+            )
             if main_call == 1:
                 return web.json_response(
                     {
@@ -1842,7 +1847,11 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(sent, ["我先处理一下", "测试回复一", "测试回复二"])
         self.assertEqual(len(llm_requests), 8)
-        self.assertNotIn("tools", llm_requests[0])
+        self.assertEqual(
+            [tool["name"] for tool in llm_requests[0]["tools"]],
+            [CONTEXT_PLAN_TOOL_NAME],
+        )
+        self.assertEqual(llm_requests[0]["tool_choice"], {"type": "any"})
         self.assertIn("Context planning protocol", llm_requests[0]["system"])
         self.assertIn("tools", llm_requests[1])
         self.assertIn(

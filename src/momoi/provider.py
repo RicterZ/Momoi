@@ -497,6 +497,15 @@ def _openai_messages(
                 item["tool_calls"] = tool_calls
             wire.append(item)
             continue
+        wire.extend(
+            {
+                "role": "tool",
+                "tool_call_id": str(block.get("tool_use_id") or ""),
+                "content": str(block.get("content") or ""),
+            }
+            for block in content
+            if isinstance(block, dict) and block.get("type") == "tool_result"
+        )
         image_parts: list[dict[str, Any]] = []
         for block in content:
             if not isinstance(block, dict) or block.get("type") != "image":
@@ -516,15 +525,6 @@ def _openai_messages(
             wire.append({"role": role, "content": parts})
         elif text:
             wire.append({"role": role, "content": text})
-        wire.extend(
-            {
-                "role": "tool",
-                "tool_call_id": str(block.get("tool_use_id") or ""),
-                "content": str(block.get("content") or ""),
-            }
-            for block in content
-            if isinstance(block, dict) and block.get("type") == "tool_result"
-        )
     return wire
 
 

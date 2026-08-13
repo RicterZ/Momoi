@@ -1,7 +1,8 @@
 import json
 from typing import Any
 
-from momoi.models import ProviderResponse
+from momoi.models import ProviderResponse, ToolCall
+from momoi.runtime.context_planner import CONTEXT_PLAN_TOOL_NAME
 from momoi.runtime.turns import CONTEXT_PLANNER_SYSTEM_PROMPT
 
 
@@ -40,8 +41,17 @@ def context_plan_response(messages: list[dict[str, Any]]) -> ProviderResponse:
         "episode_links": [],
         "uncertainty": [],
     }
+    call = ToolCall("context-plan", CONTEXT_PLAN_TOOL_NAME, plan)
     return ProviderResponse(
-        [{"type": "text", "text": json.dumps(plan, ensure_ascii=False)}], []
+        [
+            {
+                "type": "tool_use",
+                "id": call.id,
+                "name": call.name,
+                "input": call.arguments,
+            }
+        ],
+        [call],
     )
 
 

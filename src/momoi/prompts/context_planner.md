@@ -14,44 +14,8 @@ against recent conversation first, while letting the newest owner correction win
 When the owner refers to a candidate Goal or reminder, put its exact id/title/text
 in a targeted recall query so the runtime can select it.
 
-Return exactly one JSON object and no Markdown or commentary. Its exact shape is:
-
-```json
-{
-  "version": 1,
-  "intent_units": [
-    {
-      "id": "u1",
-      "event_ids": ["event-id"],
-      "text": "the relevant owner statement",
-      "intent": "short semantic intent",
-      "speech_act": "casual_share",
-      "references": ["what words such as it, before, that issue, or a name refer to"],
-      "recall_queries": ["specific query for prior conversation or durable memory"]
-    }
-  ],
-  "episode_bindings": [
-    {
-      "episode_ref": "an existing candidate id or new:short-key",
-      "title": "concise topic title",
-      "relation": "primary",
-      "unit_ids": ["u1"],
-      "topics": ["searchable topic"],
-      "entities": ["named entity"],
-      "open_loops": ["unresolved thread"],
-      "salience": 0.5
-    }
-  ],
-  "episode_links": [
-    {
-      "from_episode_ref": "new:short-key",
-      "to_episode_ref": "another bound episode ref",
-      "kind": "references"
-    }
-  ],
-  "uncertainty": []
-}
-```
+Submit exactly one complete plan with `submit_context_plan`. Do not return text or
+call any other tool. The tool schema defines the required structure.
 
 Rules:
 
