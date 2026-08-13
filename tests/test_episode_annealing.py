@@ -2,6 +2,7 @@ import asyncio
 import json
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from momoi.channel.napcat import NapCatConfig
@@ -47,6 +48,42 @@ def add_turn(daemon: MomoiDaemon, ordinal: int) -> None:
 
 
 class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
+    async def test_maintenance_timeout_uses_episode_retry_backoff(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            app_config = config(directory)
+            app_config = replace(
+                app_config,
+                episode_annealing=replace(
+                    app_config.episode_annealing,
+                    max_seconds=0.01,
+                ),
+            )
+            daemon = MomoiDaemon(app_config)
+            daemon.store.create_episode("长期项目", episode_id="episode-main")
+            for ordinal in range(1, 6):
+                add_turn(daemon, ordinal)
+
+            class Provider:
+                async def complete(self, *_: object, **__: object) -> ProviderResponse:
+                    await asyncio.Event().wait()
+                    raise AssertionError("unreachable")
+
+            daemon.provider = Provider()  # type: ignore[assignment]
+            with self.assertRaises(TimeoutError):
+                await daemon._run_episode_annealing_once()
+
+            episode = daemon.store.episode("episode-main")
+            self.assertIsNone(episode["summary_claimed_at"])
+            self.assertEqual(episode["summary_failure_count"], 1)
+            self.assertIsNotNone(episode["summary_retry_at"])
+            maintenance_turn = daemon.store._db.execute(
+                """SELECT state, failure_reason FROM turns
+                   WHERE source_ids_json LIKE '%episode-anneal:%'"""
+            ).fetchone()
+            self.assertEqual(maintenance_turn["state"], "running")
+            self.assertEqual(maintenance_turn["failure_reason"], "TimeoutError")
+            daemon.store.close()
+
     async def test_cancelled_annealing_releases_claim_without_failure(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(config(directory))
@@ -149,7 +186,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
 
             provider = Provider()
             daemon.provider = provider  # type: ignore[assignment]
-            await daemon._anneal_episode_history("turn-5")
+            self.assertTrue(await daemon._run_episode_annealing_once())
 
             episode = daemon.store.episode("episode-main")
             self.assertEqual(episode["summarized_through_ordinal"], 3)
@@ -165,6 +202,14 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                     )
                 },
                 {4, 5},
+            )
+            maintenance_turn = daemon.store._db.execute(
+                """SELECT state, failure_reason FROM turns
+                   WHERE source_ids_json LIKE '%episode-anneal:%'"""
+            ).fetchone()
+            self.assertEqual(
+                (maintenance_turn["state"], maintenance_turn["failure_reason"]),
+                ("completed", None),
             )
             self.assertEqual(
                 {
@@ -240,6 +285,10 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(episode["summary_claimed_at"])
             self.assertEqual(episode["summary_failure_count"], 1)
             self.assertIsNotNone(episode["summary_retry_at"])
+            self.assertEqual(
+                daemon.store.next_episode_annealing_retry_at(),
+                episode["summary_retry_at"],
+            )
             self.assertEqual(episode["summarized_through_ordinal"], 0)
             daemon.store.close()
 

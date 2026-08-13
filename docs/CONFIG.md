@@ -404,6 +404,26 @@ Reflection uses `notifications.timezone` and reviews the local calendar day that
 
 Reflection never contacts the owner or receives external tools. The complete summary and candidate learning are stored in SQLite `reflections`; promoted durable learning is stored in `reflection_memories` and enters later context below confirmed owner memory. Owner profile and preference items are accepted only when they quote owner text from that day.
 
+## Episode history maintenance
+
+```json
+{
+  "episode_annealing": {
+    "enabled": true,
+    "idle_seconds": 60,
+    "max_seconds": 90
+  }
+}
+```
+
+| Field | Default | Description |
+| --- | --- | --- |
+| `enabled` | `true` | Maintain older conversation Episodes in the background |
+| `idle_seconds` | `60` | Required owner-idle time before maintenance starts |
+| `max_seconds` | `90` | Maximum model time for one maintenance batch |
+
+Maintenance is coalesced and processes one Episode batch at a time. A new owner message cancels active maintenance without counting it as a failure; the work becomes eligible again after the owner is idle.
+
 ## Webhooks
 
 ```json

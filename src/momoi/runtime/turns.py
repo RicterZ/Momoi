@@ -602,8 +602,33 @@ class TurnRunner:
                     or response.tool_calls[0].name != CONTEXT_PLAN_TOOL_NAME
                 ):
                     raise ContextPlanError("context_plan_tool_required")
+                raw_plan = response.tool_calls[0].arguments
+                log_event(
+                    logger,
+                    logging.DEBUG,
+                    "context_plan_received",
+                    stage="context_plan",
+                    turn_id=turn_id,
+                    call_id=call_id,
+                    round=attempt + 1,
+                    revision=revision,
+                    tool_call_id=response.tool_calls[0].id,
+                    version=raw_plan.get("version"),
+                    intent_units=safe_preview(
+                        raw_plan.get("intent_units"), 900
+                    ),
+                    episode_bindings=safe_preview(
+                        raw_plan.get("episode_bindings"), 900
+                    ),
+                    episode_links=safe_preview(
+                        raw_plan.get("episode_links"), 500
+                    ),
+                    uncertainty=safe_preview(
+                        raw_plan.get("uncertainty"), 500
+                    ),
+                )
                 plan = parse_context_plan(
-                    response.tool_calls[0].arguments,
+                    raw_plan,
                     event_ids,
                     candidates,
                     turn_id,
@@ -1064,7 +1089,8 @@ class TurnRunner:
         )
         self.outbox_changed.set()
         self.agenda_changed.set()
-        self.episode_annealing.put_nowait(turn_id)
+        if self.config.episode_annealing.enabled:
+            self.episode_annealing_requested.set()
 
     async def _run_tool_loop(
         self,
@@ -1878,13 +1904,54 @@ class TurnRunner:
         seed = json.dumps(parts, ensure_ascii=False, separators=(",", ":"), default=str)
         return uuid.uuid5(uuid.NAMESPACE_URL, f"momoi:{seed}").hex
 
-    async def _anneal_episode_history(self, turn_id: str) -> None:
-        for anneal_round in range(1, 3):
-            candidate = self.store.claim_episode_annealing_candidate(
+    async def _run_episode_annealing_once(self) -> bool:
+        candidate = self.store.claim_episode_annealing_candidate(
+            self.config.recent_turns, self.config.recent_raw_tokens
+        )
+        if candidate is None:
+            return False
+        episode = candidate["episode"]
+        episode_id = str(episode["id"])
+        through_ordinal = int(candidate["through_ordinal"])
+        turn_id = self._turn_id(
+            "episode-anneal", episode_id, through_ordinal
+        )
+        state = self.store.begin_turn(
+            turn_id,
+            "autonomous",
+            [f"episode-anneal:{episode_id}:{through_ordinal}"],
+        )
+        if state in {"completed", "cancelled"}:
+            self.store.release_episode_annealing(episode_id, failed=False)
+            return False
+        try:
+            completed = await self._anneal_episode_history(
+                turn_id,
+                candidate=candidate,
+                max_seconds=self.config.episode_annealing.max_seconds,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            self.store.record_turn_failure(turn_id, type(error).__name__)
+            raise
+        if completed:
+            self.store.complete_background_turn(turn_id)
+        return completed
+
+    async def _anneal_episode_history(
+        self,
+        turn_id: str,
+        *,
+        candidate: dict[str, object] | None = None,
+        max_seconds: float | None = None,
+    ) -> bool:
+        for anneal_round in range(1, 2):
+            candidate = candidate or self.store.claim_episode_annealing_candidate(
                 self.config.recent_turns, self.config.recent_raw_tokens
             )
             if candidate is None:
-                return
+                return False
             episode = candidate["episode"]
             episode_id = str(episode["id"])
             payload = {
@@ -1923,8 +1990,13 @@ class TurnRunner:
                     round=anneal_round,
                     episode_id=episode_id,
                 ):
-                    response = await self.provider.complete(
+                    completion = self.provider.complete(
                         EPISODE_SUMMARY_SYSTEM_PROMPT, request, []
+                    )
+                    response = (
+                        await asyncio.wait_for(completion, timeout=max_seconds)
+                        if max_seconds is not None
+                        else await completion
                     )
                 summary = self._context_plan_response_text(response.content)
                 summary = re.sub(
@@ -1964,12 +2036,14 @@ class TurnRunner:
                     through_ordinal=candidate["through_ordinal"],
                     summary_tokens=estimate_tokens(working_summary),
                 )
+                return True
             except asyncio.CancelledError:
                 self.store.release_episode_annealing(episode_id, failed=False)
                 raise
             except Exception:
                 self.store.release_episode_annealing(episode_id)
                 raise
+        return False
 
     def _system(self) -> list[dict[str, Any]]:
         system_prompt = self.config.system_prompt

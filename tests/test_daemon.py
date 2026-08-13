@@ -15,6 +15,7 @@ from momoi.channel.napcat import NapCatConfig
 from momoi.config import (
     AppConfig,
     AutonomyConfig,
+    EpisodeAnnealingConfig,
     HeartbeatConfig,
     LLMConfig,
     NotificationConfig,
@@ -385,7 +386,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 [row.text for row in daemon.store.due_outbox()], ["合并两条后回复"]
             )
-            self.assertEqual(daemon.episode_annealing.get_nowait(), turn_id)
+            self.assertTrue(daemon.episode_annealing_requested.is_set())
             self.assertEqual(daemon.store.pending_events(), [])
             daemon.store.close()
 
@@ -561,12 +562,16 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     memory_tokens=1000,
                     database=Path(directory) / "momoi.sqlite3",
                     log_level="INFO",
+                    episode_annealing=EpisodeAnnealingConfig(
+                        idle_seconds=0.05,
+                        max_seconds=1,
+                    ),
                 )
             )
             started = asyncio.Event()
             cancelled = asyncio.Event()
 
-            async def anneal(_turn_id: str) -> None:
+            async def anneal() -> bool:
                 started.set()
                 try:
                     await asyncio.Event().wait()
@@ -574,11 +579,14 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     cancelled.set()
                     raise
 
-            daemon._anneal_episode_history = anneal  # type: ignore[method-assign]
+            daemon._run_episode_annealing_once = anneal  # type: ignore[method-assign]
+            daemon._touch_owner_activity("napcat")
             worker = asyncio.create_task(
                 daemon._episode_annealing_worker(asyncio.Event())
             )
-            daemon.episode_annealing.put_nowait("owner-turn")
+            daemon.episode_annealing_requested.set()
+            await asyncio.sleep(0.01)
+            self.assertFalse(started.is_set())
             await started.wait()
 
             await daemon._receive(

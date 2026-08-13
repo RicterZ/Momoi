@@ -81,6 +81,11 @@
     "enabled": true,
     "at": "03:00"
   },
+  "episode_annealing": {
+    "enabled": true,
+    "idle_seconds": 60,
+    "max_seconds": 90
+  },
   "webhooks": {
     "enabled": false,
     "host": "127.0.0.1",

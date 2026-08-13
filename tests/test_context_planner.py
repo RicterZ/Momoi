@@ -475,9 +475,20 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
             turn_id = "semantic-turn"
             daemon.store.begin_turn(turn_id, "owner", [event.event_id])
 
-            planned = await daemon._plan_owner_context([event], turn_id)
+            with self.assertLogs("momoi.runtime.turns", level="DEBUG") as logs:
+                planned = await daemon._plan_owner_context([event], turn_id)
 
             self.assertEqual(planned["episode_bindings"][0]["episode_id"], "old-cup")
+            received = next(
+                record
+                for record in logs.records
+                if getattr(record, "momoi_event", "") == "context_plan_received"
+            )
+            self.assertIn(
+                "find stored drinking container",
+                received.momoi_fields["intent_units"],
+            )
+            self.assertIn("old-cup", received.momoi_fields["episode_bindings"])
             daemon.store.close()
 
     async def test_planner_runs_without_tools_before_main_and_commits_episodes(

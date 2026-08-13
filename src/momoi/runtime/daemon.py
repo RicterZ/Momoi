@@ -78,17 +78,19 @@ class MomoiDaemon(TurnRunner):
         self.incoming: asyncio.Queue[IncomingMessage] = asyncio.Queue()
         self._deferred_incoming: deque[IncomingMessage] = deque()
         self._owner_quiet_until: dict[str, float] = {}
+        self._last_owner_activity_at = 0.0
         self._owner_activity_changed = asyncio.Event()
         self._owner_message_changed = asyncio.Event()
         self.webhook_requests: asyncio.Queue[
             tuple[str, str, asyncio.Future[AgentReply]]
         ] = asyncio.Queue()
         self.autonomous: asyncio.Queue[str] = asyncio.Queue()
-        self.episode_annealing: asyncio.Queue[str] = asyncio.Queue()
+        self.episode_annealing_requested = asyncio.Event()
         self.outbox_changed = asyncio.Event()
         self.agenda_changed = asyncio.Event()
         self._active_turn: asyncio.Task[None] | None = None
         self._active_annealing: asyncio.Task[None] | None = None
+        self._webhook_turn_active = False
         self._stop_requested = False
         self._manual_heartbeat_channel: str | None = None
         self.webhooks = (
@@ -107,6 +109,8 @@ class MomoiDaemon(TurnRunner):
 
     async def run(self, stop: asyncio.Event) -> None:
         self.store.assign_legacy_outbox_channel(self.channel.name)
+        if self.config.episode_annealing.enabled:
+            self.episode_annealing_requested.set()
         for event in self.store.pending_events():
             self.incoming.put_nowait(event)
         async with self.mcp, self.provider:
@@ -180,9 +184,9 @@ class MomoiDaemon(TurnRunner):
 
     def _touch_owner_activity(self, channel_name: str) -> None:
         channel = self._channel_for(channel_name)
-        self._owner_quiet_until[channel.name] = (
-            asyncio.get_running_loop().time() + channel.quiet_seconds
-        )
+        now = asyncio.get_running_loop().time()
+        self._last_owner_activity_at = now
+        self._owner_quiet_until[channel.name] = now + channel.quiet_seconds
         self._owner_activity_changed.set()
 
     async def _receive(self, event: IncomingMessage | OwnerInputStatus) -> None:
@@ -252,6 +256,8 @@ class MomoiDaemon(TurnRunner):
             annealing = self._active_annealing
             if annealing is not None and not annealing.done():
                 annealing.cancel("owner_update")
+            if self.config.episode_annealing.enabled:
+                self.episode_annealing_requested.set()
             self._owner_message_changed.set()
             self._touch_owner_activity(message.channel)
 
@@ -267,6 +273,7 @@ class MomoiDaemon(TurnRunner):
                     prompt, turn_id, future = item
                     if future.cancelled():
                         continue
+                    self._webhook_turn_active = True
                     try:
                         reply = await self._complete_webhook_turn(
                             prompt, turn_id, self.channel
@@ -281,6 +288,8 @@ class MomoiDaemon(TurnRunner):
                     else:
                         if not future.done():
                             future.set_result(reply)
+                    finally:
+                        self._webhook_turn_active = False
                     continue
                 if kind == "goal":
                     goal_id = str(item)
@@ -492,13 +501,67 @@ class MomoiDaemon(TurnRunner):
         await self.webhook_requests.put((prompt, turn_id, future))
         return await future
 
+    def _episode_annealing_is_idle(self) -> bool:
+        active = self._active_turn
+        if active is not None and not active.done():
+            return False
+        if self._webhook_turn_active:
+            return False
+        if (
+            not self.incoming.empty()
+            or self._deferred_incoming
+            or not self.webhook_requests.empty()
+            or not self.autonomous.empty()
+        ):
+            return False
+        return not bool(self.store.heartbeat_conversation_snapshot()["owner_busy"])
+
+    async def _wait_for_episode_annealing_idle(
+        self, stop: asyncio.Event
+    ) -> bool:
+        loop = asyncio.get_running_loop()
+        while not stop.is_set():
+            quiet_for = loop.time() - self._last_owner_activity_at
+            if (
+                quiet_for >= self.config.episode_annealing.idle_seconds
+                and self._episode_annealing_is_idle()
+            ):
+                return True
+            remaining = max(
+                0.05,
+                self.config.episode_annealing.idle_seconds - quiet_for,
+            )
+            try:
+                await asyncio.wait_for(stop.wait(), timeout=min(1.0, remaining))
+            except TimeoutError:
+                pass
+        return False
+
+    async def _wait_for_episode_annealing_retry(self) -> None:
+        retry_at = self.store.next_episode_annealing_retry_at()
+        if retry_at is None:
+            return
+        delay = max(1.0, retry_at - datetime.now().timestamp())
+        try:
+            await asyncio.wait_for(
+                self.episode_annealing_requested.wait(),
+                timeout=delay,
+            )
+        except TimeoutError:
+            self.episode_annealing_requested.set()
+
     async def _episode_annealing_worker(self, stop: asyncio.Event) -> None:
         while not stop.is_set():
-            turn_id = await self.episode_annealing.get()
-            task = asyncio.create_task(self._anneal_episode_history(turn_id))
+            await self.episode_annealing_requested.wait()
+            self.episode_annealing_requested.clear()
+            if not self.config.episode_annealing.enabled:
+                continue
+            if not await self._wait_for_episode_annealing_idle(stop):
+                return
+            task = asyncio.create_task(self._run_episode_annealing_once())
             self._active_annealing = task
             try:
-                await task
+                completed = await task
             except asyncio.CancelledError:
                 current = asyncio.current_task()
                 if stop.is_set() or (current is not None and current.cancelling()):
@@ -508,22 +571,26 @@ class MomoiDaemon(TurnRunner):
                     logging.INFO,
                     "episode_anneal_cancelled",
                     stage="episode_anneal",
-                    turn_id=turn_id,
                     reason="owner_update",
                 )
+                self.episode_annealing_requested.set()
             except Exception as error:
                 log_event(
                     logger,
                     logging.WARNING,
                     "episode_anneal_failure",
                     stage="episode_anneal",
-                    turn_id=turn_id,
                     error_type=type(error).__name__,
                     reason=safe_preview(str(error), 300),
                 )
+                await self._wait_for_episode_annealing_retry()
+            else:
+                if completed:
+                    self.episode_annealing_requested.set()
+                else:
+                    await self._wait_for_episode_annealing_retry()
             finally:
                 self._active_annealing = None
-                self.episode_annealing.task_done()
 
     async def _scheduler_worker(self, stop: asyncio.Event) -> None:
         while not stop.is_set():

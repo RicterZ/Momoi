@@ -67,6 +67,13 @@ class ReflectionConfig:
 
 
 @dataclass(frozen=True)
+class EpisodeAnnealingConfig:
+    enabled: bool = True
+    idle_seconds: float = 60
+    max_seconds: float = 90
+
+
+@dataclass(frozen=True)
 class AppConfig:
     llm: LLMConfig
     channel: object
@@ -90,6 +97,7 @@ class AppConfig:
     heartbeat: HeartbeatConfig = HeartbeatConfig()
     autonomy: AutonomyConfig = AutonomyConfig()
     reflection: ReflectionConfig = ReflectionConfig()
+    episode_annealing: EpisodeAnnealingConfig = EpisodeAnnealingConfig()
     workspace: Path | None = None
     heartbeat_prompt: str = ""
     soul_prompt_path: Path | None = None
@@ -233,6 +241,9 @@ def load_config(path: str | Path) -> AppConfig:
     heartbeat_raw = _mapping(raw.get("heartbeat", {}), "heartbeat")
     autonomy_raw = _mapping(raw.get("autonomy", {}), "autonomy")
     reflection_raw = _mapping(raw.get("reflection", {}), "reflection")
+    annealing_raw = _mapping(
+        raw.get("episode_annealing", {}), "episode_annealing"
+    )
     mcp_value = tools_raw.get("mcp_config", "mcp.json")
     mcp_config = (config_path.parent / str(mcp_value)).resolve() if mcp_value else None
     webhook_enabled = _boolean(webhook_raw.get("enabled", False), "webhooks.enabled")
@@ -351,6 +362,20 @@ def load_config(path: str | Path) -> AppConfig:
             ),
             at=_clock(reflection_raw.get("at", "03:00"), "reflection.at")
             or "03:00",
+        ),
+        episode_annealing=EpisodeAnnealingConfig(
+            enabled=_boolean(
+                annealing_raw.get("enabled", True),
+                "episode_annealing.enabled",
+            ),
+            idle_seconds=_nonnegative(
+                annealing_raw.get("idle_seconds", 60),
+                "episode_annealing.idle_seconds",
+            ),
+            max_seconds=_positive(
+                annealing_raw.get("max_seconds", 90),
+                "episode_annealing.max_seconds",
+            ),
         ),
         workspace=config_path.parent,
         soul_prompt_path=soul_path,

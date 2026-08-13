@@ -404,6 +404,26 @@ Owner Turn 独占对主人输入的回复权。存在未处理的主人消息、
 
 复盘不会联系主人或获得外部工具。完整摘要和候选学习保存在 SQLite 的 `reflections` 表；筛选后的长期学习保存在 `reflection_memories`，并以低于主人原话记忆的权限进入后续上下文。主人画像和偏好只有在复盘项包含当天主人原文证据时才会写入。
 
+## Episode 历史维护
+
+```json
+{
+  "episode_annealing": {
+    "enabled": true,
+    "idle_seconds": 60,
+    "max_seconds": 90
+  }
+}
+```
+
+| 字段 | 默认值 | 说明 |
+| --- | --- | --- |
+| `enabled` | `true` | 在后台维护较早的对话 Episode |
+| `idle_seconds` | `60` | 开始维护前要求主人保持空闲的时间 |
+| `max_seconds` | `90` | 单次维护允许使用模型的最长时间 |
+
+维护请求会自动合并，并且一次只处理一个 Episode 批次。新的主人消息会取消正在进行的维护且不计为失败；主人再次空闲后，该工作可以重新领取。
+
 ## Webhook
 
 ```json

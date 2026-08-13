@@ -1305,6 +1305,14 @@ class Store(MemoryStore, DeliveryStore):
                 (reason[:500], time.time(), turn_id),
             )
 
+    def complete_background_turn(self, turn_id: str) -> None:
+        with self._db:
+            self._db.execute(
+                """UPDATE turns SET state='completed', stage='completed',
+                   failure_reason=NULL, updated_at=? WHERE id=?""",
+                (time.time(), turn_id),
+            )
+
     def turn_has_external_effect(self, turn_id: str) -> bool:
         row = self._db.execute(
             "SELECT external_effect_started FROM turns WHERE id=?", (turn_id,)
@@ -2414,6 +2422,16 @@ class Store(MemoryStore, DeliveryStore):
                        summary_failure_count=? WHERE id=?""",
                 (time.time() + delay, failures, episode_id),
             )
+
+    def next_episode_annealing_retry_at(self) -> float | None:
+        row = self._db.execute(
+            """SELECT MIN(summary_retry_at) AS due
+               FROM conversation_episodes
+               WHERE status IN ('open', 'closing')
+                 AND summary_claimed_at IS NULL
+                 AND summary_retry_at IS NOT NULL"""
+        ).fetchone()
+        return float(row["due"]) if row and row["due"] is not None else None
 
     def link_episodes(
         self, from_episode_id: str, to_episode_id: str, kind: str
