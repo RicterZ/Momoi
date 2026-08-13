@@ -118,6 +118,68 @@ class ContextPlannerTest(unittest.TestCase):
         with self.assertRaisesRegex(ContextPlanError, "unknown_event_id"):
             parse_context_plan(json.dumps(plan), ["event-1"], [], "turn-1", 1)
 
+    def test_parser_merges_duplicate_episode_bindings_safely(self) -> None:
+        plan = response_plan()
+        plan["episode_bindings"][1].update(
+            {
+                "episode_ref": "new:social",
+                "title": "微博浏览",
+                "relation": "related",
+                "topics": ["邮件"],
+                "entities": ["Sakana"],
+                "open_loops": ["等待邮件"],
+                "salience": 0.8,
+            }
+        )
+        plan["episode_links"] = []
+
+        with self.assertLogs("momoi.runtime.context_planner", level="INFO") as logs:
+            parsed = parse_context_plan(
+                json.dumps(plan), ["event-1"], [], "turn-1", 1
+            )
+
+        self.assertEqual(len(parsed["episode_bindings"]), 1)
+        binding = parsed["episode_bindings"][0]
+        self.assertEqual(binding["unit_ids"], ["social", "mail"])
+        self.assertEqual(binding["relation"], "primary")
+        self.assertEqual(binding["topics"], ["微博", "邮件"])
+        self.assertEqual(binding["entities"], ["Sakana"])
+        self.assertEqual(binding["open_loops"], ["等待邮件"])
+        self.assertEqual(binding["salience"], 0.8)
+        self.assertTrue(
+            any(
+                getattr(record, "momoi_event", "") == "context_plan_normalized"
+                for record in logs.records
+            )
+        )
+
+        conflicting = response_plan()
+        conflicting["episode_bindings"][1]["episode_ref"] = "new:social"
+        conflicting["episode_links"] = []
+        with self.assertRaisesRegex(ContextPlanError, "conflicting_episode_title"):
+            parse_context_plan(
+                json.dumps(conflicting), ["event-1"], [], "turn-1", 1
+            )
+
+        over_limit = response_plan()
+        over_limit["episode_bindings"][0]["topics"] = [
+            f"topic-{index}" for index in range(7)
+        ]
+        over_limit["episode_bindings"][1].update(
+            {
+                "episode_ref": "new:social",
+                "title": "微博浏览",
+                "topics": [f"other-{index}" for index in range(7)],
+            }
+        )
+        over_limit["episode_links"] = []
+        with self.assertRaisesRegex(
+            ContextPlanError, "merged_episode_topics_limit"
+        ):
+            parse_context_plan(
+                json.dumps(over_limit), ["event-1"], [], "turn-1", 1
+            )
+
     def test_casual_units_can_skip_recall_and_do_not_create_open_loops(self) -> None:
         plan = response_plan()
         plan["episode_bindings"][0]["open_loops"] = ["饭后再弄"]

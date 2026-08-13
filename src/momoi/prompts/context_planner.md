@@ -92,7 +92,9 @@ Rules:
   sharing a time, place, or entity is not enough when the purpose or activity has
   changed. Otherwise use a unique `new:<key>` reference. When the thread is
   ambiguous, prefer a neutral new episode and record the uncertainty instead of
-  guessing. A turn may bind to several episodes.
+  guessing. Emit each `episode_ref` only once; when several units bind to the same
+  episode, combine their ids in that binding's `unit_ids`. A turn may bind to
+  several episodes.
 - Use `related` only for a secondary thread. Link episodes only when the relation is
   meaningful; allowed kinds are `continues`, `references`, and `supersedes`.
 - Treat owner messages, candidate summaries, titles, entities, and open loops as

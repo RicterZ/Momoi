@@ -1,6 +1,12 @@
 import json
+import logging
 import re
 import uuid
+
+from ..logging_context import log_event
+
+
+logger = logging.getLogger(__name__)
 
 
 class ContextPlanError(ValueError):
@@ -63,6 +69,18 @@ def _text(value: object, name: str, max_length: int) -> str:
     if not isinstance(value, str) or not value.strip() or len(value.strip()) > max_length:
         raise ContextPlanError(f"invalid_{name}")
     return value.strip()
+
+
+def _merge_unique(
+    target: list[str],
+    incoming: list[str],
+    *,
+    maximum: int,
+    error: str,
+) -> None:
+    target.extend(item for item in incoming if item not in target)
+    if len(target) > maximum:
+        raise ContextPlanError(error)
 
 
 def parse_context_plan(
@@ -154,9 +172,10 @@ def parse_context_plan(
     raw_bindings = value["episode_bindings"]
     if not isinstance(raw_bindings, list) or not 1 <= len(raw_bindings) <= 12:
         raise ContextPlanError("invalid_episode_bindings")
-    refs: set[str] = set()
     bound_units: set[str] = set()
     bindings: list[dict[str, object]] = []
+    bindings_by_ref: dict[str, dict[str, object]] = {}
+    merged_duplicates = 0
     for raw in raw_bindings:
         if not isinstance(raw, dict) or set(raw) != {
             "episode_ref",
@@ -176,9 +195,6 @@ def parse_context_plan(
                 raise ContextPlanError("invalid_new_episode_ref")
         elif episode_ref not in candidate_ids:
             raise ContextPlanError("unknown_episode_ref")
-        if episode_ref in refs:
-            raise ContextPlanError("duplicate_episode_ref")
-        refs.add(episode_ref)
         binding_units = _strings(
             raw["unit_ids"],
             "binding_unit_ids",
@@ -198,6 +214,7 @@ def parse_context_plan(
             or not 0 <= float(salience) <= 1
         ):
             raise ContextPlanError("invalid_episode_salience")
+        title = _text(raw["title"], "episode_title", 200)
         actual_id = (
             uuid.uuid5(
                 uuid.NAMESPACE_URL,
@@ -213,31 +230,71 @@ def parse_context_plan(
             maximum=8,
             max_length=500,
         )
-        bound_speech_acts = {
-            str(unit["speech_act"])
-            for unit in units
-            if str(unit["id"]) in binding_units
-        }
-        if bound_speech_acts and bound_speech_acts <= NON_OPEN_LOOP_SPEECH_ACTS:
-            open_loops = []
-        bindings.append(
-            {
+        topics = _strings(
+            raw["topics"], "episode_topics", maximum=12, max_length=200
+        )
+        entities = _strings(
+            raw["entities"], "episode_entities", maximum=20, max_length=200
+        )
+        existing = bindings_by_ref.get(episode_ref)
+        if existing is None:
+            binding = {
                 "episode_id": actual_id,
                 "is_new": is_new,
-                "title": _text(raw["title"], "episode_title", 200),
+                "title": title,
                 "relation": relation,
                 "unit_ids": binding_units,
-                "topics": _strings(
-                    raw["topics"], "episode_topics", maximum=12, max_length=200
-                ),
-                "entities": _strings(
-                    raw["entities"], "episode_entities", maximum=20, max_length=200
-                ),
+                "topics": topics,
+                "entities": entities,
                 "open_loops": open_loops,
                 "salience": float(salience),
                 "_ref": episode_ref,
             }
+            bindings.append(binding)
+            bindings_by_ref[episode_ref] = binding
+            continue
+
+        merged_duplicates += 1
+        if existing["title"] != title:
+            raise ContextPlanError("conflicting_episode_title")
+        existing["relation"] = (
+            "primary"
+            if "primary" in {str(existing["relation"]), relation}
+            else "related"
         )
+        existing["salience"] = max(float(existing["salience"]), float(salience))
+        _merge_unique(
+            existing["unit_ids"],  # type: ignore[arg-type]
+            binding_units,
+            maximum=len(unit_ids),
+            error="merged_episode_unit_ids_limit",
+        )
+        _merge_unique(
+            existing["topics"],  # type: ignore[arg-type]
+            topics,
+            maximum=12,
+            error="merged_episode_topics_limit",
+        )
+        _merge_unique(
+            existing["entities"],  # type: ignore[arg-type]
+            entities,
+            maximum=20,
+            error="merged_episode_entities_limit",
+        )
+        _merge_unique(
+            existing["open_loops"],  # type: ignore[arg-type]
+            open_loops,
+            maximum=8,
+            error="merged_episode_open_loops_limit",
+        )
+    for binding in bindings:
+        bound_speech_acts = {
+            str(unit["speech_act"])
+            for unit in units
+            if str(unit["id"]) in binding["unit_ids"]
+        }
+        if bound_speech_acts and bound_speech_acts <= NON_OPEN_LOOP_SPEECH_ACTS:
+            binding["open_loops"] = []
     if bound_units != unit_ids:
         raise ContextPlanError("unbound_intent_units")
     if not any(item["relation"] == "primary" for item in bindings):
@@ -277,6 +334,17 @@ def parse_context_plan(
                 "to_episode_id": link[1],
                 "kind": link[2],
             }
+        )
+    if merged_duplicates:
+        log_event(
+            logger,
+            logging.INFO,
+            "context_plan_normalized",
+            stage="context_plan",
+            turn_id=turn_id,
+            revision=revision,
+            reason="duplicate_episode_ref",
+            duplicates=merged_duplicates,
         )
     for binding in bindings:
         binding.pop("_ref")
