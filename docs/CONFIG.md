@@ -411,7 +411,7 @@ Reflection never contacts the owner or receives external tools. The complete sum
   "episode_annealing": {
     "enabled": true,
     "idle_seconds": 60,
-    "max_seconds": 300
+    "max_seconds": 650
   }
 }
 ```
@@ -420,7 +420,7 @@ Reflection never contacts the owner or receives external tools. The complete sum
 | --- | --- | --- |
 | `enabled` | `true` | Maintain older conversation Episodes in the background |
 | `idle_seconds` | `60` | Required owner-idle time before maintenance starts |
-| `max_seconds` | `300` | Maximum model time for one maintenance batch |
+| `max_seconds` | `650` | Maximum model time for one maintenance batch |
 
 Maintenance is coalesced and processes one Episode batch at a time. A new owner message cancels active maintenance without counting it as a failure; the work becomes eligible again after the owner is idle.
 
