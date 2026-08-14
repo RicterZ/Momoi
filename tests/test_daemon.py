@@ -5,6 +5,7 @@ import time
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -29,6 +30,7 @@ from momoi.runtime import (
     reply_wait_respond_tool_spec,
     MomoiDaemon,
 )
+from momoi.runtime.daemon import REFLECTION_QUEUE_PREFIX
 from momoi.runtime.protocol import MOOD_UPDATE_SCHEMA
 from momoi.models import (
     AgentReply,
@@ -645,6 +647,66 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(daemon.autonomous.empty())
             self.assertEqual(daemon.store.pending_events(), [])
             self.assertIsNotNone(daemon.store.self_state()["heartbeat_claimed_at"])
+            daemon.store.close()
+
+    async def test_manual_reflect_command_queues_current_day_even_when_disabled(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(
+                AppConfig(
+                    llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
+                    channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                    system_prompt="test",
+                    recent_raw_tokens=1000,
+                    recent_turns=2,
+                    memory_results=2,
+                    memory_tokens=1000,
+                    database=Path(directory) / "momoi.sqlite3",
+                    log_level="INFO",
+                    notifications=NotificationConfig(timezone="Asia/Shanghai"),
+                )
+            )
+            command = IncomingMessage(
+                "qq:manual-reflect",
+                "manual-reflect",
+                "/reflect",
+                1,
+                1,
+                channel="napcat",
+            )
+            await daemon._receive(command)
+            await daemon._receive(command)
+
+            local_date = datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
+            queued = await daemon.autonomous.get()
+            self.assertEqual(queued, REFLECTION_QUEUE_PREFIX + local_date)
+            self.assertTrue(daemon.autonomous.empty())
+            self.assertEqual(daemon.store.pending_events(), [])
+            reflection = daemon.store.reflection(local_date)
+            self.assertIsNotNone(reflection)
+            self.assertEqual(reflection["state"], "running")
+
+            daemon.store._db.execute(
+                """UPDATE reflections SET state='completed', claimed_at=NULL
+                   WHERE local_date=?""",
+                (local_date,),
+            )
+            daemon.store._db.commit()
+            await daemon._receive(
+                IncomingMessage(
+                    "qq:manual-reflect-again",
+                    "manual-reflect-again",
+                    "/reflect",
+                    2,
+                    2,
+                    channel="napcat",
+                )
+            )
+            self.assertEqual(
+                await daemon.autonomous.get(), REFLECTION_QUEUE_PREFIX + local_date
+            )
+            self.assertEqual(daemon.store.reflection(local_date)["state"], "running")
             daemon.store.close()
 
     async def test_reply_heartbeat_turn_uses_reply_check_schedule(self) -> None:

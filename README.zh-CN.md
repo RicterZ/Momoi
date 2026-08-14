@@ -224,6 +224,7 @@ momoi goal del <goal-id-or-prefix> --reason "No longer needed"
 | --- | --- |
 | `/stop` | 取消当前任务 |
 | `/heartbeat` | 立即触发一次自主心跳 |
+| `/reflect` | 立即复盘当前本地自然日 |
 | `/resolve <id> <result>` | 确认真实结果后，关闭一次不确定的外部操作 |
 | `/resume <id> <current state>` | 从确认后的状态继续一次不确定的外部操作 |
 

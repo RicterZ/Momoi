@@ -255,6 +255,34 @@ class MomoiDaemon(TurnRunner):
                     reason="heartbeat_already_active",
                 )
             return
+        if message.text.strip() == "/reflect":
+            reflection = self.store.claim_manual_reflection(
+                self.config.notifications.timezone
+            )
+            if reflection is not None:
+                log_event(
+                    logger,
+                    logging.INFO,
+                    "owner_command_accepted",
+                    channel=message.channel,
+                    event_id=message.event_id,
+                    command="reflect",
+                    local_date=reflection["local_date"],
+                )
+                await self.autonomous.put(
+                    REFLECTION_QUEUE_PREFIX + str(reflection["local_date"])
+                )
+            else:
+                log_event(
+                    logger,
+                    logging.INFO,
+                    "owner_command_ignored",
+                    channel=message.channel,
+                    event_id=message.event_id,
+                    command="reflect",
+                    reason="reflection_already_active",
+                )
+            return
         if self.store.add_event(message):
             log_event(
                 logger,

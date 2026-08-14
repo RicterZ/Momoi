@@ -225,6 +225,7 @@ Use `--at` for a future one-time review or `--every-seconds` for a recurring int
 | --- | --- |
 | `/stop` | Cancel the current task |
 | `/heartbeat` | Trigger one autonomous heartbeat immediately |
+| `/reflect` | Trigger one daily reflection for the current local day |
 | `/resolve <id> <result>` | Close an uncertain external action after checking the real result |
 | `/resume <id> <current state>` | Continue an uncertain external action from the confirmed state |
 
