@@ -390,7 +390,7 @@ function ConversationDetail({ item }) {
         <div className="conversation-head-row">
           <span className="panel-label">{item.status} conversation</span>
           <button
-            className="sort-toggle"
+            className={`sort-toggle${newestFirst ? " newest" : " oldest"}`}
             type="button"
             aria-label={newestFirst ? "切换为时间正序" : "切换为时间倒序"}
             title={newestFirst ? "时间倒序 · 点击正序" : "时间正序 · 点击倒序"}
