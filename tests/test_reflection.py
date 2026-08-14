@@ -85,7 +85,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                     assert (
                         "state=completed ok=true capability=read" in request
                     )
-                    assert "interaction.*" in json.dumps(_system, ensure_ascii=False)
+                    assert "own diary" in json.dumps(_system, ensure_ascii=False)
                     assert "always_memory_inventory" in json.dumps(
                         _system, ensure_ascii=False
                     )
