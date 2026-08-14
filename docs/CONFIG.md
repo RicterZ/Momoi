@@ -454,6 +454,26 @@ Maintenance is coalesced and processes one Episode batch at a time. A new owner 
 
 Use a long random token and place a TLS reverse proxy in front of Momoi when the endpoint crosses an untrusted network. Continue with [WORKFLOW.md](./WORKFLOW.md).
 
+## Dashboard
+
+The local Web dashboard is a small window into Momoi's records: conversations, daily reflections, memories, image reactions, and goals. From there you can also edit memories, manage reactions, and adjust goals that are still in progress.
+
+It starts only with `momoi run --dashboard`. Bind address and port come from the CLI; `config.json` holds the access passphrase.
+
+```json
+{
+  "dashboard": {
+    "token": "replace-with-a-long-random-secret"
+  }
+}
+```
+
+| Field | Default | Description |
+| --- | --- | --- |
+| `token` | empty | Passphrase required whenever `--dashboard` is enabled. Enter it on the page to unlock the dashboard; the browser keeps access for about one year |
+
+Open `http://127.0.0.1:8788` by default. Use `--dashboard-host` and `--dashboard-port` to change the listener. Keep the dashboard on localhost or a trusted network — do not expose the port directly to the public Internet.
+
 ## Logging
 
 ```json

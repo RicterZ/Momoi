@@ -454,6 +454,26 @@ Owner Turn 独占对主人输入的回复权。存在未处理的主人消息、
 
 使用长随机 token。如果 endpoint 经过不可信网络，请在 Momoi 前部署 TLS 反向代理。继续阅读 [WORKFLOW.zh-CN.md](./WORKFLOW.zh-CN.md)。
 
+## Web 看板
+
+本机 Web 看板是 Momoi 生活记录的一面小窗：聊天、每日复盘、记忆、表情包和任务都可以在这里翻看；需要时也能改记忆、管表情、调整进行中的 Goals。
+
+只有带上 `momoi run --dashboard` 才会启动。监听地址和端口由命令行参数决定；`config.json` 里放的是进入页面用的通行证。
+
+```json
+{
+  "dashboard": {
+    "token": "replace-with-a-long-random-secret"
+  }
+}
+```
+
+| 字段 | 默认值 | 说明 |
+| --- | --- | --- |
+| `token` | 空 | 启用 `--dashboard` 时必填的通行证。在页面上输入后即可进入；浏览器大约会记住一年 |
+
+默认打开 `http://127.0.0.1:8788`。可用 `--dashboard-host` 和 `--dashboard-port` 修改监听地址。请只在本机或可信网络使用，不要直接暴露到公网。
+
 ## 日志
 
 ```json
