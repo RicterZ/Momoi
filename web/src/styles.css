@@ -647,7 +647,10 @@ h2, h3, p { overflow-wrap: anywhere; }
 }
 .sort-toggle.newest:hover { box-shadow: 2px 2px 0 var(--blue); }
 .sort-toggle.oldest:hover { box-shadow: 2px 2px 0 var(--pink); }
-.sort-toggle span { display: block; transform: translateY(-1px); }
+.sort-toggle-icon {
+  display: block;
+  flex: 0 0 auto;
+}
 .tags { display: flex; flex-wrap: wrap; gap: 7px; }
 .tag, .status {
   display: inline-flex;

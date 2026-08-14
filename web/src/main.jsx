@@ -377,6 +377,32 @@ function messageTime(value) {
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
+function SortArrow({ down }) {
+  return (
+    <svg
+      className="sort-toggle-icon"
+      viewBox="0 0 16 16"
+      width="16"
+      height="16"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path
+        d={
+          down
+            ? "M3.2 6.2 L8 11 l4.8-4.8"
+            : "M3.2 9.8 L8 5 l4.8 4.8"
+        }
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="square"
+        strokeLinejoin="miter"
+      />
+    </svg>
+  );
+}
+
 function ConversationDetail({ item }) {
   const [newestFirst, setNewestFirst] = useState(true);
   const messages = [...(item.messages || [])].sort((left, right) => {
@@ -396,7 +422,7 @@ function ConversationDetail({ item }) {
             title={newestFirst ? "时间倒序 · 点击正序" : "时间正序 · 点击倒序"}
             onClick={() => setNewestFirst((value) => !value)}
           >
-            <span aria-hidden="true">{newestFirst ? "↓" : "↑"}</span>
+            <SortArrow down={newestFirst} />
           </button>
         </div>
         <h2>{item.title}</h2>
