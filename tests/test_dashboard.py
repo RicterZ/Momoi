@@ -187,16 +187,42 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
     async def test_writes_require_bearer_token(self) -> None:
         memories = await (await self.client.get("/api/memories")).json()
         memory_id = memories["items"][0]["id"]
-        unauthorized = await self.client.patch(
-            f"/api/memories/{memory_id}", json={"content": "改掉"}
-        )
-        self.assertEqual(unauthorized.status, 401)
-        wrong = await self.client.patch(
-            f"/api/memories/{memory_id}",
-            json={"content": "改掉"},
-            headers=self._auth("wrong"),
-        )
-        self.assertEqual(wrong.status, 401)
+        cases = [
+            ("PATCH", f"/api/memories/{memory_id}", {"content": "改掉"}),
+            ("DELETE", f"/api/memories/{memory_id}", None),
+            (
+                "PATCH",
+                "/api/goals/goal-one",
+                {"title": "被改", "success_criteria": "x", "next_action": "y", "status": "active"},
+            ),
+            ("DELETE", "/api/goals/goal-one", {"reason": "nope"}),
+            ("DELETE", "/api/emotions/hello", None),
+        ]
+        for method, path, body in cases:
+            unauthorized = await self.client.request(method, path, json=body)
+            self.assertEqual(unauthorized.status, 401, msg=f"{method} {path}")
+            wrong = await self.client.request(
+                method, path, json=body, headers=self._auth("wrong")
+            )
+            self.assertEqual(wrong.status, 401, msg=f"{method} {path} wrong token")
+
+        still = await (await self.client.get("/api/goals?all=true")).json()
+        self.assertEqual(still["items"][0]["status"], "active")
+        emotions = await (await self.client.get("/api/emotions")).json()
+        self.assertEqual(emotions["items"][0]["slug"], "hello")
+
+    async def test_empty_dashboard_token_rejects_all_writes(self) -> None:
+        bare = TestClient(TestServer(create_dashboard_app(self.store, token="")))
+        await bare.start_server()
+        try:
+            response = await bare.delete(
+                "/api/goals/goal-one",
+                json={"reason": "nope"},
+                headers={"Authorization": "Bearer anything"},
+            )
+            self.assertEqual(response.status, 401)
+        finally:
+            await bare.close()
 
     async def test_memory_update_and_delete(self) -> None:
         memories = await (await self.client.get("/api/memories")).json()

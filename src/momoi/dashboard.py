@@ -20,6 +20,7 @@ from .storage import Store
 logger = logging.getLogger(__name__)
 ASSET_ROOT = files("momoi").joinpath("dashboard")
 DASHBOARD_TOKEN = web.AppKey("dashboard_token", str)
+_WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 
 def _bounded_int(
@@ -32,13 +33,25 @@ def _bounded_int(
     return min(maximum, max(minimum, value))
 
 
+def _bearer_token(request: web.Request) -> str:
+    authorization = request.headers.get("Authorization", "")
+    if authorization.startswith("Bearer "):
+        return authorization[7:].strip()
+    return ""
+
+
+def _token_matches(provided: str, expected: str) -> bool:
+    if not provided or not expected:
+        return False
+    try:
+        return hmac.compare_digest(provided, expected)
+    except (TypeError, ValueError):
+        return False
+
+
 def _require_token(request: web.Request) -> None:
     expected = str(request.app[DASHBOARD_TOKEN] or "")
-    authorization = request.headers.get("Authorization", "")
-    provided = ""
-    if authorization.startswith("Bearer "):
-        provided = authorization[7:]
-    if not expected or not hmac.compare_digest(provided, expected):
+    if not _token_matches(_bearer_token(request), expected):
         raise web.HTTPUnauthorized(
             text="unauthorized",
             headers={"WWW-Authenticate": 'Bearer realm="momoi-dashboard"'},
@@ -62,6 +75,15 @@ def _public_emotion(item: dict[str, object]) -> dict[str, object]:
 
 
 @web.middleware
+async def _auth(
+    request: web.Request, handler: web.RequestHandler
+) -> web.StreamResponse:
+    if request.method in _WRITE_METHODS and request.path.startswith("/api/"):
+        _require_token(request)
+    return await handler(request)
+
+
+@web.middleware
 async def _headers(
     request: web.Request, handler: web.RequestHandler
 ) -> web.StreamResponse:
@@ -80,7 +102,7 @@ async def _headers(
 
 
 def create_dashboard_app(store: Store, *, token: str = "") -> web.Application:
-    app = web.Application(middlewares=[_headers])
+    app = web.Application(middlewares=[_auth, _headers])
     app[DASHBOARD_TOKEN] = token
     workspace = store._workspace
 
@@ -141,7 +163,6 @@ def create_dashboard_app(store: Store, *, token: str = "") -> web.Application:
         return web.json_response({"items": store.list_memories(limit)})
 
     async def update_memory(request: web.Request) -> web.Response:
-        _require_token(request)
         try:
             memory_id = int(request.match_info["memory_id"])
         except ValueError:
@@ -158,7 +179,6 @@ def create_dashboard_app(store: Store, *, token: str = "") -> web.Application:
         return web.json_response(item)
 
     async def delete_memory(request: web.Request) -> web.Response:
-        _require_token(request)
         try:
             memory_id = int(request.match_info["memory_id"])
         except ValueError:
@@ -183,7 +203,6 @@ def create_dashboard_app(store: Store, *, token: str = "") -> web.Application:
         )
 
     async def update_goal(request: web.Request) -> web.Response:
-        _require_token(request)
         payload = await _json_body(request)
         fields = {
             name: str(payload[name])
@@ -208,7 +227,6 @@ def create_dashboard_app(store: Store, *, token: str = "") -> web.Application:
         return web.json_response(item)
 
     async def delete_goal(request: web.Request) -> web.Response:
-        _require_token(request)
         reason = request.query.get("reason")
         if reason is None and request.can_read_body:
             try:
@@ -270,7 +288,6 @@ def create_dashboard_app(store: Store, *, token: str = "") -> web.Application:
         return slug, description, managed
 
     async def create_emotion(request: web.Request) -> web.Response:
-        _require_token(request)
         content_type = request.content_type or ""
         if "multipart/" not in content_type:
             raise web.HTTPBadRequest(text="multipart form required")
@@ -292,7 +309,6 @@ def create_dashboard_app(store: Store, *, token: str = "") -> web.Application:
         return web.json_response(_public_emotion(item), status=201)
 
     async def update_emotion(request: web.Request) -> web.Response:
-        _require_token(request)
         slug = request.match_info["slug"]
         if not valid_emotion_slug(slug):
             raise web.HTTPNotFound()
@@ -323,7 +339,6 @@ def create_dashboard_app(store: Store, *, token: str = "") -> web.Application:
         return web.json_response(_public_emotion(item))
 
     async def delete_emotion(request: web.Request) -> web.Response:
-        _require_token(request)
         slug = request.match_info["slug"]
         if not valid_emotion_slug(slug):
             raise web.HTTPNotFound()
