@@ -1,6 +1,8 @@
+import logging
 import re
 from typing import Any
 
+from .logging_context import log_event
 from .models import (
     IncomingMessage,
     MemoryCandidate,
@@ -17,6 +19,8 @@ from .storage import (
     Store,
     lexical_units,
 )
+
+logger = logging.getLogger(__name__)
 
 MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
     {
@@ -242,6 +246,40 @@ MEMORY_TOOL_POLICY = """### Memory tools
 """
 
 
+_MEMORY_ERROR_MESSAGES = {
+    "tool_not_allowed": "This memory tool is not available in the current Turn.",
+    "query_required": "Provide a non-empty search query.",
+    "invalid_episode_id": "episode_id must be a non-empty string.",
+    "invalid_before_ordinal": "before_ordinal must be an integer greater than one.",
+    "invalid_message_cursor": "message_id and before_ordinal cannot be combined.",
+    "message_id_required": "content_offset requires a message_id.",
+    "invalid_content_offset": "content_offset must be a non-negative integer.",
+    "message_not_found": "The requested archived message was not found.",
+    "episode_not_found": "The requested conversation episode was not found.",
+    "invalid_kind": (
+        "kind must be a memory category such as episodic, preference, or routine; "
+        "use activation for always, recent, or recall."
+    ),
+    "invalid_activation": "activation must be always, recent, or recall.",
+    "invalid_key": "key must be a lowercase stable identifier using dots or hyphens.",
+    "invalid_content": "content must contain between 1 and 2000 characters.",
+    "evidence_not_in_current_input": (
+        "evidence must be one exact contiguous quote from a current owner message."
+    ),
+    "invalid_replace_confirmed": "replace_confirmed must be a boolean.",
+    "invalid_ttl": "ttl_hours must be within the allowed range for recent memory.",
+    "memory_not_found": "The requested committed or staged memory was not found.",
+}
+
+
+def _memory_error(code: str) -> dict[str, object]:
+    return {
+        "ok": False,
+        "error": code,
+        "message": _MEMORY_ERROR_MESSAGES[code],
+    }
+
+
 class MemoryTools:
     def __init__(self, store: Store) -> None:
         self.store = store
@@ -252,22 +290,38 @@ class MemoryTools:
         current_events: list[IncomingMessage],
         draft: TurnDraft,
     ) -> dict[str, Any]:
-        if call.name == "memory_search":
-            return self._search(call.arguments, draft)
-        if call.name == "conversation_search":
-            return self._conversation_search(call.arguments)
-        if call.name == "conversation_read":
-            return self._conversation_read(call.arguments)
-        if call.name == "memory_remember":
-            return self._remember(call.arguments, current_events, draft)
-        if call.name == "memory_forget":
-            return self._forget(call.arguments, current_events, draft)
-        return {"ok": False, "error": "tool_not_allowed"}
+        try:
+            if call.name == "memory_search":
+                return self._search(call.arguments, draft)
+            if call.name == "conversation_search":
+                return self._conversation_search(call.arguments)
+            if call.name == "conversation_read":
+                return self._conversation_read(call.arguments)
+            if call.name == "memory_remember":
+                return self._remember(call.arguments, current_events, draft)
+            if call.name == "memory_forget":
+                return self._forget(call.arguments, current_events, draft)
+            return _memory_error("tool_not_allowed")
+        except Exception as error:
+            log_event(
+                logger,
+                logging.ERROR,
+                "memory_tool_failure",
+                tool_name=call.name,
+                error_type=type(error).__name__,
+                exc_info=True,
+            )
+            return {
+                "ok": False,
+                "error": "memory_operation_failed",
+                "message": f"Memory operation failed: {type(error).__name__}.",
+                "upstream_error_type": type(error).__name__,
+            }
 
     def _search(self, arguments: dict[str, Any], draft: TurnDraft) -> dict[str, Any]:
         query = str(arguments.get("query") or "").strip()
         if not query:
-            return {"ok": False, "error": "query_required"}
+            return _memory_error("query_required")
         try:
             limit = min(10, max(1, int(arguments.get("limit", 6))))
         except (TypeError, ValueError):
@@ -298,7 +352,7 @@ class MemoryTools:
     def _conversation_search(self, arguments: dict[str, Any]) -> dict[str, Any]:
         query = str(arguments.get("query") or "").strip()
         if not query:
-            return {"ok": False, "error": "query_required"}
+            return _memory_error("query_required")
         try:
             limit = min(10, max(1, int(arguments.get("limit", 5))))
         except (TypeError, ValueError):
@@ -309,14 +363,14 @@ class MemoryTools:
     def _conversation_read(self, arguments: dict[str, Any]) -> dict[str, Any]:
         episode_id = arguments.get("episode_id")
         if not isinstance(episode_id, str) or not episode_id.strip():
-            return {"ok": False, "error": "invalid_episode_id"}
+            return _memory_error("invalid_episode_id")
         before_ordinal = arguments.get("before_ordinal")
         if before_ordinal is not None and (
             isinstance(before_ordinal, bool)
             or not isinstance(before_ordinal, int)
             or before_ordinal < 2
         ):
-            return {"ok": False, "error": "invalid_before_ordinal"}
+            return _memory_error("invalid_before_ordinal")
         message_id = arguments.get("message_id")
         content_offset = arguments.get("content_offset", 0)
         if message_id is not None and (
@@ -328,24 +382,24 @@ class MemoryTools:
             or content_offset < 0
             or before_ordinal is not None
         ):
-            return {"ok": False, "error": "invalid_message_cursor"}
+            return _memory_error("invalid_message_cursor")
         if message_id is None and "content_offset" in arguments:
-            return {"ok": False, "error": "message_id_required"}
+            return _memory_error("message_id_required")
         if message_id is not None:
             try:
                 message = self.store.conversation_message(
                     episode_id.strip(), message_id, content_offset
                 )
             except ValueError:
-                return {"ok": False, "error": "invalid_content_offset"}
+                return _memory_error("invalid_content_offset")
             if message is None:
-                return {"ok": False, "error": "message_not_found"}
+                return _memory_error("message_not_found")
             return {"ok": True, "message": message}
         episode = self.store.conversation_episode(
             episode_id.strip(), before_ordinal=before_ordinal
         )
         if episode is None:
-            return {"ok": False, "error": "episode_not_found"}
+            return _memory_error("episode_not_found")
         return {"ok": True, "episode": episode}
 
     def _remember(
@@ -360,36 +414,36 @@ class MemoryTools:
         evidence = str(arguments.get("evidence") or "").strip()
         activation = str(arguments.get("activation") or "recall").strip()
         if kind not in MEMORY_KINDS:
-            return {"ok": False, "error": "invalid_kind"}
+            return _memory_error("invalid_kind")
         if activation not in MEMORY_ACTIVATIONS:
-            return {"ok": False, "error": "invalid_activation"}
+            return _memory_error("invalid_activation")
         if not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,199}", key):
-            return {"ok": False, "error": "invalid_key"}
+            return _memory_error("invalid_key")
         if not content or len(content) > 2000:
-            return {"ok": False, "error": "invalid_content"}
+            return _memory_error("invalid_content")
         if (
             not evidence
             or len(evidence) > 500
             or not any(evidence in event.text for event in current_events)
         ):
-            return {"ok": False, "error": "evidence_not_in_current_input"}
+            return _memory_error("evidence_not_in_current_input")
         try:
             importance = min(1.0, max(0.0, float(arguments.get("importance", 0.5))))
         except (TypeError, ValueError):
             importance = 0.5
         replace_confirmed = arguments.get("replace_confirmed", False)
         if not isinstance(replace_confirmed, bool):
-            return {"ok": False, "error": "invalid_replace_confirmed"}
+            return _memory_error("invalid_replace_confirmed")
         raw_ttl = arguments.get("ttl_hours", 0)
         if isinstance(raw_ttl, bool) or not isinstance(raw_ttl, (int, float)):
-            return {"ok": False, "error": "invalid_ttl"}
+            return _memory_error("invalid_ttl")
         if activation == "recent":
             if not (
                 RECENT_MEMORY_MIN_TTL_HOURS
                 <= float(raw_ttl)
                 <= RECENT_MEMORY_MAX_TTL_HOURS
             ):
-                return {"ok": False, "error": "invalid_ttl"}
+                return _memory_error("invalid_ttl")
             ttl_hours = float(raw_ttl)
         else:
             ttl_hours = 0
@@ -469,19 +523,19 @@ class MemoryTools:
         key = str(arguments.get("key") or "").strip()
         evidence = str(arguments.get("evidence") or "").strip()
         if kind not in MEMORY_KINDS:
-            return {"ok": False, "error": "invalid_kind"}
+            return _memory_error("invalid_kind")
         if not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,199}", key):
-            return {"ok": False, "error": "invalid_key"}
+            return _memory_error("invalid_key")
         if (
             not evidence
             or len(evidence) > 500
             or not any(evidence in event.text for event in current_events)
         ):
-            return {"ok": False, "error": "evidence_not_in_current_input"}
+            return _memory_error("evidence_not_in_current_input")
         if not self.store.has_memory(kind, key) and not any(
             (memory.kind, memory.key) == (kind, key) for memory in draft.memories
         ):
-            return {"ok": False, "error": "memory_not_found"}
+            return _memory_error("memory_not_found")
         draft.memories = [
             memory
             for memory in draft.memories

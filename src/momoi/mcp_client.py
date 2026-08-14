@@ -18,6 +18,7 @@ from .logging_context import (
     captured_log_context,
     current_log_context,
     log_event,
+    safe_preview,
 )
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,20 @@ MCP_TOOL_POLICY = """### External MCP tools
 - For non-trivial research, retry with a better query when the first result is
   insufficient, then answer from the evidence actually returned.
 """
+
+
+def _mcp_error_message(payload: dict[str, Any]) -> str:
+    structured = payload.get("structuredContent")
+    if isinstance(structured, dict):
+        for key in ("message", "error", "detail"):
+            if structured.get(key):
+                return safe_preview(structured[key], 500)
+    content = payload.get("content")
+    if isinstance(content, list):
+        for item in content:
+            if isinstance(item, dict) and item.get("text"):
+                return safe_preview(item["text"], 500)
+    return "The MCP server reported a tool error."
 
 
 def _expand(value: str) -> str:
@@ -166,6 +181,10 @@ class MCPManager:
                                 {
                                     "ok": False,
                                     "error": "mcp_unavailable",
+                                    "message": (
+                                        "The MCP server is unavailable after a "
+                                        "reconnect attempt."
+                                    ),
                                     "ambiguous": True,
                                     "connection_recovered": False,
                                 }
@@ -202,7 +221,12 @@ class MCPManager:
                         connected = await self._try_connect(name, config)
                         result = {
                             "ok": False,
-                            "error": type(error).__name__,
+                            "error": "mcp_transport_error",
+                            "message": (
+                                safe_preview(str(error), 500)
+                                or type(error).__name__
+                            ),
+                            "upstream_error_type": type(error).__name__,
                             "ambiguous": True,
                             "connection_recovered": connected,
                         }
@@ -264,14 +288,20 @@ class MCPManager:
     ) -> dict[str, Any]:
         result = await self._sessions[server].call_tool(tool, arguments)
         payload = result.model_dump(mode="json", by_alias=True, exclude_none=True)
+        is_error = bool(result.isError)
+        message = _mcp_error_message(payload) if is_error else None
         serialized = json.dumps(payload, ensure_ascii=False)
         if len(serialized) > 30_000:
             payload = {"truncated": True, "content": serialized[:30_000]}
-        return {
-            "ok": not bool(result.isError),
+        response = {
+            "ok": not is_error,
+            "error": "mcp_tool_error" if is_error else None,
             "truncated": bool(payload.get("truncated", False)),
             "result": payload,
         }
+        if message is not None:
+            response["message"] = message
+        return response
 
     async def _connect(self, name: str, config: dict[str, Any]) -> None:
         stack = AsyncExitStack()

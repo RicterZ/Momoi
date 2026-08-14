@@ -1,3 +1,4 @@
+import logging
 import re
 import time
 import uuid
@@ -5,9 +6,12 @@ from datetime import datetime
 from typing import Any
 
 from .emotions import EMOTION_PREFIX, emotion_slug
+from .logging_context import log_event
 from .models import ToolCall, TurnDraft
 from .storage import Store
 from .storage.scheduling import next_schedule_at, normalize_schedule
+
+logger = logging.getLogger(__name__)
 
 
 AGENDA_TOOL_POLICY = """### Agenda tools
@@ -239,6 +243,21 @@ class AgendaTools:
             return {"ok": False, "error": "tool_not_allowed"}
         except (TypeError, ValueError) as error:
             return {"ok": False, "error": "invalid_arguments", "message": str(error)[:500]}
+        except Exception as error:
+            log_event(
+                logger,
+                logging.ERROR,
+                "agenda_tool_failure",
+                tool_name=call.name,
+                error_type=type(error).__name__,
+                exc_info=True,
+            )
+            return {
+                "ok": False,
+                "error": "agenda_operation_failed",
+                "message": f"Agenda operation failed: {type(error).__name__}.",
+                "upstream_error_type": type(error).__name__,
+            }
 
     def _create(
         self,

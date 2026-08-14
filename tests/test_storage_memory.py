@@ -2758,6 +2758,7 @@ class StorageMemoryTest(unittest.TestCase):
                     TurnDraft(),
                 )
                 self.assertEqual(result["error"], error)
+                self.assertTrue(result["message"])
             store.close()
 
     def test_memory_activation_layers_are_compact_and_queryable(self) -> None:

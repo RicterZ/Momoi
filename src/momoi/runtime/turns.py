@@ -148,6 +148,41 @@ def _tool_error_block(call_id: str, error: object) -> dict[str, Any]:
     return _tool_result_block(call_id, {"ok": False, "error": error})
 
 
+def _truncate_tool_result_json(value: str, limit: int) -> str:
+    try:
+        parsed = json.loads(value)
+    except (json.JSONDecodeError, TypeError):
+        parsed = {
+            "ok": False,
+            "error": "tool_result_truncated",
+            "message": safe_preview(value, max(100, limit // 2)),
+        }
+    if not isinstance(parsed, dict):
+        parsed = {"ok": True, "value": parsed}
+    preserved = {
+        key: parsed[key]
+        for key in ("ok", "error", "message", "provenance")
+        if key in parsed
+    }
+    if "message" in preserved:
+        preserved["message"] = safe_preview(
+            preserved["message"], max(100, limit // 3)
+        )
+    omitted = {
+        key: value
+        for key, value in parsed.items()
+        if key not in preserved and key not in {"truncated", "original_chars"}
+    }
+    preserved.update(
+        {
+            "truncated": True,
+            "original_chars": len(value),
+            "content": safe_preview(omitted, max(100, limit // 2)),
+        }
+    )
+    return json.dumps(preserved, ensure_ascii=False, default=str)
+
+
 def _conversation_guidance(plan: dict[str, object]) -> str:
     intent_units = [
         {
@@ -1451,6 +1486,7 @@ class TurnRunner:
             allowed_tool_names = {str(spec["name"]) for spec in request_tools}
             for index, call in enumerate(response.tool_calls):
                 tool_started = time.monotonic()
+                source = self._tool_source(call.name, allow_notify=allow_notify)
                 log_event(
                     logger,
                     logging.DEBUG,
@@ -1464,7 +1500,16 @@ class TurnRunner:
                     tool_name=call.name,
                     arguments=safe_preview(call.arguments, 1000),
                 )
-                if call.name not in allowed_tool_names:
+                if call.argument_error:
+                    result = {
+                        "ok": False,
+                        "error": call.argument_error,
+                        "message": (
+                            "Tool arguments must be one valid JSON object. "
+                            "Call the tool again with corrected arguments."
+                        ),
+                    }
+                elif call.name not in allowed_tool_names:
                     result = {"ok": False, "error": "tool_not_allowed"}
                 elif call.name == "respond":
                     result = {
@@ -1553,7 +1598,6 @@ class TurnRunner:
                     if not call.id:
                         result = {"ok": False, "error": "missing_tool_call_id"}
                     else:
-                        source = "mcp" if self.mcp.has_tool(call.name) else "builtin"
                         capability = (
                             self.mcp.capability(call.name)
                             if source == "mcp"
@@ -1615,18 +1659,6 @@ class TurnRunner:
                 else:
                     result = self.memory_tools.execute(call, current_events, draft)
                 if "provenance" not in result:
-                    source = (
-                        "runtime"
-                        if call.name
-                        in {"respond", "send_message", "reply_expectation_close"}
-                        else (
-                            "agenda"
-                            if self.agenda_tools.has_tool(
-                                call.name, allow_notify=allow_notify
-                            )
-                            else "memory"
-                        )
-                    )
                     result = self._normalize_tool_result(call, result, source)
                 provenance = result.get("provenance")
                 log_message = (
@@ -1707,6 +1739,24 @@ class TurnRunner:
             )
             force_response = True
 
+    def _tool_source(self, name: str, *, allow_notify: bool) -> str:
+        if name in {
+            "respond",
+            "send_message",
+            "reply_expectation_close",
+            "autonomous_finish",
+        }:
+            return "runtime"
+        if self.mcp.has_tool(name):
+            return "mcp"
+        if self.builtin_tools.has_tool(name):
+            return "builtin"
+        if self.agenda_tools.has_tool(name, allow_notify=allow_notify):
+            return "agenda"
+        if name in {str(spec["name"]) for spec in MEMORY_TOOL_SPECS}:
+            return "memory"
+        return "unknown"
+
     def _normalize_tool_result(
         self, call: ToolCall, result: object, source: str
     ) -> dict[str, Any]:
@@ -1729,8 +1779,14 @@ class TurnRunner:
         serialized = json.dumps(envelope, ensure_ascii=False, default=str)
         if len(serialized) <= self.config.tool_result_max_chars:
             return envelope
-        payload_text = json.dumps(payload, ensure_ascii=False, default=str)
-        return {
+        message = raw.get("message")
+        compact_payload = {
+            key: value for key, value in payload.items() if key != "message"
+        }
+        payload_text = json.dumps(
+            compact_payload, ensure_ascii=False, default=str
+        )
+        truncated = {
             "ok": ok,
             "error": error,
             "truncated": True,
@@ -1738,6 +1794,9 @@ class TurnRunner:
             "original_chars": len(serialized),
             "content": payload_text[: self.config.tool_result_max_chars],
         }
+        if message is not None:
+            truncated["message"] = safe_preview(message, 1000)
+        return truncated
 
     def _artifact_path_allowed(self, call: ToolCall, root: Path) -> bool:
         try:
@@ -1851,8 +1910,10 @@ class TurnRunner:
                         and len(result) > 1000
                         and estimated > self.config.max_input_tokens
                     ):
-                        result = result[: max(1000, len(result) // 2)]
-                        block["content"] = result + "\n[truncated by context budget]"
+                        result = _truncate_tool_result_json(
+                            result, max(1000, len(result) // 2)
+                        )
+                        block["content"] = result
                         estimated = size()
         log_event(
             logger,

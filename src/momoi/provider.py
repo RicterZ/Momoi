@@ -379,15 +379,23 @@ class AnthropicProvider:
                         for block in data.get("content", [])
                         if isinstance(block, dict)
                     ]
-                    tool_calls = [
-                        ToolCall(
-                            str(block.get("id") or ""),
-                            str(block.get("name") or ""),
-                            block.get("input") if isinstance(block.get("input"), dict) else {},
+                    tool_calls = []
+                    for block in content:
+                        if block.get("type") != "tool_use":
+                            continue
+                        raw_input = block.get("input")
+                        tool_calls.append(
+                            ToolCall(
+                                str(block.get("id") or ""),
+                                str(block.get("name") or ""),
+                                raw_input if isinstance(raw_input, dict) else {},
+                                (
+                                    None
+                                    if isinstance(raw_input, dict)
+                                    else "tool_arguments_must_be_object"
+                                ),
+                            )
                         )
-                        for block in content
-                        if block.get("type") == "tool_use"
-                    ]
                     if tool_calls:
                         log_event(
                             logger,
@@ -663,15 +671,25 @@ class OpenAIProvider:
                         if not isinstance(function, dict):
                             continue
                         raw_arguments = function.get("arguments")
+                        argument_error = None
                         try:
-                            arguments = json.loads(raw_arguments) if isinstance(raw_arguments, str) else {}
+                            if not isinstance(raw_arguments, str):
+                                raise TypeError
+                            arguments = json.loads(raw_arguments)
                         except json.JSONDecodeError:
                             arguments = {}
-                        arguments = arguments if isinstance(arguments, dict) else {}
+                            argument_error = "invalid_tool_arguments_json"
+                        except TypeError:
+                            arguments = {}
+                            argument_error = "tool_arguments_must_be_json"
+                        if not isinstance(arguments, dict):
+                            arguments = {}
+                            argument_error = "tool_arguments_must_be_object"
                         call = ToolCall(
                             str(item.get("id") or ""),
                             str(function.get("name") or ""),
                             arguments,
+                            argument_error,
                         )
                         tool_calls.append(call)
                         content.append(

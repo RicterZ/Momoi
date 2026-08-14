@@ -33,11 +33,28 @@ from momoi.provider import (
 from momoi.runtime import (
     MomoiDaemon,
 )
-from momoi.runtime.turns import _sections
+from momoi.runtime.turns import _sections, _truncate_tool_result_json
 from tests.support import with_context_planner
 
 
 class ProvidersToolsTest(unittest.TestCase):
+    def test_context_truncation_keeps_error_envelope_valid(self) -> None:
+        rendered = _truncate_tool_result_json(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error": "upstream_error",
+                    "message": "specific reason",
+                    "result": {"content": "x" * 5000},
+                }
+            ),
+            1000,
+        )
+        parsed = json.loads(rendered)
+        self.assertEqual(parsed["error"], "upstream_error")
+        self.assertEqual(parsed["message"], "specific reason")
+        self.assertTrue(parsed["truncated"])
+
     def test_openai_adapter_orders_tool_result_before_correction_text(self) -> None:
         messages = _openai_messages(
             "system",
@@ -137,6 +154,20 @@ class ProvidersToolsTest(unittest.TestCase):
                 call, {"ok": True, "content": "x" * 5000}, "builtin"
             )
             self.assertEqual(result, repeated)
+            failed = daemon._normalize_tool_result(
+                call,
+                {
+                    "ok": False,
+                    "error": "patch_failed",
+                    "message": "The patch context did not match the file.",
+                    "content": "x" * 5000,
+                },
+                "builtin",
+            )
+            self.assertEqual(
+                failed["message"],
+                "The patch context did not match the file.",
+            )
             daemon.store.close()
 
     def test_openai_message_adapter_preserves_image_blocks(self) -> None:
@@ -528,7 +559,11 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(rejected["ok"])
         self.assertNotIn("ambiguous", rejected)
+        self.assertEqual(rejected["error"], "mcp_tool_error")
+        self.assertEqual(rejected["message"], "ok")
         self.assertFalse(stale["ok"])
+        self.assertEqual(stale["error"], "mcp_transport_error")
+        self.assertIn("missing session", stale["message"])
         self.assertTrue(stale["ambiguous"])
         self.assertTrue(stale["connection_recovered"])
         self.assertTrue(healthy["ok"])
@@ -736,6 +771,86 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(daemon.store.due_outbox()[0].text, "已纠正")
             daemon.store.close()
 
+    async def test_owner_turn_returns_argument_parse_error_to_model(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            config = AppConfig(
+                llm=LLMConfig(
+                    "http://127.0.0.1", "test", "test", 100, 0, 1, 0, "openai"
+                ),
+                channel=NapCatConfig(
+                    "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
+                ),
+                system_prompt="You are Momoi.",
+                recent_raw_tokens=1000,
+                recent_turns=2,
+                memory_results=2,
+                memory_tokens=1000,
+                database=Path(directory) / "momoi.sqlite3",
+                log_level="INFO",
+            )
+            daemon = MomoiDaemon(config)
+
+            class FakeProvider:
+                calls = 0
+
+                async def complete(
+                    self,
+                    _system: object,
+                    messages: object,
+                    _tools: list[dict[str, object]],
+                    **_: object,
+                ) -> ProviderResponse:
+                    self.calls += 1
+                    rendered = json.dumps(messages, ensure_ascii=False)
+                    if self.calls == 1:
+                        call = ToolCall(
+                            "bad-json",
+                            "send_message",
+                            {},
+                            "invalid_tool_arguments_json",
+                        )
+                    elif self.calls == 2:
+                        self_test.assertIn(
+                            "invalid_tool_arguments_json", rendered
+                        )
+                        call = ToolCall(
+                            "corrected-message",
+                            "send_message",
+                            {"messages": ["参数已纠正"]},
+                        )
+                    else:
+                        call = ToolCall(
+                            "corrected-response",
+                            "respond",
+                            {
+                                "expects_reply": False,
+                                "reply_expectation": "",
+                                "mood": {"decision": "unchanged"},
+                            },
+                        )
+                    return ProviderResponse(
+                        [
+                            {
+                                "type": "tool_use",
+                                "id": call.id,
+                                "name": call.name,
+                                "input": call.arguments,
+                            }
+                        ],
+                        [call],
+                    )
+
+            self_test = self
+            fake = FakeProvider()
+            daemon.provider = with_context_planner(fake)  # type: ignore[assignment]
+            event = IncomingMessage("qq:1:bad-json", "bad-json", "测试", 1, 1)
+            daemon.store.add_event(event)
+            await daemon._complete_batch_turn(
+                [event], asyncio.Event(), daemon._turn_id(event.event_id)
+            )
+            self.assertEqual(daemon.store.due_outbox()[0].text, "参数已纠正")
+            daemon.store.close()
+
     async def test_openai_chat_completions_protocol(self) -> None:
         requests: list[tuple[dict[str, object], str]] = []
 
@@ -906,6 +1021,63 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["tools"][0]["function"]["name"], "respond")
         self.assertEqual(payload["tool_choice"], "required")
         self.assertNotIn("tool_choice", requests[1][0])
+
+    async def test_openai_invalid_tool_arguments_keep_parse_error(self) -> None:
+        async def completion(_: web.Request) -> web.Response:
+            return web.json_response(
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "tool_calls": [
+                                    {
+                                        "id": "bad-arguments",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "respond",
+                                            "arguments": "{not-json",
+                                        },
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                }
+            )
+
+        server = TestServer(web.Application())
+        server.app.router.add_post("/v1/chat/completions", completion)
+        await server.start_server()
+        try:
+            provider = OpenAIProvider(
+                LLMConfig(
+                    base_url=str(server.make_url("/")).rstrip("/"),
+                    api_key="test",
+                    model="test",
+                    max_tokens=100,
+                    temperature=0,
+                    timeout_seconds=1,
+                    max_retries=0,
+                    api_format="openai",
+                )
+            )
+            async with provider:
+                response = await provider.complete(
+                    "system",
+                    [{"role": "user", "content": "test"}],
+                    [
+                        {
+                            "name": "respond",
+                            "input_schema": {"type": "object"},
+                        }
+                    ],
+                )
+        finally:
+            await server.close()
+        self.assertEqual(
+            response.tool_calls[0].argument_error,
+            "invalid_tool_arguments_json",
+        )
 
     async def test_builtin_http_file_patch_and_sleep_tools(self) -> None:
         async def endpoint(_: web.Request) -> web.Response:
