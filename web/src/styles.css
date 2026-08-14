@@ -611,12 +611,39 @@ h2, h3, p { overflow-wrap: anywhere; }
   padding: 32px clamp(22px, 4vw, 54px);
 }
 .conversation-head { padding-bottom: 24px; border-bottom: 2px solid var(--ink); }
+.conversation-head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
 .conversation-head h2 {
   margin: 8px 0 12px;
   font-size: 24px;
   font-weight: 800;
   letter-spacing: -.025em;
 }
+.sort-toggle {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 2px solid var(--ink);
+  border-radius: 10px;
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: 3px 3px 0 var(--blue);
+  font-size: 16px;
+  font-weight: 850;
+  line-height: 1;
+  cursor: pointer;
+}
+.sort-toggle:hover {
+  transform: translate(1px, 1px);
+  box-shadow: 2px 2px 0 var(--blue);
+}
+.sort-toggle span { display: block; transform: translateY(-1px); }
 .tags { display: flex; flex-wrap: wrap; gap: 7px; }
 .tag, .status {
   display: inline-flex;

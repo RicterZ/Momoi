@@ -362,17 +362,43 @@ function ConversationLayout({ items, activeId, detail, token, onSelect, setDetai
       <div className="conversation">
         {detail.loading && <Loading>正在读取聊天…</Loading>}
         {detail.error && <ErrorState error={detail.error} />}
-        {detail.data && <ConversationDetail item={detail.data} />}
+        {detail.data && (
+          <ConversationDetail key={activeId} item={detail.data} />
+        )}
       </div>
     </section>
   );
 }
 
+function messageTime(value) {
+  if (value === null || value === undefined || value === "") return 0;
+  if (typeof value === "number") return value < 1e12 ? value * 1000 : value;
+  const parsed = new Date(String(value).replace(" ", "T")).valueOf();
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
 function ConversationDetail({ item }) {
+  const [newestFirst, setNewestFirst] = useState(true);
+  const messages = [...(item.messages || [])].sort((left, right) => {
+    const delta = messageTime(left.created_at) - messageTime(right.created_at);
+    return newestFirst ? -delta : delta;
+  });
+
   return (
     <>
       <header className="conversation-head">
-        <span className="panel-label">{item.status} conversation</span>
+        <div className="conversation-head-row">
+          <span className="panel-label">{item.status} conversation</span>
+          <button
+            className="sort-toggle"
+            type="button"
+            aria-label={newestFirst ? "切换为时间正序" : "切换为时间倒序"}
+            title={newestFirst ? "时间倒序 · 点击正序" : "时间正序 · 点击倒序"}
+            onClick={() => setNewestFirst((value) => !value)}
+          >
+            <span aria-hidden="true">{newestFirst ? "↓" : "↑"}</span>
+          </button>
+        </div>
         <h2>{item.title}</h2>
         <div className="tags">
           {item.topics?.map((topic) => (
@@ -383,8 +409,8 @@ function ConversationDetail({ item }) {
         </div>
       </header>
       <div className="messages">
-        {item.messages?.length ? (
-          item.messages.map((message) => (
+        {messages.length ? (
+          messages.map((message) => (
             <article className="message" key={message.id}>
               <div className={`message-role ${message.role === "user" ? "owner" : "momoi"}`}>
                 {message.role === "user" ? "OWNER" : "MOMOI"}
