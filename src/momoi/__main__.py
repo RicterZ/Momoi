@@ -28,7 +28,23 @@ def parse_args() -> argparse.Namespace:
         help="runtime workspace (default: ~/.momoi)",
     )
     commands = parser.add_subparsers(dest="command", required=True)
-    commands.add_parser("run", help="run the Momoi daemon")
+    run_parser = commands.add_parser("run", help="run the Momoi daemon")
+    run_parser.add_argument(
+        "--dashboard",
+        action="store_true",
+        help="serve the local Web dashboard without authentication",
+    )
+    run_parser.add_argument(
+        "--dashboard-host",
+        default="0.0.0.0",
+        help="dashboard bind host (default: 0.0.0.0)",
+    )
+    run_parser.add_argument(
+        "--dashboard-port",
+        type=int,
+        default=8788,
+        help="dashboard bind port (default: 8788)",
+    )
     channel_parser = commands.add_parser("channel", help="manage the active channel")
     channel_commands = channel_parser.add_subparsers(
         dest="channel_command", required=True
@@ -204,7 +220,15 @@ def goal(args: argparse.Namespace) -> None:
         store.close()
 
 
-async def run(config_path: str | Path) -> None:
+async def run(
+    config_path: str | Path,
+    *,
+    dashboard: bool = False,
+    dashboard_host: str = "0.0.0.0",
+    dashboard_port: int = 8788,
+) -> None:
+    if not 1 <= dashboard_port <= 65535:
+        raise ValueError("dashboard port must be between 1 and 65535")
     config = load_config(config_path)
     configure_logging(getattr(logging, config.log_level, logging.INFO))
     for noisy_logger in ("httpx", "httpcore", "mcp"):
@@ -225,7 +249,8 @@ async def run(config_path: str | Path) -> None:
         ),
         primary_channel=getattr(config.channel, "plugin", "unknown"),
     )
-    await MomoiDaemon(config).run(stop)
+    dashboard_bind = (dashboard_host, dashboard_port) if dashboard else None
+    await MomoiDaemon(config, dashboard=dashboard_bind).run(stop)
 
 
 async def channel(args: argparse.Namespace) -> None:
@@ -253,7 +278,14 @@ def main() -> None:
     args = parse_args()
     try:
         if args.command == "run":
-            asyncio.run(run(args.workspace / "config.json"))
+            asyncio.run(
+                run(
+                    args.workspace / "config.json",
+                    dashboard=args.dashboard,
+                    dashboard_host=args.dashboard_host,
+                    dashboard_port=args.dashboard_port,
+                )
+            )
         elif args.command == "channel":
             asyncio.run(channel(args))
         elif args.command == "emotion":

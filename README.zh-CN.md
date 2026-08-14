@@ -134,6 +134,15 @@ momoi channel login weixin
 
 然后启动 Momoi，从任一主人账号发送私聊消息。回复留在发起对话的渠道，主动消息发送到配置的 primary。
 
+需要查看聊天记录、每日复盘、表情包和 Goals 时，可同时启动只读 Web 看板：
+
+```bash
+momoi run --dashboard
+```
+
+默认访问地址为 `http://127.0.0.1:8788`。可用 `--dashboard-host` 和
+`--dashboard-port` 修改监听地址；当前版本不提供认证，请勿将端口直接暴露到公网。
+
 `--workspace` 可以放在任意命令前，用来指定其他 workspace：
 
 ```bash
@@ -199,7 +208,7 @@ momoi goal del <goal-id-or-prefix> --reason "No longer needed"
 
 | 命令 | 用途 |
 | --- | --- |
-| `momoi run` | 启动 daemon |
+| `momoi run [--dashboard] [--dashboard-host <host>] [--dashboard-port <port>]` | 启动 daemon，并可选启动只读 Web 看板 |
 | `momoi --version` | 查看已安装版本 |
 | `momoi channel login <name>` | 为需要登录的已配置渠道认证 |
 | `momoi emotion add --slug <slug> --path <file> --desc <text>` | 添加或更新图片反应素材 |

@@ -3,6 +3,7 @@ __pycache__/
 .venv/
 .pytest_cache/
 .ruff_cache/
+node_modules/
 config.json
 !config.example/config.json
 mcp.json

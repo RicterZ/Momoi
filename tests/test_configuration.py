@@ -211,7 +211,26 @@ class ConfigurationTest(unittest.TestCase):
     def test_cli_workspace_defaults_and_can_be_overridden(self) -> None:
         with patch("momoi.__main__.version", return_value="0.1.0"):
             with patch("sys.argv", ["momoi", "run"]):
-                self.assertEqual(parse_args().workspace, Path.home() / ".momoi")
+                args = parse_args()
+                self.assertEqual(args.workspace, Path.home() / ".momoi")
+                self.assertFalse(args.dashboard)
+                self.assertEqual(args.dashboard_port, 8788)
+            with patch(
+                "sys.argv",
+                [
+                    "momoi",
+                    "run",
+                    "--dashboard",
+                    "--dashboard-host",
+                    "127.0.0.1",
+                    "--dashboard-port",
+                    "9000",
+                ],
+            ):
+                args = parse_args()
+                self.assertTrue(args.dashboard)
+                self.assertEqual(args.dashboard_host, "127.0.0.1")
+                self.assertEqual(args.dashboard_port, 9000)
             with (
                 tempfile.TemporaryDirectory() as directory,
                 patch(

@@ -16,6 +16,7 @@ from ..channel import (
     create_channel,
 )
 from ..config import AppConfig
+from ..dashboard import DashboardService
 from ..logging_context import log_event, safe_preview
 from ..memory_tools import MemoryTools
 from ..mcp_client import MCPManager
@@ -50,10 +51,18 @@ def _message_gap_bounds(text: str) -> tuple[float, float]:
 
 
 class MomoiDaemon(TurnRunner):
-    def __init__(self, config: AppConfig, channel: Channel | None = None) -> None:
+    def __init__(
+        self,
+        config: AppConfig,
+        channel: Channel | None = None,
+        dashboard: tuple[str, int] | None = None,
+    ) -> None:
         self.config = config
         self._artifact_root().mkdir(parents=True, exist_ok=True)
         self.store = Store(config.database, config.workspace)
+        self.dashboard = (
+            DashboardService(self.store, *dashboard) if dashboard is not None else None
+        )
         self.store.ensure_heartbeat(config.heartbeat)
         self.agenda_tools = AgendaTools(self.store)
         self.memory_tools = MemoryTools(self.store)
@@ -127,6 +136,8 @@ class MomoiDaemon(TurnRunner):
                     tasks.append(
                         group.create_task(self._episode_annealing_worker(stop))
                     )
+                    if self.dashboard is not None:
+                        tasks.append(group.create_task(self.dashboard.run(stop)))
                     if self.webhooks is not None:
                         tasks.append(group.create_task(self.webhooks.run_api(stop)))
                         tasks.append(group.create_task(self.webhooks.run_worker(stop)))

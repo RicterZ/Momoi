@@ -1,6 +1,9 @@
 services:
   momoi:
     image: momoi
+    build:
+      context: .
+      target: release
     restart: unless-stopped
     environment:
       BRAVE_API_KEY: ${BRAVE_API_KEY:-}
@@ -9,3 +12,4 @@ services:
       - ${MOMOI_WORKSPACE:-${HOME}/.momoi}:/home/momoi/.momoi
     ports:
       - 127.0.0.1:${MOMOI_WEBHOOK_PORT:-8787}:8787
+      - 127.0.0.1:${MOMOI_DASHBOARD_PORT:-8788}:8788

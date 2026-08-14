@@ -3504,6 +3504,82 @@ class Store(MemoryStore, DeliveryStore):
         ).fetchone()
         return dict(row) if row else None
 
+    def list_reflections(self, limit: int = 90) -> list[dict[str, object]]:
+        if limit <= 0:
+            return []
+        rows = self._db.execute(
+            """SELECT * FROM reflections
+               ORDER BY local_date DESC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+        results: list[dict[str, object]] = []
+        for row in rows:
+            item = dict(row)
+            try:
+                memories = json.loads(str(item.pop("memories_json", "[]")))
+            except (json.JSONDecodeError, TypeError):
+                memories = []
+            item["memories"] = memories if isinstance(memories, list) else []
+            _add_context_timestamps(
+                item, ("scheduled_at", "retry_at", "created_at", "completed_at")
+            )
+            results.append(item)
+        return results
+
+    def dashboard_overview(self) -> dict[str, object]:
+        counts = {
+            "conversations": int(
+                self._db.execute(
+                    "SELECT COUNT(*) FROM conversation_episodes"
+                ).fetchone()[0]
+            ),
+            "messages": int(
+                self._db.execute(
+                    """SELECT COUNT(*) FROM messages
+                       WHERE role='user' OR delivery_state IN
+                           ('delivered', 'uncertain', 'internal')"""
+                ).fetchone()[0]
+            ),
+            "reflections": int(
+                self._db.execute(
+                    "SELECT COUNT(*) FROM reflections WHERE state='completed'"
+                ).fetchone()[0]
+            ),
+            "goals": int(
+                self._db.execute(
+                    """SELECT COUNT(*) FROM goals
+                       WHERE status IN ('active', 'waiting', 'blocked')"""
+                ).fetchone()[0]
+            ),
+            "emotions": int(
+                self._db.execute("SELECT COUNT(*) FROM emotions").fetchone()[0]
+            ),
+        }
+        latest_message = self._db.execute(
+            """SELECT MAX(created_at) FROM messages
+               WHERE role='user' OR delivery_state IN
+                   ('delivered', 'uncertain', 'internal')"""
+        ).fetchone()[0]
+        state = self.self_state()
+        return {
+            "counts": counts,
+            "mood": {
+                "state": state["mood_state"],
+                "intensity": state["mood_intensity"],
+                "cause": state["mood_cause"],
+            },
+            "activity": {
+                "name": state["activity"],
+                "result": state.get("activity_result") or "",
+                "since": state["activity_since"],
+                "since_timestamp": context_timestamp(state["activity_since"]),
+            },
+            "latest_message_at": latest_message,
+            "latest_message_timestamp": (
+                context_timestamp(latest_message) if latest_message is not None else None
+            ),
+        }
+
     def goal(self, goal_id: str) -> dict[str, object] | None:
         row = self._db.execute("SELECT * FROM goals WHERE id=?", (goal_id,)).fetchone()
         return self._goal_dict(row) if row else None
