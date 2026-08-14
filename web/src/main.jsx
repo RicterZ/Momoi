@@ -43,6 +43,20 @@ function formatDate(value, dateOnly = false) {
   }).format(date);
 }
 
+function memoryKindLabel(kind) {
+  return (
+    {
+      owner_profile: "关于你",
+      owner_preference: "你的偏好",
+      world_knowledge: "外部信息",
+      self_insight: "Momoi 的体会",
+      relationship: "相处方式",
+      shared_experience: "共同经历",
+      practice: "行动习惯",
+    }[kind] || "复盘记忆"
+  );
+}
+
 function useHashRoute() {
   const read = () => {
     const value = window.location.hash.slice(1);
@@ -287,8 +301,20 @@ function Reflections({ refreshKey }) {
                     <div className="memory-list">
                       {item.memories.map((memory) => (
                         <div className="memory" key={`${memory.kind}:${memory.key}`}>
-                          <strong>{memory.key || memory.kind}</strong>
-                          <span>{memory.content}</span>
+                          <div className="memory-head">
+                            <span className="memory-kind">
+                              {memoryKindLabel(memory.kind)}
+                            </span>
+                            {Number.isFinite(Number(memory.confidence)) && (
+                              <span className="memory-confidence">
+                                可信度 {Math.round(Number(memory.confidence) * 100)}%
+                              </span>
+                            )}
+                          </div>
+                          <p>{memory.content}</p>
+                          {memory.evidence && (
+                            <small>依据：{memory.evidence}</small>
+                          )}
                         </div>
                       ))}
                     </div>
