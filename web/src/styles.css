@@ -27,7 +27,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
 
 .shell {
   display: grid;
-  grid-template-columns: 248px minmax(0, 1fr);
+  grid-template-columns: 260px minmax(0, 1fr);
   min-height: 100vh;
 }
 
@@ -37,17 +37,25 @@ button, a { -webkit-tap-highlight-color: transparent; }
   display: flex;
   flex-direction: column;
   height: 100vh;
-  padding: 30px 22px 22px;
-  border-right: 1px solid var(--line);
-  background: var(--surface);
+  padding: 28px 20px 22px;
+  border-right: 2px solid var(--ink);
+  background:
+    radial-gradient(circle at 12% 8%, rgba(255, 101, 141, .12), transparent 42%),
+    radial-gradient(circle at 88% 92%, rgba(67, 184, 245, .12), transparent 46%),
+    var(--canvas);
 }
 
 .brand {
   display: flex;
   align-items: center;
   gap: 12px;
+  padding: 12px;
+  border: 2px solid var(--ink);
+  border-radius: 12px;
   color: inherit;
   text-decoration: none;
+  background: var(--surface);
+  box-shadow: 4px 4px 0 var(--blue);
 }
 
 .brand-mark {
@@ -59,7 +67,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
   border-radius: 11px;
   color: #fff;
   background: var(--pink);
-  box-shadow: 4px 4px 0 var(--blue);
+  box-shadow: 3px 3px 0 var(--blue);
   font-size: 20px;
   font-weight: 900;
   transform: rotate(-2deg);
@@ -75,41 +83,69 @@ button, a { -webkit-tap-highlight-color: transparent; }
   letter-spacing: .11em;
 }
 
-nav { display: grid; gap: 7px; margin-top: 50px; }
+.sidebar-label {
+  margin: 34px 2px 12px;
+  color: var(--pink);
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: .15em;
+}
+
+nav { display: grid; gap: 10px; }
 nav a {
   display: grid;
-  grid-template-columns: 30px 1fr;
+  grid-template-columns: 34px 1fr;
   align-items: center;
   padding: 11px 12px;
-  border: 1px solid transparent;
-  border-radius: 11px;
+  border: 2px solid var(--ink);
+  border-radius: 10px;
   color: var(--muted);
+  background: var(--surface);
+  box-shadow: 3px 3px 0 var(--blue);
   text-decoration: none;
-  transition: transform 120ms ease, color 120ms ease, background 120ms ease;
+  transition: transform 120ms ease, box-shadow 120ms ease, color 120ms ease,
+    background 120ms ease;
 }
+nav a:nth-child(even) { box-shadow: 3px 3px 0 var(--pink); }
 nav a > span {
   color: var(--soft);
   font-size: 9px;
   font-weight: 850;
   letter-spacing: .08em;
 }
-nav a > strong { font-size: 14px; font-weight: 700; }
-nav a:hover { color: var(--ink); background: var(--canvas); transform: translateX(2px); }
-nav a.active {
-  border-color: #ffc4d3;
+nav a > strong { font-size: 14px; font-weight: 750; }
+nav a:hover {
   color: var(--ink);
-  background: var(--pink-soft);
-  box-shadow: inset 3px 0 0 var(--pink);
+  transform: translate(1px, 1px);
+  box-shadow: 2px 2px 0 var(--blue);
 }
-nav a.active > span { color: var(--pink); }
+nav a:nth-child(even):hover { box-shadow: 2px 2px 0 var(--pink); }
+nav a.active {
+  color: #fff;
+  background: var(--pink);
+  box-shadow: 3px 3px 0 var(--blue);
+}
+nav a.active:hover {
+  box-shadow: 2px 2px 0 var(--blue);
+  transform: translate(1px, 1px);
+}
+nav a.active > span,
+nav a.active > strong { color: #fff; }
 
 .sidebar-foot {
   display: flex;
   align-items: center;
   gap: 9px;
   margin-top: auto;
-  color: var(--muted);
-  font-size: 12px;
+  padding: 11px 12px;
+  border: 2px solid var(--ink);
+  border-radius: 10px;
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: 3px 3px 0 var(--blue);
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: .12em;
 }
 .status-dot {
   width: 7px;
@@ -815,13 +851,25 @@ h2, h3, p { overflow-wrap: anywhere; }
     display: block;
     width: 100%;
     height: auto;
-    padding: 14px 18px 10px;
+    padding: 14px 16px 12px;
     border-right: 0;
-    border-bottom: 1px solid var(--line);
+    border-bottom: 2px solid var(--ink);
   }
-  .brand, .sidebar-foot { display: none; }
-  nav { display: flex; gap: 3px; margin: 0; overflow-x: auto; }
-  nav a { flex: 0 0 auto; padding: 8px 10px; font-size: 12px; }
+  .brand, .sidebar-label, .sidebar-foot { display: none; }
+  nav {
+    display: flex;
+    gap: 8px;
+    margin: 0;
+    padding: 2px 4px 6px 2px;
+    overflow-x: auto;
+  }
+  nav a {
+    flex: 0 0 auto;
+    grid-template-columns: auto auto;
+    gap: 8px;
+    padding: 8px 12px;
+  }
+  nav a > strong { font-size: 12px; }
   main { padding: 30px 18px 48px; }
   .topbar { align-items: center; margin-bottom: 25px; }
   .token-card { padding: 22px; }

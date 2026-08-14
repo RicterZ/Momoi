@@ -1146,6 +1146,7 @@ function App() {
               <small>GAME DEV DEPT.</small>
             </span>
           </a>
+          <p className="sidebar-label">NAV // CHANNELS</p>
           <nav aria-label="主导航">
             {navItems.map(([target, index, label]) => (
               <a
