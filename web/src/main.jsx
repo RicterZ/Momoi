@@ -270,7 +270,7 @@ function ConversationDetail({ item }) {
         {item.messages?.length ? (
           item.messages.map((message) => (
             <article className="message" key={message.id}>
-              <div className="message-role">
+              <div className={`message-role ${message.role === "user" ? "owner" : "momoi"}`}>
                 {message.role === "user" ? "OWNER" : "MOMOI"}
               </div>
               <div className="message-body">

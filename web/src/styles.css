@@ -355,11 +355,12 @@ h2, h3, p { overflow-wrap: anywhere; }
 }
 .message-role {
   padding-top: 3px;
-  color: var(--blue);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: .08em;
 }
+.message-role.momoi { color: var(--pink); }
+.message-role.owner { color: var(--blue); }
 .message-body { min-width: 0; }
 .message-content { margin: 0; white-space: pre-wrap; font-size: 14px; line-height: 1.78; }
 .message-meta {
