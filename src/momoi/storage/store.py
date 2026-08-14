@@ -3289,6 +3289,38 @@ class Store(MemoryStore, DeliveryStore):
         local_date = (scheduled.date() - timedelta(days=1)).isoformat()
         return local_date, scheduled.timestamp(), scheduled
 
+    def claim_manual_reflection(
+        self,
+        timezone: str,
+        now: float | None = None,
+    ) -> dict[str, object] | None:
+        now = time.time() if now is None else now
+        local_date = datetime.fromtimestamp(now, ZoneInfo(timezone)).date().isoformat()
+        reflection_id = f"reflection:{local_date}"
+        with self._db:
+            self._db.execute(
+                """INSERT OR IGNORE INTO reflections
+                   (id, local_date, state, scheduled_at, created_at)
+                   VALUES (?, ?, 'pending', ?, ?)""",
+                (reflection_id, local_date, now, now),
+            )
+            row = self._db.execute(
+                "SELECT * FROM reflections WHERE id=?",
+                (reflection_id,),
+            ).fetchone()
+            if row is None or row["state"] == "running":
+                return None
+            self._db.execute(
+                """UPDATE reflections SET state='running', claimed_at=?,
+                   retry_at=NULL, error=NULL WHERE id=?""",
+                (now, reflection_id),
+            )
+            claimed = self._db.execute(
+                "SELECT * FROM reflections WHERE id=?",
+                (reflection_id,),
+            ).fetchone()
+        return dict(claimed) if claimed is not None else None
+
     def claim_due_reflection(
         self,
         config: ReflectionConfig,
@@ -3454,6 +3486,7 @@ class Store(MemoryStore, DeliveryStore):
         turn_id: str,
         summary: str,
         memories: list[dict[str, object]],
+        always_memory_actions: list[dict[str, object]] | None = None,
     ) -> None:
         reflection_id = f"reflection:{local_date}"
         now = time.time()
@@ -3492,6 +3525,11 @@ class Store(MemoryStore, DeliveryStore):
                         now,
                     ),
                 )
+            self.apply_always_memory_actions(
+                always_memory_actions or [],
+                source_id=reflection_id,
+                now=now,
+            )
             self._db.execute(
                 """UPDATE turns SET state='completed', stage='completed',
                    failure_reason=NULL, updated_at=? WHERE id=?""",

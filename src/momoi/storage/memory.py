@@ -3,6 +3,7 @@ import re
 import sqlite3
 import time
 
+from ..context_time import context_timestamp
 from ..models import (
     IncomingMessage,
     MemoryCandidate,
@@ -23,6 +24,14 @@ MEMORY_ACTIVATIONS = {"always", "recent", "recall"}
 RECENT_MEMORY_WINDOW_SECONDS = 7 * 24 * 60 * 60
 ALWAYS_MEMORY_TOKEN_BUDGET = 1200
 CJK_STOP_CHARS = set("的了是在我你他她它们和就都也很还把被让要会呢吧啊哦呀")
+
+
+def _merged_always_memory_content(target: str, source: str) -> str:
+    if source in target:
+        return target
+    if target in source:
+        return source[:2000]
+    return f"{target}；{source}"[:2000]
 
 
 def estimate_tokens(text: str) -> int:
@@ -177,6 +186,114 @@ class MemoryStore:
         return self._compact_memory_context(
             "老师的固定偏好与约束", self._memory_rows("always"), token_budget
         )
+
+    def always_memory_inventory(self) -> list[dict[str, object]]:
+        now = time.time()
+        rows = self._db.execute(
+            """SELECT id, kind, key, content, activation, evidence_quote,
+                      importance, updated_at
+               FROM memories AS m
+               WHERE m.activation='always' AND m.superseded_by IS NULL
+                 AND (m.expires_at IS NULL OR m.expires_at > ?)
+                 AND NOT EXISTS (
+                     SELECT 1 FROM memory_tombstones AS t
+                     WHERE t.kind=m.kind AND t.key=m.key
+                 )
+               ORDER BY m.importance DESC, m.updated_at DESC, m.id DESC""",
+            (now,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def always_memory_inventory_context(self) -> str:
+        rows = self.always_memory_inventory()
+        if not rows:
+            return "No always-on owner memories are stored."
+        lines = [
+            "Full inventory of confirmed always-on owner memories. These currently "
+            "inject into every Turn. Use memory_id in always_memory_actions."
+        ]
+        for row in rows:
+            updated = context_timestamp(row["updated_at"])
+            evidence = " ".join(str(row["evidence_quote"] or "").split())
+            lines.append(
+                f"memory_id={row['id']} [{row['kind']}:{row['key']}] {row['content']} "
+                f"evidence={evidence} updated={updated}"
+            )
+        return "\n".join(lines)
+
+    def apply_always_memory_actions(
+        self,
+        actions: list[dict[str, object]],
+        *,
+        source_id: str,
+        now: float,
+    ) -> None:
+        if not actions:
+            return
+        inventory = {
+            int(item["id"]): item for item in self.always_memory_inventory()
+        }
+        merges = [item for item in actions if item["action"] == "merge"]
+        demotes = [
+            item
+            for item in actions
+            if item["action"] in {"demote_recent", "demote_recall"}
+        ]
+        forgets = [item for item in actions if item["action"] == "forget"]
+        for item in merges:
+            source = inventory.get(int(item["memory_id"]))
+            target = inventory.get(int(item["merge_into_id"]))
+            if source is None or target is None:
+                continue
+            content = _merged_always_memory_content(
+                str(target["content"]), str(source["content"])
+            )
+            if content != target["content"]:
+                self._db.execute(
+                    "UPDATE memories SET content=?, updated_at=? WHERE id=?",
+                    (content, now, target["id"]),
+                )
+                target["content"] = content
+            self._db.execute(
+                "UPDATE memories SET superseded_by=?, updated_at=? WHERE id=?",
+                (target["id"], now, source["id"]),
+            )
+            inventory.pop(int(source["id"]), None)
+        for item in demotes:
+            memory = inventory.get(int(item["memory_id"]))
+            if memory is None:
+                continue
+            activation = (
+                "recent" if item["action"] == "demote_recent" else "recall"
+            )
+            self._db.execute(
+                """UPDATE memories SET activation=?
+                   WHERE id=? AND activation='always' AND superseded_by IS NULL""",
+                (activation, memory["id"]),
+            )
+        for item in forgets:
+            memory = inventory.get(int(item["memory_id"]))
+            if memory is None:
+                continue
+            self._db.execute(
+                """INSERT INTO memory_tombstones
+                   (kind, key, source_event_id, evidence_quote, created_at)
+                   VALUES (?, ?, ?, ?, ?)
+                   ON CONFLICT(kind, key) DO UPDATE SET
+                     source_event_id=excluded.source_event_id,
+                     evidence_quote=excluded.evidence_quote,
+                     created_at=excluded.created_at""",
+                (
+                    memory["kind"],
+                    memory["key"],
+                    source_id,
+                    str(item["reason"]),
+                    now,
+                ),
+            )
+            self._resolve_memory_conflicts(
+                str(memory["kind"]), str(memory["key"]), "forgotten", now
+            )
 
     def recent_memory_context(self, token_budget: int) -> str:
         return self._compact_memory_context(

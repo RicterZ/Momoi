@@ -179,13 +179,100 @@ def parse_mood_update(
     }, None
 
 
+ALWAYS_MEMORY_ACTIONS = {
+    "demote_recent",
+    "demote_recall",
+    "merge",
+    "forget",
+}
+
+
+def parse_always_memory_actions(
+    raw: object,
+    always_memory_ids: set[int] | None = None,
+) -> tuple[list[dict[str, Any]] | None, str | None]:
+    if raw is None:
+        return [], None
+    if not isinstance(raw, list) or len(raw) > 32:
+        return None, "invalid_always_memory_action"
+    actions: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    for item in raw:
+        if not isinstance(item, dict):
+            return None, "invalid_always_memory_action"
+        keys = set(item)
+        if keys != {"memory_id", "action", "reason"} and keys != {
+            "memory_id",
+            "action",
+            "reason",
+            "merge_into_id",
+        }:
+            return None, "invalid_always_memory_action"
+        action = item.get("action")
+        memory_id = item.get("memory_id")
+        reason = item.get("reason")
+        merge_into_id = item.get("merge_into_id")
+        if (
+            action not in ALWAYS_MEMORY_ACTIONS
+            or isinstance(memory_id, bool)
+            or not isinstance(memory_id, int)
+            or memory_id < 1
+            or not isinstance(reason, str)
+            or not reason.strip()
+            or len(reason) > 400
+        ):
+            return None, "invalid_always_memory_action"
+        if action == "merge":
+            if (
+                isinstance(merge_into_id, bool)
+                or not isinstance(merge_into_id, int)
+                or merge_into_id < 1
+                or merge_into_id == memory_id
+            ):
+                return None, "invalid_always_memory_merge"
+        elif merge_into_id is not None:
+            return None, "invalid_always_memory_action"
+        if memory_id in seen:
+            return None, "duplicate_always_memory_action"
+        seen.add(memory_id)
+        if always_memory_ids is not None and memory_id not in always_memory_ids:
+            return None, "unknown_always_memory"
+        if (
+            action == "merge"
+            and always_memory_ids is not None
+            and merge_into_id not in always_memory_ids
+        ):
+            return None, "unknown_always_memory"
+        parsed = {
+            "memory_id": memory_id,
+            "action": action,
+            "reason": reason.strip(),
+        }
+        if action == "merge":
+            parsed["merge_into_id"] = merge_into_id
+        actions.append(parsed)
+    forget_ids = {item["memory_id"] for item in actions if item["action"] == "forget"}
+    merge_sources = {item["memory_id"] for item in actions if item["action"] == "merge"}
+    for item in actions:
+        if item["action"] != "merge":
+            continue
+        target = item["merge_into_id"]
+        if target in forget_ids or target in merge_sources:
+            return None, "invalid_always_memory_merge"
+    return actions, None
+
+
 def parse_reflection_finish(
     arguments: dict[str, Any],
     source: str,
     owner_source: str,
     knowledge_source: str,
+    always_memory_ids: set[int] | None = None,
 ) -> tuple[dict[str, Any] | None, str | None]:
-    if not isinstance(arguments, dict) or set(arguments) != {"summary", "memories"}:
+    if not isinstance(arguments, dict):
+        return None, "invalid_reflection_finish"
+    extra = set(arguments) - {"summary", "memories", "always_memory_actions"}
+    if extra or {"summary", "memories"} - set(arguments):
         return None, "invalid_reflection_finish"
     summary = arguments.get("summary")
     raw_memories = arguments.get("memories")
@@ -197,6 +284,11 @@ def parse_reflection_finish(
         or len(raw_memories) > 12
     ):
         return None, "invalid_reflection_finish"
+    always_memory_actions, action_error = parse_always_memory_actions(
+        arguments.get("always_memory_actions"), always_memory_ids
+    )
+    if action_error is not None:
+        return None, action_error
     memories: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
     interaction_practices = 0
@@ -256,4 +348,8 @@ def parse_reflection_finish(
                 "confidence": float(confidence),
             }
         )
-    return {"summary": summary.strip(), "memories": memories}, None
+    return {
+        "summary": summary.strip(),
+        "memories": memories,
+        "always_memory_actions": always_memory_actions,
+    }, None

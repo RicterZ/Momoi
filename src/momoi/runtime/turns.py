@@ -2713,7 +2713,8 @@ class TurnRunner:
             max(1, self.config.memory_results),
             max(1000, self.config.memory_tokens),
         )
-        owner_preferences = self.store.always_memory_context()
+        always_inventory = self.store.always_memory_inventory()
+        always_memory_ids = {int(item["id"]) for item in always_inventory}
         recent_memories = self.store.recent_memory_context(
             max(100, self.config.memory_tokens // 8)
         )
@@ -2736,7 +2737,7 @@ class TurnRunner:
             ("daily_reflection_record", reflection_record),
             ("runtime_state", self.store.self_state_context()),
             ("recalled_episodes", episodes),
-            ("owner_preferences", owner_preferences),
+            ("always_memory_inventory", self.store.always_memory_inventory_context()),
             ("recent_memories", recent_memories),
             ("confirmed_owner_memory", confirmed_memory),
             ("reflection_memory", learned),
@@ -2817,6 +2818,7 @@ class TurnRunner:
                     record,
                     owner_source,
                     knowledge_source,
+                    always_memory_ids,
                 )
                 if decision is not None:
                     self.store.commit_reflection(
@@ -2824,6 +2826,7 @@ class TurnRunner:
                         turn_id,
                         decision["summary"],
                         decision["memories"],
+                        decision["always_memory_actions"],
                     )
                     self.agenda_changed.set()
                     log_event(
@@ -2836,6 +2839,7 @@ class TurnRunner:
                         round=reflection_round,
                         local_date=local_date,
                         memories=len(decision["memories"]),
+                        always_memory_actions=len(decision["always_memory_actions"]),
                     )
                     return
             else:

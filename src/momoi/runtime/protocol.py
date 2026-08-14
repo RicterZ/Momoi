@@ -299,12 +299,48 @@ REFLECTION_FINISH_SPEC: dict[str, Any] = {
     "name": "reflection_finish",
     "description": (
         "Required terminal result for the private daily retrospective. It stores the "
-        "reflection record and promotes only durable, evidence-backed learning."
+        "reflection record, promotes only durable evidence-backed learning, and "
+        "optionally housekeeps the supplied always-on owner-memory inventory."
     ),
     "input_schema": {
         "type": "object",
         "properties": {
             "summary": {"type": "string", "minLength": 1, "maxLength": 6000},
+            "always_memory_actions": {
+                "type": "array",
+                "maxItems": 32,
+                "description": (
+                    "Optional housekeeping of `<always_memory_inventory>`. Empty is valid. "
+                    "Use memory_id from that inventory only."
+                ),
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "memory_id": {"type": "integer", "minimum": 1},
+                        "action": {
+                            "type": "string",
+                            "enum": [
+                                "demote_recent",
+                                "demote_recall",
+                                "merge",
+                                "forget",
+                            ],
+                        },
+                        "merge_into_id": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "description": "Required for merge; the surviving always memory.",
+                        },
+                        "reason": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 400,
+                        },
+                    },
+                    "required": ["memory_id", "action", "reason"],
+                    "additionalProperties": False,
+                },
+            },
             "memories": {
                 "type": "array",
                 "maxItems": 12,
