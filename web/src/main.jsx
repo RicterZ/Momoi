@@ -1,8 +1,9 @@
-import { StrictMode, useEffect, useState } from "react";
+import { StrictMode, createContext, useContext, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
 const TOKEN_KEY = "momoi-dashboard-token";
+const ConfirmContext = createContext(null);
 
 const pages = {
   overview: ["今天也元气满满！", "MOMOI // HOME"],
@@ -149,6 +150,73 @@ function ErrorState({ error }) {
       <strong>数据暂时无法读取</strong>
       <p>{error.message}</p>
     </div>
+  );
+}
+
+function useConfirm() {
+  const confirm = useContext(ConfirmContext);
+  if (!confirm) throw new Error("ConfirmProvider missing");
+  return confirm;
+}
+
+function ConfirmProvider({ children }) {
+  const [request, setRequest] = useState(null);
+  const resolver = useRef(null);
+
+  function confirm({
+    title = "确认操作",
+    message = "",
+    confirmLabel = "确定",
+    cancelLabel = "取消",
+  } = {}) {
+    return new Promise((resolve) => {
+      resolver.current = resolve;
+      setRequest({ title, message, confirmLabel, cancelLabel });
+    });
+  }
+
+  function settle(value) {
+    const resolve = resolver.current;
+    resolver.current = null;
+    setRequest(null);
+    resolve?.(value);
+  }
+
+  return (
+    <ConfirmContext.Provider value={confirm}>
+      {children}
+      {request && (
+        <div
+          className="confirm-gate"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="confirm-title"
+        >
+          <div className="confirm-card">
+            <p className="eyebrow">MOMOI // CONFIRM</p>
+            <h2 id="confirm-title">{request.title}</h2>
+            {request.message && <p className="confirm-copy">{request.message}</p>}
+            <div className="confirm-actions">
+              <button
+                className="quiet-button"
+                type="button"
+                onClick={() => settle(false)}
+              >
+                {request.cancelLabel}
+              </button>
+              <button
+                className="quiet-button pink"
+                type="button"
+                autoFocus
+                onClick={() => settle(true)}
+              >
+                {request.confirmLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </ConfirmContext.Provider>
   );
 }
 
@@ -395,6 +463,7 @@ function Reflections({ refreshKey, token }) {
 }
 
 function Memories({ refreshKey, token, onMutated }) {
+  const confirm = useConfirm();
   const [activation, setActivation] = useState("all");
   const [editingId, setEditingId] = useState(null);
   const [draft, setDraft] = useState("");
@@ -420,7 +489,13 @@ function Memories({ refreshKey, token, onMutated }) {
   }
 
   async function remove(item) {
-    if (!window.confirm("确定删除这条记忆？删除后 Momoi 不会再使用它。")) return;
+    const ok = await confirm({
+      title: "删除这条记忆？",
+      message: "删掉之后 Momoi 不会再使用它，也找不回来了。",
+      confirmLabel: "删除记忆",
+      cancelLabel: "先留着",
+    });
+    if (!ok) return;
     setBusyId(item.id);
     setError("");
     try {
@@ -593,6 +668,7 @@ function FilePicker({ id, file, onChange, required = false }) {
 }
 
 function Goals({ refreshKey, token, onMutated }) {
+  const confirm = useConfirm();
   const [includeClosed, setIncludeClosed] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [draft, setDraft] = useState(null);
@@ -631,7 +707,13 @@ function Goals({ refreshKey, token, onMutated }) {
   }
 
   async function remove(item) {
-    if (!window.confirm("确定取消这个任务？")) return;
+    const ok = await confirm({
+      title: "取消这个任务？",
+      message: "任务会标成已取消，之后还能在「含已结束」里看到。",
+      confirmLabel: "取消任务",
+      cancelLabel: "再想想",
+    });
+    if (!ok) return;
     setBusyId(item.id);
     setError("");
     try {
@@ -837,6 +919,7 @@ function Goals({ refreshKey, token, onMutated }) {
 }
 
 function Emotions({ refreshKey, token, onMutated }) {
+  const confirm = useConfirm();
   const [slug, setSlug] = useState("");
   const [description, setDescription] = useState("");
   const [file, setFile] = useState(null);
@@ -896,7 +979,13 @@ function Emotions({ refreshKey, token, onMutated }) {
   }
 
   async function remove(item) {
-    if (!window.confirm(`确定删除表情 ${item.slug}？`)) return;
+    const ok = await confirm({
+      title: `删除表情 ${item.slug}？`,
+      message: "贴纸会从表情库里拿掉，已经发出去的聊天不会跟着消失。",
+      confirmLabel: "删除表情",
+      cancelLabel: "先留着",
+    });
+    if (!ok) return;
     setBusy(item.slug);
     setError("");
     try {
@@ -1202,6 +1291,8 @@ function App() {
 
 createRoot(document.getElementById("root")).render(
   <StrictMode>
-    <App />
+    <ConfirmProvider>
+      <App />
+    </ConfirmProvider>
   </StrictMode>,
 );

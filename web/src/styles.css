@@ -206,6 +206,7 @@ h2, h3, p { overflow-wrap: anywhere; }
   pointer-events: none;
   user-select: none;
 }
+.confirm-gate,
 .token-gate {
   position: fixed;
   inset: 0;
@@ -218,6 +219,8 @@ h2, h3, p { overflow-wrap: anywhere; }
     radial-gradient(circle at 82% 78%, rgba(67, 184, 245, .16), transparent 36%),
     rgba(247, 248, 251, .42);
 }
+.confirm-gate { z-index: 50; }
+.confirm-card,
 .token-card {
   width: min(420px, 100%);
   padding: 28px;
@@ -225,6 +228,30 @@ h2, h3, p { overflow-wrap: anywhere; }
   border-radius: 12px;
   background: var(--surface);
   box-shadow: 4px 4px 0 var(--blue);
+}
+.confirm-card { box-shadow: 4px 4px 0 var(--pink); }
+.confirm-card h2 {
+  margin: 10px 0 0;
+  font-size: 24px;
+  font-weight: 850;
+  letter-spacing: -.03em;
+}
+.confirm-copy {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 22px;
+}
+.confirm-actions .quiet-button {
+  flex: 1 1 120px;
+  padding: 12px 14px;
+  font-size: 13px;
 }
 .token-card-brand {
   display: flex;
