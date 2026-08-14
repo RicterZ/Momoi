@@ -253,9 +253,20 @@ h2, h3, p { overflow-wrap: anywhere; }
   background: var(--surface);
   box-shadow: 2px 2px 0 var(--pink);
 }
+.token-card-error {
+  min-height: 1.35em;
+  margin: 12px 0 0;
+  color: #d43f68;
+  font-size: 12px;
+  line-height: 1.35;
+  visibility: hidden;
+}
+.token-card-error.is-visible {
+  visibility: visible;
+}
 .token-card-submit {
   width: 100%;
-  margin-top: 18px;
+  margin-top: 14px;
   padding: 12px 14px;
   font-size: 13px;
 }

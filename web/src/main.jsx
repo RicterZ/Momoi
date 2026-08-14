@@ -1085,7 +1085,9 @@ function TokenGate({ value, onChange, onUnlock }) {
             onChange={(event) => onChange(event.target.value)}
           />
         </label>
-        {error && <p className="form-error">{error}</p>}
+        <p className={`token-card-error${error ? " is-visible" : ""}`} aria-live="polite">
+          {error || "\u00a0"}
+        </p>
         <button
           className="quiet-button token-card-submit"
           type="submit"
