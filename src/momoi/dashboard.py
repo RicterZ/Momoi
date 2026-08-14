@@ -98,6 +98,10 @@ def create_dashboard_app(store: Store) -> web.Application:
         limit = _bounded_int(request, "limit", 90, 1, 366)
         return web.json_response({"items": store.list_reflections(limit)})
 
+    async def memories(request: web.Request) -> web.Response:
+        limit = _bounded_int(request, "limit", 200, 1, 500)
+        return web.json_response({"items": store.list_memories(limit)})
+
     async def goals(request: web.Request) -> web.Response:
         include_closed = request.query.get("all", "").lower() in {
             "1",
@@ -138,6 +142,7 @@ def create_dashboard_app(store: Store) -> web.Application:
     app.router.add_get("/api/conversations", conversations)
     app.router.add_get("/api/conversations/{episode_id}", conversation)
     app.router.add_get("/api/reflections", reflections)
+    app.router.add_get("/api/memories", memories)
     app.router.add_get("/api/goals", goals)
     app.router.add_get("/api/emotions", emotions)
     app.router.add_get("/api/emotions/{slug}/asset", emotion_asset)

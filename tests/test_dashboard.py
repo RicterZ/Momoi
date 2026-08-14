@@ -63,6 +63,42 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
                 ),
             )
         self.store.link_turn_to_episode("episode-one", "turn-one")
+        with self.store._db:
+            self.store._db.executemany(
+                """INSERT INTO memories
+                   (kind, key, content, activation, authority, source_event_id,
+                    evidence_quote, importance, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, 'owner', 'event-one', ?, 0.8, ?, ?)""",
+                [
+                    (
+                        "preference",
+                        "food.no_cilantro",
+                        "主人不吃香菜。",
+                        "always",
+                        "我不吃香菜",
+                        now - 86400,
+                        now - 3600,
+                    ),
+                    (
+                        "routine",
+                        "location.today",
+                        "今天在公司，晚上才回家。",
+                        "recent",
+                        "我今天在公司",
+                        now - 7200,
+                        now - 1800,
+                    ),
+                    (
+                        "shared",
+                        "game.ba",
+                        "一起在补《碧蓝档案》剧情。",
+                        "recall",
+                        "先把 BA 主线补一下",
+                        now - 172800,
+                        now - 86400,
+                    ),
+                ],
+            )
 
         image = self.root / "reaction.gif"
         image.write_bytes(b"GIF89a")
@@ -95,6 +131,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(overview["counts"]["messages"], 2)
         self.assertEqual(overview["counts"]["reflections"], 1)
         self.assertEqual(overview["counts"]["emotions"], 1)
+        self.assertEqual(overview["counts"]["memories"], 3)
 
         conversations = await (
             await self.client.get("/api/conversations")
@@ -107,6 +144,14 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             [message["content"] for message in conversation["messages"]],
             ["你好，Momoi", "早上好。"],
         )
+
+        memories = await (await self.client.get("/api/memories")).json()
+        self.assertEqual(
+            [item["activation"] for item in memories["items"]],
+            ["always", "recent", "recall"],
+        )
+        self.assertEqual(memories["items"][0]["content"], "主人不吃香菜。")
+        self.assertEqual(memories["items"][1]["evidence"], "我今天在公司")
 
         reflections = await (await self.client.get("/api/reflections")).json()
         self.assertEqual(reflections["items"][0]["summary"], "今天完成了测试。")

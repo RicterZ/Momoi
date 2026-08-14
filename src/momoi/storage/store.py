@@ -3554,6 +3554,18 @@ class Store(MemoryStore, DeliveryStore):
             "emotions": int(
                 self._db.execute("SELECT COUNT(*) FROM emotions").fetchone()[0]
             ),
+            "memories": int(
+                self._db.execute(
+                    """SELECT COUNT(*) FROM memories AS m
+                       WHERE m.superseded_by IS NULL
+                         AND (m.expires_at IS NULL OR m.expires_at > ?)
+                         AND NOT EXISTS (
+                             SELECT 1 FROM memory_tombstones AS t
+                             WHERE t.kind=m.kind AND t.key=m.key
+                         )""",
+                    (time.time(),),
+                ).fetchone()[0]
+            ),
         }
         latest_message = self._db.execute(
             """SELECT MAX(created_at) FROM messages
@@ -3579,6 +3591,38 @@ class Store(MemoryStore, DeliveryStore):
                 context_timestamp(latest_message) if latest_message is not None else None
             ),
         }
+
+    def list_memories(self, limit: int = 200) -> list[dict[str, object]]:
+        if limit <= 0:
+            return []
+        now = time.time()
+        rows = self._db.execute(
+            """SELECT id, kind, key, content, activation, authority,
+                      evidence_quote, importance, created_at, updated_at,
+                      expires_at
+               FROM memories AS m
+               WHERE m.superseded_by IS NULL
+                 AND (m.expires_at IS NULL OR m.expires_at > ?)
+                 AND NOT EXISTS (
+                     SELECT 1 FROM memory_tombstones AS t
+                     WHERE t.kind=m.kind AND t.key=m.key
+                 )
+               ORDER BY CASE m.activation
+                          WHEN 'always' THEN 0
+                          WHEN 'recent' THEN 1
+                          ELSE 2
+                        END,
+                        m.updated_at DESC, m.id DESC
+               LIMIT ?""",
+            (now, limit),
+        ).fetchall()
+        results: list[dict[str, object]] = []
+        for row in rows:
+            item = dict(row)
+            item["evidence"] = item.pop("evidence_quote")
+            _add_context_timestamps(item, ("created_at", "updated_at", "expires_at"))
+            results.append(item)
+        return results
 
     def goal(self, goal_id: str) -> dict[str, object] | None:
         row = self._db.execute("SELECT * FROM goals WHERE id=?", (goal_id,)).fetchone()

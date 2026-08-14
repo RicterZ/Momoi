@@ -198,7 +198,7 @@ h2, h3, p { overflow-wrap: anywhere; }
 
 .metrics {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 12px;
 }
 .metric, .panel, .goal-card, .reflection-card, .emotion-card {
@@ -392,6 +392,9 @@ h2, h3, p { overflow-wrap: anywhere; }
   background: var(--pink);
 }
 .card-list { display: grid; gap: 12px; }
+.memory-section { margin-top: 8px; }
+.memory-section + .memory-section { margin-top: 28px; }
+.reflection-card .secondary { margin: 12px 0 0; }
 .reflection-card, .goal-card {
   padding: 24px 26px;
   border-radius: 14px;

@@ -6,6 +6,7 @@ const pages = {
   overview: ["今天也元气满满！", "MOMOI // HOME"],
   conversations: ["聊天记录", "MOMOI // CHAT LOG"],
   reflections: ["每日复盘", "MOMOI // SAVE DATA"],
+  memories: ["记忆", "MOMOI // MEMORY"],
   emotions: ["表情包", "MOMOI // STICKERS"],
   goals: ["任务列表", "MOMOI // QUESTS"],
 };
@@ -14,9 +15,17 @@ const navItems = [
   ["overview", "01", "主页"],
   ["conversations", "02", "聊天记录"],
   ["reflections", "03", "每日复盘"],
-  ["emotions", "04", "表情包"],
-  ["goals", "05", "任务列表"],
+  ["memories", "04", "记忆"],
+  ["emotions", "05", "表情包"],
+  ["goals", "06", "任务列表"],
 ];
+
+const activationOrder = ["always", "recent", "recall"];
+const activationLabels = {
+  always: "持续生效",
+  recent: "近期状态",
+  recall: "需要时回忆",
+};
 
 async function api(path, signal) {
   const response = await fetch(path, {
@@ -46,14 +55,19 @@ function formatDate(value, dateOnly = false) {
 function memoryKindLabel(kind) {
   return (
     {
+      profile: "关于你",
+      preference: "你的偏好",
+      relationship: "相处方式",
+      shared: "共同经历",
+      episodic: "具体经历",
+      routine: "日常习惯",
       owner_profile: "关于你",
       owner_preference: "你的偏好",
       world_knowledge: "外部信息",
       self_insight: "Momoi 的体会",
-      relationship: "相处方式",
       shared_experience: "共同经历",
       practice: "行动习惯",
-    }[kind] || "复盘记忆"
+    }[kind] || "记忆"
   );
 }
 
@@ -124,6 +138,7 @@ function Overview({ refreshKey }) {
           ["聊天主题", data.counts.conversations],
           ["消息", data.counts.messages],
           ["复盘", data.counts.reflections],
+          ["记忆", data.counts.memories],
           ["进行中 Goals", data.counts.goals],
           ["表情包", data.counts.emotions],
         ];
@@ -331,6 +346,79 @@ function Reflections({ refreshKey }) {
   );
 }
 
+function Memories({ refreshKey }) {
+  const [activation, setActivation] = useState("all");
+  return (
+    <DataView path="/api/memories?limit=400" refreshKey={refreshKey}>
+      {({ items }) => {
+        const visible =
+          activation === "all"
+            ? items
+            : items.filter((item) => item.activation === activation);
+        const groups = activationOrder
+          .map((name) => [
+            name,
+            visible.filter((item) => item.activation === name),
+          ])
+          .filter(([, group]) => group.length);
+        return (
+          <>
+            <section className="section-tools">
+              <p>{visible.length} 条有效记忆</p>
+              <div className="filter">
+                {[["all", "全部"], ...Object.entries(activationLabels)].map(
+                  ([value, label]) => (
+                    <button
+                      type="button"
+                      key={value}
+                      className={activation === value ? "active" : ""}
+                      onClick={() => setActivation(value)}
+                    >
+                      {label}
+                    </button>
+                  ),
+                )}
+              </div>
+            </section>
+            {groups.length ? (
+              groups.map(([name, group]) => (
+                <section className="memory-section" key={name}>
+                  <div className="section-tools">
+                    <p>
+                      {activationLabels[name]} · {group.length}
+                    </p>
+                  </div>
+                  <section className="card-list">
+                    {group.map((item) => (
+                      <article className="reflection-card" key={item.id}>
+                        <div className="card-head">
+                          <h2>{memoryKindLabel(item.kind)}</h2>
+                          <span className="status">
+                            {activationLabels[item.activation] || item.activation}
+                          </span>
+                        </div>
+                        <p className="summary">{item.content}</p>
+                        {item.evidence && (
+                          <p className="secondary">依据：{item.evidence}</p>
+                        )}
+                        <p className="secondary">
+                          更新于 {formatDate(item.updated_at)}
+                        </p>
+                      </article>
+                    ))}
+                  </section>
+                </section>
+              ))
+            ) : (
+              <Empty />
+            )}
+          </>
+        );
+      }}
+    </DataView>
+  );
+}
+
 function scheduleText(schedule, nextReview) {
   if (schedule?.kind === "daily") return `每天 ${schedule.at}`;
   if (schedule?.kind === "interval") return `每 ${schedule.every_seconds} 秒`;
@@ -443,6 +531,7 @@ const viewComponents = {
   overview: Overview,
   conversations: Conversations,
   reflections: Reflections,
+  memories: Memories,
   emotions: Emotions,
   goals: Goals,
 };
