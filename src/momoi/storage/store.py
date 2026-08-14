@@ -1899,6 +1899,82 @@ class Store(MemoryStore, DeliveryStore):
         ).fetchall()
         return [self._episode_dict(row) for row in rows]
 
+    def open_conversation_inventory(self, limit: int = 64) -> list[dict[str, object]]:
+        if limit <= 0:
+            return []
+        rows = self._db.execute(
+            """SELECT e.id, e.status, e.title, e.working_summary, e.open_loops_json,
+                      e.updated_at,
+                      COALESCE((
+                          SELECT MAX(t.updated_at) FROM episode_turns AS et
+                          JOIN turns AS t ON t.id=et.turn_id
+                          WHERE et.episode_id=e.id
+                      ), e.updated_at) AS last_activity_at
+               FROM conversation_episodes AS e
+               WHERE e.status IN ('open', 'closing')
+               ORDER BY e.status='open' DESC, last_activity_at DESC, e.updated_at DESC
+               LIMIT ?""",
+            (limit,),
+        ).fetchall()
+        inventory: list[dict[str, object]] = []
+        for row in rows:
+            item = dict(row)
+            try:
+                open_loops = json.loads(str(item.pop("open_loops_json")))
+            except (json.JSONDecodeError, TypeError):
+                open_loops = []
+            item["open_loops"] = open_loops if isinstance(open_loops, list) else []
+            item["last_activity_timestamp"] = context_timestamp(
+                item["last_activity_at"]
+            )
+            item["updated_timestamp"] = context_timestamp(item.pop("updated_at"))
+            inventory.append(item)
+        return inventory
+
+    def open_conversation_inventory_context(self) -> str:
+        rows = self.open_conversation_inventory()
+        if not rows:
+            return "No open or closing conversations are stored."
+        lines = [
+            "Inventory of conversations still marked open or closing. Use episode_id "
+            "in conversation_actions to close a thread that is finished or expired. "
+            "Leave it unchanged when it may still continue."
+        ]
+        for row in rows:
+            summary = " ".join(str(row["working_summary"] or "").split())[:240]
+            loops = json.dumps(row["open_loops"], ensure_ascii=False)
+            lines.append(
+                f"episode_id={row['id']} status={row['status']} title={row['title']} "
+                f"last_activity={row['last_activity_timestamp']} open_loops={loops}"
+                + (f" summary={summary}" if summary else "")
+            )
+        return "\n".join(lines)
+
+    def apply_conversation_actions(
+        self, actions: list[dict[str, object]], *, now: float
+    ) -> None:
+        if not actions:
+            return
+        for item in actions:
+            if item.get("action") != "close":
+                continue
+            episode_id = str(item["episode_id"])
+            row = self._db.execute(
+                """SELECT id FROM conversation_episodes
+                   WHERE id=? AND status IN ('open', 'closing')""",
+                (episode_id,),
+            ).fetchone()
+            if row is None:
+                continue
+            self._db.execute(
+                """UPDATE conversation_episodes
+                   SET status='closed', closed_at=?, open_loops_json='[]',
+                       updated_at=?
+                   WHERE id=? AND status IN ('open', 'closing')""",
+                (now, now, episode_id),
+            )
+            self._reindex_episode_terms(episode_id)
+
     def search_episodes(self, query: str, max_results: int) -> list[dict[str, object]]:
         if max_results <= 0:
             return []
@@ -3496,6 +3572,7 @@ class Store(MemoryStore, DeliveryStore):
         summary: str,
         memories: list[dict[str, object]],
         always_memory_actions: list[dict[str, object]] | None = None,
+        conversation_actions: list[dict[str, object]] | None = None,
     ) -> None:
         reflection_id = f"reflection:{local_date}"
         now = time.time()
@@ -3543,6 +3620,7 @@ class Store(MemoryStore, DeliveryStore):
                 source_id=reflection_id,
                 now=now,
             )
+            self.apply_conversation_actions(conversation_actions or [], now=now)
             self._db.execute(
                 """UPDATE turns SET state='completed', stage='completed',
                    failure_reason=NULL, updated_at=? WHERE id=?""",

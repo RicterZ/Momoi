@@ -300,7 +300,8 @@ REFLECTION_FINISH_SPEC: dict[str, Any] = {
     "description": (
         "Required terminal result for the private daily retrospective. It stores the "
         "reflection record, promotes only durable evidence-backed learning, and "
-        "optionally housekeeps the supplied always-on owner-memory inventory."
+        "optionally housekeeps the supplied always-on owner-memory inventory and "
+        "open conversations."
     ),
     "input_schema": {
         "type": "object",
@@ -347,6 +348,37 @@ REFLECTION_FINISH_SPEC: dict[str, Any] = {
                         },
                     },
                     "required": ["memory_id", "action", "reason"],
+                    "additionalProperties": False,
+                },
+            },
+            "conversation_actions": {
+                "type": "array",
+                "maxItems": 32,
+                "description": (
+                    "Optional housekeeping of `<open_conversations>`. Empty is valid. "
+                    "Use episode_id from that inventory only. Close a thread only when "
+                    "it is finished, expired, or superseded."
+                ),
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "episode_id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128,
+                            "description": "Open or closing conversation episode id.",
+                        },
+                        "action": {
+                            "type": "string",
+                            "enum": ["close"],
+                        },
+                        "reason": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 400,
+                        },
+                    },
+                    "required": ["episode_id", "action", "reason"],
                     "additionalProperties": False,
                 },
             },

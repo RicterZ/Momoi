@@ -2723,6 +2723,8 @@ class TurnRunner:
         )
         always_inventory = self.store.always_memory_inventory()
         always_memory_ids = {int(item["id"]) for item in always_inventory}
+        open_conversations = self.store.open_conversation_inventory()
+        open_episode_ids = {str(item["id"]) for item in open_conversations}
         recent_memories = self.store.recent_memory_context(
             max(100, self.config.memory_tokens // 8)
         )
@@ -2746,6 +2748,7 @@ class TurnRunner:
             ("runtime_state", self.store.self_state_context()),
             ("recalled_episodes", episodes),
             ("always_memory_inventory", self.store.always_memory_inventory_context()),
+            ("open_conversations", self.store.open_conversation_inventory_context()),
             ("recent_memories", recent_memories),
             ("confirmed_owner_memory", confirmed_memory),
             ("reflection_memory", learned),
@@ -2827,6 +2830,7 @@ class TurnRunner:
                     owner_source,
                     knowledge_source,
                     always_memory_ids,
+                    open_episode_ids,
                 )
                 if decision is not None:
                     self.store.commit_reflection(
@@ -2835,6 +2839,7 @@ class TurnRunner:
                         decision["summary"],
                         decision["memories"],
                         decision["always_memory_actions"],
+                        decision["conversation_actions"],
                     )
                     self.agenda_changed.set()
                     log_event(
@@ -2848,6 +2853,7 @@ class TurnRunner:
                         local_date=local_date,
                         memories=len(decision["memories"]),
                         always_memory_actions=len(decision["always_memory_actions"]),
+                        conversation_actions=len(decision["conversation_actions"]),
                     )
                     return
             else:

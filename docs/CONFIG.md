@@ -404,7 +404,7 @@ The default is `curl`, `read_file`, and `write_file`. `curl` is limited to GET, 
 
 Reflection uses `notifications.timezone` and reviews the local calendar day that just ended at `03:00`. `at` accepts `HH:MM` and defaults to `03:00`; the feature is disabled when omitted, while the example workspace enables it.
 
-Reflection never contacts the owner or receives external tools. The complete summary and candidate learning are stored in SQLite `reflections`; promoted durable learning is stored in `reflection_memories` and enters later context below confirmed owner memory. Owner profile and preference items are accepted only when they quote owner text from that day.
+Reflection never contacts the owner or receives external tools. The complete summary and candidate learning are stored in SQLite `reflections`; promoted durable learning is stored in `reflection_memories` and enters later context below confirmed owner memory. Owner profile and preference items are accepted only when they quote owner text from that day. The same Turn reviews still-open conversation episodes and may close a thread that the day's record shows is finished or expired.
 
 Send `/reflect` in the private owner chat to review the current local calendar day immediately, even when automatic reflection is disabled. A command received while that day's reflection is already running is ignored; a completed day can be reviewed again and overwrites that day's summary and promoted memories.
 
