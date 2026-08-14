@@ -513,3 +513,164 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
             )
             self.assertFalse(daemon.store.has_memory("episodic", "trip.last_summer"))
             daemon.store.close()
+
+    async def test_manual_reflect_overwrites_completed_day(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            config = AppConfig(
+                llm=LLMConfig("http://127.0.0.1", "test", "test", 1000, 0, 1, 0),
+                channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                system_prompt="test",
+                recent_raw_tokens=8000,
+                recent_turns=2,
+                memory_results=4,
+                memory_tokens=4000,
+                database=Path(directory) / "momoi.sqlite3",
+                log_level="DEBUG",
+                notifications=NotificationConfig(timezone="Asia/Shanghai"),
+            )
+            daemon = MomoiDaemon(config)
+            first_now = datetime(
+                2026, 7, 21, 12, 54, tzinfo=ZoneInfo("Asia/Shanghai")
+            ).timestamp()
+            second_now = datetime(
+                2026, 7, 21, 13, 7, tzinfo=ZoneInfo("Asia/Shanghai")
+            ).timestamp()
+            occurred = datetime(
+                2026, 7, 21, 12, 0, tzinfo=ZoneInfo("Asia/Shanghai")
+            ).timestamp()
+            daemon.store._db.execute(
+                """INSERT INTO messages
+                   (role, content, created_at, source_event_ids_json)
+                   VALUES ('user', ?, ?, '[]')""",
+                ("第一轮记录 第二轮记录", occurred),
+            )
+            daemon.store._db.execute(
+                """INSERT INTO turns
+                   (id, kind, source_ids_json, state, started_at, updated_at)
+                   VALUES (?, 'autonomous', ?, 'completed', ?, ?)""",
+                (
+                    daemon._turn_id("reflection", "2026-07-21"),
+                    '["reflection:2026-07-21"]',
+                    first_now,
+                    first_now,
+                ),
+            )
+            daemon.store._db.commit()
+
+            summaries = iter(("第一版日记", "覆盖后的日记"))
+            memories = iter(
+                (
+                    [
+                        {
+                            "kind": "self_insight",
+                            "key": "topic.first_pass",
+                            "content": "第一轮晋升。",
+                            "evidence": "第一轮记录",
+                            "confidence": 0.7,
+                        }
+                    ],
+                    [
+                        {
+                            "kind": "self_insight",
+                            "key": "topic.second_pass",
+                            "content": "第二轮覆盖晋升。",
+                            "evidence": "第二轮记录",
+                            "confidence": 0.8,
+                        }
+                    ],
+                )
+            )
+
+            class Provider:
+                async def complete(
+                    self,
+                    _system: object,
+                    _messages: object,
+                    tools: list[dict[str, object]],
+                    **_kwargs: object,
+                ) -> ProviderResponse:
+                    assert tools == [REFLECTION_FINISH_SPEC]
+                    call = ToolCall(
+                        "finish-reflection",
+                        "reflection_finish",
+                        {
+                            "summary": next(summaries),
+                            "memories": next(memories),
+                            "always_memory_actions": [],
+                        },
+                    )
+                    return ProviderResponse(
+                        [
+                            {
+                                "type": "tool_use",
+                                "id": call.id,
+                                "name": call.name,
+                                "input": call.arguments,
+                            }
+                        ],
+                        [call],
+                    )
+
+            daemon.provider = Provider()
+            first = daemon.store.claim_manual_reflection(
+                config.notifications.timezone, first_now
+            )
+            self.assertEqual(first["local_date"], "2026-07-21")
+            await daemon._complete_reflection_turn("2026-07-21", asyncio.Event())
+            first_reflection = daemon.store.reflection("2026-07-21")
+            self.assertEqual(first_reflection["state"], "completed")
+            self.assertEqual(first_reflection["summary"], "第一版日记")
+            self.assertEqual(
+                json.loads(first_reflection["memories_json"])[0]["key"],
+                "topic.first_pass",
+            )
+            self.assertIn(
+                "第一轮晋升",
+                daemon.store.reflection_memory_context("第一轮", 4, 2000),
+            )
+
+            second = daemon.store.claim_manual_reflection(
+                config.notifications.timezone, second_now
+            )
+            self.assertEqual(second["state"], "running")
+            self.assertNotEqual(first["claimed_at"], second["claimed_at"])
+            await daemon._complete_reflection_turn("2026-07-21", asyncio.Event())
+            overwritten = daemon.store.reflection("2026-07-21")
+            self.assertEqual(overwritten["state"], "completed")
+            self.assertEqual(overwritten["summary"], "覆盖后的日记")
+            self.assertEqual(
+                json.loads(overwritten["memories_json"])[0]["key"],
+                "topic.second_pass",
+            )
+            self.assertIn(
+                "第二轮覆盖晋升",
+                daemon.store.reflection_memory_context("第二轮", 4, 2000),
+            )
+            self.assertNotIn(
+                "第一轮晋升",
+                daemon.store.reflection_memory_context("第一轮", 4, 2000),
+            )
+            turn_states = {
+                row["id"]: row["state"]
+                for row in daemon.store._db.execute(
+                    """SELECT id, state FROM turns
+                       WHERE source_ids_json LIKE '%reflection:2026-07-21%'"""
+                )
+            }
+            self.assertEqual(
+                turn_states[daemon._turn_id("reflection", "2026-07-21")],
+                "completed",
+            )
+            self.assertEqual(
+                turn_states[
+                    daemon._turn_id("reflection", "2026-07-21", first["claimed_at"])
+                ],
+                "completed",
+            )
+            self.assertEqual(
+                turn_states[
+                    daemon._turn_id("reflection", "2026-07-21", second["claimed_at"])
+                ],
+                "completed",
+            )
+            daemon.store.close()

@@ -2659,11 +2659,19 @@ class TurnRunner:
     async def _complete_reflection_turn(
         self, local_date: str, stop: asyncio.Event
     ) -> None:
-        turn_id = self._turn_id("reflection", local_date)
+        reflection = self.store.reflection(local_date)
+        claimed_at = None if reflection is None else reflection.get("claimed_at")
+        turn_id = self._turn_id("reflection", local_date, claimed_at)
         state = self.store.begin_turn(
             turn_id, "autonomous", [f"reflection:{local_date}"]
         )
-        if state in {"completed", "cancelled"}:
+        if state == "completed":
+            self.store.restore_completed_reflection_claim(local_date)
+            return
+        if state == "cancelled":
+            self.store.release_reflection(
+                local_date, "turn_cancelled", delay_seconds=3600
+            )
             return
         if state == "needs_reconciliation" or stop.is_set():
             self.store.release_reflection(

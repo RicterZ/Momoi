@@ -3390,6 +3390,15 @@ class Store(MemoryStore, DeliveryStore):
                 (now + delay_seconds, error[:500], local_date),
             )
 
+    def restore_completed_reflection_claim(self, local_date: str) -> None:
+        with self._db:
+            self._db.execute(
+                """UPDATE reflections SET state='completed', claimed_at=NULL,
+                   retry_at=NULL, error=NULL
+                   WHERE local_date=? AND state='running'""",
+                (local_date,),
+            )
+
     def reflection_source(
         self, local_date: str, timezone: str, token_budget: int
     ) -> dict[str, object]:
@@ -3501,6 +3510,10 @@ class Store(MemoryStore, DeliveryStore):
                     now,
                     reflection_id,
                 ),
+            )
+            self._db.execute(
+                "DELETE FROM reflection_memories WHERE source_reflection_id=?",
+                (reflection_id,),
             )
             for memory in memories:
                 self._db.execute(

@@ -406,7 +406,7 @@ Reflection uses `notifications.timezone` and reviews the local calendar day that
 
 Reflection never contacts the owner or receives external tools. The complete summary and candidate learning are stored in SQLite `reflections`; promoted durable learning is stored in `reflection_memories` and enters later context below confirmed owner memory. Owner profile and preference items are accepted only when they quote owner text from that day.
 
-Send `/reflect` in the private owner chat to review the current local calendar day immediately, even when automatic reflection is disabled. A command received while that day's reflection is already running is ignored; a completed day can be reviewed again.
+Send `/reflect` in the private owner chat to review the current local calendar day immediately, even when automatic reflection is disabled. A command received while that day's reflection is already running is ignored; a completed day can be reviewed again and overwrites that day's summary and promoted memories.
 
 ## Episode history maintenance
 
