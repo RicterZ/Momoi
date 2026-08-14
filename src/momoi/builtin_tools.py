@@ -102,9 +102,9 @@ BUILTIN_TOOL_SPECS: list[dict[str, Any]] = [
     {
         "name": "apply_patch",
         "description": (
-            "Validate and apply a standard unified diff using git apply. Supports "
-            "multi-file additions, updates, moves, and deletions without requiring "
-            "the target directory to be a Git repository."
+            "Apply either a standard unified diff or a structured patch using "
+            "*** Begin Patch / *** Update File / *** End Patch. Standard diffs "
+            "support multi-file additions, updates, moves, and deletions."
         ),
         "input_schema": {
             "type": "object",
@@ -305,6 +305,16 @@ class BuiltinTools:
         cwd = self.resolve_path(arguments.get("cwd"))
         if not cwd.is_dir():
             raise FileNotFoundError(f"cwd does not exist: {cwd}")
+        stripped = patch.strip()
+        if stripped.startswith("*** Begin Patch"):
+            if not stripped.endswith("*** End Patch"):
+                raise ValueError("structured patch is missing *** End Patch")
+            patch = stripped.removeprefix("*** Begin Patch").removesuffix(
+                "*** End Patch"
+            ).strip()
+            if not patch.startswith(("diff --git ", "--- ")):
+                return self._apply_structured_patch(cwd, patch)
+            patch += "\n"
         command = ["git", "-C", str(cwd), "apply", "--recount", "--whitespace=nowarn", "-"]
         check = subprocess.run(
             [*command[:4], "--check", *command[4:]],
@@ -325,3 +335,70 @@ class BuiltinTools:
         if applied.returncode:
             raise RuntimeError((applied.stderr or applied.stdout or "patch failed").strip())
         return {"ok": True, "cwd": str(cwd)}
+
+    def _apply_structured_patch(self, cwd: Path, patch: str) -> dict[str, Any]:
+        lines = patch.splitlines()
+        index = 0
+        changed: list[str] = []
+        while index < len(lines):
+            header = lines[index]
+            if not header.startswith("*** Update File: "):
+                raise ValueError(
+                    "structured patch currently requires *** Update File"
+                )
+            raw_path = header.removeprefix("*** Update File: ").strip()
+            path = Path(raw_path).expanduser()
+            if not path.is_absolute():
+                path = cwd / path
+            path = path.resolve()
+            content = path.read_text(encoding="utf-8")
+            index += 1
+            hunks: list[list[str]] = []
+            current: list[str] = []
+            while index < len(lines) and not lines[index].startswith("*** "):
+                line = lines[index]
+                if line.startswith("@@"):
+                    if current:
+                        hunks.append(current)
+                        current = []
+                elif line[:1] in {" ", "+", "-"}:
+                    current.append(line)
+                else:
+                    raise ValueError("invalid structured patch line")
+                index += 1
+            if current:
+                hunks.append(current)
+            if not hunks:
+                raise ValueError("structured patch has no hunks")
+            for hunk in hunks:
+                old = "\n".join(
+                    line[1:] for line in hunk if line.startswith((" ", "-"))
+                )
+                new = "\n".join(
+                    line[1:] for line in hunk if line.startswith((" ", "+"))
+                )
+                matches = [
+                    (old + "\n", new + "\n"),
+                    (old, new),
+                ]
+                selected = next(
+                    (
+                        pair
+                        for pair in matches
+                        if pair[0] and content.count(pair[0]) == 1
+                    ),
+                    None,
+                )
+                if selected is None:
+                    raise ValueError(
+                        f"structured patch context is not unique in {path}"
+                    )
+                content = content.replace(selected[0], selected[1], 1)
+            result = self._write_file({"path": str(path), "content": content})
+            changed.append(str(result["path"]))
+        return {
+            "ok": True,
+            "cwd": str(cwd),
+            "files": changed,
+            "format": "structured",
+        }
