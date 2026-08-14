@@ -66,6 +66,16 @@ async function api(path, { signal, method = "GET", body, token, formData } = {})
   return response.json();
 }
 
+async function login(secret) {
+  const data = await api("/api/auth/token", {
+    method: "POST",
+    body: { token: secret },
+  });
+  const token = String(data?.token || "").trim();
+  if (!token) throw new Error("missing token");
+  return token;
+}
+
 function formatDate(value, dateOnly = false) {
   if (value === null || value === undefined || value === "") return "—";
   const date =
@@ -1054,9 +1064,10 @@ function TokenGate({ value, onChange, onUnlock }) {
           setBusy(true);
           setError("");
           try {
-            await api("/api/health", { token: next });
-            sessionStorage.setItem(TOKEN_KEY, next);
-            onUnlock(next);
+            const accessToken = await login(next);
+            sessionStorage.setItem(TOKEN_KEY, accessToken);
+            onUnlock(accessToken);
+            onChange("");
           } catch {
             setError("通行证不对，再试一次。");
           } finally {
@@ -1104,10 +1115,21 @@ function App() {
   const view = useHashRoute();
   const [refreshKey, setRefreshKey] = useState(0);
   const [token, setToken] = useState(readToken);
-  const [tokenDraft, setTokenDraft] = useState(readToken);
+  const [tokenDraft, setTokenDraft] = useState("");
   const locked = !token;
   const [pageTitle, eyebrow] = pages[view];
   const View = viewComponents[view];
+
+  useEffect(() => {
+    if (!token) return undefined;
+    const controller = new AbortController();
+    api("/api/health", { token, signal: controller.signal }).catch((error) => {
+      if (error.name === "AbortError") return;
+      sessionStorage.removeItem(TOKEN_KEY);
+      setToken("");
+    });
+    return () => controller.abort();
+  }, [token]);
 
   return (
     <>

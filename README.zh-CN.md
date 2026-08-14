@@ -151,9 +151,10 @@ momoi run --dashboard
 ```
 
 默认访问地址为 `http://127.0.0.1:8788`。可用 `--dashboard-host` 和
-`--dashboard-port` 修改监听地址。所有 `/api/*` 都需要在页面填写的
-`dashboard.token`（Bearer）；表情图片 `/api/emotions/{slug}/asset` 可匿名访问，方便
-`<img>` 加载。启用 `--dashboard` 时必须配置该 token，请勿将端口直接暴露到公网。
+`--dashboard-port` 修改监听地址。在页面输入 `dashboard.token` 后会签发一年有效的
+JWT；之后所有 `/api/*` 都带该 Bearer JWT（表情图片 `/api/emotions/{slug}/asset`
+可匿名访问，方便 `<img>` 加载）。启用 `--dashboard` 时必须配置该 token，请勿将端口
+直接暴露到公网。
 
 `--workspace` 可以放在任意命令前，用来指定其他 workspace：
 
@@ -220,7 +221,7 @@ momoi goal del <goal-id-or-prefix> --reason "No longer needed"
 
 | 命令 | 用途 |
 | --- | --- |
-| `momoi run [--dashboard] [--dashboard-host <host>] [--dashboard-port <port>]` | 启动 daemon，并可选启动 Web 看板（`/api/*` 需 `dashboard.token`） |
+| `momoi run [--dashboard] [--dashboard-host <host>] [--dashboard-port <port>]` | 启动 daemon，并可选启动 Web 看板（`dashboard.token` 签发一年 JWT 访问 `/api/*`） |
 | `momoi --version` | 查看已安装版本 |
 | `momoi channel login <name>` | 为需要登录的已配置渠道认证 |
 | `momoi emotion add --slug <slug> --path <file> --desc <text>` | 添加或更新图片反应素材 |

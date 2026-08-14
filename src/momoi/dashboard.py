@@ -1,9 +1,12 @@
 import asyncio
+import base64
+import hashlib
 import hmac
 import json
 import logging
 import mimetypes
 import re
+import time
 from importlib.resources import files
 from pathlib import Path
 
@@ -21,7 +24,10 @@ from .storage import Store
 logger = logging.getLogger(__name__)
 ASSET_ROOT = files("momoi").joinpath("dashboard")
 DASHBOARD_TOKEN = web.AppKey("dashboard_token", str)
-_PUBLIC_API_PATHS = re.compile(r"^/api/emotions/[^/]+/asset$")
+JWT_TTL_SECONDS = 365 * 24 * 60 * 60
+JWT_SUBJECT = "momoi-dashboard"
+_PUBLIC_ASSET_PATH = re.compile(r"^/api/emotions/[^/]+/asset$")
+_AUTH_TOKEN_PATH = "/api/auth/token"
 
 
 def _bounded_int(
@@ -41,6 +47,15 @@ def _bearer_token(request: web.Request) -> str:
     return ""
 
 
+def _b64url_encode(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+
+
+def _b64url_decode(raw: str) -> bytes:
+    padding = "=" * (-len(raw) % 4)
+    return base64.urlsafe_b64decode(raw + padding)
+
+
 def _token_matches(provided: str, expected: str) -> bool:
     if not provided or not expected:
         return False
@@ -50,13 +65,80 @@ def _token_matches(provided: str, expected: str) -> bool:
         return False
 
 
+def issue_dashboard_jwt(
+    secret: str,
+    *,
+    ttl_seconds: int = JWT_TTL_SECONDS,
+    now: int | None = None,
+) -> str:
+    if not secret:
+        raise ValueError("dashboard token is required")
+    issued_at = int(time.time() if now is None else now)
+    header = _b64url_encode(
+        json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode()
+    )
+    payload = _b64url_encode(
+        json.dumps(
+            {
+                "sub": JWT_SUBJECT,
+                "iat": issued_at,
+                "exp": issued_at + max(1, int(ttl_seconds)),
+            },
+            separators=(",", ":"),
+        ).encode()
+    )
+    signing_input = f"{header}.{payload}".encode("ascii")
+    signature = _b64url_encode(
+        hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest()
+    )
+    return f"{header}.{payload}.{signature}"
+
+
+def verify_dashboard_jwt(
+    token: str, secret: str, *, now: int | None = None
+) -> bool:
+    if not token or not secret or token.count(".") != 2:
+        return False
+    header_segment, payload_segment, signature_segment = token.split(".", 2)
+    signing_input = f"{header_segment}.{payload_segment}".encode("ascii")
+    expected = _b64url_encode(
+        hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest()
+    )
+    if not hmac.compare_digest(signature_segment, expected):
+        return False
+    try:
+        header = json.loads(_b64url_decode(header_segment))
+        payload = json.loads(_b64url_decode(payload_segment))
+    except (ValueError, json.JSONDecodeError, UnicodeDecodeError):
+        return False
+    if not isinstance(header, dict) or not isinstance(payload, dict):
+        return False
+    if header.get("alg") != "HS256" or header.get("typ") != "JWT":
+        return False
+    if payload.get("sub") != JWT_SUBJECT:
+        return False
+    try:
+        expires_at = int(payload["exp"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    current = int(time.time() if now is None else now)
+    return expires_at > current
+
+
 def _require_token(request: web.Request) -> None:
-    expected = str(request.app[DASHBOARD_TOKEN] or "")
-    if not _token_matches(_bearer_token(request), expected):
+    secret = str(request.app[DASHBOARD_TOKEN] or "")
+    if not verify_dashboard_jwt(_bearer_token(request), secret):
         raise web.HTTPUnauthorized(
             text="unauthorized",
             headers={"WWW-Authenticate": 'Bearer realm="momoi-dashboard"'},
         )
+
+
+def _is_public_api(request: web.Request) -> bool:
+    path = request.path
+    if _PUBLIC_ASSET_PATH.fullmatch(path):
+        return True
+    return request.method == "POST" and path == _AUTH_TOKEN_PATH
 
 
 async def _json_body(request: web.Request) -> dict[str, object]:
@@ -79,8 +161,7 @@ def _public_emotion(item: dict[str, object]) -> dict[str, object]:
 async def _auth(
     request: web.Request, handler: web.RequestHandler
 ) -> web.StreamResponse:
-    path = request.path
-    if path.startswith("/api/") and not _PUBLIC_API_PATHS.fullmatch(path):
+    if request.path.startswith("/api/") and not _is_public_api(request):
         _require_token(request)
     return await handler(request)
 
@@ -132,6 +213,23 @@ def create_dashboard_app(store: Store, *, token: str = "") -> web.Application:
 
     async def health(_request: web.Request) -> web.Response:
         return web.json_response({"ok": True})
+
+    async def issue_token(request: web.Request) -> web.Response:
+        secret = str(request.app[DASHBOARD_TOKEN] or "")
+        payload = await _json_body(request)
+        provided = str(payload.get("token") or "").strip()
+        if not _token_matches(provided, secret):
+            raise web.HTTPUnauthorized(
+                text="unauthorized",
+                headers={"WWW-Authenticate": 'Bearer realm="momoi-dashboard"'},
+            )
+        return web.json_response(
+            {
+                "token": issue_dashboard_jwt(secret),
+                "token_type": "Bearer",
+                "expires_in": JWT_TTL_SECONDS,
+            }
+        )
 
     async def overview(_request: web.Request) -> web.Response:
         return web.json_response(store.dashboard_overview())
@@ -356,6 +454,7 @@ def create_dashboard_app(store: Store, *, token: str = "") -> web.Application:
 
     app.router.add_get("/", index)
     app.router.add_get("/assets/{path:.+}", asset)
+    app.router.add_post("/api/auth/token", issue_token)
     app.router.add_get("/api/health", health)
     app.router.add_get("/api/overview", overview)
     app.router.add_get("/api/conversations", conversations)

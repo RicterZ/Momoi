@@ -151,11 +151,11 @@ momoi run --dashboard
 ```
 
 Open `http://127.0.0.1:8788` by default. Use `--dashboard-host` and
-`--dashboard-port` to change the listener. All `/api/*` routes require the
-`dashboard.token` entered in the page (Bearer); emotion image assets at
-`/api/emotions/{slug}/asset` stay public for `<img>` tags. `--dashboard`
-requires that token to be configured. Do not expose the port directly to the
-public Internet.
+`--dashboard-port` to change the listener. Enter `dashboard.token` on the page
+to receive a one-year JWT; all `/api/*` routes require that Bearer JWT (emotion
+image assets at `/api/emotions/{slug}/asset` stay public for `<img>` tags).
+`--dashboard` requires the token to be configured. Do not expose the port
+directly to the public Internet.
 
 Pass `--workspace` before any command to use another workspace:
 
@@ -222,7 +222,7 @@ Use `--at` for a future one-time review or `--every-seconds` for a recurring int
 
 | Command | Purpose |
 | --- | --- |
-| `momoi run [--dashboard] [--dashboard-host <host>] [--dashboard-port <port>]` | Start the daemon and optionally its Web dashboard (`dashboard.token` required for `/api/*`) |
+| `momoi run [--dashboard] [--dashboard-host <host>] [--dashboard-port <port>]` | Start the daemon and optionally its Web dashboard (`dashboard.token` issues a 1-year JWT for `/api/*`) |
 | `momoi --version` | Print the installed version |
 | `momoi channel login <name>` | Authenticate a configured channel when it needs login |
 | `momoi emotion add --slug <slug> --path <file> --desc <text>` | Add or update an image reaction asset |

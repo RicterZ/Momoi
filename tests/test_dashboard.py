@@ -9,7 +9,12 @@ from pathlib import Path
 from aiohttp import FormData
 from aiohttp.test_utils import TestClient, TestServer
 
-from momoi.dashboard import create_dashboard_app
+from momoi.dashboard import (
+    JWT_TTL_SECONDS,
+    create_dashboard_app,
+    issue_dashboard_jwt,
+    verify_dashboard_jwt,
+)
 from momoi.storage import Store
 
 
@@ -18,7 +23,8 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
         self.store = Store(self.root / "momoi.sqlite3", self.root)
-        self.token = "dashboard-secret"
+        self.secret = "dashboard-secret"
+        self.access_token = issue_dashboard_jwt(self.secret)
         now = time.time()
 
         self.store.create_episode("一次测试聊天", episode_id="episode-one")
@@ -117,7 +123,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.store.add_emotion("hello", image, "打招呼")
 
         self.client = TestClient(
-            TestServer(create_dashboard_app(self.store, token=self.token))
+            TestServer(create_dashboard_app(self.store, token=self.secret))
         )
         await self.client.start_server()
 
@@ -127,7 +133,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.temporary.cleanup()
 
     def _auth(self, token: str | None = None) -> dict[str, str]:
-        return {"Authorization": f"Bearer {token or self.token}"}
+        return {"Authorization": f"Bearer {token or self.access_token}"}
 
     async def test_dashboard_serves_static_ui_with_security_headers(self) -> None:
         response = await self.client.get("/")
@@ -216,6 +222,12 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
                 method, path, json=body, headers=self._auth("wrong")
             )
             self.assertEqual(wrong.status, 401, msg=f"{method} {path} wrong token")
+            raw_secret = await self.client.request(
+                method, path, json=body, headers=self._auth(self.secret)
+            )
+            self.assertEqual(
+                raw_secret.status, 401, msg=f"{method} {path} raw secret"
+            )
 
         asset = await self.client.get("/api/emotions/hello/asset")
         self.assertEqual(asset.status, 200)
@@ -230,10 +242,43 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         ).json()
         self.assertEqual(emotions["items"][0]["slug"], "hello")
 
+    async def test_auth_token_issues_year_long_jwt(self) -> None:
+        denied = await self.client.post(
+            "/api/auth/token", json={"token": "wrong"}
+        )
+        self.assertEqual(denied.status, 401)
+
+        issued = await self.client.post(
+            "/api/auth/token", json={"token": self.secret}
+        )
+        self.assertEqual(issued.status, 200)
+        payload = await issued.json()
+        self.assertEqual(payload["token_type"], "Bearer")
+        self.assertEqual(payload["expires_in"], JWT_TTL_SECONDS)
+        self.assertTrue(verify_dashboard_jwt(payload["token"], self.secret))
+
+        overview = await self.client.get(
+            "/api/overview", headers=self._auth(payload["token"])
+        )
+        self.assertEqual(overview.status, 200)
+
+        expired = issue_dashboard_jwt(
+            self.secret, ttl_seconds=1, now=int(time.time()) - 10
+        )
+        self.assertFalse(verify_dashboard_jwt(expired, self.secret))
+        rejected = await self.client.get(
+            "/api/overview", headers=self._auth(expired)
+        )
+        self.assertEqual(rejected.status, 401)
+
     async def test_empty_dashboard_token_rejects_all_api(self) -> None:
         bare = TestClient(TestServer(create_dashboard_app(self.store, token="")))
         await bare.start_server()
         try:
+            login = await bare.post(
+                "/api/auth/token", json={"token": "anything"}
+            )
+            self.assertEqual(login.status, 401)
             for method, path, body in (
                 ("GET", "/api/overview", None),
                 (

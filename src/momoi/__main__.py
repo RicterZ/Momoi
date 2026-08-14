@@ -30,7 +30,7 @@ def parse_args() -> argparse.Namespace:
     run_parser.add_argument(
         "--dashboard",
         action="store_true",
-        help="serve the local Web dashboard (/api requires dashboard.token)",
+        help="serve the local Web dashboard (/api requires JWT from dashboard.token)",
     )
     run_parser.add_argument(
         "--dashboard-host",
