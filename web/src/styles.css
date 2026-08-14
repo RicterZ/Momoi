@@ -488,12 +488,11 @@ h2, h3, p { overflow-wrap: anywhere; }
 }
 .state-detail, .secondary { color: var(--muted); line-height: 1.65; }
 .intensity {
-  height: 4px;
+  height: 6px;
   margin-top: 24px;
   overflow: hidden;
-  border-radius: 0;
+  border-radius: 999px;
   background: var(--wash);
-  border: 2px solid var(--ink);
 }
 .intensity span {
   display: block;
