@@ -255,6 +255,49 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(error, "unknown_always_memory")
 
+        result, error = MomoiDaemon._parse_reflection_finish(
+            {
+                **base,
+                "always_memory_actions": [
+                    {
+                        "memory_id": 1,
+                        "action": "merge",
+                        "merge_into_id": 2,
+                        "content": "日常聊天不要用句号，会显得冷淡。",
+                        "reason": "同一条标点偏好，措辞不同。",
+                    }
+                ],
+            },
+            "",
+            "",
+            "",
+            {1, 2},
+        )
+        self.assertIsNone(error)
+        self.assertEqual(
+            result["always_memory_actions"][0]["content"],
+            "日常聊天不要用句号，会显得冷淡。",
+        )
+
+        _, error = MomoiDaemon._parse_reflection_finish(
+            {
+                **base,
+                "always_memory_actions": [
+                    {
+                        "memory_id": 1,
+                        "action": "merge",
+                        "merge_into_id": 2,
+                        "reason": "缺少总结",
+                    }
+                ],
+            },
+            "",
+            "",
+            "",
+            {1, 2},
+        )
+        self.assertEqual(error, "invalid_always_memory_action")
+
         _, error = MomoiDaemon._parse_reflection_finish(
             {
                 **base,
@@ -263,6 +306,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                         "memory_id": 1,
                         "action": "merge",
                         "merge_into_id": 1,
+                        "content": "同一条",
                         "reason": "同一条",
                     }
                 ],
@@ -282,6 +326,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                         "memory_id": 1,
                         "action": "merge",
                         "merge_into_id": 2,
+                        "content": "主人不吃香菜。",
                         "reason": "重复偏好",
                     },
                     {
@@ -335,14 +380,14 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                 (
                     "preference",
                     "food.avoids_cilantro",
-                    "主人不吃香菜。",
-                    "我不吃香菜",
+                    "老师希望后续日常回复末尾不使用中文句号。",
+                    "不要用句号",
                 ),
                 (
                     "preference",
                     "food.no_cilantro",
-                    "主人不吃香菜。",
-                    "不要香菜",
+                    "老师希望在日常聊天里不要使用句号，因为句号会显得冷淡。",
+                    "句号显得冷淡",
                 ),
                 (
                     "preference",
@@ -403,7 +448,8 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                                     "memory_id": ids["food.no_cilantro"],
                                     "action": "merge",
                                     "merge_into_id": ids["food.avoids_cilantro"],
-                                    "reason": "同一条不吃香菜的偏好。",
+                                    "content": "日常聊天不要用句号，会显得冷淡。",
+                                    "reason": "同一条标点偏好，措辞不同。",
                                 },
                                 {
                                     "memory_id": ids["current.at_office"],
@@ -444,6 +490,10 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                 for row in daemon.store.always_memory_inventory()
             }
             self.assertEqual(set(always), {("preference", "food.avoids_cilantro")})
+            self.assertEqual(
+                always[("preference", "food.avoids_cilantro")]["content"],
+                "日常聊天不要用句号，会显得冷淡。",
+            )
             self.assertFalse(
                 daemon.store.has_memory("preference", "food.no_cilantro")
             )

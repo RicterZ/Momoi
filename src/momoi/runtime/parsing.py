@@ -206,12 +206,14 @@ def parse_always_memory_actions(
             "action",
             "reason",
             "merge_into_id",
+            "content",
         }:
             return None, "invalid_always_memory_action"
         action = item.get("action")
         memory_id = item.get("memory_id")
         reason = item.get("reason")
         merge_into_id = item.get("merge_into_id")
+        content = item.get("content")
         if (
             action not in ALWAYS_MEMORY_ACTIONS
             or isinstance(memory_id, bool)
@@ -228,9 +230,12 @@ def parse_always_memory_actions(
                 or not isinstance(merge_into_id, int)
                 or merge_into_id < 1
                 or merge_into_id == memory_id
+                or not isinstance(content, str)
+                or not content.strip()
+                or len(content) > 2000
             ):
                 return None, "invalid_always_memory_merge"
-        elif merge_into_id is not None:
+        elif "content" in item or merge_into_id is not None:
             return None, "invalid_always_memory_action"
         if memory_id in seen:
             return None, "duplicate_always_memory_action"
@@ -250,6 +255,7 @@ def parse_always_memory_actions(
         }
         if action == "merge":
             parsed["merge_into_id"] = merge_into_id
+            parsed["content"] = content.strip()
         actions.append(parsed)
     forget_ids = {item["memory_id"] for item in actions if item["action"] == "forget"}
     merge_sources = {item["memory_id"] for item in actions if item["action"] == "merge"}

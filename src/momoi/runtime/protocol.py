@@ -331,6 +331,15 @@ REFLECTION_FINISH_SPEC: dict[str, Any] = {
                             "minimum": 1,
                             "description": "Required for merge; the surviving always memory.",
                         },
+                        "content": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 2000,
+                            "description": (
+                                "Required for merge: one concise restatement of the "
+                                "surviving memory. Do not concatenate near-duplicates."
+                            ),
+                        },
                         "reason": {
                             "type": "string",
                             "minLength": 1,

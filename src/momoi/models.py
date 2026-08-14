@@ -40,6 +40,7 @@ class MemoryCandidate:
     importance: float = 0.5
     replace_confirmed: bool = False
     activation: str = "recall"
+    ttl_hours: float = 0
 
 
 @dataclass(frozen=True)

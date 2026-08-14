@@ -9,7 +9,14 @@ from .models import (
     ToolCall,
     TurnDraft,
 )
-from .storage import MEMORY_ACTIVATIONS, MEMORY_KINDS, Store, lexical_units
+from .storage import (
+    MEMORY_ACTIVATIONS,
+    MEMORY_KINDS,
+    RECENT_MEMORY_MAX_TTL_HOURS,
+    RECENT_MEMORY_MIN_TTL_HOURS,
+    Store,
+    lexical_units,
+)
 
 MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
     {
@@ -136,6 +143,16 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
                         "change autonomous task applicability; recall for everything else."
                     ),
                 },
+                "ttl_hours": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 168,
+                    "description": (
+                        "Required. For recent, how long this state should stay active: "
+                        "1 to 168 hours, chosen from the content. For always or recall, "
+                        "send 0; the value is ignored."
+                    ),
+                },
                 "evidence": {
                     "type": "string",
                     "description": "Exact contiguous quote from one current user message.",
@@ -155,7 +172,14 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
                     ),
                 },
             },
-            "required": ["kind", "key", "content", "evidence", "activation"],
+            "required": [
+                "kind",
+                "key",
+                "content",
+                "evidence",
+                "activation",
+                "ttl_hours",
+            ],
             "additionalProperties": False,
         },
     },
@@ -195,12 +219,17 @@ MEMORY_TOOL_POLICY = """### Memory tools
   or corrects an existing fact, call it before the final reply. Set `activation`
   to `always` only for a rule that should affect every response, `recent` for a
   current bounded thread or a clearly stated owner state that can affect whether
-  autonomous work is still applicable, and `recall` by default.
+  autonomous work is still applicable, and `recall` by default. `ttl_hours` is
+  required: send `0` for `always` or `recall` (ignored). For `recent`, choose 1
+  to 168 hours from the content—a momentary pose or this-afternoon state is 1-3
+  hours, today-only is about 12-24, a multi-day situation may run several days
+  up to 7. Do not store a fleeting remark as `recent` if it will be stale in an
+  hour unless you set a matching short TTL.
 - In particular, remember clearly stated, time-sensitive owner state such as a
   current situation, travel or schedule change, availability, or physical state
   when it could change a later Goal or Webhook decision, even if it was shared
-  casually. Use a stable state key and exact evidence; do not store every passing
-  remark as active context.
+  casually. Use a stable state key, exact evidence, and a TTL that matches how
+  long that state remains true.
 - A correction reuses the existing stable key. Set `replace_confirmed=true` only
   when the current user explicitly confirms the replacement. Otherwise a
   different value becomes a pending conflict and the older memory stays active;
@@ -351,6 +380,19 @@ class MemoryTools:
         replace_confirmed = arguments.get("replace_confirmed", False)
         if not isinstance(replace_confirmed, bool):
             return {"ok": False, "error": "invalid_replace_confirmed"}
+        raw_ttl = arguments.get("ttl_hours", 0)
+        if isinstance(raw_ttl, bool) or not isinstance(raw_ttl, (int, float)):
+            return {"ok": False, "error": "invalid_ttl"}
+        if activation == "recent":
+            if not (
+                RECENT_MEMORY_MIN_TTL_HOURS
+                <= float(raw_ttl)
+                <= RECENT_MEMORY_MAX_TTL_HOURS
+            ):
+                return {"ok": False, "error": "invalid_ttl"}
+            ttl_hours = float(raw_ttl)
+        else:
+            ttl_hours = 0
 
         existing = self.store.active_memory(kind, key)
         if existing and existing["content"] != content and not replace_confirmed:
@@ -380,7 +422,14 @@ class MemoryTools:
             }
 
         candidate = MemoryCandidate(
-            kind, key, content, evidence, importance, replace_confirmed, activation
+            kind,
+            key,
+            content,
+            evidence,
+            importance,
+            replace_confirmed,
+            activation,
+            ttl_hours,
         )
         draft.memories = [
             memory
@@ -406,6 +455,7 @@ class MemoryTools:
                 "key": key,
                 "content": content,
                 "activation": activation,
+                "ttl_hours": ttl_hours,
             },
         }
 

@@ -401,6 +401,8 @@ h2, h3, p { overflow-wrap: anywhere; }
   box-shadow: 0 4px 0 var(--wash);
 }
 .reflection-card { border-left: 4px solid var(--blue); }
+.memory-section .reflection-card:nth-child(odd) { border-left-color: var(--pink); }
+.memory-section .reflection-card:nth-child(even) { border-left-color: var(--blue); }
 .card-head {
   display: flex;
   align-items: flex-start;

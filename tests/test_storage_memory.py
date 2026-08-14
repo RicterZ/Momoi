@@ -2742,6 +2742,14 @@ class StorageMemoryTest(unittest.TestCase):
                 ),
                 ({**valid, "evidence": "证" * 501}, "evidence_not_in_current_input"),
                 ({**valid, "replace_confirmed": "yes"}, "invalid_replace_confirmed"),
+                (
+                    {**valid, "activation": "recent", "ttl_hours": 0},
+                    "invalid_ttl",
+                ),
+                (
+                    {**valid, "activation": "recent", "ttl_hours": 200},
+                    "invalid_ttl",
+                ),
             ]
             for index, (arguments, error) in enumerate(invalid):
                 result = tools.execute(
@@ -2792,6 +2800,7 @@ class StorageMemoryTest(unittest.TestCase):
                             "content": content,
                             "evidence": evidence,
                             "activation": activation,
+                            "ttl_hours": 48 if activation == "recent" else 0,
                         },
                     ),
                     [event],
@@ -2811,6 +2820,58 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertNotIn("波浪号", recalled)
             self.assertNotIn("恢复身体", recalled)
             self.assertEqual(always.count("波浪号"), 1)
+            recent_row = store._db.execute(
+                "SELECT expires_at FROM memories WHERE key='current.recovery'"
+            ).fetchone()
+            self.assertIsNotNone(recent_row["expires_at"])
+            always_row = store._db.execute(
+                "SELECT expires_at FROM memories WHERE key='communication.punctuation.tilde'"
+            ).fetchone()
+            self.assertIsNone(always_row["expires_at"])
+            store.close()
+
+    def test_recent_memory_drops_after_ttl(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            tools = MemoryTools(store)
+            event = IncomingMessage(
+                "qq:ttl", "ttl", "现在窝在沙发上", 1, 1
+            )
+            store.add_event(event)
+            draft = TurnDraft()
+            result = tools.execute(
+                ToolCall(
+                    "remember-ttl",
+                    "memory_remember",
+                    {
+                        "kind": "episodic",
+                        "key": "current.sofa",
+                        "content": "小桃现在抱着靠枕窝在沙发上。",
+                        "evidence": "窝在沙发上",
+                        "activation": "recent",
+                        "ttl_hours": 2,
+                    },
+                ),
+                [event],
+                draft,
+            )
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["memory"]["ttl_hours"], 2)
+            before = time.time()
+            store.commit_turn([event], event.text, AgentReply(["记住了"]), draft)
+            expires_at = store._db.execute(
+                "SELECT expires_at FROM memories WHERE key='current.sofa'"
+            ).fetchone()["expires_at"]
+            self.assertGreaterEqual(expires_at, before + 2 * 3600 - 1)
+            self.assertLessEqual(expires_at, time.time() + 2 * 3600 + 1)
+            self.assertIn("沙发", store.recent_memory_context(500))
+            store._db.execute(
+                "UPDATE memories SET expires_at=? WHERE key='current.sofa'",
+                (time.time() - 1,),
+            )
+            store._db.commit()
+            self.assertNotIn("沙发", store.recent_memory_context(500))
+            self.assertEqual(store.list_memories(), [])
             store.close()
 
     def test_legacy_summaries_become_closed_episodes_without_losing_raw(self) -> None:

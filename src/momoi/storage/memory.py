@@ -22,8 +22,22 @@ MEMORY_KINDS = {
 }
 MEMORY_ACTIVATIONS = {"always", "recent", "recall"}
 RECENT_MEMORY_WINDOW_SECONDS = 7 * 24 * 60 * 60
+RECENT_MEMORY_MIN_TTL_HOURS = 1
+RECENT_MEMORY_MAX_TTL_HOURS = 7 * 24
 ALWAYS_MEMORY_TOKEN_BUDGET = 1200
 CJK_STOP_CHARS = set("的了是在我你他她它们和就都也很还把被让要会呢吧啊哦呀")
+
+
+def memory_expires_at(
+    activation: str, ttl_hours: float, now: float
+) -> float | None:
+    if activation != "recent":
+        return None
+    hours = min(
+        RECENT_MEMORY_MAX_TTL_HOURS,
+        max(RECENT_MEMORY_MIN_TTL_HOURS, float(ttl_hours)),
+    )
+    return now + hours * 3600
 
 
 def _merged_always_memory_content(target: str, source: str) -> str:
@@ -210,7 +224,8 @@ class MemoryStore:
             return "No always-on owner memories are stored."
         lines = [
             "Full inventory of confirmed always-on owner memories. These currently "
-            "inject into every Turn. Use memory_id in always_memory_actions."
+            "inject into every Turn. Use memory_id in always_memory_actions. "
+            "Near-duplicate preferences should be merged into one concise content."
         ]
         for row in rows:
             updated = context_timestamp(row["updated_at"])
@@ -245,9 +260,11 @@ class MemoryStore:
             target = inventory.get(int(item["merge_into_id"]))
             if source is None or target is None:
                 continue
-            content = _merged_always_memory_content(
-                str(target["content"]), str(source["content"])
-            )
+            content = str(item.get("content") or "").strip()[:2000]
+            if not content:
+                content = _merged_always_memory_content(
+                    str(target["content"]), str(source["content"])
+                )
             if content != target["content"]:
                 self._db.execute(
                     "UPDATE memories SET content=?, updated_at=? WHERE id=?",
@@ -266,10 +283,15 @@ class MemoryStore:
             activation = (
                 "recent" if item["action"] == "demote_recent" else "recall"
             )
+            expires_at = (
+                memory_expires_at(activation, RECENT_MEMORY_MAX_TTL_HOURS, now)
+                if activation == "recent"
+                else None
+            )
             self._db.execute(
-                """UPDATE memories SET activation=?
+                """UPDATE memories SET activation=?, expires_at=?
                    WHERE id=? AND activation='always' AND superseded_by IS NULL""",
-                (activation, memory["id"]),
+                (activation, expires_at, memory["id"]),
             )
         for item in forgets:
             memory = inventory.get(int(item["memory_id"]))
@@ -525,15 +547,18 @@ class MemoryStore:
                ORDER BY id DESC LIMIT 1""",
             (memory.kind, memory.key),
         ).fetchone()
+        expires_at = memory_expires_at(memory.activation, memory.ttl_hours, now)
         if old and old["content"] == memory.content:
             self._db.execute(
                 """UPDATE memories SET source_event_id=?, evidence_quote=?,
-                   activation=?, importance=MAX(importance, ?), updated_at=?
+                   activation=?, expires_at=?, importance=MAX(importance, ?),
+                   updated_at=?
                    WHERE id=?""",
                 (
                     source_event_id,
                     memory.evidence,
                     memory.activation,
+                    expires_at,
                     memory.importance,
                     now,
                     old["id"],
@@ -550,8 +575,8 @@ class MemoryStore:
         cursor = self._db.execute(
             """INSERT INTO memories
                (kind, key, content, activation, authority, source_event_id,
-                evidence_quote, importance, created_at, updated_at)
-               VALUES (?, ?, ?, ?, 'owner', ?, ?, ?, ?, ?)""",
+                evidence_quote, importance, created_at, updated_at, expires_at)
+               VALUES (?, ?, ?, ?, 'owner', ?, ?, ?, ?, ?, ?)""",
             (
                 memory.kind,
                 memory.key,
@@ -562,6 +587,7 @@ class MemoryStore:
                 memory.importance,
                 now,
                 now,
+                expires_at,
             ),
         )
         if old:

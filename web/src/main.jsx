@@ -403,6 +403,9 @@ function Memories({ refreshKey }) {
                         )}
                         <p className="secondary">
                           更新于 {formatDate(item.updated_at)}
+                          {item.expires_at
+                            ? ` · 有效至 ${formatDate(item.expires_at)}`
+                            : ""}
                         </p>
                       </article>
                     ))}
