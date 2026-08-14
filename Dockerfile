@@ -15,7 +15,7 @@ RUN npm run build
 
 FROM python:3.13-slim-trixie AS python-dependencies
 
-ARG NAP_MSG_COMMIT=f0e789d0134375faf5e56de2673139f685a0c7cf
+ARG NAP_MSG_COMMIT=2399e825a473f4875067ca8e920026d524142218
 
 WORKDIR /build
 COPY pyproject.toml ./
