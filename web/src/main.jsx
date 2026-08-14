@@ -430,7 +430,7 @@ function Memories({ refreshKey, token, onMutated }) {
           <>
             <section className="section-tools">
               <p>{visible.length} 条有效记忆</p>
-              <div className="memory-tabs" role="tablist" aria-label="记忆筛选">
+              <div className="dash-tabs" role="tablist" aria-label="记忆筛选">
                 {[["all", "全部"], ...Object.entries(activationLabels)].map(
                   ([value, label]) => (
                     <button
@@ -640,20 +640,24 @@ function Goals({ refreshKey, token, onMutated }) {
           <>
             <section className="section-tools">
               <p>{visible.length} 个目标</p>
-              <div className="filter">
+              <div className="dash-tabs" role="tablist" aria-label="任务筛选">
                 <button
                   type="button"
+                  role="tab"
+                  aria-selected={!includeClosed}
                   className={includeClosed ? "" : "active"}
                   onClick={() => setIncludeClosed(false)}
                 >
-                  进行中
+                  <span>进行中</span>
                 </button>
                 <button
                   type="button"
+                  role="tab"
+                  aria-selected={includeClosed}
                   className={includeClosed ? "active" : ""}
                   onClick={() => setIncludeClosed(true)}
                 >
-                  全部
+                  <span>全部</span>
                 </button>
               </div>
             </section>

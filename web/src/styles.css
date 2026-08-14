@@ -612,13 +612,13 @@ h2, h3, p { overflow-wrap: anywhere; }
   border-color: var(--pink);
   background: var(--pink);
 }
-.memory-tabs {
+.dash-tabs {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   padding: 2px 6px 2px 2px;
 }
-.memory-tabs button {
+.dash-tabs button {
   position: relative;
   padding: 8px 16px;
   border: 2px solid var(--ink);
@@ -634,21 +634,21 @@ h2, h3, p { overflow-wrap: anywhere; }
   transition: transform 120ms ease, box-shadow 120ms ease, color 120ms ease,
     background 120ms ease;
 }
-.memory-tabs button > span {
+.dash-tabs button > span {
   display: inline-block;
   transform: skewX(16deg);
 }
-.memory-tabs button:hover {
+.dash-tabs button:hover {
   color: var(--ink);
   box-shadow: 2px 2px 0 var(--blue);
   transform: skewX(-16deg) translate(1px, 1px);
 }
-.memory-tabs button.active {
+.dash-tabs button.active {
   color: #fff;
   background: var(--pink);
   box-shadow: 3px 3px 0 var(--blue);
 }
-.memory-tabs button.active:hover {
+.dash-tabs button.active:hover {
   box-shadow: 2px 2px 0 var(--blue);
 }
 .card-list { display: grid; gap: 12px; }
