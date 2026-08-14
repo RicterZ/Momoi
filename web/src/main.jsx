@@ -142,26 +142,30 @@ function ErrorState({ error }) {
   );
 }
 
-function DataView({ path, refreshKey, children }) {
+function DataView({ path, refreshKey, token, children }) {
   const [state, setState] = useState({ loading: true });
   useEffect(() => {
+    if (!token) {
+      setState({ error: new Error("unauthorized") });
+      return undefined;
+    }
     const controller = new AbortController();
     setState({ loading: true });
-    api(path, { signal: controller.signal })
+    api(path, { signal: controller.signal, token })
       .then((data) => setState({ data }))
       .catch((error) => {
         if (error.name !== "AbortError") setState({ error });
       });
     return () => controller.abort();
-  }, [path, refreshKey]);
+  }, [path, refreshKey, token]);
   if (state.loading) return <Loading />;
   if (state.error) return <ErrorState error={state.error} />;
   return children(state.data);
 }
 
-function Overview({ refreshKey }) {
+function Overview({ refreshKey, token }) {
   return (
-    <DataView path="/api/overview" refreshKey={refreshKey}>
+    <DataView path="/api/overview" refreshKey={refreshKey} token={token}>
       {(data) => {
         const metrics = [
           ["聊天主题", data.counts.conversations],
@@ -213,11 +217,11 @@ function Overview({ refreshKey }) {
   );
 }
 
-function Conversations({ refreshKey }) {
+function Conversations({ refreshKey, token }) {
   const [selected, setSelected] = useState(null);
   const [detail, setDetail] = useState({ loading: false });
   return (
-    <DataView path="/api/conversations?limit=100" refreshKey={refreshKey}>
+    <DataView path="/api/conversations?limit=100" refreshKey={refreshKey} token={token}>
       {(data) => {
         const items = data.items || [];
         if (!items.length) return <Empty />;
@@ -227,6 +231,7 @@ function Conversations({ refreshKey }) {
             items={items}
             activeId={activeId}
             detail={detail}
+            token={token}
             onSelect={setSelected}
             setDetail={setDetail}
           />
@@ -236,19 +241,24 @@ function Conversations({ refreshKey }) {
   );
 }
 
-function ConversationLayout({ items, activeId, detail, onSelect, setDetail }) {
+function ConversationLayout({ items, activeId, detail, token, onSelect, setDetail }) {
   useEffect(() => {
+    if (!token) {
+      setDetail({ error: new Error("unauthorized") });
+      return undefined;
+    }
     const controller = new AbortController();
     setDetail({ loading: true });
     api(`/api/conversations/${encodeURIComponent(activeId)}?token_budget=100000`, {
       signal: controller.signal,
+      token,
     })
       .then((data) => setDetail({ data }))
       .catch((error) => {
         if (error.name !== "AbortError") setDetail({ error });
       });
     return () => controller.abort();
-  }, [activeId, setDetail]);
+  }, [activeId, setDetail, token]);
 
   return (
     <section className="record-layout">
@@ -320,9 +330,9 @@ function ConversationDetail({ item }) {
   );
 }
 
-function Reflections({ refreshKey }) {
+function Reflections({ refreshKey, token }) {
   return (
-    <DataView path="/api/reflections?limit=180" refreshKey={refreshKey}>
+    <DataView path="/api/reflections?limit=180" refreshKey={refreshKey} token={token}>
       {({ items }) =>
         items.length ? (
           <>
@@ -414,7 +424,7 @@ function Memories({ refreshKey, token, onMutated }) {
   }
 
   return (
-    <DataView path="/api/memories?limit=400" refreshKey={refreshKey}>
+    <DataView path="/api/memories?limit=400" refreshKey={refreshKey} token={token}>
       {({ items }) => {
         const visible =
           activation === "all"
@@ -629,7 +639,7 @@ function Goals({ refreshKey, token, onMutated }) {
   }
 
   return (
-    <DataView path="/api/goals?all=true" refreshKey={refreshKey}>
+    <DataView path="/api/goals?all=true" refreshKey={refreshKey} token={token}>
       {({ items }) => {
         const visible = includeClosed
           ? items
@@ -893,7 +903,7 @@ function Emotions({ refreshKey, token, onMutated }) {
   }
 
   return (
-    <DataView path="/api/emotions" refreshKey={refreshKey}>
+    <DataView path="/api/emotions" refreshKey={refreshKey} token={token}>
       {({ items }) => (
         <>
           <form className="create-form" onSubmit={createEmotion}>
@@ -1031,16 +1041,27 @@ const viewComponents = {
 };
 
 function TokenGate({ value, onChange, onUnlock }) {
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
   return (
     <div className="token-gate" role="dialog" aria-modal="true" aria-labelledby="token-gate-title">
       <form
         className="token-card"
-        onSubmit={(event) => {
+        onSubmit={async (event) => {
           event.preventDefault();
           const next = value.trim();
-          if (!next) return;
-          sessionStorage.setItem(TOKEN_KEY, next);
-          onUnlock(next);
+          if (!next || busy) return;
+          setBusy(true);
+          setError("");
+          try {
+            await api("/api/health", { token: next });
+            sessionStorage.setItem(TOKEN_KEY, next);
+            onUnlock(next);
+          } catch {
+            setError("通行证不对，再试一次。");
+          } finally {
+            setBusy(false);
+          }
         }}
       >
         <div className="token-card-brand">
@@ -1064,7 +1085,12 @@ function TokenGate({ value, onChange, onUnlock }) {
             onChange={(event) => onChange(event.target.value)}
           />
         </label>
-        <button className="quiet-button token-card-submit" type="submit" disabled={!value.trim()}>
+        {error && <p className="form-error">{error}</p>}
+        <button
+          className="quiet-button token-card-submit"
+          type="submit"
+          disabled={!value.trim() || busy}
+        >
           冲进后台！
         </button>
       </form>

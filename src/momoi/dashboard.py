@@ -3,6 +3,7 @@ import hmac
 import json
 import logging
 import mimetypes
+import re
 from importlib.resources import files
 from pathlib import Path
 
@@ -20,7 +21,7 @@ from .storage import Store
 logger = logging.getLogger(__name__)
 ASSET_ROOT = files("momoi").joinpath("dashboard")
 DASHBOARD_TOKEN = web.AppKey("dashboard_token", str)
-_WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+_PUBLIC_API_PATHS = re.compile(r"^/api/emotions/[^/]+/asset$")
 
 
 def _bounded_int(
@@ -78,7 +79,8 @@ def _public_emotion(item: dict[str, object]) -> dict[str, object]:
 async def _auth(
     request: web.Request, handler: web.RequestHandler
 ) -> web.StreamResponse:
-    if request.method in _WRITE_METHODS and request.path.startswith("/api/"):
+    path = request.path
+    if path.startswith("/api/") and not _PUBLIC_API_PATHS.fullmatch(path):
         _require_token(request)
     return await handler(request)
 

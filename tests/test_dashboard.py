@@ -143,7 +143,8 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("javascript", script.content_type)
 
     async def test_dashboard_exposes_read_only_records(self) -> None:
-        overview = await (await self.client.get("/api/overview")).json()
+        auth = self._auth()
+        overview = await (await self.client.get("/api/overview", headers=auth)).json()
         self.assertEqual(overview["counts"]["conversations"], 1)
         self.assertEqual(overview["counts"]["messages"], 2)
         self.assertEqual(overview["counts"]["reflections"], 1)
@@ -151,18 +152,18 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(overview["counts"]["memories"], 3)
 
         conversations = await (
-            await self.client.get("/api/conversations")
+            await self.client.get("/api/conversations", headers=auth)
         ).json()
         self.assertEqual(conversations["items"][0]["title"], "一次测试聊天")
         conversation = await (
-            await self.client.get("/api/conversations/episode-one")
+            await self.client.get("/api/conversations/episode-one", headers=auth)
         ).json()
         self.assertEqual(
             [message["content"] for message in conversation["messages"]],
             ["你好，Momoi", "早上好。"],
         )
 
-        memories = await (await self.client.get("/api/memories")).json()
+        memories = await (await self.client.get("/api/memories", headers=auth)).json()
         self.assertEqual(
             [item["activation"] for item in memories["items"]],
             ["always", "recent", "recall"],
@@ -170,24 +171,34 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(memories["items"][0]["content"], "主人不吃香菜。")
         self.assertEqual(memories["items"][1]["evidence"], "我今天在公司")
 
-        reflections = await (await self.client.get("/api/reflections")).json()
+        reflections = await (
+            await self.client.get("/api/reflections", headers=auth)
+        ).json()
         self.assertEqual(reflections["items"][0]["summary"], "今天完成了测试。")
         self.assertEqual(reflections["items"][0]["memories"][0]["key"], "testing")
 
-        emotions = await (await self.client.get("/api/emotions")).json()
+        emotions = await (await self.client.get("/api/emotions", headers=auth)).json()
         self.assertNotIn("path", emotions["items"][0])
         asset = await self.client.get(emotions["items"][0]["asset_url"])
         self.assertEqual(asset.status, 200)
         self.assertEqual(await asset.read(), b"GIF89a")
 
     async def test_dashboard_rejects_invalid_limits(self) -> None:
-        response = await self.client.get("/api/conversations?limit=nope")
+        response = await self.client.get(
+            "/api/conversations?limit=nope", headers=self._auth()
+        )
         self.assertEqual(response.status, 400)
 
-    async def test_writes_require_bearer_token(self) -> None:
-        memories = await (await self.client.get("/api/memories")).json()
+    async def test_api_requires_bearer_token_except_emotion_asset(self) -> None:
+        memories = await (
+            await self.client.get("/api/memories", headers=self._auth())
+        ).json()
         memory_id = memories["items"][0]["id"]
         cases = [
+            ("GET", "/api/overview", None),
+            ("GET", "/api/health", None),
+            ("GET", "/api/memories", None),
+            ("GET", "/api/emotions", None),
             ("PATCH", f"/api/memories/{memory_id}", {"content": "改掉"}),
             ("DELETE", f"/api/memories/{memory_id}", None),
             (
@@ -206,40 +217,60 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(wrong.status, 401, msg=f"{method} {path} wrong token")
 
-        still = await (await self.client.get("/api/goals?all=true")).json()
+        asset = await self.client.get("/api/emotions/hello/asset")
+        self.assertEqual(asset.status, 200)
+        self.assertEqual(await asset.read(), b"GIF89a")
+
+        still = await (
+            await self.client.get("/api/goals?all=true", headers=self._auth())
+        ).json()
         self.assertEqual(still["items"][0]["status"], "active")
-        emotions = await (await self.client.get("/api/emotions")).json()
+        emotions = await (
+            await self.client.get("/api/emotions", headers=self._auth())
+        ).json()
         self.assertEqual(emotions["items"][0]["slug"], "hello")
 
-    async def test_empty_dashboard_token_rejects_all_writes(self) -> None:
+    async def test_empty_dashboard_token_rejects_all_api(self) -> None:
         bare = TestClient(TestServer(create_dashboard_app(self.store, token="")))
         await bare.start_server()
         try:
-            response = await bare.delete(
-                "/api/goals/goal-one",
-                json={"reason": "nope"},
-                headers={"Authorization": "Bearer anything"},
-            )
-            self.assertEqual(response.status, 401)
+            for method, path, body in (
+                ("GET", "/api/overview", None),
+                (
+                    "DELETE",
+                    "/api/goals/goal-one",
+                    {"reason": "nope"},
+                ),
+            ):
+                response = await bare.request(
+                    method,
+                    path,
+                    json=body,
+                    headers={"Authorization": "Bearer anything"},
+                )
+                self.assertEqual(response.status, 401, msg=f"{method} {path}")
+            asset = await bare.get("/api/emotions/hello/asset")
+            self.assertEqual(asset.status, 200)
         finally:
             await bare.close()
 
     async def test_memory_update_and_delete(self) -> None:
-        memories = await (await self.client.get("/api/memories")).json()
+        auth = self._auth()
+        memories = await (await self.client.get("/api/memories", headers=auth)).json()
         memory_id = memories["items"][0]["id"]
         updated = await (
             await self.client.patch(
                 f"/api/memories/{memory_id}",
                 json={"content": "主人非常不吃香菜。"},
-                headers=self._auth(),
+                headers=auth,
             )
         ).json()
         self.assertEqual(updated["content"], "主人非常不吃香菜。")
         deleted = await self.client.delete(
-            f"/api/memories/{memory_id}", headers=self._auth()
+            f"/api/memories/{memory_id}", headers=auth
         )
         self.assertEqual(deleted.status, 200)
-        remaining = await (await self.client.get("/api/memories")).json()
+        remaining = await (await self.client.get("/api/memories", headers=auth)).json()
         self.assertEqual(len(remaining["items"]), 2)
 
     async def test_goal_update_and_cancel(self) -> None:
@@ -299,7 +330,9 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             "/api/emotions/wave", headers=self._auth()
         )
         self.assertEqual(deleted.status, 200)
-        listed = await (await self.client.get("/api/emotions")).json()
+        listed = await (
+            await self.client.get("/api/emotions", headers=self._auth())
+        ).json()
         self.assertEqual([row["slug"] for row in listed["items"]], ["hello"])
 
 
