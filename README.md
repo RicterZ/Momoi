@@ -86,6 +86,7 @@ Goal and Heartbeat notifications respect quiet hours, cooldowns, and pending own
 - Exchange chat media and use optional image reactions
 - Maintain mood, activity, reflection, and bounded initiative
 - Stop work or recover safely when an external result is uncertain
+- Browse and tidy conversations, reflections, memories, reactions, and goals in a local Web dashboard
 
 ## Getting started
 
@@ -134,9 +135,11 @@ momoi channel login weixin
 
 Then start Momoi and send a private message from either owner account. Replies stay on the channel where the conversation started; proactive messages use the configured primary channel.
 
-Start the Web dashboard alongside the daemon to inspect conversations, daily reflections, image reactions, and goals, and to edit memories, emotions, and goals:
+### Web dashboard
 
-Set a write token in `config.json` first:
+When you want to see what Momoi has been chatting about, remembering, or working on, open the Web dashboard alongside her. It is less a control panel and more a small window into her records: conversations, daily reflections, memories, image reactions, and goals. From there you can also edit memories, manage reactions, and adjust goals that are still in progress.
+
+Put an access passphrase in `config.json` first:
 
 ```json
 {
@@ -146,16 +149,13 @@ Set a write token in `config.json` first:
 }
 ```
 
+Then start Momoi with the dashboard:
+
 ```bash
 momoi run --dashboard
 ```
 
-Open `http://127.0.0.1:8788` by default. Use `--dashboard-host` and
-`--dashboard-port` to change the listener. Enter `dashboard.token` on the page
-to receive a one-year JWT; all `/api/*` routes require that Bearer JWT (emotion
-image assets at `/api/emotions/{slug}/asset` stay public for `<img>` tags).
-`--dashboard` requires the token to be configured. Do not expose the port
-directly to the public Internet.
+Open `http://127.0.0.1:8788` by default and enter the passphrase on the page. Use `--dashboard-host` and `--dashboard-port` if you need a different listener. The passphrase is required whenever the dashboard is enabled. Keep it on localhost or a trusted network — do not expose the port directly to the public Internet.
 
 Pass `--workspace` before any command to use another workspace:
 
@@ -222,7 +222,7 @@ Use `--at` for a future one-time review or `--every-seconds` for a recurring int
 
 | Command | Purpose |
 | --- | --- |
-| `momoi run [--dashboard] [--dashboard-host <host>] [--dashboard-port <port>]` | Start the daemon and optionally its Web dashboard (`dashboard.token` issues a 1-year JWT for `/api/*`) |
+| `momoi run [--dashboard] [--dashboard-host <host>] [--dashboard-port <port>]` | Start the daemon and optionally open the Web dashboard |
 | `momoi --version` | Print the installed version |
 | `momoi channel login <name>` | Authenticate a configured channel when it needs login |
 | `momoi emotion add --slug <slug> --path <file> --desc <text>` | Add or update an image reaction asset |
@@ -251,7 +251,7 @@ When `/resolve` or `/resume` is needed, Momoi sends a recovery message that incl
 - Designed for a trusted personal environment
 - Connected tools receive the real access granted to them
 
-Protect the workspace, API keys, webhook/dashboard tokens, and connected MCP services.
+Protect the workspace, API keys, webhook/dashboard passphrases, and connected MCP services.
 
 ## Development
 

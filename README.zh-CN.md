@@ -86,6 +86,7 @@ Momoi 把不同类型的未来行为分开处理：
 - 收发聊天媒体，并使用可选的图片反应
 - 保持情绪、活动、复盘和有边界的主动性
 - 停止工作，或在外部结果不确定时安全恢复
+- 用本机 Web 看板查看和整理聊天、复盘、记忆、表情与任务
 
 ## 开始使用
 
@@ -134,9 +135,11 @@ momoi channel login weixin
 
 然后启动 Momoi，从任一主人账号发送私聊消息。回复留在发起对话的渠道，主动消息发送到配置的 primary。
 
-需要查看或管理聊天记录、每日复盘、表情包和 Goals 时，可同时启动 Web 看板：
+### Web 看板
 
-先在 `config.json` 中设置写入用的 token：
+想在浏览器里看看 Momoi 最近在聊什么、记得什么、在忙什么时，可以顺手打开 Web 看板。它不是另一个控制台，更像她生活记录的一面小窗：聊天、每日复盘、记忆、表情包和任务都能在这里翻看；需要时也可以改记忆、管表情、调整进行中的 Goals。
+
+先在 `config.json` 里放一张通行证：
 
 ```json
 {
@@ -146,15 +149,13 @@ momoi channel login weixin
 }
 ```
 
+然后带看板一起启动：
+
 ```bash
 momoi run --dashboard
 ```
 
-默认访问地址为 `http://127.0.0.1:8788`。可用 `--dashboard-host` 和
-`--dashboard-port` 修改监听地址。在页面输入 `dashboard.token` 后会签发一年有效的
-JWT；之后所有 `/api/*` 都带该 Bearer JWT（表情图片 `/api/emotions/{slug}/asset`
-可匿名访问，方便 `<img>` 加载）。启用 `--dashboard` 时必须配置该 token，请勿将端口
-直接暴露到公网。
+默认打开 `http://127.0.0.1:8788`，在页面上输入通行证即可进入。可用 `--dashboard-host` 和 `--dashboard-port` 改监听地址。启用看板时必须配置这张通行证；它只适合本机或可信网络，请不要直接暴露到公网。
 
 `--workspace` 可以放在任意命令前，用来指定其他 workspace：
 
@@ -221,7 +222,7 @@ momoi goal del <goal-id-or-prefix> --reason "No longer needed"
 
 | 命令 | 用途 |
 | --- | --- |
-| `momoi run [--dashboard] [--dashboard-host <host>] [--dashboard-port <port>]` | 启动 daemon，并可选启动 Web 看板（`dashboard.token` 签发一年 JWT 访问 `/api/*`） |
+| `momoi run [--dashboard] [--dashboard-host <host>] [--dashboard-port <port>]` | 启动 daemon，并可选打开 Web 看板 |
 | `momoi --version` | 查看已安装版本 |
 | `momoi channel login <name>` | 为需要登录的已配置渠道认证 |
 | `momoi emotion add --slug <slug> --path <file> --desc <text>` | 添加或更新图片反应素材 |
@@ -250,7 +251,7 @@ momoi goal del <goal-id-or-prefix> --reason "No longer needed"
 - 面向可信的个人环境设计
 - 已连接工具会获得实际授予它们的访问权限
 
-请保护好 workspace、API 密钥、Webhook / Dashboard token 和已连接的 MCP 服务。
+请保护好 workspace、API 密钥、Webhook / 看板通行证和已连接的 MCP 服务。
 
 ## 开发
 
