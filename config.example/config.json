@@ -94,6 +94,9 @@
     "workflows": "workflows",
     "executors": "workflow-executors.yaml"
   },
+  "dashboard": {
+    "token": "replace-with-a-long-random-secret"
+  },
   "logging": {
     "level": "INFO"
   }

@@ -134,15 +134,26 @@ momoi channel login weixin
 
 Then start Momoi and send a private message from either owner account. Replies stay on the channel where the conversation started; proactive messages use the configured primary channel.
 
-Start the read-only Web dashboard alongside the daemon to inspect conversations, daily reflections, image reactions, and goals:
+Start the Web dashboard alongside the daemon to inspect conversations, daily reflections, image reactions, and goals, and to edit memories, emotions, and goals:
+
+Set a write token in `config.json` first:
+
+```json
+{
+  "dashboard": {
+    "token": "replace-with-a-long-random-secret"
+  }
+}
+```
 
 ```bash
 momoi run --dashboard
 ```
 
 Open `http://127.0.0.1:8788` by default. Use `--dashboard-host` and
-`--dashboard-port` to change the listener. The dashboard does not currently
-provide authentication, so do not expose it directly to the public Internet.
+`--dashboard-port` to change the listener. Reads stay open; writes require the
+`dashboard.token` entered in the page. `--dashboard` requires that token to be
+configured. Do not expose the port directly to the public Internet.
 
 Pass `--workspace` before any command to use another workspace:
 
@@ -209,7 +220,7 @@ Use `--at` for a future one-time review or `--every-seconds` for a recurring int
 
 | Command | Purpose |
 | --- | --- |
-| `momoi run [--dashboard] [--dashboard-host <host>] [--dashboard-port <port>]` | Start the daemon and optionally its read-only Web dashboard |
+| `momoi run [--dashboard] [--dashboard-host <host>] [--dashboard-port <port>]` | Start the daemon and optionally its Web dashboard (writes need `dashboard.token`) |
 | `momoi --version` | Print the installed version |
 | `momoi channel login <name>` | Authenticate a configured channel when it needs login |
 | `momoi emotion add --slug <slug> --path <file> --desc <text>` | Add or update an image reaction asset |
@@ -238,7 +249,7 @@ When `/resolve` or `/resume` is needed, Momoi sends a recovery message that incl
 - Designed for a trusted personal environment
 - Connected tools receive the real access granted to them
 
-Protect the workspace, API keys, webhook token, and connected MCP services.
+Protect the workspace, API keys, webhook/dashboard tokens, and connected MCP services.
 
 ## Development
 

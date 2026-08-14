@@ -61,7 +61,13 @@ class MomoiDaemon(TurnRunner):
         self._artifact_root().mkdir(parents=True, exist_ok=True)
         self.store = Store(config.database, config.workspace)
         self.dashboard = (
-            DashboardService(self.store, *dashboard) if dashboard is not None else None
+            DashboardService(
+                self.store,
+                *dashboard,
+                token=config.dashboard.token,
+            )
+            if dashboard is not None
+            else None
         )
         self.store.ensure_heartbeat(config.heartbeat)
         self.agenda_tools = AgendaTools(self.store)

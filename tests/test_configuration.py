@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
+import asyncio
 
 
 from momoi.__main__ import emotion as emotion_command, goal as goal_command, parse_args
@@ -13,6 +14,7 @@ from momoi.channel.napcat import NapCatConfig
 from momoi.channel.weixin import WeixinConfig
 from momoi.config import (
     ConfigError,
+    DashboardConfig,
     NotificationConfig,
     load_config,
 )
@@ -124,6 +126,7 @@ class ConfigurationTest(unittest.TestCase):
             self.assertEqual(config.heartbeat_prompt, "偶尔整理自己的摄影兴趣。")
             self.assertEqual(config.heartbeat.max_interval_seconds, 5400)
             self.assertEqual(config.heartbeat.reply_initial_interval_seconds, 60)
+            self.assertEqual(config.dashboard.token, "")
 
             (root / "HEARTBEAT.md").unlink()
             self.assertEqual(load_config(path).heartbeat_prompt, "")
@@ -133,6 +136,72 @@ class ConfigurationTest(unittest.TestCase):
             path.write_text(json.dumps(legacy))
             with self.assertRaisesRegex(ConfigError, "channel must be a table/object"):
                 load_config(path)
+
+    def test_loads_dashboard_token(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "prompts").mkdir()
+            (root / "prompts" / "SOUL.md").write_text("Test soul")
+            path = root / "config.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "llm": {
+                            "base_url": "https://example.com",
+                            "api_key": "key",
+                            "model": "model",
+                        },
+                        "channel": {
+                            "plugin": "napcat",
+                            "settings": {
+                                "url": "ws://localhost",
+                                "owner_qq": "123",
+                            },
+                        },
+                        "dashboard": {"token": "dash-secret"},
+                        "context": {},
+                        "storage": {"database": "momoi.sqlite3"},
+                        "logging": {},
+                    }
+                )
+            )
+            config = load_config(path)
+            self.assertIsInstance(config.dashboard, DashboardConfig)
+            self.assertEqual(config.dashboard.token, "dash-secret")
+
+    def test_dashboard_flag_requires_token(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "prompts").mkdir()
+            (root / "prompts" / "SOUL.md").write_text("Test soul")
+            path = root / "config.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "llm": {
+                            "base_url": "https://example.com",
+                            "api_key": "key",
+                            "model": "model",
+                        },
+                        "channel": {
+                            "plugin": "napcat",
+                            "settings": {
+                                "url": "ws://localhost",
+                                "owner_qq": "123",
+                            },
+                        },
+                        "context": {},
+                        "storage": {"database": "momoi.sqlite3"},
+                        "logging": {},
+                    }
+                )
+            )
+            with self.assertRaisesRegex(ValueError, "dashboard.token is required"):
+                asyncio.run(
+                    __import__("momoi.__main__", fromlist=["run"]).run(
+                        path, dashboard=True
+                    )
+                )
 
     def test_config_rejects_string_booleans(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

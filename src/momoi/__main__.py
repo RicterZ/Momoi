@@ -1,9 +1,6 @@
 import argparse
 import asyncio
-import hashlib
 import logging
-import re
-import shutil
 import signal
 from datetime import datetime, timedelta
 from importlib.metadata import version
@@ -12,6 +9,7 @@ from pathlib import Path
 from .agenda_tools import AgendaTools
 from .channel import login_channel
 from .config import ConfigError, load_config
+from .emotions import managed_emotion_path, remove_unreferenced_emotion_asset
 from .logging_context import configure_logging, log_event
 from .runtime import MomoiDaemon
 from .models import ToolCall, TurnDraft
@@ -32,7 +30,7 @@ def parse_args() -> argparse.Namespace:
     run_parser.add_argument(
         "--dashboard",
         action="store_true",
-        help="serve the local Web dashboard without authentication",
+        help="serve the local Web dashboard (writes require dashboard.token)",
     )
     run_parser.add_argument(
         "--dashboard-host",
@@ -82,34 +80,6 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _managed_emotion_path(config_path: str | Path, source_value: str) -> Path:
-    source = Path(source_value).expanduser().resolve()
-    if not source.is_file():
-        raise ValueError("path must be an existing file")
-    extension = source.suffix.lower()
-    if not re.fullmatch(r"\.[a-z0-9]{1,10}", extension):
-        raise ValueError("emotion file needs a simple extension")
-    digest = hashlib.md5(usedforsecurity=False)
-    with source.open("rb") as file:
-        for chunk in iter(lambda: file.read(1024 * 1024), b""):
-            digest.update(chunk)
-    directory = Path(config_path).expanduser().resolve().parent / "emotion"
-    directory.mkdir(parents=True, exist_ok=True)
-    destination = directory / f"{digest.hexdigest()}{extension}"
-    if not destination.exists():
-        shutil.copy2(source, destination)
-    return destination
-
-
-def _remove_unreferenced_asset(
-    store: Store, path: str, config_path: str | Path
-) -> None:
-    asset = Path(path)
-    directory = Path(config_path).expanduser().resolve().parent / "emotion"
-    if asset.is_relative_to(directory) and not store.emotion_path_referenced(str(asset)):
-        asset.unlink(missing_ok=True)
-
-
 def emotion(args: argparse.Namespace) -> None:
     config_path = args.workspace / "config.json"
     config = load_config(config_path)
@@ -117,10 +87,12 @@ def emotion(args: argparse.Namespace) -> None:
     try:
         if args.emotion_command == "add":
             previous = store.emotion(args.slug)
-            managed = _managed_emotion_path(config_path, args.path)
+            managed = managed_emotion_path(args.workspace, args.path)
             item = store.add_emotion(args.slug, managed, args.desc)
             if previous and previous["path"] != item["path"]:
-                _remove_unreferenced_asset(store, str(previous["path"]), config_path)
+                remove_unreferenced_emotion_asset(
+                    store, str(previous["path"]), args.workspace
+                )
             print(f"added\t{item['id']}\t{item['slug']}\t{item['path']}\t{item['description']}")
         elif args.emotion_command == "del":
             item = store.emotion(args.slug)
@@ -132,7 +104,9 @@ def emotion(args: argparse.Namespace) -> None:
             if not store.delete_emotion(args.slug):
                 raise ValueError("emotion slug not found")
             if not referenced:
-                _remove_unreferenced_asset(store, str(item["path"]), config_path)
+                remove_unreferenced_emotion_asset(
+                    store, str(item["path"]), args.workspace
+                )
             print(f"deleted\t{args.slug}")
         else:
             for item in store.list_emotions():
@@ -230,6 +204,8 @@ async def run(
     if not 1 <= dashboard_port <= 65535:
         raise ValueError("dashboard port must be between 1 and 65535")
     config = load_config(config_path)
+    if dashboard and not config.dashboard.token:
+        raise ValueError("dashboard.token is required when --dashboard is enabled")
     configure_logging(getattr(logging, config.log_level, logging.INFO))
     for noisy_logger in ("httpx", "httpcore", "mcp"):
         logging.getLogger(noisy_logger).setLevel(logging.WARNING)

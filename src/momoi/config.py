@@ -47,6 +47,11 @@ class WebhookConfig:
 
 
 @dataclass(frozen=True)
+class DashboardConfig:
+    token: str = ""
+
+
+@dataclass(frozen=True)
 class HeartbeatConfig:
     enabled: bool = False
     initial_delay_seconds: float = 900
@@ -94,6 +99,7 @@ class AppConfig:
     turn_max_seconds: float = 0
     turn_max_total_tokens: int = 0
     webhooks: WebhookConfig = WebhookConfig()
+    dashboard: DashboardConfig = DashboardConfig()
     heartbeat: HeartbeatConfig = HeartbeatConfig()
     autonomy: AutonomyConfig = AutonomyConfig()
     reflection: ReflectionConfig = ReflectionConfig()
@@ -238,12 +244,14 @@ def load_config(path: str | Path) -> AppConfig:
     tools_raw = _mapping(raw.get("tools", {}), "tools")
     turn_raw = _mapping(raw.get("turn", {}), "turn")
     webhook_raw = _mapping(raw.get("webhooks", {}), "webhooks")
+    dashboard_raw = _mapping(raw.get("dashboard", {}), "dashboard")
     heartbeat_raw = _mapping(raw.get("heartbeat", {}), "heartbeat")
     autonomy_raw = _mapping(raw.get("autonomy", {}), "autonomy")
     reflection_raw = _mapping(raw.get("reflection", {}), "reflection")
     annealing_raw = _mapping(
         raw.get("episode_annealing", {}), "episode_annealing"
     )
+    dashboard_token = str(dashboard_raw.get("token") or "")
     mcp_value = tools_raw.get("mcp_config", "mcp.json")
     mcp_config = (config_path.parent / str(mcp_value)).resolve() if mcp_value else None
     webhook_enabled = _boolean(webhook_raw.get("enabled", False), "webhooks.enabled")
@@ -341,6 +349,7 @@ def load_config(path: str | Path) -> AppConfig:
             workflows=workflow_path,
             executors=executor_path,
         ),
+        dashboard=DashboardConfig(token=dashboard_token),
         heartbeat=HeartbeatConfig(
             enabled=_boolean(
                 heartbeat_raw.get("enabled", False), "heartbeat.enabled"

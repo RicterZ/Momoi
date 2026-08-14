@@ -134,14 +134,25 @@ momoi channel login weixin
 
 然后启动 Momoi，从任一主人账号发送私聊消息。回复留在发起对话的渠道，主动消息发送到配置的 primary。
 
-需要查看聊天记录、每日复盘、表情包和 Goals 时，可同时启动只读 Web 看板：
+需要查看或管理聊天记录、每日复盘、表情包和 Goals 时，可同时启动 Web 看板：
+
+先在 `config.json` 中设置写入用的 token：
+
+```json
+{
+  "dashboard": {
+    "token": "replace-with-a-long-random-secret"
+  }
+}
+```
 
 ```bash
 momoi run --dashboard
 ```
 
 默认访问地址为 `http://127.0.0.1:8788`。可用 `--dashboard-host` 和
-`--dashboard-port` 修改监听地址；当前版本不提供认证，请勿将端口直接暴露到公网。
+`--dashboard-port` 修改监听地址。浏览可匿名；修改记忆 / 表情 / 任务时需在页面填写
+`dashboard.token`。启用 `--dashboard` 时必须配置该 token，请勿将端口直接暴露到公网。
 
 `--workspace` 可以放在任意命令前，用来指定其他 workspace：
 
@@ -208,7 +219,7 @@ momoi goal del <goal-id-or-prefix> --reason "No longer needed"
 
 | 命令 | 用途 |
 | --- | --- |
-| `momoi run [--dashboard] [--dashboard-host <host>] [--dashboard-port <port>]` | 启动 daemon，并可选启动只读 Web 看板 |
+| `momoi run [--dashboard] [--dashboard-host <host>] [--dashboard-port <port>]` | 启动 daemon，并可选启动 Web 看板（写入需 `dashboard.token`） |
 | `momoi --version` | 查看已安装版本 |
 | `momoi channel login <name>` | 为需要登录的已配置渠道认证 |
 | `momoi emotion add --slug <slug> --path <file> --desc <text>` | 添加或更新图片反应素材 |
@@ -237,7 +248,7 @@ momoi goal del <goal-id-or-prefix> --reason "No longer needed"
 - 面向可信的个人环境设计
 - 已连接工具会获得实际授予它们的访问权限
 
-请保护好 workspace、API 密钥、Webhook token 和已连接的 MCP 服务。
+请保护好 workspace、API 密钥、Webhook / Dashboard token 和已连接的 MCP 服务。
 
 ## 开发
 

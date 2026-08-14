@@ -1,4 +1,6 @@
 import asyncio
+import hmac
+import json
 import logging
 import mimetypes
 from importlib.resources import files
@@ -6,13 +8,18 @@ from pathlib import Path
 
 from aiohttp import web
 
-from .emotions import valid_emotion_slug
+from .emotions import (
+    managed_emotion_bytes,
+    remove_unreferenced_emotion_asset,
+    valid_emotion_slug,
+)
 from .logging_context import log_event
 from .storage import Store
 
 
 logger = logging.getLogger(__name__)
 ASSET_ROOT = files("momoi").joinpath("dashboard")
+DASHBOARD_TOKEN = web.AppKey("dashboard_token", str)
 
 
 def _bounded_int(
@@ -23,6 +30,35 @@ def _bounded_int(
     except (TypeError, ValueError):
         raise web.HTTPBadRequest(text=f"invalid {name}") from None
     return min(maximum, max(minimum, value))
+
+
+def _require_token(request: web.Request) -> None:
+    expected = str(request.app[DASHBOARD_TOKEN] or "")
+    authorization = request.headers.get("Authorization", "")
+    provided = ""
+    if authorization.startswith("Bearer "):
+        provided = authorization[7:]
+    if not expected or not hmac.compare_digest(provided, expected):
+        raise web.HTTPUnauthorized(
+            text="unauthorized",
+            headers={"WWW-Authenticate": 'Bearer realm="momoi-dashboard"'},
+        )
+
+
+async def _json_body(request: web.Request) -> dict[str, object]:
+    try:
+        payload = await request.json()
+    except json.JSONDecodeError as error:
+        raise web.HTTPBadRequest(text="invalid json") from error
+    if not isinstance(payload, dict):
+        raise web.HTTPBadRequest(text="json object required")
+    return payload
+
+
+def _public_emotion(item: dict[str, object]) -> dict[str, object]:
+    public = {key: value for key, value in item.items() if key != "path"}
+    public["asset_url"] = f"/api/emotions/{item['slug']}/asset"
+    return public
 
 
 @web.middleware
@@ -43,8 +79,10 @@ async def _headers(
     return response
 
 
-def create_dashboard_app(store: Store) -> web.Application:
+def create_dashboard_app(store: Store, *, token: str = "") -> web.Application:
     app = web.Application(middlewares=[_headers])
+    app[DASHBOARD_TOKEN] = token
+    workspace = store._workspace
 
     async def index(_request: web.Request) -> web.Response:
         return web.Response(
@@ -102,6 +140,38 @@ def create_dashboard_app(store: Store) -> web.Application:
         limit = _bounded_int(request, "limit", 200, 1, 500)
         return web.json_response({"items": store.list_memories(limit)})
 
+    async def update_memory(request: web.Request) -> web.Response:
+        _require_token(request)
+        try:
+            memory_id = int(request.match_info["memory_id"])
+        except ValueError:
+            raise web.HTTPBadRequest(text="invalid memory id") from None
+        payload = await _json_body(request)
+        if "content" not in payload:
+            raise web.HTTPBadRequest(text="content is required")
+        try:
+            item = store.update_memory_content(memory_id, str(payload["content"]))
+        except ValueError as error:
+            raise web.HTTPBadRequest(text=str(error)) from None
+        if item is None:
+            raise web.HTTPNotFound(text="memory not found")
+        return web.json_response(item)
+
+    async def delete_memory(request: web.Request) -> web.Response:
+        _require_token(request)
+        try:
+            memory_id = int(request.match_info["memory_id"])
+        except ValueError:
+            raise web.HTTPBadRequest(text="invalid memory id") from None
+        reason = request.query.get("reason") or "Deleted from dashboard"
+        try:
+            forgotten = store.forget_memory_by_id(memory_id, reason)
+        except ValueError as error:
+            raise web.HTTPBadRequest(text=str(error)) from None
+        if not forgotten:
+            raise web.HTTPNotFound(text="memory not found")
+        return web.json_response({"ok": True})
+
     async def goals(request: web.Request) -> web.Response:
         include_closed = request.query.get("all", "").lower() in {
             "1",
@@ -112,12 +182,52 @@ def create_dashboard_app(store: Store) -> web.Application:
             {"items": store.list_goals(include_closed=include_closed)}
         )
 
+    async def update_goal(request: web.Request) -> web.Response:
+        _require_token(request)
+        payload = await _json_body(request)
+        fields = {
+            name: str(payload[name])
+            for name in (
+                "title",
+                "success_criteria",
+                "next_action",
+                "status",
+                "waiting_for",
+                "blocked_reason",
+            )
+            if name in payload
+        }
+        if not fields:
+            raise web.HTTPBadRequest(text="no updatable fields provided")
+        try:
+            item = store.update_goal_owner(request.match_info["goal_id"], **fields)
+        except ValueError as error:
+            raise web.HTTPBadRequest(text=str(error)) from None
+        if item is None:
+            raise web.HTTPNotFound(text="goal not found")
+        return web.json_response(item)
+
+    async def delete_goal(request: web.Request) -> web.Response:
+        _require_token(request)
+        reason = request.query.get("reason")
+        if reason is None and request.can_read_body:
+            try:
+                payload = await request.json()
+            except json.JSONDecodeError:
+                payload = None
+            if isinstance(payload, dict) and "reason" in payload:
+                reason = str(payload["reason"])
+        reason = reason or "Cancelled from dashboard"
+        try:
+            item = store.cancel_goal(request.match_info["goal_id"], reason)
+        except ValueError as error:
+            raise web.HTTPBadRequest(text=str(error)) from None
+        if item is None:
+            raise web.HTTPNotFound(text="goal not found")
+        return web.json_response(item)
+
     async def emotions(_request: web.Request) -> web.Response:
-        items = []
-        for item in store.list_emotions():
-            public = {key: value for key, value in item.items() if key != "path"}
-            public["asset_url"] = f"/api/emotions/{item['slug']}/asset"
-            items.append(public)
+        items = [_public_emotion(item) for item in store.list_emotions()]
         return web.json_response({"items": items})
 
     async def emotion_asset(request: web.Request) -> web.StreamResponse:
@@ -135,6 +245,98 @@ def create_dashboard_app(store: Store) -> web.Application:
             headers={"Cache-Control": "private, max-age=3600"},
         )
 
+    async def _read_emotion_multipart(
+        request: web.Request, *, require_file: bool
+    ) -> tuple[str | None, str | None, Path | None]:
+        reader = await request.multipart()
+        slug: str | None = None
+        description: str | None = None
+        managed: Path | None = None
+        async for part in reader:
+            name = part.name or ""
+            if name == "slug":
+                slug = (await part.text()).strip()
+            elif name == "description":
+                description = (await part.text()).strip()
+            elif name == "file":
+                data = await part.read(decode=False)
+                filename = part.filename or "emotion.bin"
+                try:
+                    managed = managed_emotion_bytes(workspace, data, filename)
+                except ValueError as error:
+                    raise web.HTTPBadRequest(text=str(error)) from None
+        if require_file and managed is None:
+            raise web.HTTPBadRequest(text="file is required")
+        return slug, description, managed
+
+    async def create_emotion(request: web.Request) -> web.Response:
+        _require_token(request)
+        content_type = request.content_type or ""
+        if "multipart/" not in content_type:
+            raise web.HTTPBadRequest(text="multipart form required")
+        slug, description, managed = await _read_emotion_multipart(
+            request, require_file=True
+        )
+        if not slug or not valid_emotion_slug(slug):
+            raise web.HTTPBadRequest(text="invalid slug")
+        if not description:
+            raise web.HTTPBadRequest(text="description is required")
+        assert managed is not None
+        previous = store.emotion(slug)
+        try:
+            item = store.add_emotion(slug, managed, description)
+        except ValueError as error:
+            raise web.HTTPBadRequest(text=str(error)) from None
+        if previous and previous["path"] != item["path"]:
+            remove_unreferenced_emotion_asset(store, str(previous["path"]), workspace)
+        return web.json_response(_public_emotion(item), status=201)
+
+    async def update_emotion(request: web.Request) -> web.Response:
+        _require_token(request)
+        slug = request.match_info["slug"]
+        if not valid_emotion_slug(slug):
+            raise web.HTTPNotFound()
+        existing = store.emotion(slug)
+        if existing is None:
+            raise web.HTTPNotFound(text="emotion not found")
+        content_type = request.content_type or ""
+        description: str | None = None
+        managed: Path | None = None
+        if "multipart/" in content_type:
+            _, description, managed = await _read_emotion_multipart(
+                request, require_file=False
+            )
+        else:
+            payload = await _json_body(request)
+            if "description" in payload:
+                description = str(payload["description"]).strip()
+        if description is None and managed is None:
+            raise web.HTTPBadRequest(text="description or file is required")
+        path = managed if managed is not None else Path(str(existing["path"]))
+        desc = description if description is not None else str(existing["description"])
+        try:
+            item = store.add_emotion(slug, path, desc)
+        except ValueError as error:
+            raise web.HTTPBadRequest(text=str(error)) from None
+        if managed is not None and existing["path"] != item["path"]:
+            remove_unreferenced_emotion_asset(store, str(existing["path"]), workspace)
+        return web.json_response(_public_emotion(item))
+
+    async def delete_emotion(request: web.Request) -> web.Response:
+        _require_token(request)
+        slug = request.match_info["slug"]
+        if not valid_emotion_slug(slug):
+            raise web.HTTPNotFound()
+        item = store.emotion(slug)
+        if item is None:
+            raise web.HTTPNotFound(text="emotion not found")
+        referenced = store.emotion_path_referenced(str(item["path"]), exclude_slug=slug)
+        if not store.delete_emotion(slug):
+            raise web.HTTPNotFound(text="emotion not found")
+        if not referenced:
+            remove_unreferenced_emotion_asset(store, str(item["path"]), workspace)
+        return web.json_response({"ok": True})
+
     app.router.add_get("/", index)
     app.router.add_get("/assets/{path:.+}", asset)
     app.router.add_get("/api/health", health)
@@ -143,8 +345,15 @@ def create_dashboard_app(store: Store) -> web.Application:
     app.router.add_get("/api/conversations/{episode_id}", conversation)
     app.router.add_get("/api/reflections", reflections)
     app.router.add_get("/api/memories", memories)
+    app.router.add_patch("/api/memories/{memory_id}", update_memory)
+    app.router.add_delete("/api/memories/{memory_id}", delete_memory)
     app.router.add_get("/api/goals", goals)
+    app.router.add_patch("/api/goals/{goal_id}", update_goal)
+    app.router.add_delete("/api/goals/{goal_id}", delete_goal)
     app.router.add_get("/api/emotions", emotions)
+    app.router.add_post("/api/emotions", create_emotion)
+    app.router.add_patch("/api/emotions/{slug}", update_emotion)
+    app.router.add_delete("/api/emotions/{slug}", delete_emotion)
     app.router.add_get("/api/emotions/{slug}/asset", emotion_asset)
     return app
 
@@ -155,13 +364,18 @@ class DashboardService:
         store: Store,
         host: str = "0.0.0.0",
         port: int = 8788,
+        *,
+        token: str = "",
     ) -> None:
         self.store = store
         self.host = host
         self.port = port
+        self.token = token
 
     async def run(self, stop: asyncio.Event) -> None:
-        runner = web.AppRunner(create_dashboard_app(self.store), access_log=None)
+        runner = web.AppRunner(
+            create_dashboard_app(self.store, token=self.token), access_log=None
+        )
         await runner.setup()
         site = web.TCPSite(runner, self.host, self.port)
         try:

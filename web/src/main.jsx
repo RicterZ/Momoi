@@ -2,6 +2,8 @@ import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
+const TOKEN_KEY = "momoi-dashboard-token";
+
 const pages = {
   overview: ["今天也元气满满！", "MOMOI // HOME"],
   conversations: ["聊天记录", "MOMOI // CHAT LOG"],
@@ -27,13 +29,40 @@ const activationLabels = {
   recall: "需要时回忆",
 };
 
-async function api(path, signal) {
+const goalStatuses = [
+  ["active", "进行中"],
+  ["waiting", "等待中"],
+  ["blocked", "受阻"],
+];
+
+function readToken() {
+  return sessionStorage.getItem(TOKEN_KEY) || "";
+}
+
+async function api(path, { signal, method = "GET", body, token, formData } = {}) {
+  const headers = { Accept: "application/json" };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  let payload = body;
+  if (formData) {
+    payload = formData;
+  } else if (body !== undefined) {
+    headers["Content-Type"] = "application/json";
+    payload = JSON.stringify(body);
+  }
   const response = await fetch(path, {
-    headers: { Accept: "application/json" },
+    method,
+    headers,
+    body: payload,
     cache: "no-store",
     signal,
   });
-  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `${response.status} ${response.statusText}`);
+  }
+  if (response.status === 204) return null;
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.includes("application/json")) return null;
   return response.json();
 }
 
@@ -118,7 +147,7 @@ function DataView({ path, refreshKey, children }) {
   useEffect(() => {
     const controller = new AbortController();
     setState({ loading: true });
-    api(path, controller.signal)
+    api(path, { signal: controller.signal })
       .then((data) => setState({ data }))
       .catch((error) => {
         if (error.name !== "AbortError") setState({ error });
@@ -211,10 +240,9 @@ function ConversationLayout({ items, activeId, detail, onSelect, setDetail }) {
   useEffect(() => {
     const controller = new AbortController();
     setDetail({ loading: true });
-    api(
-      `/api/conversations/${encodeURIComponent(activeId)}?token_budget=100000`,
-      controller.signal,
-    )
+    api(`/api/conversations/${encodeURIComponent(activeId)}?token_budget=100000`, {
+      signal: controller.signal,
+    })
       .then((data) => setDetail({ data }))
       .catch((error) => {
         if (error.name !== "AbortError") setDetail({ error });
@@ -346,8 +374,45 @@ function Reflections({ refreshKey }) {
   );
 }
 
-function Memories({ refreshKey }) {
+function Memories({ refreshKey, token, onMutated }) {
   const [activation, setActivation] = useState("all");
+  const [editingId, setEditingId] = useState(null);
+  const [draft, setDraft] = useState("");
+  const [busyId, setBusyId] = useState(null);
+  const [error, setError] = useState("");
+
+  async function save(item) {
+    setBusyId(item.id);
+    setError("");
+    try {
+      await api(`/api/memories/${item.id}`, {
+        method: "PATCH",
+        token,
+        body: { content: draft },
+      });
+      setEditingId(null);
+      onMutated();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function remove(item) {
+    if (!window.confirm("确定删除这条记忆？删除后 Momoi 不会再使用它。")) return;
+    setBusyId(item.id);
+    setError("");
+    try {
+      await api(`/api/memories/${item.id}`, { method: "DELETE", token });
+      onMutated();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   return (
     <DataView path="/api/memories?limit=400" refreshKey={refreshKey}>
       {({ items }) => {
@@ -365,21 +430,24 @@ function Memories({ refreshKey }) {
           <>
             <section className="section-tools">
               <p>{visible.length} 条有效记忆</p>
-              <div className="filter">
+              <div className="memory-tabs" role="tablist" aria-label="记忆筛选">
                 {[["all", "全部"], ...Object.entries(activationLabels)].map(
                   ([value, label]) => (
                     <button
                       type="button"
+                      role="tab"
                       key={value}
+                      aria-selected={activation === value}
                       className={activation === value ? "active" : ""}
                       onClick={() => setActivation(value)}
                     >
-                      {label}
+                      <span>{label}</span>
                     </button>
                   ),
                 )}
               </div>
             </section>
+            {error && <p className="form-error">{error}</p>}
             {groups.length ? (
               groups.map(([name, group]) => (
                 <section className="memory-section" key={name}>
@@ -397,7 +465,16 @@ function Memories({ refreshKey }) {
                             {activationLabels[item.activation] || item.activation}
                           </span>
                         </div>
-                        <p className="summary">{item.content}</p>
+                        {editingId === item.id ? (
+                          <textarea
+                            className="edit-area"
+                            value={draft}
+                            onChange={(event) => setDraft(event.target.value)}
+                            rows={4}
+                          />
+                        ) : (
+                          <p className="summary">{item.content}</p>
+                        )}
                         {item.evidence && (
                           <p className="secondary">依据：{item.evidence}</p>
                         )}
@@ -407,6 +484,49 @@ function Memories({ refreshKey }) {
                             ? ` · 有效至 ${formatDate(item.expires_at)}`
                             : ""}
                         </p>
+                        <div className="card-actions">
+                          {editingId === item.id ? (
+                            <>
+                              <button
+                                type="button"
+                                className="quiet-button"
+                                disabled={busyId === item.id}
+                                onClick={() => save(item)}
+                              >
+                                保存
+                              </button>
+                              <button
+                                type="button"
+                                className="quiet-button pink"
+                                onClick={() => setEditingId(null)}
+                              >
+                                取消
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                className="quiet-button"
+                                onClick={() => {
+                                  setEditingId(item.id);
+                                  setDraft(item.content);
+                                  setError("");
+                                }}
+                              >
+                                编辑
+                              </button>
+                              <button
+                                type="button"
+                                className="quiet-button pink"
+                                disabled={busyId === item.id}
+                                onClick={() => remove(item)}
+                              >
+                                删除
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </article>
                     ))}
                   </section>
@@ -428,8 +548,86 @@ function scheduleText(schedule, nextReview) {
   return nextReview ? formatDate(nextReview) : "无计划时间";
 }
 
-function Goals({ refreshKey }) {
+function FilePicker({ id, file, onChange, required = false }) {
+  return (
+    <label
+      className={`file-picker${file ? " has-file" : ""}`}
+      htmlFor={id}
+      title={file ? file.name : undefined}
+    >
+      <input
+        id={id}
+        className="file-picker-input"
+        type="file"
+        accept="image/*,.gif,.webp"
+        required={required}
+        onChange={(event) => onChange(event.target.files?.[0] || null)}
+      />
+      <span className="file-picker-face">
+        <span className="file-picker-action">
+          {file ? file.name : "选择图片"}
+        </span>
+      </span>
+    </label>
+  );
+}
+
+function Goals({ refreshKey, token, onMutated }) {
   const [includeClosed, setIncludeClosed] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [draft, setDraft] = useState(null);
+  const [busyId, setBusyId] = useState(null);
+  const [error, setError] = useState("");
+
+  function startEdit(item) {
+    setEditingId(item.id);
+    setDraft({
+      title: item.title || "",
+      success_criteria: item.success_criteria || "",
+      next_action: item.next_action || "",
+      status: item.status,
+      waiting_for: item.waiting_for || "",
+      blocked_reason: item.blocked_reason || "",
+    });
+    setError("");
+  }
+
+  async function save(item) {
+    setBusyId(item.id);
+    setError("");
+    try {
+      await api(`/api/goals/${encodeURIComponent(item.id)}`, {
+        method: "PATCH",
+        token,
+        body: draft,
+      });
+      setEditingId(null);
+      onMutated();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function remove(item) {
+    if (!window.confirm("确定取消这个任务？")) return;
+    setBusyId(item.id);
+    setError("");
+    try {
+      await api(`/api/goals/${encodeURIComponent(item.id)}`, {
+        method: "DELETE",
+        token,
+        body: { reason: "Cancelled from dashboard" },
+      });
+      onMutated();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   return (
     <DataView path="/api/goals?all=true" refreshKey={refreshKey}>
       {({ items }) => {
@@ -459,29 +657,148 @@ function Goals({ refreshKey }) {
                 </button>
               </div>
             </section>
+            {error && <p className="form-error">{error}</p>}
             {visible.length ? (
               <section className="goal-grid">
                 {visible.map((item) => (
                   <article className="goal-card" key={item.id}>
-                    <span className="status">{item.status}</span>
-                    <h2>{item.title}</h2>
-                    <p className="criteria">{item.success_criteria}</p>
-                    <div className="goal-details">
-                      <div>
-                        <span className="meta-label">Next action</span>
-                        <p>{item.next_action || "—"}</p>
-                      </div>
-                      {item.latest_result && (
-                        <div>
-                          <span className="meta-label">Latest result</span>
-                          <p>{item.latest_result}</p>
+                    {editingId === item.id && draft ? (
+                      <div className="edit-form">
+                        <label>
+                          状态
+                          <select
+                            value={draft.status}
+                            onChange={(event) =>
+                              setDraft({ ...draft, status: event.target.value })
+                            }
+                          >
+                            {goalStatuses.map(([value, label]) => (
+                              <option value={value} key={value}>
+                                {label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label>
+                          标题
+                          <input
+                            value={draft.title}
+                            onChange={(event) =>
+                              setDraft({ ...draft, title: event.target.value })
+                            }
+                          />
+                        </label>
+                        <label>
+                          成功标准
+                          <textarea
+                            rows={3}
+                            value={draft.success_criteria}
+                            onChange={(event) =>
+                              setDraft({
+                                ...draft,
+                                success_criteria: event.target.value,
+                              })
+                            }
+                          />
+                        </label>
+                        <label>
+                          下一步
+                          <textarea
+                            rows={2}
+                            value={draft.next_action}
+                            onChange={(event) =>
+                              setDraft({ ...draft, next_action: event.target.value })
+                            }
+                          />
+                        </label>
+                        {draft.status === "waiting" && (
+                          <label>
+                            等待
+                            <input
+                              value={draft.waiting_for}
+                              onChange={(event) =>
+                                setDraft({
+                                  ...draft,
+                                  waiting_for: event.target.value,
+                                })
+                              }
+                            />
+                          </label>
+                        )}
+                        {draft.status === "blocked" && (
+                          <label>
+                            受阻原因
+                            <input
+                              value={draft.blocked_reason}
+                              onChange={(event) =>
+                                setDraft({
+                                  ...draft,
+                                  blocked_reason: event.target.value,
+                                })
+                              }
+                            />
+                          </label>
+                        )}
+                        <div className="card-actions">
+                          <button
+                            type="button"
+                            className="quiet-button"
+                            disabled={busyId === item.id}
+                            onClick={() => save(item)}
+                          >
+                            保存
+                          </button>
+                          <button
+                            type="button"
+                            className="quiet-button pink"
+                            onClick={() => setEditingId(null)}
+                          >
+                            取消
+                          </button>
                         </div>
-                      )}
-                      <div>
-                        <span className="meta-label">Schedule</span>
-                        <p>{scheduleText(item.schedule, item.next_review_at)}</p>
                       </div>
-                    </div>
+                    ) : (
+                      <>
+                        <span className="status">{item.status}</span>
+                        <h2>{item.title}</h2>
+                        <p className="criteria">{item.success_criteria}</p>
+                        <div className="goal-details">
+                          <div>
+                            <span className="meta-label">Next action</span>
+                            <p>{item.next_action || "—"}</p>
+                          </div>
+                          {item.latest_result && (
+                            <div>
+                              <span className="meta-label">Latest result</span>
+                              <p>{item.latest_result}</p>
+                            </div>
+                          )}
+                          <div>
+                            <span className="meta-label">Schedule</span>
+                            <p>{scheduleText(item.schedule, item.next_review_at)}</p>
+                          </div>
+                        </div>
+                        {["active", "waiting", "blocked"].includes(item.status) && (
+                          <div className="card-actions">
+                            <button
+                              type="button"
+                              className="quiet-button"
+                              onClick={() => startEdit(item)}
+                            >
+                              编辑
+                            </button>
+                            <button
+                              type="button"
+                              className="quiet-button pink"
+                              disabled={busyId === item.id}
+                              onClick={() => remove(item)}
+                            >
+                              取消任务
+                            </button>
+                          </div>
+                        )}
+                      </>
+                    )}
                   </article>
                 ))}
               </section>
@@ -495,15 +812,122 @@ function Goals({ refreshKey }) {
   );
 }
 
-function Emotions({ refreshKey }) {
+function Emotions({ refreshKey, token, onMutated }) {
+  const [slug, setSlug] = useState("");
+  const [description, setDescription] = useState("");
+  const [file, setFile] = useState(null);
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+  const [editing, setEditing] = useState(null);
+
+  async function createEmotion(event) {
+    event.preventDefault();
+    setBusy("create");
+    setError("");
+    try {
+      const formData = new FormData();
+      formData.set("slug", slug.trim());
+      formData.set("description", description.trim());
+      if (file) formData.set("file", file);
+      await api("/api/emotions", { method: "POST", token, formData });
+      setSlug("");
+      setDescription("");
+      setFile(null);
+      event.target.reset?.();
+      onMutated();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function saveEmotion(item) {
+    setBusy(item.slug);
+    setError("");
+    try {
+      if (editing.file) {
+        const formData = new FormData();
+        formData.set("description", editing.description.trim());
+        formData.set("file", editing.file);
+        await api(`/api/emotions/${encodeURIComponent(item.slug)}`, {
+          method: "PATCH",
+          token,
+          formData,
+        });
+      } else {
+        await api(`/api/emotions/${encodeURIComponent(item.slug)}`, {
+          method: "PATCH",
+          token,
+          body: { description: editing.description.trim() },
+        });
+      }
+      setEditing(null);
+      onMutated();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function remove(item) {
+    if (!window.confirm(`确定删除表情 ${item.slug}？`)) return;
+    setBusy(item.slug);
+    setError("");
+    try {
+      await api(`/api/emotions/${encodeURIComponent(item.slug)}`, {
+        method: "DELETE",
+        token,
+      });
+      onMutated();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy("");
+    }
+  }
+
   return (
     <DataView path="/api/emotions" refreshKey={refreshKey}>
-      {({ items }) =>
-        items.length ? (
-          <>
-            <section className="section-tools">
-              <p>{items.length} 个可用表情</p>
-            </section>
+      {({ items }) => (
+        <>
+          <form className="create-form" onSubmit={createEmotion}>
+            <input
+              id="emotion-slug"
+              value={slug}
+              onChange={(event) => setSlug(event.target.value)}
+              placeholder="Slug"
+              aria-label="Slug"
+              required
+            />
+            <input
+              id="emotion-desc"
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              placeholder="描述"
+              aria-label="描述"
+              required
+            />
+            <FilePicker
+              id="emotion-file"
+              file={file}
+              required
+              onChange={setFile}
+            />
+            <button
+              className="quiet-button pink"
+              type="submit"
+              disabled={busy === "create"}
+            >
+              添加表情
+            </button>
+          </form>
+          {error && <p className="form-error">{error}</p>}
+          <section className="section-tools">
+            <p>{items.length} 个可用表情</p>
+          </section>
+          {items.length ? (
             <section className="emotion-grid">
               {items.map((item) => (
                 <article className="emotion-card" key={item.id}>
@@ -515,17 +939,80 @@ function Emotions({ refreshKey }) {
                     />
                   </div>
                   <div className="emotion-copy">
-                    <h2>{item.slug}</h2>
-                    <p>{item.description}</p>
+                    {editing?.slug === item.slug ? (
+                      <div className="edit-form compact">
+                        <input
+                          value={editing.description}
+                          onChange={(event) =>
+                            setEditing({
+                              ...editing,
+                              description: event.target.value,
+                            })
+                          }
+                        />
+                        <FilePicker
+                          id={`emotion-edit-${item.slug}`}
+                          file={editing.file}
+                          onChange={(next) =>
+                            setEditing({ ...editing, file: next })
+                          }
+                        />
+                        <div className="card-actions">
+                          <button
+                            type="button"
+                            className="quiet-button"
+                            disabled={busy === item.slug}
+                            onClick={() => saveEmotion(item)}
+                          >
+                            保存
+                          </button>
+                          <button
+                            type="button"
+                            className="quiet-button pink"
+                            onClick={() => setEditing(null)}
+                          >
+                            取消
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <h2>{item.slug}</h2>
+                        <p>{item.description}</p>
+                        <div className="card-actions">
+                          <button
+                            type="button"
+                            className="quiet-button"
+                            onClick={() =>
+                              setEditing({
+                                slug: item.slug,
+                                description: item.description,
+                                file: null,
+                              })
+                            }
+                          >
+                            编辑
+                          </button>
+                          <button
+                            type="button"
+                            className="quiet-button pink"
+                            disabled={busy === item.slug}
+                            onClick={() => remove(item)}
+                          >
+                            删除
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </article>
               ))}
             </section>
-          </>
-        ) : (
-          <Empty />
-        )
-      }
+          ) : (
+            <Empty text="还没有表情包，可以用上面的表单添加。" />
+          )}
+        </>
+      )}
     </DataView>
   );
 }
@@ -539,57 +1026,122 @@ const viewComponents = {
   goals: Goals,
 };
 
+function TokenGate({ value, onChange, onUnlock }) {
+  return (
+    <div className="token-gate" role="dialog" aria-modal="true" aria-labelledby="token-gate-title">
+      <form
+        className="token-card"
+        onSubmit={(event) => {
+          event.preventDefault();
+          const next = value.trim();
+          if (!next) return;
+          sessionStorage.setItem(TOKEN_KEY, next);
+          onUnlock(next);
+        }}
+      >
+        <div className="token-card-brand">
+          <span className="brand-mark">M</span>
+          <div>
+            <p className="eyebrow">MOMOI // ACCESS</p>
+            <h2 id="token-gate-title">老师，出示通行证！</h2>
+          </div>
+        </div>
+        <p className="token-card-copy">
+          嘿嘿，先把通行证交一下嘛。对上了才能进开发部的后台哦。
+        </p>
+        <label className="token-card-field">
+          <span>通行证</span>
+          <input
+            type="password"
+            autoFocus
+            autoComplete="current-password"
+            value={value}
+            placeholder="输入通行证"
+            onChange={(event) => onChange(event.target.value)}
+          />
+        </label>
+        <button className="quiet-button token-card-submit" type="submit" disabled={!value.trim()}>
+          冲进后台！
+        </button>
+      </form>
+    </div>
+  );
+}
+
 function App() {
   const view = useHashRoute();
   const [refreshKey, setRefreshKey] = useState(0);
+  const [token, setToken] = useState(readToken);
+  const [tokenDraft, setTokenDraft] = useState(readToken);
+  const locked = !token;
   const [pageTitle, eyebrow] = pages[view];
   const View = viewComponents[view];
+
   return (
-    <div className="shell">
-      <aside className="sidebar">
-        <a className="brand" href="#overview" aria-label="Momoi 首页">
-          <span className="brand-mark">M</span>
-          <span>
-            <strong>Momoi</strong>
-            <small>GAME DEV DEPT.</small>
-          </span>
-        </a>
-        <nav aria-label="主导航">
-          {navItems.map(([target, index, label]) => (
-            <a
-              href={`#${target}`}
-              className={target === view ? "active" : ""}
-              key={target}
-            >
-              <span>{index}</span>
-              <strong>{label}</strong>
-            </a>
-          ))}
-        </nav>
-        <div className="sidebar-foot">
-          <span className="status-dot" />
-          <span>SYSTEM ONLINE</span>
-        </div>
-      </aside>
-      <main>
-        <header className="topbar">
-          <div>
-            <p className="eyebrow">{eyebrow}</p>
-            <h1>{pageTitle}</h1>
+    <>
+      <div
+        className={`shell${locked ? " is-locked" : ""}`}
+        aria-hidden={locked || undefined}
+        inert={locked || undefined}
+      >
+        <aside className="sidebar">
+          <a className="brand" href="#overview" aria-label="Momoi 首页">
+            <span className="brand-mark">M</span>
+            <span>
+              <strong>Momoi</strong>
+              <small>GAME DEV DEPT.</small>
+            </span>
+          </a>
+          <nav aria-label="主导航">
+            {navItems.map(([target, index, label]) => (
+              <a
+                href={`#${target}`}
+                className={target === view ? "active" : ""}
+                key={target}
+                tabIndex={locked ? -1 : undefined}
+              >
+                <span>{index}</span>
+                <strong>{label}</strong>
+              </a>
+            ))}
+          </nav>
+          <div className="sidebar-foot">
+            <span className="status-dot" />
+            <span>SYSTEM ONLINE</span>
           </div>
-          <button
-            className="quiet-button"
-            type="button"
-            onClick={() => setRefreshKey((value) => value + 1)}
-          >
-            ↻ 刷新
-          </button>
-        </header>
-        <div id="content">
-          <View refreshKey={refreshKey} />
-        </div>
-      </main>
-    </div>
+        </aside>
+        <main>
+          <header className="topbar">
+            <div>
+              <p className="eyebrow">{eyebrow}</p>
+              <h1>{pageTitle}</h1>
+            </div>
+            <button
+              className="quiet-button"
+              type="button"
+              tabIndex={locked ? -1 : undefined}
+              onClick={() => setRefreshKey((value) => value + 1)}
+            >
+              ↻ 刷新
+            </button>
+          </header>
+          <div id="content">
+            <View
+              refreshKey={refreshKey}
+              token={token}
+              onMutated={() => setRefreshKey((value) => value + 1)}
+            />
+          </div>
+        </main>
+      </div>
+      {locked && (
+        <TokenGate
+          value={tokenDraft}
+          onChange={setTokenDraft}
+          onUnlock={setToken}
+        />
+      )}
+    </>
   );
 }
 

@@ -3747,11 +3747,78 @@ class Store(MemoryStore, DeliveryStore):
         ).fetchall()
         results: list[dict[str, object]] = []
         for row in rows:
-            item = dict(row)
-            item["evidence"] = item.pop("evidence_quote")
-            _add_context_timestamps(item, ("created_at", "updated_at", "expires_at"))
-            results.append(item)
+            results.append(self._memory_public_dict(row))
         return results
+
+    def _memory_public_dict(self, row: sqlite3.Row) -> dict[str, object]:
+        item = dict(row)
+        item["evidence"] = item.pop("evidence_quote")
+        _add_context_timestamps(item, ("created_at", "updated_at", "expires_at"))
+        return item
+
+    def _active_memory_row(self, memory_id: int) -> sqlite3.Row | None:
+        return self._db.execute(
+            """SELECT id, kind, key, content, activation, authority,
+                      evidence_quote, importance, created_at, updated_at,
+                      expires_at
+               FROM memories AS m
+               WHERE m.id=?
+                 AND m.superseded_by IS NULL
+                 AND (m.expires_at IS NULL OR m.expires_at > ?)
+                 AND NOT EXISTS (
+                     SELECT 1 FROM memory_tombstones AS t
+                     WHERE t.kind=m.kind AND t.key=m.key
+                 )""",
+            (memory_id, time.time()),
+        ).fetchone()
+
+    def update_memory_content(
+        self, memory_id: int, content: str
+    ) -> dict[str, object] | None:
+        text = content.strip()
+        if not text or len(text) > 2000:
+            raise ValueError("content must contain between 1 and 2000 characters")
+        now = time.time()
+        with self._db:
+            row = self._active_memory_row(memory_id)
+            if row is None:
+                return None
+            self._db.execute(
+                "UPDATE memories SET content=?, updated_at=? WHERE id=?",
+                (text, now, memory_id),
+            )
+        updated = self._active_memory_row(memory_id)
+        return self._memory_public_dict(updated) if updated else None
+
+    def forget_memory_by_id(self, memory_id: int, reason: str) -> bool:
+        text = reason.strip() or "Deleted from dashboard"
+        if len(text) > 500:
+            raise ValueError("reason must contain at most 500 characters")
+        now = time.time()
+        with self._db:
+            row = self._active_memory_row(memory_id)
+            if row is None:
+                return False
+            self._db.execute(
+                """INSERT INTO memory_tombstones
+                   (kind, key, source_event_id, evidence_quote, created_at)
+                   VALUES (?, ?, ?, ?, ?)
+                   ON CONFLICT(kind, key) DO UPDATE SET
+                     source_event_id=excluded.source_event_id,
+                     evidence_quote=excluded.evidence_quote,
+                     created_at=excluded.created_at""",
+                (
+                    row["kind"],
+                    row["key"],
+                    "dashboard:forget",
+                    text,
+                    now,
+                ),
+            )
+            self._resolve_memory_conflicts(
+                str(row["kind"]), str(row["key"]), "forgotten", now
+            )
+        return True
 
     def goal(self, goal_id: str) -> dict[str, object] | None:
         row = self._db.execute("SELECT * FROM goals WHERE id=?", (goal_id,)).fetchone()
@@ -3765,6 +3832,92 @@ class Store(MemoryStore, DeliveryStore):
             f"SELECT * FROM goals {where} ORDER BY updated_at DESC"
         ).fetchall()
         return [self._goal_dict(row) for row in rows]
+
+    def update_goal_owner(
+        self,
+        goal_id: str,
+        *,
+        title: str | None = None,
+        success_criteria: str | None = None,
+        next_action: str | None = None,
+        status: str | None = None,
+        waiting_for: str | None = None,
+        blocked_reason: str | None = None,
+    ) -> dict[str, object] | None:
+        goal = self.goal(goal_id)
+        if goal is None:
+            return None
+        if goal["status"] in {"done", "cancelled"}:
+            raise ValueError("closed goal cannot be updated")
+        if title is not None:
+            text = title.strip()
+            if not text:
+                raise ValueError("title must not be empty")
+            goal["title"] = text[:500]
+        if success_criteria is not None:
+            text = success_criteria.strip()
+            if not text:
+                raise ValueError("success_criteria must not be empty")
+            goal["success_criteria"] = text[:2000]
+        if next_action is not None:
+            goal["next_action"] = next_action.strip()[:2000]
+        if waiting_for is not None:
+            goal["waiting_for"] = waiting_for.strip()[:2000]
+        if blocked_reason is not None:
+            goal["blocked_reason"] = blocked_reason.strip()[:2000]
+        if status is not None:
+            if status not in {"active", "waiting", "blocked"}:
+                raise ValueError("status must be active, waiting, or blocked")
+            goal["status"] = status
+        if goal["status"] == "active" and not goal.get("next_action"):
+            raise ValueError("active goal requires next_action")
+        if goal["status"] == "waiting" and not goal.get("waiting_for"):
+            raise ValueError("waiting goal requires waiting_for")
+        if goal["status"] == "blocked" and not goal.get("blocked_reason"):
+            raise ValueError("blocked goal requires blocked_reason")
+        if goal["status"] == "blocked":
+            goal["next_review_at"] = None
+        now = time.time()
+        with self._db:
+            self._db.execute(
+                """UPDATE goals
+                   SET title=?, success_criteria=?, status=?, next_action=?,
+                       waiting_for=?, blocked_reason=?,
+                       next_review_at=?, review_claimed_at=NULL, updated_at=?
+                   WHERE id=?""",
+                (
+                    goal["title"],
+                    goal["success_criteria"],
+                    goal["status"],
+                    goal.get("next_action", ""),
+                    goal.get("waiting_for", ""),
+                    goal.get("blocked_reason", ""),
+                    goal.get("next_review_at"),
+                    now,
+                    goal_id,
+                ),
+            )
+        return self.goal(goal_id)
+
+    def cancel_goal(self, goal_id: str, reason: str) -> dict[str, object] | None:
+        text = reason.strip()
+        if not text:
+            raise ValueError("reason is required")
+        goal = self.goal(goal_id)
+        if goal is None:
+            return None
+        if goal["status"] in {"done", "cancelled"}:
+            raise ValueError("closed goal cannot be cancelled")
+        now = time.time()
+        with self._db:
+            self._db.execute(
+                """UPDATE goals
+                   SET status='cancelled', latest_result=?, next_review_at=NULL,
+                       review_claimed_at=NULL, updated_at=?
+                   WHERE id=?""",
+                (text[:2000], now, goal_id),
+            )
+        return self.goal(goal_id)
 
     def search_goals(self, query: str, max_results: int) -> list[dict[str, object]]:
         if max_results <= 0:
