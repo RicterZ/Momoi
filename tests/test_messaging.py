@@ -1025,6 +1025,8 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             file_path = Path(directory) / "notes.txt"
             file_path.write_bytes(b"hello")
+            unnamed = Path(directory) / "report.pdf"
+            unnamed.write_bytes(b"%PDF")
             await client.send_message(
                 {
                     "action": "message",
@@ -1042,6 +1044,10 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                         {
                             "type": "file",
                             "data": {"file": str(file_path), "name": "notes.txt"},
+                        },
+                        {
+                            "type": "file",
+                            "data": {"file": str(unnamed)},
                         },
                         {
                             "type": "video",
@@ -1075,8 +1081,12 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(segments[2]["data"]["sub_type"], 1)
         encoded = segments[3]["data"]["file"].removeprefix("base64://")
         self.assertEqual(base64.b64decode(encoded), b"hello")
-        self.assertEqual(segments[4]["data"]["file"], "https://cdn.example/a.mp4")
-        self.assertEqual(segments[6], {"type": "face", "data": {"id": "178"}})
+        self.assertEqual(segments[3]["data"]["name"], "notes.txt")
+        encoded_unnamed = segments[4]["data"]["file"].removeprefix("base64://")
+        self.assertEqual(base64.b64decode(encoded_unnamed), b"%PDF")
+        self.assertEqual(segments[4]["data"]["name"], "report.pdf")
+        self.assertEqual(segments[5]["data"]["file"], "https://cdn.example/a.mp4")
+        self.assertEqual(segments[7], {"type": "face", "data": {"id": "178"}})
         self.assertEqual(payloads[1]["action"], "send_private_forward_msg")
         self.assertEqual(payloads[1]["params"]["messages"][0]["type"], "node")  # type: ignore[index]
 

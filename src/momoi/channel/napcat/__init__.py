@@ -8,6 +8,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, ClassVar
+from urllib.parse import unquote, urlparse
 
 import aiohttp
 
@@ -435,6 +436,14 @@ class NapCatChannel:
             if item["type"] in {"image", "file", "video", "record"} and isinstance(
                 source, str
             ):
+                # base64:// has no filename; NapCat falls back to a UUID without
+                # extension unless `name` is set. Prefer an explicit name.
+                if item["type"] == "file":
+                    name = item["data"].get("name")
+                    if not (isinstance(name, str) and name.strip()):
+                        derived = _media_display_name(source)
+                        if derived:
+                            item["data"]["name"] = derived
                 if not source.startswith(("base64://", "http://", "https://")):
                     try:
                         content = await asyncio.to_thread(Path(source).expanduser().read_bytes)
@@ -627,6 +636,20 @@ def image_blocks(
                 }
             )
     return blocks
+
+
+def _media_display_name(source: str) -> str | None:
+    """Derive a NapCat file `name` from a local path or URL basename."""
+    if source.startswith("base64://"):
+        return None
+    if source.startswith(("http://", "https://", "file://")):
+        try:
+            name = Path(unquote(urlparse(source).path)).name
+            return name or None
+        except ValueError:
+            return None
+    name = Path(source.split("?", 1)[0]).expanduser().name
+    return name or None
 
 
 def _describe_media(kind: str, data: dict[str, Any]) -> str:
