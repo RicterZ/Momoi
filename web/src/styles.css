@@ -39,23 +39,15 @@ button, a { -webkit-tap-highlight-color: transparent; }
   height: 100vh;
   padding: 28px 20px 22px;
   border-right: 2px solid var(--ink);
-  background:
-    radial-gradient(circle at 12% 8%, rgba(255, 101, 141, .12), transparent 42%),
-    radial-gradient(circle at 88% 92%, rgba(67, 184, 245, .12), transparent 46%),
-    var(--canvas);
+  background: var(--surface);
 }
 
 .brand {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px;
-  border: 2px solid var(--ink);
-  border-radius: 12px;
   color: inherit;
   text-decoration: none;
-  background: var(--surface);
-  box-shadow: 4px 4px 0 var(--blue);
 }
 
 .brand-mark {
