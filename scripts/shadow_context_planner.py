@@ -2,6 +2,7 @@
 import argparse
 import asyncio
 import json
+import logging
 import time
 import uuid
 from collections import defaultdict
@@ -9,6 +10,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from momoi.config import WebhookConfig, load_config
+from momoi.logging_context import configure_logging
 from momoi.runtime import MomoiDaemon
 from momoi.runtime.context_candidates import EpisodeCandidatePolicy
 
@@ -194,7 +196,12 @@ def main() -> None:
     parser.add_argument("--active", type=int, default=2)
     parser.add_argument("--directory", type=int, default=8)
     parser.add_argument("--total", type=int, default=18)
-    asyncio.run(run(parser.parse_args()))
+    parser.add_argument("--log-level", default="INFO")
+    args = parser.parse_args()
+    configure_logging(
+        getattr(logging, str(args.log_level).upper(), logging.INFO)
+    )
+    asyncio.run(run(args))
 
 
 if __name__ == "__main__":

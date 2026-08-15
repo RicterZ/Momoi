@@ -15,7 +15,6 @@ from momoi.runtime.context_planner import (
     CONTEXT_PLAN_TOOL_SPEC,
     ContextPlanError,
     degraded_context_plan,
-    is_light_social_plan,
     parse_context_plan,
 )
 from momoi.runtime.turns import CONTEXT_PLANNER_SYSTEM_PROMPT
@@ -213,14 +212,14 @@ class ContextPlannerTest(unittest.TestCase):
                 json.dumps(over_limit), ["event-1"], [], "turn-1", 1
             )
 
-    def test_casual_units_can_skip_recall_and_do_not_create_open_loops(self) -> None:
+    def test_casual_units_can_skip_recall_without_parser_semantics(self) -> None:
         plan = response_plan()
         plan["episode_bindings"][0]["open_loops"] = ["饭后再弄"]
         parsed = parse_context_plan(json.dumps(plan), ["event-1"], [], "turn-1", 1)
         self.assertEqual(parsed["intent_units"][0]["recall_queries"], [])
-        self.assertEqual(parsed["episode_bindings"][0]["open_loops"], [])
+        self.assertEqual(parsed["episode_bindings"][0]["open_loops"], ["饭后再弄"])
 
-    def test_light_social_plan_does_not_inject_bound_episode_or_task_tools(
+    def test_bound_episode_does_not_inject_history_or_remove_tools(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -258,7 +257,6 @@ class ContextPlannerTest(unittest.TestCase):
                 "episode_links": [],
                 "uncertainty": [],
             }
-            self.assertTrue(is_light_social_plan(plan))
             self.assertEqual(
                 build_plan_retrieval(daemon.store, plan, app_config(directory))[
                     "episodes"
@@ -269,8 +267,22 @@ class ContextPlannerTest(unittest.TestCase):
                 [spec["name"] for spec in daemon._owner_tool_specs(plan)],
                 [
                     "send_message",
+                    "memory_search",
+                    "conversation_search",
+                    "conversation_read",
                     "memory_remember",
                     "memory_forget",
+                    "goal_create",
+                    "goal_update",
+                    "goal_finish",
+                    "goal_cancel",
+                    "reminder_create",
+                    "reminder_cancel",
+                    "curl",
+                    "read_file",
+                    "write_file",
+                    "apply_patch",
+                    "sleep",
                     "reply_expectation_close",
                     "respond",
                 ],
@@ -399,6 +411,16 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                 )
             )
             daemon.store.close()
+
+    def test_invalid_plan_log_keeps_reason_and_raw_arguments(self) -> None:
+        # Runtime logging is exercised asynchronously elsewhere; keep the
+        # formatter contract explicit so shadow runs remain diagnosable.
+        self.assertIn("reason=last_error", Path(
+            __file__
+        ).parents[1].joinpath("src/momoi/runtime/turns.py").read_text())
+        self.assertIn("raw_plan=raw_plan", Path(
+            __file__
+        ).parents[1].joinpath("src/momoi/runtime/turns.py").read_text())
 
     async def test_closed_episode_directory_allows_semantic_planner_binding(
         self,
@@ -681,7 +703,7 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                         text = str(content)
                     self.assertNotIn("degraded_message_segment", text)
                     self.assertIn("<context_resolution>", text)
-                    self.assertIn("may miss references", text)
+                    self.assertIn("without automatic historical recall", text)
                     call = ToolCall(
                         "respond",
                         "respond",

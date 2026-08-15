@@ -1870,12 +1870,19 @@ class Store(MemoryStore, DeliveryStore):
             used += size
         return [item for group in reversed(selected) for item in group]
 
-    def list_episode_candidates(self, limit: int = 20) -> list[dict[str, object]]:
+    def list_episode_candidates(
+        self, limit: int = 20, *, after: float | None = None
+    ) -> list[dict[str, object]]:
         if limit <= 0:
             return []
         rows = self._db.execute(
             """SELECT * FROM conversation_episodes AS e
                WHERE status IN ('open', 'closing')
+                 AND (? IS NULL OR COALESCE((
+                     SELECT MAX(t.updated_at) FROM episode_turns AS et
+                     JOIN turns AS t ON t.id=et.turn_id
+                     WHERE et.episode_id=e.id
+                 ), e.updated_at)>=?)
                ORDER BY status='open' DESC,
                         COALESCE((
                             SELECT MAX(t.updated_at) FROM episode_turns AS et
@@ -1884,18 +1891,29 @@ class Store(MemoryStore, DeliveryStore):
                         ), 0) DESC,
                         salience DESC, updated_at DESC
                LIMIT ?""",
-            (limit,),
+            (after, after, limit),
         ).fetchall()
         return [self._episode_dict(row) for row in rows]
 
-    def list_episode_directory(self, limit: int = 64) -> list[dict[str, object]]:
+    def list_episode_directory(
+        self, limit: int = 64, *, after: float | None = None
+    ) -> list[dict[str, object]]:
         if limit <= 0:
             return []
         rows = self._db.execute(
-            """SELECT * FROM conversation_episodes
+            """SELECT e.* FROM conversation_episodes AS e
+               WHERE ? IS NULL OR COALESCE((
+                   SELECT MAX(t.updated_at) FROM episode_turns AS et
+                   JOIN turns AS t ON t.id=et.turn_id
+                   WHERE et.episode_id=e.id
+               ), e.updated_at)>=?
                ORDER BY status='open' DESC, status='closing' DESC,
-                        updated_at DESC, salience DESC LIMIT ?""",
-            (limit,),
+                        COALESCE((
+                            SELECT MAX(t.updated_at) FROM episode_turns AS et
+                            JOIN turns AS t ON t.id=et.turn_id
+                            WHERE et.episode_id=e.id
+                        ), e.updated_at) DESC, salience DESC LIMIT ?""",
+            (after, after, limit),
         ).fetchall()
         return [self._episode_dict(row) for row in rows]
 
@@ -1975,12 +1993,42 @@ class Store(MemoryStore, DeliveryStore):
             )
             self._reindex_episode_terms(episode_id)
 
-    def search_episodes(self, query: str, max_results: int) -> list[dict[str, object]]:
+    def search_episodes(
+        self,
+        query: str,
+        max_results: int,
+        *,
+        after: float | None = None,
+        before: float | None = None,
+    ) -> list[dict[str, object]]:
         if max_results <= 0:
             return []
         query_units = lexical_units(query, strict=True)
         if not query_units:
-            return []
+            rows = self._db.execute(
+                """SELECT e.*, COALESCE((
+                       SELECT MAX(t.updated_at) FROM episode_turns AS et
+                       JOIN turns AS t ON t.id=et.turn_id
+                       WHERE et.episode_id=e.id
+                   ), e.updated_at) AS last_activity_at
+                   FROM conversation_episodes AS e"""
+            ).fetchall()
+            ranked = [
+                (0.0, float(row["last_activity_at"]), row)
+                for row in rows
+                if (after is None or float(row["last_activity_at"]) >= after)
+                and (before is None or float(row["last_activity_at"]) < before)
+            ]
+            ranked.sort(key=lambda item: item[1], reverse=True)
+            results = []
+            for _, _, row in ranked[:max_results]:
+                episode = self._episode_dict(row)
+                episode["last_activity_timestamp"] = context_timestamp(
+                    row["last_activity_at"]
+                )
+                episode["matches"] = []
+                results.append(episode)
+            return results
         query_term_ids = tuple(
             self._recall_term_ids(query_units, create=False).values()
         )
@@ -1989,7 +2037,11 @@ class Store(MemoryStore, DeliveryStore):
         placeholders = ",".join("?" for _ in query_term_ids)
         ranked: list[tuple[float, float, sqlite3.Row]] = []
         rows = self._db.execute(
-            f"""SELECT e.*, matched.overlap
+            f"""SELECT e.*, matched.overlap, COALESCE((
+                       SELECT MAX(t.updated_at) FROM episode_turns AS et
+                       JOIN turns AS t ON t.id=et.turn_id
+                       WHERE et.episode_id=e.id
+                   ), e.updated_at) AS last_activity_at
                 FROM conversation_episodes AS e
                 JOIN (
                     SELECT rei.episode_id, COUNT(*) AS overlap
@@ -2001,6 +2053,11 @@ class Store(MemoryStore, DeliveryStore):
             query_term_ids,
         ).fetchall()
         for row in rows:
+            last_activity = float(row["last_activity_at"])
+            if (after is not None and last_activity < after) or (
+                before is not None and last_activity >= before
+            ):
+                continue
             overlap = int(row["overlap"])
             if overlap / max(1, len(query_units)) < 0.1:
                 continue
@@ -2010,6 +2067,9 @@ class Store(MemoryStore, DeliveryStore):
         results: list[dict[str, object]] = []
         for _, _, row in ranked[:max_results]:
             episode = self._episode_dict(row)
+            episode["last_activity_timestamp"] = context_timestamp(
+                row["last_activity_at"]
+            )
             episode["matches"] = self._episode_match_snippets(
                 str(episode["id"]), query_units
             )

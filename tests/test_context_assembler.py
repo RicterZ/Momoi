@@ -98,7 +98,7 @@ class ContextAssemblerTest(unittest.TestCase):
             self.assertIn("朱红钥匙藏在温室花盆下面", assembled["episodes"])
             store.close()
 
-    def test_matched_raw_excerpt_is_centered_on_a_late_message_match(self) -> None:
+    def test_automatic_recall_returns_directory_without_raw_match(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
             store.create_episode("很久以前的暗号", episode_id="long-match")
@@ -112,10 +112,14 @@ class ContextAssemblerTest(unittest.TestCase):
             )
             store.add_event(event)
             store.begin_turn("long-match-turn", "owner", [event.event_id])
+            stored_plan = plan(secret, "long-match")
+            stored_plan["intent_units"][0]["event_ids"] = [event.event_id]
+            store.save_context_plan(
+                "long-match-turn", 1, [event.event_id], stored_plan
+            )
             store.commit_turn(
                 [event], event.text, AgentReply(["记下了"]), turn_id="long-match-turn"
             )
-            store.link_turn_to_episode("long-match", "long-match-turn")
             store._db.execute(
                 """UPDATE conversation_episodes
                    SET working_summary='曾经谈过一个暗号',
@@ -126,9 +130,10 @@ class ContextAssemblerTest(unittest.TestCase):
 
             recalled = recall_episode_context(store, secret, 3, 1000, 1000)
 
-            self.assertIn("matched_raw", recalled)
-            self.assertIn(secret, recalled)
-            self.assertRegex(recalled, r"timestamp=\d{4}-\d{2}-\d{2}T")
+            self.assertIn("summary_quality: legacy", recalled)
+            self.assertNotIn("曾经谈过一个暗号", recalled)
+            self.assertNotIn("matched_raw", recalled)
+            self.assertNotIn(secret, recalled)
             store.close()
 
     def test_multi_intent_turn_indexes_only_its_bound_episode_units(self) -> None:
@@ -262,7 +267,7 @@ class ContextAssemblerTest(unittest.TestCase):
             self.assertIn("Sakana", assembled["owner_preferences"])
             store.close()
 
-    def test_raw_detail_remains_automatically_recallable_after_summary_omits_it(
+    def test_raw_detail_requires_explicit_conversation_read(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -277,13 +282,15 @@ class ContextAssemblerTest(unittest.TestCase):
             )
             store.add_event(event)
             store.begin_turn("rare-turn", "owner", [event.event_id])
+            stored_plan = plan("蓝色保温杯 第三个纸箱", "episode-old")
+            stored_plan["intent_units"][0]["event_ids"] = [event.event_id]
+            store.save_context_plan("rare-turn", 1, [event.event_id], stored_plan)
             store.commit_turn(
                 [event],
                 event.text,
                 AgentReply(["我记得这个位置了"]),
                 turn_id="rare-turn",
             )
-            store.link_turn_to_episode("episode-old", "rare-turn")
             store._db.execute(
                 """UPDATE conversation_episodes
                    SET working_summary='聊过家中物品的位置',
@@ -294,16 +301,21 @@ class ContextAssemblerTest(unittest.TestCase):
             recalled = recall_episode_context(
                 store, "蓝色保温杯 第三个纸箱", 3, 1000, 1000
             )
-            self.assertIn("聊过家中物品的位置", recalled)
-            self.assertIn("蓝色保温杯藏在阁楼第三个纸箱里", recalled)
-            self.assertIn("matched_raw", recalled)
+            self.assertIn("summary_quality: legacy", recalled)
+            self.assertNotIn("聊过家中物品的位置", recalled)
+            self.assertNotIn("蓝色保温杯藏在阁楼第三个纸箱里", recalled)
+            self.assertNotIn("matched_raw", recalled)
+            self.assertIn(
+                "蓝色保温杯藏在阁楼第三个纸箱里",
+                store.conversation_episode("episode-old")["messages"][0]["content"],
+            )
             store._db.execute("DELETE FROM episode_message_recall_terms")
             store._db.execute("DELETE FROM episode_recall_terms")
             store._db.commit()
             store.close()
 
             reopened = Store(Path(directory) / "momoi.sqlite3")
-            self.assertIn(
+            self.assertNotIn(
                 "蓝色保温杯藏在阁楼第三个纸箱里",
                 recall_episode_context(
                     reopened, "蓝色保温杯 第三个纸箱", 3, 1000, 1000
@@ -336,14 +348,14 @@ class ContextAssemblerTest(unittest.TestCase):
                 "SELECT id FROM outbox WHERE turn_id='fallback'"
             ).fetchone()["id"]
             store.mark_ambiguous(int(outbox_id), 1, "timeout")
-            self.assertIn(
-                "[ASSISTANT delivery=uncertain",
+            self.assertNotIn(
+                "这轮仍然会归档",
                 recall_episode_context(store, "规划器失败 归档", 3, 1000, 1000),
             )
             store.mark_sent(int(outbox_id))
             self.assertIn(
                 "这轮仍然会归档",
-                recall_episode_context(store, "规划器失败 归档", 3, 1000, 1000),
+                store.conversation_episode(str(episode["id"]))["messages"][1]["content"],
             )
             store.close()
 
@@ -498,7 +510,7 @@ class ContextAssemblerTest(unittest.TestCase):
             )
             rendered = "\n".join(assembled.values())
             self.assertIn("项目邮件还没到", rendered)
-            self.assertIn("较早的项目邮件仍在等待", rendered)
+            self.assertNotIn("较早的项目邮件仍在等待", rendered)
             self.assertIn("项目邮件关系到当前合作", rendered)
             self.assertIn("项目邮件已经到达", rendered)
             self.assertIn("goal-mail", rendered)
@@ -506,7 +518,8 @@ class ContextAssemblerTest(unittest.TestCase):
             self.assertNotIn("goal-social", rendered)
             self.assertNotIn("reminder-social", rendered)
             autonomous = recall_episode_context(store, "等待 项目 邮件", 3, 2000, 2000)
-            self.assertIn("较早的项目邮件仍在等待", autonomous)
+            self.assertNotIn("较早的项目邮件仍在等待", autonomous)
+            self.assertIn("summary_quality: legacy", autonomous)
             self.assertNotIn("最近聊过微博上的猫", autonomous)
             bounded_tail = store.episode_messages("episode-mail", 5)
             self.assertLessEqual(

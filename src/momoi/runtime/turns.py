@@ -48,7 +48,6 @@ from .context_planner import (
     CONTEXT_PLAN_TOOL_SPEC,
     ContextPlanError,
     degraded_context_plan,
-    is_light_social_plan,
     parse_context_plan,
 )
 from .parsing import (
@@ -136,7 +135,7 @@ def _sections(*items: tuple[str, str]) -> str:
     3. runtime metadata (`runtime_state`, `conversation_state`)
     4. active constraints / agenda (reply expectation, reconciliations, goals, …)
     5. memory evidence (preferences, memories, conflicts, inventories)
-    6. dialogue / episodic evidence (`recalled_episodes`, `recent_conversation`, …)
+    6. dialogue / episodic evidence (`episode_directory`, `recent_conversation`, …)
 
     Stable response capabilities such as `emotion_catalog` belong in the cached
     system prefix, not in the per-turn user pack.
@@ -258,21 +257,8 @@ class TurnRunner:
     def _owner_tool_specs(
         self, plan: dict[str, object], channel_name: str | None = None
     ) -> list[dict[str, Any]]:
-        send_message = self._send_message_tool_spec(channel_name)
-        if is_light_social_plan(plan):
-            memory_specs = [
-                spec
-                for spec in MEMORY_TOOL_SPECS
-                if spec["name"] in {"memory_remember", "memory_forget"}
-            ]
-            return [
-                send_message,
-                *memory_specs,
-                REPLY_EXPECTATION_CLOSE_SPEC,
-                RESPOND_TOOL_SPEC,
-            ]
         return [
-            send_message,
+            self._send_message_tool_spec(channel_name),
             *MEMORY_TOOL_SPECS,
             *AGENDA_TOOL_SPECS,
             *BUILTIN_TOOL_SPECS,
@@ -439,7 +425,7 @@ class TurnRunner:
                         _conversation_guidance(context_plan),
                     ),
                     ("recent_conversation", recalled["recent_conversation"]),
-                    ("recalled_episodes", recalled["episodes"]),
+                    ("episode_directory", recalled["episodes"]),
                     ("owner_preferences", recalled["owner_preferences"]),
                     ("recent_memories", recalled["recent_memories"]),
                     ("confirmed_owner_memory", recalled["confirmed_memories"]),
@@ -582,6 +568,7 @@ class TurnRunner:
         last_error = "invalid_context_plan"
         planner_tools = [CONTEXT_PLAN_TOOL_SPEC]
         for attempt in range(2):
+            raw_plan: object = None
             call_started = time.monotonic()
             call_id = new_trace_id()
             with log_context(
@@ -681,6 +668,11 @@ class TurnRunner:
                     round=attempt + 1,
                     revision=revision,
                     reason=last_error,
+                    tool_calls=[
+                        {"name": call.name, "arguments": call.arguments}
+                        for call in response.tool_calls
+                    ],
+                    raw_plan=raw_plan,
                     duration_ms=int((time.monotonic() - call_started) * 1000),
                 )
                 if attempt == 0:
@@ -841,7 +833,7 @@ class TurnRunner:
                 "recent_conversation",
                 recent_conversation,
             ),
-            ("recalled_episodes", episodes),
+            ("episode_directory", episodes),
             ("owner_preferences", owner_preferences),
             ("recent_memories", recent_memories),
             ("confirmed_owner_memory", memories),
@@ -1052,7 +1044,7 @@ class TurnRunner:
             ("runtime_directives", "\n\n".join(directives)),
             ("runtime_state", runtime_state),
             ("recent_conversation", recalled["recent_conversation"]),
-            ("recalled_episodes", recalled["episodes"]),
+            ("episode_directory", recalled["episodes"]),
             ("owner_preferences", recalled["owner_preferences"]),
             ("recent_memories", recalled["recent_memories"]),
             ("confirmed_owner_memory", recalled["confirmed_memories"]),
@@ -2634,7 +2626,7 @@ class TurnRunner:
                 "recent_conversation",
                 recent_conversation,
             ),
-            ("recalled_episodes", episodes),
+            ("episode_directory", episodes),
             ("owner_preferences", owner_preferences),
             ("recent_memories", recent_memories),
             ("confirmed_owner_memory", memories),
@@ -2827,7 +2819,7 @@ class TurnRunner:
         current_input = _sections(
             ("daily_reflection_record", reflection_record),
             ("runtime_state", self.store.self_state_context()),
-            ("recalled_episodes", episodes),
+            ("episode_directory", episodes),
             ("always_memory_inventory", self.store.always_memory_inventory_context()),
             ("open_conversations", self.store.open_conversation_inventory_context()),
             ("recent_memories", recent_memories),
@@ -3047,7 +3039,7 @@ class TurnRunner:
                 ),
             ),
             ("recent_conversation", recent_conversation),
-            ("recalled_episodes", episodes),
+            ("episode_directory", episodes),
             ("owner_preferences", owner_preferences),
             ("recent_memories", recent_memories),
             ("confirmed_owner_memory", memories),

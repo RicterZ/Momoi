@@ -2949,7 +2949,10 @@ class StorageMemoryTest(unittest.TestCase):
                 ToolCall(
                     "conversation-search",
                     "conversation_search",
-                    {"query": "项目邮件 等待"},
+                    {
+                        "query": "项目邮件 等待",
+                        "time_range": {"kind": "all"},
+                    },
                 ),
                 [],
                 TurnDraft(),

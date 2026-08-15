@@ -1,14 +1,19 @@
 import json
+import logging
+import time
 from collections.abc import Callable
 from typing import Any
 
 from ..config import AppConfig
 from ..context_time import context_timestamp
+from ..logging_context import log_event
 from ..storage import Store, estimate_tokens, truncate_tokens
-from .context_planner import NON_OPEN_LOOP_SPEECH_ACTS, is_light_social_plan
 
 
 _LEGACY_OWNER_HEADER = "# Current owner messages\n"
+_DEFAULT_EPISODE_LOOKBACK_SECONDS = 30 * 24 * 60 * 60
+_MAX_EPISODE_DIRECTORY_RESULTS = 12
+logger = logging.getLogger(__name__)
 
 
 def _historical_content(value: object) -> str:
@@ -124,15 +129,20 @@ def build_plan_retrieval(
         reflection_limit,
         config.memory_tokens // 2,
     )
+    episode_results = max(config.summary_results, _MAX_EPISODE_DIRECTORY_RESULTS)
     recalled_episodes = _selected_by_unit(
         units,
-        store.search_episodes,
+        lambda query, limit: store.search_episodes(
+            query,
+            limit,
+            after=time.time() - _DEFAULT_EPISODE_LOOKBACK_SECONDS,
+        ),
         lambda row: row["id"],
         lambda row: truncate_tokens(
             _episode_search_text(row),
             max(
                 1,
-                config.summary_tokens // max(1, config.summary_results, len(units)),
+                config.summary_tokens // max(1, episode_results, len(units)),
             ),
         ),
         lambda row: {
@@ -141,7 +151,7 @@ def build_plan_retrieval(
             "is_new": False,
             "matches": row.get("matches", []),
         },
-        config.summary_results,
+        episode_results,
         config.summary_tokens,
     )
     agenda_budget = config.memory_tokens // 2
@@ -206,47 +216,11 @@ def build_plan_retrieval(
         config.memory_results,
         config.memory_tokens // 2,
     )
-    episodes: dict[str, dict[str, object]] = {}
-    new_episodes: list[dict[str, object]] = []
-    episode_limit = max(config.summary_results, len(units))
-    light_social = is_light_social_plan(plan)
-    unit_by_id = {
-        str(unit["id"]): unit
-        for unit in units
-        if isinstance(unit, dict) and unit.get("id")
-    }
-    for binding in bindings:
-        item = {
-            "episode_id": binding["episode_id"],
-            "relation": binding["relation"],
-            "unit_ids": list(binding["unit_ids"]),
-            "is_new": binding["is_new"],
-        }
-        if binding["is_new"]:
-            new_episodes.append(item)
-        elif light_social and all(
-            str(unit_id) in unit_by_id
-            and unit_by_id[str(unit_id)].get("speech_act")
-            in NON_OPEN_LOOP_SPEECH_ACTS
-            for unit_id in binding["unit_ids"]
-        ):
-            continue
-        elif len(episodes) < episode_limit:
-            episodes[str(binding["episode_id"])] = item
-    for recalled in recalled_episodes:
-        episode_id = str(recalled["episode_id"])
-        existing = episodes.get(episode_id)
-        if existing is not None:
-            existing_units = existing["unit_ids"]
-            for unit_id in recalled["unit_ids"]:
-                if unit_id not in existing_units:
-                    existing_units.append(unit_id)
-            existing["matches"] = recalled.get("matches", [])
-        elif len(episodes) < episode_limit:
-            episodes[episode_id] = recalled
     return {
         "version": 2,
-        "episodes": [*episodes.values(), *new_episodes],
+        # Episode bindings route the current Turn into storage. Only explicit
+        # recall queries select historical Episode context.
+        "episodes": recalled_episodes,
         "confirmed_memories": confirmed,
         "owner_preferences": store.always_memory_context(),
         "recent_memories": store.recent_memory_context(
@@ -339,12 +313,22 @@ def _message_role(message: dict[str, object]) -> str:
     return role
 
 
+def _episode_summary(episode: dict[str, object]) -> tuple[str, str]:
+    claims = episode.get("working_summary_claims")
+    if isinstance(claims, list) and claims:
+        return str(episode.get("working_summary") or ""), "extractive"
+    summary = str(episode.get("summary") or episode.get("working_summary") or "")
+    # Unverified legacy summaries stay searchable but are not safe default
+    # context: many are imported multi-topic transcripts.
+    return "", ("legacy" if summary else "empty")
+
+
 def _episode_context(
     store: Store,
     episodes: object,
     summary_token_budget: int,
-    raw_token_budget: int,
-    exclude_message_ids: set[int] | None = None,
+    _raw_token_budget: int = 0,
+    _exclude_message_ids: set[int] | None = None,
 ) -> str:
     if not isinstance(episodes, list):
         return ""
@@ -353,11 +337,11 @@ def _episode_context(
         for item in episodes
         if not item.get("is_new") and store.episode(str(item["episode_id"]))
     ]
-    if not existing or (summary_token_budget <= 0 and raw_token_budget <= 0):
+    if not existing or summary_token_budget <= 0:
         return ""
     per_summary = max(1, summary_token_budget // len(existing))
-    per_raw_tail = max(1, raw_token_budget // len(existing))
     sections: list[str] = []
+    quality_counts: dict[str, int] = {}
     for selected in existing:
         episode = store.episode(str(selected["episode_id"]))
         if episode is None:
@@ -369,8 +353,10 @@ def _episode_context(
             f"updated={episode.get('updated_timestamp') or 'unknown'}]",
             f"title: {episode['title']}",
         ]
-        summary = str(episode["summary"] or episode["working_summary"])
-        if summary and summary_token_budget > 0:
+        summary, quality = _episode_summary(episode)
+        quality_counts[quality] = quality_counts.get(quality, 0) + 1
+        lines.append(f"summary_quality: {quality}")
+        if summary:
             lines.append(f"summary: {truncate_tokens(summary, per_summary)}")
         if episode["topics"]:
             lines.append(f"topics: {json.dumps(episode['topics'], ensure_ascii=False)}")
@@ -378,61 +364,19 @@ def _episode_context(
             lines.append(
                 f"open_loops: {json.dumps(episode['open_loops'], ensure_ascii=False)}"
             )
-        remaining_raw = per_raw_tail if raw_token_budget > 0 else 0
-        matched_ids: set[int] = set()
-        matched_lines: list[str] = []
-        for message in selected.get("matches", []):
-            if not isinstance(message, dict) or remaining_raw <= 0:
-                continue
-            if isinstance(message.get("id"), int) and int(message["id"]) in (
-                exclude_message_ids or set()
-            ):
-                continue
-            prefix = (
-                f"  [{_message_role(message)} "
-                f"timestamp={message.get('timestamp') or context_timestamp(message['created_at'])} "
-                f"turn={message.get('turn_id')} ordinal={message.get('ordinal')}] "
-            )
-            prefix_tokens = estimate_tokens(prefix)
-            if prefix_tokens >= remaining_raw:
-                break
-            content = truncate_tokens(
-                _historical_content(message.get("content")),
-                remaining_raw - prefix_tokens,
-            )
-            line = prefix + content
-            matched_lines.append(line)
-            remaining_raw -= estimate_tokens(line)
-            if isinstance(message.get("id"), int):
-                matched_ids.add(int(message["id"]))
-        if matched_lines:
-            lines.append("matched_raw:")
-            lines.extend(matched_lines)
-        messages = (
-            store.episode_messages(
-                str(episode["id"]),
-                remaining_raw,
-                after_ordinal=int(episode["summarized_through_ordinal"]),
-                exclude_message_ids=exclude_message_ids,
-            )
-            if remaining_raw > 0
-            else []
-        )
-        messages = [
-            message for message in messages if int(message["id"]) not in matched_ids
-        ]
-        if messages:
-            lines.append("raw_tail:")
-            lines.extend(
-                f"  [{_message_role(message)} "
-                f"timestamp={message.get('timestamp') or context_timestamp(message['created_at'])} "
-                f"turn={message['turn_id']} "
-                f"ordinal={message['ordinal']}] "
-                f"{_historical_content(message['content'])}"
-                for message in messages
-            )
         sections.append("\n".join(lines))
-    return "\n\n".join(sections)
+    rendered = "\n\n".join(sections)
+    log_event(
+        logger,
+        logging.INFO,
+        "episode_directory_assembled",
+        stage="context_recall",
+        episodes=len(sections),
+        tokens=estimate_tokens(rendered) if rendered else 0,
+        raw_messages=0,
+        summary_quality=quality_counts,
+    )
+    return rendered
 
 
 def assemble_recent_conversation(
@@ -462,14 +406,9 @@ def assemble_main_context(
     recent_turns: int = 0,
     recent_before_timestamp: float | None = None,
 ) -> dict[str, str]:
-    recent, recent_ids = assemble_recent_conversation(
+    recent, _ = assemble_recent_conversation(
         store,
         recent_turns, raw_token_budget, recent_before_timestamp
-    )
-    remaining_raw = (
-        max(0, raw_token_budget - estimate_tokens(recent))
-        if recent
-        else raw_token_budget
     )
     reflection = _memory_lines(retrieval.get("reflection_memories"))
     if reflection:
@@ -482,8 +421,6 @@ def assemble_main_context(
             store,
             retrieval.get("episodes"),
             summary_token_budget,
-            remaining_raw,
-            recent_ids,
         ),
         "confirmed_memories": _memory_lines(retrieval.get("confirmed_memories")),
         "owner_preferences": str(retrieval.get("owner_preferences") or ""),

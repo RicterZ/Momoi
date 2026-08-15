@@ -20,7 +20,7 @@ Rules:
   unique short id. Choose `speech_act` by meaning. Use `casual_share` for a simple
   status or mood update, even when it mentions something that could become a task
   later.
-- Use targeted recall queries when the current reply needs earlier evidence—for a
+- Use targeted recall queries only when the current reply needs earlier evidence—for a
   request, question, correction, or a social share that clearly refers to a prior
   matter. Leave them empty when continuity is not needed, and never invent a prior
   thread merely to fill the list. When the owner refers to a candidate Goal or
@@ -50,6 +50,9 @@ Rules:
   are not open loops.
 - In recent conversation, assistant `delivery_state=uncertain` is not proof that
   the owner received the message; queued and failed assistant messages are omitted.
+- Episode bindings route the current Turn into archival threads; they do not request
+  historical content. Recall queries independently request compact Episode directories
+  and memory evidence for the current reply.
 - Bind every unit to at least one episode and include at least one `primary`
   binding. Reuse an existing candidate only when it is genuinely the same thread;
   sharing a time, place, or entity is not enough when the purpose or activity has

@@ -1,5 +1,7 @@
 import logging
 import re
+import time
+from datetime import datetime
 from typing import Any
 
 from .logging_context import log_event
@@ -18,9 +20,57 @@ from .storage import (
     RECENT_MEMORY_MIN_TTL_HOURS,
     Store,
     lexical_units,
+    truncate_tokens,
 )
 
 logger = logging.getLogger(__name__)
+_DEFAULT_EPISODE_LOOKBACK_DAYS = 30
+
+
+def _episode_time_range(
+    value: object,
+) -> tuple[float | None, float | None, dict[str, object]]:
+    now = time.time()
+    if value is None:
+        after = now - _DEFAULT_EPISODE_LOOKBACK_DAYS * 86400
+        return after, None, {
+            "kind": "recent",
+            "days": _DEFAULT_EPISODE_LOOKBACK_DAYS,
+        }
+    if not isinstance(value, dict):
+        raise ValueError("invalid_time_range")
+    kind = value.get("kind")
+    if kind == "all" and set(value) == {"kind"}:
+        return None, None, {"kind": "all"}
+    if kind == "recent" and set(value) <= {"kind", "days"}:
+        days = value.get("days", _DEFAULT_EPISODE_LOOKBACK_DAYS)
+        if isinstance(days, bool) or not isinstance(days, int) or not 1 <= days <= 3650:
+            raise ValueError("invalid_time_range")
+        return now - days * 86400, None, {"kind": "recent", "days": days}
+    if kind == "range" and set(value) <= {"kind", "from", "to"}:
+        try:
+            after = (
+                datetime.fromisoformat(str(value["from"])).timestamp()
+                if value.get("from")
+                else None
+            )
+            before = (
+                datetime.fromisoformat(str(value["to"])).timestamp()
+                if value.get("to")
+                else None
+            )
+        except (ValueError, TypeError):
+            raise ValueError("invalid_time_range") from None
+        if after is None and before is None or (
+            after is not None and before is not None and after >= before
+        ):
+            raise ValueError("invalid_time_range")
+        return after, before, {
+            "kind": "range",
+            **({"from": str(value["from"])} if after is not None else {}),
+            **({"to": str(value["to"])} if before is not None else {}),
+        }
+    raise ValueError("invalid_time_range")
 
 MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
     {
@@ -58,11 +108,38 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
             "type": "object",
             "properties": {
                 "query": {"type": "string"},
+                "time_range": {
+                    "type": "object",
+                    "description": (
+                        "Optional search window. Default is the last 30 days. "
+                        "Use kind=all only when older history is necessary."
+                    ),
+                    "properties": {
+                        "kind": {
+                            "type": "string",
+                            "enum": ["recent", "range", "all"],
+                        },
+                        "days": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 3650,
+                        },
+                        "from": {"type": "string"},
+                        "to": {"type": "string"},
+                    },
+                    "required": ["kind"],
+                    "additionalProperties": False,
+                },
                 "limit": {
                     "type": "integer",
                     "minimum": 1,
                     "maximum": 10,
                     "default": 5,
+                },
+                "cursor": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Offset returned as next_cursor.",
                 },
             },
             "required": ["query"],
@@ -217,7 +294,11 @@ MEMORY_TOOL_POLICY = """### Memory tools
   event, promise, or vague shared context that is not already visible.
 - `conversation_search` searches older conversation episodes;
   `conversation_read` retrieves the archived raw messages for a returned episode.
-  Use them when factual memory is insufficient to reconstruct an older episode.
+  Search returns compact summaries and evidence locations, not raw message text.
+  It defaults to the last 30 days. If the owner clearly refers to older shared
+  history and the default search is empty, retry with a longer range or all
+  history. Use `conversation_read` only when exact wording, chronology,
+  corrections, commitments, or omitted details require raw messages.
 - `memory_remember` stages durable memory for this Turn. When the user explicitly
   says to remember something, states a stable preference/relationship/routine,
   or corrects an existing fact, call it before the final reply. Set `activation`
@@ -256,6 +337,10 @@ _MEMORY_ERROR_MESSAGES = {
     "invalid_content_offset": "content_offset must be a non-negative integer.",
     "message_not_found": "The requested archived message was not found.",
     "episode_not_found": "The requested conversation episode was not found.",
+    "invalid_time_range": (
+        "time_range must be recent with optional days, range with from/to, or all."
+    ),
+    "invalid_search_cursor": "cursor must be a non-negative integer.",
     "invalid_kind": (
         "kind must be a memory category such as episodic, preference, or routine; "
         "use activation for always, recent, or recall."
@@ -351,14 +436,72 @@ class MemoryTools:
 
     def _conversation_search(self, arguments: dict[str, Any]) -> dict[str, Any]:
         query = str(arguments.get("query") or "").strip()
-        if not query:
-            return _memory_error("query_required")
         try:
             limit = min(10, max(1, int(arguments.get("limit", 5))))
         except (TypeError, ValueError):
             limit = 5
-        results = self.store.search_episodes(query, limit)
-        return {"ok": True, "count": len(results), "results": results}
+        cursor = arguments.get("cursor", 0)
+        if isinstance(cursor, bool) or not isinstance(cursor, int) or cursor < 0:
+            return _memory_error("invalid_search_cursor")
+        try:
+            after, before, window = _episode_time_range(arguments.get("time_range"))
+        except ValueError as error:
+            return _memory_error(str(error))
+        results = self.store.search_episodes(
+            query, cursor + limit + 1, after=after, before=before
+        )[cursor:]
+        has_more = len(results) > limit
+        results = results[:limit]
+        compact = []
+        for episode in results:
+            claims = episode.get("working_summary_claims")
+            summary = str(
+                episode.get("working_summary")
+                if isinstance(claims, list) and claims
+                else episode.get("summary") or episode.get("working_summary") or ""
+            )
+            compact.append(
+                {
+                    "id": episode["id"],
+                    "status": episode["status"],
+                    "title": episode["title"],
+                    "created_timestamp": episode.get("created_timestamp"),
+                    "last_activity_timestamp": episode.get(
+                        "last_activity_timestamp"
+                    ),
+                    "summary": truncate_tokens(summary, 1200),
+                    "summary_quality": (
+                        "extractive"
+                        if isinstance(claims, list) and claims
+                        else ("legacy" if summary else "empty")
+                    ),
+                    "topics": episode["topics"],
+                    "entities": episode["entities"],
+                    "open_loops": episode["open_loops"],
+                    "matches": [
+                        {
+                            key: match.get(key)
+                            for key in (
+                                "id",
+                                "turn_id",
+                                "ordinal",
+                                "role",
+                                "delivery_state",
+                                "timestamp",
+                            )
+                        }
+                        for match in episode.get("matches", [])
+                        if isinstance(match, dict)
+                    ],
+                }
+            )
+        return {
+            "ok": True,
+            "count": len(compact),
+            "time_range": window,
+            "next_cursor": cursor + limit if has_more else None,
+            "results": compact,
+        }
 
     def _conversation_read(self, arguments: dict[str, Any]) -> dict[str, Any]:
         episode_id = arguments.get("episode_id")

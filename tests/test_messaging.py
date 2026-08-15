@@ -2,6 +2,7 @@ import asyncio
 import base64
 import json
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -745,15 +746,17 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
 
             class Provider:
                 def __init__(self) -> None:
+                    self.system: object = None
                     self.messages: list[dict[str, object]] = []
 
                 async def complete(
                     self,
-                    _: object,
+                    system: object,
                     messages: list[dict[str, object]],
                     *__: object,
                     **___: object,
                 ) -> ProviderResponse:
+                    self.system = system
                     self.messages = messages
                     call = ToolCall(
                         "image-response",
@@ -814,16 +817,18 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
 
             class Provider:
                 def __init__(self) -> None:
+                    self.system: object = None
                     self.messages: list[dict[str, object]] = []
                     self.calls = 0
 
                 async def complete(
                     self,
-                    _: object,
+                    system: object,
                     messages: list[dict[str, object]],
                     *__: object,
                     **___: object,
                 ) -> ProviderResponse:
+                    self.system = system
                     self.messages = messages
                     self.calls += 1
                     if self.calls > 1:
@@ -868,7 +873,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             turn_id = daemon._turn_id(event.event_id)
             daemon.store.begin_turn(turn_id, "owner", [event.event_id])
             await daemon._complete_batch([event], turn_id)
-            request = json.dumps(provider.messages, ensure_ascii=False)
+            request = json.dumps(provider.system, ensure_ascii=False)
             self.assertIn("happy-1", request)
             self.assertIn("proud-1", request)
             self.assertIn("真心高兴或庆祝时使用", request)
@@ -1179,11 +1184,24 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                     )
 
             daemon.provider = with_context_planner(Provider())  # type: ignore[assignment]
+            now = time.time()
             for event in (
                 IncomingMessage(
-                    "napcat:1", "1", "QQ 上说过的事", 1, 1, channel="napcat"
+                    "napcat:1",
+                    "1",
+                    "QQ 上说过的事",
+                    now,
+                    now,
+                    channel="napcat",
                 ),
-                IncomingMessage("weixin:2", "2", "接着刚才聊", 2, 2, channel="weixin"),
+                IncomingMessage(
+                    "weixin:2",
+                    "2",
+                    "接着刚才聊",
+                    now + 2,
+                    now + 2,
+                    channel="weixin",
+                ),
             ):
                 daemon.store.add_event(event)
                 turn_id = daemon._turn_id(event.event_id)

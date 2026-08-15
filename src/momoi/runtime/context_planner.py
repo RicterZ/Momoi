@@ -24,13 +24,6 @@ SPEECH_ACTS = {
     "closing",
     "unknown",
 }
-NON_OPEN_LOOP_SPEECH_ACTS = {
-    "emotional_share",
-    "casual_share",
-    "banter",
-    "acknowledgment",
-    "closing",
-}
 CONTEXT_PLAN_TOOL_NAME = "submit_context_plan"
 CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
     "name": CONTEXT_PLAN_TOOL_NAME,
@@ -166,16 +159,6 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
         "additionalProperties": False,
     },
 }
-
-
-def is_light_social_plan(plan: dict[str, object]) -> bool:
-    units = plan.get("intent_units")
-    return bool(units) and all(
-        isinstance(unit, dict)
-        and unit.get("speech_act") in NON_OPEN_LOOP_SPEECH_ACTS
-        and not unit.get("recall_queries")
-        for unit in units
-    )
 
 
 def _strings(
@@ -425,14 +408,6 @@ def parse_context_plan(
             maximum=8,
             error="merged_episode_open_loops_limit",
         )
-    for binding in bindings:
-        bound_speech_acts = {
-            str(unit["speech_act"])
-            for unit in units
-            if str(unit["id"]) in binding["unit_ids"]
-        }
-        if bound_speech_acts and bound_speech_acts <= NON_OPEN_LOOP_SPEECH_ACTS:
-            binding["open_loops"] = []
     if bound_units != unit_ids:
         raise ContextPlanError("unbound_intent_units")
     if not any(item["relation"] == "primary" for item in bindings):
@@ -537,7 +512,7 @@ def degraded_context_plan(
                 "intent": "degraded_message_segment",
                 "speech_act": "unknown",
                 "references": [],
-                "recall_queries": [part[:500]],
+                "recall_queries": [],
             }
         )
     return {
@@ -546,7 +521,7 @@ def degraded_context_plan(
         "episode_bindings": [],
         "episode_links": [],
         "uncertainty": [
-            f"Context planner protocol failed ({reason}); recall uses deterministic "
-            "message segmentation and may miss references or episode relations."
+            f"Context planner protocol failed ({reason}); deterministic message "
+            "segmentation is used without automatic historical recall."
         ],
     }

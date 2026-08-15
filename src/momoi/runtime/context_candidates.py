@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import time
 
 from ..storage import Store
 
@@ -17,6 +18,7 @@ DEFAULT_EPISODE_CANDIDATE_POLICY = EpisodeCandidatePolicy(
     directory_limit=8,
     total_limit=18,
 )
+_DEFAULT_EPISODE_LOOKBACK_SECONDS = 30 * 24 * 60 * 60
 
 
 def collect_episode_candidates(
@@ -24,11 +26,12 @@ def collect_episode_candidates(
     query: str,
     policy: EpisodeCandidatePolicy = DEFAULT_EPISODE_CANDIDATE_POLICY,
 ) -> list[dict[str, object]]:
+    after = time.time() - _DEFAULT_EPISODE_LOOKBACK_SECONDS
     candidates: dict[str, dict[str, object]] = {}
     for candidate in [
-        *store.search_episodes(query, policy.search_limit),
-        *store.list_episode_candidates(policy.active_limit),
-        *store.list_episode_directory(policy.directory_limit),
+        *store.search_episodes(query, policy.search_limit, after=after),
+        *store.list_episode_candidates(policy.active_limit, after=after),
+        *store.list_episode_directory(policy.directory_limit, after=after),
     ]:
         candidates.setdefault(str(candidate["id"]), candidate)
         if len(candidates) >= policy.total_limit:

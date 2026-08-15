@@ -17,13 +17,13 @@ class ContextCandidatesTest(unittest.TestCase):
 
     def test_collects_in_priority_order_and_deduplicates(self) -> None:
         class Store:
-            def search_episodes(self, _query: str, _limit: int):
+            def search_episodes(self, _query: str, _limit: int, **_: object):
                 return [{"id": "matched"}, {"id": "shared"}]
 
-            def list_episode_candidates(self, _limit: int):
+            def list_episode_candidates(self, _limit: int, **_: object):
                 return [{"id": "shared"}, {"id": "active"}]
 
-            def list_episode_directory(self, _limit: int):
+            def list_episode_directory(self, _limit: int, **_: object):
                 return [{"id": "directory"}, {"id": "older"}]
 
         result = collect_episode_candidates(

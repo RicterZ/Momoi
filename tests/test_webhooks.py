@@ -289,7 +289,7 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn("<runtime_state>", context_text)
             self.assertIn("<recent_conversation>", context_text)
             self.assertIn("<conversation_state>", context_text)
-            self.assertIn("<recalled_episodes>", context_text)
+            self.assertIn("<episode_directory>", context_text)
             self.assertRegex(
                 context_text, r"timestamp=\d{4}-\d{2}-\d{2}T"
             )

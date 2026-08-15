@@ -233,7 +233,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                 "episodes"
             ]
             self.assertIn("source OWNER turn=turn-1 ordinal=1", context)
-            self.assertIn("第4轮主人消息", context)
+            self.assertNotIn("第4轮主人消息", context)
             self.assertNotIn("第1轮主人消息", context)
 
             for ordinal in range(6, 10):
