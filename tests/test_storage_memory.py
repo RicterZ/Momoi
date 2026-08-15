@@ -733,6 +733,23 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertIsNotNone(store.claim_episode_consolidation_candidate())
             store.close()
 
+    def test_episode_consolidation_skips_completed_turns_without_messages(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store.begin_turn("empty", "owner", ["empty-event"])
+            store.complete_background_turn("empty")
+            store.commit_turn([], "真实对话", AgentReply([]), turn_id="real")
+
+            candidate = store.claim_episode_consolidation_candidate()
+
+            self.assertEqual(
+                [turn["turn_id"] for turn in candidate["turns"]],
+                ["real"],
+            )
+            store.close()
+
     def test_consolidation_backfill_reorders_episode_and_invalidates_summary(
         self,
     ) -> None:

@@ -127,6 +127,7 @@ annealing。
 候选：
 
 - completed Owner Turn；
+- 至少包含一条 message；
 - 没有 `episode_turns`；
 - 没有 consolidation decision；
 - 不含 queued assistant message；
@@ -235,4 +236,4 @@ Runtime：
 - 数据库迁移在 Store 启动时自动执行，不需要手工迁移。
 - Planner v1 仅保留读取兼容；新请求固定使用 v2。
 - 原始 messages 表及投递状态不被 Consolidator 改写。
-- 完整测试：214 项通过。
+- 完整测试：215 项通过。

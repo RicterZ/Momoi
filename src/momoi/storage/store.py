@@ -2213,6 +2213,9 @@ class Store(MemoryStore, DeliveryStore):
                          SELECT 1 FROM messages AS m
                          WHERE m.turn_id=t.id AND m.delivery_state='queued'
                      )
+                     AND EXISTS (
+                         SELECT 1 FROM messages AS m WHERE m.turn_id=t.id
+                     )
                    ORDER BY t.updated_at DESC LIMIT ?
                ) AS pending
                ORDER BY pending.updated_at""",
