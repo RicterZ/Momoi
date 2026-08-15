@@ -23,7 +23,7 @@
 | 顺序 | 工作块 | 状态 |
 | --- | --- | --- |
 | 1 | Episode 边界、归档与尺寸滚动 | 已完成并通过生产观察 |
-| 2 | Empty Episode 的 claims 与短摘要 | 待讨论 |
+| 2 | Empty Episode 的 claims 与短摘要 | 已完成并通过生产观察 |
 | 3 | 时间浏览与精确原文读取 | 部分完成，待讨论剩余部分 |
 | 4 | 词法排序与检索评估集 | 待讨论 |
 | 5 | 搜索进展反馈与停止机制 | 待讨论 |
@@ -124,13 +124,24 @@ successor，并用 `continues` 连接；不按存活天数强制切分。
 
 ### A3. Empty Episode 维护
 
-当前生产库仍有大量 empty Episode。
+后台会在主人空闲时自动为 closed empty Episode 生成 verified claims 和
+narrative summary；主人发消息时会取消后台任务，之后继续。
 
 TODO：
 
 - [x] closed empty Episode 可进入后台 evidence selection。
-- [ ] 优先处理近期、搜索频繁或体积大的 Episode。
-- [ ] 不在 Owner Turn 同步生成 claims。
+- [x] 不在 Owner Turn 同步生成 claims。
+- [x] 自动连续处理，失败时沿用现有退避，Owner Turn 始终优先。
+
+生产验收：**2026-08-15 完成。**
+
+- narrative Episode 从 3 增加到 6；
+- empty Episode 从 203 减少到 200；
+- 连续 6 次 `episode_anneal_complete`，未出现 summary failure；
+- 后台任务在主人发消息时正常取消；
+- 无需等待全部历史 Episode 清理完毕。
+
+基于搜索频率和体积的优先级暂不实现；当前单主人场景按现有顺序自动清理已经足够。
 
 ### A4. 混合 Episode
 

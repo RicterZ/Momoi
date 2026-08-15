@@ -239,3 +239,5 @@ Runtime：
 - 完整测试：215 项通过。
 - 2026-08-15 生产观察通过：真实 Owner Turns 正确归档，空 Turn 不再进入
   Consolidator，默认 Episode 目录没有原文，后台 narrative summary 正常生成。
+- 第二次生产观察确认自动清理持续推进：narrative Episode 从 3 增加到 6，empty
+  Episode 从 203 减少到 200；主人消息仍能取消后台任务。
