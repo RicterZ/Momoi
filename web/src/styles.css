@@ -773,6 +773,12 @@ h2, h3, p { overflow-wrap: anywhere; }
 }
 .usage-legend-item.pink::before { background: var(--pink); }
 .usage-legend-item.blue::before { background: var(--blue); }
+.usage-legend-item.bar::before { border-radius: 2px; }
+.usage-req-bar {
+  fill: rgba(67, 184, 245, .42);
+  stroke: var(--ink);
+  stroke-width: 1.4;
+}
 .usage-chart-frame {
   position: relative;
 }
@@ -785,9 +791,6 @@ h2, h3, p { overflow-wrap: anywhere; }
   stroke: var(--line);
   stroke-width: 1.5;
   stroke-dasharray: 5 6;
-}
-.usage-area {
-  fill: rgba(255, 101, 141, .16);
 }
 .usage-line {
   fill: none;

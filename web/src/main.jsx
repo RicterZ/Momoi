@@ -422,21 +422,13 @@ function UsageChart({ rows, totals, balance }) {
   const count = Math.max(daily.length, 1);
   const xAt = (index) =>
     pad.left + (count === 1 ? innerW / 2 : (index / (count - 1)) * innerW);
-  const yAt = (value, max) =>
-    pad.top + innerH - (max ? (value / max) * innerH : 0);
+  const yAt = (value, max, ratio) =>
+    pad.top + innerH - (max ? (value / max) * innerH * ratio : 0);
   const costPoints = daily.map((row, index) => ({
     x: xAt(index),
-    y: yAt(Number(row.estimated_cost) || 0, maxCost),
+    y: yAt(Number(row.estimated_cost) || 0, maxCost, 0.92),
+    cost: Number(row.estimated_cost) || 0,
   }));
-  const reqPoints = daily.map((row, index) => ({
-    x: xAt(index),
-    y: yAt(Number(row.requests) || 0, maxReq),
-  }));
-  const costArea = costPoints.length
-    ? `${linePath(costPoints)} L${costPoints[costPoints.length - 1].x.toFixed(1)} ${
-        pad.top + innerH
-      } L${costPoints[0].x.toFixed(1)} ${pad.top + innerH} Z`
-    : "";
   const ticks = daily
     .map((row, index) => ({ row, index }))
     .filter(({ index }) => {
@@ -451,7 +443,7 @@ function UsageChart({ rows, totals, balance }) {
       <div className="usage-chart-head">
         <div className="usage-legend">
           <span className="usage-legend-item pink">估算金额</span>
-          <span className="usage-legend-item blue">请求次数</span>
+          <span className="usage-legend-item blue bar">请求次数</span>
         </div>
       </div>
       <div className="usage-home-stats">
@@ -489,23 +481,34 @@ function UsageChart({ rows, totals, balance }) {
               y2={pad.top + innerH * (1 - step)}
             />
           ))}
-          <path className="usage-area" d={costArea} />
-          <path className="usage-line blue" d={linePath(reqPoints)} />
+          {daily.map((row, index) => {
+            const req = Number(row.requests) || 0;
+            if (!req || !maxReq) return null;
+            const slot = innerW / count;
+            const barW = Math.min(14, Math.max(slot * 0.55, 3));
+            const barH = (req / maxReq) * innerH * 0.58;
+            return (
+              <rect
+                key={`bar-${row.date}`}
+                className="usage-req-bar"
+                x={xAt(index) - barW / 2}
+                y={pad.top + innerH - barH}
+                width={barW}
+                height={barH}
+              />
+            );
+          })}
           <path className="usage-line pink" d={linePath(costPoints)} />
           {daily.map((row, index) => (
             <g key={row.date}>
-              <circle
-                className="usage-dot blue"
-                cx={reqPoints[index].x}
-                cy={reqPoints[index].y}
-                r={hover === index ? 5 : 3.2}
-              />
-              <circle
-                className="usage-dot pink"
-                cx={costPoints[index].x}
-                cy={costPoints[index].y}
-                r={hover === index ? 5.5 : 3.6}
-              />
+              {costPoints[index].cost > 0 && (
+                <circle
+                  className="usage-dot pink"
+                  cx={costPoints[index].x}
+                  cy={costPoints[index].y}
+                  r={hover === index ? 5.5 : 3.6}
+                />
+              )}
               <rect
                 className="usage-hit"
                 x={xAt(index) - innerW / count / 2}
