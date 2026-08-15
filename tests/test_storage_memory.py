@@ -573,7 +573,7 @@ class StorageMemoryTest(unittest.TestCase):
 
             candidate = store.claim_episode_consolidation_candidate()
             turn_ids = [turn["turn_id"] for turn in candidate["turns"]]
-            linked = store.apply_episode_consolidation(
+            linked, deferred = store.apply_episode_consolidation(
                 turn_ids,
                 [
                     {
@@ -596,6 +596,7 @@ class StorageMemoryTest(unittest.TestCase):
             )
 
             self.assertEqual(linked, 2)
+            self.assertEqual(deferred, 0)
             self.assertIsNone(store.claim_episode_consolidation_candidate())
             episode_id = store._db.execute(
                 """SELECT episode_id FROM episode_turns
@@ -638,8 +639,98 @@ class StorageMemoryTest(unittest.TestCase):
                 store.apply_episode_consolidation(
                     ["turn-1"], [decision], ["old-game"]
                 ),
-                1,
+                (1, 0),
             )
+            store.close()
+
+    def test_latest_consolidation_turn_is_deferred_then_reconsidered(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store.commit_turn([], "你在干嘛", AgentReply(["我在打游戏"]), turn_id="first")
+            first_outbox = store._db.execute(
+                "SELECT id FROM outbox WHERE turn_id='first'"
+            ).fetchone()["id"]
+            store.mark_sent(int(first_outbox))
+
+            candidate = store.claim_episode_consolidation_candidate()
+            self.assertEqual(
+                [turn["turn_id"] for turn in candidate["turns"]], ["first"]
+            )
+            self.assertEqual(
+                store.apply_episode_consolidation(
+                    ["first"],
+                    [
+                        {
+                            "action": "defer",
+                            "turn_ids": ["first"],
+                            "reason": "needs later context",
+                        }
+                    ],
+                    [],
+                ),
+                (0, 1),
+            )
+            self.assertEqual(
+                [turn["turn_id"] for turn in store.claim_episode_consolidation_candidate()["turns"]],
+                ["first"],
+            )
+
+            store.commit_turn([], "在玩什么", AgentReply(["塞尔达"]), turn_id="second")
+            second_outbox = store._db.execute(
+                "SELECT id FROM outbox WHERE turn_id='second'"
+            ).fetchone()["id"]
+            store.mark_sent(int(second_outbox))
+            candidate = store.claim_episode_consolidation_candidate()
+            turn_ids = [turn["turn_id"] for turn in candidate["turns"]]
+            self.assertEqual(turn_ids, ["first", "second"])
+            self.assertEqual(
+                store.apply_episode_consolidation(
+                    turn_ids,
+                    [
+                        {
+                            "action": "new",
+                            "key": "playing-zelda",
+                            "title": "聊正在玩的《塞尔达》",
+                            "turn_ids": ["first", "second"],
+                            "topics": ["游戏", "塞尔达"],
+                            "entities": ["塞尔达"],
+                            "open_loops": [],
+                            "salience": 0.5,
+                        }
+                    ],
+                    [],
+                ),
+                (2, 0),
+            )
+            self.assertIsNone(store.claim_episode_consolidation_candidate())
+            store.close()
+
+    def test_latest_consolidation_turn_cannot_be_ignored(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store.commit_turn([], "你好", AgentReply(["你好"]), turn_id="greeting")
+            outbox_id = store._db.execute(
+                "SELECT id FROM outbox WHERE turn_id='greeting'"
+            ).fetchone()["id"]
+            store.mark_sent(int(outbox_id))
+
+            with self.assertRaisesRegex(
+                ValueError, "latest consolidation turn may not be ignored"
+            ):
+                store.apply_episode_consolidation(
+                    ["greeting"],
+                    [
+                        {
+                            "action": "ignore",
+                            "turn_ids": ["greeting"],
+                            "reason": "ordinary greeting",
+                        }
+                    ],
+                    [],
+                )
+            self.assertIsNotNone(store.claim_episode_consolidation_candidate())
             store.close()
 
     def test_episode_rolls_to_successor_after_turn_limit(self) -> None:

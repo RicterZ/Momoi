@@ -137,6 +137,7 @@ annealing。
 
 LLM 输出每个 Turn 的处理：
 
+- `defer`
 - `ignore`
 - `continue`
 - `new`
@@ -144,6 +145,8 @@ LLM 输出每个 Turn 的处理：
 Runtime 校验：
 
 - 每个候选 Turn 恰好覆盖一次；
+- 最新 Turn 不能 `ignore`，信息不足时必须 `defer`；
+- `defer` 不写 decision，下次出现新的 Owner Turn 后会连同新上下文再次判断；
 - continue 只能使用候选 Episode；
 - new ref 必须为 ASCII slug；
 - ignored Turn 不进入 Episode；
@@ -216,7 +219,7 @@ Runtime：
 5. 回忆问题不强制创建“回忆……”Episode。
 6. Planner 失败仍保存消息但不复用旧 Episode。
 7. 后台可把连续未归档 Turn 整理成 Episode。
-8. ignored Turn 不会再次被 Consolidator 处理。
+8. 最新低信息 Turn 会 defer；有后续上下文后才允许最终 ignored。
 9. closed empty Episode 可获得 claims 和 narrative。
 10. Episode 超限后自动 successor。
 11. 原始 messages 不因整理被修改。
@@ -227,4 +230,4 @@ Runtime：
 - 数据库迁移在 Store 启动时自动执行，不需要手工迁移。
 - Planner v1 仅保留读取兼容；新请求固定使用 v2。
 - 原始 messages 表及投递状态不被 Consolidator 改写。
-- 完整测试：211 项通过。
+- 完整测试：213 项通过。

@@ -2187,20 +2187,23 @@ class Store(MemoryStore, DeliveryStore):
         self, limit: int = 6
     ) -> dict[str, object] | None:
         rows = self._db.execute(
-            """SELECT t.id, t.updated_at FROM turns AS t
-               WHERE t.kind='owner' AND t.state='completed'
-                 AND NOT EXISTS (
-                     SELECT 1 FROM episode_turns AS et WHERE et.turn_id=t.id
-                 )
-                 AND NOT EXISTS (
-                     SELECT 1 FROM episode_consolidation_decisions AS d
-                     WHERE d.turn_id=t.id
-                 )
-                 AND NOT EXISTS (
-                     SELECT 1 FROM messages AS m
-                     WHERE m.turn_id=t.id AND m.delivery_state='queued'
-                 )
-               ORDER BY t.updated_at LIMIT ?""",
+            """SELECT pending.id, pending.updated_at FROM (
+                   SELECT t.id, t.updated_at FROM turns AS t
+                   WHERE t.kind='owner' AND t.state='completed'
+                     AND NOT EXISTS (
+                         SELECT 1 FROM episode_turns AS et WHERE et.turn_id=t.id
+                     )
+                     AND NOT EXISTS (
+                         SELECT 1 FROM episode_consolidation_decisions AS d
+                         WHERE d.turn_id=t.id
+                     )
+                     AND NOT EXISTS (
+                         SELECT 1 FROM messages AS m
+                         WHERE m.turn_id=t.id AND m.delivery_state='queued'
+                     )
+                   ORDER BY t.updated_at DESC LIMIT ?
+               ) AS pending
+               ORDER BY pending.updated_at""",
             (max(1, limit),),
         ).fetchall()
         if not rows:
@@ -2253,7 +2256,7 @@ class Store(MemoryStore, DeliveryStore):
         turn_ids: list[str],
         decisions: list[dict[str, object]],
         candidate_episode_ids: list[str] | None = None,
-    ) -> int:
+    ) -> tuple[int, int]:
         expected = set(turn_ids)
         allowed_episodes = set(candidate_episode_ids or [])
         if not expected or len(expected) != len(turn_ids):
@@ -2261,12 +2264,14 @@ class Store(MemoryStore, DeliveryStore):
         covered: set[str] = set()
         now = time.time()
         linked = 0
+        deferred = 0
         with self._db:
             for decision in decisions:
                 if not isinstance(decision, dict):
                     raise ValueError("invalid consolidation decision")
                 action = str(decision.get("action") or "")
                 expected_keys = {
+                    "defer": {"action", "turn_ids", "reason"},
                     "ignore": {"action", "turn_ids", "reason"},
                     "continue": {
                         "action",
@@ -2304,7 +2309,14 @@ class Store(MemoryStore, DeliveryStore):
                 ):
                     raise ValueError("invalid consolidation turn coverage")
                 covered.update(decision_turns)
+                if action == "defer":
+                    if decision_turns != [turn_ids[-1]]:
+                        raise ValueError("only latest consolidation turn may defer")
+                    deferred += 1
+                    continue
                 if action == "ignore":
+                    if turn_ids[-1] in decision_turns:
+                        raise ValueError("latest consolidation turn may not be ignored")
                     self._db.executemany(
                         """INSERT INTO episode_consolidation_decisions
                            (turn_id, action, reason, processed_at)
@@ -2435,7 +2447,7 @@ class Store(MemoryStore, DeliveryStore):
                 self._reindex_episode_terms(episode_id)
             if covered != expected:
                 raise ValueError("incomplete consolidation turn coverage")
-        return linked
+        return linked, deferred
 
     @staticmethod
     def _consolidation_strings(

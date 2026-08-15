@@ -2050,7 +2050,7 @@ class TurnRunner:
                 or not isinstance(value["decisions"], list)
             ):
                 raise RuntimeError("invalid episode consolidation response")
-            linked = self.store.apply_episode_consolidation(
+            linked, deferred = self.store.apply_episode_consolidation(
                 turn_ids,
                 value["decisions"],
                 [
@@ -2066,7 +2066,7 @@ class TurnRunner:
                     if isinstance(decision, dict)
                     and decision.get("action") == action
                 )
-                for action in ("ignore", "continue", "new")
+                for action in ("defer", "ignore", "continue", "new")
             }
             metrics = response.usage or {}
             self.store.record_turn_usage(
@@ -2091,9 +2091,14 @@ class TurnRunner:
                 turn_id=turn_id,
                 turns=len(turn_ids),
                 linked=linked,
+                deferred=deferred,
                 **action_counts,
             )
-            return True
+            if not deferred:
+                return True
+            remaining = self.store.claim_episode_consolidation_candidate()
+            remaining_turns = remaining.get("turns", []) if remaining else []
+            return isinstance(remaining_turns, list) and len(remaining_turns) > deferred
         except asyncio.CancelledError:
             raise
         except Exception as error:

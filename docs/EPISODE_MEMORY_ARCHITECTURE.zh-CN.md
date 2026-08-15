@@ -31,6 +31,10 @@ Episode 不是每个 Turn 必须进入的归档容器，而是从完整聊天档
 Episode Consolidator 观察连续 Turn，决定未归档 Turn 是否值得形成情景记忆，以及
 哪些 Turn 应组成同一段上下文。
 
+Consolidator 不会立即永久忽略最新的未归档 Turn。最新 Turn 在意义尚不明确时保持
+deferred；下一次 Owner Turn 到来后，它会带着新的上下文重新参与判断。只有已经出现
+后续 Turn，模型仍确认其只是问候、填充或无关过渡时，才记录为 ignored。
+
 ## 2. 非目标
 
 本设计不做以下事情：
