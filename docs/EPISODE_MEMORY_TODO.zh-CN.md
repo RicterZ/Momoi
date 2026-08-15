@@ -162,10 +162,19 @@ TODO：
 
 TODO：
 
-- [ ] 区分 title、topics/entities、claims、message match 的权重。
-- [ ] 精确实体和专有词优先。
-- [ ] 主人 claims 高于 Momoi claims。
-- [ ] 同一 Episode 的多条命中聚合。
+- [x] 用统一候选特征向量替代词法搜索、活跃目录、最近目录的来源顺序拼接。
+- [x] 区分 title、topics/entities、claims、message、recent context、open loops 和
+  links 的权重。
+- [x] 精确实体和专有词优先。
+- [x] 主人原话命中高于 Momoi 消息命中。
+- [x] 同一 Episode 的多条命中聚合。
+- [x] Episode 大小不进入相关性评分；选中后仍由尺寸滚动保护。
+- [ ] 部署观察 `episode_candidates_ranked` 与 Planner 实际选择。
+
+设计与实施见：
+
+- `EPISODE_CANDIDATE_RANKING_DESIGN.zh-CN.md`
+- `EPISODE_CANDIDATE_RANKING_IMPLEMENTATION.zh-CN.md`
 
 ### B2. 时间浏览
 

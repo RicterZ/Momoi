@@ -46,20 +46,45 @@ def evaluate_episode_policy(
     covered = 0
     tokens = []
     counts = []
+    ranks = []
     for record in plans:
         plan = record["plan"]
         if not isinstance(plan, dict):
             continue
         query = owner_query(store, list(record["source_event_ids"]))
-        candidates = collect_episode_candidates(store, query, policy)
+        turn = store._db.execute(
+            "SELECT started_at FROM turns WHERE id=?",
+            (record["turn_id"],),
+        ).fetchone()
+        before_timestamp = float(turn["started_at"]) if turn is not None else None
+        recent = store.recent_conversation_messages(
+            6, 64000, before_timestamp=before_timestamp
+        )
+        recent_turn_ids = list(
+            dict.fromkeys(str(item["turn_id"]) for item in recent)
+        )
+        candidates = collect_episode_candidates(
+            store, query, policy, recent_turn_ids=recent_turn_ids
+        )
         candidate_ids = {str(item["id"]) for item in candidates}
+        candidate_rank = {
+            str(item["id"]): index
+            for index, item in enumerate(candidates, 1)
+        }
         expected_ids = {
             str(item["episode_id"])
-            for item in plan.get("episode_bindings", [])
+            for item in plan.get(
+                "episode_actions", plan.get("episode_bindings", [])
+            )
             if isinstance(item, dict) and item.get("is_new") is False
         }
         expected += len(expected_ids)
         covered += len(expected_ids & candidate_ids)
+        ranks.extend(
+            candidate_rank[episode_id]
+            for episode_id in expected_ids
+            if episode_id in candidate_rank
+        )
         counts.append(len(candidates))
         tokens.append(
             estimate_tokens(
@@ -79,6 +104,10 @@ def evaluate_episode_policy(
         "covered": covered,
         "expected": expected,
         "avg_candidates": sum(counts) / len(counts) if counts else 0,
+        "mean_expected_rank": sum(ranks) / len(ranks) if ranks else None,
+        "expected_top3": (
+            sum(rank <= 3 for rank in ranks) / len(ranks) if ranks else 1.0
+        ),
         "avg_tokens": sum(tokens) / len(tokens) if tokens else 0,
         "max_tokens": max(tokens, default=0),
     }

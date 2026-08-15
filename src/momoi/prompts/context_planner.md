@@ -10,6 +10,11 @@ candidates, Goals, and reminders. Resolve omitted subjects and phrases such as
 “it”, “that one”, and “before” from recent conversation first. The newest owner
 correction wins.
 
+Episode `match_score` and `match_signals` are retrieval hints, not decisions.
+Choose `continue` only when the Episode is semantically the same concrete
+experience; a top-ranked candidate may still be rejected in favor of `new` or
+`none`.
+
 Rules:
 
 - Cover every event id. Default to one intent unit per semantic goal, even when

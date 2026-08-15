@@ -1735,6 +1735,94 @@ class Store(MemoryStore, DeliveryStore):
             results.append(episode)
         return results
 
+    def episode_candidates_by_ids(
+        self, episode_ids: list[str]
+    ) -> list[dict[str, object]]:
+        episode_ids = list(dict.fromkeys(episode_ids))
+        if not episode_ids:
+            return []
+        placeholders = ",".join("?" for _ in episode_ids)
+        rows = self._db.execute(
+            f"""SELECT e.*, COALESCE((
+                       SELECT MAX(t.updated_at) FROM episode_turns AS et
+                       JOIN turns AS t ON t.id=et.turn_id
+                       WHERE et.episode_id=e.id
+                   ), e.updated_at) AS last_activity_at
+                FROM conversation_episodes AS e
+                WHERE e.id IN ({placeholders})""",
+            tuple(episode_ids),
+        ).fetchall()
+        by_id: dict[str, dict[str, object]] = {}
+        for row in rows:
+            episode = self._episode_dict(row)
+            episode["last_activity_timestamp"] = context_timestamp(
+                row["last_activity_at"]
+            )
+            by_id[str(episode["id"])] = episode
+        return [by_id[episode_id] for episode_id in episode_ids if episode_id in by_id]
+
+    def episode_context_scores(
+        self, recent_turn_ids: list[str]
+    ) -> dict[str, dict[str, float]]:
+        recent_turn_ids = list(dict.fromkeys(recent_turn_ids))
+        if not recent_turn_ids:
+            return {}
+        placeholders = ",".join("?" for _ in recent_turn_ids)
+        rows = self._db.execute(
+            f"""SELECT episode_id, turn_id FROM episode_turns
+                WHERE turn_id IN ({placeholders})""",
+            tuple(recent_turn_ids),
+        ).fetchall()
+        turn_rows = self._db.execute(
+            f"""SELECT id, kind, updated_at FROM turns
+                WHERE id IN ({placeholders})""",
+            tuple(recent_turn_ids),
+        ).fetchall()
+        updated_at = {str(row["id"]): float(row["updated_at"]) for row in turn_rows}
+        kind = {str(row["id"]): str(row["kind"]) for row in turn_rows}
+        latest = max(updated_at.values(), default=time.time())
+        turn_weights = {
+            turn_id: (0.62 ** (len(recent_turn_ids) - index - 1))
+            * math.exp(
+                -max(0.0, latest - updated_at.get(turn_id, latest)) / (6 * 3600)
+            )
+            * (1.0 if kind.get(turn_id) == "owner" else 0.4)
+            for index, turn_id in enumerate(recent_turn_ids)
+        }
+        scores: dict[str, dict[str, float]] = {}
+        for row in rows:
+            episode_id = str(row["episode_id"])
+            score = turn_weights[str(row["turn_id"])]
+            scores.setdefault(episode_id, {})["recent_context"] = max(
+                score,
+                scores.get(episode_id, {}).get("recent_context", 0.0),
+            )
+        direct_ids = list(scores)
+        if not direct_ids:
+            return scores
+        direct_placeholders = ",".join("?" for _ in direct_ids)
+        links = self._db.execute(
+            f"""SELECT from_episode_id, to_episode_id, kind FROM episode_links
+                WHERE from_episode_id IN ({direct_placeholders})
+                   OR to_episode_id IN ({direct_placeholders})""",
+            (*direct_ids, *direct_ids),
+        ).fetchall()
+        kind_weight = {"continues": 1.0, "supersedes": 0.9, "references": 0.55}
+        for link in links:
+            source = str(link["from_episode_id"])
+            target = str(link["to_episode_id"])
+            kind = str(link["kind"])
+            for direct, neighbor in ((source, target), (target, source)):
+                recent = scores.get(direct, {}).get("recent_context")
+                if recent is None or neighbor == direct:
+                    continue
+                linked = recent * kind_weight[kind]
+                scores.setdefault(neighbor, {})["linked_context"] = max(
+                    linked,
+                    scores.get(neighbor, {}).get("linked_context", 0.0),
+                )
+        return scores
+
     def list_dashboard_conversations(
         self, limit: int = 64
     ) -> list[dict[str, object]]:

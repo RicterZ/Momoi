@@ -515,9 +515,6 @@ class TurnRunner:
 
         revision = self.store.next_context_plan_revision(turn_id)
         owner_query = "\n".join(event.text for event in events)
-        candidates = collect_episode_candidates(
-            self.store, owner_query, candidate_policy
-        )
         recent_conversation = [
             {**message, "content": _historical_content(message.get("content"))}
             for message in self.store.recent_conversation_messages(
@@ -526,6 +523,34 @@ class TurnRunner:
                 min(event.received_at for event in events),
             )
         ]
+        recent_turn_ids = list(
+            dict.fromkeys(str(message["turn_id"]) for message in recent_conversation)
+        )
+        candidates = collect_episode_candidates(
+            self.store,
+            owner_query,
+            candidate_policy,
+            recent_turn_ids=recent_turn_ids,
+        )
+        log_event(
+            logger,
+            logging.DEBUG,
+            "episode_candidates_ranked",
+            stage="context_plan",
+            turn_id=turn_id,
+            revision=revision,
+            candidates=[
+                {
+                    "id": candidate["id"],
+                    "title": candidate["title"],
+                    "status": candidate["status"],
+                    "score": candidate.get("match_score"),
+                    "features": candidate.get("match_features"),
+                    "signals": candidate.get("match_signals"),
+                }
+                for candidate in candidates
+            ],
+        )
         candidate_context = full_candidate_context(candidates)
         owner_messages = [
             {
