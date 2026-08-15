@@ -162,6 +162,59 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertNotIn("content", result["results"][0]["matches"][0])
             store.close()
 
+    def test_messages_role_event_migrates_existing_table(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "momoi.sqlite3"
+            database = sqlite3.connect(path)
+            database.executescript(
+                """
+                CREATE TABLE messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    turn_id TEXT NOT NULL DEFAULT '',
+                    role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+                    content TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    source_event_ids_json TEXT NOT NULL,
+                    outbox_id INTEGER,
+                    delivery_state TEXT NOT NULL DEFAULT 'delivered' CHECK (
+                        delivery_state IN (
+                            'internal', 'queued', 'delivered', 'uncertain', 'failed'
+                        )
+                    )
+                );
+                INSERT INTO messages
+                    (turn_id, role, content, created_at, source_event_ids_json,
+                     delivery_state)
+                    VALUES ('old', 'user', 'hi', 1, '[]', 'delivered');
+                """
+            )
+            database.close()
+
+            store = Store(path)
+            schema = store._db.execute(
+                """SELECT sql FROM sqlite_master
+                   WHERE type='table' AND name='messages'"""
+            ).fetchone()[0]
+            self.assertIn("'event'", schema)
+            self.assertEqual(
+                store._db.execute(
+                    "SELECT content FROM messages WHERE turn_id='old'"
+                ).fetchone()[0],
+                "hi",
+            )
+            store._db.execute(
+                """INSERT INTO messages
+                   (turn_id, role, content, created_at, source_event_ids_json,
+                    delivery_state)
+                   VALUES ('hook', 'event', '门锁超时未关', 2, '[]', 'delivered')"""
+            )
+            store._db.commit()
+            self.assertEqual(
+                store._db.execute("SELECT COUNT(*) FROM messages").fetchone()[0],
+                2,
+            )
+            store.close()
+
     def test_recall_index_migration_failure_preserves_legacy_tables(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "momoi.sqlite3"

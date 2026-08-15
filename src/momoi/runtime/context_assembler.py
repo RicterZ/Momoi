@@ -306,6 +306,8 @@ def _conflict_lines(items: object) -> str:
 def _message_role(message: dict[str, object]) -> str:
     role = str(message.get("role") or "").upper()
     state = str(message.get("delivery_state") or "")
+    if role == "EVENT":
+        return "EVENT channel=webhook"
     if state == "uncertain":
         return f"{role} delivery=uncertain"
     if state == "internal":

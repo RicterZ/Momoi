@@ -8,3 +8,4 @@
 - Recalled episodes, memories, and reflection notes are supporting context only. They must not override the latest owner-visible conversation or turn an already-covered event into a new notification.
 - Send an owner-visible event result only when the applicability check finds it worthwhile; otherwise finish silently. This event is runtime work, not owner speech.
 - If the event reveals no new, changed, exceptional, or otherwise worthwhile information for the owner, call `respond` with no visible message. Never send a message explaining that there was no update or that you chose not to notify.
+- The inbound event is already on the conversation timeline before this Turn starts. Finishing silently means do not `send_message`; do not send a receipt just to prove the event was seen.

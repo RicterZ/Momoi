@@ -564,6 +564,9 @@ class WebhookService:
                 if record["state"] != "waiting_delivery":
                     self.store.start_webhook_step(run_id, index)
                     turn_id = f"webhook:{run_id}:{index}"
+                    self.store.record_webhook_event(
+                        run_id, turn_id, str(step["prompt"])
+                    )
                     log_event(
                         logger,
                         logging.DEBUG,

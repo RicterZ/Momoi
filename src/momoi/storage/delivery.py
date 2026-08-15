@@ -140,6 +140,47 @@ class DeliveryStore:
                 (step_index, now, run_id),
             )
 
+    def record_webhook_event(
+        self,
+        run_id: str,
+        turn_id: str,
+        content: str,
+    ) -> int:
+        text = str(content or "").strip()
+        if not text:
+            raise ValueError("webhook event content is empty")
+        now = time.time()
+        source = json.dumps([turn_id], ensure_ascii=False)
+        with self._db:
+            existing = self._db.execute(
+                """SELECT id FROM messages
+                   WHERE turn_id=? AND role='event'
+                   ORDER BY id LIMIT 1""",
+                (turn_id,),
+            ).fetchone()
+            if existing is not None:
+                return int(existing["id"])
+            workflow = self._db.execute(
+                "SELECT workflow_id FROM webhook_runs WHERE id=?",
+                (run_id,),
+            ).fetchone()
+            workflow_id = str(workflow["workflow_id"]) if workflow else run_id
+            inserted = self._db.execute(
+                """INSERT INTO messages
+                   (turn_id, role, content, created_at, source_event_ids_json,
+                    delivery_state)
+                   VALUES (?, 'event', ?, ?, ?, 'delivered')""",
+                (turn_id, text, now, source),
+            )
+            self._ensure_autonomous_episode(
+                f"webhook:{workflow_id}",
+                turn_id,
+                self._episode_title(text, "Webhook conversation"),
+                now,
+                text,
+            )
+            return int(inserted.lastrowid)
+
     def commit_webhook_reply(
         self,
         run_id: str,

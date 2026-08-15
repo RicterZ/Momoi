@@ -21,6 +21,7 @@ from momoi.models import (
 from momoi.runtime import (
     MomoiDaemon,
 )
+from momoi.runtime.context_assembler import assemble_recent_conversation
 from momoi.storage import Store
 from momoi.webhooks import WebhookService, WorkflowError, bind_workflow, load_catalog
 
@@ -371,6 +372,47 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             webhook_turn_id = f"webhook:{first['id']}:0"
             self.assertEqual(
+                [
+                    str(row["role"])
+                    for row in store._db.execute(
+                        """SELECT role FROM messages
+                           WHERE turn_id=? ORDER BY id""",
+                        (webhook_turn_id,),
+                    ).fetchall()
+                ],
+                ["event", "assistant"],
+            )
+            self.assertEqual(
+                store._db.execute(
+                    """SELECT content FROM messages
+                       WHERE turn_id=? AND role='event'""",
+                    (webhook_turn_id,),
+                ).fetchone()[0],
+                "门口检测到有人，请自然提醒我。",
+            )
+            self.assertEqual(
+                store.record_webhook_event(
+                    str(first["id"]),
+                    webhook_turn_id,
+                    "门口检测到有人，请自然提醒我。",
+                ),
+                int(
+                    store._db.execute(
+                        """SELECT id FROM messages
+                           WHERE turn_id=? AND role='event'""",
+                        (webhook_turn_id,),
+                    ).fetchone()[0]
+                ),
+            )
+            self.assertEqual(
+                store._db.execute(
+                    """SELECT COUNT(*) FROM messages
+                       WHERE turn_id=? AND role='event'""",
+                    (webhook_turn_id,),
+                ).fetchone()[0],
+                1,
+            )
+            self.assertEqual(
                 store._db.execute(
                     """SELECT turn_id FROM messages
                        WHERE content='门口好像有人，需要我继续帮你留意吗？'"""
@@ -378,12 +420,14 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                 webhook_turn_id,
             )
             episode = store.search_episodes("门口 继续留意", 3)[0]
-            self.assertIn(
-                "门口好像有人",
-                store.conversation_episode(str(episode["id"]))["messages"][0][
-                    "content"
-                ],
-            )
+            contents = [
+                item["content"]
+                for item in store.conversation_episode(str(episode["id"]))[
+                    "messages"
+                ]
+            ]
+            self.assertIn("门口检测到有人，请自然提醒我。", contents)
+            self.assertIn("门口好像有人，需要我继续帮你留意吗？", contents)
             store.mark_sent(rows[0].id)
             await asyncio.wait_for(task, timeout=1)
             self.assertEqual(store.webhook_run(str(first["id"]))["state"], "succeeded")
@@ -437,4 +481,45 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                 store.webhook_step(str(created["id"]), 0)["result"],
                 {"outbox_ids": []},
             )
+            webhook_turn_id = f"webhook:{created['id']}:0"
+            event = store._db.execute(
+                """SELECT role, content, delivery_state FROM messages
+                   WHERE turn_id=?""",
+                (webhook_turn_id,),
+            ).fetchall()
+            self.assertEqual(len(event), 1)
+            self.assertEqual(event[0]["role"], "event")
+            self.assertEqual(event[0]["content"], "没有变化时保持安静。")
+            self.assertEqual(event[0]["delivery_state"], "delivered")
+            recent = store.recent_conversation_messages(5, 2000)
+            self.assertEqual(
+                [(item["role"], item["content"]) for item in recent],
+                [("event", "没有变化时保持安静。")],
+            )
+            rendered, _ = assemble_recent_conversation(store, 5, 2000)
+            self.assertIn("[EVENT channel=webhook ", rendered)
+            self.assertIn("没有变化时保持安静。", rendered)
+            self.assertNotIn("[USER ", rendered)
+            found = store.search_episodes("没有变化", 3)
+            self.assertTrue(found)
+            self.assertIn(
+                "没有变化时保持安静。",
+                [
+                    item["content"]
+                    for item in store.conversation_episode(str(found[0]["id"]))[
+                        "messages"
+                    ]
+                ],
+            )
+            searched = MemoryTools(store).execute(
+                ToolCall(
+                    "search-webhook",
+                    "conversation_search",
+                    {"query": "没有变化"},
+                ),
+                [],
+                TurnDraft(),
+            )
+            self.assertTrue(searched["ok"])
+            self.assertGreater(searched["count"], 0)
             store.close()

@@ -211,6 +211,7 @@ class Store(MemoryStore, DeliveryStore):
                    WHERE role='assistant' AND outbox_id IS NULL
                      AND delivery_state='delivered'"""
             )
+        self._migrate_message_event_role()
         self._db.execute(
             "CREATE INDEX IF NOT EXISTS messages_delivery ON messages(delivery_state, outbox_id)"
         )
@@ -538,6 +539,73 @@ class Store(MemoryStore, DeliveryStore):
         )
         self._db.execute("UPDATE conversation_episodes SET summary_claimed_at=NULL")
         self._db.commit()
+
+    def _migrate_message_event_role(self) -> None:
+        message_schema = self._db.execute(
+            """SELECT sql FROM sqlite_master
+               WHERE type='table' AND name='messages'"""
+        ).fetchone()
+        if message_schema is None or "'event'" in str(message_schema[0]):
+            return
+        self._db.execute("PRAGMA foreign_keys=OFF")
+        with self._db:
+            self._db.execute("ALTER TABLE messages RENAME TO messages_legacy")
+            self._db.execute(
+                """CREATE TABLE messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    turn_id TEXT NOT NULL DEFAULT '',
+                    role TEXT NOT NULL CHECK (
+                        role IN ('user', 'assistant', 'event')
+                    ),
+                    content TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    source_event_ids_json TEXT NOT NULL,
+                    outbox_id INTEGER,
+                    delivery_state TEXT NOT NULL DEFAULT 'delivered' CHECK (
+                        delivery_state IN (
+                            'internal', 'queued', 'delivered', 'uncertain', 'failed'
+                        )
+                    )
+                )"""
+            )
+            self._db.execute(
+                """INSERT INTO messages
+                   (id, turn_id, role, content, created_at, source_event_ids_json,
+                    outbox_id, delivery_state)
+                   SELECT id, turn_id, role, content, created_at,
+                          source_event_ids_json, outbox_id, delivery_state
+                   FROM messages_legacy"""
+            )
+            self._db.execute(
+                """ALTER TABLE episode_message_recall_terms
+                   RENAME TO episode_message_recall_terms_legacy"""
+            )
+            self._db.execute(
+                """CREATE TABLE episode_message_recall_terms (
+                    episode_key INTEGER NOT NULL,
+                    message_id INTEGER NOT NULL,
+                    term_id INTEGER NOT NULL,
+                    PRIMARY KEY (episode_key, message_id, term_id),
+                    FOREIGN KEY (episode_key) REFERENCES recall_episode_ids(id)
+                        ON DELETE CASCADE,
+                    FOREIGN KEY (message_id) REFERENCES messages(id)
+                        ON DELETE CASCADE,
+                    FOREIGN KEY (term_id) REFERENCES recall_terms(id)
+                        ON DELETE CASCADE
+                ) WITHOUT ROWID"""
+            )
+            self._db.execute(
+                """INSERT INTO episode_message_recall_terms
+                   SELECT * FROM episode_message_recall_terms_legacy"""
+            )
+            self._db.execute("DROP TABLE episode_message_recall_terms_legacy")
+            self._db.execute("DROP TABLE messages_legacy")
+            self._db.execute(
+                """CREATE INDEX IF NOT EXISTS episode_message_recall_terms_lookup
+                   ON episode_message_recall_terms
+                      (term_id, episode_key, message_id)"""
+            )
+        self._db.execute("PRAGMA foreign_keys=ON")
 
     def _migrate_recall_index(self) -> None:
         columns = {
@@ -887,7 +955,7 @@ class Store(MemoryStore, DeliveryStore):
         source_turn = str(row["cooled_reply_source_turn_id"] or "")
         source_rows = self._db.execute(
             """SELECT role, content, created_at, delivery_state FROM messages
-               WHERE turn_id=? AND (role='user' OR delivery_state IN ('delivered','uncertain'))
+               WHERE turn_id=? AND (role IN ('user', 'event') OR delivery_state IN ('delivered','uncertain'))
                ORDER BY id""",
             (source_turn,),
         ).fetchall()
@@ -1671,7 +1739,7 @@ class Store(MemoryStore, DeliveryStore):
                WHERE t.state='completed' AND EXISTS (
                    SELECT 1 FROM messages AS m
                    WHERE m.turn_id=t.id
-                     AND (m.role='user' OR m.delivery_state IN ('delivered', 'uncertain'))
+                     AND (m.role IN ('user', 'event') OR m.delivery_state IN ('delivered', 'uncertain'))
                )
                  AND (? IS NULL OR t.updated_at < ?)
                ORDER BY t.updated_at DESC LIMIT ?""",
@@ -1686,7 +1754,7 @@ class Store(MemoryStore, DeliveryStore):
                        m.delivery_state
                 FROM messages AS m
                 WHERE m.turn_id IN ({placeholders})
-                  AND (m.role='user' OR m.delivery_state IN ('delivered', 'uncertain'))
+                  AND (m.role IN ('user', 'event') OR m.delivery_state IN ('delivered', 'uncertain'))
                 ORDER BY m.id""",
             tuple(turn_ids),
         ).fetchall()
@@ -2095,7 +2163,7 @@ class Store(MemoryStore, DeliveryStore):
                 JOIN episode_turns AS et
                   ON et.episode_id=rei.episode_id AND et.turn_id=m.turn_id
                 WHERE rei.episode_id=? AND mrt.term_id IN ({placeholders})
-                  AND (m.role='user' OR m.delivery_state IN
+                  AND (m.role IN ('user', 'event') OR m.delivery_state IN
                        ('delivered', 'uncertain', 'internal'))
                   AND (? IS NULL OR m.created_at>=?)
                   AND (? IS NULL OR m.created_at<?)
@@ -2354,7 +2422,7 @@ class Store(MemoryStore, DeliveryStore):
                  AND (? IS NULL OR et.ordinal<?)
                  AND (? IS NULL OR m.created_at>=?)
                  AND (? IS NULL OR m.created_at<?)
-                 AND (? OR m.role='user' OR m.delivery_state IN
+                 AND (? OR m.role IN ('user', 'event') OR m.delivery_state IN
                       ('delivered', 'uncertain', 'internal'))
                ORDER BY et.ordinal DESC, m.id""",
             (
@@ -2418,7 +2486,7 @@ class Store(MemoryStore, DeliveryStore):
             f"""SELECT id, turn_id, role, content, created_at, delivery_state
                 FROM messages
                 WHERE turn_id IN ({placeholders})
-                  AND (role='user' OR delivery_state IN
+                  AND (role IN ('user', 'event') OR delivery_state IN
                        ('delivered', 'uncertain', 'internal'))
                 ORDER BY id""",
             tuple(turn_ids),
@@ -2817,7 +2885,7 @@ class Store(MemoryStore, DeliveryStore):
                        FROM episode_turns AS et
                        JOIN messages AS m ON m.turn_id=et.turn_id
                        WHERE et.episode_id=? AND et.ordinal>?
-                         AND (m.role='user' OR m.delivery_state IN
+                         AND (m.role IN ('user', 'event') OR m.delivery_state IN
                               ('delivered', 'uncertain', 'internal'))
                        ORDER BY et.ordinal, m.id""",
                     (
@@ -3515,7 +3583,7 @@ class Store(MemoryStore, DeliveryStore):
             }
             for item in self._db.execute(
                 """SELECT role, content, created_at, delivery_state FROM messages
-                   WHERE turn_id=? AND (role='user' OR delivery_state IN ('delivered','uncertain'))
+                   WHERE turn_id=? AND (role IN ('user', 'event') OR delivery_state IN ('delivered','uncertain'))
                    ORDER BY id""",
                 (source_turn,),
             ).fetchall()
@@ -4192,16 +4260,21 @@ class Store(MemoryStore, DeliveryStore):
         for row in self._db.execute(
             """SELECT role, content, created_at, delivery_state FROM messages
                WHERE created_at>=? AND created_at<?
-                 AND (role='user' OR delivery_state IN
+                 AND (role IN ('user', 'event') OR delivery_state IN
                       ('delivered', 'uncertain', 'internal'))
                ORDER BY created_at""",
             (start.timestamp(), end.timestamp()),
         ).fetchall():
             owner = row["role"] == "user"
-            label = "OWNER" if owner else "MOMOI"
-            if row["delivery_state"] == "internal":
+            if owner:
+                label = "OWNER"
+            elif row["role"] == "event":
+                label = "EVENT"
+            else:
+                label = "MOMOI"
+            if row["role"] != "event" and row["delivery_state"] == "internal":
                 label = "MOMOI INTERNAL (not sent to owner)"
-            elif row["delivery_state"] == "uncertain":
+            elif row["role"] != "event" and row["delivery_state"] == "uncertain":
                 label = "MOMOI DELIVERY UNCERTAIN"
             entries.append(
                 (
@@ -4372,7 +4445,7 @@ class Store(MemoryStore, DeliveryStore):
             "messages": int(
                 self._db.execute(
                     """SELECT COUNT(*) FROM messages
-                       WHERE role='user' OR delivery_state IN
+                       WHERE role IN ('user', 'event') OR delivery_state IN
                            ('delivered', 'uncertain', 'internal')"""
                 ).fetchone()[0]
             ),
@@ -4410,7 +4483,7 @@ class Store(MemoryStore, DeliveryStore):
         }
         latest_message = self._db.execute(
             """SELECT MAX(created_at) FROM messages
-               WHERE role='user' OR delivery_state IN
+               WHERE role IN ('user', 'event') OR delivery_state IN
                    ('delivered', 'uncertain', 'internal')"""
         ).fetchone()[0]
         state = self.self_state()

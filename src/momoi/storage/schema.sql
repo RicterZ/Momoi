@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE TABLE IF NOT EXISTS messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     turn_id TEXT NOT NULL DEFAULT '',
-    role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+    role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'event')),
     content TEXT NOT NULL,
     created_at REAL NOT NULL,
     source_event_ids_json TEXT NOT NULL,
