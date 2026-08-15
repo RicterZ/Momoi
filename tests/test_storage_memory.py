@@ -1149,10 +1149,15 @@ class StorageMemoryTest(unittest.TestCase):
         self.assertIn("calls together in one response", AGENDA_TOOL_POLICY)
         self.assertIn("judgment, not a reflex", MEMORY_TOOL_POLICY)
         self.assertIn("this is `recent`, never", MEMORY_TOOL_POLICY)
+        self.assertIn("A procedure you are afraid of forgetting is not `always`", MEMORY_TOOL_POLICY)
         remember = next(
             spec for spec in MEMORY_TOOL_SPECS if spec["name"] == "memory_remember"
         )
         self.assertNotIn("durable", remember["description"])
+        self.assertEqual(
+            remember["input_schema"]["properties"]["activation"]["enum"],
+            ["recall", "recent", "always"],
+        )
         self.assertIn(
             "Do not turn 这个/this into a standing rule",
             remember["input_schema"]["properties"]["content"]["description"],

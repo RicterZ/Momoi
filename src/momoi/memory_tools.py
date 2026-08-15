@@ -131,22 +131,26 @@ stated a fact that later Turns must treat as true. Ordinary chat, venting,
 a correction that only applies to this reply, or a fact already in confirmed
 memory does not need a new write.
 
-Choose `activation` by how long that fact should steer later Turns—not by
-how strongly they feel, and not by how tidy a standing rule would look:
+`activation` is where the fact sits—not how important it feels, and not
+whether they said 记住:
 
-- `always`: a preference or constraint that should color every later Turn
-  until they revoke it. Use it only when they stated a standing rule
-  ("from now on", "don't ever", "以后都").
+- `recall` (default): keep it and pull it only when a later topic matches.
+  How-to, device/API playbooks, game rules, and "研究下怎么用然后记住"
+  belong here. If it would only matter when that topic comes back, it is
+  `recall` even if they said 记住, 以后都按这个做, or 下次要用.
 - `recent`: a time-bounded owner state or this-item situation that will go
   stale (this package, tonight's plan, current location). `ttl_hours` must
   come from the content: hours, "a few days", "this week". If they say
   短期, short-term, or that it will disappear, this is `recent`, never
   `always`.
-- `recall`: worth keeping, but retrieve it only when a later topic matches.
-  Default here when it is neither a standing rule nor a ticking state.
+- `always`: a preference or constraint that should color ordinary chat
+  even when the topic is unrelated (how to address them, punctuation,
+  never use emoji). Use it only for standing interpersonal rules they
+  stated. A procedure you are afraid of forgetting is not `always`.
 
-`kind` is the topic (preference, episodic, routine). It is not duration.
-A preference may be `recent`; an episode may be `recall`.
+`kind` is the topic (preference, episodic, routine, shared). It is not
+duration. A preference may be `recent`; shared how-to is almost always
+`recall`.
 
 Scope `content` to what they pointed at. 这个 / 这条 / this one names a
 specific object—write that object. Do not promote it into a general policy
@@ -315,9 +319,10 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
         "name": "memory_remember",
         "description": (
             "Stage one memory the authenticated user just stated in the current "
-            "input. Judge activation from how long the fact should steer later "
-            "Turns; do not treat every useful note as always-on. The write commits "
-            "only when this turn finishes successfully."
+            "input. Default activation is recall. Use always only for a standing "
+            "rule that should color ordinary chat even off-topic; 记住 and how-to "
+            "playbooks are recall. The write commits only when this turn finishes "
+            "successfully."
         ),
         "input_schema": {
             "type": "object",
@@ -327,7 +332,7 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
                     "enum": sorted(MEMORY_KINDS),
                     "description": (
                         "Topic category such as episodic, preference, or routine. "
-                        "This is not duration. Use activation for always, recent, or recall."
+                        "This is not duration. Use activation for recall, recent, or always."
                     ),
                 },
                 "key": {
@@ -344,13 +349,14 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
                 },
                 "activation": {
                     "type": "string",
-                    "enum": sorted(MEMORY_ACTIVATIONS),
+                    "enum": ["recall", "recent", "always"],
                     "description": (
-                        "How long this should steer later Turns, not how important it feels. "
-                        "always: standing rule for every Turn, only if they said a lasting "
-                        "preference or constraint. recent: time-bounded state or this-item "
+                        "Where this sits, not how important it feels. "
+                        "recall (default): keep for later search; how-to, device/API, "
+                        "and 记住怎么用. recent: time-bounded state or this-item "
                         "situation; required when they say short-term or it will expire. "
-                        "recall: keep for later search, not every Turn."
+                        "always: standing interpersonal rule that should color every "
+                        "Turn even off-topic. 记住 / 以后要用 is not always."
                     ),
                 },
                 "ttl_hours": {
