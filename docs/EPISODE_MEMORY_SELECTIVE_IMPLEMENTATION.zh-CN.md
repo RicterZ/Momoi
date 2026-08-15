@@ -152,6 +152,11 @@ Runtime 校验：
 - ignored Turn 不进入 Episode；
 - 不修改原始 messages。
 
+当 Consolidator 把较早 Turn 补入一个已经存在的 Episode 时，Runtime 按消息实际
+时间重新生成连续 ordinal。若已有 ordinal 发生变化，则清空该 Episode 的 claims、
+narrative、emotional context、outcomes 和总结进度，交给 annealing 重新生成，避免
+旧引用中的 ordinal 与原文顺序不一致。
+
 ## 6. Episode 维护
 
 Evidence-selection 输出升级为：
@@ -230,4 +235,4 @@ Runtime：
 - 数据库迁移在 Store 启动时自动执行，不需要手工迁移。
 - Planner v1 仅保留读取兼容；新请求固定使用 v2。
 - 原始 messages 表及投递状态不被 Consolidator 改写。
-- 完整测试：213 项通过。
+- 完整测试：214 项通过。

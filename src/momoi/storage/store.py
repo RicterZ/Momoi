@@ -2047,6 +2047,7 @@ class Store(MemoryStore, DeliveryStore):
             raise ValueError("episode turn relation must be primary or related")
         now = time.time()
         with self._db:
+            inserted = False
             row = self._db.execute(
                 """SELECT ordinal FROM episode_turns
                    WHERE episode_id=? AND turn_id=?""",
@@ -2074,6 +2075,7 @@ class Store(MemoryStore, DeliveryStore):
                         ),
                     ),
                 )
+                inserted = True
             else:
                 ordinal = int(row["ordinal"])
                 self._db.execute(
@@ -2095,7 +2097,17 @@ class Store(MemoryStore, DeliveryStore):
                        updated_at=? WHERE id=?""",
                 (relation, relation, now, episode_id),
             )
-            self._index_turn_episode_terms(turn_id)
+            if inserted and self._reorder_episode_turns(episode_id, now):
+                ordinal = int(
+                    self._db.execute(
+                        """SELECT ordinal FROM episode_turns
+                           WHERE episode_id=? AND turn_id=?""",
+                        (episode_id, turn_id),
+                    ).fetchone()["ordinal"]
+                )
+                self._reindex_episode_terms(episode_id)
+            else:
+                self._index_turn_episode_terms(turn_id)
         return {
             "episode_id": episode_id,
             "turn_id": turn_id,
@@ -2265,6 +2277,7 @@ class Store(MemoryStore, DeliveryStore):
         now = time.time()
         linked = 0
         deferred = 0
+        touched_episodes: set[str] = set()
         with self._db:
             for decision in decisions:
                 if not isinstance(decision, dict):
@@ -2444,9 +2457,12 @@ class Store(MemoryStore, DeliveryStore):
                     )
                     self._index_turn_episode_terms(turn_id)
                     linked += 1
-                self._reindex_episode_terms(episode_id)
+                touched_episodes.add(episode_id)
             if covered != expected:
                 raise ValueError("incomplete consolidation turn coverage")
+            for episode_id in touched_episodes:
+                self._reorder_episode_turns(episode_id, now)
+                self._reindex_episode_terms(episode_id)
         return linked, deferred
 
     @staticmethod
@@ -2794,6 +2810,54 @@ class Store(MemoryStore, DeliveryStore):
         return turns, sum(
             estimate_tokens(str(message["content"])) for message in messages
         )
+
+    def _reorder_episode_turns(self, episode_id: str, now: float) -> bool:
+        rows = self._db.execute(
+            """SELECT et.turn_id, et.ordinal,
+                      COALESCE(MIN(m.created_at), t.started_at, t.updated_at) AS occurred_at,
+                      t.started_at
+               FROM episode_turns AS et
+               JOIN turns AS t ON t.id=et.turn_id
+               LEFT JOIN messages AS m ON m.turn_id=et.turn_id
+               WHERE et.episode_id=?
+               GROUP BY et.turn_id, et.ordinal, t.started_at, t.updated_at
+               ORDER BY occurred_at, t.started_at, et.turn_id""",
+            (episode_id,),
+        ).fetchall()
+        if all(int(row["ordinal"]) == index for index, row in enumerate(rows, 1)):
+            return False
+        offset = max(int(row["ordinal"]) for row in rows) + len(rows) + 1
+        self._db.execute(
+            "UPDATE episode_turns SET ordinal=ordinal+? WHERE episode_id=?",
+            (offset, episode_id),
+        )
+        self._db.executemany(
+            """UPDATE episode_turns SET ordinal=?
+               WHERE episode_id=? AND turn_id=?""",
+            (
+                (index, episode_id, str(row["turn_id"]))
+                for index, row in enumerate(rows, 1)
+            ),
+        )
+        self._db.execute(
+            """UPDATE conversation_episodes
+               SET working_summary='', working_summary_claims_json='[]',
+                   narrative_summary='', emotional_context_json='{}',
+                   outcomes_json='[]', summarized_through_ordinal=0,
+                   summary_claimed_at=NULL, summary_retry_at=NULL,
+                   summary_failure_count=0, updated_at=?
+               WHERE id=?""",
+            (now, episode_id),
+        )
+        log_event(
+            logger,
+            logging.INFO,
+            "episode_turns_reordered",
+            stage="storage",
+            episode_id=episode_id,
+            turns=len(rows),
+        )
+        return True
 
     @staticmethod
     def _episode_actions(plan: dict[str, object]) -> list[dict[str, object]]:

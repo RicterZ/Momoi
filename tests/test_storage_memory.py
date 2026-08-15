@@ -733,6 +733,73 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertIsNotNone(store.claim_episode_consolidation_candidate())
             store.close()
 
+    def test_consolidation_backfill_reorders_episode_and_invalidates_summary(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store.commit_turn(
+                [], "你在干嘛", AgentReply(["我在打游戏"]), turn_id="earlier"
+            )
+            earlier_outbox = store._db.execute(
+                "SELECT id FROM outbox WHERE turn_id='earlier'"
+            ).fetchone()["id"]
+            store.mark_sent(int(earlier_outbox))
+            store.commit_turn(
+                [], "在玩什么", AgentReply(["塞尔达"]), turn_id="later"
+            )
+            later_outbox = store._db.execute(
+                "SELECT id FROM outbox WHERE turn_id='later'"
+            ).fetchone()["id"]
+            store.mark_sent(int(later_outbox))
+            store.create_episode("聊正在玩的游戏", episode_id="playing-game")
+            store.link_turn_to_episode("playing-game", "later")
+            with store._db:
+                store._db.execute(
+                    """UPDATE conversation_episodes
+                       SET working_summary='old', working_summary_claims_json='[{}]',
+                           narrative_summary='old narrative',
+                           emotional_context_json='{"tone":"old"}',
+                           outcomes_json='["old"]',
+                           summarized_through_ordinal=1
+                       WHERE id='playing-game'"""
+                )
+
+            self.assertEqual(
+                store.apply_episode_consolidation(
+                    ["earlier"],
+                    [
+                        {
+                            "action": "continue",
+                            "episode_id": "playing-game",
+                            "turn_ids": ["earlier"],
+                            "topics": ["游戏"],
+                            "entities": ["塞尔达"],
+                            "open_loops": [],
+                            "salience": 0.5,
+                        }
+                    ],
+                    ["playing-game"],
+                ),
+                (1, 0),
+            )
+
+            self.assertEqual(
+                [
+                    (turn["turn_id"], turn["ordinal"])
+                    for turn in store.episode_turns("playing-game")
+                ],
+                [("earlier", 1), ("later", 2)],
+            )
+            episode = store.episode("playing-game")
+            self.assertEqual(episode["working_summary"], "")
+            self.assertEqual(episode["working_summary_claims"], [])
+            self.assertEqual(episode["narrative_summary"], "")
+            self.assertEqual(episode["emotional_context"], {})
+            self.assertEqual(episode["outcomes"], [])
+            self.assertEqual(episode["summarized_through_ordinal"], 0)
+            store.close()
+
     def test_episode_rolls_to_successor_after_turn_limit(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")

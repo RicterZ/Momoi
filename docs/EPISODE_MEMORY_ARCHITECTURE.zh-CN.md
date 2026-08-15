@@ -35,6 +35,10 @@ Consolidator 不会立即永久忽略最新的未归档 Turn。最新 Turn 在�
 deferred；下一次 Owner Turn 到来后，它会带着新的上下文重新参与判断。只有已经出现
 后续 Turn，模型仍确认其只是问候、填充或无关过渡时，才记录为 ignored。
 
+如果后续上下文证明较早的未归档 Turn 属于一个已经建立的 Episode，Runtime 会按消息
+实际发生时间重新排列 Episode Turns，而不是把较早 Turn 追加到末尾。发生重排时，
+旧的 claims 和语义总结失效并由后台重新生成。
+
 ## 2. 非目标
 
 本设计不做以下事情：
