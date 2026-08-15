@@ -115,6 +115,20 @@ class ContextPlannerTest(unittest.TestCase):
         self.assertNotIn("1-12", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertNotIn("0-6", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertNotIn("allowed kinds", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn(
+            "request, question, correction, or a social share",
+            CONTEXT_PLANNER_SYSTEM_PROMPT,
+        )
+        self.assertIn("that reference needs evidence", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn(
+            "vague deferrals without an explicit ask",
+            CONTEXT_PLANNER_SYSTEM_PROMPT,
+        )
+        self.assertNotIn("饭后再说", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn(
+            "sparse and retrieval-useful",
+            CONTEXT_PLANNER_SYSTEM_PROMPT,
+        )
         schema = CONTEXT_PLAN_TOOL_SPEC["input_schema"]
         self.assertEqual(
             schema["required"],  # type: ignore[index]
@@ -130,14 +144,15 @@ class ContextPlannerTest(unittest.TestCase):
     def test_standalone_media_guidance_limits_semantic_inference(self) -> None:
         self.assertIn("low-information social cue", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertIn(
-            "Do not assign it a specific claim, emotion, intention, or referent",
+            "not a specific claim, emotion label, intention, or referent",
             CONTEXT_PLANNER_SYSTEM_PROMPT,
         )
+        self.assertIn("leave `recall_queries` empty", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn("invent a semantic agenda", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertIn(
-            "leave `recall_queries` and `open_loops` empty",
+            "Still bind the unit to an episode as usual",
             CONTEXT_PLANNER_SYSTEM_PROMPT,
         )
-        self.assertIn("new topic.", CONTEXT_PLANNER_SYSTEM_PROMPT)
 
     def test_parser_requires_event_coverage_and_normalizes_episode_refs(self) -> None:
         plan = response_plan()
