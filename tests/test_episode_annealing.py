@@ -392,6 +392,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(episode["working_summary"], "")
             self.assertEqual(episode["summarized_through_ordinal"], 0)
             self.assertEqual(episode["summary_failure_count"], 1)
+            self.assertIsNone(episode["summary_abandoned_at"])
             daemon.store.close()
 
     async def test_v2_summary_stores_narrative_emotion_and_outcomes(self) -> None:
@@ -467,3 +468,78 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(result["outcomes"], ["老师已下班，当天工作结束"])
+
+    async def test_third_failure_abandons_episode_and_other_lines_continue(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(config(directory))
+            daemon.store.create_episode("卡住的旧线", episode_id="episode-stuck")
+            for ordinal in range(1, 6):
+                add_named_turn(daemon, "episode-stuck", ordinal, "stuck")
+
+            class Provider:
+                async def complete(self, *_: object, **__: object) -> ProviderResponse:
+                    return ProviderResponse([], [])
+
+            daemon.provider = Provider()  # type: ignore[assignment]
+            for attempt in range(3):
+                daemon.store._db.execute(
+                    "UPDATE conversation_episodes SET summary_retry_at=0 WHERE id=?",
+                    ("episode-stuck",),
+                )
+                daemon.store._db.commit()
+                claimed = daemon.store.claim_episode_annealing_candidate(2, 10000)
+                self.assertIsNotNone(claimed)
+                self.assertEqual(claimed["episode"]["id"], "episode-stuck")
+                with self.assertRaisesRegex(RuntimeError, "no text"):
+                    await daemon._anneal_episode_history(
+                        f"turn-stuck-{attempt}",
+                        candidate=claimed,
+                    )
+
+            daemon.store.create_episode("还能退的线", episode_id="episode-ready")
+            for ordinal in range(1, 6):
+                add_named_turn(daemon, "episode-ready", ordinal, "ready")
+
+            stuck = daemon.store.episode("episode-stuck")
+            self.assertEqual(stuck["summary_failure_count"], 3)
+            self.assertIsNotNone(stuck["summary_abandoned_at"])
+            self.assertIsNone(stuck["summary_retry_at"])
+            self.assertIsNone(
+                daemon.store.next_episode_annealing_retry_at()
+            )
+
+            claimed = daemon.store.claim_episode_annealing_candidate(2, 10000)
+            self.assertIsNotNone(claimed)
+            self.assertEqual(claimed["episode"]["id"], "episode-ready")
+            daemon.store.release_episode_annealing("episode-ready", failed=False)
+
+            add_named_turn(daemon, "episode-stuck", 6, "stuck")
+            revived = daemon.store.episode("episode-stuck")
+            self.assertIsNone(revived["summary_abandoned_at"])
+            self.assertEqual(revived["summary_failure_count"], 0)
+            daemon.store.close()
+
+
+def add_named_turn(
+    daemon: MomoiDaemon, episode_id: str, ordinal: int, prefix: str
+) -> None:
+    event_id = f"{prefix}-event-{ordinal}"
+    turn_id = f"{prefix}-turn-{ordinal}"
+    event = IncomingMessage(
+        event_id, event_id, f"{prefix}第{ordinal}轮主人消息", ordinal, ordinal
+    )
+    daemon.store.add_event(event)
+    daemon.store.begin_turn(turn_id, "owner", [event_id])
+    daemon.store.commit_turn(
+        [event],
+        event.text,
+        AgentReply([f"{prefix}第{ordinal}轮桃衣回复"]),
+        turn_id=turn_id,
+    )
+    outbox_id = daemon.store._db.execute(
+        "SELECT id FROM outbox WHERE turn_id=?", (turn_id,)
+    ).fetchone()["id"]
+    daemon.store.mark_sent(int(outbox_id))
+    daemon.store.link_turn_to_episode(episode_id, turn_id)

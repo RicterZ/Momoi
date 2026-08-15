@@ -628,7 +628,7 @@ class MomoiDaemon(TurnRunner):
                     error_type=type(error).__name__,
                     reason=safe_preview(str(error), 300),
                 )
-                await self._wait_for_episode_annealing_retry()
+                self.episode_annealing_requested.set()
             else:
                 if completed:
                     self.episode_annealing_requested.set()

@@ -39,6 +39,8 @@ from .scheduling import next_schedule_at, quiet_until
 logger = logging.getLogger(__name__)
 
 
+EPISODE_ANNEAL_MAX_FAILURES = 3
+
 BASELINE_MOOD_STATE = "calm"
 BASELINE_MOOD_INTENSITY = 0.35
 BASELINE_MOOD_CAUSE = "resting baseline"
@@ -432,6 +434,17 @@ class Store(MemoryStore, DeliveryStore):
                 self._db.execute(
                     f"ALTER TABLE conversation_episodes ADD COLUMN {name} {definition}"
                 )
+        if "summary_abandoned_at" not in episode_columns:
+            self._db.execute(
+                "ALTER TABLE conversation_episodes ADD COLUMN summary_abandoned_at REAL"
+            )
+            self._db.execute(
+                """UPDATE conversation_episodes
+                   SET summary_abandoned_at=COALESCE(updated_at, ?),
+                       summary_retry_at=NULL
+                   WHERE summary_failure_count>=?""",
+                (time.time(), EPISODE_ANNEAL_MAX_FAILURES),
+            )
         now = time.time()
         self._db.execute(
             """INSERT OR IGNORE INTO self_state
@@ -1245,7 +1258,8 @@ class Store(MemoryStore, DeliveryStore):
         episode = dict(row)
         episode.pop("overlap", None)
         _add_context_timestamps(
-            episode, ("created_at", "updated_at", "closed_at")
+            episode,
+            ("created_at", "updated_at", "closed_at", "summary_abandoned_at"),
         )
         try:
             claims = json.loads(str(episode.pop("working_summary_claims_json")))
@@ -2222,6 +2236,13 @@ class Store(MemoryStore, DeliveryStore):
                     ),
                 )
                 inserted = True
+                self._db.execute(
+                    """UPDATE conversation_episodes
+                       SET summary_abandoned_at=NULL, summary_retry_at=NULL,
+                           summary_failure_count=0
+                       WHERE id=?""",
+                    (episode_id,),
+                )
             else:
                 ordinal = int(row["ordinal"])
                 self._db.execute(
@@ -2649,6 +2670,7 @@ class Store(MemoryStore, DeliveryStore):
             episodes = self._db.execute(
                 """SELECT * FROM conversation_episodes
                    WHERE summary_claimed_at IS NULL
+                     AND summary_abandoned_at IS NULL
                      AND COALESCE(summary_retry_at, 0)<=?
                      AND NOT EXISTS (
                          SELECT 1 FROM episode_turns AS et
@@ -2861,7 +2883,8 @@ class Store(MemoryStore, DeliveryStore):
                        outcomes_json=?,
                        summarized_through_ordinal=?,
                        summary_claimed_at=NULL, summary_retry_at=NULL,
-                       summary_failure_count=0, updated_at=?
+                       summary_failure_count=0, summary_abandoned_at=NULL,
+                       updated_at=?
                    WHERE id=? AND summary_claimed_at IS NOT NULL
                      AND summarized_through_ordinal<=?""",
                 (
@@ -2913,6 +2936,22 @@ class Store(MemoryStore, DeliveryStore):
             if row is None:
                 return
             failures = int(row["summary_failure_count"]) + 1
+            if failures >= EPISODE_ANNEAL_MAX_FAILURES:
+                self._db.execute(
+                    """UPDATE conversation_episodes
+                       SET summary_claimed_at=NULL, summary_retry_at=NULL,
+                           summary_failure_count=?, summary_abandoned_at=?
+                       WHERE id=?""",
+                    (failures, time.time(), episode_id),
+                )
+                log_event(
+                    logger,
+                    logging.WARNING,
+                    "episode_anneal_abandoned",
+                    episode_id=episode_id,
+                    failures=failures,
+                )
+                return
             delay = min(3600, 60 * 2 ** min(failures - 1, 6))
             self._db.execute(
                 """UPDATE conversation_episodes
@@ -2926,6 +2965,7 @@ class Store(MemoryStore, DeliveryStore):
             """SELECT MIN(summary_retry_at) AS due
                FROM conversation_episodes
                WHERE summary_claimed_at IS NULL
+                 AND summary_abandoned_at IS NULL
                  AND summary_retry_at IS NOT NULL"""
         ).fetchone()
         return float(row["due"]) if row and row["due"] is not None else None

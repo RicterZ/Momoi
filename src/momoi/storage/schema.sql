@@ -268,6 +268,7 @@ CREATE TABLE IF NOT EXISTS conversation_episodes (
     summary_claimed_at REAL,
     summary_retry_at REAL,
     summary_failure_count INTEGER NOT NULL DEFAULT 0,
+    summary_abandoned_at REAL,
     created_at REAL NOT NULL,
     updated_at REAL NOT NULL,
     closed_at REAL
