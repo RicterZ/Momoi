@@ -3118,16 +3118,11 @@ class TurnRunner:
 
     @staticmethod
     def _render_batch(batch: list[IncomingMessage]) -> str:
-        lines = [
-            "[Consecutive messages from the authenticated user. Read them in order "
-            "as one evolving intent; later messages may correct or extend earlier ones.]"
-        ]
-        for message in batch:
-            lines.append(
-                f"{context_timestamp(message.occurred_at)} "
-                f"[{message.channel}] {message.text}"
-            )
-        return "\n".join(lines)
+        return "\n".join(
+            f"{context_timestamp(message.occurred_at)} "
+            f"[{message.channel}] {message.text}"
+            for message in batch
+        )
 
     def _apply_reconciliation_commands(self, batch: list[IncomingMessage]) -> str:
         results: list[str] = []

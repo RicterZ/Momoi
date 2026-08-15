@@ -2044,7 +2044,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn("</current_owner_messages>", current_text)
         self.assertIn("</runtime_state>", current_text)
-        self.assertIn(
+        self.assertNotIn(
             "Consecutive messages from the authenticated user",
             current_text,
         )
