@@ -17,7 +17,7 @@ from momoi.config import (
     LLMConfig,
     NotificationConfig,
 )
-from momoi.memory_tools import MemoryTools
+from momoi.memory_tools import MEMORY_TOOL_SPECS, MemoryTools
 from momoi.models import (
     AgentReply,
     IncomingMessage,
@@ -1127,6 +1127,74 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertEqual(first_ordinals | second_ordinals, {1, 2, 3, 4})
             self.assertIsNone(second["next_before_ordinal"])
             store.close()
+
+    def test_conversation_read_filters_raw_messages_by_exact_time_range(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store.create_episode("跨时段对话", episode_id="time-window")
+            for turn_id, content, created_at in (
+                ("before", "窗口之前", 100.0),
+                ("inside-1", "窗口内第一条", 200.0),
+                ("inside-2", "窗口内第二条", 250.0),
+                ("after", "窗口之后", 400.0),
+            ):
+                store.begin_turn(turn_id, "autonomous", [turn_id])
+                with store._db:
+                    store._db.execute(
+                        """INSERT INTO messages
+                           (turn_id, role, content, created_at,
+                            source_event_ids_json, delivery_state)
+                           VALUES (?, 'assistant', ?, ?, '[]', 'internal')""",
+                        (turn_id, content, created_at),
+                    )
+                store.link_turn_to_episode("time-window", turn_id)
+
+            result = MemoryTools(store).execute(
+                ToolCall(
+                    "read-window",
+                    "conversation_read",
+                    {
+                        "episode_id": "time-window",
+                        "time_range": {
+                            "kind": "range",
+                            "from": "1970-01-01T00:03:00+00:00",
+                            "to": "1970-01-01T00:05:00+00:00",
+                        },
+                    },
+                ),
+                [],
+                TurnDraft(),
+            )
+
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["time_range"]["kind"], "range")
+            self.assertEqual(
+                [message["content"] for message in result["episode"]["messages"]],
+                ["窗口内第一条", "窗口内第二条"],
+            )
+            self.assertFalse(result["episode"]["truncated"])
+            self.assertIsNone(result["episode"]["next_before_ordinal"])
+            self.assertEqual(
+                result["episode"]["window_first_timestamp"],
+                result["episode"]["messages"][0]["timestamp"],
+            )
+            self.assertEqual(
+                result["episode"]["window_last_timestamp"],
+                result["episode"]["messages"][-1]["timestamp"],
+            )
+            store.close()
+
+    def test_conversation_read_schema_warns_against_broad_raw_windows(self) -> None:
+        spec = next(
+            spec for spec in MEMORY_TOOL_SPECS if spec["name"] == "conversation_read"
+        )
+        self.assertIn("flood the model context", spec["description"])
+        self.assertIn(
+            "must be used cautiously",
+            spec["input_schema"]["properties"]["time_range"]["description"],
+        )
 
     def test_conversation_read_continues_inside_one_oversized_message(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

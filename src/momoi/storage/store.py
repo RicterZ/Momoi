@@ -2014,6 +2014,8 @@ class Store(MemoryStore, DeliveryStore):
         token_budget: int = 30000,
         *,
         before_ordinal: int | None = None,
+        after: float | None = None,
+        before: float | None = None,
     ) -> dict[str, object] | None:
         episode = self.episode(episode_id)
         if episode is None:
@@ -2022,14 +2024,26 @@ class Store(MemoryStore, DeliveryStore):
             """SELECT et.ordinal, m.content FROM episode_turns AS et
                JOIN messages AS m ON m.turn_id=et.turn_id
                WHERE et.episode_id=?
-                 AND (? IS NULL OR et.ordinal<?)""",
-            (episode_id, before_ordinal, before_ordinal),
+                 AND (? IS NULL OR et.ordinal<?)
+                 AND (? IS NULL OR m.created_at>=?)
+                 AND (? IS NULL OR m.created_at<?)""",
+            (
+                episode_id,
+                before_ordinal,
+                before_ordinal,
+                after,
+                after,
+                before,
+                before,
+            ),
         ).fetchall()
         messages = self.episode_messages(
             episode_id,
             token_budget,
             before_ordinal=before_ordinal,
             include_nondelivered=True,
+            after=after,
+            before=before,
         )
         omitted_messages = len(messages) < len(archived)
         content_truncated = (
@@ -2045,6 +2059,14 @@ class Store(MemoryStore, DeliveryStore):
             "messages": messages,
             "truncated": omitted_messages or content_truncated,
             "next_before_ordinal": next_before_ordinal,
+            "window_first_timestamp": min(
+                (str(message["timestamp"]) for message in messages),
+                default=None,
+            ),
+            "window_last_timestamp": max(
+                (str(message["timestamp"]) for message in messages),
+                default=None,
+            ),
         }
 
     def link_turn_to_episode(
@@ -2150,6 +2172,8 @@ class Store(MemoryStore, DeliveryStore):
         before_ordinal: int | None = None,
         exclude_message_ids: set[int] | None = None,
         include_nondelivered: bool = False,
+        after: float | None = None,
+        before: float | None = None,
     ) -> list[dict[str, object]]:
         if token_budget <= 0:
             return []
@@ -2160,6 +2184,8 @@ class Store(MemoryStore, DeliveryStore):
                JOIN messages AS m ON m.turn_id=et.turn_id
                WHERE et.episode_id=? AND et.ordinal>?
                  AND (? IS NULL OR et.ordinal<?)
+                 AND (? IS NULL OR m.created_at>=?)
+                 AND (? IS NULL OR m.created_at<?)
                  AND (? OR m.role='user' OR m.delivery_state IN
                       ('delivered', 'uncertain', 'internal'))
                ORDER BY et.ordinal DESC, m.id""",
@@ -2168,6 +2194,10 @@ class Store(MemoryStore, DeliveryStore):
                 after_ordinal,
                 before_ordinal,
                 before_ordinal,
+                after,
+                after,
+                before,
+                before,
                 int(include_nondelivered),
             ),
         ).fetchall()

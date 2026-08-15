@@ -233,9 +233,13 @@ TODO：
 TODO：
 
 - [ ] 支持 query 匹配原文。
-- [ ] 支持 from/to 时间过滤。
-- [ ] 明确 `matches` 和 `full` 两种读取模式。
-- [ ] 保留 delivery state 标记。
+- [x] 支持 time_range 的 from/to 时间过滤。
+- [x] 宽时间窗口的上下文风险写入 tool schema。
+- [x] 保留 delivery state 标记。
+
+本轮不增加 `matches/full` 模式。精确读取继续保持一个工具、一套分页：先由
+`conversation_search` 定位 Episode，再用窄时间窗口读取原文；query 原文匹配留待
+检索排序板块讨论。
 
 ### C3. memory_search 与 conversation_search 边界
 

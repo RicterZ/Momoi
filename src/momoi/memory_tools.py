@@ -208,8 +208,11 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
     {
         "name": "conversation_read",
         "description": (
-            "Read the archived raw messages covered by one conversation episode "
-            "returned by conversation_search."
+            "Read raw archived messages from one Episode returned by "
+            "conversation_search. Narrow time_range to the smallest useful window: "
+            "raw messages are verbose, and a broad window can flood the model "
+            "context with irrelevant history. Read broader or older pages only "
+            "when the compact summary is insufficient or exact wording is needed."
         ),
         "input_schema": {
             "type": "object",
@@ -226,6 +229,29 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
                         "For an older page, pass next_before_ordinal from the "
                         "previous result. Omit it for the newest page."
                     ),
+                },
+                "time_range": {
+                    "type": "object",
+                    "description": (
+                        "Optional exact message-time window. Prefer kind=range with "
+                        "a narrow from/to interval. recent/all or a wide range may "
+                        "return many raw messages and must be used cautiously."
+                    ),
+                    "properties": {
+                        "kind": {
+                            "type": "string",
+                            "enum": ["recent", "range", "all"],
+                        },
+                        "days": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 3650,
+                        },
+                        "from": {"type": "string"},
+                        "to": {"type": "string"},
+                    },
+                    "required": ["kind"],
+                    "additionalProperties": False,
                 },
                 "message_id": {
                     "type": "integer",
@@ -351,7 +377,9 @@ _MEMORY_ERROR_MESSAGES = {
     "query_required": "Provide a non-empty search query.",
     "invalid_episode_id": "episode_id must be a non-empty string.",
     "invalid_before_ordinal": "before_ordinal must be an integer greater than one.",
-    "invalid_message_cursor": "message_id and before_ordinal cannot be combined.",
+    "invalid_message_cursor": (
+        "message_id cannot be combined with before_ordinal or time_range."
+    ),
     "message_id_required": "content_offset requires a message_id.",
     "invalid_content_offset": "content_offset must be a non-negative integer.",
     "message_not_found": "The requested archived message was not found.",
@@ -545,10 +573,20 @@ class MemoryTools:
             or not isinstance(content_offset, int)
             or content_offset < 0
             or before_ordinal is not None
+            or "time_range" in arguments
         ):
             return _memory_error("invalid_message_cursor")
         if message_id is None and "content_offset" in arguments:
             return _memory_error("message_id_required")
+        time_range = arguments.get("time_range")
+        if time_range is None:
+            after = before = None
+            window = None
+        else:
+            try:
+                after, before, window = _episode_time_range(time_range)
+            except ValueError as error:
+                return _memory_error(str(error))
         if message_id is not None:
             try:
                 message = self.store.conversation_message(
@@ -560,11 +598,18 @@ class MemoryTools:
                 return _memory_error("message_not_found")
             return {"ok": True, "message": message}
         episode = self.store.conversation_episode(
-            episode_id.strip(), before_ordinal=before_ordinal
+            episode_id.strip(),
+            before_ordinal=before_ordinal,
+            after=after,
+            before=before,
         )
         if episode is None:
             return _memory_error("episode_not_found")
-        return {"ok": True, "episode": episode}
+        return {
+            "ok": True,
+            **({"time_range": window} if window is not None else {}),
+            "episode": episode,
+        }
 
     def _remember(
         self,
