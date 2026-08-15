@@ -27,11 +27,122 @@ from momoi.models import (
 from momoi.runtime import (
     MomoiDaemon,
 )
-from momoi.storage import Store
+from momoi.storage import Store, estimate_tokens
 from momoi.storage.scheduling import next_schedule_at
 
 
 class StorageMemoryTest(unittest.TestCase):
+    def test_episode_time_range_matches_message_time_not_last_activity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store.create_episode("长期话题", episode_id="long-running")
+            for turn_id, content, created_at in (
+                ("old-turn", "七月旧暗号", 100.0),
+                ("new-turn", "八月新内容", 1000.0),
+            ):
+                store.begin_turn(turn_id, "autonomous", [turn_id])
+                with store._db:
+                    store._db.execute(
+                        """INSERT INTO messages
+                           (turn_id, role, content, created_at,
+                            source_event_ids_json, delivery_state)
+                           VALUES (?, 'assistant', ?, ?, '[]', 'internal')""",
+                        (turn_id, content, created_at),
+                    )
+                    store._db.execute(
+                        """UPDATE turns SET state='completed', updated_at=?
+                           WHERE id=?""",
+                        (created_at, turn_id),
+                    )
+                store.link_turn_to_episode("long-running", turn_id)
+
+            old = store.search_episodes(
+                "七月旧暗号", 5, after=50, before=150
+            )
+            self.assertEqual([item["id"] for item in old], ["long-running"])
+            self.assertEqual(
+                [match["content"] for match in old[0]["matches"]],
+                ["七月旧暗号"],
+            )
+            self.assertEqual(
+                store.search_episodes("八月新内容", 5, after=50, before=150),
+                [],
+            )
+            store.close()
+
+    def test_conversation_search_returns_compact_relevant_claims(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store.create_episode("长期项目", episode_id="project")
+            turn_id = "project-turn"
+            store.begin_turn(turn_id, "autonomous", [turn_id])
+            with store._db:
+                message_id = store._db.execute(
+                    """INSERT INTO messages
+                       (turn_id, role, content, created_at,
+                        source_event_ids_json, delivery_state)
+                       VALUES (?, 'assistant', ?, 100, '[]', 'internal')""",
+                    (turn_id, "紫罗兰钥匙放在书架顶层"),
+                ).lastrowid
+                store._db.execute(
+                    """UPDATE turns SET state='completed', updated_at=100
+                       WHERE id=?""",
+                    (turn_id,),
+                )
+            store.link_turn_to_episode("project", turn_id)
+            claims = [
+                {
+                    "message_id": int(message_id),
+                    "turn_id": turn_id,
+                    "ordinal": 1,
+                    "role": "assistant",
+                    "delivery_state": "internal",
+                    "quote": "紫罗兰钥匙放在书架顶层",
+                },
+                *[
+                    {
+                        "message_id": int(message_id),
+                        "turn_id": turn_id,
+                        "ordinal": 1,
+                        "role": "assistant",
+                        "delivery_state": "internal",
+                        "quote": "无关背景" + str(index),
+                    }
+                    for index in range(30)
+                ],
+            ]
+            with store._db:
+                store._db.execute(
+                    """UPDATE conversation_episodes
+                       SET working_summary=?, working_summary_claims_json=?
+                       WHERE id='project'""",
+                    (
+                        "很长的旧摘要" * 1000,
+                        json.dumps(claims, ensure_ascii=False),
+                    ),
+                )
+                store._reindex_episode_terms("project")
+
+            result = MemoryTools(store).execute(
+                ToolCall(
+                    "search",
+                    "conversation_search",
+                    {
+                        "query": "紫罗兰钥匙",
+                        "time_range": {"kind": "all"},
+                    },
+                ),
+                [],
+                TurnDraft(),
+            )
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["count"], 1)
+            summary = result["results"][0]["summary"]
+            self.assertIn("紫罗兰钥匙放在书架顶层", summary)
+            self.assertLessEqual(estimate_tokens(summary), 300)
+            self.assertNotIn("content", result["results"][0]["matches"][0])
+            store.close()
+
     def test_recall_index_migration_failure_preserves_legacy_tables(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "momoi.sqlite3"

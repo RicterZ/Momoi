@@ -1,3 +1,4 @@
+import json
 import logging
 import re
 import time
@@ -25,6 +26,57 @@ from .storage import (
 
 logger = logging.getLogger(__name__)
 _DEFAULT_EPISODE_LOOKBACK_DAYS = 30
+_EPISODE_SEARCH_SUMMARY_TOKENS = 300
+
+
+def _episode_claim_excerpt(
+    episode: dict[str, object], query: str
+) -> str:
+    claims = episode.get("working_summary_claims")
+    if not isinstance(claims, list):
+        return ""
+    query_units = lexical_units(query, strict=True)
+    matched_ids = {
+        int(match["id"])
+        for match in episode.get("matches", [])
+        if isinstance(match, dict) and isinstance(match.get("id"), int)
+    }
+    ranked = []
+    for index, claim in enumerate(claims):
+        if not isinstance(claim, dict) or not str(claim.get("quote") or "").strip():
+            continue
+        overlap = len(query_units & lexical_units(str(claim["quote"]), strict=True))
+        ranked.append(
+            (
+                int(claim.get("message_id") in matched_ids),
+                overlap,
+                int(claim.get("role") == "user"),
+                index,
+                claim,
+            )
+        )
+    if not ranked:
+        return ""
+    if query_units:
+        ranked.sort(key=lambda item: item[:4], reverse=True)
+    else:
+        ranked = ranked[-4:]
+    lines = []
+    for _, _, _, _, claim in ranked:
+        role = "OWNER" if claim.get("role") == "user" else "MOMOI"
+        lines.append(
+            f"- [{role} ordinal={claim.get('ordinal')}] "
+            f"{json.dumps(str(claim['quote']), ensure_ascii=False)}"
+        )
+        excerpt = truncate_tokens(
+            "\n".join(lines), _EPISODE_SEARCH_SUMMARY_TOKENS
+        )
+        if excerpt != "\n".join(lines):
+            lines.pop()
+            break
+    return truncate_tokens(
+        "\n".join(lines), _EPISODE_SEARCH_SUMMARY_TOKENS
+    )
 
 
 def _episode_time_range(
@@ -455,11 +507,7 @@ class MemoryTools:
         compact = []
         for episode in results:
             claims = episode.get("working_summary_claims")
-            summary = (
-                str(episode.get("working_summary") or "")
-                if isinstance(claims, list) and claims
-                else ""
-            )
+            summary = _episode_claim_excerpt(episode, query)
             compact.append(
                 {
                     "id": episode["id"],
@@ -469,7 +517,7 @@ class MemoryTools:
                     "last_activity_timestamp": episode.get(
                         "last_activity_timestamp"
                     ),
-                    "summary": truncate_tokens(summary, 1200),
+                    "summary": summary,
                     "summary_quality": (
                         "extractive"
                         if isinstance(claims, list) and claims
