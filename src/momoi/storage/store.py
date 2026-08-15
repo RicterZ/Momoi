@@ -1711,6 +1711,18 @@ class Store(MemoryStore, DeliveryStore):
         ).fetchall()
         return [self._episode_dict(row) for row in rows]
 
+    def list_dashboard_conversations(
+        self, limit: int = 64
+    ) -> list[dict[str, object]]:
+        if limit <= 0:
+            return []
+        rows = self._db.execute(
+            """SELECT * FROM conversation_episodes
+               ORDER BY updated_at DESC, id DESC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+        return [self._episode_dict(row) for row in rows]
+
     def open_conversation_inventory(self, limit: int = 64) -> list[dict[str, object]]:
         if limit <= 0:
             return []

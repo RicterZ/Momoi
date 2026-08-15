@@ -236,7 +236,7 @@ def create_dashboard_app(store: Store, *, token: str = "") -> web.Application:
 
     async def conversations(request: web.Request) -> web.Response:
         limit = _bounded_int(request, "limit", 64, 1, 200)
-        return web.json_response({"items": store.list_episode_directory(limit)})
+        return web.json_response({"items": store.list_dashboard_conversations(limit)})
 
     async def conversation(request: web.Request) -> web.Response:
         token_budget = _bounded_int(request, "token_budget", 100_000, 1_000, 250_000)

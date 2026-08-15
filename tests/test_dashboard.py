@@ -195,6 +195,32 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(response.status, 400)
 
+    async def test_conversations_are_sorted_by_displayed_update_time(self) -> None:
+        self.store.create_episode("较旧的开放聊天", episode_id="older-open")
+        self.store.create_episode("较新的已关闭聊天", episode_id="newer-closed")
+        with self.store._db:
+            self.store._db.execute(
+                """UPDATE conversation_episodes
+                   SET status='open', updated_at=200 WHERE id='older-open'"""
+            )
+            self.store._db.execute(
+                """UPDATE conversation_episodes
+                   SET status='closed', updated_at=300 WHERE id='newer-closed'"""
+            )
+            self.store._db.execute(
+                """UPDATE conversation_episodes
+                   SET updated_at=100 WHERE id='episode-one'"""
+            )
+
+        conversations = await (
+            await self.client.get("/api/conversations", headers=self._auth())
+        ).json()
+
+        self.assertEqual(
+            [item["id"] for item in conversations["items"]],
+            ["newer-closed", "older-open", "episode-one"],
+        )
+
     async def test_api_requires_bearer_token_except_emotion_asset(self) -> None:
         memories = await (
             await self.client.get("/api/memories", headers=self._auth())
