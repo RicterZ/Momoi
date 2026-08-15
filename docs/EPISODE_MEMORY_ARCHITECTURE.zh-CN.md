@@ -1233,7 +1233,298 @@ Episode 限制。
 11. 没有 Episode 可以因持续收到新 turn 而无限增长。
 12. 多 intent 输入不会因为固定 Top 3 而丢失其他 intent 的相关历史。
 
-## 17. 实施阶段
+## 17. 第一阶段生产观察（2026-08-15）
+
+### 17.1 观察范围
+
+版本 `d0122b2` 于 2026-08-15 12:39 +08 部署后，使用真实 QQ 对话、daemon 日志和
+对应的 `llm-dumps` 观察了以下场景：
+
+1. 普通问候：“小桃 你好呀”
+2. 依赖最近上下文和 Goal/Reminder 的提问：“等午休完还记得我要做什么吗”
+3. 有明确主题的跨日回忆：“还记得昨晚我们玩了什么游戏嘛？”
+4. 连续消息和亲昵动作：“不光这个啦……我们一起玩” + “揉揉”
+5. 模糊长时间回忆：“还记得一个月前的事情么？”
+6. 搜索失败后的自然收尾：“没啥事情，在考验记忆力……”
+
+本轮只观察生产行为，没有在线修改数据库。
+
+### 17.2 已确认的改善
+
+#### 旧 Episode 原文不再自动注入
+
+- 所有观察到的 `<episode_directory>` 都没有 `raw_tail` 或 `matched_raw`。
+- `episode_directory_assembled` 日志中的 `raw_messages` 始终为 `0`。
+- 8 月 3 日旧门锁原文没有再次出现在请求中。
+- 普通问候没有 recall query，因此没有 Episode 目录。
+
+这一阶段的首要目标已经达到：Episode 检索不再把整个旧话题的原始消息自动交给主模型。
+
+#### 有明确对象的回忆效果良好
+
+“还记得昨晚我们玩了什么游戏嘛？”通过默认 Episode 目录直接定位到
+《湖之仆从》，回复包含：
+
+- 游戏名；
+- 一周目已经通关；
+- 29/49 成就；
+- 剩余成就可后续补。
+
+主模型没有调用 `conversation_search` 或 `conversation_read`。这说明在总结足够时，
+“先目录、后工具”的第一层召回可以直接完成自然回复。
+
+#### 最近上下文、Goal 和 Reminder 能正常协同
+
+“等午休完还记得我要做什么吗”被正确解析为当日 15:00 HR 面试，并使用 14:30 提前
+提醒信息回答。没有读取旧原文。
+
+#### 长时间搜索没有编造
+
+“还记得一个月前的事情么？”触发了：
+
+1. 指定 7 月中旬时间范围搜索；
+2. 默认范围无结果；
+3. 扩大到全历史；
+4. 改写查询继续搜索；
+5. 最终确认现有存档最早约从 7 月 20 日开始。
+
+模型最终明确说没有找到，而不是虚构一个月前发生的事情。这说明分层搜索的事实纪律
+优于原来的大段历史注入。
+
+### 17.3 当前问题
+
+#### P0：模糊长时间搜索没有停止条件
+
+“一个月前”场景中，主模型连续执行：
+
+- `conversation_search` 11 次；
+- `memory_search` 5 次；
+- Owner tool loop 共 12 轮；
+- 输入上下文从约 40k 增长到最高约 123k tokens；
+- 最后还因输出普通文本被协议拒绝，再补 `send_message` 和 `respond`。
+
+问题不是模型没有遵循分层搜索，而是遵循得过度：
+
+- 多次查询没有新增证据仍继续搜索；
+- 相似 query 重复覆盖相同结果；
+- 没有明确的“存档起始时间”元数据帮助快速停止；
+- 搜索工具结果过长，尤其 legacy summary 会持续扩大后续请求；
+- 当前 tool loop 没有通用的搜索停机纪律。
+
+这在功能上正确，但成本、延迟和自然性不可接受。
+
+#### P0：Planner 的 Episode link 协议与实际输出不一致
+
+日志已确认三次 `context_plan_invalid`：
+
+1. `invalid_new_episode_ref`
+   - Planner 输出了中文 `new:小桃推荐喜欢的游戏一起玩`；
+   - Parser 只接受 ASCII `[a-z0-9_-]`。
+2. `unknown_link_episode`
+   - Planner 用 `episode_links` 指向候选 Episode；
+   - 目标 Episode 没有同时出现在本轮 `episode_bindings`；
+   - Parser 拒绝该链接。
+3. 后续 Owner update 重新规划时再次出现 `unknown_link_episode`。
+
+第一次可以通过更明确的 schema 描述减少。第二种说明协议本身不自然：建立 Episode 间
+关系不应要求目标 Episode 同时承载当前 turn。
+
+两次重试仍失败时会进入 degraded plan，导致本轮自动 recall 被关闭。虽然 recent
+conversation 仍能保证基本对话，但这会降低记忆召回质量。
+
+#### P1：Context Planner 过度规划
+
+观察到：
+
+- 单个记忆问题被拆成 `question + banter` 两个 intent units；
+- “不光这个……我们一起玩”生成三条较宽泛 recall queries；
+- 多次把简单问候或亲昵动作继续绑定到巨大的“主动陪伴” Episode；
+- 为“回忆昨晚玩的游戏”新建“回忆……”Episode，而不是继续实际游戏 Episode；
+- Planner 单次耗时约 14.6～53.9 秒，输出最高约 6.6k tokens。
+
+Planner 的语义理解大体正确，但归档和查询表达过多，增加延迟并继续污染 Episode 边界。
+
+#### P1：搜索相关度不足
+
+模糊查询会返回：
+
+- 最近更新但语义无关的 Episode；
+- “门锁”“面试”“webhook”等无关 Memory；
+- 同一大型 Episode 在多次 query 中反复出现。
+
+现有 lexical overlap 对明确实体有效，对“一个月前有什么值得记住的事”这种模糊问题
+不够精确。
+
+#### P1：工具结果携带过长 summary
+
+`conversation_search` 虽然不返回 raw messages，但会返回长 extractive/legacy summary。
+真实 dump 中多轮工具结果使请求文件从约 203KB 增长到约 476KB。
+
+默认 Episode 目录约 3.4k～4.4k tokens，处于可接受范围；真正的放大来自重复工具结果。
+
+#### P1：归档 Episode 继续无限增长
+
+普通问候“你好呀”和亲昵动作“揉揉”仍被 Planner 绑定到
+`小桃主动陪伴老师（下班前后陪伴）`。该 Episode 在生产数据中已经有数百 turns。
+
+第一阶段已经阻止它污染当前上下文，但没有解决其持续增长和总结失焦。
+
+#### P2：Legacy summary 仍影响搜索
+
+默认上下文会标记 legacy 质量，不再展开原文；但显式 `conversation_search` 仍会返回
+legacy summary。部分 legacy summary 本身就是混合内容，可能：
+
+- 误导排序；
+- 向主模型提供不可靠事实；
+- 占用大量工具结果预算。
+
+### 17.4 当前质量判断
+
+| 目标 | 结论 |
+| --- | --- |
+| 普通对话不受旧原文污染 | 达标 |
+| 明确主题的近期/跨日回忆 | 达标，效果有提升 |
+| Goal/Reminder 与对话记忆协同 | 达标 |
+| 模糊长时间搜索的事实可靠性 | 达标，没有编造 |
+| 模糊长时间搜索的效率 | 不达标 |
+| Planner schema 稳定性 | 不达标，真实场景出现 degraded |
+| Episode 归档边界 | 不达标 |
+| 搜索结果精度 | 部分达标，明确实体好，模糊查询差 |
+| 默认上下文大小 | 可接受 |
+| 深度搜索后的上下文增长 | 不可接受 |
+
+总体判断：**第一阶段可以保留，不应回滚。** 它显著改善了安全性和明确主题的召回质量。
+下一步不应恢复旧原文自动注入，而应集中修复搜索停止、工具结果压缩、Planner 协议和
+Episode 边界。
+
+## 18. 下一步实施计划
+
+### 18.1 P0：让深度搜索可停止
+
+1. `conversation_search` 返回 archive coverage：
+   - 数据库最早消息时间；
+   - 数据库最晚消息时间；
+   - 实际搜索范围；
+   - 是否存在该时间段的任何 Episode。
+2. 搜索结果增加稳定的结果 ID 集合或 evidence fingerprint。
+3. 主模型提示词增加通用停止规则：
+   - 一次精确时间搜索；
+   - 一次扩大范围搜索；
+   - 如果没有新增 Episode/evidence，停止并说明未找到；
+   - 只有新证据指向具体 Episode 时才继续读取。
+4. Harness 只做资源保护：
+   - 限制单 Turn 的 memory/conversation 搜索调用总数；
+   - 连续搜索结果 ID 集合不变时返回 `no_new_evidence=true`；
+   - 不替模型判断语义。
+5. `conversation_search` 的默认 limit 降为足够覆盖相关结果的值，并使用 cursor 继续分页，
+   而不是每轮重新发起多个全新 query。
+
+验收标准：
+
+- 模糊长时间回忆最多 2～3 轮搜索；
+- 无结果时输入上下文不超过初始请求的 1.5 倍；
+- 不编造；
+- 能明确说明存档覆盖范围。
+
+### 18.2 P0：修正 Planner 协议
+
+已完成：
+
+1. schema description 明确 `new:` key 只能使用 ASCII slug。
+2. `episode_links` 允许指向：
+   - 本轮 bindings；
+   - Planner 候选目录中的已有 Episode。
+3. 不再要求为了建立 link 而把旧 Episode 设为 related binding。
+4. `parse_context_plan()` 继续校验候选 ID 存在，不接受任意 ID。
+5. 保留当前 `context_plan_invalid` 的 reason、raw plan 和 tool arguments 日志。
+
+验收标准：
+
+- 上述连续消息场景首轮 plan 通过；
+- 不因 link 目标未绑定当前 turn 而 degraded；
+- 不降低未知 Episode ID 的安全校验。
+
+### 18.3 P1：压缩搜索工具结果
+
+`conversation_search` 默认只返回：
+
+- ID；
+- title；
+- created/last activity；
+- summary quality；
+- 100～300 token 的 summary excerpt；
+- match message IDs/ordinals/timestamps；
+- topics/entities。
+
+不返回完整 extractive claims 或长 legacy summary。
+
+只有 `conversation_read` 才返回原文。需要查看完整 claims 时，读取指定 Episode。
+
+验收标准：
+
+- 单次 10 条搜索结果控制在 4k tokens 以内；
+- 多轮搜索不会使请求文件线性增长数百 KB；
+- 明确主题 recall@10 不下降。
+
+### 18.4 P1：减少 Planner 过度规划
+
+提示词调整：
+
+- 一个 owner question 不要为了记录社交语气再复制一个 intent unit；
+- recall query 以最少且互补为原则，通常 1～2 条；
+- recent conversation 已经给出答案时，不生成历史 query；
+- “回忆某件事”通常归档到被回忆的实际 Episode，或只建立 reference link，不新建
+  “回忆……”元话题 Episode；
+- 普通问候、亲昵动作和短回应优先建立短期新 Episode 或沿当前最近对话，不使用永久
+  “陪伴”分类 Episode。
+
+质量监测增加：
+
+- intents per owner event；
+- recall queries per intent；
+- Planner output tokens；
+- Planner latency；
+- existing/new Episode binding 比例；
+- degraded rate。
+
+### 18.5 P1：Episode 尺寸滚动
+
+先实现客观保护，不做自动语义拆分：
+
+- turn 数上限；
+- raw token 上限；
+- 超限后新建 successor Episode；
+- 用 `continues` 连接；
+- Owner 和 autonomous Episode 都适用。
+
+不使用“存活 30 天”单独强制切分。
+
+### 18.6 P2：Legacy Episode 后台治理
+
+在前述在线路径稳定后再做：
+
+1. closed legacy Episode 进入最终总结维护；
+2. 生成 verified claims；
+3. 生成短 semantic summary；
+4. legacy summary 退出默认搜索结果正文；
+5. 混合 Episode 拆分作为离线、可审计迁移，不放进普通 Owner Turn。
+
+### 18.7 质量门槛
+
+下一版发布前至少满足：
+
+- `episode_auto_injection_raw_messages = 0`
+- Planner degraded rate < 1%
+- Planner P95 < 20 秒
+- 每个 intent 平均 recall queries ≤ 2
+- 普通无 recall Turn 的 Episode 目录数量 = 0
+- 明确主题回忆无需工具或最多一次 search
+- 模糊长时间回忆最多 3 次 search
+- 单次 search 结果 ≤ 4k tokens
+- Owner Turn 输入 P95 < 60k tokens
+- 不存在单 Episode 无限增长
+
+## 19. 实施阶段
 
 ### 阶段一：先切断无关原文自动注入
 
@@ -1274,7 +1565,7 @@ Episode 限制。
 - 调整目录数量、summary 长度和搜索排序。
 - 不通过增加话题关键词条件修复个例。
 
-## 18. 最终行为
+## 20. 最终行为
 
 最终 Momoi 在普通对话中看到的是：
 

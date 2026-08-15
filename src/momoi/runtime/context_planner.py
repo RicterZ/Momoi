@@ -81,7 +81,14 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                 "items": {
                     "type": "object",
                     "properties": {
-                        "episode_ref": {"type": "string"},
+                        "episode_ref": {
+                            "type": "string",
+                            "description": (
+                                "Use an existing candidate Episode id, or create one "
+                                "with new:<key>. A new key must be a lowercase ASCII "
+                                "slug using only a-z, 0-9, underscore, or hyphen."
+                            ),
+                        },
                         "title": {"type": "string"},
                         "relation": {
                             "type": "string",
@@ -133,7 +140,13 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                     "type": "object",
                     "properties": {
                         "from_episode_ref": {"type": "string"},
-                        "to_episode_ref": {"type": "string"},
+                        "to_episode_ref": {
+                            "type": "string",
+                            "description": (
+                                "A bound episode_ref or an existing candidate Episode "
+                                "id. Existing link targets need not be bound to this Turn."
+                            ),
+                        },
                         "kind": {
                             "type": "string",
                             "enum": ["continues", "references", "supersedes"],
@@ -413,7 +426,10 @@ def parse_context_plan(
     if not any(item["relation"] == "primary" for item in bindings):
         raise ContextPlanError("missing_primary_episode")
 
-    ref_to_id = {str(item["_ref"]): str(item["episode_id"]) for item in bindings}
+    ref_to_id = {episode_id: episode_id for episode_id in candidate_ids}
+    ref_to_id.update(
+        {str(item["_ref"]): str(item["episode_id"]) for item in bindings}
+    )
     raw_links = value["episode_links"]
     if not isinstance(raw_links, list) or len(raw_links) > 20:
         raise ContextPlanError("invalid_episode_links")

@@ -150,6 +150,42 @@ class ContextPlannerTest(unittest.TestCase):
         with self.assertRaisesRegex(ContextPlanError, "unknown_event_id"):
             parse_context_plan(json.dumps(plan), ["event-1"], [], "turn-1", 1)
 
+    def test_links_may_target_unbound_candidates_but_not_unknown_episodes(self) -> None:
+        plan = response_plan()
+        plan["episode_links"] = [
+            {
+                "from_episode_ref": "new:mail",
+                "to_episode_ref": "older-game",
+                "kind": "references",
+            }
+        ]
+        parsed = parse_context_plan(
+            plan,
+            ["event-1"],
+            [{"id": "older-game"}],
+            "turn-1",
+            1,
+        )
+        self.assertEqual(
+            parsed["episode_links"][0]["to_episode_id"], "older-game"
+        )
+
+        plan["episode_links"][0]["to_episode_ref"] = "not-a-candidate"
+        with self.assertRaisesRegex(ContextPlanError, "unknown_link_episode"):
+            parse_context_plan(
+                plan,
+                ["event-1"],
+                [{"id": "older-game"}],
+                "turn-1",
+                1,
+            )
+
+    def test_new_episode_refs_require_ascii_slugs(self) -> None:
+        plan = response_plan()
+        plan["episode_bindings"][0]["episode_ref"] = "new:一起玩游戏"
+        with self.assertRaisesRegex(ContextPlanError, "invalid_new_episode_ref"):
+            parse_context_plan(plan, ["event-1"], [], "turn-1", 1)
+
     def test_parser_merges_duplicate_episode_bindings_safely(self) -> None:
         plan = response_plan()
         plan["episode_bindings"][1].update(
