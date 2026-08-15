@@ -265,25 +265,36 @@ function Overview({ refreshKey, token }) {
   return (
     <DataView path="/api/overview" refreshKey={refreshKey} token={token}>
       {(data) => {
-        const metrics = [
-          ["聊天主题", data.counts.conversations],
-          ["消息", data.counts.messages],
-          ["复盘", data.counts.reflections],
-          ["记忆", data.counts.memories],
-          ["进行中 Goals", data.counts.goals],
-          ["待提醒", data.counts.reminders],
-          ["表情包", data.counts.emotions],
+        const groups = [
+          {
+            label: "Life archive",
+            title: "生活档案",
+            tone: "pink",
+            items: [
+              ["聊天主题", data.counts.conversations, "#conversations"],
+              ["消息", data.counts.messages, "#conversations"],
+              ["记忆", data.counts.memories, "#memories"],
+              ["每日复盘", data.counts.reflections, "#reflections"],
+            ],
+          },
+          {
+            label: "Agenda",
+            title: "待办事项",
+            tone: "blue",
+            items: [
+              ["进行中 Goals", data.counts.goals, "#goals"],
+              ["待提醒", data.counts.reminders, "#reminders"],
+            ],
+          },
+          {
+            label: "Expression",
+            title: "表情包",
+            tone: "blue",
+            items: [["可用素材", data.counts.emotions, "#emotions"]],
+          },
         ];
         return (
           <>
-            <section className="metrics">
-              {metrics.map(([label, value]) => (
-                <article className="metric" key={label}>
-                  <span>{label}</span>
-                  <strong>{value}</strong>
-                </article>
-              ))}
-            </section>
             <section className="overview-grid">
               <article className="panel">
                 <span className="panel-label">Current activity</span>
@@ -308,6 +319,34 @@ function Overview({ refreshKey, token }) {
                   />
                 </div>
               </article>
+            </section>
+            <section className="overview-records">
+              <div className="overview-section-head">
+                <span className="panel-label">Momoi records</span>
+                <p>生活记录与待办概览</p>
+              </div>
+              <div className="overview-groups">
+                {groups.map((group) => (
+                  <article
+                    className={`overview-group ${group.tone}`}
+                    key={group.title}
+                  >
+                    <div className="overview-group-head">
+                      <span className="panel-label">{group.label}</span>
+                    </div>
+                    <h2>{group.title}</h2>
+                    <div className="overview-stats">
+                      {group.items.map(([label, value, href]) => (
+                        <a href={href} key={label}>
+                          <strong>{value}</strong>
+                          <span>{label}</span>
+                          <i aria-hidden="true">↗</i>
+                        </a>
+                      ))}
+                    </div>
+                  </article>
+                ))}
+              </div>
             </section>
           </>
         );
