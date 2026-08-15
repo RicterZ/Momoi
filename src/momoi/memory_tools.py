@@ -502,6 +502,8 @@ class MemoryTools:
         compact = []
         for episode in results:
             claims = episode.get("working_summary_claims")
+            # ponytail: time-filtered searches still use the Episode-wide summary;
+            # add window-scoped claims/activity only if real queries become misleading.
             summary = str(episode.get("narrative_summary") or "")
             if not summary:
                 summary = _episode_claim_excerpt(episode, query)
