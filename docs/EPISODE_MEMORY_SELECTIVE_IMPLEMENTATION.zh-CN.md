@@ -237,3 +237,5 @@ Runtime：
 - Planner v1 仅保留读取兼容；新请求固定使用 v2。
 - 原始 messages 表及投递状态不被 Consolidator 改写。
 - 完整测试：215 项通过。
+- 2026-08-15 生产观察通过：真实 Owner Turns 正确归档，空 Turn 不再进入
+  Consolidator，默认 Episode 目录没有原文，后台 narrative summary 正常生成。
