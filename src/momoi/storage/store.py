@@ -1670,7 +1670,12 @@ class Store(MemoryStore, DeliveryStore):
         if limit <= 0:
             return []
         rows = self._db.execute(
-            """SELECT * FROM conversation_episodes AS e
+            """SELECT e.*, COALESCE((
+                       SELECT MAX(t.updated_at) FROM episode_turns AS et
+                       JOIN turns AS t ON t.id=et.turn_id
+                       WHERE et.episode_id=e.id
+                   ), e.updated_at) AS last_activity_at
+               FROM conversation_episodes AS e
                WHERE status IN ('open', 'closing')
                  AND (? IS NULL OR COALESCE((
                      SELECT MAX(t.updated_at) FROM episode_turns AS et
@@ -1687,7 +1692,14 @@ class Store(MemoryStore, DeliveryStore):
                LIMIT ?""",
             (after, after, limit),
         ).fetchall()
-        return [self._episode_dict(row) for row in rows]
+        results = []
+        for row in rows:
+            episode = self._episode_dict(row)
+            episode["last_activity_timestamp"] = context_timestamp(
+                row["last_activity_at"]
+            )
+            results.append(episode)
+        return results
 
     def list_episode_directory(
         self, limit: int = 64, *, after: float | None = None
@@ -1695,7 +1707,12 @@ class Store(MemoryStore, DeliveryStore):
         if limit <= 0:
             return []
         rows = self._db.execute(
-            """SELECT e.* FROM conversation_episodes AS e
+            """SELECT e.*, COALESCE((
+                       SELECT MAX(t.updated_at) FROM episode_turns AS et
+                       JOIN turns AS t ON t.id=et.turn_id
+                       WHERE et.episode_id=e.id
+                   ), e.updated_at) AS last_activity_at
+               FROM conversation_episodes AS e
                WHERE ? IS NULL OR COALESCE((
                    SELECT MAX(t.updated_at) FROM episode_turns AS et
                    JOIN turns AS t ON t.id=et.turn_id
@@ -1709,7 +1726,14 @@ class Store(MemoryStore, DeliveryStore):
                         ), e.updated_at) DESC, salience DESC LIMIT ?""",
             (after, after, limit),
         ).fetchall()
-        return [self._episode_dict(row) for row in rows]
+        results = []
+        for row in rows:
+            episode = self._episode_dict(row)
+            episode["last_activity_timestamp"] = context_timestamp(
+                row["last_activity_at"]
+            )
+            results.append(episode)
+        return results
 
     def list_dashboard_conversations(
         self, limit: int = 64

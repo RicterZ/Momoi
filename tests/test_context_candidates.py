@@ -44,7 +44,7 @@ class ContextCandidatesTest(unittest.TestCase):
                     "status": "open",
                     "title": "Topic",
                     "created_timestamp": "created",
-                    "updated_timestamp": "updated",
+                    "last_activity_timestamp": "activity",
                     "working_summary": "x" * 500,
                     "summary": "",
                     "topics": ["topic"],
@@ -55,4 +55,6 @@ class ContextCandidatesTest(unittest.TestCase):
         )
         self.assertEqual(len(result[0]["summary"]), 400)
         self.assertEqual(result[0]["id"], "episode")
+        self.assertEqual(result[0]["last_activity_timestamp"], "activity")
+        self.assertNotIn("updated_timestamp", result[0])
         self.assertEqual(result[0]["open_loops"], ["loop"])

@@ -48,7 +48,7 @@ def full_candidate_context(
             "status": candidate["status"],
             "title": candidate["title"],
             "created_timestamp": candidate.get("created_timestamp"),
-            "updated_timestamp": candidate.get("updated_timestamp"),
+            "last_activity_timestamp": candidate.get("last_activity_timestamp"),
             "summary": str(
                 candidate.get("narrative_summary")
                 or candidate.get("working_summary")

@@ -143,8 +143,31 @@ class ContextPlannerTest(unittest.TestCase):
 
     def test_standalone_media_guidance_limits_semantic_inference(self) -> None:
         self.assertIn("low-information social cue", CONTEXT_PLANNER_SYSTEM_PROMPT)
-        self.assertIn("invent a semantic agenda", CONTEXT_PLANNER_SYSTEM_PROMPT)
-        self.assertIn("Episode action may be `none`", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn("Do not invent an agenda", CONTEXT_PLANNER_SYSTEM_PROMPT)
+
+    def test_planner_guidance_preserves_capability_while_discouraging_noise(
+        self,
+    ) -> None:
+        self.assertIn(
+            "Default to one intent unit per semantic goal",
+            CONTEXT_PLANNER_SYSTEM_PROMPT,
+        )
+        self.assertIn(
+            "Recent conversation is the first source of continuity",
+            CONTEXT_PLANNER_SYSTEM_PROMPT,
+        )
+        self.assertIn(
+            "use two only for genuinely independent evidence needs",
+            CONTEXT_PLANNER_SYSTEM_PROMPT,
+        )
+        self.assertIn(
+            "could change the reply, recall target, or Episode action",
+            CONTEXT_PLANNER_SYSTEM_PROMPT,
+        )
+        schema = CONTEXT_PLAN_TOOL_SPEC["input_schema"]  # type: ignore[assignment]
+        unit = schema["properties"]["intent_units"]["items"]  # type: ignore[index]
+        self.assertEqual(unit["properties"]["recall_queries"]["maxItems"], 2)
+        self.assertEqual(schema["properties"]["uncertainty"]["maxItems"], 4)  # type: ignore[index]
 
     def test_parser_requires_event_coverage_and_normalizes_episode_refs(self) -> None:
         plan = response_plan()

@@ -27,7 +27,7 @@
 | 3 | 时间浏览与精确原文读取 | 部分完成，待讨论剩余部分 |
 | 4 | 词法排序与检索评估集 | 待讨论 |
 | 5 | 搜索进展反馈与停止机制 | 待讨论 |
-| 6 | Context Planner 简化 | 待讨论 |
+| 6 | Context Planner 简化 | 已实施，待生产观察 |
 | 7 | 默认上下文目录策略 | 待讨论 |
 | 8 | 向量/混合检索实验 | 暂缓，前置评估未完成 |
 | 9 | 质量监测与发布门槛 | 持续补充 |
@@ -304,12 +304,17 @@ Runtime 只描述结果是否重复，不判断语义是否值得继续。
 
 TODO：
 
-- [ ] 一个语义目标只生成一个 intent unit。
-- [ ] recall query 通常最多 1～2 条且必须互补。
-- [ ] recent conversation 已足够时不再 recall。
-- [ ] 回忆问题归入真实话题或建立 link。
-- [ ] uncertainty 只保留影响处理的歧义。
+- [x] 一个语义目标默认只生成一个 intent unit；独立请求、纠正或不同处理目标仍可拆分。
+- [x] recall query 最多 2 条且必须互补，禁止近义改写堆叠。
+- [x] recent conversation 已足够时不再 recall。
+- [x] 回忆问题归入真实话题或建立 link。
+- [x] uncertainty 只保留会改变回复、召回对象或 Episode 归属的歧义。
+- [x] topics/entities 保持稀疏，不记录“主人”“Momoi”等通用参与者。
+- [x] Planner 候选使用 Episode 实际最后活动时间，不使用后台整理时间。
 - [ ] 监测 Planner latency、output tokens 和 degraded rate。
+
+实现保持多意图、指代、纠正、Episode link 和历史召回能力，不通过关键词启发式修正
+模型输出，也不减少 recent conversation 或 Episode 候选数量。
 
 ## 8. F 类：默认上下文注入
 

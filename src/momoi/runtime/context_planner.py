@@ -58,7 +58,7 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                         },
                         "recall_queries": {
                             "type": "array",
-                            "maxItems": 6,
+                            "maxItems": 2,
                             "items": {"type": "string"},
                         },
                     },
@@ -221,7 +221,7 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
             },
             "uncertainty": {
                 "type": "array",
-                "maxItems": 8,
+                "maxItems": 4,
                 "items": {"type": "string"},
             },
         },
@@ -361,7 +361,7 @@ def parse_context_plan(
                     raw["recall_queries"],
                     "unit_recall_queries",
                     minimum=0,
-                    maximum=6,
+                    maximum=2,
                     max_length=500,
                 ),
             }
@@ -640,7 +640,7 @@ def parse_context_plan(
         "uncertainty": _strings(
             value["uncertainty"],
             "uncertainty",
-            maximum=8,
+            maximum=4,
             max_length=500,
         ),
     }
