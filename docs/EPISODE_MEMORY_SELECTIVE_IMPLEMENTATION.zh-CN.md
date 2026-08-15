@@ -19,7 +19,6 @@
 
 - 向量检索；
 - 搜索停止机制；
-- 外部 MCP adapter；
 - 自动拆分现有大型混合 Episode；
 - 新的 Memory/Reflection 对象；
 - 按存活天数切分 Episode。
