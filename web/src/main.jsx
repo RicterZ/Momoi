@@ -37,7 +37,25 @@ const goalStatuses = [
 ];
 
 function readToken() {
-  return sessionStorage.getItem(TOKEN_KEY) || "";
+  const local = localStorage.getItem(TOKEN_KEY) || "";
+  if (local) return local;
+  // Migrate older session-scoped tokens once.
+  const session = sessionStorage.getItem(TOKEN_KEY) || "";
+  if (session) {
+    localStorage.setItem(TOKEN_KEY, session);
+    sessionStorage.removeItem(TOKEN_KEY);
+  }
+  return session;
+}
+
+function writeToken(token) {
+  localStorage.setItem(TOKEN_KEY, token);
+  sessionStorage.removeItem(TOKEN_KEY);
+}
+
+function clearToken() {
+  localStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(TOKEN_KEY);
 }
 
 async function api(path, { signal, method = "GET", body, token, formData } = {}) {
@@ -1206,7 +1224,7 @@ function TokenGate({ value, onChange, onUnlock }) {
           setError("");
           try {
             const accessToken = await login(next);
-            sessionStorage.setItem(TOKEN_KEY, accessToken);
+            writeToken(accessToken);
             onUnlock(accessToken);
             onChange("");
           } catch {
@@ -1264,11 +1282,24 @@ function App() {
   useEffect(() => {
     if (!token) return undefined;
     const controller = new AbortController();
-    api("/api/health", { token, signal: controller.signal }).catch((error) => {
-      if (error.name === "AbortError") return;
-      sessionStorage.removeItem(TOKEN_KEY);
-      setToken("");
-    });
+    fetch("/api/health", {
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then((response) => {
+        // Only drop a saved JWT when the server rejects it; network blips keep it.
+        if (response.status === 401) {
+          clearToken();
+          setToken("");
+        }
+      })
+      .catch((error) => {
+        if (error.name === "AbortError") return;
+      });
     return () => controller.abort();
   }, [token]);
 
