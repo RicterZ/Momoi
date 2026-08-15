@@ -25,7 +25,7 @@ from ..context_time import context_timestamp
 from ..emotions import EMOTION_PREFIX, emotion_slug
 from ..logging_context import log_context, log_event, new_trace_id, safe_preview
 from ..mcp_client import MCP_TOOL_POLICY
-from ..memory_tools import MEMORY_TOOL_SPECS
+from ..memory_tools import MEMORY_TOOL_POLICY, MEMORY_TOOL_SPECS
 from ..models import AgentReply, IncomingMessage, ProviderResponse, ToolCall, TurnDraft
 from ..provider import ProviderError
 from ..storage import estimate_tokens, truncate_tokens
@@ -111,6 +111,7 @@ AGENDA_POLICY_TOOLS = frozenset(
         "owner_notify",
     }
 )
+MEMORY_POLICY_TOOLS = frozenset({"memory_remember", "memory_forget"})
 
 
 def _live_prompt(path: Any, fallback: str, *, optional: bool = False) -> str:
@@ -2298,6 +2299,8 @@ class TurnRunner:
             policies.append(BUILTIN_TOOL_POLICY.strip())
         if names & AGENDA_POLICY_TOOLS:
             policies.append(AGENDA_TOOL_POLICY.strip())
+        if names & MEMORY_POLICY_TOOLS:
+            policies.append(MEMORY_TOOL_POLICY.strip())
         mcp_names = {str(tool.get("name") or "") for tool in self.mcp.tool_specs}
         if names & mcp_names:
             policies.append(MCP_TOOL_POLICY.strip())

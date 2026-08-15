@@ -81,9 +81,10 @@ class DaemonTest(unittest.TestCase):
             ],
         )
 
-        self.assertEqual(len(specialized), 1)
+        self.assertEqual(len(specialized), 2)
         self.assertEqual(specialized[0], base[0])
-        self.assertNotIn("Memory tools", specialized[0]["text"])
+        self.assertIn("Memory tools", specialized[1]["text"])
+        self.assertIn("judgment, not a reflex", specialized[1]["text"])
         self.assertEqual(len(owner), 2)
         self.assertNotIn("Memory tools", owner[1]["text"])
         self.assertIn("Built-in runtime tools", owner[1]["text"])

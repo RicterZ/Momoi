@@ -17,7 +17,7 @@ from momoi.config import (
     LLMConfig,
     NotificationConfig,
 )
-from momoi.memory_tools import MEMORY_TOOL_SPECS, MemoryTools
+from momoi.memory_tools import MEMORY_TOOL_POLICY, MEMORY_TOOL_SPECS, MemoryTools
 from momoi.models import (
     AgentReply,
     IncomingMessage,
@@ -1147,6 +1147,16 @@ class StorageMemoryTest(unittest.TestCase):
         )
         self.assertEqual(len({id(schedule) for schedule in schedules}), 3)
         self.assertIn("calls together in one response", AGENDA_TOOL_POLICY)
+        self.assertIn("judgment, not a reflex", MEMORY_TOOL_POLICY)
+        self.assertIn("this is `recent`, never", MEMORY_TOOL_POLICY)
+        remember = next(
+            spec for spec in MEMORY_TOOL_SPECS if spec["name"] == "memory_remember"
+        )
+        self.assertNotIn("durable", remember["description"])
+        self.assertIn(
+            "Do not turn 这个/this into a standing rule",
+            remember["input_schema"]["properties"]["content"]["description"],
+        )
 
     def test_legacy_outbox_migrates_to_typed_messages(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

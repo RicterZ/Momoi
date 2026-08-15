@@ -108,7 +108,9 @@ function formatDate(value, dateOnly = false) {
     year: "numeric",
     month: "short",
     day: "numeric",
-    ...(dateOnly ? {} : { hour: "2-digit", minute: "2-digit" }),
+    ...(dateOnly
+      ? {}
+      : { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
   }).format(date);
 }
 
@@ -629,6 +631,15 @@ function messageTime(value) {
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
+function compareMessages(left, right, newestFirst) {
+  const delta = messageTime(left.created_at) - messageTime(right.created_at);
+  if (delta !== 0) return newestFirst ? -delta : delta;
+  const idDelta = Number(left.id || 0) - Number(right.id || 0);
+  if (idDelta !== 0) return newestFirst ? -idDelta : idDelta;
+  const ordinalDelta = Number(left.ordinal || 0) - Number(right.ordinal || 0);
+  return newestFirst ? -ordinalDelta : ordinalDelta;
+}
+
 function SortArrow({ down }) {
   return (
     <svg
@@ -657,10 +668,9 @@ function SortArrow({ down }) {
 
 function ConversationDetail({ item }) {
   const [newestFirst, setNewestFirst] = useState(true);
-  const messages = [...(item.messages || [])].sort((left, right) => {
-    const delta = messageTime(left.created_at) - messageTime(right.created_at);
-    return newestFirst ? -delta : delta;
-  });
+  const messages = [...(item.messages || [])].sort((left, right) =>
+    compareMessages(left, right, newestFirst),
+  );
 
   return (
     <>

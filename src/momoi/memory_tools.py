@@ -124,6 +124,43 @@ def _episode_time_range(
         }
     raise ValueError("invalid_time_range")
 
+MEMORY_TOOL_POLICY = """### Memory tools
+
+Writing a memory is a judgment, not a reflex. Ask whether the owner just
+stated a fact that later Turns must treat as true. Ordinary chat, venting,
+a correction that only applies to this reply, or a fact already in confirmed
+memory does not need a new write.
+
+Choose `activation` by how long that fact should steer later Turns—not by
+how strongly they feel, and not by how tidy a standing rule would look:
+
+- `always`: a preference or constraint that should color every later Turn
+  until they revoke it. Use it only when they stated a standing rule
+  ("from now on", "don't ever", "以后都").
+- `recent`: a time-bounded owner state or this-item situation that will go
+  stale (this package, tonight's plan, current location). `ttl_hours` must
+  come from the content: hours, "a few days", "this week". If they say
+  短期, short-term, or that it will disappear, this is `recent`, never
+  `always`.
+- `recall`: worth keeping, but retrieve it only when a later topic matches.
+  Default here when it is neither a standing rule nor a ticking state.
+
+`kind` is the topic (preference, episodic, routine). It is not duration.
+A preference may be `recent`; an episode may be `recall`.
+
+Scope `content` to what they pointed at. 这个 / 这条 / this one names a
+specific object—write that object. Do not promote it into a general policy
+about all similar cases, and do not add a second `always` memory "just in
+case". One stated fact → one `memory_remember`. If they later correct
+polarity, duration, or scope, replace or forget the wrong row; do not leave
+the old `always` standing beside the fix.
+
+`evidence` is an exact quote. `content` must keep the same polarity and
+conditions as that quote (taken vs not taken; only when already picked up).
+Canonicalize; do not generalize.
+"""
+
+
 MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
     {
         "name": "memory_search",
@@ -277,9 +314,10 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
     {
         "name": "memory_remember",
         "description": (
-            "Stage one durable memory explicitly stated by the authenticated user "
-            "in the current input. The memory commits atomically only when this turn "
-            "finishes successfully."
+            "Stage one memory the authenticated user just stated in the current "
+            "input. Judge activation from how long the fact should steer later "
+            "Turns; do not treat every useful note as always-on. The write commits "
+            "only when this turn finishes successfully."
         ),
         "input_schema": {
             "type": "object",
@@ -288,8 +326,8 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
                     "type": "string",
                     "enum": sorted(MEMORY_KINDS),
                     "description": (
-                        "Memory category such as episodic, preference, or routine. "
-                        "This is not recency; use activation for always, recent, or recall."
+                        "Topic category such as episodic, preference, or routine. "
+                        "This is not duration. Use activation for always, recent, or recall."
                     ),
                 },
                 "key": {
@@ -298,15 +336,21 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
                 },
                 "content": {
                     "type": "string",
-                    "description": "Faithful concise canonicalization of the user's statement.",
+                    "description": (
+                        "Faithful concise restatement of what they pointed at. "
+                        "Keep the specific object, polarity, and conditions. "
+                        "Do not turn 这个/this into a standing rule about all similar cases."
+                    ),
                 },
                 "activation": {
                     "type": "string",
                     "enum": sorted(MEMORY_ACTIVATIONS),
                     "description": (
-                        "always only for preferences or constraints that affect every Turn; "
-                        "recent for a current time-bounded thread or owner state that can "
-                        "change autonomous task applicability; recall for everything else."
+                        "How long this should steer later Turns, not how important it feels. "
+                        "always: standing rule for every Turn, only if they said a lasting "
+                        "preference or constraint. recent: time-bounded state or this-item "
+                        "situation; required when they say short-term or it will expire. "
+                        "recall: keep for later search, not every Turn."
                     ),
                 },
                 "ttl_hours": {
@@ -314,9 +358,9 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
                     "minimum": 0,
                     "maximum": 168,
                     "description": (
-                        "Required. For recent, how long this state should stay active: "
-                        "1 to 168 hours, chosen from the content. For always or recall, "
-                        "send 0; the value is ignored."
+                        "Required. For recent, hours this state should stay active "
+                        "(1 to 168), read from the content: a few days is about 72-96. "
+                        "For always or recall, send 0; the value is ignored."
                     ),
                 },
                 "evidence": {
