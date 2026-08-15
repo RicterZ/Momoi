@@ -16,6 +16,7 @@ from momoi.config import (
     ConfigError,
     DashboardConfig,
     NotificationConfig,
+    UsageConfig,
     load_config,
 )
 from momoi.mcp_client import load_mcp_servers
@@ -168,6 +169,56 @@ class ConfigurationTest(unittest.TestCase):
             config = load_config(path)
             self.assertIsInstance(config.dashboard, DashboardConfig)
             self.assertEqual(config.dashboard.token, "dash-secret")
+            self.assertEqual(config.usage.provider, "")
+            self.assertEqual(config.usage.api_key, "")
+
+    def test_loads_usage_plugin_config(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "prompts").mkdir()
+            (root / "prompts" / "SOUL.md").write_text("Test soul")
+            path = root / "config.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "llm": {
+                            "base_url": "https://example.com",
+                            "api_key": "key",
+                            "model": "model",
+                        },
+                        "channel": {
+                            "plugin": "napcat",
+                            "settings": {
+                                "url": "ws://localhost",
+                                "owner_qq": "123",
+                            },
+                        },
+                        "usage": {
+                            "provider": "momoi.extensions.deepseek.DeepSeekPlugin",
+                            "api_key": "sk-usage",
+                            "base_url": "https://api.deepseek.com",
+                            "timeout_seconds": 8,
+                        },
+                        "context": {},
+                        "storage": {"database": "momoi.sqlite3"},
+                        "logging": {},
+                    }
+                )
+            )
+            config = load_config(path)
+            self.assertIsInstance(config.usage, UsageConfig)
+            self.assertEqual(
+                config.usage.provider,
+                "momoi.extensions.deepseek.DeepSeekPlugin",
+            )
+            self.assertEqual(config.usage.api_key, "sk-usage")
+            self.assertEqual(
+                config.usage.settings,
+                {
+                    "base_url": "https://api.deepseek.com",
+                    "timeout_seconds": 8,
+                },
+            )
 
     def test_dashboard_flag_requires_token(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -52,6 +52,13 @@ class DashboardConfig:
 
 
 @dataclass(frozen=True)
+class UsageConfig:
+    provider: str = ""
+    api_key: str = ""
+    settings: dict[str, object] | None = None
+
+
+@dataclass(frozen=True)
 class HeartbeatConfig:
     enabled: bool = False
     initial_delay_seconds: float = 900
@@ -100,6 +107,7 @@ class AppConfig:
     turn_max_total_tokens: int = 0
     webhooks: WebhookConfig = WebhookConfig()
     dashboard: DashboardConfig = DashboardConfig()
+    usage: UsageConfig = UsageConfig()
     heartbeat: HeartbeatConfig = HeartbeatConfig()
     autonomy: AutonomyConfig = AutonomyConfig()
     reflection: ReflectionConfig = ReflectionConfig()
@@ -245,6 +253,12 @@ def load_config(path: str | Path) -> AppConfig:
     turn_raw = _mapping(raw.get("turn", {}), "turn")
     webhook_raw = _mapping(raw.get("webhooks", {}), "webhooks")
     dashboard_raw = _mapping(raw.get("dashboard", {}), "dashboard")
+    usage_raw = _mapping(raw.get("usage", {}), "usage")
+    usage_settings = {
+        key: value
+        for key, value in usage_raw.items()
+        if key not in {"provider", "api_key"}
+    }
     heartbeat_raw = _mapping(raw.get("heartbeat", {}), "heartbeat")
     autonomy_raw = _mapping(raw.get("autonomy", {}), "autonomy")
     reflection_raw = _mapping(raw.get("reflection", {}), "reflection")
@@ -350,6 +364,11 @@ def load_config(path: str | Path) -> AppConfig:
             executors=executor_path,
         ),
         dashboard=DashboardConfig(token=dashboard_token),
+        usage=UsageConfig(
+            provider=str(usage_raw.get("provider") or ""),
+            api_key=str(usage_raw.get("api_key") or ""),
+            settings=usage_settings or None,
+        ),
         heartbeat=HeartbeatConfig(
             enabled=_boolean(
                 heartbeat_raw.get("enabled", False), "heartbeat.enabled"

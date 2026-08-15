@@ -398,3 +398,17 @@ CREATE TABLE IF NOT EXISTS webhook_steps (
     PRIMARY KEY (run_id, step_index),
     FOREIGN KEY (run_id) REFERENCES webhook_runs(id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS llm_usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at REAL NOT NULL,
+    turn_id TEXT NOT NULL DEFAULT '',
+    stage TEXT NOT NULL DEFAULT '',
+    model TEXT NOT NULL DEFAULT '',
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    uncached_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_reported INTEGER NOT NULL DEFAULT 0 CHECK (cache_reported IN (0, 1))
+);
+CREATE INDEX IF NOT EXISTS llm_usage_created ON llm_usage(created_at);

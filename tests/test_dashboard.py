@@ -165,6 +165,9 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(overview["counts"]["emotions"], 1)
         self.assertEqual(overview["counts"]["memories"], 3)
         self.assertEqual(overview["counts"]["reminders"], 1)
+        self.assertEqual(overview["usage"]["today"]["requests"], 0)
+        self.assertEqual(overview["balance"]["source"], "unavailable")
+        self.assertEqual(overview["balance"]["total_balance"], "0")
 
         conversations = await (
             await self.client.get("/api/conversations", headers=auth)
@@ -203,11 +206,36 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(asset.status, 200)
         self.assertEqual(await asset.read(), b"GIF89a")
 
+    async def test_usage_endpoint_counts_recorded_calls(self) -> None:
+        self.store.record_llm_call(
+            created_at=time.time(),
+            turn_id="turn-one",
+            stage="owner",
+            model="deepseek-v4-flash",
+            metrics={
+                "input": 120,
+                "uncached": 20,
+                "cache_read": 100,
+                "cache_write": 0,
+                "output": 15,
+                "cache_reported": True,
+            },
+        )
+        usage = await (
+            await self.client.get("/api/usage?days=7", headers=self._auth())
+        ).json()
+        self.assertEqual(usage["source"], "local")
+        self.assertEqual(usage["today"]["requests"], 1)
+        self.assertEqual(usage["today"]["cache_read_tokens"], 100)
+        self.assertEqual(len(usage["daily"]), 7)
+
     async def test_dashboard_rejects_invalid_limits(self) -> None:
         response = await self.client.get(
             "/api/conversations?limit=nope", headers=self._auth()
         )
         self.assertEqual(response.status, 400)
+        usage = await self.client.get("/api/usage?days=nope", headers=self._auth())
+        self.assertEqual(usage.status, 400)
 
     async def test_conversations_are_sorted_by_displayed_update_time(self) -> None:
         self.store.create_episode("较旧的开放聊天", episode_id="older-open")
@@ -242,6 +270,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         memory_id = memories["items"][0]["id"]
         cases = [
             ("GET", "/api/overview", None),
+            ("GET", "/api/usage", None),
             ("GET", "/api/health", None),
             ("GET", "/api/memories", None),
             ("GET", "/api/emotions", None),

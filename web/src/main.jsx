@@ -112,6 +112,24 @@ function formatDate(value, dateOnly = false) {
   }).format(date);
 }
 
+function formatTokens(value) {
+  const n = Number(value) || 0;
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return String(n);
+}
+
+function formatYuan(value) {
+  const n = Number(value) || 0;
+  if (n === 0) return "¥0.00";
+  if (Math.abs(n) < 0.01) return `¥${n.toFixed(4)}`;
+  return `¥${n.toFixed(2)}`;
+}
+
+function formatRate(value) {
+  return `${Number(value || 0).toFixed(1)}%`;
+}
+
 function memoryKindLabel(kind) {
   return (
     {
@@ -293,38 +311,44 @@ function Overview({ refreshKey, token }) {
             items: [["可用素材", data.counts.emotions, "#emotions"]],
           },
         ];
+        const usage = data.usage || {};
         return (
           <>
-            <section className="overview-grid">
-              <article className="panel">
-                <span className="panel-label">Current activity</span>
-                <h2 className="state-name">{data.activity.name}</h2>
-                <p className="state-detail">
-                  {data.activity.result || "Momoi 正在按自己的节奏生活。"}
-                </p>
-                <p className="secondary">始于 {formatDate(data.activity.since)}</p>
-              </article>
-              <article className="panel">
-                <span className="panel-label">Mood</span>
-                <h2 className="state-name">{data.mood.state}</h2>
-                <p className="state-detail">{data.mood.cause}</p>
-                <div className="intensity" aria-label="情绪强度">
-                  <span
-                    style={{
-                      width: `${Math.max(
-                        0,
-                        Math.min(100, Number(data.mood.intensity || 0) * 100),
-                      )}%`,
-                    }}
-                  />
-                </div>
-              </article>
-            </section>
-            <section className="overview-records">
-              <div className="overview-section-head">
-                <span className="panel-label">Momoi records</span>
-                <p>生活记录与待办概览</p>
+            <OverviewSection label="Usage" note="账户余额与近 30 日调用">
+              <UsageChart
+                rows={usage.daily}
+                totals={usage.totals}
+                balance={data.balance}
+              />
+            </OverviewSection>
+            <OverviewSection label="Now" note="当前活动与心情">
+              <div className="overview-grid">
+                <article className="panel">
+                  <span className="panel-label">Current activity</span>
+                  <h2 className="state-name">{data.activity.name}</h2>
+                  <p className="state-detail">
+                    {data.activity.result || "Momoi 正在按自己的节奏生活。"}
+                  </p>
+                  <p className="secondary">始于 {formatDate(data.activity.since)}</p>
+                </article>
+                <article className="panel">
+                  <span className="panel-label">Mood</span>
+                  <h2 className="state-name">{data.mood.state}</h2>
+                  <p className="state-detail">{data.mood.cause}</p>
+                  <div className="intensity" aria-label="情绪强度">
+                    <span
+                      style={{
+                        width: `${Math.max(
+                          0,
+                          Math.min(100, Number(data.mood.intensity || 0) * 100),
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                </article>
               </div>
+            </OverviewSection>
+            <OverviewSection label="Momoi records" note="生活记录与待办概览">
               <div className="overview-groups">
                 {groups.map((group) => (
                   <article
@@ -347,11 +371,173 @@ function Overview({ refreshKey, token }) {
                   </article>
                 ))}
               </div>
-            </section>
+            </OverviewSection>
           </>
         );
       }}
     </DataView>
+  );
+}
+
+function OverviewSection({ label, note, children }) {
+  return (
+    <section className="overview-section">
+      <div className="overview-section-head">
+        <span className="panel-label">{label}</span>
+        <p>{note}</p>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function shortDate(value) {
+  const [, month, day] = String(value).split("-");
+  if (!month || !day) return value;
+  return `${Number(month)}/${Number(day)}`;
+}
+
+function linePath(points) {
+  if (!points.length) return "";
+  return points
+    .map((point, index) => `${index === 0 ? "M" : "L"}${point.x.toFixed(1)} ${point.y.toFixed(1)}`)
+    .join(" ");
+}
+
+function UsageChart({ rows, totals, balance }) {
+  const [hover, setHover] = useState(null);
+  const daily = rows || [];
+  const width = 720;
+  const height = 220;
+  const pad = { top: 22, right: 18, bottom: 36, left: 18 };
+  const innerW = width - pad.left - pad.right;
+  const innerH = height - pad.top - pad.bottom;
+  const costs = daily.map((row) => Number(row.estimated_cost) || 0);
+  const requests = daily.map((row) => Number(row.requests) || 0);
+  const maxCost = Math.max(...costs, 0);
+  const maxReq = Math.max(...requests, 0);
+  const count = Math.max(daily.length, 1);
+  const xAt = (index) =>
+    pad.left + (count === 1 ? innerW / 2 : (index / (count - 1)) * innerW);
+  const yAt = (value, max) =>
+    pad.top + innerH - (max ? (value / max) * innerH : 0);
+  const costPoints = daily.map((row, index) => ({
+    x: xAt(index),
+    y: yAt(Number(row.estimated_cost) || 0, maxCost),
+  }));
+  const reqPoints = daily.map((row, index) => ({
+    x: xAt(index),
+    y: yAt(Number(row.requests) || 0, maxReq),
+  }));
+  const costArea = costPoints.length
+    ? `${linePath(costPoints)} L${costPoints[costPoints.length - 1].x.toFixed(1)} ${
+        pad.top + innerH
+      } L${costPoints[0].x.toFixed(1)} ${pad.top + innerH} Z`
+    : "";
+  const ticks = daily
+    .map((row, index) => ({ row, index }))
+    .filter(({ index }) => {
+      if (count <= 8) return true;
+      const step = Math.ceil((count - 1) / 6);
+      return index === 0 || index === count - 1 || index % step === 0;
+    });
+  const active = hover == null ? null : daily[hover];
+
+  return (
+    <section className="usage-chart-card">
+      <div className="usage-chart-head">
+        <div className="usage-legend">
+          <span className="usage-legend-item pink">估算金额</span>
+          <span className="usage-legend-item blue">请求次数</span>
+        </div>
+      </div>
+      <div className="usage-home-stats">
+        <div>
+          <span>账户余额</span>
+          <strong>{formatYuan(balance?.total_balance)}</strong>
+        </div>
+        <div>
+          <span>请求</span>
+          <strong>{totals?.requests ?? 0}</strong>
+        </div>
+        <div>
+          <span>缓存命中</span>
+          <strong>{formatRate(totals?.cache_hit_rate)}</strong>
+        </div>
+        <div>
+          <span>估算金额</span>
+          <strong>{formatYuan(totals?.estimated_cost)}</strong>
+        </div>
+      </div>
+      <div className="usage-chart-frame">
+        <svg
+          viewBox={`0 0 ${width} ${height}`}
+          role="img"
+          aria-label="近 30 日用量折线图"
+          onMouseLeave={() => setHover(null)}
+        >
+          {[0.25, 0.5, 0.75, 1].map((step) => (
+            <line
+              key={step}
+              className="usage-gridline"
+              x1={pad.left}
+              x2={width - pad.right}
+              y1={pad.top + innerH * (1 - step)}
+              y2={pad.top + innerH * (1 - step)}
+            />
+          ))}
+          <path className="usage-area" d={costArea} />
+          <path className="usage-line blue" d={linePath(reqPoints)} />
+          <path className="usage-line pink" d={linePath(costPoints)} />
+          {daily.map((row, index) => (
+            <g key={row.date}>
+              <circle
+                className="usage-dot blue"
+                cx={reqPoints[index].x}
+                cy={reqPoints[index].y}
+                r={hover === index ? 5 : 3.2}
+              />
+              <circle
+                className="usage-dot pink"
+                cx={costPoints[index].x}
+                cy={costPoints[index].y}
+                r={hover === index ? 5.5 : 3.6}
+              />
+              <rect
+                className="usage-hit"
+                x={xAt(index) - innerW / count / 2}
+                y={pad.top}
+                width={Math.max(innerW / count, 12)}
+                height={innerH}
+                onMouseEnter={() => setHover(index)}
+              />
+            </g>
+          ))}
+          {ticks.map(({ row, index }) => (
+            <text
+              key={row.date}
+              className="usage-tick"
+              x={xAt(index)}
+              y={height - 10}
+              textAnchor="middle"
+            >
+              {shortDate(row.date)}
+            </text>
+          ))}
+        </svg>
+        {active && (
+          <div className="usage-tooltip">
+            <span className="panel-label">{active.date}</span>
+            <strong>{formatYuan(active.estimated_cost)}</strong>
+            <p>
+              {active.requests} 次 · 输入 {formatTokens(active.input_tokens)} · 输出{" "}
+              {formatTokens(active.output_tokens)}
+            </p>
+            <p>缓存 {formatRate(active.cache_hit_rate)}</p>
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 

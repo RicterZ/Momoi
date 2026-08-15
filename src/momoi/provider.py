@@ -4,14 +4,14 @@ import logging
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from time import monotonic
-from typing import Any
+from time import monotonic, time
+from typing import Any, Callable
 from urllib.parse import urlsplit
 
 import aiohttp
 
 from .config import LLMConfig
-from .logging_context import log_event, safe_preview
+from .logging_context import current_log_context, log_event, safe_preview
 from .models import ProviderResponse, ToolCall
 from .text_replacement import cyber_keyword_pre_hook
 
@@ -146,7 +146,7 @@ def usage_metrics(data: dict[str, Any]) -> dict[str, float | int | bool] | None:
 
 def _log_usage(
     data: dict[str, Any], *, protocol: str, duration_ms: int
-) -> None:
+) -> dict[str, float | int | bool] | None:
     metrics = usage_metrics(data)
     if not metrics:
         log_event(
@@ -157,7 +157,7 @@ def _log_usage(
             available=False,
             duration_ms=duration_ms,
         )
-        return
+        return None
     log_event(
         logger,
         logging.DEBUG,
@@ -173,6 +173,34 @@ def _log_usage(
         cache_hit=round(float(metrics["cache_hit_rate"]), 1),
         cache_reported=metrics["cache_reported"],
     )
+    return metrics
+
+
+def _persist_usage(
+    sink: Callable[..., None] | None,
+    metrics: dict[str, float | int | bool] | None,
+    *,
+    model: str,
+) -> None:
+    if sink is None or metrics is None:
+        return
+    context = current_log_context()
+    try:
+        sink(
+            created_at=time(),
+            turn_id=str(context.get("turn_id") or ""),
+            stage=str(context.get("stage") or ""),
+            model=model,
+            metrics=metrics,
+        )
+    except Exception as error:
+        log_event(
+            logger,
+            logging.WARNING,
+            "llm_usage_record_failed",
+            error_type=type(error).__name__,
+            exc_info=True,
+        )
 
 
 def _dump_request(
@@ -311,6 +339,7 @@ class AnthropicProvider:
     def __init__(self, config: LLMConfig, dump_dir: Path | None = None) -> None:
         self.config = config
         self.dump_dir = dump_dir
+        self.usage_sink: Callable[..., None] | None = None
         self._session: aiohttp.ClientSession | None = None
 
     async def __aenter__(self) -> "AnthropicProvider":
@@ -398,8 +427,12 @@ class AnthropicProvider:
                     data = await response.json()
                     _dump_response(dump_path, data)
                     duration_ms = int((monotonic() - attempt_started) * 1000)
-                    _log_usage(
-                        data, protocol="anthropic", duration_ms=duration_ms
+                    _persist_usage(
+                        self.usage_sink,
+                        _log_usage(
+                            data, protocol="anthropic", duration_ms=duration_ms
+                        ),
+                        model=self.config.model,
                     )
                     content = [
                         block
@@ -567,6 +600,7 @@ class OpenAIProvider:
     def __init__(self, config: LLMConfig, dump_dir: Path | None = None) -> None:
         self.config = config
         self.dump_dir = dump_dir
+        self.usage_sink: Callable[..., None] | None = None
         self._session: aiohttp.ClientSession | None = None
 
     async def __aenter__(self) -> "OpenAIProvider":
@@ -678,7 +712,11 @@ class OpenAIProvider:
                         )
                     _dump_response(dump_path, data)
                     duration_ms = int((monotonic() - attempt_started) * 1000)
-                    _log_usage(data, protocol="openai", duration_ms=duration_ms)
+                    _persist_usage(
+                        self.usage_sink,
+                        _log_usage(data, protocol="openai", duration_ms=duration_ms),
+                        model=self.config.model,
+                    )
                     choices = data.get("choices")
                     if not isinstance(choices, list) or not choices:
                         _log_openai_unusable_response(response, data, "no_choices")

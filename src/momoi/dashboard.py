@@ -17,6 +17,7 @@ from .emotions import (
     remove_unreferenced_emotion_asset,
     valid_emotion_slug,
 )
+from .extensions.base import UsagePlugin
 from .logging_context import log_event
 from .storage import Store
 
@@ -24,6 +25,7 @@ from .storage import Store
 logger = logging.getLogger(__name__)
 ASSET_ROOT = files("momoi").joinpath("dashboard")
 DASHBOARD_TOKEN = web.AppKey("dashboard_token", str)
+USAGE_PLUGIN = web.AppKey("usage_plugin", UsagePlugin | None)
 JWT_TTL_SECONDS = 365 * 24 * 60 * 60
 JWT_SUBJECT = "momoi-dashboard"
 _PUBLIC_ASSET_PATH = re.compile(r"^/api/emotions/[^/]+/asset$")
@@ -184,9 +186,12 @@ async def _headers(
     return response
 
 
-def create_dashboard_app(store: Store, *, token: str = "") -> web.Application:
+def create_dashboard_app(
+    store: Store, *, token: str = "", usage_plugin: UsagePlugin | None = None
+) -> web.Application:
     app = web.Application(middlewares=[_auth, _headers])
     app[DASHBOARD_TOKEN] = token
+    app[USAGE_PLUGIN] = usage_plugin
     workspace = store._workspace
 
     async def index(_request: web.Request) -> web.Response:
@@ -231,8 +236,23 @@ def create_dashboard_app(store: Store, *, token: str = "") -> web.Application:
             }
         )
 
-    async def overview(_request: web.Request) -> web.Response:
-        return web.json_response(store.dashboard_overview())
+    async def overview(request: web.Request) -> web.Response:
+        data = store.dashboard_overview()
+        plugin = request.app[USAGE_PLUGIN]
+        if plugin is not None:
+            data["balance"] = await plugin.balance()
+        else:
+            data["balance"] = {
+                "source": "unavailable",
+                "currency": "CNY",
+                "is_available": False,
+                "total_balance": "0",
+            }
+        return web.json_response(data)
+
+    async def usage(request: web.Request) -> web.Response:
+        days = _bounded_int(request, "days", 30, 1, 366)
+        return web.json_response(store.dashboard_usage(days=days))
 
     async def conversations(request: web.Request) -> web.Response:
         limit = _bounded_int(request, "limit", 64, 1, 200)
@@ -478,6 +498,7 @@ def create_dashboard_app(store: Store, *, token: str = "") -> web.Application:
     app.router.add_post("/api/auth/token", issue_token)
     app.router.add_get("/api/health", health)
     app.router.add_get("/api/overview", overview)
+    app.router.add_get("/api/usage", usage)
     app.router.add_get("/api/conversations", conversations)
     app.router.add_get("/api/conversations/{episode_id}", conversation)
     app.router.add_get("/api/reflections", reflections)
@@ -505,15 +526,20 @@ class DashboardService:
         port: int = 8788,
         *,
         token: str = "",
+        usage_plugin: UsagePlugin | None = None,
     ) -> None:
         self.store = store
         self.host = host
         self.port = port
         self.token = token
+        self.usage_plugin = usage_plugin
 
     async def run(self, stop: asyncio.Event) -> None:
         runner = web.AppRunner(
-            create_dashboard_app(self.store, token=self.token), access_log=None
+            create_dashboard_app(
+                self.store, token=self.token, usage_plugin=self.usage_plugin
+            ),
+            access_log=None,
         )
         await runner.setup()
         site = web.TCPSite(runner, self.host, self.port)

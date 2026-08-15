@@ -19,6 +19,8 @@ from ..channel import (
 from ..config import HeartbeatConfig, NotificationConfig, ReflectionConfig
 from ..context_time import context_timestamp
 from ..emotions import emotion_slug, valid_emotion_slug
+from ..extensions.base import UsagePlugin
+from ..llm_usage import PRICING_NOTE, summarize_usage
 from ..logging_context import log_event, safe_preview
 from ..models import (
     AgentReply,
@@ -73,11 +75,15 @@ class Store(MemoryStore, DeliveryStore):
         self._db.row_factory = sqlite3.Row
         self._db.execute("PRAGMA journal_mode=WAL")
         self._db.execute("PRAGMA foreign_keys=ON")
+        self._usage_plugin: UsagePlugin | None = None
         self._migrate()
         self._compact_recall_index_if_pending()
         self._migrate_emotion_paths()
         self._recover_outbox()
         self._recover_webhooks()
+
+    def set_usage_plugin(self, plugin: UsagePlugin) -> None:
+        self._usage_plugin = plugin
 
     def close(self) -> None:
         self._db.close()
@@ -1231,6 +1237,63 @@ class Store(MemoryStore, DeliveryStore):
                     turn_id,
                 ),
             )
+
+    def record_llm_call(
+        self,
+        *,
+        created_at: float,
+        turn_id: str = "",
+        stage: str = "",
+        model: str = "",
+        metrics: dict[str, float | int | bool],
+    ) -> None:
+        with self._db:
+            self._db.execute(
+                """INSERT INTO llm_usage
+                   (created_at, turn_id, stage, model, input_tokens,
+                    uncached_tokens, cache_read_tokens, cache_write_tokens,
+                    output_tokens, cache_reported)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    created_at,
+                    turn_id,
+                    stage,
+                    model,
+                    max(0, int(metrics.get("input") or 0)),
+                    max(0, int(metrics.get("uncached") or 0)),
+                    max(0, int(metrics.get("cache_read") or 0)),
+                    max(0, int(metrics.get("cache_write") or 0)),
+                    max(0, int(metrics.get("output") or 0)),
+                    1 if metrics.get("cache_reported") else 0,
+                ),
+            )
+
+    def dashboard_usage(
+        self, *, days: int = 30, now: float | None = None
+    ) -> dict[str, object]:
+        current = time.time() if now is None else now
+        zone = datetime.now().astimezone().tzinfo or ZoneInfo("UTC")
+        start = datetime.fromtimestamp(current, zone).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        ) - timedelta(days=max(1, days) - 1)
+        rows = self._db.execute(
+            """SELECT created_at, turn_id, stage, model, input_tokens,
+                      uncached_tokens, cache_read_tokens, cache_write_tokens,
+                      output_tokens, cache_reported
+               FROM llm_usage
+               WHERE created_at >= ?
+               ORDER BY created_at""",
+            (start.timestamp(),),
+        ).fetchall()
+        plugin = self._usage_plugin
+        return summarize_usage(
+            [dict(row) for row in rows],
+            days=days,
+            now=current,
+            zone=zone,
+            estimate=None if plugin is None else plugin.estimate_cost,
+            note=PRICING_NOTE,
+        )
 
     @staticmethod
     def _context_plan_dict(row: sqlite3.Row) -> dict[str, object]:
@@ -4504,6 +4567,7 @@ class Store(MemoryStore, DeliveryStore):
             "latest_message_timestamp": (
                 context_timestamp(latest_message) if latest_message is not None else None
             ),
+            "usage": self.dashboard_usage(days=30),
         }
 
     def list_memories(self, limit: int = 200) -> list[dict[str, object]]:

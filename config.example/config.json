@@ -97,6 +97,10 @@
   "dashboard": {
     "token": "replace-with-a-long-random-secret"
   },
+  "usage": {
+    "provider": "momoi.extensions.deepseek.DeepSeekPlugin",
+    "api_key": "replace-me"
+  },
   "logging": {
     "level": "INFO"
   }

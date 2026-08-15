@@ -17,6 +17,7 @@ from ..channel import (
 )
 from ..config import AppConfig
 from ..dashboard import DashboardService
+from ..extensions import load_usage_plugin
 from ..logging_context import log_event, safe_preview
 from ..memory_tools import MemoryTools
 from ..mcp_client import MCPManager
@@ -60,11 +61,20 @@ class MomoiDaemon(TurnRunner):
         self.config = config
         self._artifact_root().mkdir(parents=True, exist_ok=True)
         self.store = Store(config.database, config.workspace)
+        usage_plugin = None
+        if config.usage.provider:
+            usage_plugin = load_usage_plugin(
+                config.usage.provider,
+                api_key=config.usage.api_key,
+                **(config.usage.settings or {}),
+            )
+            self.store.set_usage_plugin(usage_plugin)
         self.dashboard = (
             DashboardService(
                 self.store,
                 *dashboard,
                 token=config.dashboard.token,
+                usage_plugin=usage_plugin,
             )
             if dashboard is not None
             else None
@@ -89,6 +99,7 @@ class MomoiDaemon(TurnRunner):
             if config.llm.api_format == "openai"
             else AnthropicProvider(config.llm, dump_dir)
         )
+        self.provider.usage_sink = self.store.record_llm_call
         self.mcp = MCPManager(config.mcp_config)
         self.incoming: asyncio.Queue[IncomingMessage] = asyncio.Queue()
         self._deferred_incoming: deque[IncomingMessage] = deque()
