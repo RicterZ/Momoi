@@ -1253,6 +1253,7 @@ h2, h3, p { overflow-wrap: anywhere; }
   .token-card { padding: 22px; }
   .token-card-brand h2 { font-size: 22px; }
   .create-form { flex-direction: column; align-items: stretch; }
+  .create-form input,
   .create-form .file-picker,
   .create-form .quiet-button { width: 100%; flex: none; }
   h1 { font-size: 34px; }

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Momoi">
+  <rect x="4" y="4" width="26" height="26" rx="7" fill="#43b8f5"/>
+  <g transform="rotate(-2 15 15)">
+    <rect x="2" y="2" width="26" height="26" rx="7" fill="#ff658d" stroke="#20243a" stroke-width="2"/>
+    <path fill="#fff" d="M8 22.6V8.8h3.15L15 16.7 20.85 8.8H24v13.8h-2.95v-8.15L15.4 21.2h-.8L10.95 14.45V22.6z"/>
+  </g>
+</svg>

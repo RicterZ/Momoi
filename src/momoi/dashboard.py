@@ -216,6 +216,16 @@ def create_dashboard_app(
             headers={"Cache-Control": "public, max-age=3600"},
         )
 
+    async def favicon(_request: web.Request) -> web.Response:
+        resource = ASSET_ROOT.joinpath("favicon.svg")
+        if not resource.is_file():
+            raise web.HTTPNotFound()
+        return web.Response(
+            body=resource.read_bytes(),
+            content_type="image/svg+xml",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
+
     async def health(_request: web.Request) -> web.Response:
         return web.json_response({"ok": True})
 
@@ -495,6 +505,8 @@ def create_dashboard_app(
 
     app.router.add_get("/", index)
     app.router.add_get("/assets/{path:.+}", asset)
+    app.router.add_get("/favicon.svg", favicon)
+    app.router.add_get("/favicon.ico", favicon)
     app.router.add_post("/api/auth/token", issue_token)
     app.router.add_get("/api/health", health)
     app.router.add_get("/api/overview", overview)

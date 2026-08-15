@@ -156,6 +156,14 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(script.status, 200)
         self.assertIn("javascript", script.content_type)
 
+        icon = await self.client.get("/favicon.svg")
+        self.assertEqual(icon.status, 200)
+        self.assertEqual(icon.content_type, "image/svg+xml")
+        self.assertIn(b"ff658d", await icon.read())
+        shortcut = await self.client.get("/favicon.ico")
+        self.assertEqual(shortcut.status, 200)
+        self.assertEqual(shortcut.content_type, "image/svg+xml")
+
     async def test_dashboard_exposes_read_only_records(self) -> None:
         auth = self._auth()
         overview = await (await self.client.get("/api/overview", headers=auth)).json()
