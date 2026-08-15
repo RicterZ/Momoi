@@ -455,10 +455,10 @@ class MemoryTools:
         compact = []
         for episode in results:
             claims = episode.get("working_summary_claims")
-            summary = str(
-                episode.get("working_summary")
+            summary = (
+                str(episode.get("working_summary") or "")
                 if isinstance(claims, list) and claims
-                else episode.get("summary") or episode.get("working_summary") or ""
+                else ""
             )
             compact.append(
                 {
@@ -473,7 +473,7 @@ class MemoryTools:
                     "summary_quality": (
                         "extractive"
                         if isinstance(claims, list) and claims
-                        else ("legacy" if summary else "empty")
+                        else "empty"
                     ),
                     "topics": episode["topics"],
                     "entities": episode["entities"],

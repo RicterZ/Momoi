@@ -253,7 +253,6 @@ def _episode_search_text(episode: dict[str, object]) -> str:
         for name in (
             "title",
             "working_summary",
-            "summary",
             "topics",
             "entities",
             "open_loops",
@@ -317,10 +316,7 @@ def _episode_summary(episode: dict[str, object]) -> tuple[str, str]:
     claims = episode.get("working_summary_claims")
     if isinstance(claims, list) and claims:
         return str(episode.get("working_summary") or ""), "extractive"
-    summary = str(episode.get("summary") or episode.get("working_summary") or "")
-    # Unverified legacy summaries stay searchable but are not safe default
-    # context: many are imported multi-topic transcripts.
-    return "", ("legacy" if summary else "empty")
+    return "", "empty"
 
 
 def _episode_context(

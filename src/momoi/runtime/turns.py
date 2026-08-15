@@ -2568,7 +2568,7 @@ class TurnRunner:
                 "created_timestamp": episode.get("created_timestamp"),
                 "updated_timestamp": episode.get("updated_timestamp"),
                 "summary": truncate_tokens(
-                    str(episode["summary"] or episode["working_summary"] or ""),
+                    str(episode["working_summary"] or ""),
                     160,
                 ),
                 "topics": episode["topics"],

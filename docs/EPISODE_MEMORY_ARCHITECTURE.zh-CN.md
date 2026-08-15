@@ -1013,7 +1013,7 @@ Planner 应明确哪些 Episode 仍是 primary/related，Reflection 可以做后
 
 ## 13. 迁移现有 legacy Episode
 
-### 13.1 legacy 识别
+### 13.1 legacy 识别（已完成一次性迁移）
 
 现有数据可通过以下条件识别：
 
@@ -1023,15 +1023,23 @@ Planner 应明确哪些 Episode 仍是 primary/related，Reflection 可以做后
 - 包含 imported legacy/extractive 标记
 - `summarized_through_ordinal = 0`
 
-### 13.2 迁移顺序
+### 13.2 迁移结果与后续约束
 
-1. 先停止 legacy summary 和 raw tail 的自动注入。
-2. 让 closed legacy Episode 进入后台维护。
-3. 为 legacy Episode 选择 verified claims。
-4. 生成 grounded semantic summary。
-5. 对明显混合的 Episode 执行 turn 重分组。
-6. 重建 Episode 搜索索引。
-7. 保留原始 messages，不做破坏性删除。
+2026-08-15 已对单主人生产数据库完成一次性迁移：
+
+- 32 个 closed legacy Episode 全部转换为 verified extractive claims；
+- 迁移后共有 49 个 extractive Episode、203 个 empty Episode、0 个 legacy Episode；
+- 旧 `summary` 内容全部清空；
+- messages、turns、episode_turns、context_plans 的数量和内容哈希保持不变；
+- SQLite `integrity_check` 通过，`foreign_key_check` 为 0；
+- 生产库保留迁移前完整备份。
+
+代码后续不再支持 legacy conversation summary、continuity state 或无 claims summary fallback。
+数据库中的 `summary` 列暂时保留为空，避免为删除一个废弃列而重建表；运行时代码不再读写该列。
+Episode 只有两种可消费状态：
+
+- `extractive`：有经过原文校验的 `working_summary_claims`；
+- `empty`：尚无可用 claims。
 
 ### 13.3 安全要求
 
@@ -1357,7 +1365,7 @@ Planner 的语义理解大体正确，但归档和查询表达过多，增加延
 
 #### P1：工具结果携带过长 summary
 
-`conversation_search` 虽然不返回 raw messages，但会返回长 extractive/legacy summary。
+`conversation_search` 不返回 raw messages，但仍可能返回较长的 extractive claims。
 真实 dump 中多轮工具结果使请求文件从约 203KB 增长到约 476KB。
 
 默认 Episode 目录约 3.4k～4.4k tokens，处于可接受范围；真正的放大来自重复工具结果。
@@ -1369,10 +1377,10 @@ Planner 的语义理解大体正确，但归档和查询表达过多，增加延
 
 第一阶段已经阻止它污染当前上下文，但没有解决其持续增长和总结失焦。
 
-#### P2：Legacy summary 仍影响搜索
+#### P2：Legacy summary 仍影响搜索（已消除）
 
 默认上下文会标记 legacy 质量，不再展开原文；但显式 `conversation_search` 仍会返回
-legacy summary。部分 legacy summary 本身就是混合内容，可能：
+legacy summary。legacy summary 已于 2026-08-15 完成一次性迁移并从运行时代码移除。当前剩余风险来自混合 Episode 的 extractive claims，可能：
 
 - 误导排序；
 - 向主模型提供不可靠事实；

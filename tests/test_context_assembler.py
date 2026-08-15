@@ -130,7 +130,7 @@ class ContextAssemblerTest(unittest.TestCase):
 
             recalled = recall_episode_context(store, secret, 3, 1000, 1000)
 
-            self.assertIn("summary_quality: legacy", recalled)
+            self.assertIn("summary_quality: empty", recalled)
             self.assertNotIn("曾经谈过一个暗号", recalled)
             self.assertNotIn("matched_raw", recalled)
             self.assertNotIn(secret, recalled)
@@ -301,7 +301,7 @@ class ContextAssemblerTest(unittest.TestCase):
             recalled = recall_episode_context(
                 store, "蓝色保温杯 第三个纸箱", 3, 1000, 1000
             )
-            self.assertIn("summary_quality: legacy", recalled)
+            self.assertIn("summary_quality: empty", recalled)
             self.assertNotIn("聊过家中物品的位置", recalled)
             self.assertNotIn("蓝色保温杯藏在阁楼第三个纸箱里", recalled)
             self.assertNotIn("matched_raw", recalled)
@@ -519,7 +519,7 @@ class ContextAssemblerTest(unittest.TestCase):
             self.assertNotIn("reminder-social", rendered)
             autonomous = recall_episode_context(store, "等待 项目 邮件", 3, 2000, 2000)
             self.assertNotIn("较早的项目邮件仍在等待", autonomous)
-            self.assertIn("summary_quality: legacy", autonomous)
+            self.assertIn("summary_quality: empty", autonomous)
             self.assertNotIn("最近聊过微博上的猫", autonomous)
             bounded_tail = store.episode_messages("episode-mail", 5)
             self.assertLessEqual(
