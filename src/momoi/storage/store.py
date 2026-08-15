@@ -4413,15 +4413,31 @@ class Store(MemoryStore, DeliveryStore):
             for row in rows
         )
 
-    def list_reminders(self, limit: int = 20) -> list[dict[str, object]]:
+    def list_reminders(
+        self, limit: int = 20, *, include_closed: bool = False
+    ) -> list[dict[str, object]]:
         if limit <= 0:
             return []
+        where = "" if include_closed else "WHERE status='pending'"
         rows = self._db.execute(
-            """SELECT * FROM reminders
-               WHERE status='pending' ORDER BY fire_at LIMIT ?""",
+            f"""SELECT * FROM reminders {where}
+                ORDER BY status='pending' DESC,
+                         CASE WHEN status='pending' THEN fire_at END,
+                         updated_at DESC LIMIT ?""",
             (limit,),
         ).fetchall()
         return [self._reminder_dict(row) for row in rows]
+
+    def cancel_reminder(self, reminder_id: str) -> dict[str, object] | None:
+        now = time.time()
+        with self._db:
+            cursor = self._db.execute(
+                """UPDATE reminders
+                   SET status='cancelled', claimed_at=NULL, updated_at=?
+                   WHERE id=? AND status='pending'""",
+                (now, reminder_id),
+            )
+        return self.reminder(reminder_id) if cursor.rowcount else None
 
     def search_reminders(self, query: str, max_results: int) -> list[dict[str, object]]:
         if max_results <= 0:

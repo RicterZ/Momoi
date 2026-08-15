@@ -496,7 +496,7 @@ h2, h3, p { overflow-wrap: anywhere; }
   grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 12px;
 }
-.metric, .panel, .goal-card, .reflection-card {
+.metric, .panel, .goal-card, .reflection-card, .reminder-card {
   border: 2px solid var(--ink);
   border-radius: 12px;
   background: var(--surface);
@@ -857,6 +857,41 @@ h2, h3, p { overflow-wrap: anywhere; }
 }
 .goal-details p { margin: 5px 0 0; font-size: 12px; line-height: 1.6; }
 
+.reminder-list { display: grid; gap: 14px; }
+.reminder-card {
+  display: grid;
+  grid-template-columns: minmax(180px, .28fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 24px;
+  padding: 22px 24px;
+}
+.reminder-card:nth-child(even) { box-shadow: 4px 4px 0 var(--pink); }
+.reminder-time {
+  align-self: stretch;
+  padding-right: 24px;
+  border-right: 2px solid var(--ink);
+}
+.reminder-time strong,
+.reminder-time small { display: block; }
+.reminder-time strong { margin-top: 10px; font-size: 17px; line-height: 1.45; }
+.reminder-time small {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+.reminder-copy h2 {
+  margin: 12px 0 0;
+  white-space: pre-wrap;
+  font-size: 18px;
+  line-height: 1.55;
+}
+.reminder-copy p {
+  margin: 9px 0 0;
+  color: var(--soft);
+  font-size: 10px;
+}
+
 .emotion-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -953,6 +988,13 @@ h2, h3, p { overflow-wrap: anywhere; }
   .emotion-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .memory-list,
   .memory-section .card-list { grid-template-columns: 1fr; }
+  .reminder-card { grid-template-columns: 1fr auto; }
+  .reminder-time {
+    grid-column: 1 / -1;
+    padding: 0 0 16px;
+    border-right: 0;
+    border-bottom: 2px solid var(--ink);
+  }
 }
 
 @media (max-width: 460px) {
@@ -961,5 +1003,6 @@ h2, h3, p { overflow-wrap: anywhere; }
   .metric { min-height: 105px; padding: 16px; }
   .metric strong { margin-top: 17px; font-size: 27px; }
   .goal-grid, .emotion-grid { grid-template-columns: 1fr; }
+  .reminder-card { grid-template-columns: 1fr; }
   .message { grid-template-columns: 1fr; gap: 7px; }
 }

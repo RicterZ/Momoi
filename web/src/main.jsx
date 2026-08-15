@@ -12,6 +12,7 @@ const pages = {
   memories: ["记忆", "MOMOI // MEMORY"],
   emotions: ["表情包", "MOMOI // STICKERS"],
   goals: ["任务列表", "MOMOI // QUESTS"],
+  reminders: ["提醒", "MOMOI // REMINDERS"],
 };
 
 const navItems = [
@@ -21,6 +22,7 @@ const navItems = [
   ["memories", "04", "记忆"],
   ["emotions", "05", "表情包"],
   ["goals", "06", "任务列表"],
+  ["reminders", "07", "提醒"],
 ];
 
 const activationOrder = ["always", "recent", "recall"];
@@ -713,6 +715,20 @@ function scheduleText(schedule, nextReview) {
   return nextReview ? formatDate(nextReview) : "无计划时间";
 }
 
+function reminderStatus(status) {
+  return { pending: "等待中", fired: "已提醒", cancelled: "已取消" }[status] || status;
+}
+
+function reminderSchedule(item) {
+  if (item.schedule?.kind === "daily") {
+    return `每天 ${item.schedule.at} · ${item.schedule.timezone}`;
+  }
+  if (item.schedule?.kind === "interval") {
+    return `每 ${item.schedule.every_seconds} 秒`;
+  }
+  return "单次提醒";
+}
+
 function FilePicker({ id, file, onChange, required = false }) {
   return (
     <label
@@ -988,6 +1004,103 @@ function Goals({ refreshKey, token, onMutated }) {
   );
 }
 
+function Reminders({ refreshKey, token, onMutated }) {
+  const confirm = useConfirm();
+  const [includeClosed, setIncludeClosed] = useState(false);
+  const [busyId, setBusyId] = useState(null);
+  const [error, setError] = useState("");
+
+  async function remove(item) {
+    const ok = await confirm({
+      title: "取消这个提醒？",
+      message: "取消后不会再发送；记录仍可在「全部」中看到。",
+      confirmLabel: "取消提醒",
+      cancelLabel: "再想想",
+    });
+    if (!ok) return;
+    setBusyId(item.id);
+    setError("");
+    try {
+      await api(`/api/reminders/${encodeURIComponent(item.id)}`, {
+        method: "DELETE",
+        token,
+      });
+      onMutated();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <DataView
+      path={`/api/reminders?all=${includeClosed}`}
+      refreshKey={refreshKey}
+      token={token}
+    >
+      {({ items }) => (
+        <>
+          <section className="section-tools">
+            <p>{items.length} 个提醒</p>
+            <div className="dash-tabs" role="tablist" aria-label="提醒筛选">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={!includeClosed}
+                className={includeClosed ? "" : "active"}
+                onClick={() => setIncludeClosed(false)}
+              >
+                <span>待提醒</span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={includeClosed}
+                className={includeClosed ? "active" : ""}
+                onClick={() => setIncludeClosed(true)}
+              >
+                <span>全部</span>
+              </button>
+            </div>
+          </section>
+          {error && <p className="form-error">{error}</p>}
+          {items.length ? (
+            <section className="reminder-list">
+              {items.map((item) => (
+                <article className="reminder-card" key={item.id}>
+                  <div className="reminder-time">
+                    <span className="meta-label">Fire at</span>
+                    <strong>{formatDate(item.fire_at)}</strong>
+                    <small>{reminderSchedule(item)}</small>
+                  </div>
+                  <div className="reminder-copy">
+                    <span className="status">{reminderStatus(item.status)}</span>
+                    <h2>{item.text}</h2>
+                    <p>创建于 {formatDate(item.created_at)}</p>
+                  </div>
+                  {item.status === "pending" && (
+                    <button
+                      type="button"
+                      className="quiet-button pink"
+                      disabled={busyId === item.id}
+                      onClick={() => remove(item)}
+                    >
+                      取消提醒
+                    </button>
+                  )}
+                </article>
+              ))}
+            </section>
+          ) : (
+            <Empty text="当前没有待发送的提醒。" />
+          )}
+        </>
+      )}
+    </DataView>
+  );
+}
+
 function Emotions({ refreshKey, token, onMutated }) {
   const confirm = useConfirm();
   const [slug, setSlug] = useState("");
@@ -1207,6 +1320,7 @@ const viewComponents = {
   memories: Memories,
   emotions: Emotions,
   goals: Goals,
+  reminders: Reminders,
 };
 
 function TokenGate({ value, onChange, onUnlock }) {
