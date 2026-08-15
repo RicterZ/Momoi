@@ -549,12 +549,15 @@ h2, h3, p { overflow-wrap: anywhere; }
 }
 .overview-groups {
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(260px, .65fr);
+  grid-template-columns: minmax(0, 1.45fr) minmax(0, .72fr) minmax(168px, .52fr);
+  align-items: stretch;
   gap: 14px;
 }
 .overview-group {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
-  padding: 22px 24px;
+  padding: 16px 18px 16px;
   border: 2px solid var(--ink);
   border-radius: 12px;
   color: var(--ink);
@@ -562,7 +565,6 @@ h2, h3, p { overflow-wrap: anywhere; }
 }
 .overview-group.blue { box-shadow: 4px 4px 0 var(--blue); }
 .overview-group.pink { box-shadow: 4px 4px 0 var(--pink); }
-.overview-group:first-child { grid-row: span 2; }
 .overview-group-head {
   display: flex;
   align-items: center;
@@ -575,14 +577,16 @@ h2, h3, p { overflow-wrap: anywhere; }
   font-weight: 850;
 }
 .overview-group h2 {
-  margin: 18px 0 24px;
-  font-size: 20px;
+  margin: 6px 0 12px;
+  font-size: 18px;
   font-weight: 800;
   letter-spacing: -.02em;
 }
 .overview-stats {
   display: grid;
+  flex: 1;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: 1fr;
   gap: 10px;
 }
 .overview-stats > a {
@@ -624,7 +628,21 @@ h2, h3, p { overflow-wrap: anywhere; }
   font-style: normal;
   font-weight: 850;
 }
-.overview-group:last-child .overview-stats { grid-template-columns: 1fr; }
+.overview-group.agenda .overview-stats,
+.overview-group.stickers .overview-stats {
+  grid-template-columns: 1fr;
+}
+.overview-group.stickers .overview-stats > a {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: 100%;
+  padding: 16px;
+}
+.overview-group.stickers .overview-stats strong {
+  font-size: 44px;
+  line-height: .95;
+}
 
 .usage-note {
   margin: 0 2px 18px;
@@ -1196,8 +1214,8 @@ h2, h3, p { overflow-wrap: anywhere; }
 .emotion-copy .card-actions { margin-top: 14px; }
 
 @media (max-width: 1000px) {
-  .overview-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .overview-group:first-child { grid-row: auto; }
+  .overview-groups { grid-template-columns: 1fr 1fr; }
+  .overview-group.archive { grid-column: 1 / -1; }
   .emotion-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 

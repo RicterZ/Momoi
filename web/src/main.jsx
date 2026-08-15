@@ -285,6 +285,7 @@ function Overview({ refreshKey, token }) {
       {(data) => {
         const groups = [
           {
+            kind: "archive",
             label: "Life archive",
             title: "生活档案",
             tone: "pink",
@@ -296,6 +297,7 @@ function Overview({ refreshKey, token }) {
             ],
           },
           {
+            kind: "agenda",
             label: "Agenda",
             title: "待办事项",
             tone: "blue",
@@ -305,6 +307,7 @@ function Overview({ refreshKey, token }) {
             ],
           },
           {
+            kind: "stickers",
             label: "Expression",
             title: "表情包",
             tone: "blue",
@@ -352,7 +355,7 @@ function Overview({ refreshKey, token }) {
               <div className="overview-groups">
                 {groups.map((group) => (
                   <article
-                    className={`overview-group ${group.tone}`}
+                    className={`overview-group ${group.tone} ${group.kind}`}
                     key={group.title}
                   >
                     <div className="overview-group-head">
