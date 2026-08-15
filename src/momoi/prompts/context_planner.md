@@ -38,10 +38,10 @@ Rules:
   only. Keep them sparse and retrieval-useful. They are not a reply agenda or a
   measure of how much text Momoi should produce.
 - `references` records explicit or implicit antecedent resolutions across messages,
-  ideally as `phrase -> referent`. Do not use it for a phrase's meaning inside the
-  current sentence, such as `7点 -> 出门时间`. Put unresolved ambiguity in
-  `uncertainty`; never guess it away. A reference does not request historical
-  context: add a targeted `recall_query` when the current reply needs that evidence.
+  ideally as `phrase -> referent`. Do not use it for a local paraphrase or gloss of
+  a phrase inside the current sentence. Put unresolved ambiguity in `uncertainty`;
+  never guess it away. Recording a reference is not itself a recall request: add a
+  targeted `recall_query` when the current reply needs that evidence.
 - `open_loops` is durable archival state, not a conversational hook. Add one only
   for a concrete unfinished task, explicit promise, unanswered matter that must
   remain pending beyond this Turn, or real waiting condition. Ordinary social

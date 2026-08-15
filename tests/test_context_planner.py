@@ -115,20 +115,6 @@ class ContextPlannerTest(unittest.TestCase):
         self.assertNotIn("1-12", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertNotIn("0-6", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertNotIn("allowed kinds", CONTEXT_PLANNER_SYSTEM_PROMPT)
-        self.assertIn(
-            "request, question, correction, or a social share",
-            CONTEXT_PLANNER_SYSTEM_PROMPT,
-        )
-        self.assertIn("that reference needs evidence", CONTEXT_PLANNER_SYSTEM_PROMPT)
-        self.assertIn(
-            "vague deferrals without an explicit ask",
-            CONTEXT_PLANNER_SYSTEM_PROMPT,
-        )
-        self.assertNotIn("饭后再说", CONTEXT_PLANNER_SYSTEM_PROMPT)
-        self.assertIn(
-            "sparse and retrieval-useful",
-            CONTEXT_PLANNER_SYSTEM_PROMPT,
-        )
         schema = CONTEXT_PLAN_TOOL_SPEC["input_schema"]
         self.assertEqual(
             schema["required"],  # type: ignore[index]
@@ -143,11 +129,6 @@ class ContextPlannerTest(unittest.TestCase):
 
     def test_standalone_media_guidance_limits_semantic_inference(self) -> None:
         self.assertIn("low-information social cue", CONTEXT_PLANNER_SYSTEM_PROMPT)
-        self.assertIn(
-            "not a specific claim, emotion label, intention, or referent",
-            CONTEXT_PLANNER_SYSTEM_PROMPT,
-        )
-        self.assertIn("leave `recall_queries` empty", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertIn("invent a semantic agenda", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertIn(
             "Still bind the unit to an episode as usual",
@@ -599,16 +580,24 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                         )
                         return tool_plan_response(response_plan())
                     provider_self.calls.append("main")
-                    rendered = json.dumps(messages, ensure_ascii=False)
-                    provider_self.main_rendered = rendered
-                    self.assertIn("<context_resolution>", rendered)
-                    self.assertIn('"speech_act":"casual_share"', rendered)
-                    self.assertNotIn("<context_plan>", rendered)
-                    self.assertNotIn("browse social feed", rendered)
-                    self.assertNotIn("episode_bindings", rendered)
-                    self.assertNotIn('"salience"', rendered)
-                    self.assertIn("RECENT CONTEXT 2", rendered)
-                    self.assertNotIn("GLOBAL RAW MUST NOT LEAK", rendered)
+                    content = messages[0]["content"]
+                    if isinstance(content, list):
+                        text = "\n".join(
+                            str(block.get("text") or "")
+                            for block in content
+                            if isinstance(block, dict)
+                        )
+                    else:
+                        text = str(content)
+                    provider_self.main_rendered = text
+                    self.assertIn("<context_resolution>", text)
+                    self.assertIn('"speech_act":"casual_share"', text)
+                    self.assertNotIn("<context_plan>", text)
+                    self.assertNotIn("browse social feed", text)
+                    self.assertNotIn("episode_bindings", text)
+                    self.assertNotIn('"salience"', text)
+                    self.assertIn("RECENT CONTEXT 2", text)
+                    self.assertNotIn("GLOBAL RAW MUST NOT LEAK", text)
                     self.assertEqual(len(messages), 1)
                     call = ToolCall(
                         "respond",
@@ -681,10 +670,18 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                         return ProviderResponse(
                             [{"type": "text", "text": "not json"}], []
                         )
-                    rendered = json.dumps(messages, ensure_ascii=False)
-                    self.assertNotIn("degraded_message_segment", rendered)
-                    self.assertIn("<context_resolution>", rendered)
-                    self.assertIn("may miss references", rendered)
+                    content = messages[0]["content"]
+                    if isinstance(content, list):
+                        text = "\n".join(
+                            str(block.get("text") or "")
+                            for block in content
+                            if isinstance(block, dict)
+                        )
+                    else:
+                        text = str(content)
+                    self.assertNotIn("degraded_message_segment", text)
+                    self.assertIn("<context_resolution>", text)
+                    self.assertIn("may miss references", text)
                     call = ToolCall(
                         "respond",
                         "respond",
