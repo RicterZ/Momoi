@@ -128,6 +128,18 @@ def _live_prompt(path: Any, fallback: str, *, optional: bool = False) -> str:
 
 
 def _sections(*items: tuple[str, str]) -> str:
+    """Render non-empty XML context sections in call order.
+
+    Preferred pack shape across Turns:
+    1. authority / task (`current_*`, `pending_*`, heartbeat, due goal, …)
+    2. orchestration (`context_resolution`, `runtime_directives`)
+    3. runtime metadata (`runtime_state`, `conversation_state`)
+    4. response capabilities (`emotion_catalog`) — keep near runtime, before bulk
+       recall, so output affordances are visible before long evidence
+    5. active constraints / agenda (reply expectation, reconciliations, goals, …)
+    6. memory evidence (preferences, memories, conflicts, inventories)
+    7. dialogue / episodic evidence (`recalled_episodes`, `recent_conversation`, …)
+    """
     return "\n\n".join(
         f"<{name}>\n{escape(value.strip())}\n</{name}>"
         for name, value in items
@@ -425,6 +437,7 @@ class TurnRunner:
                         "context_resolution",
                         _conversation_guidance(context_plan),
                     ),
+                    ("emotion_catalog", self.store.emotion_context()),
                     ("recent_conversation", recalled["recent_conversation"]),
                     ("recalled_episodes", recalled["episodes"]),
                     ("owner_preferences", recalled["owner_preferences"]),
@@ -814,10 +827,7 @@ class TurnRunner:
                 ),
             ),
             ("runtime_state", f"{runtime_state}\nCurrent self state: {self_state}"),
-            (
-                "recent_conversation",
-                recent_conversation,
-            ),
+            ("emotion_catalog", emotions),
             (
                 "conversation_state",
                 json.dumps(
@@ -829,12 +839,15 @@ class TurnRunner:
                     separators=(",", ":"),
                 ),
             ),
+            (
+                "recent_conversation",
+                recent_conversation,
+            ),
             ("recalled_episodes", episodes),
             ("owner_preferences", owner_preferences),
             ("recent_memories", recent_memories),
             ("confirmed_owner_memory", memories),
             ("reflection_memory", learned),
-            ("emotion_catalog", emotions),
         )
         system = [
             *self._system(),
@@ -1041,6 +1054,7 @@ class TurnRunner:
             ),
             ("runtime_directives", "\n\n".join(directives)),
             ("runtime_state", runtime_state),
+            ("emotion_catalog", emotions),
             ("recent_conversation", recalled["recent_conversation"]),
             ("recalled_episodes", recalled["episodes"]),
             ("owner_preferences", recalled["owner_preferences"]),
@@ -1055,7 +1069,6 @@ class TurnRunner:
                 self.store.cooled_reply_expectation_context(),
             ),
             ("open_reconciliations", reconciliations),
-            ("emotion_catalog", emotions),
         )
         system = self._system()
 
@@ -2428,7 +2441,6 @@ class TurnRunner:
                     f"Current self state: {self.store.self_state_context()}"
                 ),
             ),
-            ("recent_conversation", recent),
             (
                 "conversation_state",
                 json.dumps(
@@ -2442,6 +2454,7 @@ class TurnRunner:
                 ),
             ),
             ("emotion_catalog", self.store.emotion_context()),
+            ("recent_conversation", recent),
         )
         system = [
             *self._system(),
@@ -2589,24 +2602,6 @@ class TurnRunner:
                 ),
             ),
             (
-                "recent_topic_reference",
-                json.dumps(recent_topics, ensure_ascii=False),
-            ),
-            (
-                "recent_conversation",
-                recent_conversation,
-            ),
-            (
-                "cooled_reply_expectation",
-                self.store.cooled_reply_expectation_context(),
-            ),
-            ("recalled_episodes", episodes),
-            ("owner_preferences", owner_preferences),
-            ("recent_memories", recent_memories),
-            ("confirmed_owner_memory", memories),
-            ("reflection_memory", learned),
-            ("active_goals", goals),
-            (
                 "conversation_state",
                 json.dumps(
                     {
@@ -2619,6 +2614,24 @@ class TurnRunner:
                 ),
             ),
             ("emotion_catalog", emotions),
+            (
+                "cooled_reply_expectation",
+                self.store.cooled_reply_expectation_context(),
+            ),
+            ("active_goals", goals),
+            (
+                "recent_topic_reference",
+                json.dumps(recent_topics, ensure_ascii=False),
+            ),
+            (
+                "recent_conversation",
+                recent_conversation,
+            ),
+            ("recalled_episodes", episodes),
+            ("owner_preferences", owner_preferences),
+            ("recent_memories", recent_memories),
+            ("confirmed_owner_memory", memories),
+            ("reflection_memory", learned),
         )
         system = [
             *self._system(),
@@ -3015,7 +3028,6 @@ class TurnRunner:
         current_input = _sections(
             ("due_goal", goal_event),
             ("runtime_state", self_state),
-            ("recent_conversation", recent_conversation),
             (
                 "conversation_state",
                 json.dumps(
@@ -3027,6 +3039,8 @@ class TurnRunner:
                     separators=(",", ":"),
                 ),
             ),
+            ("emotion_catalog", self.store.emotion_context()),
+            ("recent_conversation", recent_conversation),
             ("recalled_episodes", episodes),
             ("owner_preferences", owner_preferences),
             ("recent_memories", recent_memories),
