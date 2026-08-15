@@ -30,6 +30,14 @@ JWT_TTL_SECONDS = 365 * 24 * 60 * 60
 JWT_SUBJECT = "momoi-dashboard"
 _PUBLIC_ASSET_PATH = re.compile(r"^/api/emotions/[^/]+/asset$")
 _AUTH_TOKEN_PATH = "/api/auth/token"
+_ROOT_STATIC = {
+    "favicon.svg": ("favicon.svg", "image/svg+xml"),
+    "favicon.ico": ("favicon.svg", "image/svg+xml"),
+    "manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
+    "apple-touch-icon.png": ("apple-touch-icon.png", "image/png"),
+    "icon-192.png": ("icon-192.png", "image/png"),
+    "icon-512.png": ("icon-512.png", "image/png"),
+}
 
 
 def _bounded_int(
@@ -216,13 +224,17 @@ def create_dashboard_app(
             headers={"Cache-Control": "public, max-age=3600"},
         )
 
-    async def favicon(_request: web.Request) -> web.Response:
-        resource = ASSET_ROOT.joinpath("favicon.svg")
+    async def root_static(request: web.Request) -> web.Response:
+        spec = _ROOT_STATIC.get(request.match_info["name"])
+        if spec is None:
+            raise web.HTTPNotFound()
+        filename, content_type = spec
+        resource = ASSET_ROOT.joinpath(filename)
         if not resource.is_file():
             raise web.HTTPNotFound()
         return web.Response(
             body=resource.read_bytes(),
-            content_type="image/svg+xml",
+            content_type=content_type,
             headers={"Cache-Control": "public, max-age=86400"},
         )
 
@@ -505,8 +517,10 @@ def create_dashboard_app(
 
     app.router.add_get("/", index)
     app.router.add_get("/assets/{path:.+}", asset)
-    app.router.add_get("/favicon.svg", favicon)
-    app.router.add_get("/favicon.ico", favicon)
+    app.router.add_get(
+        "/{name:" + "|".join(re.escape(name) for name in _ROOT_STATIC) + "}",
+        root_static,
+    )
     app.router.add_post("/api/auth/token", issue_token)
     app.router.add_get("/api/health", health)
     app.router.add_get("/api/overview", overview)

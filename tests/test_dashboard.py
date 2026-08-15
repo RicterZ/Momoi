@@ -163,6 +163,15 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         shortcut = await self.client.get("/favicon.ico")
         self.assertEqual(shortcut.status, 200)
         self.assertEqual(shortcut.content_type, "image/svg+xml")
+        manifest = await self.client.get("/manifest.webmanifest")
+        self.assertEqual(manifest.status, 200)
+        self.assertEqual(manifest.content_type, "application/manifest+json")
+        self.assertEqual((await manifest.json())["display"], "standalone")
+        touch = await self.client.get("/apple-touch-icon.png")
+        self.assertEqual(touch.status, 200)
+        self.assertEqual(touch.content_type, "image/png")
+        unknown = await self.client.get("/not-a-static-file")
+        self.assertEqual(unknown.status, 404)
 
     async def test_dashboard_exposes_read_only_records(self) -> None:
         auth = self._auth()

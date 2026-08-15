@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" role="img" aria-label="Momoi">
+  <rect width="180" height="180" fill="#ff658d"/>
+  <path
+    fill="#fff"
+    d="M44 136V44h22.2L90 94.4 113.8 44H136v92h-20.6V78.8L92.8 126h-5.6L64.6 78.8V136z"
+  />
+</svg>
