@@ -43,6 +43,7 @@ BASELINE_MOOD_STATE = "calm"
 BASELINE_MOOD_INTENSITY = 0.35
 BASELINE_MOOD_CAUSE = "resting baseline"
 DEFAULT_ACTIVITY = "spending time freely"
+EPISODE_CONSOLIDATION_LOOKBACK_SECONDS = 30 * 24 * 60 * 60
 REFLECTION_MEMORY_KINDS = {
     "owner_profile",
     "owner_preference",
@@ -422,6 +423,15 @@ class Store(MemoryStore, DeliveryStore):
                    WHERE status IN ('open', 'closing')
                      AND working_summary<>''"""
             )
+        for name, definition in (
+            ("narrative_summary", "TEXT NOT NULL DEFAULT ''"),
+            ("emotional_context_json", "TEXT NOT NULL DEFAULT '{}'"),
+            ("outcomes_json", "TEXT NOT NULL DEFAULT '[]'"),
+        ):
+            if name not in episode_columns:
+                self._db.execute(
+                    f"ALTER TABLE conversation_episodes ADD COLUMN {name} {definition}"
+                )
         now = time.time()
         self._db.execute(
             """INSERT OR IGNORE INTO self_state
@@ -1242,6 +1252,18 @@ class Store(MemoryStore, DeliveryStore):
         except (json.JSONDecodeError, TypeError):
             claims = []
         episode["working_summary_claims"] = claims if isinstance(claims, list) else []
+        try:
+            emotional_context = json.loads(str(episode.pop("emotional_context_json")))
+        except (json.JSONDecodeError, TypeError):
+            emotional_context = {}
+        try:
+            outcomes = json.loads(str(episode.pop("outcomes_json")))
+        except (json.JSONDecodeError, TypeError):
+            outcomes = []
+        episode["emotional_context"] = (
+            emotional_context if isinstance(emotional_context, dict) else {}
+        )
+        episode["outcomes"] = outcomes if isinstance(outcomes, list) else []
         episode.pop("summary", None)
         for name in ("topics", "entities", "open_loops"):
             episode[name] = json.loads(str(episode.pop(f"{name}_json")))
@@ -1409,6 +1431,9 @@ class Store(MemoryStore, DeliveryStore):
             episode_id,
             episode["title"],
             episode["working_summary"],
+            episode["narrative_summary"],
+            episode["emotional_context"],
+            episode["outcomes"],
             episode["topics"],
             episode["entities"],
             episode["open_loops"],
@@ -1443,12 +1468,29 @@ class Store(MemoryStore, DeliveryStore):
                VALUES (?, ?, 0.4, ?, ?)""",
             (episode_id, title[:200], now, now),
         )
+        while True:
+            successor = self._db.execute(
+                """SELECT l.from_episode_id FROM episode_links AS l
+                   JOIN conversation_episodes AS e ON e.id=l.from_episode_id
+                   WHERE l.to_episode_id=? AND l.kind='continues'
+                   ORDER BY e.created_at DESC LIMIT 1""",
+                (episode_id,),
+            ).fetchone()
+            if successor is None:
+                break
+            episode_id = str(successor["from_episode_id"])
         linked = self._db.execute(
             """SELECT 1 FROM episode_turns
                WHERE episode_id=? AND turn_id=?""",
             (episode_id, turn_id),
         ).fetchone()
         if linked is None:
+            episode_id = self._roll_episode(
+                episode_id,
+                turn_id,
+                now,
+                json.dumps(recall_values, ensure_ascii=False),
+            )
             ordinal = self._db.execute(
                 """SELECT COALESCE(MAX(ordinal), 0) + 1 FROM episode_turns
                    WHERE episode_id=?""",
@@ -1483,6 +1525,9 @@ class Store(MemoryStore, DeliveryStore):
                 str(episode["id"]),
                 episode["title"],
                 episode["working_summary"],
+                episode["narrative_summary"],
+                episode["emotional_context"],
+                episode["outcomes"],
                 episode["topics"],
                 episode["entities"],
                 episode["open_loops"],
@@ -2138,6 +2183,277 @@ class Store(MemoryStore, DeliveryStore):
             used += size
         return [item for group in reversed(selected) for item in group]
 
+    def claim_episode_consolidation_candidate(
+        self, limit: int = 6
+    ) -> dict[str, object] | None:
+        rows = self._db.execute(
+            """SELECT t.id, t.updated_at FROM turns AS t
+               WHERE t.kind='owner' AND t.state='completed'
+                 AND NOT EXISTS (
+                     SELECT 1 FROM episode_turns AS et WHERE et.turn_id=t.id
+                 )
+                 AND NOT EXISTS (
+                     SELECT 1 FROM episode_consolidation_decisions AS d
+                     WHERE d.turn_id=t.id
+                 )
+                 AND NOT EXISTS (
+                     SELECT 1 FROM messages AS m
+                     WHERE m.turn_id=t.id AND m.delivery_state='queued'
+                 )
+               ORDER BY t.updated_at LIMIT ?""",
+            (max(1, limit),),
+        ).fetchall()
+        if not rows:
+            return None
+        turn_ids = [str(row["id"]) for row in rows]
+        placeholders = ",".join("?" for _ in turn_ids)
+        messages = self._db.execute(
+            f"""SELECT id, turn_id, role, content, created_at, delivery_state
+                FROM messages
+                WHERE turn_id IN ({placeholders})
+                  AND (role='user' OR delivery_state IN
+                       ('delivered', 'uncertain', 'internal'))
+                ORDER BY id""",
+            tuple(turn_ids),
+        ).fetchall()
+        by_turn: dict[str, list[dict[str, object]]] = {
+            turn_id: [] for turn_id in turn_ids
+        }
+        for row in messages:
+            item = dict(row)
+            item["timestamp"] = context_timestamp(item["created_at"])
+            by_turn[str(row["turn_id"])].append(item)
+        return {
+            "turns": [
+                {
+                    "turn_id": turn_id,
+                    "timestamp": context_timestamp(row["updated_at"]),
+                    "messages": by_turn[turn_id],
+                }
+                for turn_id, row in zip(turn_ids, rows, strict=True)
+            ],
+            "candidate_episodes": [
+                {
+                    "id": episode["id"],
+                    "title": episode["title"],
+                    "status": episode["status"],
+                    "narrative_summary": episode["narrative_summary"],
+                    "topics": episode["topics"],
+                    "entities": episode["entities"],
+                    "open_loops": episode["open_loops"],
+                }
+                for episode in self.list_episode_directory(
+                    12, after=time.time() - EPISODE_CONSOLIDATION_LOOKBACK_SECONDS
+                )
+            ],
+        }
+
+    def apply_episode_consolidation(
+        self,
+        turn_ids: list[str],
+        decisions: list[dict[str, object]],
+        candidate_episode_ids: list[str] | None = None,
+    ) -> int:
+        expected = set(turn_ids)
+        allowed_episodes = set(candidate_episode_ids or [])
+        if not expected or len(expected) != len(turn_ids):
+            raise ValueError("invalid consolidation turn coverage")
+        covered: set[str] = set()
+        now = time.time()
+        linked = 0
+        with self._db:
+            for decision in decisions:
+                if not isinstance(decision, dict):
+                    raise ValueError("invalid consolidation decision")
+                action = str(decision.get("action") or "")
+                expected_keys = {
+                    "ignore": {"action", "turn_ids", "reason"},
+                    "continue": {
+                        "action",
+                        "episode_id",
+                        "turn_ids",
+                        "topics",
+                        "entities",
+                        "open_loops",
+                        "salience",
+                    },
+                    "new": {
+                        "action",
+                        "key",
+                        "title",
+                        "turn_ids",
+                        "topics",
+                        "entities",
+                        "open_loops",
+                        "salience",
+                    },
+                }.get(action)
+                if expected_keys is None or set(decision) != expected_keys:
+                    raise ValueError("invalid consolidation decision")
+                raw_turns = decision["turn_ids"]
+                if not isinstance(raw_turns, list) or any(
+                    not isinstance(value, str) for value in raw_turns
+                ):
+                    raise ValueError("invalid consolidation turn coverage")
+                decision_turns = [str(value) for value in raw_turns]
+                if (
+                    not decision_turns
+                    or len(decision_turns) != len(set(decision_turns))
+                    or not set(decision_turns) <= expected
+                    or covered & set(decision_turns)
+                ):
+                    raise ValueError("invalid consolidation turn coverage")
+                covered.update(decision_turns)
+                if action == "ignore":
+                    self._db.executemany(
+                        """INSERT INTO episode_consolidation_decisions
+                           (turn_id, action, reason, processed_at)
+                           VALUES (?, 'ignored', ?, ?)""",
+                        (
+                            (turn_id, str(decision.get("reason") or "")[:500], now)
+                            for turn_id in decision_turns
+                        ),
+                    )
+                    continue
+                topics = self._consolidation_strings(
+                    decision["topics"], "topics", 12, 200
+                )
+                entities = self._consolidation_strings(
+                    decision["entities"], "entities", 20, 200
+                )
+                loops = self._consolidation_strings(
+                    decision["open_loops"], "open loops", 8, 500
+                )
+                salience = decision["salience"]
+                if (
+                    isinstance(salience, bool)
+                    or not isinstance(salience, (int, float))
+                    or not 0 <= float(salience) <= 1
+                ):
+                    raise ValueError("invalid consolidation salience")
+                if action == "continue":
+                    episode_id = str(decision["episode_id"])
+                    if (
+                        episode_id not in allowed_episodes
+                        or self.episode(episode_id) is None
+                    ):
+                        raise ValueError("unknown consolidation episode")
+                else:
+                    key = str(decision["key"])
+                    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,39}", key):
+                        raise ValueError("invalid consolidation episode key")
+                    episode_id = uuid.uuid5(
+                        uuid.NAMESPACE_URL,
+                        f"momoi:consolidated-episode:{decision_turns[0]}:{key}",
+                    ).hex
+                    title = str(decision["title"]).strip()
+                    if not title or len(title) > 200:
+                        raise ValueError("invalid consolidation title")
+                raw_text = "\n".join(
+                    str(row["content"])
+                    for turn_id in decision_turns
+                    for row in self._db.execute(
+                        """SELECT content FROM messages
+                           WHERE turn_id=? ORDER BY id""",
+                        (turn_id,),
+                    ).fetchall()
+                )
+                existing = self.episode(episode_id)
+                if existing is not None:
+                    episode_id = self._roll_episode(
+                        episode_id,
+                        decision_turns[0],
+                        now,
+                        raw_text,
+                        incoming_turns=len(decision_turns),
+                    )
+                    existing = self.episode(episode_id)
+                status = "open" if loops else "closing"
+                if existing is None:
+                    self._db.execute(
+                        """INSERT INTO conversation_episodes
+                           (id, status, title, topics_json, entities_json,
+                            open_loops_json, salience, created_at, updated_at)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (
+                            episode_id,
+                            status,
+                            title,
+                            json.dumps(topics, ensure_ascii=False),
+                            json.dumps(entities, ensure_ascii=False),
+                            json.dumps(loops, ensure_ascii=False),
+                            float(salience),
+                            now,
+                            now,
+                        ),
+                    )
+                else:
+                    merged_topics = list(
+                        dict.fromkeys([*existing["topics"], *topics])
+                    )[:12]
+                    merged_entities = list(
+                        dict.fromkeys([*existing["entities"], *entities])
+                    )[:20]
+                    self._db.execute(
+                        """UPDATE conversation_episodes
+                           SET topics_json=?, entities_json=?,
+                               open_loops_json=?, salience=MAX(salience, ?),
+                               status=?, closed_at=NULL, updated_at=?
+                           WHERE id=?""",
+                        (
+                            json.dumps(merged_topics, ensure_ascii=False),
+                            json.dumps(merged_entities, ensure_ascii=False),
+                            json.dumps(loops, ensure_ascii=False),
+                            float(salience),
+                            status,
+                            now,
+                            episode_id,
+                        ),
+                    )
+                for turn_id in decision_turns:
+                    ordinal = int(
+                        self._db.execute(
+                            """SELECT COALESCE(MAX(ordinal), 0) + 1
+                               FROM episode_turns WHERE episode_id=?""",
+                            (episode_id,),
+                        ).fetchone()[0]
+                    )
+                    self._db.execute(
+                        """INSERT INTO episode_turns
+                           (episode_id, turn_id, ordinal, relation, unit_ids_json)
+                           VALUES (?, ?, ?, 'primary', '[]')""",
+                        (episode_id, turn_id, ordinal),
+                    )
+                    self._db.execute(
+                        """INSERT INTO episode_consolidation_decisions
+                           (turn_id, action, episode_id, reason, processed_at)
+                           VALUES (?, 'linked', ?, '', ?)""",
+                        (turn_id, episode_id, now),
+                    )
+                    self._index_turn_episode_terms(turn_id)
+                    linked += 1
+                self._reindex_episode_terms(episode_id)
+            if covered != expected:
+                raise ValueError("incomplete consolidation turn coverage")
+        return linked
+
+    @staticmethod
+    def _consolidation_strings(
+        value: object, name: str, maximum: int, max_length: int
+    ) -> list[str]:
+        if (
+            not isinstance(value, list)
+            or len(value) > maximum
+            or any(
+                not isinstance(item, str)
+                or not item.strip()
+                or len(item.strip()) > max_length
+                for item in value
+            )
+        ):
+            raise ValueError(f"invalid consolidation {name}")
+        return [str(item).strip() for item in value]
+
     def claim_episode_annealing_candidate(
         self, raw_tail_turns: int, raw_token_budget: int
     ) -> dict[str, object] | None:
@@ -2147,8 +2463,7 @@ class Store(MemoryStore, DeliveryStore):
         with self._db:
             episodes = self._db.execute(
                 """SELECT * FROM conversation_episodes
-                   WHERE status IN ('open', 'closing')
-                     AND summary_claimed_at IS NULL
+                   WHERE summary_claimed_at IS NULL
                      AND COALESCE(summary_retry_at, 0)<=?
                      AND NOT EXISTS (
                          SELECT 1 FROM episode_turns AS et
@@ -2175,17 +2490,40 @@ class Store(MemoryStore, DeliveryStore):
                     ),
                 ).fetchall()
                 ordinals = list(dict.fromkeys(int(row["ordinal"]) for row in rows))
-                if len(ordinals) <= raw_tail_turns:
+                tail_turns = raw_tail_turns if episode["status"] != "closed" else 0
+                if not rows and episode["narrative_summary"]:
+                    continue
+                if not rows and episode["working_summary_claims_json"] != "[]":
+                    cursor = self._db.execute(
+                        """UPDATE conversation_episodes SET summary_claimed_at=?
+                           WHERE id=? AND summary_claimed_at IS NULL""",
+                        (now, episode["id"]),
+                    )
+                    if cursor.rowcount == 1:
+                        return {
+                            "episode": self._episode_dict(episode),
+                            "through_ordinal": int(
+                                episode["summarized_through_ordinal"]
+                            ),
+                            "messages": [],
+                        }
+                    continue
+                if len(ordinals) <= tail_turns:
                     continue
                 tokens = sum(estimate_tokens(str(row["content"])) for row in rows)
-                if len(ordinals) <= raw_tail_turns * 2 and tokens <= math.ceil(
-                    raw_token_budget * 1.25
+                if (
+                    episode["status"] != "closed"
+                    and len(ordinals) <= raw_tail_turns * 2
+                    and tokens <= math.ceil(raw_token_budget * 1.25)
                 ):
                     continue
                 compact: list[dict[str, object]] = []
                 compact_tokens = 0
                 through = 0
-                for ordinal in ordinals[:-raw_tail_turns]:
+                selected_ordinals = (
+                    ordinals[:-tail_turns] if tail_turns else ordinals
+                )
+                for ordinal in selected_ordinals:
                     group = [row for row in rows if int(row["ordinal"]) == ordinal]
                     group_tokens = sum(
                         estimate_tokens(str(row["content"])) for row in group
@@ -2221,6 +2559,10 @@ class Store(MemoryStore, DeliveryStore):
         episode_id: str,
         through_ordinal: int,
         claims: list[object],
+        *,
+        narrative_summary: str = "",
+        emotional_context: dict[str, object] | None = None,
+        outcomes: list[object] | None = None,
     ) -> str:
         if not 1 <= len(claims) <= 64:
             raise ValueError("episode summary needs 1 to 64 evidence claims")
@@ -2301,18 +2643,60 @@ class Store(MemoryStore, DeliveryStore):
         working_summary = "\n".join(lines)
         if len(working_summary) > 12000:
             raise ValueError("episode summary exceeds storage budget")
+        narrative_summary = narrative_summary.strip()
+        if len(narrative_summary) > 800:
+            raise ValueError("episode narrative exceeds storage budget")
+        emotional_context = emotional_context or {}
+        if (
+            not isinstance(emotional_context, dict)
+            or set(emotional_context) - {"owner", "momoi", "tone"}
+            or any(
+                not isinstance(value, str) or len(value.strip()) > 300
+                for value in emotional_context.values()
+            )
+        ):
+            raise ValueError("invalid episode emotional context")
+        outcomes = outcomes or []
+        if (
+            not isinstance(outcomes, list)
+            or len(outcomes) > 12
+            or any(
+                not isinstance(value, str)
+                or not value.strip()
+                or len(value.strip()) > 500
+                for value in outcomes
+            )
+        ):
+            raise ValueError("invalid episode outcomes")
         with self._db:
             cursor = self._db.execute(
                 """UPDATE conversation_episodes
                    SET working_summary=?, working_summary_claims_json=?,
+                       narrative_summary=?, emotional_context_json=?,
+                       outcomes_json=?,
                        summarized_through_ordinal=?,
                        summary_claimed_at=NULL, summary_retry_at=NULL,
                        summary_failure_count=0, updated_at=?
                    WHERE id=? AND summary_claimed_at IS NOT NULL
-                     AND summarized_through_ordinal<?""",
+                     AND summarized_through_ordinal<=?""",
                 (
                     working_summary,
                     json.dumps(normalized, ensure_ascii=False, separators=(",", ":")),
+                    narrative_summary,
+                    json.dumps(
+                        {
+                            key: str(value).strip()
+                            for key, value in emotional_context.items()
+                            if str(value).strip()
+                        },
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                    ),
+                    json.dumps(
+                        [str(value).strip() for value in outcomes],
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                    ),
                     through_ordinal,
                     time.time(),
                     episode_id,
@@ -2382,8 +2766,103 @@ class Store(MemoryStore, DeliveryStore):
                 return line[:200]
         return fallback
 
+    def _episode_size(self, episode_id: str) -> tuple[int, int]:
+        turns = int(
+            self._db.execute(
+                "SELECT COUNT(*) FROM episode_turns WHERE episode_id=?",
+                (episode_id,),
+            ).fetchone()[0]
+        )
+        messages = self._db.execute(
+            """SELECT m.content FROM episode_turns AS et
+               JOIN messages AS m ON m.turn_id=et.turn_id
+               WHERE et.episode_id=?""",
+            (episode_id,),
+        ).fetchall()
+        return turns, sum(
+            estimate_tokens(str(message["content"])) for message in messages
+        )
+
+    @staticmethod
+    def _episode_actions(plan: dict[str, object]) -> list[dict[str, object]]:
+        actions = plan.get("episode_actions")
+        if isinstance(actions, list):
+            return [
+                item
+                for item in actions
+                if isinstance(item, dict) and item.get("action") != "none"
+            ]
+        bindings = plan.get("episode_bindings")
+        return (
+            [item for item in bindings if isinstance(item, dict)]
+            if isinstance(bindings, list)
+            else []
+        )
+
+    def _roll_episode(
+        self,
+        episode_id: str,
+        turn_id: str,
+        now: float,
+        raw_text: str,
+        *,
+        incoming_turns: int = 1,
+    ) -> str:
+        turns, raw_tokens = self._episode_size(episode_id)
+        if (
+            turns + incoming_turns <= 64
+            and raw_tokens + estimate_tokens(raw_text) < 64000
+        ):
+            return episode_id
+        row = self._db.execute(
+            "SELECT * FROM conversation_episodes WHERE id=?", (episode_id,)
+        ).fetchone()
+        if row is None:
+            return episode_id
+        successor = uuid.uuid5(
+            uuid.NAMESPACE_URL, f"momoi:episode-successor:{episode_id}:{turn_id}"
+        ).hex
+        self._db.execute(
+            """INSERT OR IGNORE INTO conversation_episodes
+               (id, status, title, topics_json, entities_json, open_loops_json,
+                salience, created_at, updated_at)
+               VALUES (?, 'closing', ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                successor,
+                row["title"],
+                row["topics_json"],
+                row["entities_json"],
+                row["open_loops_json"],
+                row["salience"],
+                now,
+                now,
+            ),
+        )
+        self._db.execute(
+            """UPDATE conversation_episodes
+               SET status='closed', closed_at=?, updated_at=? WHERE id=?""",
+            (now, now, episode_id),
+        )
+        self._db.execute(
+            """INSERT OR IGNORE INTO episode_links
+               (from_episode_id, to_episode_id, kind)
+               VALUES (?, ?, 'continues')""",
+            (successor, episode_id),
+        )
+        log_event(
+            logger,
+            logging.INFO,
+            "episode_rolled",
+            stage="storage",
+            episode_id=episode_id,
+            successor_episode_id=successor,
+            turns=turns,
+            raw_tokens=raw_tokens,
+        )
+        return successor
+
     def _apply_context_plan_episodes(
-        self, turn_id: str, now: float, user_text: str
+        self, turn_id: str, now: float, raw_text: str
     ) -> None:
         row = self._db.execute(
             """SELECT plan_json FROM context_plans
@@ -2392,149 +2871,123 @@ class Store(MemoryStore, DeliveryStore):
             (turn_id,),
         ).fetchone()
         plan = json.loads(str(row["plan_json"])) if row is not None else {}
-        bindings = plan.get("episode_bindings", [])
+        actions = self._episode_actions(plan)
         links = plan.get("episode_links", [])
-        if not bindings:
-            fallback_id = uuid.uuid5(
-                uuid.NAMESPACE_URL, f"momoi:fallback-episode:{turn_id}"
-            ).hex
-            bindings = [
-                {
-                    "episode_id": fallback_id,
-                    "is_new": True,
-                    "title": self._episode_title(user_text, "Unplanned owner turn"),
-                    "relation": "primary",
-                    "unit_ids": [
-                        str(unit["id"])
-                        for unit in plan.get("intent_units", [])
-                        if isinstance(unit, dict) and unit.get("id")
-                    ],
-                    "topics": [],
-                    "entities": [],
-                    "open_loops": [],
-                    "salience": 0.5,
-                }
-            ]
-        primary_ids = [
-            str(binding["episode_id"])
-            for binding in bindings
-            if binding.get("relation") == "primary"
-        ]
-        primary_placeholders = ",".join("?" for _ in primary_ids)
-        excluded = f"AND id NOT IN ({primary_placeholders})" if primary_ids else ""
-        owner_episode = """AND id IN (
-            SELECT et.episode_id FROM episode_turns AS et
-            JOIN turns AS t ON t.id=et.turn_id WHERE t.kind='owner'
-        )"""
-        self._db.execute(
-            f"""UPDATE conversation_episodes SET status='closed', closed_at=?
-                WHERE status='closing' {owner_episode} {excluded}""",
-            (now, *primary_ids),
-        )
-        self._db.execute(
-            f"""UPDATE conversation_episodes SET status='closing'
-                WHERE status='open' {owner_episode} {excluded}""",
-            tuple(primary_ids),
-        )
+        selected: set[str] = set()
+        resolved: dict[str, str] = {}
         self._db.execute("DELETE FROM episode_turns WHERE turn_id=?", (turn_id,))
-        for binding in bindings:
-            episode_id = str(binding["episode_id"])
-            episode = self._db.execute(
-                "SELECT 1 FROM conversation_episodes WHERE id=?", (episode_id,)
+        for action in actions:
+            episode_id = str(action["episode_id"])
+            existing = self._db.execute(
+                "SELECT * FROM conversation_episodes WHERE id=?", (episode_id,)
             ).fetchone()
-            if episode is None:
-                if binding.get("is_new") is not True:
-                    log_event(
-                        logger,
-                        logging.WARNING,
-                        "episode_recreated",
-                        stage="storage",
-                        turn_id=turn_id,
-                        episode_id=episode_id,
-                    )
+            if existing is not None:
+                episode_id = self._roll_episode(
+                    episode_id, turn_id, now, raw_text
+                )
+                existing = self._db.execute(
+                    "SELECT * FROM conversation_episodes WHERE id=?", (episode_id,)
+                ).fetchone()
+            resolved[str(action["episode_id"])] = episode_id
+            topics = list(action.get("topics") or [])
+            entities = list(action.get("entities") or [])
+            loops = list(action.get("open_loops") or [])
+            status = "open" if loops else "closing"
+            if existing is None:
                 self._db.execute(
                     """INSERT INTO conversation_episodes
-                       (id, title, topics_json, entities_json, open_loops_json,
-                        salience, created_at, updated_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                       (id, status, title, topics_json, entities_json,
+                        open_loops_json, salience, created_at, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         episode_id,
-                        str(binding["title"]),
-                        json.dumps(binding["topics"], ensure_ascii=False),
-                        json.dumps(binding["entities"], ensure_ascii=False),
-                        json.dumps(binding["open_loops"], ensure_ascii=False),
-                        float(binding["salience"]),
+                        status,
+                        str(action["title"]),
+                        json.dumps(topics, ensure_ascii=False),
+                        json.dumps(entities, ensure_ascii=False),
+                        json.dumps(loops, ensure_ascii=False),
+                        float(action.get("salience", 0.5)),
                         now,
                         now,
                     ),
                 )
             else:
+                old_topics = json.loads(str(existing["topics_json"]))
+                old_entities = json.loads(str(existing["entities_json"]))
+                merged_topics = list(dict.fromkeys([*old_topics, *topics]))[:12]
+                merged_entities = list(dict.fromkeys([*old_entities, *entities]))[:20]
                 self._db.execute(
                     """UPDATE conversation_episodes
-                       SET title=?, topics_json=?, entities_json=?, open_loops_json=?,
-                           salience=?, status=CASE WHEN ?='primary' THEN 'open' ELSE status END,
-                           closed_at=CASE WHEN ?='primary' THEN NULL ELSE closed_at END,
+                       SET topics_json=?, entities_json=?, open_loops_json=?,
+                           salience=MAX(salience, ?), status=?, closed_at=NULL,
                            updated_at=? WHERE id=?""",
                     (
-                        str(binding["title"]),
-                        json.dumps(binding["topics"], ensure_ascii=False),
-                        json.dumps(binding["entities"], ensure_ascii=False),
-                        json.dumps(binding["open_loops"], ensure_ascii=False),
-                        float(binding["salience"]),
-                        str(binding["relation"]),
-                        str(binding["relation"]),
+                        json.dumps(merged_topics, ensure_ascii=False),
+                        json.dumps(merged_entities, ensure_ascii=False),
+                        json.dumps(loops, ensure_ascii=False),
+                        float(action.get("salience", 0.5)),
+                        status,
                         now,
                         episode_id,
                     ),
                 )
-                self._reindex_episode_terms(episode_id)
-            self._index_episode_terms(
-                episode_id,
-                binding["title"],
-                binding["topics"],
-                binding["entities"],
-                binding["open_loops"],
-            )
             ordinal = int(
                 self._db.execute(
-                    """SELECT COALESCE(MAX(ordinal), 0) + 1 FROM episode_turns
-                       WHERE episode_id=?""",
+                    """SELECT COALESCE(MAX(ordinal), 0) + 1
+                       FROM episode_turns WHERE episode_id=?""",
                     (episode_id,),
                 ).fetchone()[0]
             )
             self._db.execute(
                 """INSERT INTO episode_turns
                    (episode_id, turn_id, ordinal, relation, unit_ids_json)
-                   VALUES (?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, 'primary', ?)""",
                 (
                     episode_id,
                     turn_id,
                     ordinal,
-                    str(binding["relation"]),
-                    json.dumps(binding["unit_ids"], ensure_ascii=False),
+                    json.dumps(action.get("unit_ids") or [], ensure_ascii=False),
                 ),
             )
+            selected.add(episode_id)
+            self._reindex_episode_terms(episode_id)
+        if selected:
+            placeholders = ",".join("?" for _ in selected)
             self._db.execute(
-                """UPDATE conversation_episodes
-                   SET status=CASE WHEN ?='primary' THEN 'open' ELSE status END,
-                       closed_at=CASE WHEN ?='primary' THEN NULL ELSE closed_at END,
-                       updated_at=? WHERE id=?""",
-                (
-                    str(binding["relation"]),
-                    str(binding["relation"]),
-                    now,
-                    episode_id,
-                ),
+                f"""UPDATE conversation_episodes SET status='closed',
+                    closed_at=?, updated_at=?
+                    WHERE status='closing' AND id NOT IN ({placeholders})
+                      AND id IN (
+                          SELECT et.episode_id FROM episode_turns AS et
+                          JOIN turns AS t ON t.id=et.turn_id WHERE t.kind='owner'
+                      )""",
+                (now, now, *selected),
             )
-        for link in links:
+        else:
+            self._db.execute(
+                """UPDATE conversation_episodes SET status='closed',
+                   closed_at=?, updated_at=?
+                   WHERE status='closing' AND id IN (
+                       SELECT et.episode_id FROM episode_turns AS et
+                       JOIN turns AS t ON t.id=et.turn_id WHERE t.kind='owner'
+                   )""",
+                (now, now),
+            )
+        for link in links if isinstance(links, list) else []:
+            if not isinstance(link, dict):
+                continue
+            source = resolved.get(
+                str(link["from_episode_id"]), str(link["from_episode_id"])
+            )
+            target = resolved.get(
+                str(link["to_episode_id"]), str(link["to_episode_id"])
+            )
+            if source == target:
+                continue
             self._db.execute(
                 """INSERT OR IGNORE INTO episode_links
                    (from_episode_id, to_episode_id, kind) VALUES (?, ?, ?)""",
-                (
-                    str(link["from_episode_id"]),
-                    str(link["to_episode_id"]),
-                    str(link["kind"]),
-                ),
+                (source, target, str(link["kind"])),
             )
 
     def open_reconciliation(self, turn_id: str, reason: str) -> None:
@@ -4356,7 +4809,20 @@ class Store(MemoryStore, DeliveryStore):
                    VALUES (?, 'owner', ?, 'running', ?, ?)""",
                 (turn_id, source_json, now, now),
             )
-            self._apply_context_plan_episodes(turn_id, now, user_text)
+            progress = self._db.execute(
+                """SELECT text, created_at, tool_call_id, part_index
+                   FROM turn_progress
+                   WHERE turn_id=? ORDER BY created_at, tool_call_id, part_index""",
+                (turn_id,),
+            ).fetchall()
+            raw_text = "\n".join(
+                [
+                    user_text,
+                    *(str(row["text"]) for row in progress),
+                    *(text for text, _kind, _path, _payload in normalized_messages),
+                ]
+            )
+            self._apply_context_plan_episodes(turn_id, now, raw_text)
             self._db.execute(
                 """INSERT INTO messages
                    (turn_id, role, content, created_at, source_event_ids_json)
@@ -4368,12 +4834,6 @@ class Store(MemoryStore, DeliveryStore):
                     source_json,
                 ),
             )
-            progress = self._db.execute(
-                """SELECT text, created_at, tool_call_id, part_index
-                   FROM turn_progress
-                   WHERE turn_id=? ORDER BY created_at, tool_call_id, part_index""",
-                (turn_id,),
-            ).fetchall()
             for row in progress:
                 outbox = self._db.execute(
                     """SELECT id, state, possible_duplicate FROM outbox

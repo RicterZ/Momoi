@@ -36,7 +36,7 @@ def app_config(directory: str) -> AppConfig:
 
 def response_plan() -> dict[str, object]:
     return {
-        "version": 1,
+        "version": 2,
         "intent_units": [
             {
                 "id": "social",
@@ -57,11 +57,11 @@ def response_plan() -> dict[str, object]:
                 "recall_queries": ["pending expected email thread"],
             },
         ],
-        "episode_bindings": [
+        "episode_actions": [
             {
+                "action": "new",
                 "episode_ref": "new:social",
                 "title": "微博浏览",
-                "relation": "primary",
                 "unit_ids": ["social"],
                 "topics": ["微博"],
                 "entities": [],
@@ -69,9 +69,9 @@ def response_plan() -> dict[str, object]:
                 "salience": 0.4,
             },
             {
+                "action": "new",
                 "episode_ref": "new:mail",
                 "title": "邮件跟进",
-                "relation": "primary",
                 "unit_ids": ["mail"],
                 "topics": ["邮件"],
                 "entities": [],
@@ -105,6 +105,16 @@ def tool_plan_response(plan: dict[str, object]) -> ProviderResponse:
     )
 
 
+def legacy_response_plan() -> dict[str, object]:
+    plan = response_plan()
+    plan["version"] = 1
+    plan["episode_bindings"] = plan.pop("episode_actions")
+    for binding in plan["episode_bindings"]:
+        binding.pop("action")
+        binding["relation"] = "primary"
+    return plan
+
+
 class ContextPlannerTest(unittest.TestCase):
     def test_context_plan_shape_lives_in_tool_schema(self) -> None:
         self.assertIn(CONTEXT_PLAN_TOOL_NAME, CONTEXT_PLANNER_SYSTEM_PROMPT)
@@ -120,24 +130,26 @@ class ContextPlannerTest(unittest.TestCase):
             [
                 "version",
                 "intent_units",
-                "episode_bindings",
+                "episode_actions",
                 "episode_links",
                 "uncertainty",
             ],
+        )
+        action_shapes = schema["properties"]["episode_actions"]["items"]["oneOf"]  # type: ignore[index]
+        self.assertEqual(
+            [shape["properties"]["action"]["enum"][0] for shape in action_shapes],
+            ["none", "continue", "new"],
         )
 
     def test_standalone_media_guidance_limits_semantic_inference(self) -> None:
         self.assertIn("low-information social cue", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertIn("invent a semantic agenda", CONTEXT_PLANNER_SYSTEM_PROMPT)
-        self.assertIn(
-            "Still bind the unit to an episode as usual",
-            CONTEXT_PLANNER_SYSTEM_PROMPT,
-        )
+        self.assertIn("Episode action may be `none`", CONTEXT_PLANNER_SYSTEM_PROMPT)
 
     def test_parser_requires_event_coverage_and_normalizes_episode_refs(self) -> None:
         plan = response_plan()
         parsed = parse_context_plan(json.dumps(plan), ["event-1"], [], "turn-1", 1)
-        bindings = parsed["episode_bindings"]
+        bindings = parsed["episode_actions"]
         self.assertEqual(len(bindings), 2)
         self.assertTrue(all(item["is_new"] for item in bindings))
         self.assertNotEqual(bindings[0]["episode_id"], bindings[1]["episode_id"])
@@ -182,12 +194,58 @@ class ContextPlannerTest(unittest.TestCase):
 
     def test_new_episode_refs_require_ascii_slugs(self) -> None:
         plan = response_plan()
-        plan["episode_bindings"][0]["episode_ref"] = "new:一起玩游戏"
+        plan["episode_actions"][0]["episode_ref"] = "new:一起玩游戏"
         with self.assertRaisesRegex(ContextPlanError, "invalid_new_episode_ref"):
             parse_context_plan(plan, ["event-1"], [], "turn-1", 1)
 
-    def test_parser_merges_duplicate_episode_bindings_safely(self) -> None:
+    def test_v2_allows_none_and_continue_without_changing_existing_title(
+        self,
+    ) -> None:
         plan = response_plan()
+        plan["episode_actions"] = [
+            {"action": "none", "unit_ids": ["social"]},
+            {
+                "action": "continue",
+                "episode_ref": "mail-thread",
+                "unit_ids": ["mail"],
+                "topics": ["新进展"],
+                "entities": [],
+                "open_loops": [],
+                "salience": 0.6,
+            },
+        ]
+        plan["episode_links"] = []
+
+        parsed = parse_context_plan(
+            plan,
+            ["event-1"],
+            [{"id": "mail-thread", "title": "已有邮件话题"}],
+            "turn-1",
+            1,
+        )
+
+        self.assertEqual(parsed["episode_actions"][0]["action"], "none")
+        self.assertEqual(parsed["episode_actions"][1]["episode_id"], "mail-thread")
+        self.assertEqual(
+            parsed["episode_actions"][1]["title"], "已有邮件话题"
+        )
+
+    def test_v2_requires_each_unit_exactly_once(self) -> None:
+        missing = response_plan()
+        missing["episode_actions"] = [missing["episode_actions"][0]]
+        missing["episode_links"] = []
+        with self.assertRaisesRegex(ContextPlanError, "unbound_intent_units"):
+            parse_context_plan(missing, ["event-1"], [], "turn-1", 1)
+
+        duplicate = response_plan()
+        duplicate["episode_actions"][0]["unit_ids"] = ["social", "mail"]
+        duplicate["episode_actions"][1]["unit_ids"] = ["mail"]
+        duplicate["episode_links"] = []
+        with self.assertRaisesRegex(ContextPlanError, "duplicate_binding_unit"):
+            parse_context_plan(duplicate, ["event-1"], [], "turn-1", 1)
+
+    def test_v1_parser_merges_duplicate_episode_bindings_safely(self) -> None:
+        plan = legacy_response_plan()
         plan["episode_bindings"][1].update(
             {
                 "episode_ref": "new:social",
@@ -221,7 +279,7 @@ class ContextPlannerTest(unittest.TestCase):
             )
         )
 
-        conflicting = response_plan()
+        conflicting = legacy_response_plan()
         conflicting["episode_bindings"][1]["episode_ref"] = "new:social"
         conflicting["episode_links"] = []
         with self.assertRaisesRegex(ContextPlanError, "conflicting_episode_title"):
@@ -229,7 +287,7 @@ class ContextPlannerTest(unittest.TestCase):
                 json.dumps(conflicting), ["event-1"], [], "turn-1", 1
             )
 
-        over_limit = response_plan()
+        over_limit = legacy_response_plan()
         over_limit["episode_bindings"][0]["topics"] = [
             f"topic-{index}" for index in range(7)
         ]
@@ -250,10 +308,10 @@ class ContextPlannerTest(unittest.TestCase):
 
     def test_casual_units_can_skip_recall_without_parser_semantics(self) -> None:
         plan = response_plan()
-        plan["episode_bindings"][0]["open_loops"] = ["饭后再弄"]
+        plan["episode_actions"][0]["open_loops"] = ["饭后再弄"]
         parsed = parse_context_plan(json.dumps(plan), ["event-1"], [], "turn-1", 1)
         self.assertEqual(parsed["intent_units"][0]["recall_queries"], [])
-        self.assertEqual(parsed["episode_bindings"][0]["open_loops"], ["饭后再弄"])
+        self.assertEqual(parsed["episode_actions"][0]["open_loops"], ["饭后再弄"])
 
     def test_bound_episode_does_not_inject_history_or_remove_tools(
         self,
@@ -337,7 +395,9 @@ class ContextPlannerTest(unittest.TestCase):
             "invalid_json",
         )
         self.assertEqual(len(plan["intent_units"]), 2)
-        self.assertEqual(plan["episode_bindings"], [])
+        self.assertTrue(
+            all(item["action"] == "none" for item in plan["episode_actions"])
+        )
         self.assertIn("invalid_json", plan["uncertainty"][0])
 
 
@@ -762,10 +822,10 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
             stored = daemon.store.context_plan(turn_id)
             self.assertEqual(stored["state"], "degraded")
             self.assertEqual(len(stored["plan"]["intent_units"]), 2)
-            fallback = daemon.store.list_episode_candidates()
-            self.assertEqual(len(fallback), 1)
             self.assertEqual(
-                daemon.store.episode_turns(str(fallback[0]["id"]))[0]["turn_id"],
-                turn_id,
+                daemon.store._db.execute(
+                    "SELECT COUNT(*) FROM episode_turns WHERE turn_id=?", (turn_id,)
+                ).fetchone()[0],
+                0,
             )
             daemon.store.close()

@@ -79,6 +79,9 @@ REPLY_WAIT_PROMPT_PATH = PROMPT_ROOT.joinpath("reply_wait.md")
 REFLECTION_PROMPT_PATH = PROMPT_ROOT.joinpath("reflection.md")
 CONTEXT_PLANNER_PROMPT_PATH = PROMPT_ROOT.joinpath("context_planner.md")
 EPISODE_SUMMARY_PROMPT_PATH = PROMPT_ROOT.joinpath("episode_summary.md")
+EPISODE_CONSOLIDATION_PROMPT_PATH = PROMPT_ROOT.joinpath(
+    "episode_consolidation.md"
+)
 STYLE_CARD_SYSTEM_PROMPT = STYLE_CARD_PROMPT_PATH.read_text(encoding="utf-8").strip()
 WEBHOOK_SYSTEM_PROMPT = WEBHOOK_PROMPT_PATH.read_text(encoding="utf-8").strip()
 HEARTBEAT_SYSTEM_PROMPT = HEARTBEAT_PROMPT_PATH.read_text(encoding="utf-8").strip()
@@ -90,6 +93,9 @@ CONTEXT_PLANNER_SYSTEM_PROMPT = CONTEXT_PLANNER_PROMPT_PATH.read_text(
 EPISODE_SUMMARY_SYSTEM_PROMPT = EPISODE_SUMMARY_PROMPT_PATH.read_text(
     encoding="utf-8"
 ).strip()
+EPISODE_CONSOLIDATION_SYSTEM_PROMPT = (
+    EPISODE_CONSOLIDATION_PROMPT_PATH.read_text(encoding="utf-8").strip()
+)
 MAX_CONSECUTIVE_TOOL_FAILURES = 3
 BUILTIN_POLICY_TOOLS = frozenset(
     {"curl", "read_file", "write_file", "apply_patch", "sleep"}
@@ -453,21 +459,31 @@ class TurnRunner:
         ).strip()
 
     @staticmethod
-    def _episode_summary_claims(text: str) -> list[object]:
+    def _episode_summary_result(text: str) -> dict[str, object]:
         try:
             value = json.loads(text)
         except (json.JSONDecodeError, TypeError) as error:
             raise RuntimeError(
                 "episode summary provider returned invalid JSON"
             ) from error
-        if (
-            not isinstance(value, dict)
-            or set(value) != {"version", "claims"}
-            or value["version"] != 1
-            or not isinstance(value["claims"], list)
-        ):
+        if not isinstance(value, dict) or not isinstance(value.get("claims"), list):
             raise RuntimeError("episode summary provider returned invalid claims")
-        return value["claims"]
+        if value.get("version") == 1 and set(value) == {"version", "claims"}:
+            return {
+                "claims": value["claims"],
+                "narrative_summary": "",
+                "emotional_context": {},
+                "outcomes": [],
+            }
+        if value.get("version") != 2 or set(value) != {
+            "version",
+            "claims",
+            "narrative_summary",
+            "emotional_context",
+            "outcomes",
+        }:
+            raise RuntimeError("episode summary provider returned invalid result")
+        return value
 
     @staticmethod
     def _stored_context_plan(record: dict[str, object]) -> dict[str, object]:
@@ -639,7 +655,8 @@ class TurnRunner:
                         raw_plan.get("intent_units"), 900
                     ),
                     episode_bindings=safe_preview(
-                        raw_plan.get("episode_bindings"), 900
+                        raw_plan.get("episode_actions", raw_plan.get("episode_bindings")),
+                        900,
                     ),
                     episode_links=safe_preview(
                         raw_plan.get("episode_links"), 500
@@ -716,7 +733,7 @@ class TurnRunner:
                 return self._stored_context_plan(saved)
             saved = self.store.save_context_plan(turn_id, revision, event_ids, plan)
             units = plan.get("intent_units")
-            bindings = plan.get("episode_bindings")
+            bindings = plan.get("episode_actions", plan.get("episode_bindings"))
             log_event(
                 logger,
                 logging.INFO,
@@ -1952,6 +1969,9 @@ class TurnRunner:
         return uuid.uuid5(uuid.NAMESPACE_URL, f"momoi:{seed}").hex
 
     async def _run_episode_annealing_once(self) -> bool:
+        consolidation = self.store.claim_episode_consolidation_candidate()
+        if consolidation is not None:
+            return await self._consolidate_episode_turns(consolidation)
         candidate = self.store.claim_episode_annealing_candidate(
             self.config.recent_turns, self.config.recent_raw_tokens
         )
@@ -1985,6 +2005,100 @@ class TurnRunner:
         if completed:
             self.store.complete_background_turn(turn_id)
         return completed
+
+    async def _consolidate_episode_turns(
+        self, candidate: dict[str, object]
+    ) -> bool:
+        turns = candidate["turns"]
+        if not isinstance(turns, list) or not turns:
+            return False
+        turn_ids = [str(turn["turn_id"]) for turn in turns]
+        turn_id = self._turn_id("episode-consolidate", *turn_ids)
+        state = self.store.begin_turn(
+            turn_id,
+            "autonomous",
+            [f"episode-consolidate:{value}" for value in turn_ids],
+        )
+        if state in {"completed", "cancelled"}:
+            return False
+        request = [
+            {
+                "role": "user",
+                "content": json.dumps(
+                    candidate, ensure_ascii=False, separators=(",", ":")
+                ),
+            }
+        ]
+        try:
+            response = await asyncio.wait_for(
+                self.provider.complete(
+                    EPISODE_CONSOLIDATION_SYSTEM_PROMPT, request, []
+                ),
+                timeout=self.config.episode_annealing.max_seconds,
+            )
+            text = re.sub(
+                r"<think>.*?</think>",
+                "",
+                self._context_plan_response_text(response.content),
+                flags=re.DOTALL,
+            ).strip()
+            value = json.loads(text)
+            if (
+                not isinstance(value, dict)
+                or set(value) != {"version", "decisions"}
+                or value["version"] != 1
+                or not isinstance(value["decisions"], list)
+            ):
+                raise RuntimeError("invalid episode consolidation response")
+            linked = self.store.apply_episode_consolidation(
+                turn_ids,
+                value["decisions"],
+                [
+                    str(episode["id"])
+                    for episode in candidate["candidate_episodes"]
+                    if isinstance(episode, dict) and episode.get("id")
+                ],
+            )
+            action_counts = {
+                action: sum(
+                    1
+                    for decision in value["decisions"]
+                    if isinstance(decision, dict)
+                    and decision.get("action") == action
+                )
+                for action in ("ignore", "continue", "new")
+            }
+            metrics = response.usage or {}
+            self.store.record_turn_usage(
+                turn_id,
+                int(
+                    metrics.get(
+                        "input",
+                        estimate_tokens(
+                            EPISODE_CONSOLIDATION_SYSTEM_PROMPT
+                            + json.dumps(candidate, ensure_ascii=False)
+                        ),
+                    )
+                ),
+                int(metrics.get("output", estimate_tokens(text))),
+            )
+            self.store.complete_background_turn(turn_id)
+            log_event(
+                logger,
+                logging.INFO,
+                "episode_consolidation_complete",
+                stage="episode_consolidate",
+                turn_id=turn_id,
+                turns=len(turn_ids),
+                linked=linked,
+                **action_counts,
+            )
+            return True
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            self.store.record_turn_failure(turn_id, type(error).__name__)
+            raise
 
     async def _anneal_episode_history(
         self,
@@ -2051,11 +2165,14 @@ class TurnRunner:
                 ).strip()
                 if not summary:
                     raise RuntimeError("episode summary provider returned no text")
-                claims = self._episode_summary_claims(summary)
+                result = self._episode_summary_result(summary)
                 working_summary = self.store.finish_episode_annealing(
                     episode_id,
                     int(candidate["through_ordinal"]),
-                    claims,
+                    result["claims"],  # type: ignore[arg-type]
+                    narrative_summary=str(result["narrative_summary"]),
+                    emotional_context=result["emotional_context"],  # type: ignore[arg-type]
+                    outcomes=result["outcomes"],  # type: ignore[arg-type]
                 )
                 metrics = response.usage or {}
                 self.store.record_turn_usage(
@@ -2565,7 +2682,11 @@ class TurnRunner:
                 "created_timestamp": episode.get("created_timestamp"),
                 "updated_timestamp": episode.get("updated_timestamp"),
                 "summary": truncate_tokens(
-                    str(episode["working_summary"] or ""),
+                    str(
+                        episode["narrative_summary"]
+                        or episode["working_summary"]
+                        or ""
+                    ),
                     160,
                 ),
                 "topics": episode["topics"],

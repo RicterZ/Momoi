@@ -95,7 +95,8 @@ class ContextAssemblerTest(unittest.TestCase):
                 {item["episode_id"] for item in retrieval["episodes"]},
             )
             assembled = assemble_main_context(store, retrieval, 2000, 2000)
-            self.assertIn("朱红钥匙藏在温室花盆下面", assembled["episodes"])
+            self.assertIn("title: 旧暗号", assembled["episodes"])
+            self.assertNotIn("朱红钥匙藏在温室花盆下面", assembled["episodes"])
             store.close()
 
     def test_automatic_recall_returns_directory_without_raw_match(self) -> None:
@@ -323,7 +324,7 @@ class ContextAssemblerTest(unittest.TestCase):
             )
             reopened.close()
 
-    def test_commit_without_a_context_plan_gets_a_searchable_fallback_episode(
+    def test_commit_without_a_context_plan_stays_unassigned_for_consolidation(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -335,27 +336,29 @@ class ContextAssemblerTest(unittest.TestCase):
             store.commit_turn(
                 [event], event.text, AgentReply(["这轮仍然会归档"]), turn_id="fallback"
             )
+            outbox_id = store._db.execute(
+                "SELECT id FROM outbox WHERE turn_id='fallback'"
+            ).fetchone()["id"]
+            store.mark_sent(int(outbox_id))
 
-            episode = store.search_episodes("规划器失败 归档", 3)[0]
-            self.assertEqual(
-                store.episode_turns(str(episode["id"]))[0]["turn_id"], "fallback"
-            )
+            self.assertEqual(store.search_episodes("规划器失败 归档", 3), [])
+            candidate = store.claim_episode_consolidation_candidate()
+            self.assertEqual(candidate["turns"][0]["turn_id"], "fallback")
             self.assertNotIn(
                 "这轮仍然会归档",
                 recall_episode_context(store, "规划器失败 归档", 3, 1000, 1000),
             )
-            outbox_id = store._db.execute(
-                "SELECT id FROM outbox WHERE turn_id='fallback'"
-            ).fetchone()["id"]
             store.mark_ambiguous(int(outbox_id), 1, "timeout")
             self.assertNotIn(
                 "这轮仍然会归档",
                 recall_episode_context(store, "规划器失败 归档", 3, 1000, 1000),
             )
             store.mark_sent(int(outbox_id))
-            self.assertIn(
-                "这轮仍然会归档",
-                store.conversation_episode(str(episode["id"]))["messages"][1]["content"],
+            self.assertEqual(
+                store._db.execute(
+                    "SELECT COUNT(*) FROM episode_turns WHERE turn_id='fallback'"
+                ).fetchone()[0],
+                0,
             )
             store.close()
 
@@ -509,7 +512,7 @@ class ContextAssemblerTest(unittest.TestCase):
                 ["reminder-mail"],
             )
             rendered = "\n".join(assembled.values())
-            self.assertIn("项目邮件还没到", rendered)
+            self.assertNotIn("项目邮件还没到", rendered)
             self.assertNotIn("较早的项目邮件仍在等待", rendered)
             self.assertIn("项目邮件关系到当前合作", rendered)
             self.assertIn("项目邮件已经到达", rendered)

@@ -91,8 +91,8 @@ def build_plan_retrieval(
     store: Store, plan: dict[str, object], config: AppConfig
 ) -> dict[str, object]:
     units = plan.get("intent_units")
-    bindings = plan.get("episode_bindings")
-    if not isinstance(units, list) or not isinstance(bindings, list):
+    actions = plan.get("episode_actions", plan.get("episode_bindings"))
+    if not isinstance(units, list) or not isinstance(actions, list):
         raise RuntimeError("context plan has invalid retrieval inputs")
 
     confirmed = _selected_by_unit(
@@ -252,6 +252,7 @@ def _episode_search_text(episode: dict[str, object]) -> str:
         str(episode.get(name) or "")
         for name in (
             "title",
+            "narrative_summary",
             "working_summary",
             "topics",
             "entities",
@@ -313,6 +314,9 @@ def _message_role(message: dict[str, object]) -> str:
 
 
 def _episode_summary(episode: dict[str, object]) -> tuple[str, str]:
+    narrative = str(episode.get("narrative_summary") or "")
+    if narrative:
+        return narrative, "narrative"
     claims = episode.get("working_summary_claims")
     if isinstance(claims, list) and claims:
         return str(episode.get("working_summary") or ""), "extractive"

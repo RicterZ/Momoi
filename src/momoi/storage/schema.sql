@@ -255,6 +255,9 @@ CREATE TABLE IF NOT EXISTS conversation_episodes (
     title TEXT NOT NULL,
     working_summary TEXT NOT NULL DEFAULT '',
     working_summary_claims_json TEXT NOT NULL DEFAULT '[]',
+    narrative_summary TEXT NOT NULL DEFAULT '',
+    emotional_context_json TEXT NOT NULL DEFAULT '{}',
+    outcomes_json TEXT NOT NULL DEFAULT '[]',
     summarized_through_ordinal INTEGER NOT NULL DEFAULT 0
         CHECK (summarized_through_ordinal >= 0),
     summary TEXT NOT NULL DEFAULT '',
@@ -319,6 +322,16 @@ CREATE TABLE IF NOT EXISTS episode_links (
         ON DELETE CASCADE,
     FOREIGN KEY (to_episode_id) REFERENCES conversation_episodes(id)
         ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS episode_consolidation_decisions (
+    turn_id TEXT PRIMARY KEY,
+    action TEXT NOT NULL CHECK (action IN ('ignored', 'linked')),
+    episode_id TEXT,
+    reason TEXT NOT NULL DEFAULT '',
+    processed_at REAL NOT NULL,
+    FOREIGN KEY (turn_id) REFERENCES turns(id) ON DELETE CASCADE,
+    FOREIGN KEY (episode_id) REFERENCES conversation_episodes(id)
+        ON DELETE SET NULL
 );
 CREATE TABLE IF NOT EXISTS context_plans (
     turn_id TEXT NOT NULL,

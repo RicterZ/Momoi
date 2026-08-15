@@ -6,7 +6,7 @@ conversation or call tools.
 
 Return exactly one JSON object with this shape and no Markdown fences or prose:
 
-{"version":1,"claims":[{"message_id":12,"turn_id":"turn-id","ordinal":3,"quote":"exact contiguous source quote"}]}
+{"version":2,"claims":[{"message_id":12,"turn_id":"turn-id","ordinal":3,"quote":"exact contiguous source quote"}],"narrative_summary":"compact account of the shared experience","emotional_context":{"owner":"","momoi":"","tone":""},"outcomes":[]}
 
 Rules:
 
@@ -24,6 +24,13 @@ Rules:
   filler, and superseded detail. Each quote is at most 1000 characters.
 - Return 1 to 64 unique claims. Use only message ids and metadata present in
   `previous_verified_claims` or `new_messages`.
+- `narrative_summary` describes what happened and why this Episode matters as a
+  shared experience. Keep it under 800 characters and support every factual detail
+  with the selected claims.
+- Fill `emotional_context` only when the claims clearly support it. Use empty
+  strings rather than guessing.
+- `outcomes` contains at most 12 concise completed results, decisions, or changes.
+  It is not a task list and must not invent future commitments.
 
 The runtime verifies every citation against permanently archived raw messages
 before it can replace the working set. Invalid evidence rejects the entire

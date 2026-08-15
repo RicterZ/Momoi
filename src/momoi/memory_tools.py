@@ -474,7 +474,11 @@ class MemoryTools:
         compact = []
         for episode in results:
             claims = episode.get("working_summary_claims")
-            summary = _episode_claim_excerpt(episode, query)
+            summary = str(episode.get("narrative_summary") or "")
+            if not summary:
+                summary = _episode_claim_excerpt(episode, query)
+            else:
+                summary = truncate_tokens(summary, _EPISODE_SEARCH_SUMMARY_TOKENS)
             compact.append(
                 {
                     "id": episode["id"],
@@ -486,7 +490,9 @@ class MemoryTools:
                     ),
                     "summary": summary,
                     "summary_quality": (
-                        "extractive"
+                        "narrative"
+                        if episode.get("narrative_summary")
+                        else "extractive"
                         if isinstance(claims, list) and claims
                         else "empty"
                     ),

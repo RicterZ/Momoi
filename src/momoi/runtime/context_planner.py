@@ -31,7 +31,7 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
     "input_schema": {
         "type": "object",
         "properties": {
-            "version": {"type": "integer", "enum": [1]},
+            "version": {"type": "integer", "enum": [2]},
             "intent_units": {
                 "type": "array",
                 "minItems": 1,
@@ -74,63 +74,126 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                     "additionalProperties": False,
                 },
             },
-            "episode_bindings": {
+            "episode_actions": {
                 "type": "array",
                 "minItems": 1,
                 "maxItems": 12,
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "episode_ref": {
-                            "type": "string",
-                            "description": (
-                                "Use an existing candidate Episode id, or create one "
-                                "with new:<key>. A new key must be a lowercase ASCII "
-                                "slug using only a-z, 0-9, underscore, or hyphen."
-                            ),
+                    "oneOf": [
+                        {
+                            "type": "object",
+                            "properties": {
+                                "action": {"type": "string", "enum": ["none"]},
+                                "unit_ids": {
+                                    "type": "array",
+                                    "minItems": 1,
+                                    "items": {"type": "string"},
+                                },
+                            },
+                            "required": ["action", "unit_ids"],
+                            "additionalProperties": False,
                         },
-                        "title": {"type": "string"},
-                        "relation": {
-                            "type": "string",
-                            "enum": ["primary", "related"],
+                        {
+                            "type": "object",
+                            "properties": {
+                                "action": {
+                                    "type": "string",
+                                    "enum": ["continue"],
+                                },
+                                "episode_ref": {
+                                    "type": "string",
+                                    "description": (
+                                        "An existing candidate Episode id."
+                                    ),
+                                },
+                                "unit_ids": {
+                                    "type": "array",
+                                    "minItems": 1,
+                                    "items": {"type": "string"},
+                                },
+                                "topics": {
+                                    "type": "array",
+                                    "maxItems": 12,
+                                    "items": {"type": "string"},
+                                },
+                                "entities": {
+                                    "type": "array",
+                                    "maxItems": 20,
+                                    "items": {"type": "string"},
+                                },
+                                "open_loops": {
+                                    "type": "array",
+                                    "maxItems": 8,
+                                    "items": {"type": "string"},
+                                },
+                                "salience": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "maximum": 1,
+                                },
+                            },
+                            "required": [
+                                "action",
+                                "episode_ref",
+                                "unit_ids",
+                                "topics",
+                                "entities",
+                                "open_loops",
+                                "salience",
+                            ],
+                            "additionalProperties": False,
                         },
-                        "unit_ids": {
-                            "type": "array",
-                            "minItems": 1,
-                            "items": {"type": "string"},
+                        {
+                            "type": "object",
+                            "properties": {
+                                "action": {"type": "string", "enum": ["new"]},
+                                "episode_ref": {
+                                    "type": "string",
+                                    "description": (
+                                        "A new:<key> reference using a lowercase "
+                                        "ASCII slug."
+                                    ),
+                                },
+                                "title": {"type": "string"},
+                                "unit_ids": {
+                                    "type": "array",
+                                    "minItems": 1,
+                                    "items": {"type": "string"},
+                                },
+                                "topics": {
+                                    "type": "array",
+                                    "maxItems": 12,
+                                    "items": {"type": "string"},
+                                },
+                                "entities": {
+                                    "type": "array",
+                                    "maxItems": 20,
+                                    "items": {"type": "string"},
+                                },
+                                "open_loops": {
+                                    "type": "array",
+                                    "maxItems": 8,
+                                    "items": {"type": "string"},
+                                },
+                                "salience": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "maximum": 1,
+                                },
+                            },
+                            "required": [
+                                "action",
+                                "episode_ref",
+                                "title",
+                                "unit_ids",
+                                "topics",
+                                "entities",
+                                "open_loops",
+                                "salience",
+                            ],
+                            "additionalProperties": False,
                         },
-                        "topics": {
-                            "type": "array",
-                            "maxItems": 12,
-                            "items": {"type": "string"},
-                        },
-                        "entities": {
-                            "type": "array",
-                            "maxItems": 20,
-                            "items": {"type": "string"},
-                        },
-                        "open_loops": {
-                            "type": "array",
-                            "maxItems": 8,
-                            "items": {"type": "string"},
-                        },
-                        "salience": {
-                            "type": "number",
-                            "minimum": 0,
-                            "maximum": 1,
-                        },
-                    },
-                    "required": [
-                        "episode_ref",
-                        "title",
-                        "relation",
-                        "unit_ids",
-                        "topics",
-                        "entities",
-                        "open_loops",
-                        "salience",
-                    ],
-                    "additionalProperties": False,
+                    ]
                 },
             },
             "episode_links": {
@@ -165,7 +228,7 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
         "required": [
             "version",
             "intent_units",
-            "episode_bindings",
+            "episode_actions",
             "episode_links",
             "uncertainty",
         ],
@@ -228,15 +291,19 @@ def parse_context_plan(
             value = json.loads(text)
         except (json.JSONDecodeError, TypeError) as error:
             raise ContextPlanError("invalid_json") from error
-    if not isinstance(value, dict) or set(value) != {
+    if not isinstance(value, dict):
+        raise ContextPlanError("invalid_top_level")
+    version = value.get("version")
+    expected = {
         "version",
         "intent_units",
-        "episode_bindings",
+        "episode_actions" if version == 2 else "episode_bindings",
         "episode_links",
         "uncertainty",
-    }:
+    }
+    if set(value) != expected:
         raise ContextPlanError("invalid_top_level")
-    if value["version"] != 1:
+    if version not in {1, 2}:
         raise ContextPlanError("unsupported_version")
 
     raw_units = value["intent_units"]
@@ -303,7 +370,47 @@ def parse_context_plan(
         raise ContextPlanError("uncovered_event_ids")
 
     candidate_ids = {str(item["id"]) for item in candidates}
-    raw_bindings = value["episode_bindings"]
+    if version == 2:
+        raw_actions = value["episode_actions"]
+        if not isinstance(raw_actions, list) or not 1 <= len(raw_actions) <= 12:
+            raise ContextPlanError("invalid_episode_actions")
+        raw_bindings = []
+        for raw in raw_actions:
+            if not isinstance(raw, dict):
+                raise ContextPlanError("invalid_episode_action")
+            action = raw.get("action")
+            if action == "none":
+                if set(raw) != {"action", "unit_ids"}:
+                    raise ContextPlanError("invalid_episode_action")
+                raw_bindings.append(
+                    {
+                        "action": "none",
+                        "unit_ids": raw["unit_ids"],
+                    }
+                )
+                continue
+            required = {
+                "action",
+                "episode_ref",
+                "unit_ids",
+                "topics",
+                "entities",
+                "open_loops",
+                "salience",
+            }
+            if action == "new":
+                required.add("title")
+            if set(raw) != required or action not in {"continue", "new"}:
+                raise ContextPlanError("invalid_episode_action")
+            raw_bindings.append(
+                {
+                    **raw,
+                    "title": raw.get("title", ""),
+                    "relation": "primary",
+                }
+            )
+    else:
+        raw_bindings = value["episode_bindings"]
     if not isinstance(raw_bindings, list) or not 1 <= len(raw_bindings) <= 12:
         raise ContextPlanError("invalid_episode_bindings")
     bound_units: set[str] = set()
@@ -311,7 +418,23 @@ def parse_context_plan(
     bindings_by_ref: dict[str, dict[str, object]] = {}
     merged_duplicates = 0
     for raw in raw_bindings:
+        if raw.get("action") == "none":
+            binding_units = _strings(
+                raw["unit_ids"],
+                "binding_unit_ids",
+                minimum=1,
+                maximum=len(unit_ids),
+                max_length=40,
+            )
+            if not set(binding_units) <= unit_ids:
+                raise ContextPlanError("unknown_binding_unit")
+            if bound_units & set(binding_units):
+                raise ContextPlanError("duplicate_binding_unit")
+            bound_units.update(binding_units)
+            bindings.append({"action": "none", "unit_ids": binding_units})
+            continue
         if not isinstance(raw, dict) or set(raw) != {
+            *(["action"] if version == 2 else []),
             "episode_ref",
             "title",
             "relation",
@@ -323,11 +446,15 @@ def parse_context_plan(
         }:
             raise ContextPlanError("invalid_episode_binding")
         episode_ref = _text(raw["episode_ref"], "episode_ref", 200)
-        is_new = episode_ref.startswith("new:")
+        action = str(
+            raw.get("action")
+            or ("new" if episode_ref.startswith("new:") else "continue")
+        )
+        is_new = action == "new"
         if is_new:
             if not re.fullmatch(r"new:[a-z0-9][a-z0-9_-]{0,39}", episode_ref):
                 raise ContextPlanError("invalid_new_episode_ref")
-        elif episode_ref not in candidate_ids:
+        elif episode_ref.startswith("new:") or episode_ref not in candidate_ids:
             raise ContextPlanError("unknown_episode_ref")
         binding_units = _strings(
             raw["unit_ids"],
@@ -338,6 +465,8 @@ def parse_context_plan(
         )
         if not set(binding_units) <= unit_ids:
             raise ContextPlanError("unknown_binding_unit")
+        if version == 2 and bound_units & set(binding_units):
+            raise ContextPlanError("duplicate_binding_unit")
         relation = raw["relation"]
         if not isinstance(relation, str) or relation not in {"primary", "related"}:
             raise ContextPlanError("invalid_episode_relation")
@@ -348,7 +477,20 @@ def parse_context_plan(
             or not 0 <= float(salience) <= 1
         ):
             raise ContextPlanError("invalid_episode_salience")
-        title = _text(raw["title"], "episode_title", 200)
+        title = (
+            _text(raw["title"], "episode_title", 200)
+            if is_new or version == 1
+            else str(
+                next(
+                    (
+                        item.get("title") or "Conversation"
+                        for item in candidates
+                        if str(item["id"]) == episode_ref
+                    ),
+                    "Conversation",
+                )
+            )
+        )
         actual_id = (
             uuid.uuid5(
                 uuid.NAMESPACE_URL,
@@ -373,6 +515,7 @@ def parse_context_plan(
         existing = bindings_by_ref.get(episode_ref)
         if existing is None:
             binding = {
+                "action": action,
                 "episode_id": actual_id,
                 "is_new": is_new,
                 "title": title,
@@ -388,6 +531,8 @@ def parse_context_plan(
             bindings_by_ref[episode_ref] = binding
             continue
 
+        if version == 2:
+            raise ContextPlanError("duplicate_episode_ref")
         merged_duplicates += 1
         if existing["title"] != title:
             raise ContextPlanError("conflicting_episode_title")
@@ -423,12 +568,18 @@ def parse_context_plan(
         )
     if bound_units != unit_ids:
         raise ContextPlanError("unbound_intent_units")
-    if not any(item["relation"] == "primary" for item in bindings):
+    if version == 1 and not any(
+        item.get("relation") == "primary" for item in bindings
+    ):
         raise ContextPlanError("missing_primary_episode")
 
     ref_to_id = {episode_id: episode_id for episode_id in candidate_ids}
     ref_to_id.update(
-        {str(item["_ref"]): str(item["episode_id"]) for item in bindings}
+        {
+            str(item["_ref"]): str(item["episode_id"])
+            for item in bindings
+            if "_ref" in item
+        }
     )
     raw_links = value["episode_links"]
     if not isinstance(raw_links, list) or len(raw_links) > 20:
@@ -476,11 +627,15 @@ def parse_context_plan(
             duplicates=merged_duplicates,
         )
     for binding in bindings:
-        binding.pop("_ref")
+        binding.pop("_ref", None)
     return {
-        "version": 1,
+        "version": version,
         "intent_units": units,
-        "episode_bindings": bindings,
+        **(
+            {"episode_actions": bindings}
+            if version == 2
+            else {"episode_bindings": bindings}
+        ),
         "episode_links": links,
         "uncertainty": _strings(
             value["uncertainty"],
@@ -532,9 +687,12 @@ def degraded_context_plan(
             }
         )
     return {
-        "version": 1,
+        "version": 2,
         "intent_units": units,
-        "episode_bindings": [],
+        "episode_actions": [
+            {"action": "none", "unit_ids": [str(unit["id"])]}
+            for unit in units
+        ],
         "episode_links": [],
         "uncertainty": [
             f"Context planner protocol failed ({reason}); deterministic message "

@@ -481,7 +481,9 @@ class StorageMemoryTest(unittest.TestCase):
                 AgentReply(["这条消息等待投递"]),
                 turn_id="delivery-turn",
             )
-            episode_id = str(store.list_episode_candidates()[0]["id"])
+            store.create_episode("投递状态", episode_id="delivery-episode")
+            store.link_turn_to_episode("delivery-episode", "delivery-turn")
+            episode_id = "delivery-episode"
             outbox_id = int(
                 store._db.execute(
                     "SELECT id FROM outbox WHERE turn_id='delivery-turn'"
@@ -557,7 +559,158 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertRegex(messages[0]["timestamp"], r"^\d{4}-\d{2}-\d{2}T")
             store.close()
 
-    def test_episode_metadata_updates_and_owner_focus_ages_out(self) -> None:
+    def test_episode_consolidation_ignores_or_groups_unassigned_turns_once(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            for turn_id, text in (
+                ("greeting", "早"),
+                ("game-1", "昨晚开始玩湖之仆从"),
+                ("game-2", "一口气打完第一章，挺开心"),
+            ):
+                store.commit_turn([], text, AgentReply([]), turn_id=turn_id)
+
+            candidate = store.claim_episode_consolidation_candidate()
+            turn_ids = [turn["turn_id"] for turn in candidate["turns"]]
+            linked = store.apply_episode_consolidation(
+                turn_ids,
+                [
+                    {
+                        "action": "ignore",
+                        "turn_ids": ["greeting"],
+                        "reason": "ordinary greeting",
+                    },
+                    {
+                        "action": "new",
+                        "key": "lake-servant",
+                        "title": "《湖之仆从》第一章",
+                        "turn_ids": ["game-1", "game-2"],
+                        "topics": ["湖之仆从"],
+                        "entities": ["湖之仆从"],
+                        "open_loops": [],
+                        "salience": 0.7,
+                    },
+                ],
+                [],
+            )
+
+            self.assertEqual(linked, 2)
+            self.assertIsNone(store.claim_episode_consolidation_candidate())
+            episode_id = store._db.execute(
+                """SELECT episode_id FROM episode_turns
+                   WHERE turn_id='game-1'"""
+            ).fetchone()["episode_id"]
+            self.assertEqual(
+                [turn["turn_id"] for turn in store.episode_turns(episode_id)],
+                ["game-1", "game-2"],
+            )
+            self.assertEqual(
+                store._db.execute(
+                    "SELECT content FROM messages ORDER BY id"
+                ).fetchall()[1]["content"],
+                "昨晚开始玩湖之仆从",
+            )
+            store.close()
+
+    def test_episode_consolidation_continue_is_limited_to_supplied_candidates(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store.create_episode("旧游戏", episode_id="old-game")
+            store.commit_turn([], "继续昨晚的游戏", AgentReply([]), turn_id="turn-1")
+            decision = {
+                "action": "continue",
+                "episode_id": "old-game",
+                "turn_ids": ["turn-1"],
+                "topics": [],
+                "entities": [],
+                "open_loops": [],
+                "salience": 0.5,
+            }
+            with self.assertRaisesRegex(
+                ValueError, "unknown consolidation episode"
+            ):
+                store.apply_episode_consolidation(["turn-1"], [decision], [])
+
+            self.assertEqual(
+                store.apply_episode_consolidation(
+                    ["turn-1"], [decision], ["old-game"]
+                ),
+                1,
+            )
+            store.close()
+
+    def test_episode_rolls_to_successor_after_turn_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store.create_episode(
+                "长期项目",
+                episode_id="long-project",
+                topics=["项目"],
+            )
+            for ordinal in range(64):
+                turn_id = f"old-{ordinal}"
+                store.begin_turn(turn_id, "autonomous", [turn_id])
+                store.complete_background_turn(turn_id)
+                store.link_turn_to_episode("long-project", turn_id)
+
+            event = IncomingMessage("next", "next", "继续这个项目", 1, 1)
+            store.add_event(event)
+            store.begin_turn("next", "owner", [event.event_id])
+            store.save_context_plan(
+                "next",
+                1,
+                [event.event_id],
+                {
+                    "version": 2,
+                    "intent_units": [
+                        {
+                            "id": "u1",
+                            "event_ids": [event.event_id],
+                            "text": event.text,
+                            "intent": "continue project",
+                            "speech_act": "casual_share",
+                            "references": [],
+                            "recall_queries": [],
+                        }
+                    ],
+                    "episode_actions": [
+                        {
+                            "action": "continue",
+                            "episode_id": "long-project",
+                            "is_new": False,
+                            "title": "长期项目",
+                            "relation": "primary",
+                            "unit_ids": ["u1"],
+                            "topics": ["新阶段"],
+                            "entities": [],
+                            "open_loops": [],
+                            "salience": 0.6,
+                        }
+                    ],
+                    "episode_links": [],
+                    "uncertainty": [],
+                },
+            )
+            store.commit_turn(
+                [event], event.text, AgentReply([]), turn_id="next"
+            )
+
+            successor = store._db.execute(
+                """SELECT from_episode_id FROM episode_links
+                   WHERE to_episode_id='long-project' AND kind='continues'"""
+            ).fetchone()["from_episode_id"]
+            self.assertEqual(store.episode("long-project")["status"], "closed")
+            self.assertEqual(store.episode(successor)["title"], "长期项目")
+            self.assertEqual(
+                [turn["turn_id"] for turn in store.episode_turns(successor)],
+                ["next"],
+            )
+            store.close()
+
+    def test_episode_metadata_merges_and_closing_episodes_age_out(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
 
@@ -600,17 +753,23 @@ class StorageMemoryTest(unittest.TestCase):
 
             commit("turn-a1", "episode-a", "obsolete_marker")
             commit("turn-a2", "episode-a", "fresh_marker")
-            self.assertEqual(store.episode("episode-a")["topics"], ["fresh_marker"])
-            self.assertEqual(store.search_episodes("obsolete_marker", 3), [])
+            self.assertEqual(
+                store.episode("episode-a")["topics"],
+                ["obsolete_marker", "fresh_marker"],
+            )
+            self.assertEqual(
+                [item["id"] for item in store.search_episodes("obsolete_marker", 3)],
+                ["episode-a"],
+            )
 
             commit("turn-b", "episode-b", "第二主题")
-            self.assertEqual(store.episode("episode-a")["status"], "closing")
+            self.assertEqual(store.episode("episode-a")["status"], "closed")
             commit("turn-c", "episode-c", "第三主题")
             self.assertEqual(store.episode("episode-a")["status"], "closed")
-            self.assertEqual(store.episode("episode-b")["status"], "closing")
+            self.assertEqual(store.episode("episode-b")["status"], "closed")
             self.assertEqual(
                 [item["id"] for item in store.list_episode_candidates()],
-                ["episode-c", "episode-b"],
+                ["episode-c"],
             )
             store.close()
 

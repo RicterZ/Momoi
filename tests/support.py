@@ -16,26 +16,26 @@ def context_plan_response(messages: list[dict[str, Any]]) -> ProviderResponse:
             "event_ids": [message["event_id"]],
             "text": message["text"],
             "intent": "test owner intent",
+            "speech_act": "request",
             "references": [],
             "recall_queries": [message["text"] or "non-text owner message"],
         }
         for index, message in enumerate(owner_messages, 1)
     ]
     episode_ref = candidates[0]["id"] if candidates else "new:test-thread"
-    episode_title = candidates[0]["title"] if candidates else "Test conversation"
     plan = {
-        "version": 1,
+        "version": 2,
         "intent_units": units,
-        "episode_bindings": [
+        "episode_actions": [
             {
+                "action": "continue" if candidates else "new",
                 "episode_ref": episode_ref,
-                "title": episode_title,
-                "relation": "primary",
                 "unit_ids": [unit["id"] for unit in units],
                 "topics": ["test"],
                 "entities": [],
                 "open_loops": [],
                 "salience": 0.5,
+                **({"title": "Test conversation"} if not candidates else {}),
             }
         ],
         "episode_links": [],

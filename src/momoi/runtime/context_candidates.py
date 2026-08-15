@@ -49,7 +49,11 @@ def full_candidate_context(
             "title": candidate["title"],
             "created_timestamp": candidate.get("created_timestamp"),
             "updated_timestamp": candidate.get("updated_timestamp"),
-            "summary": str(candidate["working_summary"])[:400],
+            "summary": str(
+                candidate.get("narrative_summary")
+                or candidate.get("working_summary")
+                or ""
+            )[:400],
             "topics": candidate["topics"],
             "entities": candidate["entities"],
             "open_loops": candidate["open_loops"],

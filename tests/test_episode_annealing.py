@@ -132,6 +132,38 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
             daemon.store.release_episode_annealing("episode-main")
             daemon.store.close()
 
+    async def test_closed_empty_episode_is_eligible_for_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(config(directory))
+            daemon.store.create_episode("已经结束的讨论", episode_id="closed-empty")
+            event = IncomingMessage("event-1", "event-1", "讨论已经完成", 1, 1)
+            daemon.store.add_event(event)
+            daemon.store.commit_turn(
+                [event],
+                event.text,
+                AgentReply(["好的"]),
+                turn_id="turn-1",
+            )
+            outbox_id = daemon.store._db.execute(
+                "SELECT id FROM outbox WHERE turn_id='turn-1'"
+            ).fetchone()["id"]
+            daemon.store.mark_sent(int(outbox_id))
+            daemon.store.link_turn_to_episode("closed-empty", "turn-1")
+            with daemon.store._db:
+                daemon.store._db.execute(
+                    """UPDATE conversation_episodes
+                       SET status='closed', closed_at=updated_at
+                       WHERE id='closed-empty'"""
+                )
+
+            candidate = daemon.store.claim_episode_annealing_candidate(2, 1000)
+
+            self.assertEqual(candidate["episode"]["id"], "closed-empty")
+            self.assertEqual(candidate["through_ordinal"], 1)
+            self.assertTrue(candidate["messages"])
+            daemon.store.release_episode_annealing("closed-empty", failed=False)
+            daemon.store.close()
+
     async def test_old_episode_prefix_progressively_merges_into_working_summary(
         self,
     ) -> None:
@@ -337,4 +369,62 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(episode["working_summary"], "")
             self.assertEqual(episode["summarized_through_ordinal"], 0)
             self.assertEqual(episode["summary_failure_count"], 1)
+            daemon.store.close()
+
+    async def test_v2_summary_stores_narrative_emotion_and_outcomes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(config(directory))
+            daemon.store.create_episode("长期项目", episode_id="episode-main")
+            for ordinal in range(1, 6):
+                add_turn(daemon, ordinal)
+
+            class Provider:
+                async def complete(
+                    self,
+                    _system: object,
+                    messages: list[dict[str, object]],
+                    _tools: list[dict[str, object]],
+                    **_: object,
+                ) -> ProviderResponse:
+                    payload = json.loads(str(messages[0]["content"]))
+                    message = payload["new_messages"][0]
+                    return ProviderResponse(
+                        [
+                            {
+                                "type": "text",
+                                "text": json.dumps(
+                                    {
+                                        "version": 2,
+                                        "claims": [
+                                            {
+                                                "message_id": message["message_id"],
+                                                "turn_id": message["turn_id"],
+                                                "ordinal": message["ordinal"],
+                                                "quote": f"第{message['ordinal']}轮",
+                                            }
+                                        ],
+                                        "narrative_summary": "主人和桃衣持续讨论长期项目。",
+                                        "emotional_context": {
+                                            "owner": "投入",
+                                            "momoi": "配合",
+                                            "tone": "合作",
+                                        },
+                                        "outcomes": ["完成一次阶段讨论"],
+                                    },
+                                    ensure_ascii=False,
+                                ),
+                            }
+                        ],
+                        [],
+                    )
+
+            daemon.provider = Provider()  # type: ignore[assignment]
+            self.assertTrue(await daemon._run_episode_annealing_once())
+            episode = daemon.store.episode("episode-main")
+            self.assertEqual(
+                episode["narrative_summary"],
+                "主人和桃衣持续讨论长期项目。",
+            )
+            self.assertEqual(episode["emotional_context"]["tone"], "合作")
+            self.assertEqual(episode["outcomes"], ["完成一次阶段讨论"])
             daemon.store.close()

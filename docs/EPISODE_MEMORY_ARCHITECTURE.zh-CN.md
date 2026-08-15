@@ -15,6 +15,22 @@ Momoi 的目标不是把尽可能多的历史对话放进每次模型请求，�
 这里所说的“过期”不是删除历史。Episode 原始消息仍然永久保存在数据库中并可搜索。
 过期只表示它不再自动出现在普通 Owner Turn 的上下文候选中。
 
+### 1.1 选择性情景记忆
+
+Episode 不是每个 Turn 必须进入的归档容器，而是从完整聊天档案中选择性沉淀出的
+情景记忆：
+
+- 原始 Turn 和 message 始终保存；
+- 普通问候、无上下文意义的短回应和过渡话语可以不属于任何 Episode；
+- 一段有意义的共同经历、事件、讨论、情绪过程或项目阶段才形成 Episode；
+- 一句低信息消息如果处于有意义上下文中，可以作为整段 Episode 的一部分；
+- Episode 保存“我们经历了什么”，Memory 保存确认事实/偏好/定义/流程，
+  Reflection 保存 Momoi 的低权限知识、经验和人格理解，Goal/Reminder 保存未来行动。
+
+在线 Context Planner 只做暂定的 `none`、`continue`、`new` 归档判断。后台
+Episode Consolidator 观察连续 Turn，决定未归档 Turn 是否值得形成情景记忆，以及
+哪些 Turn 应组成同一段上下文。
+
 ## 2. 非目标
 
 本设计不做以下事情：
@@ -49,12 +65,14 @@ Momoi 的复盘结果和低权限学习。
 
 ### 3.3 episodes
 
-一次活动或一条话题线。
+一段值得长期回忆的共同经历、事件、讨论、情绪过程或项目阶段。
 
 - 保存 title、status、summary、working summary、open loops 和关联 turns。
 - 支持按话题搜索、时间搜索和原文读取。
 - 默认自动检索有时间范围。
 - 超出默认时间范围后仍可显式搜索。
+- 不要求每个 Turn 都属于 Episode。
+- 不是“家庭门锁”“主动陪伴”“Momoi 开发”这类永久分类；分类由 topics/entities 表达。
 
 ### 3.4 recent_conversation
 
@@ -100,7 +118,7 @@ Momoi 的复盘结果和低权限学习。
 
 ### 4.2 归档关系与读取权限分离
 
-`episode_bindings` 只表示当前 turn 应该归档到哪些 Episode。
+Episode 归档动作只表示当前 intent unit 是否明显属于一段情景记忆。
 
 它不再表示：
 
@@ -110,6 +128,15 @@ Momoi 的复盘结果和低权限学习。
 - 当前 turn 需要复述这些 Episode。
 
 历史检索只由独立的 recall request 触发。
+
+每个 intent unit 的归档动作是：
+
+- `none`：只保存原始 Turn，不进入 Episode；
+- `continue`：明显继续候选中的已有 Episode；
+- `new`：明显开始一段值得记住的新经历或讨论。
+
+Episode 间的关联只使用 `episode_links`。不存在“related binding”；建立关联不会把当前
+Turn 写入目标 Episode。
 
 ### 4.3 默认范围有限，显式范围无限
 
@@ -208,7 +235,7 @@ Planner 必须知道质量状态，但主模型默认目录中不需要展示内
 
 ### 5.2 Context Planner 输出
 
-建议将 Planner 协议升级为 v2，把“归档”和“召回”明确分开：
+Planner 协议把“归档”和“召回”明确分开，并允许不建立 Episode：
 
 ```json
 {
@@ -224,11 +251,11 @@ Planner 必须知道质量状态，但主模型默认目录中不需要展示内
     }
   ],
   "recall_requests": [],
-  "episode_bindings": [
+  "episode_actions": [
     {
+      "action": "new",
       "episode_ref": "new:momoi-upgrade-20260815",
       "title": "Momoi 提示词和代码升级",
-      "relation": "primary",
       "unit_ids": ["u1"],
       "topics": ["Momoi", "提示词", "代码升级"],
       "entities": ["Momoi"],
@@ -281,10 +308,10 @@ Runtime 根据 `recall_requests`：
 
 Episode 检索只产生目录项。
 
-一个 Episode 同时被 binding 和 recall 命中时：
+一个 Episode 同时被归档动作和 recall 命中时：
 
 - 合并 unit IDs；
-- 保留归档 relation；
+- 保留归档动作；
 - 不因此展开原文；
 - 不把 relation 转换成原文读取模式。
 
@@ -388,7 +415,7 @@ token 预算共同决定，采用两层目录：
 
 #### summary
 
-面向检索和目录展示的简短语义总结。
+面向检索和目录展示的 narrative summary。
 
 - 只能基于 verified claims 生成。
 - 应描述这个 Episode 发生了什么、有哪些决定、结果和未完成事项。
@@ -396,11 +423,35 @@ token 预算共同决定，采用两层目录：
 - 不应复制大量原文。
 - 应有严格长度限制。
 
-### 6.2 两阶段后台维护
+#### emotional_context
 
-每次 Episode 维护分成两步：
+只在有清晰证据时记录这段经历的情绪和关系语气：
 
-#### 阶段 A：证据选择
+```json
+{
+  "owner": "紧张但愿意准备",
+  "momoi": "关心、投入",
+  "tone": "亲密、支持"
+}
+```
+
+没有明显情绪时保持为空，不为了填字段而推断。
+
+#### outcomes
+
+记录这段经历中已经形成的结果、决定或关系变化，例如：
+
+- 一周目已通关；
+- 确认以后一起尝试 Momoi 推荐的游戏；
+- 门锁告警已经解除。
+
+它不承担 Goal/Reminder 的未来执行职责。
+
+### 6.2 后台维护中的两层结果
+
+每次 Episode 维护同时产生两层结果：
+
+#### 层 A：证据选择
 
 沿用当前 episode annealing：
 
@@ -409,7 +460,7 @@ token 预算共同决定，采用两层目录：
 - 所有 quote 必须在原始消息中逐字存在；
 - Runtime 验证引用。
 
-#### 阶段 B：语义总结
+#### 层 B：语义总结
 
 把以下内容交给总结模型：
 
@@ -422,15 +473,21 @@ token 预算共同决定，采用两层目录：
 
 ```json
 {
-  "version": 1,
-  "summary": "主人调整了 Momoi 的回复拆分方式，并指出过度描述和 www 滥用问题；Momoi 已确认新的使用原则。",
-  "topics": ["回复拆分", "表达风格", "www 使用"],
-  "entities": ["Momoi"],
-  "open_loops": []
+  "version": 2,
+  "claims": [],
+  "narrative_summary": "主人调整了 Momoi 的回复拆分方式，并指出过度描述和 www 滥用问题；Momoi 已确认新的使用原则。",
+  "emotional_context": {
+    "owner": "认真纠正并期待改善",
+    "momoi": "接受纠正",
+    "tone": "直接、合作"
+  },
+  "outcomes": ["明确了消息拆分和 www 使用原则"]
 }
 ```
 
-Runtime 只允许总结引用 claims 已支持的内容。第一阶段已经保证证据存在，第二阶段不接触未验证 raw history。
+Runtime 先逐条验证 claims；任一引用不匹配原文时整次更新失败。叙事、情绪和结果必须
+由同一批 claims 支持，但其“是否充分蕴含”目前由提示词约束，Runtime 不做语义证明，
+因此它们的权限低于 verified claims，不能覆盖主人确认过的 Memory。
 
 ### 6.3 维护触发位置
 
@@ -459,19 +516,19 @@ closed 只表示话题结束，不表示不再维护总结。
 
 Episode 状态继续使用：
 
-- `open`：当前主要话题；
-- `closing`：近期可能继续，但已经切换到其他主要话题；
-- `closed`：话题已结束或长期没有继续。
+- `open`：存在明确、跨 Turn 的 `open_loops`；
+- `closing`：近期有活动但没有 durable open loop；
+- `closed`：一段情景已经结束。
 
 归档是状态变化和总结完成，不是移动或删除消息。
 
 建议流程：
 
-1. 新 primary Episode 出现时，旧 primary 从 open 进入 closing。
-2. 后续 Turn 没有继续旧 Episode 时，旧 Episode 从 closing 进入 closed。
-3. Reflection 可以关闭遗漏的话题，但不是唯一关闭机制。
+1. 当前归档 Episode 有 open loops 时进入 `open`，否则进入 `closing`。
+2. 未被当前 Turn 继续的 `closing` Episode 进入 `closed`。
+3. `open` Episode 不因话题切换自动关闭；其任务状态由 Goal/Reminder 和后续整理共同维护。
 4. closed 后仍执行必要的最终总结。
-5. 完成总结后进入稳定归档状态。
+5. 已关闭 Episode 之后仍可被明确 `continue`，但普通弱关联只建立 link。
 
 ### 6.5 混合 Episode 的修复
 
