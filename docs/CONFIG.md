@@ -389,7 +389,7 @@ Owner Turns exclusively answer owner input. A heartbeat is deferred while owner 
 }
 ```
 
-The default is `curl`, `read_file`, and `write_file`. `curl` is limited to GET, HEAD, and OPTIONS. Autonomous file access is restricted to `<workspace>/artifacts`. MCP tools must be both listed here and classified read-only through `readOnlyHint` or `readOnlyTools`. Agent-owned Goals inherit the same boundary; owner-created Goals retain the tools authorized by the owner's task.
+The default is `curl`, `read_file`, `write_file`, and `list_dir`. `curl` is limited to GET, HEAD, and OPTIONS. Autonomous file access is restricted to `<workspace>/artifacts`. MCP tools must be both listed here and classified read-only through `readOnlyHint` or `readOnlyTools`. Agent-owned Goals inherit the same boundary; owner-created Goals retain the tools authorized by the owner's task.
 
 ## Daily reflection
 

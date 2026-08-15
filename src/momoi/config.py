@@ -69,7 +69,7 @@ class HeartbeatConfig:
 
 @dataclass(frozen=True)
 class AutonomyConfig:
-    allowed_tools: tuple[str, ...] = ("curl", "read_file", "write_file")
+    allowed_tools: tuple[str, ...] = ("curl", "read_file", "write_file", "list_dir")
 
 
 @dataclass(frozen=True)
@@ -299,7 +299,7 @@ def load_config(path: str | Path) -> AppConfig:
             "heartbeat.max_interval_seconds must be at least min_interval_seconds"
         )
     allowed_tools = autonomy_raw.get(
-        "allowed_tools", ["curl", "read_file", "write_file"]
+        "allowed_tools", ["curl", "read_file", "write_file", "list_dir"]
     )
     if not isinstance(allowed_tools, list) or not all(
         isinstance(item, str) and item.strip() for item in allowed_tools

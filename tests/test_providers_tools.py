@@ -1198,6 +1198,15 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                     ToolCall("read-1", "read_file", {"path": "note.txt"})
                 )
                 self.assertEqual(read["content"], "old\n")
+                listed = await workspace_tools.execute(
+                    ToolCall("list-1", "list_dir", {"path": "."})
+                )
+                self.assertTrue(listed["ok"], listed)
+                self.assertEqual(
+                    [entry["name"] for entry in listed["entries"]],
+                    ["note.txt"],
+                )
+                self.assertEqual(listed["entries"][0]["type"], "file")
                 patched = await workspace_tools.execute(
                     ToolCall(
                         "patch-1",

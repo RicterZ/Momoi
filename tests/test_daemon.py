@@ -87,7 +87,7 @@ class DaemonTest(unittest.TestCase):
         self.assertIn("judgment, not a reflex", specialized[1]["text"])
         self.assertEqual(len(owner), 2)
         self.assertNotIn("Memory tools", owner[1]["text"])
-        self.assertIn("Built-in runtime tools", owner[1]["text"])
+        self.assertNotIn("Built-in runtime tools", owner[1]["text"])
         self.assertIn("Agenda tools", owner[1]["text"])
 
     def test_emotion_catalog_is_cached_system_block(self) -> None:

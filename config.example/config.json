@@ -74,6 +74,7 @@
       "curl",
       "read_file",
       "write_file",
+      "list_dir",
       "mcp__brave-search__brave_web_search"
     ]
   },

@@ -16,7 +16,6 @@ from ..agenda_tools import (
     OWNER_NOTIFY_SPEC,
 )
 from ..builtin_tools import (
-    BUILTIN_TOOL_POLICY,
     BUILTIN_TOOL_SPECS,
     SELF_DIRECTED_BUILTIN_TOOL_SPECS,
 )
@@ -97,9 +96,6 @@ EPISODE_CONSOLIDATION_SYSTEM_PROMPT = (
     EPISODE_CONSOLIDATION_PROMPT_PATH.read_text(encoding="utf-8").strip()
 )
 MAX_CONSECUTIVE_TOOL_FAILURES = 3
-BUILTIN_POLICY_TOOLS = frozenset(
-    {"curl", "read_file", "write_file", "apply_patch", "sleep"}
-)
 AGENDA_POLICY_TOOLS = frozenset(
     {
         "goal_create",
@@ -1663,7 +1659,7 @@ class TurnRunner:
                             result = {"ok": False, "error": "tool_not_allowed"}
                         elif (
                             artifact_root is not None
-                            and call.name in {"read_file", "write_file"}
+                            and call.name in {"read_file", "write_file", "list_dir"}
                             and not self._artifact_path_allowed(call, artifact_root)
                         ):
                             result = {
@@ -2295,8 +2291,6 @@ class TurnRunner:
     ) -> list[dict[str, Any]]:
         names = {str(tool.get("name") or "") for tool in tools}
         policies: list[str] = []
-        if names & BUILTIN_POLICY_TOOLS:
-            policies.append(BUILTIN_TOOL_POLICY.strip())
         if names & AGENDA_POLICY_TOOLS:
             policies.append(AGENDA_TOOL_POLICY.strip())
         if names & MEMORY_POLICY_TOOLS:

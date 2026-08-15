@@ -389,7 +389,7 @@ Owner Turn 独占对主人输入的回复权。存在未处理的主人消息、
 }
 ```
 
-默认允许 `curl`、`read_file` 和 `write_file`。`curl` 仅允许 GET、HEAD 和 OPTIONS；自主文件访问仅限 `<workspace>/artifacts`。MCP 工具必须同时出现在这里，并通过 `readOnlyHint` 或 `readOnlyTools` 判定为只读。agent-owned Goal 继承同一边界；主人创建的 Goal 继续使用主人任务授权的工具。
+默认允许 `curl`、`read_file`、`write_file` 和 `list_dir`。`curl` 仅允许 GET、HEAD 和 OPTIONS；自主文件访问仅限 `<workspace>/artifacts`。MCP 工具必须同时出现在这里，并通过 `readOnlyHint` 或 `readOnlyTools` 判定为只读。agent-owned Goal 继承同一边界；主人创建的 Goal 继续使用主人任务授权的工具。
 
 ## 每日复盘
 
