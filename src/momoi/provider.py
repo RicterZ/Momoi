@@ -181,9 +181,9 @@ def _dump_request(
     provider: str,
     payload: dict[str, Any],
     require_tool: bool,
-) -> None:
+) -> Path | None:
     if not enabled or dump_dir is None:
-        return
+        return None
     try:
         timestamp = datetime.now(timezone.utc)
         dump_dir.mkdir(parents=True, exist_ok=True)
@@ -203,6 +203,30 @@ def _dump_request(
                 indent=2,
             )
             + "\n",
+            encoding="utf-8",
+        )
+        return path
+    except (OSError, TypeError, ValueError) as error:
+        log_event(
+            logger,
+            logging.WARNING,
+            "llm_dump_failed",
+            error_type=type(error).__name__,
+            exc_info=True,
+        )
+        return None
+
+
+def _dump_response(path: Path | None, data: Any) -> None:
+    if path is None:
+        return
+    try:
+        dumped = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(dumped, dict):
+            return
+        dumped["response"] = _redact_dump_media(data)
+        path.write_text(
+            json.dumps(dumped, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
     except (OSError, TypeError, ValueError) as error:
@@ -320,7 +344,9 @@ class AnthropicProvider:
             if require_tool:
                 payload["tool_choice"] = {"type": "any"}
         payload = cyber_keyword_pre_hook.replace_strings(payload)
-        _dump_request(self.dump_dir, self.config.dump_prompts, "anthropic", payload, require_tool)
+        dump_path = _dump_request(
+            self.dump_dir, self.config.dump_prompts, "anthropic", payload, require_tool
+        )
         headers = {
             "x-api-key": self.config.api_key,
             "anthropic-version": "2023-06-01",
@@ -370,6 +396,7 @@ class AnthropicProvider:
                         )
                         raise error
                     data = await response.json()
+                    _dump_response(dump_path, data)
                     duration_ms = int((monotonic() - attempt_started) * 1000)
                     _log_usage(
                         data, protocol="anthropic", duration_ms=duration_ms
@@ -583,7 +610,9 @@ class OpenAIProvider:
             if require_tool and self.config.tool_choice:
                 payload["tool_choice"] = "required"
         payload = cyber_keyword_pre_hook.replace_strings(payload)
-        _dump_request(self.dump_dir, self.config.dump_prompts, "openai", payload, require_tool)
+        dump_path = _dump_request(
+            self.dump_dir, self.config.dump_prompts, "openai", payload, require_tool
+        )
         headers = {
             "authorization": f"Bearer {self.config.api_key}",
             "content-type": "application/json",
@@ -647,6 +676,7 @@ class OpenAIProvider:
                         raise ProviderResponseError(
                             "OpenAI-compatible endpoint returned non-object JSON"
                         )
+                    _dump_response(dump_path, data)
                     duration_ms = int((monotonic() - attempt_started) * 1000)
                     _log_usage(data, protocol="openai", duration_ms=duration_ms)
                     choices = data.get("choices")

@@ -81,7 +81,7 @@ This makes the workspace relocatable. Absolute paths are also accepted where a p
 | `temperature` | No | `0.6` | Sampling temperature |
 | `timeout_seconds` | No | `300` | Positive request timeout |
 | `max_retries` | No | `3` | Retries for transient connection and server errors; OpenAI-compatible endpoints also retry unusable successful responses |
-| `dump_prompts` | No | `false` | Save complete LLM requests under `llm-dumps/` in the workspace for diagnostics and prompt review |
+| `dump_prompts` | No | `false` | Save complete LLM requests and raw responses under `llm-dumps/` in the workspace for diagnostics and prompt review |
 | `tool_choice` | No | `true` | Require tool use in OpenAI-compatible requests; set to `false` for models such as Thinking mode that reject `tool_choice` |
 
 For Anthropic-compatible providers, Momoi calls `/v1/messages`. For OpenAI-compatible providers, a host-only URL receives `/v1/chat/completions`; a URL that already contains a gateway path receives `/chat/completions` below that path.
