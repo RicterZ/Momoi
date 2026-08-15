@@ -324,6 +324,29 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(episode["summarized_through_ordinal"], 0)
             daemon.store.close()
 
+    async def test_closed_episode_failure_schedules_worker_retry(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(config(directory))
+            daemon.store.create_episode("已结束的项目", episode_id="episode-main")
+            for ordinal in range(1, 6):
+                add_turn(daemon, ordinal)
+            with daemon.store._db:
+                daemon.store._db.execute(
+                    """UPDATE conversation_episodes SET status='closed'
+                       WHERE id='episode-main'"""
+                )
+            candidate = daemon.store.claim_episode_annealing_candidate(2, 10000)
+            self.assertIsNotNone(candidate)
+
+            daemon.store.release_episode_annealing("episode-main")
+
+            episode = daemon.store.episode("episode-main")
+            self.assertEqual(
+                daemon.store.next_episode_annealing_retry_at(),
+                episode["summary_retry_at"],
+            )
+            daemon.store.close()
+
     async def test_hallucinated_summary_quote_cannot_replace_working_set(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(config(directory))
@@ -428,3 +451,19 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(episode["emotional_context"]["tone"], "合作")
             self.assertEqual(episode["outcomes"], ["完成一次阶段讨论"])
             daemon.store.close()
+
+    def test_v2_summary_normalizes_common_outcome_object_shape(self) -> None:
+        result = MomoiDaemon._episode_summary_result(
+            json.dumps(
+                {
+                    "version": 2,
+                    "claims": [],
+                    "narrative_summary": "",
+                    "emotional_context": {},
+                    "outcomes": [{"outcome": "老师已下班，当天工作结束"}],
+                },
+                ensure_ascii=False,
+            )
+        )
+
+        self.assertEqual(result["outcomes"], ["老师已下班，当天工作结束"])

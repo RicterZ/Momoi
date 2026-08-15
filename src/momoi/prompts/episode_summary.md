@@ -29,8 +29,9 @@ Rules:
   with the selected claims.
 - Fill `emotional_context` only when the claims clearly support it. Use empty
   strings rather than guessing.
-- `outcomes` contains at most 12 concise completed results, decisions, or changes.
-  It is not a task list and must not invent future commitments.
+- `outcomes` is an array of at most 12 JSON strings, never objects. Each string is
+  one concise completed result, decision, or change. It is not a task list and
+  must not invent future commitments.
 
 The runtime verifies every citation against permanently archived raw messages
 before it can replace the working set. Invalid evidence rejects the entire

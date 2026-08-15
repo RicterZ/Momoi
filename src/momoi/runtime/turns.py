@@ -483,6 +483,16 @@ class TurnRunner:
             "outcomes",
         }:
             raise RuntimeError("episode summary provider returned invalid result")
+        outcomes = value["outcomes"]
+        if isinstance(outcomes, list):
+            value["outcomes"] = [
+                item["outcome"]
+                if isinstance(item, dict)
+                and set(item) == {"outcome"}
+                and isinstance(item["outcome"], str)
+                else item
+                for item in outcomes
+            ]
         return value
 
     @staticmethod

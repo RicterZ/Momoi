@@ -2813,8 +2813,7 @@ class Store(MemoryStore, DeliveryStore):
         row = self._db.execute(
             """SELECT MIN(summary_retry_at) AS due
                FROM conversation_episodes
-               WHERE status IN ('open', 'closing')
-                 AND summary_claimed_at IS NULL
+               WHERE summary_claimed_at IS NULL
                  AND summary_retry_at IS NOT NULL"""
         ).fetchone()
         return float(row["due"]) if row and row["due"] is not None else None
