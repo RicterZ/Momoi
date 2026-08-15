@@ -164,6 +164,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(overview["counts"]["reflections"], 1)
         self.assertEqual(overview["counts"]["emotions"], 1)
         self.assertEqual(overview["counts"]["memories"], 3)
+        self.assertEqual(overview["counts"]["reminders"], 1)
 
         conversations = await (
             await self.client.get("/api/conversations", headers=auth)

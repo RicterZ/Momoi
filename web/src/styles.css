@@ -493,7 +493,7 @@ h2, h3, p { overflow-wrap: anywhere; }
 
 .metrics {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(126px, 1fr));
   gap: 12px;
 }
 .metric, .panel, .goal-card, .reflection-card, .reminder-card {

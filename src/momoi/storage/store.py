@@ -4106,6 +4106,11 @@ class Store(MemoryStore, DeliveryStore):
                        WHERE status IN ('active', 'waiting', 'blocked')"""
                 ).fetchone()[0]
             ),
+            "reminders": int(
+                self._db.execute(
+                    "SELECT COUNT(*) FROM reminders WHERE status='pending'"
+                ).fetchone()[0]
+            ),
             "emotions": int(
                 self._db.execute("SELECT COUNT(*) FROM emotions").fetchone()[0]
             ),

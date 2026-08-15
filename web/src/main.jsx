@@ -271,6 +271,7 @@ function Overview({ refreshKey, token }) {
           ["复盘", data.counts.reflections],
           ["记忆", data.counts.memories],
           ["进行中 Goals", data.counts.goals],
+          ["待提醒", data.counts.reminders],
           ["表情包", data.counts.emotions],
         ];
         return (
