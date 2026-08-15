@@ -12,6 +12,9 @@ from ..models import IncomingMessage, OwnerInputStatus
 ChannelMessage = str | dict[str, Any]
 _SEGMENT_TYPE = re.compile(r"^[a-zA-Z0-9_-]{1,40}$")
 _MEDIA_TYPES = {"image", "file", "video", "audio", "record"}
+# QQ/NapCat can attach a caption to images, but file/video/audio drop sibling
+# text if they share one send_private_msg. Keep those media types alone.
+_EXCLUSIVE_MEDIA_TYPES = {"file", "video", "audio", "record"}
 
 
 class ChannelError(RuntimeError):
@@ -82,6 +85,29 @@ def _plugin(name: str) -> Any:
         if error.name == module_name:
             raise ValueError(f"unsupported channel plugin: {name}") from None
         raise
+
+
+def split_exclusive_media(message: dict[str, Any]) -> list[dict[str, Any]]:
+    if message.get("action") != "message":
+        return [message]
+    segments = message.get("segments") or []
+    if len(segments) <= 1:
+        return [message]
+    if not any(segment.get("type") in _EXCLUSIVE_MEDIA_TYPES for segment in segments):
+        return [message]
+    groups: list[list[dict[str, Any]]] = []
+    current: list[dict[str, Any]] = []
+    for segment in segments:
+        if segment.get("type") in _EXCLUSIVE_MEDIA_TYPES:
+            if current:
+                groups.append(current)
+                current = []
+            groups.append([segment])
+        else:
+            current.append(segment)
+    if current:
+        groups.append(current)
+    return [{"action": "message", "segments": group} for group in groups]
 
 
 def normalize_channel_message(value: ChannelMessage) -> dict[str, Any]:

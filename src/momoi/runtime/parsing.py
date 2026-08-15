@@ -1,7 +1,12 @@
 import re
 from typing import Any
 
-from ..channel import ChannelMessage, has_blank_line, normalize_channel_message
+from ..channel import (
+    ChannelMessage,
+    has_blank_line,
+    normalize_channel_message,
+    split_exclusive_media,
+)
 from ..emotions import EMOTION_PREFIX
 from ..models import AgentReply
 from ..storage import REFLECTION_MEMORY_KINDS
@@ -23,21 +28,22 @@ def parse_messages(
             messages.append(item.strip())
             continue
         try:
-            message = normalize_channel_message(item)
+            normalized = normalize_channel_message(item)
         except ValueError as error:
             return None, str(error)
-        segments = message.get("segments") or []
-        if (
-            message.get("action") == "message"
-            and len(segments) == 1
-            and segments[0].get("type") == "text"
-            and str(segments[0].get("data", {}).get("text", "")).startswith(
-                EMOTION_PREFIX
-            )
-        ):
-            messages.append(str(segments[0]["data"]["text"]))
-        else:
-            messages.append(message)
+        for message in split_exclusive_media(normalized):
+            segments = message.get("segments") or []
+            if (
+                message.get("action") == "message"
+                and len(segments) == 1
+                and segments[0].get("type") == "text"
+                and str(segments[0].get("data", {}).get("text", "")).startswith(
+                    EMOTION_PREFIX
+                )
+            ):
+                messages.append(str(segments[0]["data"]["text"]))
+            else:
+                messages.append(message)
     return messages, None
 
 

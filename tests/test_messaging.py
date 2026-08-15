@@ -487,6 +487,66 @@ class MessagingTest(unittest.TestCase):
         )
         self.assertIsNone(invalid_rich)
         self.assertEqual(error, "blank_lines_must_be_separate_messages")
+        mixed, error = MomoiDaemon._parse_messages(
+            {
+                "messages": [
+                    {
+                        "segments": [
+                            {
+                                "type": "text",
+                                "data": {"text": "找到啦老师！"},
+                            },
+                            {
+                                "type": "file",
+                                "data": {"file": "/tmp/concept.md"},
+                            },
+                        ]
+                    }
+                ]
+            }
+        )
+        self.assertIsNone(error)
+        self.assertEqual(len(mixed), 2)
+        self.assertEqual(
+            mixed[0]["segments"],
+            [{"type": "text", "data": {"text": "找到啦老师！"}}],
+        )
+        self.assertEqual(
+            mixed[1]["segments"],
+            [{"type": "file", "data": {"file": "/tmp/concept.md"}}],
+        )
+        captioned_image, error = MomoiDaemon._parse_messages(
+            {
+                "messages": [
+                    {
+                        "segments": [
+                            {"type": "text", "data": {"text": "看看这张"}},
+                            {"type": "image", "data": {"file": "/tmp/a.png"}},
+                        ]
+                    }
+                ]
+            }
+        )
+        self.assertIsNone(error)
+        self.assertEqual(len(captioned_image), 1)
+        self.assertEqual(len(captioned_image[0]["segments"]), 2)
+        file_then_text, error = MomoiDaemon._parse_messages(
+            {
+                "messages": [
+                    {
+                        "segments": [
+                            {"type": "file", "data": {"file": "/tmp/a.md"}},
+                            {"type": "text", "data": {"text": "附件在上面"}},
+                        ]
+                    }
+                ]
+            }
+        )
+        self.assertIsNone(error)
+        self.assertEqual(
+            [item["segments"][0]["type"] for item in file_then_text],
+            ["file", "text"],
+        )
 
 
 class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):

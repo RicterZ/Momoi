@@ -233,7 +233,9 @@ SEND_MESSAGE_TOOL_SPEC: dict[str, Any] = {
     "name": "send_message",
     "description": (
         "Emit non-empty owner-visible beats without ending the Turn. Keep each item "
-        "as one complete beat; after the result, call respond to close the Turn."
+        "as one complete beat. Text may share a beat with images; file, video, audio, "
+        "and record must be their own items, and mixed input is split. After the "
+        "result, call respond to close the Turn."
     ),
     "input_schema": {
         "type": "object",
