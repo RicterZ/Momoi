@@ -2006,7 +2006,10 @@ class TurnRunner:
     async def _run_episode_annealing_once(self) -> bool:
         consolidation = self.store.claim_episode_consolidation_candidate()
         if consolidation is not None:
-            return await self._consolidate_episode_turns(consolidation)
+            archived = await self._consolidate_episode_turns(consolidation)
+            remaining = self.store.claim_episode_consolidation_candidate()
+            if remaining is not None and archived:
+                return True
         candidate = self.store.claim_episode_annealing_candidate(
             self.config.recent_turns, self.config.recent_raw_tokens
         )
@@ -2048,7 +2051,14 @@ class TurnRunner:
         if not isinstance(turns, list) or not turns:
             return False
         turn_ids = [str(turn["turn_id"]) for turn in turns]
-        turn_id = self._turn_id("episode-consolidate", *turn_ids)
+        context_turns = candidate.get("context_turns")
+        context_items = context_turns if isinstance(context_turns, list) else []
+        through = ""
+        if context_items and isinstance(context_items[-1], dict):
+            through = str(context_items[-1].get("turn_id") or "")
+        turn_id = self._turn_id(
+            "episode-consolidate", *turn_ids, f"through:{through}"
+        )
         state = self.store.begin_turn(
             turn_id,
             "autonomous",
@@ -2093,6 +2103,7 @@ class TurnRunner:
                     for episode in candidate["candidate_episodes"]
                     if isinstance(episode, dict) and episode.get("id")
                 ],
+                allow_ignore_latest=bool(context_items),
             )
             action_counts = {
                 action: sum(
@@ -2129,11 +2140,7 @@ class TurnRunner:
                 deferred=deferred,
                 **action_counts,
             )
-            if not deferred:
-                return True
-            remaining = self.store.claim_episode_consolidation_candidate()
-            remaining_turns = remaining.get("turns", []) if remaining else []
-            return isinstance(remaining_turns, list) and len(remaining_turns) > deferred
+            return True
         except asyncio.CancelledError:
             raise
         except Exception as error:

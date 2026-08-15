@@ -326,7 +326,7 @@ CREATE TABLE IF NOT EXISTS episode_links (
 );
 CREATE TABLE IF NOT EXISTS episode_consolidation_decisions (
     turn_id TEXT PRIMARY KEY,
-    action TEXT NOT NULL CHECK (action IN ('ignored', 'linked')),
+    action TEXT NOT NULL CHECK (action IN ('ignored', 'linked', 'deferred')),
     episode_id TEXT,
     reason TEXT NOT NULL DEFAULT '',
     processed_at REAL NOT NULL,

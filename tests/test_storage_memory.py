@@ -658,6 +658,7 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertEqual(
                 [turn["turn_id"] for turn in candidate["turns"]], ["first"]
             )
+            self.assertEqual(candidate["context_turns"], [])
             self.assertEqual(
                 store.apply_episode_consolidation(
                     ["first"],
@@ -673,9 +674,12 @@ class StorageMemoryTest(unittest.TestCase):
                 (0, 1),
             )
             self.assertEqual(
-                [turn["turn_id"] for turn in store.claim_episode_consolidation_candidate()["turns"]],
-                ["first"],
+                store._db.execute(
+                    "SELECT action FROM episode_consolidation_decisions WHERE turn_id='first'"
+                ).fetchone()["action"],
+                "deferred",
             )
+            self.assertIsNone(store.claim_episode_consolidation_candidate())
 
             store.commit_turn([], "在玩什么", AgentReply(["塞尔达"]), turn_id="second")
             second_outbox = store._db.execute(
@@ -685,6 +689,7 @@ class StorageMemoryTest(unittest.TestCase):
             candidate = store.claim_episode_consolidation_candidate()
             turn_ids = [turn["turn_id"] for turn in candidate["turns"]]
             self.assertEqual(turn_ids, ["first", "second"])
+            self.assertEqual(candidate["context_turns"], [])
             self.assertEqual(
                 store.apply_episode_consolidation(
                     turn_ids,
@@ -703,6 +708,128 @@ class StorageMemoryTest(unittest.TestCase):
                     [],
                 ),
                 (2, 0),
+            )
+            self.assertIsNone(store.claim_episode_consolidation_candidate())
+            store.close()
+
+    def test_deferred_turn_reconsiders_with_already_linked_later_context(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store.commit_turn([], "你在干嘛", AgentReply(["我在打游戏"]), turn_id="first")
+            first_outbox = store._db.execute(
+                "SELECT id FROM outbox WHERE turn_id='first'"
+            ).fetchone()["id"]
+            store.mark_sent(int(first_outbox))
+            store.apply_episode_consolidation(
+                ["first"],
+                [
+                    {
+                        "action": "defer",
+                        "turn_ids": ["first"],
+                        "reason": "needs later context",
+                    }
+                ],
+                [],
+            )
+
+            store.commit_turn([], "在玩什么", AgentReply(["塞尔达"]), turn_id="second")
+            second_outbox = store._db.execute(
+                "SELECT id FROM outbox WHERE turn_id='second'"
+            ).fetchone()["id"]
+            store.mark_sent(int(second_outbox))
+            store.create_episode("聊正在玩的游戏", episode_id="playing-game")
+            store.link_turn_to_episode("playing-game", "second")
+
+            candidate = store.claim_episode_consolidation_candidate()
+            self.assertEqual(
+                [turn["turn_id"] for turn in candidate["turns"]], ["first"]
+            )
+            self.assertEqual(
+                [turn["turn_id"] for turn in candidate["context_turns"]],
+                ["second"],
+            )
+            self.assertEqual(
+                candidate["context_turns"][0]["episode_id"], "playing-game"
+            )
+            self.assertIn(
+                "playing-game",
+                {episode["id"] for episode in candidate["candidate_episodes"]},
+            )
+            self.assertEqual(
+                store.apply_episode_consolidation(
+                    ["first"],
+                    [
+                        {
+                            "action": "continue",
+                            "episode_id": "playing-game",
+                            "turn_ids": ["first"],
+                            "topics": ["游戏"],
+                            "entities": ["塞尔达"],
+                            "open_loops": [],
+                            "salience": 0.5,
+                        }
+                    ],
+                    ["playing-game"],
+                ),
+                (1, 0),
+            )
+            self.assertEqual(
+                [
+                    (turn["turn_id"], turn["ordinal"])
+                    for turn in store.episode_turns("playing-game")
+                ],
+                [("first", 1), ("second", 2)],
+            )
+            self.assertIsNone(store.claim_episode_consolidation_candidate())
+            store.close()
+
+    def test_deferred_latest_may_be_ignored_when_later_context_exists(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store.commit_turn([], "ping", AgentReply([]), turn_id="ping")
+            store.apply_episode_consolidation(
+                ["ping"],
+                [
+                    {
+                        "action": "defer",
+                        "turn_ids": ["ping"],
+                        "reason": "needs later context",
+                    }
+                ],
+                [],
+            )
+            store.commit_turn([], "去玩吧", AgentReply(["好"]), turn_id="later")
+            later_outbox = store._db.execute(
+                "SELECT id FROM outbox WHERE turn_id='later'"
+            ).fetchone()["id"]
+            store.mark_sent(int(later_outbox))
+            store.create_episode("休息去玩", episode_id="play")
+            store.link_turn_to_episode("play", "later")
+
+            self.assertEqual(
+                store.apply_episode_consolidation(
+                    ["ping"],
+                    [
+                        {
+                            "action": "ignore",
+                            "turn_ids": ["ping"],
+                            "reason": "later context shows isolated ping",
+                        }
+                    ],
+                    ["play"],
+                    allow_ignore_latest=True,
+                ),
+                (0, 0),
+            )
+            self.assertEqual(
+                store._db.execute(
+                    "SELECT action FROM episode_consolidation_decisions WHERE turn_id='ping'"
+                ).fetchone()["action"],
+                "ignored",
             )
             self.assertIsNone(store.claim_episode_consolidation_candidate())
             store.close()

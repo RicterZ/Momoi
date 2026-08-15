@@ -123,14 +123,17 @@ processed_at REAL NOT NULL
 在现有 episode maintenance worker 中，优先处理未归档 Owner Turns，再做 Episode
 annealing。
 
-候选：
+候选（现在就要处理）：
 
 - completed Owner Turn；
 - 至少包含一条 message；
 - 没有 `episode_turns`；
-- 没有 consolidation decision；
+- 没有 `ignored` / `linked` decision；
+- `deferred` 仅当存在更新的已完成 Owner Turn 时重新进入；
 - 不含 queued assistant message；
 - 按时间取最近一小批连续 Turn。
+
+已挂线的后续 Owner Turn 作为只读 `context_turns` 一并供给，不要求再判。
 
 `continue` 只能从默认近 30 天的候选目录中选择；超出该范围的历史 Episode 仍可由
 显式搜索找到，但后台整理不会仅因类别相似而继续写入。
@@ -144,9 +147,10 @@ LLM 输出每个 Turn 的处理：
 
 Runtime 校验：
 
-- 每个候选 Turn 恰好覆盖一次；
-- 最新 Turn 不能 `ignore`，信息不足时必须 `defer`；
-- `defer` 不写 decision，下次出现新的 Owner Turn 后会连同新上下文再次判断；
+- 每个待决 Turn 恰好覆盖一次；
+- 没有后续上下文时，最新待决 Turn 不能 `ignore`，信息不足时必须 `defer`；
+- `defer` 写入 `deferred` 并离开待处理队列；出现更新的已完成 Owner Turn 后，
+  连同已挂线的后续上下文再次判断；
 - continue 只能使用候选 Episode；
 - new ref 必须为 ASCII slug；
 - ignored Turn 不进入 Episode；

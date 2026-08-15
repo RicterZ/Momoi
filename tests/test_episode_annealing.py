@@ -10,7 +10,10 @@ from momoi.config import AppConfig, LLMConfig
 from momoi.models import AgentReply, IncomingMessage, ProviderResponse
 from momoi.runtime import MomoiDaemon
 from momoi.runtime.context_assembler import assemble_main_context
-from momoi.runtime.turns import EPISODE_SUMMARY_SYSTEM_PROMPT
+from momoi.runtime.turns import (
+    EPISODE_CONSOLIDATION_SYSTEM_PROMPT,
+    EPISODE_SUMMARY_SYSTEM_PROMPT,
+)
 from momoi.storage import estimate_tokens
 
 
@@ -519,6 +522,107 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
             revived = daemon.store.episode("episode-stuck")
             self.assertIsNone(revived["summary_abandoned_at"])
             self.assertEqual(revived["summary_failure_count"], 0)
+            daemon.store.close()
+
+    async def test_deferred_consolidation_does_not_block_anneal(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(config(directory))
+            daemon.store.create_episode("长期项目", episode_id="episode-main")
+            for ordinal in range(1, 6):
+                add_turn(daemon, ordinal)
+            daemon.store.commit_turn(
+                [], "ping", AgentReply([]), turn_id="lonely-ping"
+            )
+
+            class Provider:
+                systems: list[object] = []
+
+                async def complete(
+                    provider_self,
+                    system: object,
+                    messages: list[dict[str, object]],
+                    _tools: list[dict[str, object]],
+                    **_: object,
+                ) -> ProviderResponse:
+                    provider_self.systems.append(system)
+                    if system == EPISODE_CONSOLIDATION_SYSTEM_PROMPT:
+                        payload = json.loads(str(messages[0]["content"]))
+                        latest = payload["turns"][-1]["turn_id"]
+                        return ProviderResponse(
+                            [
+                                {
+                                    "type": "text",
+                                    "text": json.dumps(
+                                        {
+                                            "version": 1,
+                                            "decisions": [
+                                                {
+                                                    "action": "defer",
+                                                    "turn_ids": [latest],
+                                                    "reason": "needs later context",
+                                                }
+                                            ],
+                                        },
+                                        ensure_ascii=False,
+                                    ),
+                                }
+                            ],
+                            [],
+                        )
+                    payload = json.loads(str(messages[0]["content"]))
+                    message = payload["new_messages"][0]
+                    return ProviderResponse(
+                        [
+                            {
+                                "type": "text",
+                                "text": json.dumps(
+                                    {
+                                        "version": 2,
+                                        "claims": [
+                                            {
+                                                "message_id": message["message_id"],
+                                                "turn_id": message["turn_id"],
+                                                "ordinal": message["ordinal"],
+                                                "quote": f"第{message['ordinal']}轮",
+                                            }
+                                        ],
+                                        "narrative_summary": "项目讨论仍在继续。",
+                                        "emotional_context": {
+                                            "owner": "",
+                                            "momoi": "",
+                                            "tone": "",
+                                        },
+                                        "outcomes": [],
+                                    },
+                                    ensure_ascii=False,
+                                ),
+                            }
+                        ],
+                        [],
+                    )
+
+            provider = Provider()
+            daemon.provider = provider  # type: ignore[assignment]
+            self.assertTrue(await daemon._run_episode_annealing_once())
+            self.assertEqual(
+                provider.systems,
+                [
+                    EPISODE_CONSOLIDATION_SYSTEM_PROMPT,
+                    EPISODE_SUMMARY_SYSTEM_PROMPT,
+                ],
+            )
+            self.assertEqual(
+                daemon.store._db.execute(
+                    """SELECT action FROM episode_consolidation_decisions
+                       WHERE turn_id='lonely-ping'"""
+                ).fetchone()["action"],
+                "deferred",
+            )
+            self.assertIsNone(daemon.store.claim_episode_consolidation_candidate())
+            self.assertEqual(
+                daemon.store.episode("episode-main")["narrative_summary"],
+                "项目讨论仍在继续。",
+            )
             daemon.store.close()
 
 

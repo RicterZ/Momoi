@@ -23,6 +23,8 @@ Rules:
   earlier unit, or parts that genuinely need different recall or Episode actions.
 - Keep `intent` brief. Choose `speech_act` by the unit's main function; a status
   or mood update is usually `casual_share` or `emotional_share`, not a task.
+  `speech_act` is for recall and Episode archival only; it is not a recommendation
+  that Momoi stay silent or skip a reply.
 - Recent conversation is the first source of continuity. When it already resolves
   the current reply, leave `recall_queries` empty. Use one concise query when older
   evidence is necessary; use two only for genuinely independent evidence needs,

@@ -445,6 +445,41 @@ class Store(MemoryStore, DeliveryStore):
                    WHERE summary_failure_count>=?""",
                 (time.time(), EPISODE_ANNEAL_MAX_FAILURES),
             )
+        decision_schema = self._db.execute(
+            """SELECT sql FROM sqlite_master
+               WHERE type='table' AND name='episode_consolidation_decisions'"""
+        ).fetchone()
+        if decision_schema is not None and "'deferred'" not in str(
+            decision_schema[0]
+        ):
+            self._db.execute(
+                """ALTER TABLE episode_consolidation_decisions
+                   RENAME TO episode_consolidation_decisions_legacy"""
+            )
+            self._db.execute(
+                """CREATE TABLE episode_consolidation_decisions (
+                       turn_id TEXT PRIMARY KEY,
+                       action TEXT NOT NULL CHECK (
+                           action IN ('ignored', 'linked', 'deferred')
+                       ),
+                       episode_id TEXT,
+                       reason TEXT NOT NULL DEFAULT '',
+                       processed_at REAL NOT NULL,
+                       FOREIGN KEY (turn_id) REFERENCES turns(id)
+                           ON DELETE CASCADE,
+                       FOREIGN KEY (episode_id) REFERENCES conversation_episodes(id)
+                           ON DELETE SET NULL
+                   )"""
+            )
+            self._db.execute(
+                """INSERT INTO episode_consolidation_decisions
+                   (turn_id, action, episode_id, reason, processed_at)
+                   SELECT turn_id, action, episode_id, reason, processed_at
+                   FROM episode_consolidation_decisions_legacy"""
+            )
+            self._db.execute(
+                "DROP TABLE episode_consolidation_decisions_legacy"
+            )
         now = time.time()
         self._db.execute(
             """INSERT OR IGNORE INTO self_state
@@ -2370,6 +2405,50 @@ class Store(MemoryStore, DeliveryStore):
             used += size
         return [item for group in reversed(selected) for item in group]
 
+    def _consolidation_turn_messages(
+        self, turn_ids: list[str]
+    ) -> dict[str, list[dict[str, object]]]:
+        by_turn: dict[str, list[dict[str, object]]] = {
+            turn_id: [] for turn_id in turn_ids
+        }
+        if not turn_ids:
+            return by_turn
+        placeholders = ",".join("?" for _ in turn_ids)
+        messages = self._db.execute(
+            f"""SELECT id, turn_id, role, content, created_at, delivery_state
+                FROM messages
+                WHERE turn_id IN ({placeholders})
+                  AND (role='user' OR delivery_state IN
+                       ('delivered', 'uncertain', 'internal'))
+                ORDER BY id""",
+            tuple(turn_ids),
+        ).fetchall()
+        for row in messages:
+            item = dict(row)
+            item["timestamp"] = context_timestamp(item["created_at"])
+            by_turn[str(row["turn_id"])].append(item)
+        return by_turn
+
+    def _upsert_consolidation_decision(
+        self,
+        turn_id: str,
+        action: str,
+        reason: str,
+        now: float,
+        episode_id: str | None = None,
+    ) -> None:
+        self._db.execute(
+            """INSERT INTO episode_consolidation_decisions
+               (turn_id, action, episode_id, reason, processed_at)
+               VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(turn_id) DO UPDATE SET
+                 action=excluded.action,
+                 episode_id=excluded.episode_id,
+                 reason=excluded.reason,
+                 processed_at=excluded.processed_at""",
+            (turn_id, action, episode_id, reason[:500], now),
+        )
+
     def claim_episode_consolidation_candidate(
         self, limit: int = 6
     ) -> dict[str, object] | None:
@@ -2382,7 +2461,24 @@ class Store(MemoryStore, DeliveryStore):
                      )
                      AND NOT EXISTS (
                          SELECT 1 FROM episode_consolidation_decisions AS d
-                         WHERE d.turn_id=t.id
+                         WHERE d.turn_id=t.id AND d.action IN ('ignored', 'linked')
+                     )
+                     AND (
+                         NOT EXISTS (
+                             SELECT 1 FROM episode_consolidation_decisions AS d
+                             WHERE d.turn_id=t.id
+                         )
+                         OR EXISTS (
+                             SELECT 1 FROM episode_consolidation_decisions AS d
+                             WHERE d.turn_id=t.id AND d.action='deferred'
+                               AND EXISTS (
+                                   SELECT 1 FROM turns AS later
+                                   WHERE later.kind='owner'
+                                     AND later.state='completed'
+                                     AND later.id<>t.id
+                                     AND later.updated_at>d.processed_at
+                               )
+                         )
                      )
                      AND NOT EXISTS (
                          SELECT 1 FROM messages AS m
@@ -2399,23 +2495,65 @@ class Store(MemoryStore, DeliveryStore):
         if not rows:
             return None
         turn_ids = [str(row["id"]) for row in rows]
-        placeholders = ",".join("?" for _ in turn_ids)
-        messages = self._db.execute(
-            f"""SELECT id, turn_id, role, content, created_at, delivery_state
-                FROM messages
-                WHERE turn_id IN ({placeholders})
-                  AND (role='user' OR delivery_state IN
-                       ('delivered', 'uncertain', 'internal'))
-                ORDER BY id""",
-            tuple(turn_ids),
+        by_turn = self._consolidation_turn_messages(turn_ids)
+        oldest_updated = float(rows[0]["updated_at"])
+        context_rows = self._db.execute(
+            """SELECT t.id, t.updated_at, et.episode_id
+               FROM turns AS t
+               JOIN episode_turns AS et ON et.turn_id=t.id
+               WHERE t.kind='owner' AND t.state='completed'
+                 AND t.updated_at>?
+               ORDER BY t.updated_at
+               LIMIT 12""",
+            (oldest_updated,),
         ).fetchall()
-        by_turn: dict[str, list[dict[str, object]]] = {
-            turn_id: [] for turn_id in turn_ids
-        }
-        for row in messages:
-            item = dict(row)
-            item["timestamp"] = context_timestamp(item["created_at"])
-            by_turn[str(row["turn_id"])].append(item)
+        context_ids = [str(row["id"]) for row in context_rows]
+        context_messages = self._consolidation_turn_messages(context_ids)
+        context_turns: list[dict[str, object]] = []
+        extra_episodes: list[dict[str, object]] = []
+        seen_episodes: set[str] = set()
+        for row in context_rows:
+            episode_id = str(row["episode_id"])
+            episode = self.episode(episode_id)
+            context_turns.append(
+                {
+                    "turn_id": str(row["id"]),
+                    "timestamp": context_timestamp(row["updated_at"]),
+                    "episode_id": episode_id,
+                    "episode_title": "" if episode is None else episode["title"],
+                    "messages": context_messages[str(row["id"])],
+                }
+            )
+            if episode is not None and episode_id not in seen_episodes:
+                extra_episodes.append(
+                    {
+                        "id": episode["id"],
+                        "title": episode["title"],
+                        "status": episode["status"],
+                        "narrative_summary": episode["narrative_summary"],
+                        "topics": episode["topics"],
+                        "entities": episode["entities"],
+                        "open_loops": episode["open_loops"],
+                    }
+                )
+                seen_episodes.add(episode_id)
+        candidate_episodes = [
+            {
+                "id": episode["id"],
+                "title": episode["title"],
+                "status": episode["status"],
+                "narrative_summary": episode["narrative_summary"],
+                "topics": episode["topics"],
+                "entities": episode["entities"],
+                "open_loops": episode["open_loops"],
+            }
+            for episode in self.list_episode_directory(
+                12, after=time.time() - EPISODE_CONSOLIDATION_LOOKBACK_SECONDS
+            )
+        ]
+        for episode in extra_episodes:
+            if episode["id"] not in {item["id"] for item in candidate_episodes}:
+                candidate_episodes.append(episode)
         return {
             "turns": [
                 {
@@ -2425,20 +2563,8 @@ class Store(MemoryStore, DeliveryStore):
                 }
                 for turn_id, row in zip(turn_ids, rows, strict=True)
             ],
-            "candidate_episodes": [
-                {
-                    "id": episode["id"],
-                    "title": episode["title"],
-                    "status": episode["status"],
-                    "narrative_summary": episode["narrative_summary"],
-                    "topics": episode["topics"],
-                    "entities": episode["entities"],
-                    "open_loops": episode["open_loops"],
-                }
-                for episode in self.list_episode_directory(
-                    12, after=time.time() - EPISODE_CONSOLIDATION_LOOKBACK_SECONDS
-                )
-            ],
+            "context_turns": context_turns,
+            "candidate_episodes": candidate_episodes,
         }
 
     def apply_episode_consolidation(
@@ -2446,6 +2572,8 @@ class Store(MemoryStore, DeliveryStore):
         turn_ids: list[str],
         decisions: list[dict[str, object]],
         candidate_episode_ids: list[str] | None = None,
+        *,
+        allow_ignore_latest: bool = False,
     ) -> tuple[int, int]:
         expected = set(turn_ids)
         allowed_episodes = set(candidate_episode_ids or [])
@@ -2503,20 +2631,24 @@ class Store(MemoryStore, DeliveryStore):
                 if action == "defer":
                     if decision_turns != [turn_ids[-1]]:
                         raise ValueError("only latest consolidation turn may defer")
+                    self._upsert_consolidation_decision(
+                        decision_turns[0],
+                        "deferred",
+                        str(decision.get("reason") or ""),
+                        now,
+                    )
                     deferred += 1
                     continue
                 if action == "ignore":
-                    if turn_ids[-1] in decision_turns:
+                    if turn_ids[-1] in decision_turns and not allow_ignore_latest:
                         raise ValueError("latest consolidation turn may not be ignored")
-                    self._db.executemany(
-                        """INSERT INTO episode_consolidation_decisions
-                           (turn_id, action, reason, processed_at)
-                           VALUES (?, 'ignored', ?, ?)""",
-                        (
-                            (turn_id, str(decision.get("reason") or "")[:500], now)
-                            for turn_id in decision_turns
-                        ),
-                    )
+                    for turn_id in decision_turns:
+                        self._upsert_consolidation_decision(
+                            turn_id,
+                            "ignored",
+                            str(decision.get("reason") or ""),
+                            now,
+                        )
                     continue
                 topics = self._consolidation_strings(
                     decision["topics"], "topics", 12, 200
@@ -2627,11 +2759,8 @@ class Store(MemoryStore, DeliveryStore):
                            VALUES (?, ?, ?, 'primary', '[]')""",
                         (episode_id, turn_id, ordinal),
                     )
-                    self._db.execute(
-                        """INSERT INTO episode_consolidation_decisions
-                           (turn_id, action, episode_id, reason, processed_at)
-                           VALUES (?, 'linked', ?, '', ?)""",
-                        (turn_id, episode_id, now),
+                    self._upsert_consolidation_decision(
+                        turn_id, "linked", "", now, episode_id
                     )
                     self._index_turn_episode_terms(turn_id)
                     linked += 1
