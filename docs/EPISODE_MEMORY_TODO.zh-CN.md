@@ -32,6 +32,7 @@
 | 8 | 向量/混合检索实验 | 暂缓，前置评估未完成 |
 | 9 | 外部 MCP Episode adapter | 待讨论 |
 | 10 | 质量监测与发布门槛 | 持续补充 |
+| 11 | 对话知识、定义与流程的记忆沉淀 | 待讨论 |
 
 ### 每块的决策模板
 
@@ -352,7 +353,37 @@ TODO：
 - [ ] 时间浏览 topic coverage。
 - [ ] 精确原话定位成功率。
 
-## 11. 推荐实施顺序
+## 11. I 类：对话中的记忆沉淀
+
+### 当前职责
+
+- 主人当轮明确确认的事实、偏好、定义、约定和固定流程，由主模型调用
+  `memory_remember` 写入正式 `memories`。
+- Daily Reflection 从当天记录中提炼可复用知识、实践、关系理解和自我反思，写入
+  低权限 `reflection_memories`。
+- Consolidator 只判断 Episode 的边界和归属；Episode annealing 只生成 claims、
+  narrative、emotional context 和 outcomes。两者都不写正式 Memory。
+
+### 已确认原则
+
+- Consolidator 不承担 Memory 提取，避免归档模型顺便推断主人事实。
+- 主人明确教给 Momoi 的稳定内容应优先在当前对话中写正式 Memory。
+- Reflection 是查漏补缺和经验学习，不能覆盖正式 Memory，也不能把推测自动升级为
+  主人确认事实。
+- 同一段对话可以同时留下 Episode、正式 Memory 和 Reflection Memory；三者分别保存
+  共同经历、确认认知和低权限学习，不互相替代。
+
+### TODO
+
+- [ ] 检查并收紧 `memory_remember` 的 tool description 和系统提示词：主人明确给出
+  稳定定义、术语含义或固定流程时应主动沉淀，但普通闲聊和短期状态不应滥记。
+- [ ] 讨论正式 Memory 是否需要新增 `definition`、`knowledge`、`procedure` 类型；
+  若现有 `shared`、`routine` 已足够，则只明确映射规则，不新增类型。
+- [ ] 建立定义、固定流程、主人纠正、短期状态和未经确认推断的评估场景。
+- [ ] 监测正式 Memory 漏记率和误记率。
+- [ ] 保持 Reflection Memory 的低权限，不设计无主人证据的自动升级。
+
+## 12. 推荐实施顺序
 
 ### 下一批：轻量且直接改善体验
 
@@ -381,7 +412,7 @@ TODO：
 3. 混合检索离线比较。
 4. 达标后再接入生产。
 
-## 12. 边界速查
+## 13. 边界速查
 
 - “某段时间聊了什么”找不到：时间浏览/工具协议问题。
 - “换一种说法搜不到”：语义检索问题。
