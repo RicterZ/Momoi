@@ -66,6 +66,7 @@ class DaemonTest(unittest.TestCase):
             soul_prompt="Test soul",
         )
         daemon.mcp = SimpleNamespace(tool_specs=[])
+        daemon.store = SimpleNamespace(emotion_context=lambda token_budget=4000: "")
 
         base = daemon._system()
         specialized = daemon._system_with_tool_policies(
@@ -88,6 +89,25 @@ class DaemonTest(unittest.TestCase):
         self.assertIn("Built-in runtime tools", owner[1]["text"])
         self.assertIn("Agenda tools", owner[1]["text"])
 
+    def test_emotion_catalog_is_cached_system_block(self) -> None:
+        daemon = object.__new__(MomoiDaemon)
+        daemon.config = SimpleNamespace(
+            system_prompt="You are Momoi.",
+            soul_prompt="Soul",
+        )
+        daemon.mcp = SimpleNamespace(tool_specs=[])
+        daemon.store = SimpleNamespace(
+            emotion_context=lambda token_budget=4000: "- slug=hello meaning=hi"
+        )
+
+        blocks = daemon._system()
+        self.assertEqual(len(blocks), 2)
+        self.assertEqual(blocks[0]["cache_control"], {"type": "ephemeral"})
+        self.assertEqual(blocks[1]["cache_control"], {"type": "ephemeral"})
+        self.assertIn("<emotion_catalog>", blocks[1]["text"])
+        self.assertIn("slug=hello", blocks[1]["text"])
+        self.assertNotIn("<emotion_catalog>", blocks[0]["text"])
+
     def test_workspace_prompts_hot_reload_between_turns(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -104,6 +124,7 @@ class DaemonTest(unittest.TestCase):
                 heartbeat_prompt_path=heartbeat,
             )
             daemon.mcp = SimpleNamespace(tool_specs=[])
+            daemon.store = SimpleNamespace(emotion_context=lambda token_budget=4000: "")
 
             self.assertIn("Old soul", daemon._system()[0]["text"])
             self.assertIn("Old heartbeat", daemon._heartbeat_system_prompt())
@@ -123,6 +144,7 @@ class DaemonTest(unittest.TestCase):
             soul_prompt="Test soul",
         )
         daemon.mcp = SimpleNamespace(tool_specs=[])
+        daemon.store = SimpleNamespace(emotion_context=lambda token_budget=4000: "")
 
         self.assertEqual(daemon._system()[0]["text"], STYLE_CARD_SYSTEM_PROMPT)
 

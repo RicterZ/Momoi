@@ -122,18 +122,18 @@ class ProvidersToolsTest(unittest.TestCase):
             "</current_owner_messages>",
         )
 
-    def test_emotion_catalog_renders_before_bulk_conversation_evidence(self) -> None:
+    def test_user_pack_keeps_runtime_before_bulk_conversation_evidence(self) -> None:
         rendered = _sections(
             ("pending_owner_reply", '{"waiting":true}'),
             ("runtime_state", "now"),
             ("conversation_state", '{"busy":false}'),
-            ("emotion_catalog", "- slug=hello meaning=hi"),
             ("recent_conversation", "user: hi"),
         )
-        emotion_at = rendered.index("<emotion_catalog>")
-        recent_at = rendered.index("<recent_conversation>")
-        self.assertLess(rendered.index("<runtime_state>"), emotion_at)
-        self.assertLess(emotion_at, recent_at)
+        self.assertNotIn("<emotion_catalog>", rendered)
+        self.assertLess(
+            rendered.index("<runtime_state>"),
+            rendered.index("<recent_conversation>"),
+        )
 
     def test_tool_result_envelope_is_uniform_and_deterministically_truncated(
         self,

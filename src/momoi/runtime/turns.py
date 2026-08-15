@@ -130,15 +130,16 @@ def _live_prompt(path: Any, fallback: str, *, optional: bool = False) -> str:
 def _sections(*items: tuple[str, str]) -> str:
     """Render non-empty XML context sections in call order.
 
-    Preferred pack shape across Turns:
+    Preferred user-pack shape across Turns:
     1. authority / task (`current_*`, `pending_*`, heartbeat, due goal, …)
     2. orchestration (`context_resolution`, `runtime_directives`)
     3. runtime metadata (`runtime_state`, `conversation_state`)
-    4. response capabilities (`emotion_catalog`) — keep near runtime, before bulk
-       recall, so output affordances are visible before long evidence
-    5. active constraints / agenda (reply expectation, reconciliations, goals, …)
-    6. memory evidence (preferences, memories, conflicts, inventories)
-    7. dialogue / episodic evidence (`recalled_episodes`, `recent_conversation`, …)
+    4. active constraints / agenda (reply expectation, reconciliations, goals, …)
+    5. memory evidence (preferences, memories, conflicts, inventories)
+    6. dialogue / episodic evidence (`recalled_episodes`, `recent_conversation`, …)
+
+    Stable response capabilities such as `emotion_catalog` belong in the cached
+    system prefix, not in the per-turn user pack.
     """
     return "\n\n".join(
         f"<{name}>\n{escape(value.strip())}\n</{name}>"
@@ -437,7 +438,6 @@ class TurnRunner:
                         "context_resolution",
                         _conversation_guidance(context_plan),
                     ),
-                    ("emotion_catalog", self.store.emotion_context()),
                     ("recent_conversation", recalled["recent_conversation"]),
                     ("recalled_episodes", recalled["episodes"]),
                     ("owner_preferences", recalled["owner_preferences"]),
@@ -808,7 +808,6 @@ class TurnRunner:
         )
         conversation = self.store.heartbeat_conversation_snapshot()
         self_state = self.store.self_state_context()
-        emotions = self.store.emotion_context()
         runtime_state = (
             f"Current local time: {datetime.now().astimezone().isoformat(timespec='seconds')}\n"
             "Channel: authorized local webhook event for the single owner.\n"
@@ -827,7 +826,6 @@ class TurnRunner:
                 ),
             ),
             ("runtime_state", f"{runtime_state}\nCurrent self state: {self_state}"),
-            ("emotion_catalog", emotions),
             (
                 "conversation_state",
                 json.dumps(
@@ -1017,7 +1015,6 @@ class TurnRunner:
         user_text = self._render_batch(batch)
         reconciliation_control = self._apply_reconciliation_commands(batch)
         reconciliations = self.store.open_reconciliations_context()
-        emotions = self.store.emotion_context()
         self_state = self.store.self_state_context()
         runtime = datetime.now().astimezone().isoformat(timespec="seconds")
         runtime_state = (
@@ -1054,7 +1051,6 @@ class TurnRunner:
             ),
             ("runtime_directives", "\n\n".join(directives)),
             ("runtime_state", runtime_state),
-            ("emotion_catalog", emotions),
             ("recent_conversation", recalled["recent_conversation"]),
             ("recalled_episodes", recalled["episodes"]),
             ("owner_preferences", recalled["owner_preferences"]),
@@ -2122,7 +2118,21 @@ class TurnRunner:
             )
             .replace("{{CAPABILITY_POLICIES}}", "")
         )
-        return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
+        blocks: list[dict[str, Any]] = [
+            {"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}
+        ]
+        # Keep the catalog as its own cached system block so editing stickers does
+        # not invalidate the large contract/Soul/style prefix.
+        emotions = self.store.emotion_context()
+        if emotions.strip():
+            blocks.append(
+                {
+                    "type": "text",
+                    "text": _sections(("emotion_catalog", emotions)),
+                    "cache_control": {"type": "ephemeral"},
+                }
+            )
+        return blocks
 
     def _system_with_tool_policies(
         self, system: list[dict[str, Any]], tools: list[dict[str, Any]]
@@ -2453,7 +2463,6 @@ class TurnRunner:
                     separators=(",", ":"),
                 ),
             ),
-            ("emotion_catalog", self.store.emotion_context()),
             ("recent_conversation", recent),
         )
         system = [
@@ -2580,7 +2589,6 @@ class TurnRunner:
             recent_topics.append(topic)
             topic_tokens += size
         goals = self.store.active_goals_context(authority="agent")
-        emotions = self.store.emotion_context()
         artifact_root = self._artifact_root().resolve()
         minimum = max(1, int(self.config.heartbeat.min_interval_seconds / 60))
         maximum = max(minimum, int(self.config.heartbeat.max_interval_seconds / 60))
@@ -2613,7 +2621,6 @@ class TurnRunner:
                     separators=(",", ":"),
                 ),
             ),
-            ("emotion_catalog", emotions),
             (
                 "cooled_reply_expectation",
                 self.store.cooled_reply_expectation_context(),
@@ -3039,7 +3046,6 @@ class TurnRunner:
                     separators=(",", ":"),
                 ),
             ),
-            ("emotion_catalog", self.store.emotion_context()),
             ("recent_conversation", recent_conversation),
             ("recalled_episodes", episodes),
             ("owner_preferences", owner_preferences),
