@@ -57,6 +57,22 @@ class LoggingContextTest(unittest.TestCase):
         self.assertIn("[omitted 6 base64 chars]", rendered)
         self.assertIn(r"a\nb", rendered)
 
+    def test_formatter_colors_levels_only_when_enabled(self) -> None:
+        record = logging.LogRecord(
+            "momoi.tests.logging",
+            logging.WARNING,
+            "",
+            0,
+            "warning",
+            (),
+            None,
+        )
+        plain = KeyValueFormatter().format(record)
+        colored = KeyValueFormatter(color=True).format(record)
+        self.assertNotIn("\033[", plain)
+        self.assertTrue(colored.startswith("\033[33m"))
+        self.assertTrue(colored.endswith("\033[0m"))
+
 
 class LoggingContextAsyncTest(unittest.IsolatedAsyncioTestCase):
     async def test_concurrent_contexts_do_not_leak(self) -> None:

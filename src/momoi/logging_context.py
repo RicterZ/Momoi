@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import re
 import uuid
 from contextlib import contextmanager
@@ -39,6 +40,14 @@ _PREFERRED_FIELDS = (
     "error_type",
     "reason",
 )
+_LEVEL_COLORS = {
+    logging.DEBUG: "\033[36m",
+    logging.INFO: "\033[32m",
+    logging.WARNING: "\033[33m",
+    logging.ERROR: "\033[31m",
+    logging.CRITICAL: "\033[1;31m",
+}
+_COLOR_RESET = "\033[0m"
 
 
 def new_trace_id() -> str:
@@ -150,6 +159,10 @@ def log_event(
 
 
 class KeyValueFormatter(logging.Formatter):
+    def __init__(self, *, color: bool = False) -> None:
+        super().__init__()
+        self.color = color
+
     def format(self, record: logging.LogRecord) -> str:
         timestamp = datetime.fromtimestamp(record.created).astimezone().strftime(
             "%Y-%m-%d %H:%M:%S"
@@ -160,8 +173,10 @@ class KeyValueFormatter(logging.Formatter):
             message = record.getMessage().replace("\r", "\\r").replace("\n", "\\n")
             if record.exc_info:
                 exception = safe_preview(self.formatException(record.exc_info), 2000)
-                return f"{prefix} {message} exception={_format_value(exception)}"
-            return f"{prefix} {message}".rstrip()
+                rendered = f"{prefix} {message} exception={_format_value(exception)}"
+            else:
+                rendered = f"{prefix} {message}".rstrip()
+            return self._colorize(record, rendered)
 
         fields: dict[str, Any] = {}
         fields.update(getattr(record, "momoi_context", {}) or {})
@@ -177,10 +192,16 @@ class KeyValueFormatter(logging.Formatter):
             key for key in _PREFERRED_FIELDS if key in fields
         ] + sorted(key for key in fields if key not in _PREFERRED_FIELDS)
         rendered = " ".join(f"{key}={_format_value(fields[key])}" for key in ordered)
-        return f"{prefix} {rendered}".rstrip()
+        return self._colorize(record, f"{prefix} {rendered}".rstrip())
+
+    def _colorize(self, record: logging.LogRecord, value: str) -> str:
+        color = _LEVEL_COLORS.get(record.levelno) if self.color else None
+        return f"{color}{value}{_COLOR_RESET}" if color else value
 
 
 def configure_logging(level: int) -> None:
     handler = logging.StreamHandler()
-    handler.setFormatter(KeyValueFormatter())
+    handler.setFormatter(
+        KeyValueFormatter(color="NO_COLOR" not in os.environ)
+    )
     logging.basicConfig(level=level, handlers=[handler], force=True)

@@ -68,6 +68,25 @@ class StorageMemoryTest(unittest.TestCase):
                 store.search_episodes("八月新内容", 5, after=50, before=150),
                 [],
             )
+            listed = MemoryTools(store).execute(
+                ToolCall(
+                    "browse",
+                    "conversation_search",
+                    {
+                        "query": "",
+                        "time_range": {
+                            "kind": "range",
+                            "from": "1970-01-01T00:00:50+00:00",
+                            "to": "1970-01-01T00:02:30+00:00",
+                        },
+                    },
+                ),
+                [],
+                TurnDraft(),
+            )
+            self.assertEqual(
+                [item["id"] for item in listed["results"]], ["long-running"]
+            )
             store.close()
 
     def test_conversation_search_returns_compact_relevant_claims(self) -> None:

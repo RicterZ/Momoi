@@ -25,7 +25,7 @@ from ..context_time import context_timestamp
 from ..emotions import EMOTION_PREFIX, emotion_slug
 from ..logging_context import log_context, log_event, new_trace_id, safe_preview
 from ..mcp_client import MCP_TOOL_POLICY
-from ..memory_tools import MEMORY_TOOL_POLICY, MEMORY_TOOL_SPECS
+from ..memory_tools import MEMORY_TOOL_SPECS
 from ..models import AgentReply, IncomingMessage, ProviderResponse, ToolCall, TurnDraft
 from ..provider import ProviderError
 from ..storage import estimate_tokens, truncate_tokens
@@ -91,7 +91,6 @@ EPISODE_SUMMARY_SYSTEM_PROMPT = EPISODE_SUMMARY_PROMPT_PATH.read_text(
     encoding="utf-8"
 ).strip()
 MAX_CONSECUTIVE_TOOL_FAILURES = 3
-MEMORY_POLICY_TOOLS = frozenset({"memory_search", "conversation_search"})
 BUILTIN_POLICY_TOOLS = frozenset(
     {"curl", "read_file", "write_file", "apply_patch", "sleep"}
 )
@@ -2131,8 +2130,6 @@ class TurnRunner:
     ) -> list[dict[str, Any]]:
         names = {str(tool.get("name") or "") for tool in tools}
         policies: list[str] = []
-        if names & MEMORY_POLICY_TOOLS:
-            policies.append(MEMORY_TOOL_POLICY.strip())
         if names & BUILTIN_POLICY_TOOLS:
             policies.append(BUILTIN_TOOL_POLICY.strip())
         if names & AGENDA_POLICY_TOOLS:

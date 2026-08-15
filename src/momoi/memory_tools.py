@@ -153,13 +153,20 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
     {
         "name": "conversation_search",
         "description": (
-            "Search conversation episodes when older events or context "
-            "are not present in recent messages or durable memory."
+            "Search archived conversation Episodes. Supports keyword search, "
+            "time-range browsing with an empty query, and paginated results. "
+            "Returns compact summaries and evidence locations, not raw messages."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "query": {"type": "string"},
+                "query": {
+                    "type": "string",
+                    "description": (
+                        "Optional topic or event keywords. Use an empty string "
+                        "to browse Episodes chronologically within time_range."
+                    ),
+                },
                 "time_range": {
                     "type": "object",
                     "description": (
@@ -337,46 +344,6 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
         },
     },
 ]
-
-
-MEMORY_TOOL_POLICY = """### Memory tools
-
-- `memory_search` searches committed long-term memory. Call it before saying you
-  do not remember when the user refers to an earlier person, fact, preference,
-  event, promise, or vague shared context that is not already visible.
-- `conversation_search` searches older conversation episodes;
-  `conversation_read` retrieves the archived raw messages for a returned episode.
-  Search returns compact summaries and evidence locations, not raw message text.
-  It defaults to the last 30 days. If the owner clearly refers to older shared
-  history and the default search is empty, retry with a longer range or all
-  history. Use `conversation_read` only when exact wording, chronology,
-  corrections, commitments, or omitted details require raw messages.
-- `memory_remember` stages durable memory for this Turn. When the user explicitly
-  says to remember something, states a stable preference/relationship/routine,
-  or corrects an existing fact, call it before the final reply. Set `activation`
-  to `always` only for a rule that should affect every response, `recent` for a
-  current bounded thread or a clearly stated owner state that can affect whether
-  autonomous work is still applicable, and `recall` by default. `ttl_hours` is
-  required: send `0` for `always` or `recall` (ignored). For `recent`, choose 1
-  to 168 hours from the content—a momentary pose or this-afternoon state is 1-3
-  hours, today-only is about 12-24, a multi-day situation may run several days
-  up to 7. Do not store a fleeting remark as `recent` if it will be stale in an
-  hour unless you set a matching short TTL.
-- In particular, remember clearly stated, time-sensitive owner state such as a
-  current situation, travel or schedule change, availability, or physical state
-  when it could change a later Goal or Webhook decision, even if it was shared
-  casually. Use a stable state key, exact evidence, and a TTL that matches how
-  long that state remains true.
-- A correction reuses the existing stable key. Set `replace_confirmed=true` only
-  when the current user explicitly confirms the replacement. Otherwise a
-  different value becomes a pending conflict and the older memory stays active;
-  ask the user which value is correct. A later confirmed `memory_remember` call
-  for either value resolves the pending conflict.
-- Never claim something was remembered unless the tool result is `ok`.
-- `memory_forget` requires an explicit current-user request and exact evidence.
-  Use it instead of overwriting a memory with an empty or invented value.
-- Search may be retried with a better query when the first result is empty.
-"""
 
 
 _MEMORY_ERROR_MESSAGES = {

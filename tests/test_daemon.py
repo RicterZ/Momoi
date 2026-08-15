@@ -85,7 +85,7 @@ class DaemonTest(unittest.TestCase):
         self.assertEqual(specialized[0], base[0])
         self.assertNotIn("Memory tools", specialized[0]["text"])
         self.assertEqual(len(owner), 2)
-        self.assertIn("Memory tools", owner[1]["text"])
+        self.assertNotIn("Memory tools", owner[1]["text"])
         self.assertIn("Built-in runtime tools", owner[1]["text"])
         self.assertIn("Agenda tools", owner[1]["text"])
 
@@ -2023,7 +2023,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             llm_requests[1]["system"][0]["text"].rstrip().endswith("You are Momoi.")
         )
         self.assertEqual(len(llm_requests[1]["system"]), 2)
-        self.assertIn("Memory tools", llm_requests[1]["system"][1]["text"])
+        self.assertNotIn("Memory tools", llm_requests[1]["system"][1]["text"])
         self.assertEqual(len(llm_requests[7]["system"]), 1)
         self.assertEqual(
             llm_requests[1]["system"][0]["text"],
