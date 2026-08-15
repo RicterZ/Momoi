@@ -522,4 +522,59 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             self.assertTrue(searched["ok"])
             self.assertGreater(searched["count"], 0)
+            episode = found[0]
+            self.assertRegex(str(episode["title"]), r"^家里事件 \d{4}-\d{2}-\d{2}$")
+            store.close()
+
+    async def test_webhook_events_share_one_episode_per_local_day(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(__file__).resolve().parents[1] / "config.example"
+            store = Store(Path(directory) / "momoi.sqlite3")
+
+            async def generate(_: str, __: str) -> AgentReply:
+                return AgentReply([])
+
+            service = WebhookService(
+                WebhookConfig(
+                    enabled=True,
+                    token="test",
+                    workflows=root / "workflows",
+                    executors=root / "workflow-executors.yaml",
+                ),
+                {"channel_url": "ws://napcat.test/ws", "owner_id": "20000"},
+                store,
+                generate,
+                lambda: None,
+            )
+            first_plan = bind_workflow(
+                service.workflows["event-message"],
+                service.executors,
+                {"event_prompt": "门锁超时未关"},
+                service.channel_variables,
+            )
+            second_plan = bind_workflow(
+                service.workflows["event-message"],
+                service.executors,
+                {"event_prompt": "当前仓鼠窝温度为 28.0°C"},
+                service.channel_variables,
+            )
+            store.create_webhook_run("event-message", "door", first_plan)
+            store.create_webhook_run("event-message", "hamster", second_plan)
+            first = store.claim_webhook_run()
+            await service._execute(first, asyncio.Event())
+            second = store.claim_webhook_run()
+            await service._execute(second, asyncio.Event())
+
+            door = store.search_episodes("门锁超时", 3)
+            hamster = store.search_episodes("仓鼠窝", 3)
+            self.assertTrue(door)
+            self.assertTrue(hamster)
+            self.assertEqual(door[0]["id"], hamster[0]["id"])
+            self.assertRegex(str(door[0]["title"]), r"^家里事件 \d{4}-\d{2}-\d{2}$")
+            contents = [
+                item["content"]
+                for item in store.conversation_episode(str(door[0]["id"]))["messages"]
+            ]
+            self.assertIn("门锁超时未关", contents)
+            self.assertIn("当前仓鼠窝温度为 28.0°C", contents)
             store.close()

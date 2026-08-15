@@ -2,6 +2,7 @@ import json
 import sqlite3
 import time
 import uuid
+from datetime import datetime
 
 from ..channel import normalize_channel_message
 from ..models import AgentReply, OutboxMessage
@@ -140,6 +141,11 @@ class DeliveryStore:
                 (step_index, now, run_id),
             )
 
+    @staticmethod
+    def _webhook_day_episode(when: float) -> tuple[str, str]:
+        day = datetime.fromtimestamp(when).astimezone().date().isoformat()
+        return f"webhook:day:{day}", f"家里事件 {day}"
+
     def record_webhook_event(
         self,
         run_id: str,
@@ -160,11 +166,6 @@ class DeliveryStore:
             ).fetchone()
             if existing is not None:
                 return int(existing["id"])
-            workflow = self._db.execute(
-                "SELECT workflow_id FROM webhook_runs WHERE id=?",
-                (run_id,),
-            ).fetchone()
-            workflow_id = str(workflow["workflow_id"]) if workflow else run_id
             inserted = self._db.execute(
                 """INSERT INTO messages
                    (turn_id, role, content, created_at, source_event_ids_json,
@@ -172,10 +173,11 @@ class DeliveryStore:
                    VALUES (?, 'event', ?, ?, ?, 'delivered')""",
                 (turn_id, text, now, source),
             )
+            episode_key, title = self._webhook_day_episode(now)
             self._ensure_autonomous_episode(
-                f"webhook:{workflow_id}",
+                episode_key,
                 turn_id,
-                self._episode_title(text, "Webhook conversation"),
+                title,
                 now,
                 text,
             )
@@ -265,14 +267,18 @@ class DeliveryStore:
                 text for text, _, _, _ in normalized
             ]
             if visible:
-                workflow = self._db.execute(
-                    "SELECT workflow_id FROM webhook_runs WHERE id=?", (run_id,)
+                event = self._db.execute(
+                    """SELECT created_at FROM messages
+                       WHERE turn_id=? AND role='event'
+                       ORDER BY id LIMIT 1""",
+                    (turn_id,),
                 ).fetchone()
-                workflow_id = str(workflow["workflow_id"]) if workflow else run_id
+                when = float(event["created_at"]) if event is not None else now
+                episode_key, title = self._webhook_day_episode(when)
                 self._ensure_autonomous_episode(
-                    f"webhook:{workflow_id}",
+                    episode_key,
                     turn_id,
-                    self._episode_title(visible[0], "Webhook conversation"),
+                    title,
                     now,
                     visible,
                 )
