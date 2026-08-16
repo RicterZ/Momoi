@@ -8,13 +8,13 @@ from typing import Any
 from ..config import AppConfig
 from ..context_time import context_timestamp
 from ..logging_context import log_event, safe_preview
+from ..search import search_alternatives
 from ..storage import Store, estimate_tokens, truncate_tokens
 from .budget import SECTION_BUDGET_ALLOCATOR
 
 
 _LEGACY_OWNER_HEADER = "# Current owner messages\n"
 _DEFAULT_EPISODE_LOOKBACK_SECONDS = 30 * 24 * 60 * 60
-_MAX_RECENT_EPISODE_RESULTS = 12
 logger = logging.getLogger(__name__)
 
 
@@ -171,36 +171,53 @@ def build_plan_retrieval(
         config.memory_tokens // 2,
     )
     episode_results = config.summary_results
-    recalled_episodes = _selected_by_unit(
-        units,
-        lambda query, limit: store.search_episodes(
-            query,
-            limit,
-            after=time.time() - _DEFAULT_EPISODE_LOOKBACK_SECONDS,
-        ),
-        lambda row: row["id"],
-        lambda row: truncate_tokens(
-            _episode_search_text(row),
-            max(
-                1,
-                config.summary_tokens // max(1, episode_results, len(units)),
-            ),
-        ),
-        lambda row: {
-            "episode_id": row["id"],
-            "relation": "recalled",
-            "is_new": False,
-            "matches": row.get("matches", []),
-        },
-        episode_results,
-        config.summary_tokens,
-        expand_or=False,
+    keyword_query = " | ".join(
+        str(query)
+        for unit in units
+        if isinstance(unit, dict)
+        for query in unit.get("recall_queries", [])
+        if str(query).strip()
     )
+    recalled_episodes = []
+    if episode_results > 0 and config.summary_tokens > 0 and keyword_query:
+        for row in store.search_episodes(
+            keyword_query,
+            episode_results,
+            after=time.time() - _DEFAULT_EPISODE_LOOKBACK_SECONDS,
+        ):
+            recalled_episodes.append(
+                {
+                    "episode_id": row["id"],
+                    "relation": "recalled",
+                    "is_new": False,
+                    "matches": row.get("matches", []),
+                    "keyword_match_count": int(
+                        row.get("keyword_match_count") or 0
+                    ),
+                    "last_activity_at": float(
+                        row.get("last_activity_at") or 0
+                    ),
+                    "unit_ids": [
+                        str(unit["id"])
+                        for unit in units
+                        if isinstance(unit, dict)
+                        and any(
+                            alternative
+                            in {
+                                keyword
+                                for query in unit.get("recall_queries", [])
+                                for keyword in search_alternatives(str(query))
+                            }
+                            for alternative in row.get(
+                                "matched_keywords", []
+                            )
+                        )
+                    ],
+                }
+            )
     recent_episodes = (
-        store.search_episodes(
-            "",
-            _MAX_RECENT_EPISODE_RESULTS,
-            after=time.time() - config.recent_episode_hours * 3600,
+        store.list_recent_episodes(
+            time.time() - config.recent_episode_hours * 3600
         )
         if config.recent_episode_hours > 0 and config.summary_tokens > 0
         else []
@@ -213,6 +230,10 @@ def build_plan_retrieval(
         existing = episodes_by_id.get(episode_id)
         if existing is not None:
             existing["relation"] = "recent_recalled"
+            existing["last_activity_at"] = max(
+                float(existing.get("last_activity_at") or 0),
+                float(episode.get("last_activity_at") or 0),
+            )
             continue
         episodes_by_id[episode_id] = {
             "episode_id": episode_id,
@@ -220,7 +241,30 @@ def build_plan_retrieval(
             "is_new": False,
             "matches": [],
             "unit_ids": [],
+            "keyword_match_count": 0,
+            "last_activity_at": float(episode.get("last_activity_at") or 0),
         }
+    def episode_priority(item: dict[str, object]) -> int:
+        keyword_count = int(item.get("keyword_match_count") or 0)
+        recent = item["relation"] in {"recent", "recent_recalled"}
+        if recent and keyword_count > 1:
+            return 4
+        if keyword_count > 1:
+            return 3
+        if keyword_count > 0:
+            return 2
+        return 1 if recent else 0
+
+    ordered_episodes = sorted(
+        episodes_by_id.values(),
+        key=lambda item: (
+            episode_priority(item),
+            int(item.get("keyword_match_count") or 0),
+            float(item.get("last_activity_at") or 0),
+            str(item["episode_id"]),
+        ),
+        reverse=True,
+    )
     agenda_budget = config.memory_tokens // 2
     goals = _selected_by_unit(
         units,
@@ -285,9 +329,9 @@ def build_plan_retrieval(
     )
     retrieval = {
         "version": 2,
-        # Episode bindings route the current Turn into storage. Only explicit
-        # recall queries select historical Episode context.
-        "episodes": list(episodes_by_id.values()),
+        # Recent Episodes are included by time window; explicit recall queries add
+        # up to the configured keyword result limit before the two sets are merged.
+        "episodes": ordered_episodes,
         "confirmed_memories": confirmed,
         "owner_preferences": store.always_memory_context(),
         "recent_memories": store.recent_memory_context(

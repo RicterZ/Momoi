@@ -19,6 +19,7 @@ def config(
     directory: str,
     memory_results: int = 6,
     recent_episode_hours: float = 6,
+    summary_results: int = 3,
 ) -> AppConfig:
     return AppConfig(
         llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
@@ -28,7 +29,7 @@ def config(
         recent_turns=2,
         memory_results=memory_results,
         memory_tokens=4000,
-        summary_results=3,
+        summary_results=summary_results,
         summary_tokens=2000,
         recent_episode_hours=recent_episode_hours,
         database=Path(directory) / "momoi.sqlite3",
@@ -72,10 +73,19 @@ class ContextAssemblerTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
             now = time.time()
-            for episode_id, title, turn_id, timestamp in (
-                ("recent-topic", "最近六小时话题", "recent-turn", now - 2 * 3600),
-                ("old-topic", "六小时前旧话题", "old-turn", now - 7 * 3600),
-            ):
+            episodes = [
+                (
+                    f"recent-topic-{index:02d}",
+                    f"最近六小时话题 {index:02d}",
+                    f"recent-turn-{index:02d}",
+                    now - index * 60,
+                )
+                for index in range(13)
+            ]
+            episodes.append(
+                ("old-topic", "六小时前旧话题", "old-turn", now - 7 * 3600)
+            )
+            for episode_id, title, turn_id, timestamp in episodes:
                 store.create_episode(title, episode_id=episode_id)
                 store.begin_turn(turn_id, "autonomous", [turn_id])
                 with store._db:
@@ -103,12 +113,16 @@ class ContextAssemblerTest(unittest.TestCase):
 
             self.assertEqual(
                 [item["episode_id"] for item in retrieval["episodes"]],
-                ["recent-topic"],
+                [f"recent-topic-{index:02d}" for index in range(13)],
             )
-            self.assertEqual(retrieval["episodes"][0]["relation"], "recent")
-            self.assertEqual(retrieval["episodes"][0]["unit_ids"], [])
+            self.assertTrue(
+                all(item["relation"] == "recent" for item in retrieval["episodes"])
+            )
+            self.assertTrue(
+                all(item["unit_ids"] == [] for item in retrieval["episodes"])
+            )
             assembled = assemble_main_context(store, retrieval, 2000, 2000)
-            self.assertIn("最近六小时话题", assembled["episodes"])
+            self.assertIn("最近六小时话题 12", assembled["episodes"])
             self.assertNotIn("六小时前旧话题", assembled["episodes"])
 
             disabled = build_plan_retrieval(
@@ -155,6 +169,111 @@ class ContextAssemblerTest(unittest.TestCase):
                 retrieval["episodes"][0]["relation"], "recent_recalled"
             )
             self.assertEqual(retrieval["episodes"][0]["unit_ids"], ["mail"])
+            store.close()
+
+    def test_keyword_recall_is_capped_at_twelve_before_recent_merge(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            now = time.time()
+            for index in range(13):
+                episode_id = f"keyword-{index:02d}"
+                turn_id = f"keyword-turn-{index:02d}"
+                store.create_episode(
+                    f"关键词话题 {index:02d}", episode_id=episode_id
+                )
+                store.begin_turn(turn_id, "autonomous", [turn_id])
+                timestamp = now - 7 * 3600 - index * 60
+                with store._db:
+                    store._db.execute(
+                        """INSERT INTO messages
+                           (turn_id, role, content, created_at,
+                            source_event_ids_json, delivery_state)
+                           VALUES (?, 'assistant', ?, ?, '[]', 'internal')""",
+                        (turn_id, f"关键词内容 {index:02d}", timestamp),
+                    )
+                    store._db.execute(
+                        """UPDATE turns SET state='completed', updated_at=?
+                           WHERE id=?""",
+                        (timestamp, turn_id),
+                    )
+                store.link_turn_to_episode(episode_id, turn_id)
+
+            retrieval = build_plan_retrieval(
+                store,
+                plan("关键词"),
+                config(
+                    directory,
+                    recent_episode_hours=6,
+                    summary_results=12,
+                ),
+            )
+
+            self.assertEqual(len(retrieval["episodes"]), 12)
+            self.assertNotIn(
+                "keyword-12",
+                {item["episode_id"] for item in retrieval["episodes"]},
+            )
+            self.assertTrue(
+                all(item["relation"] == "recalled" for item in retrieval["episodes"])
+            )
+            store.close()
+
+    def test_episode_merge_order_prefers_recent_multi_then_keyword_hits_then_recent(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            now = time.time()
+            episodes = (
+                ("recent-multi", "甲关键词 乙关键词", now - 300),
+                ("old-multi", "甲关键词 乙关键词", now - 7 * 3600),
+                ("recent-single", "甲关键词", now - 200),
+                ("old-single", "甲关键词", now - 7 * 3600 - 60),
+                ("recent-only", "无关近期话题", now - 100),
+            )
+            for episode_id, title, timestamp in episodes:
+                turn_id = f"turn-{episode_id}"
+                store.create_episode(title, episode_id=episode_id)
+                store.begin_turn(turn_id, "autonomous", [turn_id])
+                with store._db:
+                    store._db.execute(
+                        """INSERT INTO messages
+                           (turn_id, role, content, created_at,
+                            source_event_ids_json, delivery_state)
+                           VALUES (?, 'assistant', ?, ?, '[]', 'internal')""",
+                        (turn_id, title, timestamp),
+                    )
+                    store._db.execute(
+                        """UPDATE turns SET state='completed', updated_at=?
+                           WHERE id=?""",
+                        (timestamp, turn_id),
+                    )
+                store.link_turn_to_episode(episode_id, turn_id)
+
+            retrieval = build_plan_retrieval(
+                store,
+                plan("甲关键词 | 乙关键词"),
+                config(
+                    directory,
+                    recent_episode_hours=6,
+                    summary_results=12,
+                ),
+            )
+
+            self.assertEqual(
+                [item["episode_id"] for item in retrieval["episodes"]],
+                [
+                    "recent-multi",
+                    "old-multi",
+                    "recent-single",
+                    "old-single",
+                    "recent-only",
+                ],
+            )
+            self.assertEqual(
+                [item["keyword_match_count"] for item in retrieval["episodes"]],
+                [2, 2, 1, 1, 0],
+            )
             store.close()
 
     def test_planner_or_query_is_executed_as_separate_terms(self) -> None:

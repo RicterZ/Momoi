@@ -98,7 +98,7 @@ class AppConfig:
     database: Path
     log_level: str
     max_input_tokens: int = 96000
-    summary_results: int = 3
+    summary_results: int = 12
     summary_tokens: int = 6000
     recent_episode_hours: float = 6
     soul_prompt: str = ""
@@ -331,7 +331,9 @@ def load_config(path: str | Path) -> AppConfig:
         database=database,
         log_level=str(logging_raw.get("level", "DEBUG")).upper(),
         max_input_tokens=max(1000, int(context_raw.get("max_input_tokens", 96000))),
-        summary_results=max(0, int(context_raw.get("summary_results", 3))),
+        summary_results=min(
+            12, max(0, int(context_raw.get("summary_results", 12)))
+        ),
         summary_tokens=max(0, int(context_raw.get("summary_tokens", 6000))),
         recent_episode_hours=_nonnegative(
             context_raw.get("recent_episode_hours", 6),

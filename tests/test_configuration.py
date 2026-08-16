@@ -58,6 +58,7 @@ class ConfigurationTest(unittest.TestCase):
             self.assertTrue(config.llm.tool_choice)
             self.assertEqual(config.llm.max_tokens, 16384)
             self.assertEqual(config.llm.timeout_seconds, 300)
+            self.assertEqual(config.summary_results, 12)
             self.assertEqual(config.recent_episode_hours, 6)
             self.assertTrue(config.episode_annealing.enabled)
             self.assertEqual(config.episode_annealing.idle_seconds, 60)
@@ -107,6 +108,10 @@ class ConfigurationTest(unittest.TestCase):
             }
             path.write_text(json.dumps(value))
             self.assertEqual(load_config(path).recent_episode_hours, 2.5)
+
+            value["context"]["summary_results"] = 99  # type: ignore[index]
+            path.write_text(json.dumps(value))
+            self.assertEqual(load_config(path).summary_results, 12)
 
             value["context"]["recent_episode_hours"] = -1  # type: ignore[index]
             path.write_text(json.dumps(value))

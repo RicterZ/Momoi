@@ -32,6 +32,7 @@ class EpisodeSearchHit:
     score: float
     last_activity_at: float
     matches: tuple[EpisodeSearchMessage, ...]
+    matched_keywords: tuple[str, ...] = ()
 
 
 class EpisodeSearchBackend(Protocol):
@@ -91,7 +92,13 @@ class StringEpisodeSearchBackend:
             )
         ranked.sort(key=lambda item: item[:5], reverse=True)
         return [
-            EpisodeSearchHit(episode_id, score, last_activity_at, matches)
+            EpisodeSearchHit(
+                episode_id,
+                score,
+                last_activity_at,
+                matches,
+                (keyword,),
+            )
             for score, _, last_activity_at, _, episode_id, matches in ranked[
                 :max_results
             ]
@@ -175,6 +182,9 @@ class EpisodeQueryService:
                     score=float(state["score"]),
                     last_activity_at=float(state["last_activity_at"]),
                     matches=ordered_matches,
+                    matched_keywords=tuple(
+                        sorted(str(value) for value in state["alternatives"])
+                    ),
                 )
             )
         return results

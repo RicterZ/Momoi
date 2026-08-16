@@ -180,7 +180,7 @@ Protocol-specific parsing, content rendering, and connection logs belong in that
     "memory_results": 6,
     "memory_tokens": 8000,
     "max_input_tokens": 96000,
-    "summary_results": 3,
+    "summary_results": 12,
     "summary_tokens": 6000,
     "recent_episode_hours": 6
   }
@@ -195,13 +195,13 @@ Protocol-specific parsing, content rendering, and connection logs belong in that
 | `memory_results` | `6` | Maximum durable memories recalled automatically |
 | `memory_tokens` | `8000` | Token budget for recalled durable memory |
 | `max_input_tokens` | `96000` | Target ceiling for the complete model input, including tool schemas |
-| `summary_results` | `3` | Maximum older conversation segments recalled automatically |
+| `summary_results` | `12` | Maximum Episodes returned by keyword recall before merging with recent Episodes |
 | `summary_tokens` | `6000` | Token budget for recalled conversation segments |
 | `recent_episode_hours` | `6` | Automatically include Episode summaries active within this many recent hours; set to `0` to disable |
 
 Set `max_input_tokens` below the provider's real context window. These are context-building budgets, not a promise that every provider counts tokens identically.
 
-`recent_raw_tokens` limits recent conversation kept in original form, and `recent_turns` limits how many completed conversation Turns are considered. `recent_episode_hours` adds up to 12 recently active Episode summaries by default, independent of keyword recall. The memory and summary fields independently control durable-memory recall and older-conversation recall; `summary_results` limits keyword-recalled Episodes, while `summary_tokens` is shared by recent and keyword-recalled Episode summaries.
+`recent_raw_tokens` limits recent conversation kept in original form, and `recent_turns` limits how many completed conversation Turns are considered. `recent_episode_hours` adds every Episode active in the configured window, independent of keyword recall. `summary_results` limits keyword-recalled Episodes to 12 by default. The two sets are deduplicated, then ordered with recent keyword matches first, other keyword matches next, and recent-only Episodes last. More matched keyword alternatives rank ahead within the keyword groups. `summary_tokens` is shared by the merged Episode summaries.
 
 Set a recall result count or token budget to `0` to disable that automatic recall layer. Explicit memory and conversation search tools remain available to the agent when their tool is enabled.
 

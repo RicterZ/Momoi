@@ -1962,6 +1962,31 @@ class Store(MemoryStore, DeliveryStore):
             results.append(episode)
         return results
 
+    def list_recent_episodes(self, after: float) -> list[dict[str, object]]:
+        rows = self._db.execute(
+            """SELECT e.*, COALESCE((
+                       SELECT MAX(t.updated_at) FROM episode_turns AS et
+                       JOIN turns AS t ON t.id=et.turn_id
+                       WHERE et.episode_id=e.id
+                   ), e.updated_at) AS last_activity_at
+               FROM conversation_episodes AS e
+               WHERE EXISTS (
+                   SELECT 1 FROM episode_turns AS et
+                   JOIN messages AS m ON m.turn_id=et.turn_id
+                   WHERE et.episode_id=e.id AND m.created_at>=?
+               )
+               ORDER BY last_activity_at DESC, e.id DESC""",
+            (after,),
+        ).fetchall()
+        results = []
+        for row in rows:
+            episode = self._episode_dict(row)
+            episode["last_activity_timestamp"] = context_timestamp(
+                row["last_activity_at"]
+            )
+            results.append(episode)
+        return results
+
     def episode_candidates_by_ids(
         self, episode_ids: list[str]
     ) -> list[dict[str, object]]:
@@ -2322,6 +2347,8 @@ class Store(MemoryStore, DeliveryStore):
                 | {"content": truncate_tokens(match.content, 500)}
                 for match in hit.matches
             ]
+            episode["matched_keywords"] = list(hit.matched_keywords)
+            episode["keyword_match_count"] = len(hit.matched_keywords)
             results.append(episode)
         return results
 

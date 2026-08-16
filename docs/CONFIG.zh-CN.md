@@ -180,7 +180,7 @@ momoi --workspace ~/.momoi run
     "memory_results": 6,
     "memory_tokens": 8000,
     "max_input_tokens": 96000,
-    "summary_results": 3,
+    "summary_results": 12,
     "summary_tokens": 6000,
     "recent_episode_hours": 6
   }
@@ -195,13 +195,13 @@ momoi --workspace ~/.momoi run
 | `memory_results` | `6` | 自动召回的持久记忆最大数量 |
 | `memory_tokens` | `8000` | 召回持久记忆的 token 预算 |
 | `max_input_tokens` | `96000` | 包括工具 schema 在内的完整模型输入目标上限 |
-| `summary_results` | `3` | 自动召回的较早对话片段最大数量 |
+| `summary_results` | `12` | 关键词召回最多返回的 Episode 数量，之后再与近期 Episode 合并 |
 | `summary_tokens` | `6000` | 召回对话片段的 token 预算 |
 | `recent_episode_hours` | `6` | 默认注入最近多少小时内活跃的 Episode 摘要；设为 `0` 可关闭 |
 
 `max_input_tokens` 应低于 provider 真实的上下文窗口。这些数值是构建上下文的预算，不代表每个 provider 都会以相同方式计算 token。
 
-`recent_raw_tokens` 限制以原始形式保留的近期对话，`recent_turns` 限制纳入考虑的近期已完成对话回合数。`recent_episode_hours` 默认额外注入最多 12 个近期活跃的 Episode 摘要，与关键词召回相互独立。记忆和摘要字段分别控制持久记忆与较早对话的召回；`summary_results` 限制关键词召回的 Episode 数量，`summary_tokens` 由近期和关键词召回的 Episode 摘要共同使用。
+`recent_raw_tokens` 限制以原始形式保留的近期对话，`recent_turns` 限制纳入考虑的近期已完成对话回合数。`recent_episode_hours` 会加入配置窗口内全部活跃的 Episode，与关键词召回相互独立；`summary_results` 默认将关键词召回限制为最多 12 个 Episode。两组结果按 Episode 去重后排序：近期且命中关键词的优先，其次是其他关键词命中，最后是仅近期活跃的 Episode；在关键词组内，命中的关键词 alternative 越多越靠前。`summary_tokens` 由合并后的 Episode 摘要共同使用。
 
 将某个召回层的结果数量或 token 预算设为 `0` 可关闭该层自动召回。对应工具已启用时，显式记忆和对话搜索工具仍然可用。
 
