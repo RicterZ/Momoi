@@ -7,6 +7,7 @@ from momoi.channel.napcat import NapCatConfig
 from momoi.config import AppConfig, LLMConfig
 from momoi.models import AgentReply, IncomingMessage
 from momoi.runtime.context_assembler import (
+    _search_or,
     assemble_main_context,
     build_plan_retrieval,
     recall_episode_context,
@@ -62,6 +63,31 @@ def plan(query: str, episode_id: str = "episode-mail") -> dict[str, object]:
 
 
 class ContextAssemblerTest(unittest.TestCase):
+    def test_planner_or_query_is_executed_as_separate_terms(self) -> None:
+        calls: list[str] = []
+        rows = {
+            "房间": [{"id": "shared"}, {"id": "room-only"}],
+            "屋子": [{"id": "shared"}, {"id": "house-only"}],
+            "碎片": [{"id": "fragment-only"}],
+        }
+
+        def search(query: str, _: int) -> list[dict[str, object]]:
+            calls.append(query)
+            return rows[query]
+
+        results = _search_or(
+            "房间 | 屋子 | 碎片 | 房间",
+            search,
+            lambda row: row["id"],
+            4,
+        )
+
+        self.assertEqual(calls, ["房间", "屋子", "碎片"])
+        self.assertEqual(
+            [row["id"] for row in results],
+            ["shared", "room-only", "house-only", "fragment-only"],
+        )
+
     def test_expanded_query_reaches_episode_outside_recent_directory(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")

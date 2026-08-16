@@ -26,10 +26,14 @@ Rules:
   `speech_act` is for recall and Episode archival only; it is not a recommendation
   that Momoi stay silent or skip a reply.
 - Recent conversation is the first source of continuity. When it already resolves
-  the current reply, leave `recall_queries` empty. Use one concise query when older
-  evidence is necessary; use two only for genuinely independent evidence needs,
-  never as near-synonym rewrites. A referenced Goal or reminder needs one query
-  containing its exact id/title/text.
+  the current reply, leave `recall_queries` empty. When older evidence is necessary,
+  generate one compact `|`-separated OR expression containing the concrete names,
+  entities, aliases, synonyms, and phrases likely to occur in the archive. Use two
+  expressions only for genuinely independent evidence needs. Do not write a search
+  instruction or prose sentence; omit verbs such as read, find, recall, or review.
+  File paths and artifact-reading steps belong to execution tools, not recall.
+  Do not use wildcard syntax. A referenced Goal or reminder needs an expression
+  containing its exact id, title, or text.
 - `references` contains only useful cross-message or omitted-subject resolutions,
   preferably `phrase -> referent`. Do not restate or paraphrase information already
   explicit in the current unit.

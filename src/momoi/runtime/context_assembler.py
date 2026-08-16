@@ -16,6 +16,57 @@ _MAX_EPISODE_DIRECTORY_RESULTS = 12
 logger = logging.getLogger(__name__)
 
 
+def _query_alternatives(query: str) -> list[str]:
+    return list(
+        dict.fromkeys(
+            part.strip() for part in query.split("|") if part.strip()
+        )
+    )[:12]
+
+
+def _search_or(
+    query: str,
+    search: Callable[[str, int], list[dict[str, object]]],
+    identity: Callable[[dict[str, object]], object],
+    max_results: int,
+) -> list[dict[str, object]]:
+    alternatives = _query_alternatives(query)
+    if not alternatives:
+        return []
+    if len(alternatives) == 1:
+        return search(alternatives[0], max_results)
+
+    ranked: dict[
+        object, tuple[dict[str, object], int, float, int]
+    ] = {}
+    for alternative in alternatives:
+        for rank, row in enumerate(search(alternative, max_results)):
+            key = identity(row)
+            existing = ranked.get(key)
+            if existing is None:
+                ranked[key] = (row, 1, 1.0 / (rank + 1), len(ranked))
+            else:
+                existing_row, hits, score, first = existing
+                _merge_matches(existing_row, row)
+                ranked[key] = (
+                    existing_row,
+                    hits + 1,
+                    score + 1.0 / (rank + 1),
+                    first,
+                )
+
+    rows = list(ranked.values())
+    rows.sort(
+        key=lambda item: (
+            item[1],
+            -item[3],
+            item[2],
+        ),
+        reverse=True,
+    )
+    return [item[0] for item in rows[:max_results]]
+
+
 def _historical_content(value: object) -> str:
     """Remove the legacy owner wrapper before showing persisted history."""
     text = str(value or "")
@@ -50,7 +101,7 @@ def _selected_by_unit(
         seen: dict[object, dict[str, object]] = {}
         rows: list[dict[str, object]] = []
         for query in unit["recall_queries"]:
-            for row in search(str(query), max_results):
+            for row in _search_or(str(query), search, identity, max_results):
                 key = identity(row)
                 if key in seen:
                     _merge_matches(seen[key], row)
