@@ -16,7 +16,6 @@ from .models import (
 )
 from .storage import (
     ALWAYS_MEMORY_KINDS,
-    ALWAYS_MEMORY_MAX_ITEMS,
     MEMORY_ACTIVATIONS,
     MEMORY_KINDS,
     RECENT_MEMORY_MAX_TTL_HOURS,
@@ -461,7 +460,6 @@ _MEMORY_ERROR_MESSAGES = {
     ),
     "invalid_replace_confirmed": "replace_confirmed must be a boolean.",
     "invalid_ttl": "ttl_hours must be within the allowed range for recent memory.",
-    "always_memory_limit": "always memory is limited to stable owner rules; use recall or recent.",
     "always_memory_kind": "always memory is limited to profile, preference, or relationship.",
     "memory_not_found": "The requested committed or staged memory was not found.",
 }
@@ -725,9 +723,6 @@ class MemoryTools:
             ttl_hours = 0
 
         existing = self.store.active_memory(kind, key)
-        if activation == "always" and existing is None:
-            if self.store.always_memory_count() >= ALWAYS_MEMORY_MAX_ITEMS:
-                return _memory_error("always_memory_limit")
         if existing and existing["content"] != content and not replace_confirmed:
             candidate = MemoryConflictCandidate(
                 kind, key, content, evidence, importance, activation
