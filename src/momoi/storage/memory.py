@@ -21,6 +21,8 @@ MEMORY_KINDS = {
     "routine",
 }
 MEMORY_ACTIVATIONS = {"always", "recent", "recall"}
+ALWAYS_MEMORY_KINDS = {"profile", "preference", "relationship"}
+ALWAYS_MEMORY_MAX_ITEMS = 24
 RECENT_MEMORY_WINDOW_SECONDS = 7 * 24 * 60 * 60
 RECENT_MEMORY_MIN_TTL_HOURS = 1
 RECENT_MEMORY_MAX_TTL_HOURS = 7 * 24
@@ -250,6 +252,9 @@ class MemoryStore:
             (now,),
         ).fetchall()
         return [dict(row) for row in rows]
+
+    def always_memory_count(self) -> int:
+        return len(self.always_memory_inventory())
 
     def always_memory_inventory_context(self) -> str:
         rows = self.always_memory_inventory()

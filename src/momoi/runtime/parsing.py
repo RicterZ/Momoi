@@ -200,7 +200,7 @@ def parse_always_memory_actions(
 ) -> tuple[list[dict[str, Any]] | None, str | None]:
     if raw is None:
         return [], None
-    if not isinstance(raw, list) or len(raw) > 32:
+    if not isinstance(raw, list) or len(raw) > 8:
         return None, "invalid_always_memory_action"
     actions: list[dict[str, Any]] = []
     seen: set[int] = set()

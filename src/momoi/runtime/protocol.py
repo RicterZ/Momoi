@@ -311,7 +311,7 @@ REFLECTION_FINISH_SPEC: dict[str, Any] = {
             "summary": {"type": "string", "minLength": 1, "maxLength": 6000},
             "always_memory_actions": {
                 "type": "array",
-                "maxItems": 32,
+                "maxItems": 8,
                 "description": (
                     "Optional housekeeping of `<always_memory_inventory>`. Empty is valid. "
                     "Use memory_id from that inventory only."
