@@ -141,10 +141,19 @@ class DeliveryStore:
                 (step_index, now, run_id),
             )
 
+    def _webhook_workflow_id(self, run_id: str) -> str:
+        row = self._db.execute(
+            "SELECT workflow_id FROM webhook_runs WHERE id=?",
+            (run_id,),
+        ).fetchone()
+        if row is None:
+            raise ValueError("webhook run not found")
+        return str(row["workflow_id"])
+
     @staticmethod
-    def _webhook_day_episode(when: float) -> tuple[str, str]:
+    def _webhook_day_episode(when: float, workflow_id: str) -> tuple[str, str]:
         day = datetime.fromtimestamp(when).astimezone().date().isoformat()
-        return f"webhook:day:{day}", f"家里事件 {day}"
+        return f"webhook:{workflow_id}:day:{day}", f"Webhook {workflow_id} {day}"
 
     @staticmethod
     def _heartbeat_day_episode(when: float) -> tuple[str, str]:
@@ -238,7 +247,9 @@ class DeliveryStore:
                    VALUES (?, 'event', ?, ?, ?, 'delivered')""",
                 (turn_id, text, now, source),
             )
-            episode_key, title = self._webhook_day_episode(now)
+            episode_key, title = self._webhook_day_episode(
+                now, self._webhook_workflow_id(run_id)
+            )
             self._ensure_autonomous_episode(
                 episode_key,
                 turn_id,
@@ -339,7 +350,9 @@ class DeliveryStore:
                     (turn_id,),
                 ).fetchone()
                 when = float(event["created_at"]) if event is not None else now
-                episode_key, title = self._webhook_day_episode(when)
+                episode_key, title = self._webhook_day_episode(
+                    when, self._webhook_workflow_id(run_id)
+                )
                 self._ensure_autonomous_episode(
                     episode_key,
                     turn_id,

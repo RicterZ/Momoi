@@ -14,3 +14,4 @@ mcp.json
 *.log
 var/
 dist
+docs/*-user-content-review.txt

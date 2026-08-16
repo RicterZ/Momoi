@@ -520,7 +520,9 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(searched["ok"])
             self.assertGreater(searched["count"], 0)
             episode = found[0]
-            self.assertRegex(str(episode["title"]), r"^家里事件 \d{4}-\d{2}-\d{2}$")
+            self.assertRegex(
+                str(episode["title"]), r"^Webhook event-message \d{4}-\d{2}-\d{2}$"
+            )
             store.close()
 
     async def test_webhook_events_share_one_episode_per_local_day(self) -> None:
@@ -557,20 +559,36 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             store.create_webhook_run("event-message", "door", first_plan)
             store.create_webhook_run("event-message", "hamster", second_plan)
+            store.create_webhook_run("url-check-event", "other", first_plan)
             first = store.claim_webhook_run()
             await service._execute(first, asyncio.Event())
             second = store.claim_webhook_run()
             await service._execute(second, asyncio.Event())
+            other = store.claim_webhook_run()
+            await service._execute(other, asyncio.Event())
 
             door = store.search_episodes("门锁超时", 3)
             hamster = store.search_episodes("仓鼠窝", 3)
             self.assertTrue(door)
             self.assertTrue(hamster)
-            self.assertEqual(door[0]["id"], hamster[0]["id"])
-            self.assertRegex(str(door[0]["title"]), r"^家里事件 \d{4}-\d{2}-\d{2}$")
+            by_title = {str(item["title"]): item for item in door}
+            event_title = next(
+                title
+                for title in by_title
+                if title.startswith("Webhook event-message ")
+            )
+            other_title = next(
+                title
+                for title in by_title
+                if title.startswith("Webhook url-check-event ")
+            )
+            self.assertEqual(by_title[event_title]["id"], hamster[0]["id"])
+            self.assertNotEqual(by_title[event_title]["id"], by_title[other_title]["id"])
             contents = [
                 item["content"]
-                for item in store.conversation_episode(str(door[0]["id"]))["messages"]
+                for item in store.conversation_episode(
+                    str(by_title[event_title]["id"])
+                )["messages"]
             ]
             self.assertIn("门锁超时未关", contents)
             self.assertIn("当前仓鼠窝温度为 28.0°C", contents)
