@@ -41,6 +41,7 @@ _PREFERRED_FIELDS = (
 )
 TRACE = 5
 logging.addLevelName(TRACE, "TRACE")
+logging.TRACE = TRACE
 _LEVEL_COLORS = {
     TRACE: "\033[2;37m",
     logging.DEBUG: "\033[36m",

@@ -486,7 +486,7 @@ Open `http://127.0.0.1:8788` by default. Use `--dashboard-host` and `--dashboard
 
 | Field | Default | Description |
 | --- | --- | --- |
-| `level` | `DEBUG` | Python logging level; the starter template sets `INFO` |
+| `level` | `DEBUG` | Python logging level; supports `TRACE`, `DEBUG`, `INFO`, `WARNING`, `ERROR`, and `CRITICAL` |
 
 Use `INFO` for normal operation and `DEBUG` for development. DEBUG logs may contain owner messages, model output, and tool status; treat them as private data.
 

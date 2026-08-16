@@ -486,7 +486,7 @@ Owner Turn 独占对主人输入的回复权。存在未处理的主人消息、
 
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
-| `level` | `DEBUG` | Python 日志级别；初始模板设置为 `INFO` |
+| `level` | `DEBUG` | Python 日志级别；支持 `TRACE`、`DEBUG`、`INFO`、`WARNING`、`ERROR`、`CRITICAL` |
 
 正常运行使用 `INFO`，开发时使用 `DEBUG`。DEBUG 日志可能包含主人消息、模型输出和工具状态，应当作私密数据保护。
 
