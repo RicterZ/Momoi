@@ -19,7 +19,7 @@ function previewThinkingCalls() {
       excerpt:
         "主人在问为什么衣服洗好了却没提醒。近期对话里有 webhook 事件，先按洗衣和提醒召回 Episode。",
       reasoning:
-        "主人问的是「为什么衣服洗好了没提醒」。这不是新的洗衣任务，而是在追问上一次 webhook 的处理。\n\n近期对话里已经有 EVENT channel=webhook：衣服洗好了。先用「洗衣|衣服|提醒」召回相关 Episode，不要把「事件已写入时间线」当成已经送达。\n\nintent：解释刚才为什么没有发提醒。speech_act：question。Episode 继续当天的洗衣事件，而不是新开一个元讨论。",
+        "主人问的是「为什么衣服洗好了没提醒」。这不是新的洗衣任务，而是在追问上一次 webhook 的处理。\n\n近期对话里已经有 EVENT channel=webhook：衣服洗好了。先用「洗衣|衣服|提醒」召回相关 Episode，不要把「事件已写入时间线」当成已经送达。\n\nintent：解释刚才为什么没有发提醒。speech_act：question。Episode 继续当天的洗衣事件，而不是新开一个元讨论。\n\n再核对一遍时间线：webhook 到了，outbox 是空的，老师现在是在追问，不是布置新任务。如果只回「已经记下来了」，老师还是会觉得没被提醒。\n\n接下来只做一件事：把当时为什么静默说清楚，并问要不要补一条提醒。不要把旧 Episode 笔记里的「烘干结束不必提醒」直接当成这轮的禁令。",
     },
     {
       turn_id: "9d5db6937f765921b2d6cbe0773e5111",
@@ -113,6 +113,29 @@ function previewThinkingCalls() {
       excerpt: "六月在想表情包分类，先按老师最近用过的召回。",
       reasoning: "老师在问表情包。先召回最近用过的贴纸，不要把分类方案一次倒完。",
     },
+    ...Array.from({ length: 22 }, (_, index) => {
+      const stages = ["owner", "heartbeat", "webhook", "context_plan", "reflection"];
+      const stage = stages[index % stages.length];
+      const reasoning = [
+        `预览思考 ${index + 1}。用来把左侧列表和右侧详情都撑出滚动条。`,
+        "先核对最近对话，再决定要不要主动说话。",
+        "如果只是重复已知状态，就静默收束，不要假装已经提醒过。",
+        "关卡节奏、洗衣 webhook、表情包分类都可以各自记一笔，不要混成一件事。",
+        "结论写清楚：这轮只整理判断，不把旧笔记当成现行禁令。",
+      ].join("\n\n");
+      return {
+        turn_id: `preview-turn-${index + 1}`,
+        call_id: `preview-call-${index + 1}`,
+        created_at: at(-(index + 3) * 18),
+        stage,
+        round: 1,
+        model: "deepseek-v4-flash",
+        tools: ["respond"],
+        reasoning_chars: reasoning.length,
+        excerpt: `预览条目 ${index + 1}：把思考列表撑高，方便看滚动条。`,
+        reasoning,
+      };
+    }),
   ];
 }
 
@@ -173,6 +196,171 @@ function previewThinkingList(params) {
     items: page,
     count: page.length,
   };
+}
+
+function previewNow() {
+  return Math.floor(Date.now() / 1000);
+}
+
+function previewRecords() {
+  const now = previewNow();
+  const conversations = [
+    {
+      id: "episode-laundry",
+      title: "衣服洗好了",
+      status: "open",
+      working_summary: "老师在追问上次 webhook 为什么没有发出烘干结束提醒。",
+      topics: ["洗衣", "提醒", "webhook"],
+      updated_at: now - 120,
+    },
+    {
+      id: "episode-game",
+      title: "小游戏关卡节奏",
+      status: "open",
+      working_summary: "最近在聊关卡节奏，心跳里记过「先看见机关再决定要不要踩」。",
+      topics: ["小游戏", "关卡"],
+      updated_at: now - 3600,
+    },
+    ...Array.from({ length: 16 }, (_, index) => ({
+      id: `episode-preview-${index + 1}`,
+      title: `预览聊天 ${index + 1}`,
+      status: index % 5 === 0 ? "closed" : "open",
+      working_summary: `用来把聊天列表撑高的预览主题 ${index + 1}。`,
+      topics: ["预览", index % 2 ? "日常" : "杂谈"],
+      updated_at: now - (index + 2) * 5400,
+    })),
+  ];
+
+  const longReply = [
+    "先看事实，不看旧笔记。",
+    "那次 webhook 的工具只有 respond，outbox 是空的，所以老师确实没收到提醒。",
+    "thinking 里写过「烘干结束提醒并非老师要求」，那是当时的判断，不能当成现行禁令。",
+    "老师现在明确在问为什么没提醒。结论：衣服洗好这件事到了，我评估后选择了静默。",
+    "接下来用 send_message 把这件事说清楚，不要假装已经提醒过。",
+    "如果老师还想补一条提醒，我可以现在就记下时间，不再把旧 Episode 笔记直接套过来。",
+  ].join("\n\n");
+
+  const conversationDetails = {
+    "episode-laundry": {
+      id: "episode-laundry",
+      title: "衣服洗好了",
+      status: "open",
+      topics: ["洗衣", "提醒", "webhook"],
+      messages: [
+        {
+          id: 1,
+          role: "user",
+          content: "衣服洗好了怎么没提醒我？",
+          created_at: now - 900,
+          ordinal: 1,
+        },
+        {
+          id: 2,
+          role: "assistant",
+          content: longReply,
+          created_at: now - 860,
+          delivery_state: "delivered",
+          ordinal: 2,
+        },
+        ...Array.from({ length: 18 }, (_, index) => ({
+          id: index + 3,
+          role: index % 2 ? "assistant" : "user",
+          content:
+            index % 2
+              ? `预览回复 ${Math.ceil((index + 1) / 2)}。把对话详情撑高，方便看右侧滚动条。\n\n${longReply}`
+              : `预览追问 ${Math.ceil((index + 1) / 2)}：那条提醒后来补了吗？`,
+          created_at: now - 800 + index * 20,
+          delivery_state: index % 2 ? "delivered" : undefined,
+          ordinal: index + 3,
+        })),
+      ],
+    },
+  };
+
+  const reminders = Array.from({ length: 14 }, (_, index) => ({
+    id: `reminder-${index + 1}`,
+    text:
+      index % 3 === 0
+        ? `预览提醒 ${index + 1}：站起来活动一下，顺便看看滚动条。`
+        : index % 3 === 1
+          ? `预览提醒 ${index + 1}：检查洗衣机有没有把衣服烘干。`
+          : `预览提醒 ${index + 1}：把关卡节奏笔记收进今天的复盘。`,
+    status: index > 10 ? "fired" : "pending",
+    fire_at: now + (index + 1) * 3600,
+    created_at: now - (index + 1) * 7200,
+    schedule:
+      index % 4 === 0
+        ? { kind: "daily", at: "21:00", timezone: "Asia/Shanghai" }
+        : null,
+  }));
+
+  const memories = [
+    {
+      id: 1,
+      kind: "owner_preference",
+      activation: "always",
+      content: "主人不吃香菜。",
+      evidence: "上次点外卖时明确说过。",
+      updated_at: now - 86400,
+    },
+    {
+      id: 2,
+      kind: "practice",
+      activation: "recent",
+      content: "衣服洗好后，老师现在希望被提醒，不再沿用旧的静默判断。",
+      evidence: "今晚追问「为什么衣服洗好了没提醒」。",
+      updated_at: now - 1800,
+    },
+    ...Array.from({ length: 12 }, (_, index) => ({
+      id: index + 3,
+      kind: index % 2 ? "shared_experience" : "self_insight",
+      activation: index % 3 === 0 ? "always" : index % 3 === 1 ? "recent" : "recall",
+      content: `预览记忆 ${index + 1}：用来把记忆页撑出滚动条。`,
+      evidence: "本地预览数据",
+      updated_at: now - (index + 2) * 86000,
+    })),
+  ];
+
+  const goals = Array.from({ length: 8 }, (_, index) => ({
+    id: `goal-${index + 1}`,
+    title: `预览任务 ${index + 1}`,
+    status: index === 6 ? "waiting" : index === 7 ? "blocked" : "active",
+    success_criteria: "把这条预览任务显示完整，方便看任务列表高度。",
+    next_action: "打开看板确认滚动条样式。",
+    waiting_for: index === 6 ? "等老师回关卡意见" : "",
+    blocked_reason: index === 7 ? "还缺一张表情包素材" : "",
+    latest_result: index % 2 ? "已经记过一版草稿。" : "",
+    schedule: null,
+    next_review_at: now + 86400,
+  }));
+
+  const reflections = Array.from({ length: 10 }, (_, index) => {
+    const date = new Date();
+    date.setDate(date.getDate() - index);
+    return {
+      id: `reflection-${index + 1}`,
+      local_date: date.toISOString().slice(0, 10),
+      state: "completed",
+      summary:
+        index === 0
+          ? "今天核对了洗衣 webhook：当时选择静默，老师后来追问，已经把原因说清楚。"
+          : `预览复盘 ${index + 1}：整理当天的心跳和对话，用来把复盘列表撑高。`,
+      memories:
+        index === 0
+          ? [
+              {
+                kind: "practice",
+                key: "laundry-reminder",
+                content: "烘干结束是否提醒，以老师这轮的明确要求为准。",
+                confidence: 0.86,
+                evidence: "今晚的追问",
+              },
+            ]
+          : [],
+    };
+  });
+
+  return { conversations, conversationDetails, reminders, memories, goals, reflections };
 }
 
 function previewUsageApi() {
@@ -258,16 +446,19 @@ function previewUsageApi() {
           json(res, { ok: true });
           return;
         }
+        const records = previewRecords();
         if (req.method === "GET" && path === "/api/overview") {
           json(res, {
             counts: {
-              conversations: 0,
-              messages: 0,
-              reflections: 0,
-              goals: 0,
-              reminders: 0,
+              conversations: records.conversations.length,
+              messages: 42,
+              reflections: records.reflections.length,
+              goals: records.goals.filter((item) =>
+                ["active", "waiting", "blocked"].includes(item.status),
+              ).length,
+              reminders: records.reminders.filter((item) => item.status === "pending").length,
               emotions: 0,
-              memories: 0,
+              memories: records.memories.length,
             },
             mood: { state: "happy", intensity: 0.65, cause: "preview" },
             activity: {
@@ -315,6 +506,64 @@ function previewUsageApi() {
             return;
           }
           json(res, { ok: true, items, count: items.length });
+          return;
+        }
+        if (req.method === "GET" && path === "/api/conversations") {
+          json(res, { items: records.conversations });
+          return;
+        }
+        if (req.method === "GET" && path.startsWith("/api/conversations/")) {
+          const id = decodeURIComponent(path.slice("/api/conversations/".length));
+          const item =
+            records.conversationDetails[id] || {
+              ...records.conversations.find((row) => row.id === id),
+              messages: [
+                {
+                  id: 1,
+                  role: "user",
+                  content: "这是预览对话。",
+                  created_at: previewNow() - 600,
+                  ordinal: 1,
+                },
+                {
+                  id: 2,
+                  role: "assistant",
+                  content: "本地预览回复。打开这条是为了看滚动条和排版。",
+                  created_at: previewNow() - 560,
+                  delivery_state: "delivered",
+                  ordinal: 2,
+                },
+              ],
+            };
+          if (!item?.id) {
+            json(res, { error: "conversation not found" }, 404);
+            return;
+          }
+          json(res, item);
+          return;
+        }
+        if (req.method === "GET" && path === "/api/reminders") {
+          const includeClosed = new URL(req.url, "http://127.0.0.1").searchParams
+            .get("all")
+            ?.toLowerCase();
+          const closed = includeClosed === "1" || includeClosed === "true" || includeClosed === "yes";
+          json(res, {
+            items: closed
+              ? records.reminders
+              : records.reminders.filter((item) => item.status === "pending"),
+          });
+          return;
+        }
+        if (req.method === "GET" && path === "/api/memories") {
+          json(res, { items: records.memories });
+          return;
+        }
+        if (req.method === "GET" && path === "/api/goals") {
+          json(res, { items: records.goals });
+          return;
+        }
+        if (req.method === "GET" && path === "/api/reflections") {
+          json(res, { items: records.reflections });
           return;
         }
         if (req.method === "GET" && path.startsWith("/api/")) {

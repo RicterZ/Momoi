@@ -20,10 +20,39 @@
 }
 
 * { box-sizing: border-box; }
-html { min-width: 320px; background: var(--canvas); }
+html {
+  min-width: 320px;
+  background: var(--canvas);
+  scrollbar-width: thin;
+  scrollbar-color: var(--pink) var(--wash);
+}
 body { min-height: 100vh; margin: 0; }
 button { font: inherit; }
 button, a { -webkit-tap-highlight-color: transparent; }
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: var(--wash);
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--pink);
+  border: 2px solid var(--ink);
+  border-radius: 8px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--blue);
+}
+*::-webkit-scrollbar-corner {
+  background: var(--wash);
+}
+*::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
 
 .shell {
   display: grid;
@@ -746,7 +775,7 @@ main.is-record .error {
 
 .usage-chart-card {
   margin: 0;
-  padding: 22px 22px 16px;
+  padding: 16px 20px 12px;
   border: 2px solid var(--ink);
   border-radius: 12px;
   background: var(--surface);
@@ -756,10 +785,10 @@ main.is-record .error {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
-  margin: 16px 0 8px;
+  margin: 10px 0 4px;
 }
 .usage-home-stats > div {
-  padding: 12px 14px;
+  padding: 10px 12px;
   border: 2px solid var(--ink);
   background: var(--canvas);
   box-shadow: 3px 3px 0 var(--blue);
@@ -1334,6 +1363,11 @@ a.tag:hover {
     margin: 0;
     padding: 2px 4px 6px 2px;
     overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  nav::-webkit-scrollbar {
+    display: none;
   }
   nav a {
     flex: 0 0 auto;
@@ -1349,7 +1383,6 @@ a.tag:hover {
     padding: 20px 18px 18px;
   }
   main.is-record .topbar { margin-bottom: 16px; }
-  main.is-record h1 { font-size: 28px; }
   .topbar { align-items: center; margin-bottom: 25px; }
   .token-card { padding: 22px; }
   .token-card-brand h2 { font-size: 22px; }
@@ -1367,8 +1400,8 @@ a.tag:hover {
   .usage-home-stats strong { font-size: 20px; }
   .usage-chart-head { align-items: start; flex-direction: column; gap: 10px; }
   .usage-legend-item { font-size: 13px; }
-  .usage-chart-card { padding: 16px 12px 12px; }
-  .usage-chart-frame svg { min-height: 220px; }
+  .usage-chart-card { padding: 14px 12px 10px; }
+  .usage-chart-frame svg { min-height: 180px; }
   .usage-tooltip {
     left: 10px;
     right: 10px;

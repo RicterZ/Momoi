@@ -473,10 +473,10 @@ function UsageChart({ rows, totals, balance, days = 30 }) {
   const daily = (rows || []).slice(-days);
   const shown = compact ? summarizeDaily(daily) : totals;
   const width = compact ? 390 : 720;
-  const height = compact ? 268 : 220;
+  const height = compact ? 220 : 176;
   const pad = compact
-    ? { top: 18, right: 14, bottom: 44, left: 14 }
-    : { top: 22, right: 18, bottom: 36, left: 18 };
+    ? { top: 14, right: 14, bottom: 36, left: 14 }
+    : { top: 16, right: 18, bottom: 30, left: 18 };
   const innerW = width - pad.left - pad.right;
   const innerH = height - pad.top - pad.bottom;
   const costs = daily.map((row) => Number(row.estimated_cost) || 0);
