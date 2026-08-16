@@ -1572,7 +1572,9 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "activity": {
                                     "intent": "浏览微博关注流",
                                     "reason": "看看最近感兴趣的动态",
-                                    "recall_queries": ["微博登录错误报告规则"],
+                                    "recall_queries": [
+                                        "微博登录过期 | 刷微博遇到错误"
+                                    ],
                                 },
                                 "uncertainty": [],
                             },

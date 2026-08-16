@@ -14,7 +14,7 @@ from .budget import SECTION_BUDGET_ALLOCATOR
 
 _LEGACY_OWNER_HEADER = "# Current owner messages\n"
 _DEFAULT_EPISODE_LOOKBACK_SECONDS = 30 * 24 * 60 * 60
-_MAX_EPISODE_DIRECTORY_RESULTS = 12
+_MAX_RECENT_EPISODE_RESULTS = 12
 logger = logging.getLogger(__name__)
 
 
@@ -93,6 +93,8 @@ def _selected_by_unit(
     snapshot: Callable[[dict[str, object]], dict[str, object]],
     max_results: int,
     token_budget: int,
+    *,
+    expand_or: bool = True,
 ) -> list[dict[str, object]]:
     if max_results <= 0 or token_budget <= 0:
         return []
@@ -101,7 +103,12 @@ def _selected_by_unit(
         seen: dict[object, dict[str, object]] = {}
         rows: list[dict[str, object]] = []
         for query in unit["recall_queries"]:
-            for row in _search_or(str(query), search, identity, max_results):
+            found = (
+                _search_or(str(query), search, identity, max_results)
+                if expand_or
+                else search(str(query), max_results)
+            )
+            for row in found:
                 key = identity(row)
                 if key in seen:
                     _merge_matches(seen[key], row)
@@ -163,7 +170,7 @@ def build_plan_retrieval(
         reflection_limit,
         config.memory_tokens // 2,
     )
-    episode_results = max(config.summary_results, _MAX_EPISODE_DIRECTORY_RESULTS)
+    episode_results = config.summary_results
     recalled_episodes = _selected_by_unit(
         units,
         lambda query, limit: store.search_episodes(
@@ -187,7 +194,33 @@ def build_plan_retrieval(
         },
         episode_results,
         config.summary_tokens,
+        expand_or=False,
     )
+    recent_episodes = (
+        store.search_episodes(
+            "",
+            _MAX_RECENT_EPISODE_RESULTS,
+            after=time.time() - config.recent_episode_hours * 3600,
+        )
+        if config.recent_episode_hours > 0 and config.summary_tokens > 0
+        else []
+    )
+    episodes_by_id: dict[str, dict[str, object]] = {
+        str(item["episode_id"]): item for item in recalled_episodes
+    }
+    for episode in recent_episodes:
+        episode_id = str(episode["id"])
+        existing = episodes_by_id.get(episode_id)
+        if existing is not None:
+            existing["relation"] = "recent_recalled"
+            continue
+        episodes_by_id[episode_id] = {
+            "episode_id": episode_id,
+            "relation": "recent",
+            "is_new": False,
+            "matches": [],
+            "unit_ids": [],
+        }
     agenda_budget = config.memory_tokens // 2
     goals = _selected_by_unit(
         units,
@@ -254,7 +287,7 @@ def build_plan_retrieval(
         "version": 2,
         # Episode bindings route the current Turn into storage. Only explicit
         # recall queries select historical Episode context.
-        "episodes": recalled_episodes,
+        "episodes": list(episodes_by_id.values()),
         "confirmed_memories": confirmed,
         "owner_preferences": store.always_memory_context(),
         "recent_memories": store.recent_memory_context(
@@ -561,5 +594,6 @@ def recall_episode_context(
         },
         max_results,
         summary_token_budget,
+        expand_or=False,
     )
     return _episode_context(store, episodes, summary_token_budget, raw_token_budget)

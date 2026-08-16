@@ -181,7 +181,8 @@ Protocol-specific parsing, content rendering, and connection logs belong in that
     "memory_tokens": 8000,
     "max_input_tokens": 96000,
     "summary_results": 3,
-    "summary_tokens": 6000
+    "summary_tokens": 6000,
+    "recent_episode_hours": 6
   }
 }
 ```
@@ -196,10 +197,11 @@ Protocol-specific parsing, content rendering, and connection logs belong in that
 | `max_input_tokens` | `96000` | Target ceiling for the complete model input, including tool schemas |
 | `summary_results` | `3` | Maximum older conversation segments recalled automatically |
 | `summary_tokens` | `6000` | Token budget for recalled conversation segments |
+| `recent_episode_hours` | `6` | Automatically include Episode summaries active within this many recent hours; set to `0` to disable |
 
 Set `max_input_tokens` below the provider's real context window. These are context-building budgets, not a promise that every provider counts tokens identically.
 
-`recent_raw_tokens` limits recent conversation kept in original form, and `recent_turns` limits how many completed conversation Turns are considered. The memory and summary fields independently control durable-memory recall and older-conversation recall.
+`recent_raw_tokens` limits recent conversation kept in original form, and `recent_turns` limits how many completed conversation Turns are considered. `recent_episode_hours` adds up to 12 recently active Episode summaries by default, independent of keyword recall. The memory and summary fields independently control durable-memory recall and older-conversation recall; `summary_results` limits keyword-recalled Episodes, while `summary_tokens` is shared by recent and keyword-recalled Episode summaries.
 
 Set a recall result count or token budget to `0` to disable that automatic recall layer. Explicit memory and conversation search tools remain available to the agent when their tool is enabled.
 

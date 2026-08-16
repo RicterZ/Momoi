@@ -15,12 +15,12 @@ from .models import (
     TurnDraft,
 )
 from .policies import MemoryPolicy
+from .search import SearchBackend, search_expression
 from .storage import (
     ALWAYS_MEMORY_KINDS,
     MEMORY_ACTIVATIONS,
     MEMORY_KINDS,
     Store,
-    lexical_units,
     truncate_tokens,
 )
 
@@ -30,12 +30,11 @@ _EPISODE_SEARCH_SUMMARY_TOKENS = 300
 
 
 def _episode_claim_excerpt(
-    episode: dict[str, object], query: str
+    episode: dict[str, object], query: str, search_backend: SearchBackend
 ) -> str:
     claims = episode.get("working_summary_claims")
     if not isinstance(claims, list):
         return ""
-    query_units = lexical_units(query, strict=True)
     matched_ids = {
         int(match["id"])
         for match in episode.get("matches", [])
@@ -45,11 +44,17 @@ def _episode_claim_excerpt(
     for index, claim in enumerate(claims):
         if not isinstance(claim, dict) or not str(claim.get("quote") or "").strip():
             continue
-        overlap = len(query_units & lexical_units(str(claim["quote"]), strict=True))
+        match = (
+            None
+            if not query.strip()
+            else search_expression(
+                query, (str(claim["quote"]),), search_backend
+            )
+        )
         ranked.append(
             (
                 int(claim.get("message_id") in matched_ids),
-                overlap,
+                match.score if match else 0.0,
                 int(claim.get("role") == "user"),
                 index,
                 claim,
@@ -57,7 +62,7 @@ def _episode_claim_excerpt(
         )
     if not ranked:
         return ""
-    if query_units:
+    if query.strip():
         ranked.sort(key=lambda item: item[:4], reverse=True)
     else:
         ranked = ranked[-4:]
@@ -179,7 +184,10 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "A concise query using likely entities and concepts.",
+                    "description": (
+                        "Exact keyword or `|`-separated OR alternatives likely to "
+                        "occur verbatim in stored memory."
+                    ),
                 },
                 "limit": {
                     "type": "integer",
@@ -205,8 +213,9 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
                 "query": {
                     "type": "string",
                     "description": (
-                        "Optional topic or event keywords. Use an empty string "
-                        "to browse Episodes chronologically within time_range."
+                        "Optional exact keyword or `|`-separated OR alternatives. "
+                        "Use an empty string to browse Episodes chronologically "
+                        "within time_range."
                     ),
                 },
                 "time_range": {
@@ -521,7 +530,6 @@ class MemoryTools:
             limit = 6
         results = self.store.search_memories(query, limit)
 
-        query_units = lexical_units(query)
         committed_keys = {(str(item["kind"]), str(item["key"])) for item in results}
         for index, memory in enumerate(draft.memories):
             if len(results) >= limit:
@@ -529,7 +537,11 @@ class MemoryTools:
             key = (memory.kind, memory.key)
             if key in committed_keys:
                 continue
-            if query_units & lexical_units(f"{memory.key} {memory.content}"):
+            if search_expression(
+                query,
+                (memory.key, memory.content),
+                self.store.search_backend,
+            ) is not None:
                 results.append(
                     {
                         "id": f"draft:{index}",
@@ -556,8 +568,12 @@ class MemoryTools:
         except ValueError as error:
             return _memory_error(str(error))
         results = self.store.search_episodes(
-            query, cursor + limit + 1, after=after, before=before
-        )[cursor:]
+            query,
+            limit + 1,
+            after=after,
+            before=before,
+            offset=cursor,
+        )
         has_more = len(results) > limit
         results = results[:limit]
         compact = []
@@ -567,7 +583,9 @@ class MemoryTools:
             # add window-scoped claims/activity only if real queries become misleading.
             summary = str(episode.get("narrative_summary") or "")
             if not summary:
-                summary = _episode_claim_excerpt(episode, query)
+                summary = _episode_claim_excerpt(
+                    episode, query, self.store.search_backend
+                )
             else:
                 summary = truncate_tokens(summary, _EPISODE_SEARCH_SUMMARY_TOKENS)
             compact.append(

@@ -58,6 +58,7 @@ class ConfigurationTest(unittest.TestCase):
             self.assertTrue(config.llm.tool_choice)
             self.assertEqual(config.llm.max_tokens, 16384)
             self.assertEqual(config.llm.timeout_seconds, 300)
+            self.assertEqual(config.recent_episode_hours, 6)
             self.assertTrue(config.episode_annealing.enabled)
             self.assertEqual(config.episode_annealing.idle_seconds, 60)
             self.assertEqual(config.episode_annealing.max_seconds, 650)
@@ -79,6 +80,39 @@ class ConfigurationTest(unittest.TestCase):
             value["channel"] = {"plugin": "weixin", "settings": {}}
             path.write_text(json.dumps(value))
             with self.assertRaisesRegex(ConfigError, "either channel or channels"):
+                load_config(path)
+
+    def test_recent_episode_hours_is_configurable_and_nonnegative(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "prompts").mkdir()
+            (root / "prompts" / "SOUL.md").write_text("Test soul")
+            path = root / "config.json"
+            value = {
+                "llm": {
+                    "base_url": "https://example.com",
+                    "api_key": "key",
+                    "model": "model",
+                },
+                "channel": {
+                    "plugin": "napcat",
+                    "settings": {
+                        "url": "ws://localhost",
+                        "owner_qq": "123",
+                    },
+                },
+                "context": {"recent_episode_hours": 2.5},
+                "storage": {"database": "momoi.sqlite3"},
+                "logging": {},
+            }
+            path.write_text(json.dumps(value))
+            self.assertEqual(load_config(path).recent_episode_hours, 2.5)
+
+            value["context"]["recent_episode_hours"] = -1  # type: ignore[index]
+            path.write_text(json.dumps(value))
+            with self.assertRaisesRegex(
+                ConfigError, "context.recent_episode_hours must not be negative"
+            ):
                 load_config(path)
 
     def test_loads_channel_plugin_configuration(self) -> None:

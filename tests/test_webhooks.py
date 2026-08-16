@@ -290,14 +290,11 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn("<runtime_state>", context_text)
             self.assertIn("<recent_conversation>", context_text)
             self.assertIn("<conversation_state>", context_text)
-            self.assertIn("<episode_directory>", context_text)
             self.assertRegex(
                 context_text, r"timestamp=\d{4}-\d{2}-\d{2}T"
             )
             self.assertIn("以后回家时帮我留意快递", context_text)
             self.assertIn("好，回家时我会留意", context_text)
-            self.assertIn("回家与快递", context_text)
-            self.assertIn("回家事件需要留意已到达的快递", context_text)
             daemon.store.close()
 
     async def test_message_webhook_is_idempotent_and_waits_for_outbox_delivery(
@@ -419,7 +416,7 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                 ).fetchone()[0],
                 webhook_turn_id,
             )
-            episode = store.search_episodes("门口 继续留意", 3)[0]
+            episode = store.search_episodes("门口 | 继续留意", 3)[0]
             contents = [
                 item["content"]
                 for item in store.conversation_episode(str(episode["id"]))[

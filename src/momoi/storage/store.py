@@ -28,12 +28,23 @@ from ..models import (
     TurnDraft,
 )
 from ..policies import MemoryPolicy
+from ..search import (
+    SearchBackend,
+    StringSearchBackend,
+    search_alternatives,
+    search_expression,
+)
 from .delivery import DeliveryStore
+from .episode_search import (
+    EpisodeQueryService,
+    EpisodeSearchBackend,
+    EpisodeSearchDocument,
+    EpisodeSearchMessage,
+    StringEpisodeSearchBackend,
+)
 from .memory import (
     MemoryStore,
     estimate_tokens,
-    excerpt_tokens,
-    lexical_units,
     token_chunk,
     truncate_tokens,
 )
@@ -74,10 +85,17 @@ class Store(MemoryStore, DeliveryStore):
         path: Path,
         workspace: Path | None = None,
         memory_policy: MemoryPolicy = MemoryPolicy(),
+        search_backend: SearchBackend | None = None,
+        episode_search_backend: EpisodeSearchBackend | None = None,
     ) -> None:
         database = Path(path).expanduser().resolve()
         self._workspace = (workspace or database.parent).expanduser().resolve()
         self._memory_policy = memory_policy
+        self._search_backend = search_backend or StringSearchBackend()
+        self._episode_query = EpisodeQueryService(
+            episode_search_backend
+            or StringEpisodeSearchBackend(self._search_backend)
+        )
         self._db = sqlite3.connect(database)
         self._db.row_factory = sqlite3.Row
         self._db.execute("PRAGMA journal_mode=WAL")
@@ -91,6 +109,10 @@ class Store(MemoryStore, DeliveryStore):
 
     def set_usage_plugin(self, plugin: UsagePlugin) -> None:
         self._usage_plugin = plugin
+
+    @property
+    def search_backend(self) -> SearchBackend:
+        return self._search_backend
 
     def close(self) -> None:
         self._db.close()
@@ -1467,14 +1489,23 @@ class Store(MemoryStore, DeliveryStore):
 
     @staticmethod
     def _recall_terms(*values: object) -> set[str]:
-        return lexical_units(
-            " ".join(
-                json.dumps(value, ensure_ascii=False)
-                if isinstance(value, (list, dict))
-                else str(value or "")
-                for value in values
-            )
-        )
+        terms: set[str] = set()
+
+        def collect(value: object) -> None:
+            if isinstance(value, dict):
+                for key, item in value.items():
+                    collect(key)
+                    collect(item)
+                return
+            if isinstance(value, (list, tuple, set)):
+                for item in value:
+                    collect(item)
+                return
+            terms.update(search_alternatives(str(value or "")))
+
+        for value in values:
+            collect(value)
+        return terms
 
     def _episode_recall_key(self, episode_id: str) -> int:
         self._db.execute(
@@ -2114,12 +2145,12 @@ class Store(MemoryStore, DeliveryStore):
         *,
         after: float | None = None,
         before: float | None = None,
+        offset: int = 0,
     ) -> list[dict[str, object]]:
-        if max_results <= 0:
+        if max_results <= 0 or offset < 0:
             return []
-        query_units = lexical_units(query, strict=True)
         time_filter = after is not None or before is not None
-        if not query_units:
+        if not query.strip():
             rows = self._db.execute(
                 """SELECT e.*, COALESCE((
                        SELECT MAX(t.updated_at) FROM episode_turns AS et
@@ -2139,7 +2170,7 @@ class Store(MemoryStore, DeliveryStore):
             ranked = [(0.0, float(row["last_activity_at"]), row) for row in rows]
             ranked.sort(key=lambda item: item[1], reverse=True)
             results = []
-            for _, _, row in ranked[:max_results]:
+            for _, _, row in ranked[offset : offset + max_results]:
                 episode = self._episode_dict(row)
                 episode["last_activity_timestamp"] = context_timestamp(
                     row["last_activity_at"]
@@ -2147,136 +2178,152 @@ class Store(MemoryStore, DeliveryStore):
                 episode["matches"] = []
                 results.append(episode)
             return results
-        query_term_ids = tuple(
-            self._recall_term_ids(query_units, create=False).values()
-        )
-        if not query_term_ids:
-            return []
-        placeholders = ",".join("?" for _ in query_term_ids)
-        ranked: list[
-            tuple[float, float, sqlite3.Row, list[dict[str, object]]]
-        ] = []
         rows = self._db.execute(
-            f"""SELECT e.*, matched.overlap, COALESCE((
+            """SELECT e.*, COALESCE((
                        SELECT MAX(t.updated_at) FROM episode_turns AS et
                        JOIN turns AS t ON t.id=et.turn_id
                        WHERE et.episode_id=e.id
                    ), e.updated_at) AS last_activity_at
-                FROM conversation_episodes AS e
-                JOIN (
-                    SELECT rei.episode_id, COUNT(*) AS overlap
-                    FROM episode_recall_terms AS rt
-                    JOIN recall_episode_ids AS rei ON rei.id=rt.episode_key
-                    WHERE rt.term_id IN ({placeholders})
-                    GROUP BY rt.episode_key
-                ) AS matched ON matched.episode_id=e.id""",
-            query_term_ids,
+               FROM conversation_episodes AS e"""
         ).fetchall()
-        for row in rows:
-            episode_id = str(row["id"])
-            if time_filter and self._db.execute(
-                """SELECT 1 FROM episode_turns AS et
-                   JOIN messages AS m ON m.turn_id=et.turn_id
-                   WHERE et.episode_id=?
-                     AND (? IS NULL OR m.created_at>=?)
-                     AND (? IS NULL OR m.created_at<?)
-                   LIMIT 1""",
-                (episode_id, after, after, before, before),
-            ).fetchone() is None:
-                continue
-            matches = self._episode_match_snippets(
-                episode_id, query_units, after=after, before=before
+        rows_by_id = {str(row["id"]): row for row in rows}
+        message_rows = self._db.execute(
+            """SELECT et.episode_id, et.ordinal, et.relation, et.unit_ids_json,
+                      m.id, m.turn_id, m.role, m.content, m.created_at,
+                      m.delivery_state
+               FROM episode_turns AS et
+               JOIN messages AS m ON m.turn_id=et.turn_id
+               WHERE (m.role IN ('user', 'event') OR m.delivery_state IN
+                      ('delivered', 'uncertain', 'internal'))
+                 AND (? IS NULL OR m.created_at>=?)
+                 AND (? IS NULL OR m.created_at<?)
+               ORDER BY et.episode_id, et.ordinal, m.id""",
+            (after, after, before, before),
+        ).fetchall()
+        active_plans = {
+            str(row["turn_id"]): json.loads(str(row["plan_json"]))
+            for row in self._db.execute(
+                """SELECT cp.turn_id, cp.plan_json
+                   FROM context_plans AS cp
+                   JOIN (
+                       SELECT turn_id, MAX(revision) AS revision
+                       FROM context_plans
+                       WHERE state<>'superseded'
+                       GROUP BY turn_id
+                   ) AS active
+                     ON active.turn_id=cp.turn_id
+                    AND active.revision=cp.revision"""
+            ).fetchall()
+        }
+        scoped_text_by_episode: dict[str, list[str]] = {}
+        messages_by_episode: dict[str, list[EpisodeSearchMessage]] = {}
+        for message in message_rows:
+            episode_id = str(message["episode_id"])
+            turn_id = str(message["turn_id"])
+            plan = active_plans.get(turn_id, {})
+            units = {
+                str(unit.get("id")): unit
+                for unit in plan.get("intent_units", [])
+                if isinstance(unit, dict) and unit.get("id")
+            }
+            unit_ids = json.loads(str(message["unit_ids_json"]))
+            scoped_units = [
+                units[unit_id]
+                for unit_id in unit_ids
+                if isinstance(unit_id, str) and unit_id in units
+            ]
+            scoped_text = "\n".join(
+                str(value)
+                for unit in scoped_units
+                for value in (
+                    unit.get("text"),
+                    unit.get("intent"),
+                    " ".join(str(item) for item in unit.get("references", [])),
+                    " ".join(str(item) for item in unit.get("recall_queries", [])),
+                )
+                if value
             )
-            metadata_overlap = query_units & lexical_units(
-                " ".join(
-                    str(row[name] or "")
-                    for name in (
-                        "title",
-                        "working_summary",
-                        "topics_json",
-                        "entities_json",
-                        "open_loops_json",
-                    )
+            if scoped_text:
+                values = scoped_text_by_episode.setdefault(episode_id, [])
+                if scoped_text not in values:
+                    values.append(scoped_text)
+            content = str(message["content"])
+            searchable_text = content
+            if scoped_text:
+                if str(message["role"]) in {"user", "event"}:
+                    searchable_text = ""
+                elif str(message["relation"]) != "primary":
+                    searchable_text = ""
+            messages_by_episode.setdefault(episode_id, []).append(
+                EpisodeSearchMessage(
+                    id=int(message["id"]),
+                    turn_id=turn_id,
+                    ordinal=int(message["ordinal"]),
+                    role=str(message["role"]),
+                    content=content,
+                    created_at=float(message["created_at"]),
+                    delivery_state=str(message["delivery_state"]),
+                    timestamp=context_timestamp(message["created_at"]),
+                    searchable_text=searchable_text,
+                )
+            )
+        documents: list[EpisodeSearchDocument] = []
+        for episode_id, row in rows_by_id.items():
+            messages = tuple(messages_by_episode.get(episode_id, []))
+            if time_filter and not messages:
+                continue
+            documents.append(
+                EpisodeSearchDocument(
+                    episode_id=episode_id,
+                    metadata=(
+                    str(row["title"] or ""),
+                    str(row["working_summary"] or ""),
+                    (
+                        str(row["summary"] or "")
+                        if "summary" in row.keys()
+                        else ""
+                    ),
+                    str(row["narrative_summary"] or ""),
+                    str(row["topics_json"] or ""),
+                    str(row["entities_json"] or ""),
+                    str(row["open_loops_json"] or ""),
+                    *scoped_text_by_episode.get(episode_id, []),
+                    ),
+                    last_activity_at=float(row["last_activity_at"]),
+                    salience=float(row["salience"]),
+                    messages=messages,
                 ),
-                strict=True,
             )
-            if time_filter and not matches and not metadata_overlap:
-                continue
-            overlap = int(row["overlap"])
-            if overlap / max(1, len(query_units)) < 0.1:
-                continue
-            score = overlap / len(query_units) + float(row["salience"]) * 0.1
-            ranked.append((score, float(row["last_activity_at"]), row, matches))
-        ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        hits = self._episode_query.search(
+            query, documents, max_results, offset=offset
+        )
         results: list[dict[str, object]] = []
-        for _, _, row, matches in ranked[:max_results]:
+        for hit in hits:
+            row = rows_by_id.get(hit.episode_id)
+            if row is None:
+                continue
             episode = self._episode_dict(row)
             episode["last_activity_timestamp"] = context_timestamp(
                 row["last_activity_at"]
             )
-            episode["matches"] = matches
-            results.append(episode)
-        return results
-
-    def _episode_match_snippets(
-        self,
-        episode_id: str,
-        query_units: set[str],
-        limit: int = 4,
-        *,
-        after: float | None = None,
-        before: float | None = None,
-    ) -> list[dict[str, object]]:
-        query_term_ids = tuple(
-            self._recall_term_ids(query_units, create=False).values()
-        )
-        if not query_term_ids:
-            return []
-        placeholders = ",".join("?" for _ in query_term_ids)
-        rows = self._db.execute(
-            f"""SELECT m.id, m.turn_id, et.ordinal, m.role, m.content,
-                       m.created_at, m.delivery_state, COUNT(*) AS overlap
-                FROM episode_message_recall_terms AS mrt
-                JOIN recall_episode_ids AS rei ON rei.id=mrt.episode_key
-                JOIN messages AS m ON m.id=mrt.message_id
-                JOIN episode_turns AS et
-                  ON et.episode_id=rei.episode_id AND et.turn_id=m.turn_id
-                WHERE rei.episode_id=? AND mrt.term_id IN ({placeholders})
-                  AND (m.role IN ('user', 'event') OR m.delivery_state IN
-                       ('delivered', 'uncertain', 'internal'))
-                  AND (? IS NULL OR m.created_at>=?)
-                  AND (? IS NULL OR m.created_at<?)
-                GROUP BY m.id, m.turn_id, et.ordinal, m.role, m.content, m.created_at
-                ORDER BY overlap DESC, et.ordinal DESC
-                LIMIT ?""",
-            (
-                episode_id,
-                *query_term_ids,
-                after,
-                after,
-                before,
-                before,
-                limit,
-            ),
-        ).fetchall()
-        return [
-            {
-                **{
-                    name: row[name]
-                    for name in (
+            episode["matches"] = [
+                {
+                    key: getattr(match, key)
+                    for key in (
                         "id",
                         "turn_id",
                         "ordinal",
                         "role",
                         "created_at",
                         "delivery_state",
+                        "timestamp",
                     )
-                },
-                "timestamp": context_timestamp(row["created_at"]),
-                "content": excerpt_tokens(str(row["content"]), query_units, 500),
-            }
-            for row in rows
-        ]
+                }
+                | {"content": truncate_tokens(match.content, 500)}
+                for match in hit.matches
+            ]
+            results.append(episode)
+        return results
 
     def conversation_message(
         self,
@@ -4805,11 +4852,11 @@ class Store(MemoryStore, DeliveryStore):
     def search_goals(self, query: str, max_results: int) -> list[dict[str, object]]:
         if max_results <= 0:
             return []
-        query_units = lexical_units(query)
         ranked: list[tuple[float, dict[str, object]]] = []
         for goal in self.list_goals():
-            units = lexical_units(
-                " ".join(
+            match = search_expression(
+                query,
+                tuple(
                     str(goal.get(name) or "")
                     for name in (
                         "id",
@@ -4820,13 +4867,12 @@ class Store(MemoryStore, DeliveryStore):
                         "blocked_reason",
                         "latest_result",
                     )
-                )
+                ),
+                self._search_backend,
             )
-            overlap = len(query_units & units)
-            if overlap == 0:
+            if match is None:
                 continue
-            score = overlap / max(1, math.sqrt(len(query_units) * len(units)))
-            ranked.append((score, goal))
+            ranked.append((match.score, goal))
         ranked.sort(key=lambda item: item[0], reverse=True)
         return [goal for _, goal in ranked[:max_results]]
 
@@ -4898,15 +4944,16 @@ class Store(MemoryStore, DeliveryStore):
     def search_reminders(self, query: str, max_results: int) -> list[dict[str, object]]:
         if max_results <= 0:
             return []
-        query_units = lexical_units(query)
         ranked: list[tuple[float, dict[str, object]]] = []
         for reminder in self.list_reminders():
-            units = lexical_units(f"{reminder['id']} {reminder['text']}")
-            overlap = len(query_units & units)
-            if overlap == 0:
+            match = search_expression(
+                query,
+                (str(reminder["id"]), str(reminder["text"])),
+                self._search_backend,
+            )
+            if match is None:
                 continue
-            score = overlap / max(1, math.sqrt(len(query_units) * len(units)))
-            ranked.append((score, reminder))
+            ranked.append((match.score, reminder))
         ranked.sort(key=lambda item: item[0], reverse=True)
         return [reminder for _, reminder in ranked[:max_results]]
 

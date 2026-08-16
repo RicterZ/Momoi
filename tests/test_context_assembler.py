@@ -15,7 +15,11 @@ from momoi.runtime.context_assembler import (
 from momoi.storage import Store, estimate_tokens
 
 
-def config(directory: str, memory_results: int = 6) -> AppConfig:
+def config(
+    directory: str,
+    memory_results: int = 6,
+    recent_episode_hours: float = 6,
+) -> AppConfig:
     return AppConfig(
         llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
         channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
@@ -26,6 +30,7 @@ def config(directory: str, memory_results: int = 6) -> AppConfig:
         memory_tokens=4000,
         summary_results=3,
         summary_tokens=2000,
+        recent_episode_hours=recent_episode_hours,
         database=Path(directory) / "momoi.sqlite3",
         log_level="INFO",
     )
@@ -63,6 +68,95 @@ def plan(query: str, episode_id: str = "episode-mail") -> dict[str, object]:
 
 
 class ContextAssemblerTest(unittest.TestCase):
+    def test_recent_episode_window_is_injected_without_keyword_recall(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            now = time.time()
+            for episode_id, title, turn_id, timestamp in (
+                ("recent-topic", "最近六小时话题", "recent-turn", now - 2 * 3600),
+                ("old-topic", "六小时前旧话题", "old-turn", now - 7 * 3600),
+            ):
+                store.create_episode(title, episode_id=episode_id)
+                store.begin_turn(turn_id, "autonomous", [turn_id])
+                with store._db:
+                    store._db.execute(
+                        """INSERT INTO messages
+                           (turn_id, role, content, created_at,
+                            source_event_ids_json, delivery_state)
+                           VALUES (?, 'assistant', ?, ?, '[]', 'internal')""",
+                        (turn_id, f"{title}的内容", timestamp),
+                    )
+                    store._db.execute(
+                        """UPDATE turns SET state='completed', updated_at=?
+                           WHERE id=?""",
+                        (timestamp, turn_id),
+                    )
+                store.link_turn_to_episode(episode_id, turn_id)
+
+            empty_plan = plan("")
+            empty_plan["intent_units"][0]["recall_queries"] = []
+            retrieval = build_plan_retrieval(
+                store,
+                empty_plan,
+                config(directory, recent_episode_hours=6),
+            )
+
+            self.assertEqual(
+                [item["episode_id"] for item in retrieval["episodes"]],
+                ["recent-topic"],
+            )
+            self.assertEqual(retrieval["episodes"][0]["relation"], "recent")
+            self.assertEqual(retrieval["episodes"][0]["unit_ids"], [])
+            assembled = assemble_main_context(store, retrieval, 2000, 2000)
+            self.assertIn("最近六小时话题", assembled["episodes"])
+            self.assertNotIn("六小时前旧话题", assembled["episodes"])
+
+            disabled = build_plan_retrieval(
+                store,
+                empty_plan,
+                config(directory, recent_episode_hours=0),
+            )
+            self.assertEqual(disabled["episodes"], [])
+            store.close()
+
+    def test_recent_and_keyword_episode_is_injected_once(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            now = time.time()
+            store.create_episode("项目邮件", episode_id="episode-mail")
+            store.begin_turn("mail-turn", "autonomous", ["mail-turn"])
+            with store._db:
+                store._db.execute(
+                    """INSERT INTO messages
+                       (turn_id, role, content, created_at,
+                        source_event_ids_json, delivery_state)
+                       VALUES ('mail-turn', 'assistant', '项目邮件仍在等待',
+                               ?, '[]', 'internal')""",
+                    (now - 60,),
+                )
+                store._db.execute(
+                    """UPDATE turns SET state='completed', updated_at=?
+                       WHERE id='mail-turn'""",
+                    (now - 60,),
+                )
+            store.link_turn_to_episode("episode-mail", "mail-turn")
+
+            retrieval = build_plan_retrieval(
+                store,
+                plan("项目邮件"),
+                config(directory, recent_episode_hours=6),
+            )
+
+            self.assertEqual(len(retrieval["episodes"]), 1)
+            self.assertEqual(
+                retrieval["episodes"][0]["episode_id"], "episode-mail"
+            )
+            self.assertEqual(
+                retrieval["episodes"][0]["relation"], "recent_recalled"
+            )
+            self.assertEqual(retrieval["episodes"][0]["unit_ids"], ["mail"])
+            store.close()
+
     def test_planner_or_query_is_executed_as_separate_terms(self) -> None:
         calls: list[str] = []
         rows = {
@@ -113,7 +207,7 @@ class ContextAssemblerTest(unittest.TestCase):
                 "old-secret",
                 {item["id"] for item in store.list_episode_directory(64)},
             )
-            expanded = plan("朱红钥匙 温室 花盆", "current-topic")
+            expanded = plan("朱红钥匙 | 温室 | 花盆", "current-topic")
             retrieval = build_plan_retrieval(store, expanded, config(directory))
 
             self.assertIn(
@@ -524,7 +618,7 @@ class ContextAssemblerTest(unittest.TestCase):
             store._db.commit()
 
             retrieval = build_plan_retrieval(
-                store, plan("等待 项目 邮件"), config(directory)
+                store, plan("项目邮件"), config(directory)
             )
             assembled = assemble_main_context(store, retrieval, 2000, 2000)
 
@@ -546,7 +640,7 @@ class ContextAssemblerTest(unittest.TestCase):
             self.assertNotIn("微博上有只猫", rendered)
             self.assertNotIn("goal-social", rendered)
             self.assertNotIn("reminder-social", rendered)
-            autonomous = recall_episode_context(store, "等待 项目 邮件", 3, 2000, 2000)
+            autonomous = recall_episode_context(store, "项目邮件", 3, 2000, 2000)
             self.assertNotIn("较早的项目邮件仍在等待", autonomous)
             self.assertIn("summary_quality: empty", autonomous)
             self.assertNotIn("最近聊过微博上的猫", autonomous)

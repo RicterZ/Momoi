@@ -27,17 +27,17 @@ Rules:
   that Momoi stay silent or skip a reply.
 - Recent conversation is the first source of continuity. When it already resolves
   the current reply, leave `recall_queries` empty. When older evidence is necessary,
-  generate one compact `|`-separated OR expression from terms likely to appear in
-  the stored evidence. Cover the subject with specific identifiers plus useful
-  alternative wording: names, ids, titles, entities, aliases, abbreviations,
-  translations, synonyms, related terminology, and distinctive phrases. This
-  applies uniformly to people, events, places, preferences, procedures, devices,
-  services, projects, media, knowledge, and any other topic. Use two expressions
-  only for genuinely independent evidence needs. Each expression is a search
-  pattern, not a request or explanation: omit filler and action wording such as
-  read, find, search, recall, review, or tell me. Do not include file paths or steps
-  that the main model can perform with tools. Do not use wildcard syntax. A
-  referenced Goal or reminder should include its exact id, title, or text.
+  generate one compact `|`-separated OR expression. Each alternative must be one
+  exact name, id, title, entity, alias, abbreviation, translation, or distinctive
+  phrase likely to occur verbatim in stored evidence. Put separate alternatives on
+  separate sides of `|`; do not combine several keywords with spaces inside one
+  alternative. Use two expressions only for genuinely independent evidence needs.
+  This applies to people, events, places, preferences, procedures, devices,
+  services, projects, media, knowledge, and any other topic.
+  Each expression is search data, not a request or explanation: omit filler and
+  action wording such as read, find, search, recall, review, or tell me. Do not include file paths.
+  Do not include tool steps or use wildcard syntax. A referenced Goal or reminder
+  should include its exact id, title, or text.
 - `references` contains only useful cross-message or omitted-subject resolutions,
   preferably `phrase -> referent`. Do not restate or paraphrase information already
   explicit in the current unit.

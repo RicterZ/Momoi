@@ -32,6 +32,42 @@ from momoi.storage.scheduling import next_schedule_at
 
 
 class StorageMemoryTest(unittest.TestCase):
+    def test_episode_search_uses_complete_query_phrase_without_lexical_split(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store.create_episode("普通消息排查", episode_id="generic-message")
+            store.create_episode("真正的好消息", episode_id="good-news")
+            for episode_id, turn_id, content in (
+                ("generic-message", "generic-turn", "今天收到了一条普通消息"),
+                ("good-news", "good-turn", "今天有好消息想讲给你听"),
+            ):
+                store.begin_turn(turn_id, "autonomous", [turn_id])
+                with store._db:
+                    store._db.execute(
+                        """INSERT INTO messages
+                           (turn_id, role, content, created_at,
+                            source_event_ids_json, delivery_state)
+                           VALUES (?, 'assistant', ?, 100, '[]', 'internal')""",
+                        (turn_id, content),
+                    )
+                    store._db.execute(
+                        """UPDATE turns SET state='completed', updated_at=100
+                           WHERE id=?""",
+                        (turn_id,),
+                    )
+                store.link_turn_to_episode(episode_id, turn_id)
+
+            found = store.search_episodes("今天有好消息", 5)
+
+            self.assertEqual([item["id"] for item in found], ["good-news"])
+            self.assertEqual(
+                [match["content"] for match in found[0]["matches"]],
+                ["今天有好消息想讲给你听"],
+            )
+            store.close()
+
     def test_episode_time_range_matches_message_time_not_last_activity(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
@@ -307,7 +343,7 @@ class StorageMemoryTest(unittest.TestCase):
                 )
                 store._reindex_episode_terms(episode_id)
 
-            expected = store.search_episodes("蓝色保温杯 第三个纸箱", 3)
+            expected = store.search_episodes("蓝色保温杯", 3)
             self.assertEqual([item["id"] for item in expected], [episode_id])
             self.assertEqual(expected[0]["matches"][0]["id"], message_id)
             expected_episode_terms = {
@@ -407,7 +443,7 @@ class StorageMemoryTest(unittest.TestCase):
             )
             self.assertEqual(
                 [item["id"] for item in migrated.search_episodes(
-                    "蓝色保温杯 第三个纸箱", 3
+                    "蓝色保温杯", 3
                 )],
                 [episode_id],
             )
@@ -446,7 +482,7 @@ class StorageMemoryTest(unittest.TestCase):
 
             reopened = Store(path)
             self.assertEqual(
-                [item["id"] for item in reopened.search_episodes("阁楼纸箱", 3)],
+                [item["id"] for item in reopened.search_episodes("阁楼", 3)],
                 [episode_id],
             )
             with reopened._db:
@@ -1768,7 +1804,7 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertEqual(notification_message["turn_id"], notification["turn_id"])
             store.mark_sent(store.due_outbox()[0].id)
             self.assertEqual(store.due_outbox()[0].text, "目前正常")
-            episode = store.search_episodes("检查任务 本次检查正常", 3)[0]
+            episode = store.search_episodes("本次检查正常", 3)[0]
             archived = store.conversation_episode(str(episode["id"]))["messages"]
             self.assertTrue(
                 any(
@@ -2040,7 +2076,7 @@ class StorageMemoryTest(unittest.TestCase):
                     messages=[],
                     reason="test",
                 )
-            episode = store.search_episodes("关卡灵感 点子", 3)[0]
+            episode = store.search_episodes("关卡灵感", 3)[0]
             self.assertEqual(len(store.episode_turns(str(episode["id"]))), 20)
             self.assertIn(
                 "AUTONOMOUS HEARTBEAT RECORD",
@@ -3041,7 +3077,7 @@ class StorageMemoryTest(unittest.TestCase):
             )
             self.assertIn(
                 "卧室灯默认使用暖色",
-                store.memory_context("灯光按我喜欢的来", 6, 8000),
+                store.memory_context("卧室灯", 6, 8000),
             )
 
             correction = IncomingMessage(
@@ -3076,7 +3112,7 @@ class StorageMemoryTest(unittest.TestCase):
                 AgentReply(["改成冷色了"]),
                 correction_draft,
             )
-            recalled = store.memory_context("卧室灯光", 6, 8000)
+            recalled = store.memory_context("卧室灯", 6, 8000)
             self.assertIn("卧室灯默认使用冷色", recalled)
             self.assertNotIn("卧室灯默认使用暖色", recalled)
 
@@ -3098,7 +3134,7 @@ class StorageMemoryTest(unittest.TestCase):
             store = Store(path)
             self.assertIn(
                 "卧室灯默认使用冷色",
-                store.memory_context("卧室灯光", 6, 8000),
+                store.memory_context("卧室灯", 6, 8000),
             )
             store.close()
 
@@ -3336,7 +3372,7 @@ class StorageMemoryTest(unittest.TestCase):
             store.commit_turn(
                 [forgotten], forgotten.text, AgentReply(["已经忘掉了"]), forget_draft
             )
-            self.assertEqual(store.search_memories("灯光颜色", 6), [])
+            self.assertEqual(store.search_memories("冷色", 6), [])
             self.assertEqual(store.memory_conflicts_context(), "")
             self.assertEqual(
                 store._db.execute("SELECT COUNT(*) FROM memories").fetchone()[0], 1
@@ -3366,7 +3402,7 @@ class StorageMemoryTest(unittest.TestCase):
             store.commit_turn(
                 [relearned], relearned.text, AgentReply(["重新记住了"]), relearn_draft
             )
-            self.assertIn("主人喜欢冷色", store.memory_context("灯光颜色", 6, 1000))
+            self.assertIn("主人喜欢冷色", store.memory_context("冷色", 6, 1000))
             store.close()
 
     def test_memory_remember_validates_boundary_parameters(self) -> None:

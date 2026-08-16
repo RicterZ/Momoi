@@ -1,8 +1,9 @@
 from dataclasses import dataclass
 import math
 import time
+import unicodedata
 
-from ..storage import Store, lexical_units
+from ..storage import Store
 
 
 @dataclass(frozen=True)
@@ -49,12 +50,16 @@ _GENERIC_METADATA = {
 }
 
 
-def _overlap(query_units: set[str], value: object) -> float:
-    if not query_units:
+def _normalized(value: object) -> str:
+    return unicodedata.normalize("NFKC", str(value or "")).casefold()
+
+
+def _phrase_match(query: str, value: object) -> float:
+    query_text = _normalized(query)
+    value_text = _normalized(value)
+    if not query_text or not value_text:
         return 0.0
-    return len(query_units & lexical_units(str(value or ""), strict=True)) / len(
-        query_units
-    )
+    return float(query_text in value_text or value_text in query_text)
 
 
 def _exact_metadata(query: str, candidate: dict[str, object]) -> float:
@@ -76,11 +81,11 @@ def _exact_metadata(query: str, candidate: dict[str, object]) -> float:
 
 
 def _message_overlap_by_role(
-    query_units: set[str], candidate: dict[str, object], role: str
+    query: str, candidate: dict[str, object], role: str
 ) -> float:
     return max(
         (
-            _overlap(query_units, match.get("content"))
+            _phrase_match(query, match.get("content"))
             for match in candidate.get("matches", [])
             if isinstance(match, dict) and str(match.get("role") or "") == role
         ),
@@ -94,7 +99,6 @@ def _candidate_features(
     context_scores: dict[str, dict[str, float]],
     now: float,
 ) -> dict[str, float]:
-    query_units = lexical_units(query, strict=True)
     episode_id = str(candidate["id"])
     last_activity = float(candidate.get("last_activity_at") or now)
     age_days = max(0.0, now - last_activity) / 86400
@@ -107,18 +111,16 @@ def _candidate_features(
     )
     return {
         "exact_metadata": _exact_metadata(query, candidate),
-        "title_overlap": _overlap(query_units, candidate.get("title")),
-        "topics_overlap": _overlap(query_units, candidate.get("topics")),
-        "entities_overlap": _overlap(query_units, candidate.get("entities")),
-        "summary_overlap": _overlap(query_units, summary),
-        "open_loops_overlap": _overlap(
-            query_units, candidate.get("open_loops")
-        ),
+        "title_overlap": _phrase_match(query, candidate.get("title")),
+        "topics_overlap": _phrase_match(query, candidate.get("topics")),
+        "entities_overlap": _phrase_match(query, candidate.get("entities")),
+        "summary_overlap": _phrase_match(query, summary),
+        "open_loops_overlap": _phrase_match(query, candidate.get("open_loops")),
         "owner_message_overlap": _message_overlap_by_role(
-            query_units, candidate, "user"
+            query, candidate, "user"
         ),
         "assistant_message_overlap": _message_overlap_by_role(
-            query_units, candidate, "assistant"
+            query, candidate, "assistant"
         ),
         "recent_context": float(context.get("recent_context", 0.0)),
         "recent_open_loop": float(context.get("recent_context", 0.0))

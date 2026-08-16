@@ -741,11 +741,11 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                         self.assertNotIn("GLOBAL RAW MUST NOT LEAK", recent)
                         self.assertEqual(len(payload["candidate_goals"]), 8)
                         self.assertEqual(
-                            payload["candidate_goals"][0]["id"], "goal-0"
+                            payload["candidate_goals"][0]["id"], "goal-8"
                         )
                         self.assertEqual(len(payload["candidate_reminders"]), 8)
                         self.assertEqual(
-                            payload["candidate_reminders"][0]["id"], "reminder-0"
+                            payload["candidate_reminders"][0]["id"], "reminder-8"
                         )
                         return tool_plan_response(response_plan())
                     provider_self.calls.append("main")

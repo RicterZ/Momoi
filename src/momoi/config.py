@@ -100,6 +100,7 @@ class AppConfig:
     max_input_tokens: int = 96000
     summary_results: int = 3
     summary_tokens: int = 6000
+    recent_episode_hours: float = 6
     soul_prompt: str = ""
     mcp_config: Path | None = None
     notifications: NotificationConfig = NotificationConfig()
@@ -332,6 +333,10 @@ def load_config(path: str | Path) -> AppConfig:
         max_input_tokens=max(1000, int(context_raw.get("max_input_tokens", 96000))),
         summary_results=max(0, int(context_raw.get("summary_results", 3))),
         summary_tokens=max(0, int(context_raw.get("summary_tokens", 6000))),
+        recent_episode_hours=_nonnegative(
+            context_raw.get("recent_episode_hours", 6),
+            "context.recent_episode_hours",
+        ),
         soul_prompt=soul_prompt,
         heartbeat_prompt=heartbeat_prompt,
         mcp_config=mcp_config,

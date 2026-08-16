@@ -1,10 +1,9 @@
-import math
-import re
 import sqlite3
 import time
 
 from ..context_time import context_timestamp
 from ..policies import MemoryPolicy
+from ..search import search_expression
 from ..models import (
     IncomingMessage,
     MemoryCandidate,
@@ -28,7 +27,6 @@ _DEFAULT_MEMORY_POLICY = MemoryPolicy()
 RECENT_MEMORY_MIN_TTL_HOURS = _DEFAULT_MEMORY_POLICY.recent_min_ttl_hours
 RECENT_MEMORY_MAX_TTL_HOURS = _DEFAULT_MEMORY_POLICY.recent_max_ttl_hours
 ALWAYS_MEMORY_TOKEN_BUDGET = 1200
-CJK_STOP_CHARS = set("的了是在我你他她它们和就都也很还把被让要会呢吧啊哦呀")
 
 
 def memory_expires_at(
@@ -93,19 +91,6 @@ def token_chunk(text: str, offset: int, token_budget: int) -> tuple[str, int | N
     if low == 0:
         low = 1
     return remaining[:low] + marker, offset + low
-
-
-def lexical_units(text: str, *, strict: bool = False) -> set[str]:
-    normalized = text.casefold()
-    units = set(re.findall(r"[a-z0-9_]{2,}", normalized))
-    for run in re.findall(r"[\u3400-\u9fff]+", normalized):
-        if len(run) == 1:
-            units.add(run)
-        else:
-            if not strict:
-                units.update(char for char in run if char not in CJK_STOP_CHARS)
-            units.update(run[index : index + 2] for index in range(len(run) - 1))
-    return units
 
 
 class MemoryStore:
@@ -452,28 +437,24 @@ class MemoryStore:
     ) -> list[dict[str, object]]:
         if max_results <= 0:
             return []
-        query_units = lexical_units(query, strict=True)
         core_kinds = {"owner_profile", "self_insight", "relationship", "practice"}
         ranked: list[tuple[float, sqlite3.Row]] = []
         for row in self._db.execute(
             """SELECT id, kind, key, content, confidence FROM reflection_memories
                ORDER BY updated_at DESC"""
         ).fetchall():
-            units = lexical_units(f"{row['key']} {row['content']}")
-            overlap = len(query_units & units)
+            match = search_expression(
+                query,
+                (str(row["key"]), str(row["content"])),
+                self._search_backend,
+            )
             core = include_core and row["kind"] in core_kinds
-            if (
-                not core
-                and (
-                    overlap == 0
-                    or overlap / max(1, len(query_units))
-                    < self._memory_policy.lexical_overlap_floor
-                )
-            ):
+            if not core and match is None:
                 continue
-            lexical_score = overlap / max(1, math.sqrt(len(query_units) * len(units)))
             score = (
-                lexical_score + float(row["confidence"]) * 0.1 + (1.0 if core else 0.0)
+                (match.score if match else 0.0)
+                + float(row["confidence"]) * 0.1
+                + (1.0 if core else 0.0)
             )
             ranked.append((score, row))
         ranked.sort(key=lambda item: item[0], reverse=True)
@@ -484,7 +465,6 @@ class MemoryStore:
     ) -> list[dict[str, object]]:
         if max_results <= 0:
             return []
-        query_units = lexical_units(query)
         ranked: list[tuple[float, sqlite3.Row]] = []
         for row in self._db.execute(
             """SELECT c.id, c.kind, c.key, c.activation, c.candidate_content,
@@ -493,15 +473,19 @@ class MemoryStore:
                JOIN memories AS m ON m.id=c.existing_memory_id
                WHERE c.status='open' ORDER BY c.updated_at DESC"""
         ).fetchall():
-            units = lexical_units(
-                f"{row['kind']} {row['key']} {row['candidate_content']} "
-                f"{row['existing_content']}"
+            match = search_expression(
+                query,
+                (
+                    str(row["kind"]),
+                    str(row["key"]),
+                    str(row["candidate_content"]),
+                    str(row["existing_content"]),
+                ),
+                self._search_backend,
             )
-            overlap = len(query_units & units)
-            if overlap == 0:
+            if match is None:
                 continue
-            score = overlap / max(1, math.sqrt(len(query_units) * len(units)))
-            ranked.append((score, row))
+            ranked.append((match.score, row))
         ranked.sort(key=lambda item: item[0], reverse=True)
         return [dict(row) for _, row in ranked[:max_results]]
 
@@ -558,20 +542,21 @@ class MemoryStore:
                  )""",
             (time.time(), time.time() - RECENT_MEMORY_WINDOW_SECONDS, activation, activation),
         ).fetchall()
-        query_units = lexical_units(query)
         core_kinds = {"profile", "relationship", "shared"}
         ranked: list[tuple[float, sqlite3.Row]] = []
         for row in rows:
-            memory_units = lexical_units(f"{row['key']} {row['content']}")
-            overlap = len(query_units & memory_units)
-            core = include_core and row["kind"] in core_kinds
-            if not core and overlap == 0:
-                continue
-            lexical_score = overlap / max(
-                1, math.sqrt(len(query_units) * len(memory_units))
+            match = search_expression(
+                query,
+                (str(row["key"]), str(row["content"])),
+                self._search_backend,
             )
+            core = include_core and row["kind"] in core_kinds
+            if not core and match is None:
+                continue
             score = (
-                lexical_score + float(row["importance"]) * 0.1 + (1.0 if core else 0.0)
+                (match.score if match else 0.0)
+                + float(row["importance"]) * 0.1
+                + (1.0 if core else 0.0)
             )
             ranked.append((score, row))
         ranked.sort(key=lambda item: item[0], reverse=True)
