@@ -213,7 +213,7 @@ momoi --workspace /path/to/workspace run
 
 Edit `~/.momoi/prompts/SOUL.md` to define Momoi's identity, relationship, values, interests, and natural speaking style.
 
-Edit `~/.momoi/HEARTBEAT.md` if you want to shape how she spends her own time — what she may explore, make, or leave quiet.
+Edit `~/.momoi/prompts/HEARTBEAT.md` if you want to shape how she spends her own time — what she may explore, make, or leave quiet.
 
 Add image reactions with a description of when they fit:
 

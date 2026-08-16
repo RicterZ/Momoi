@@ -213,7 +213,7 @@ momoi --workspace /path/to/workspace run
 
 编辑 `~/.momoi/prompts/SOUL.md`，定义 Momoi 的身份、关系、价值观、兴趣和自然说话方式。
 
-如果想影响她自己的时间怎么过，可以编辑 `~/.momoi/HEARTBEAT.md`：她可以探索什么、做什么、什么时候安静下来。
+如果想影响她自己的时间怎么过，可以编辑 `~/.momoi/prompts/HEARTBEAT.md`：她可以探索什么、做什么、什么时候安静下来。
 
 添加图片反应，并描述它适合在什么时候使用：
 

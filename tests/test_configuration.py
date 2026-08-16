@@ -124,7 +124,7 @@ class ConfigurationTest(unittest.TestCase):
             root = Path(directory)
             (root / "prompts").mkdir()
             (root / "prompts" / "SOUL.md").write_text("Test soul")
-            (root / "HEARTBEAT.md").write_text("偶尔整理自己的摄影兴趣。")
+            (root / "prompts" / "HEARTBEAT.md").write_text("偶尔整理自己的摄影兴趣。")
             path = root / "config.json"
             path.write_text(
                 json.dumps(
@@ -163,11 +163,15 @@ class ConfigurationTest(unittest.TestCase):
                 ("curl", "mcp__brave-search__brave_web_search"),
             )
             self.assertEqual(config.heartbeat_prompt, "偶尔整理自己的摄影兴趣。")
+            self.assertEqual(
+                config.heartbeat_prompt_path,
+                (root / "prompts" / "HEARTBEAT.md").resolve(),
+            )
             self.assertEqual(config.heartbeat.max_interval_seconds, 5400)
             self.assertEqual(config.heartbeat.reply_initial_interval_seconds, 60)
             self.assertEqual(config.dashboard.token, "")
 
-            (root / "HEARTBEAT.md").unlink()
+            (root / "prompts" / "HEARTBEAT.md").unlink()
             self.assertEqual(load_config(path).heartbeat_prompt, "")
 
             legacy = json.loads(path.read_text())

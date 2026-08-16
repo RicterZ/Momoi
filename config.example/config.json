@@ -35,6 +35,7 @@
   },
   "context": {
     "soul_prompt": "prompts/SOUL.md",
+    "heartbeat_prompt": "prompts/HEARTBEAT.md",
     "recent_raw_tokens": 32000,
     "recent_turns": 6,
     "memory_results": 6,

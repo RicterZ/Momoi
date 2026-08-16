@@ -38,9 +38,9 @@ Relative paths in `config.json` are resolved from the directory containing that 
 ~/.momoi/
 ├── config.json
 ├── mcp.json
-├── HEARTBEAT.md
 ├── prompts/
-│   └── SOUL.md
+│   ├── SOUL.md
+│   └── HEARTBEAT.md
 ├── workflows/
 │   ├── *.yaml
 │   └── workflow-executors.yaml
@@ -173,6 +173,7 @@ Protocol-specific parsing, content rendering, and connection logs belong in that
 {
   "context": {
     "soul_prompt": "prompts/SOUL.md",
+    "heartbeat_prompt": "prompts/HEARTBEAT.md",
     "recent_raw_tokens": 32000,
     "recent_turns": 6,
     "memory_results": 6,
@@ -188,6 +189,7 @@ Protocol-specific parsing, content rendering, and connection logs belong in that
 | Field | Default | Description |
 | --- | --- | --- |
 | `soul_prompt` | `prompts/SOUL.md` | Persona file, relative to the workspace |
+| `heartbeat_prompt` | `prompts/HEARTBEAT.md` | Workspace heartbeat guidance; omitted when the file is absent |
 | `recent_raw_tokens` | `32000` | Budget for recent conversation in original form |
 | `recent_turns` | `6` | Maximum recent completed conversation Turns kept in raw form |
 | `memory_results` | `6` | Maximum durable memories recalled automatically |
@@ -367,7 +369,7 @@ This policy applies to proactive Goal and Heartbeat contacts. Goal notifications
 
 Intervals must be positive, and the maximum must not be smaller than the ordinary minimum.
 
-When a non-empty `HEARTBEAT.md` exists beside the configuration file, Momoi automatically appends it as workspace heartbeat guidance. No additional prompt is injected when the file is absent.
+When a non-empty `prompts/HEARTBEAT.md` exists, Momoi automatically appends it as workspace heartbeat guidance. No additional prompt is injected when the file is absent. Change the path with `context.heartbeat_prompt`.
 
 A heartbeat may use explicitly allowed read-only tools, search memory, create files under `<workspace>/artifacts`, or create an agent-owned Goal for work that must continue. It records the real result before deciding whether contacting the owner is useful. Owner Goals and reminders remain separate and are never performed or imitated by a heartbeat.
 

@@ -236,9 +236,12 @@ def load_config(path: str | Path) -> AppConfig:
     soul_path = (
         config_path.parent / str(context_raw.get("soul_prompt", "prompts/SOUL.md"))
     ).resolve()
+    heartbeat_path = (
+        config_path.parent
+        / str(context_raw.get("heartbeat_prompt", "prompts/HEARTBEAT.md"))
+    ).resolve()
     system_prompt = files("momoi").joinpath("prompts/system.md").read_text(encoding="utf-8").strip()
     soul_prompt = soul_path.read_text(encoding="utf-8").strip()
-    heartbeat_path = config_path.parent / "HEARTBEAT.md"
     heartbeat_prompt = (
         heartbeat_path.read_text(encoding="utf-8").strip()
         if heartbeat_path.is_file()

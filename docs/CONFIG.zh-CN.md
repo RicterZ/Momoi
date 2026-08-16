@@ -38,9 +38,9 @@ MCP 是添加由模型控制能力的常规方式。工作流用于事件驱动�
 ~/.momoi/
 ├── config.json
 ├── mcp.json
-├── HEARTBEAT.md
 ├── prompts/
-│   └── SOUL.md
+│   ├── SOUL.md
+│   └── HEARTBEAT.md
 ├── workflows/
 │   ├── *.yaml
 │   └── workflow-executors.yaml
@@ -173,6 +173,7 @@ momoi --workspace ~/.momoi run
 {
   "context": {
     "soul_prompt": "prompts/SOUL.md",
+    "heartbeat_prompt": "prompts/HEARTBEAT.md",
     "recent_raw_tokens": 32000,
     "recent_turns": 6,
     "memory_results": 6,
@@ -188,6 +189,7 @@ momoi --workspace ~/.momoi run
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
 | `soul_prompt` | `prompts/SOUL.md` | 相对于 workspace 的人格文件 |
+| `heartbeat_prompt` | `prompts/HEARTBEAT.md` | workspace 心跳指引；文件不存在时不注入 |
 | `recent_raw_tokens` | `32000` | 以原始形式保留近期对话的预算 |
 | `recent_turns` | `6` | 以原始形式保留的近期已完成对话回合上限 |
 | `memory_results` | `6` | 自动召回的持久记忆最大数量 |
@@ -367,7 +369,7 @@ MCP 环境值、远程 URL 和 header 支持从 Momoi 进程环境展开 `${VARI
 
 所有间隔必须为正数，最大间隔不能小于普通最短间隔。
 
-配置文件同目录下存在非空的 `HEARTBEAT.md` 时，其内容会作为 workspace 的 heartbeat 指引自动追加；文件不存在时不注入额外提示词。
+存在非空的 `prompts/HEARTBEAT.md` 时，其内容会作为 workspace 的 heartbeat 指引自动追加；文件不存在时不注入额外提示词。可用 `context.heartbeat_prompt` 改路径。
 
 心跳可以使用明确允许的只读工具、搜索记忆、在 `<workspace>/artifacts` 下生成文件，或者为需要跨轮继续的工作创建 agent-owned Goal。它会先记录真实结果，再决定是否有必要联系主人。主人 Goal 和提醒由各自的调度器负责，心跳不会代替或模仿它们。
 
