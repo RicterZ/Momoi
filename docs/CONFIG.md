@@ -479,6 +479,77 @@ It starts only with `momoi run --dashboard`. Bind address and port come from the
 
 Open `http://127.0.0.1:8788` by default. Use `--dashboard-host` and `--dashboard-port` to change the listener. Keep the dashboard on localhost or a trusted network — do not expose the port directly to the public Internet.
 
+## Usage
+
+The dashboard records each LLM call locally. A Usage plugin supplies official token rates, and optionally a live account balance, so the page can estimate cost. Leave `provider` empty to keep request and token counts without pricing.
+
+```json
+{
+  "usage": {
+    "provider": "momoi.extensions.deepseek.DeepSeekPlugin",
+    "api_key": "replace-me",
+    "base_url": "https://api.deepseek.com",
+    "timeout_seconds": 10
+  }
+}
+```
+
+| Field | Default | Description |
+| --- | --- | --- |
+| `provider` | empty | Dotted class name of a `UsagePlugin` |
+| `api_key` | empty | Passed to the plugin constructor as `api_key` |
+| other keys | — | Forwarded as constructor keyword arguments |
+
+The included DeepSeek plugin prices `deepseek-v4-flash` and `deepseek-v4-pro` in CNY per 1M tokens (cache hit, cache miss, output) and reads `/user/balance` when `api_key` is set. `base_url` and `timeout_seconds` are optional.
+
+Restart `momoi run` after changing `usage`. The class must be importable from Momoi's Python environment.
+
+### Writing a plugin
+
+Subclass `momoi.extensions.UsagePlugin`. Implement `token_rates`. Override `balance` if the dashboard should show account funds. The default `estimate_cost` multiplies those rates by token counts; override it only when pricing is not linear.
+
+```python
+from momoi.extensions import UsagePlugin
+
+
+class FlatRatePlugin(UsagePlugin):
+    def __init__(
+        self,
+        *,
+        api_key: str = "",
+        input_cny: float = 2.0,
+        output_cny: float = 8.0,
+    ) -> None:
+        self.input_cny = float(input_cny)
+        self.output_cny = float(output_cny)
+
+    def token_rates(self, model: str, timestamp: float) -> tuple[float, float, float]:
+        # CNY per 1M tokens: cache hit, cache miss, output
+        return (self.input_cny, self.input_cny, self.output_cny)
+
+    async def balance(self) -> dict[str, object]:
+        return {
+            "source": "unavailable",
+            "currency": "CNY",
+            "is_available": False,
+            "total_balance": "0",
+        }
+```
+
+Point `provider` at the dotted class name. Extra fields become constructor arguments:
+
+```json
+{
+  "usage": {
+    "provider": "my_package.usage.FlatRatePlugin",
+    "input_cny": 2.0,
+    "output_cny": 8.0
+  }
+}
+```
+
+`balance()` must include `source`, `currency`, `is_available`, and `total_balance`. Use `source` `"live"` when the value is current, or `"unavailable"` when it is not.
+
 ## Logging
 
 ```json

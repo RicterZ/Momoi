@@ -479,6 +479,77 @@ Owner Turn 独占对主人输入的回复权。存在未处理的主人消息、
 
 默认打开 `http://127.0.0.1:8788`。可用 `--dashboard-host` 和 `--dashboard-port` 修改监听地址。请只在本机或可信网络使用，不要直接暴露到公网。
 
+## Usage
+
+看板会在本地记录每一次 LLM 调用。Usage 插件提供官方单价，也可以再提供实时余额，这样页面才能估算费用。`provider` 留空时仍会统计请求和 token，只是没有估价。
+
+```json
+{
+  "usage": {
+    "provider": "momoi.extensions.deepseek.DeepSeekPlugin",
+    "api_key": "replace-me",
+    "base_url": "https://api.deepseek.com",
+    "timeout_seconds": 10
+  }
+}
+```
+
+| 字段 | 默认值 | 说明 |
+| --- | --- | --- |
+| `provider` | 空 | `UsagePlugin` 的点分类名 |
+| `api_key` | 空 | 作为 `api_key` 传给插件构造函数 |
+| 其他字段 | — | 作为构造函数关键字参数转发 |
+
+自带的 DeepSeek 插件按人民币 / 百万 token（缓存命中、未命中、输出）给 `deepseek-v4-flash` 和 `deepseek-v4-pro` 计价；设置了 `api_key` 时会读取 `/user/balance`。`base_url` 和 `timeout_seconds` 可选。
+
+修改 `usage` 后需要重启 `momoi run`。该类必须能从 Momoi 的 Python 环境里 import。
+
+### 编写插件
+
+继承 `momoi.extensions.UsagePlugin`，实现 `token_rates`。如果看板要显示账户余额，再实现 `balance`。默认的 `estimate_cost` 用这些单价乘 token 数；只有计价不是线性时才需要覆盖它。
+
+```python
+from momoi.extensions import UsagePlugin
+
+
+class FlatRatePlugin(UsagePlugin):
+    def __init__(
+        self,
+        *,
+        api_key: str = "",
+        input_cny: float = 2.0,
+        output_cny: float = 8.0,
+    ) -> None:
+        self.input_cny = float(input_cny)
+        self.output_cny = float(output_cny)
+
+    def token_rates(self, model: str, timestamp: float) -> tuple[float, float, float]:
+        # 人民币 / 百万 token：缓存命中、未命中、输出
+        return (self.input_cny, self.input_cny, self.output_cny)
+
+    async def balance(self) -> dict[str, object]:
+        return {
+            "source": "unavailable",
+            "currency": "CNY",
+            "is_available": False,
+            "total_balance": "0",
+        }
+```
+
+把 `provider` 指到这个点分类名。其余字段会变成构造参数：
+
+```json
+{
+  "usage": {
+    "provider": "my_package.usage.FlatRatePlugin",
+    "input_cny": 2.0,
+    "output_cny": 8.0
+  }
+}
+```
+
+`balance()` 必须包含 `source`、`currency`、`is_available` 和 `total_balance`。当前有效的余额用 `source` `"live"`，拿不到时用 `"unavailable"`。
+
 ## 日志
 
 ```json
