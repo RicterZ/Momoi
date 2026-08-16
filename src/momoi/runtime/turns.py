@@ -1452,6 +1452,7 @@ class TurnRunner:
                 and len(response.tool_calls) == 1
                 and response.tool_calls[0].name == "respond"
             ):
+                plain_text = self._context_plan_response_text(response.content)
                 log_event(
                     logger,
                     logging.DEBUG,
@@ -1468,6 +1469,9 @@ class TurnRunner:
                     require_heartbeat=heartbeat_turn,
                     require_reply_wait=reply_wait_turn,
                 )
+                if reply is not None and plain_text:
+                    reply = None
+                    error = "plain_text_with_respond"
                 if reply is not None and heartbeat_turn and reply.heartbeat:
                     minutes = int(reply.heartbeat["next_check_minutes"])
                     seconds = minutes * 60
@@ -1519,11 +1523,29 @@ class TurnRunner:
                         {"role": "assistant", "content": response.content},
                         {
                             "role": "user",
-                            "content": [
-                                _tool_error_block(
-                                    response.tool_calls[0].id, error
-                                )
-                            ],
+                            "content": (
+                                [
+                                    _tool_error_block(
+                                        response.tool_calls[0].id, error
+                                    ),
+                                    {
+                                        "type": "text",
+                                        "text": (
+                                            "[Trusted runtime protocol correction: "
+                                            "plain assistant text is not delivered. "
+                                            "Send any owner-visible reply with "
+                                            "send_message first, then call respond "
+                                            "alone to finish.]"
+                                        ),
+                                    },
+                                ]
+                                if error == "plain_text_with_respond"
+                                else [
+                                    _tool_error_block(
+                                        response.tool_calls[0].id, error
+                                    )
+                                ]
+                            ),
                         },
                     ]
                 )

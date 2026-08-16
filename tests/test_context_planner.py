@@ -397,6 +397,7 @@ class ContextPlannerTest(unittest.TestCase):
                     "reminder_cancel",
                     "curl",
                     "read_file",
+                    "list_dir",
                     "write_file",
                     "apply_patch",
                     "sleep",

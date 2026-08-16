@@ -48,6 +48,7 @@ from momoi.runtime.turns import (
     CONTEXT_PLANNER_SYSTEM_PROMPT,
     STYLE_CARD_SYSTEM_PROMPT,
 )
+from momoi.runtime.context_planner import degraded_context_plan
 from momoi.runtime.daemon import _message_gap_bounds
 from momoi.storage import estimate_tokens
 from tests.support import context_plan_response, with_context_planner
@@ -1336,6 +1337,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "goal_create",
                             "curl",
                             "read_file",
+                            "list_dir",
                             "write_file",
                             "send_message",
                             "reply_expectation_close",
@@ -1485,6 +1487,143 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 "SELECT state, llm_calls FROM turns WHERE id=?", (turn_id,)
             ).fetchone()
             self.assertEqual((turn["state"], turn["llm_calls"]), ("completed", 0))
+            daemon.store.close()
+
+    async def test_plain_text_with_respond_is_retried_through_send_message(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(
+                AppConfig(
+                    llm=LLMConfig(
+                        "http://127.0.0.1", "test", "test", 100, 0, 1, 0
+                    ),
+                    channel=NapCatConfig(
+                        "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
+                    ),
+                    system_prompt="test",
+                    recent_raw_tokens=1000,
+                    recent_turns=2,
+                    memory_results=2,
+                    memory_tokens=1000,
+                    database=Path(directory) / "momoi.sqlite3",
+                    log_level="INFO",
+                )
+            )
+
+            class Provider:
+                calls = 0
+
+                async def complete(
+                    self,
+                    _system: object,
+                    _messages: list[dict[str, object]],
+                    tools: list[dict[str, object]],
+                    **_: object,
+                ) -> ProviderResponse:
+                    self.calls += 1
+                    if self.calls == 1:
+                        call = ToolCall(
+                            "bad-respond",
+                            "respond",
+                            {
+                                "expects_reply": False,
+                                "reply_expectation": "",
+                                "mood": {"decision": "unchanged"},
+                            },
+                        )
+                        return ProviderResponse(
+                            [
+                                {"type": "text", "text": "午饭要好好吃呀"},
+                                {
+                                    "type": "tool_use",
+                                    "id": call.id,
+                                    "name": call.name,
+                                    "input": call.arguments,
+                                },
+                            ],
+                            [call],
+                        )
+                    if [tool["name"] for tool in tools] != [
+                        "send_message",
+                        "respond",
+                    ]:
+                        raise AssertionError(tools)
+                    if self.calls == 2:
+                        call = ToolCall(
+                            "send",
+                            "send_message",
+                            {"messages": ["午饭要好好吃呀"]},
+                        )
+                    else:
+                        call = ToolCall(
+                            "finish",
+                            "respond",
+                            {
+                                "expects_reply": False,
+                                "reply_expectation": "",
+                                "mood": {"decision": "unchanged"},
+                            },
+                        )
+                    return ProviderResponse(
+                        [
+                            {
+                                "type": "tool_use",
+                                "id": call.id,
+                                "name": call.name,
+                                "input": call.arguments,
+                            }
+                        ],
+                        [call],
+                    )
+
+            provider = Provider()
+            event = IncomingMessage(
+                "owner-lunch", "owner-lunch", "等午饭吧", 1, 1
+            )
+            daemon.store.add_event(event)
+            turn_id = daemon._turn_id(event.event_id)
+            plan = degraded_context_plan(
+                [
+                    {
+                        "event_id": event.event_id,
+                        "channel": event.channel,
+                        "text": event.text,
+                    }
+                ],
+                "test",
+            )
+            daemon.store.begin_turn(turn_id, "owner", [event.event_id])
+            daemon.store.save_context_plan(
+                turn_id, 1, [event.event_id], plan
+            )
+            daemon.provider = provider  # type: ignore[assignment]
+            reply = await daemon._run_tool_loop(
+                daemon._system(),
+                [{"role": "user", "content": event.text}],
+                daemon._owner_tool_specs(plan),
+                [event],
+                TurnDraft(),
+                authority="owner",
+                source_event_id=event.event_id,
+                allow_notify=False,
+                turn_id=turn_id,
+                require_response=True,
+                accept_owner_updates=False,
+                dynamic_tool_policies=True,
+                delivery_channel=daemon.channel,
+            )
+
+            self.assertEqual(provider.calls, 3)
+            self.assertEqual(reply.messages, [])
+            self.assertEqual(
+                daemon.store._db.execute(
+                    """SELECT text FROM turn_progress
+                       WHERE turn_id=? ORDER BY created_at""",
+                    (turn_id,),
+                ).fetchone()["text"],
+                "午饭要好好吃呀",
+            )
             daemon.store.close()
 
     async def test_owner_turn_does_not_retry_after_provider_exhausts_retries(
@@ -2024,7 +2163,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             llm_requests[1]["system"][0]["text"].rstrip().endswith("You are Momoi.")
         )
         self.assertEqual(len(llm_requests[1]["system"]), 2)
-        self.assertNotIn("Memory tools", llm_requests[1]["system"][1]["text"])
+        self.assertIn("Memory tools", llm_requests[1]["system"][1]["text"])
         self.assertEqual(len(llm_requests[7]["system"]), 1)
         self.assertEqual(
             llm_requests[1]["system"][0]["text"],
