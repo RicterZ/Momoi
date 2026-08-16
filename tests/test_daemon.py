@@ -133,7 +133,16 @@ class DaemonTest(unittest.TestCase):
             soul.write_text("New soul")
             heartbeat.write_text("New heartbeat")
             self.assertIn("New soul", daemon._system()[0]["text"])
-            self.assertIn("New heartbeat", daemon._heartbeat_system_prompt())
+            rendered = daemon._heartbeat_system_prompt()
+            self.assertIn("New heartbeat", rendered)
+            self.assertLess(
+                rendered.index("After choosing a different concrete activity"),
+                rendered.index("# Workspace heartbeat guidance"),
+            )
+            self.assertIn(
+                "call `memory_search` once with a concise activity-specific query",
+                rendered,
+            )
             heartbeat.unlink()
             self.assertNotIn(
                 "# Workspace heartbeat guidance", daemon._heartbeat_system_prompt()
