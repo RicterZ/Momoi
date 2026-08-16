@@ -35,6 +35,7 @@ from momoi.runtime.protocol import MOOD_UPDATE_SCHEMA
 from momoi.models import (
     AgentReply,
     IncomingMessage,
+    MemoryCandidate,
     OwnerInputStatus,
     ProviderResponse,
     ToolCall,
@@ -46,6 +47,7 @@ from momoi.provider import (
 from momoi.runtime.turns import (
     CONTEXT_PLAN_TOOL_NAME,
     CONTEXT_PLANNER_SYSTEM_PROMPT,
+    HEARTBEAT_PLANNER_SYSTEM_PROMPT,
     STYLE_CARD_SYSTEM_PROMPT,
 )
 from momoi.runtime.context_planner import degraded_context_plan
@@ -136,13 +138,10 @@ class DaemonTest(unittest.TestCase):
             rendered = daemon._heartbeat_system_prompt()
             self.assertIn("New heartbeat", rendered)
             self.assertLess(
-                rendered.index("After choosing a different concrete activity"),
+                rendered.index("<heartbeat_plan>"),
                 rendered.index("# Workspace heartbeat guidance"),
             )
-            self.assertIn(
-                "call `memory_search` once with a concise activity-specific query",
-                rendered,
-            )
+            self.assertIn("harness has already used its recall queries", rendered)
             heartbeat.unlink()
             self.assertNotIn(
                 "# Workspace heartbeat guidance", daemon._heartbeat_system_prompt()
@@ -1332,6 +1331,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         request = json.dumps(__, ensure_ascii=False)
                         if (
                             "<autonomous_heartbeat>" not in request
+                            or "<heartbeat_plan>" not in request
                             or "<runtime_state>" not in request
                             or "<recent_topic_reference>" not in request
                             or "<recent_conversation>" not in request
@@ -1342,7 +1342,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         ):
                             raise AssertionError(__)
                         expected = {
-                            "memory_search",
                             "goal_create",
                             "curl",
                             "read_file",
@@ -1457,6 +1456,155 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(goal["authority"], "agent")
             self.assertEqual(goal["title"], "继续整理关卡点子")
             self.assertEqual(provider.calls, 5)
+            daemon.store.close()
+
+    async def test_heartbeat_planner_recall_is_loaded_before_execution(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            config = AppConfig(
+                llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
+                channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                system_prompt="test",
+                recent_raw_tokens=1000,
+                recent_turns=2,
+                memory_results=4,
+                memory_tokens=1000,
+                database=Path(directory) / "momoi.sqlite3",
+                log_level="INFO",
+                notifications=NotificationConfig(
+                    timezone="Asia/Shanghai",
+                    cooldown_seconds=0,
+                    pending_owner_delay_seconds=0,
+                ),
+                heartbeat=HeartbeatConfig(
+                    enabled=True,
+                    initial_delay_seconds=60,
+                    min_interval_seconds=60,
+                    max_interval_seconds=600,
+                ),
+                heartbeat_prompt="按自己的兴趣安排这次心跳。",
+            )
+            daemon = MomoiDaemon(config)
+            memory_event = IncomingMessage(
+                "test-memory",
+                "test-memory",
+                "刷微博遇到错误时直接说",
+                time.time(),
+                time.time(),
+            )
+            daemon.store.add_event(memory_event)
+            daemon.store._remember(
+                MemoryCandidate(
+                    "shared",
+                    "shared.weibo.login_expired_notify",
+                    "微博登录过期时主动提醒；刷微博遇到错误时直接说",
+                    "刷微博遇到错误时直接说",
+                    activation="recall",
+                ),
+                [memory_event],
+                time.time(),
+            )
+            daemon.store._db.execute(
+                "UPDATE events SET processed=1 WHERE id=?", (memory_event.event_id,)
+            )
+            daemon.store._db.commit()
+
+            class Provider:
+                calls = 0
+
+                async def complete(
+                    self,
+                    system: object,
+                    messages: list[dict[str, object]],
+                    tools: list[dict[str, object]],
+                    **_: object,
+                ) -> ProviderResponse:
+                    self.calls += 1
+                    if self.calls == 1:
+                        self.assert_planner(system, messages, tools)
+                        call = ToolCall(
+                            "heartbeat-plan",
+                            "submit_heartbeat_plan",
+                            {
+                                "version": 1,
+                                "activity": {
+                                    "intent": "浏览微博关注流",
+                                    "reason": "看看最近感兴趣的动态",
+                                    "recall_queries": ["微博登录错误报告规则"],
+                                },
+                                "uncertainty": [],
+                            },
+                        )
+                    else:
+                        request = json.dumps(messages, ensure_ascii=False)
+                        names = {str(tool["name"]) for tool in tools}
+                        if (
+                            system == HEARTBEAT_PLANNER_SYSTEM_PROMPT
+                            or "<heartbeat_plan>" not in request
+                            or "浏览微博关注流" not in request
+                            or "shared.weibo.login_expired_notify" not in request
+                            or "微博登录过期时主动提醒" not in request
+                            or "memory_search" in names
+                        ):
+                            raise AssertionError((system, request, names))
+                        call = ToolCall(
+                            "heartbeat-done",
+                            "respond",
+                            {
+                                "expects_reply": False,
+                                "reply_expectation": "",
+                                "mood": {"decision": "unchanged"},
+                                "heartbeat": {
+                                    "activity": "浏览微博关注流",
+                                    "result": "已准备按已知规则浏览",
+                                    "next_check_minutes": 2,
+                                    "reason": "本次无需联系主人",
+                                },
+                            },
+                        )
+                    return ProviderResponse(
+                        [
+                            {
+                                "type": "tool_use",
+                                "id": call.id,
+                                "name": call.name,
+                                "input": call.arguments,
+                            }
+                        ],
+                        [call],
+                    )
+
+                @staticmethod
+                def assert_planner(
+                    system: object,
+                    messages: list[dict[str, object]],
+                    tools: list[dict[str, object]],
+                ) -> None:
+                    if (
+                        system != HEARTBEAT_PLANNER_SYSTEM_PROMPT
+                        or [tool["name"] for tool in tools]
+                        != ["submit_heartbeat_plan"]
+                        or "按自己的兴趣安排这次心跳。"
+                        not in json.dumps(messages, ensure_ascii=False)
+                    ):
+                        raise AssertionError((system, messages, tools))
+
+            provider = Provider()
+            daemon.provider = provider  # type: ignore[assignment]
+            daemon.store._db.execute(
+                "UPDATE self_state SET next_heartbeat_at=? WHERE id=1",
+                (time.time() - 1,),
+            )
+            daemon.store._db.commit()
+            self.assertIsNotNone(
+                daemon.store.claim_due_heartbeat(
+                    config.heartbeat, config.notifications
+                )
+            )
+            await daemon._complete_heartbeat_turn(asyncio.Event())
+            self.assertEqual(provider.calls, 2)
+            self.assertEqual(
+                daemon.store.self_state()["activity"], "浏览微博关注流"
+            )
             daemon.store.close()
 
     async def test_owner_turn_stops_cleanly_at_configured_token_budget(self) -> None:

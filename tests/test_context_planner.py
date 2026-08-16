@@ -14,7 +14,9 @@ from momoi.runtime.context_planner import (
     CONTEXT_PLAN_TOOL_NAME,
     CONTEXT_PLAN_TOOL_SPEC,
     ContextPlanError,
+    degraded_heartbeat_plan,
     degraded_context_plan,
+    parse_heartbeat_plan,
     parse_context_plan,
 )
 from momoi.runtime.turns import CONTEXT_PLANNER_SYSTEM_PROMPT
@@ -116,6 +118,27 @@ def legacy_response_plan() -> dict[str, object]:
 
 
 class ContextPlannerTest(unittest.TestCase):
+    def test_heartbeat_plan_parser_and_degraded_fallback(self) -> None:
+        plan = parse_heartbeat_plan(
+            {
+                "version": 1,
+                "activity": {
+                    "intent": "浏览微博关注流",
+                    "reason": "看看最近感兴趣的动态",
+                    "recall_queries": ["微博登录错误报告规则"],
+                },
+                "uncertainty": [],
+            }
+        )
+        self.assertEqual(plan["activity"]["recall_queries"], ["微博登录错误报告规则"])
+        with self.assertRaisesRegex(ContextPlanError, "invalid_heartbeat_activity"):
+            parse_heartbeat_plan(
+                {"version": 1, "activity": {}, "uncertainty": []}
+            )
+        degraded = degraded_heartbeat_plan("", "invalid_json")
+        self.assertEqual(degraded["activity"]["recall_queries"], [])
+        self.assertEqual(degraded["activity"]["intent"], "spend time freely")
+
     def test_context_plan_shape_lives_in_tool_schema(self) -> None:
         self.assertIn(CONTEXT_PLAN_TOOL_NAME, CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertNotIn('"intent_units"', CONTEXT_PLANNER_SYSTEM_PROMPT)

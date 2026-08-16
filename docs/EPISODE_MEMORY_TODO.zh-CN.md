@@ -438,3 +438,12 @@ TODO：
 - “原话定位不到”：message-level read/index 问题。
 - “Planner 生成太多 query”：Planner 提示词与模型质量问题。
 - “Memory 返回门锁规则但用户问旧聊天”：工具职责或检索排序问题。
+
+## 14. Heartbeat 初始召回
+
+- [x] Heartbeat 先由专用 Context Planner 选择活动并生成初始 recall queries。
+- [x] Runtime 根据查询预先加载 Memory、Reflection Memory 和 Episode 摘要。
+- [x] 主 Heartbeat 模型不再依赖 `memory_search` 修复初始上下文。
+- [x] 工作区 `HEARTBEAT.md` 只提供主人自定义指导；通用协议保留在内置提示词。
+- [ ] 部署后观察 `heartbeat_plan_complete`、`heartbeat_recall_complete` 和
+  `heartbeat_recall_selected`，确认活动查询不过度、相关规则能在活动工具调用前命中。

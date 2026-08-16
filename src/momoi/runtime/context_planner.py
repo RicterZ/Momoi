@@ -235,6 +235,40 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
         "additionalProperties": False,
     },
 }
+HEARTBEAT_PLAN_TOOL_NAME = "submit_heartbeat_plan"
+HEARTBEAT_PLAN_TOOL_SPEC: dict[str, object] = {
+    "name": HEARTBEAT_PLAN_TOOL_NAME,
+    "description": (
+        "Submit the selected heartbeat activity and its initial recall queries."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "version": {"type": "integer", "enum": [1]},
+            "activity": {
+                "type": "object",
+                "properties": {
+                    "intent": {"type": "string", "maxLength": 300},
+                    "reason": {"type": "string", "maxLength": 300},
+                    "recall_queries": {
+                        "type": "array",
+                        "maxItems": 2,
+                        "items": {"type": "string", "maxLength": 500},
+                    },
+                },
+                "required": ["intent", "reason", "recall_queries"],
+                "additionalProperties": False,
+            },
+            "uncertainty": {
+                "type": "array",
+                "maxItems": 4,
+                "items": {"type": "string", "maxLength": 500},
+            },
+        },
+        "required": ["version", "activity", "uncertainty"],
+        "additionalProperties": False,
+    },
+}
 
 
 def _strings(
@@ -698,4 +732,57 @@ def degraded_context_plan(
             f"Context planner protocol failed ({reason}); deterministic message "
             "segmentation is used without automatic historical recall."
         ],
+    }
+
+
+def parse_heartbeat_plan(
+    value: str | dict[str, object],
+) -> dict[str, object]:
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except (json.JSONDecodeError, TypeError) as error:
+            raise ContextPlanError("invalid_json") from error
+    if (
+        not isinstance(value, dict)
+        or set(value) != {"version", "activity", "uncertainty"}
+        or value.get("version") != 1
+    ):
+        raise ContextPlanError("invalid_heartbeat_plan")
+    activity = value.get("activity")
+    if (
+        not isinstance(activity, dict)
+        or set(activity) != {"intent", "reason", "recall_queries"}
+    ):
+        raise ContextPlanError("invalid_heartbeat_activity")
+    return {
+        "version": 1,
+        "activity": {
+            "intent": _text(activity["intent"], "heartbeat_intent", 300),
+            "reason": _text(activity["reason"], "heartbeat_reason", 300),
+            "recall_queries": _strings(
+                activity["recall_queries"],
+                "heartbeat_recall_queries",
+                maximum=2,
+                max_length=500,
+            ),
+        },
+        "uncertainty": _strings(
+            value["uncertainty"],
+            "heartbeat_uncertainty",
+            maximum=4,
+            max_length=500,
+        ),
+    }
+
+
+def degraded_heartbeat_plan(activity: str, reason: str) -> dict[str, object]:
+    return {
+        "version": 1,
+        "activity": {
+            "intent": activity.strip() or "spend time freely",
+            "reason": f"Heartbeat planner failed ({reason}); continue current activity.",
+            "recall_queries": [],
+        },
+        "uncertainty": [f"Heartbeat planner protocol failed: {reason}"],
     }

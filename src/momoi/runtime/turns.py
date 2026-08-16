@@ -45,8 +45,12 @@ from .context_candidates import (
 from .context_planner import (
     CONTEXT_PLAN_TOOL_NAME,
     CONTEXT_PLAN_TOOL_SPEC,
+    HEARTBEAT_PLAN_TOOL_NAME,
+    HEARTBEAT_PLAN_TOOL_SPEC,
     ContextPlanError,
+    degraded_heartbeat_plan,
     degraded_context_plan,
+    parse_heartbeat_plan,
     parse_context_plan,
 )
 from .parsing import (
@@ -74,6 +78,7 @@ SYSTEM_PROMPT_PATH = PROMPT_ROOT.joinpath("system.md")
 STYLE_CARD_PROMPT_PATH = PROMPT_ROOT.joinpath("style_card.md")
 WEBHOOK_PROMPT_PATH = PROMPT_ROOT.joinpath("webhook.md")
 HEARTBEAT_PROMPT_PATH = PROMPT_ROOT.joinpath("heartbeat.md")
+HEARTBEAT_PLANNER_PROMPT_PATH = PROMPT_ROOT.joinpath("heartbeat_planner.md")
 REPLY_WAIT_PROMPT_PATH = PROMPT_ROOT.joinpath("reply_wait.md")
 REFLECTION_PROMPT_PATH = PROMPT_ROOT.joinpath("reflection.md")
 CONTEXT_PLANNER_PROMPT_PATH = PROMPT_ROOT.joinpath("context_planner.md")
@@ -84,6 +89,9 @@ EPISODE_CONSOLIDATION_PROMPT_PATH = PROMPT_ROOT.joinpath(
 STYLE_CARD_SYSTEM_PROMPT = STYLE_CARD_PROMPT_PATH.read_text(encoding="utf-8").strip()
 WEBHOOK_SYSTEM_PROMPT = WEBHOOK_PROMPT_PATH.read_text(encoding="utf-8").strip()
 HEARTBEAT_SYSTEM_PROMPT = HEARTBEAT_PROMPT_PATH.read_text(encoding="utf-8").strip()
+HEARTBEAT_PLANNER_SYSTEM_PROMPT = HEARTBEAT_PLANNER_PROMPT_PATH.read_text(
+    encoding="utf-8"
+).strip()
 REPLY_WAIT_SYSTEM_PROMPT = REPLY_WAIT_PROMPT_PATH.read_text(encoding="utf-8").strip()
 REFLECTION_SYSTEM_PROMPT = REFLECTION_PROMPT_PATH.read_text(encoding="utf-8").strip()
 CONTEXT_PLANNER_SYSTEM_PROMPT = CONTEXT_PLANNER_PROMPT_PATH.read_text(
@@ -2343,6 +2351,146 @@ class TurnRunner:
             prompt += "\n\n# Workspace heartbeat guidance\n\n" + workspace_prompt
         return prompt
 
+    async def _plan_heartbeat_context(
+        self,
+        turn_id: str,
+        *,
+        state: dict[str, object],
+        self_context: str,
+        conversation: dict[str, object],
+        recent_topics: list[dict[str, object]],
+        recent_conversation: str,
+        goals: str,
+    ) -> dict[str, object]:
+        request = [
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "current_time": datetime.now().astimezone().isoformat(
+                            timespec="seconds"
+                        ),
+                        "current_self_state": self_context,
+                        "previous_activity": {
+                            "activity": state.get("activity"),
+                            "result": state.get("activity_result"),
+                        },
+                        "conversation_state": conversation,
+                        "recent_topics": recent_topics,
+                        "recent_conversation": recent_conversation,
+                        "active_goals": goals,
+                        "workspace_heartbeat_guidance": (
+                            _live_prompt(
+                                self.config.heartbeat_prompt_path,
+                                "",
+                                optional=True,
+                            )
+                            if self.config.heartbeat_prompt_path is not None
+                            else self.config.heartbeat_prompt
+                        ),
+                    },
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ),
+            }
+        ]
+        last_error = "invalid_heartbeat_plan"
+        for attempt in range(2):
+            call_id = new_trace_id()
+            started = time.monotonic()
+            with log_context(
+                stage="heartbeat_plan",
+                turn_id=turn_id,
+                call_id=call_id,
+                round=attempt + 1,
+            ):
+                self._check_turn_budget(
+                    turn_id,
+                    HEARTBEAT_PLANNER_SYSTEM_PROMPT,
+                    request,
+                    [HEARTBEAT_PLAN_TOOL_SPEC],
+                )
+                response = await self.provider.complete(
+                    HEARTBEAT_PLANNER_SYSTEM_PROMPT,
+                    request,
+                    [HEARTBEAT_PLAN_TOOL_SPEC],
+                    require_tool=True,
+                )
+            metrics = response.usage or {}
+            self.store.record_turn_usage(
+                turn_id,
+                int(metrics.get("input", 0)),
+                int(metrics.get("output", 0)),
+            )
+            try:
+                if (
+                    len(response.tool_calls) != 1
+                    or response.tool_calls[0].name != HEARTBEAT_PLAN_TOOL_NAME
+                ):
+                    raise ContextPlanError("heartbeat_plan_tool_required")
+                plan = parse_heartbeat_plan(response.tool_calls[0].arguments)
+            except ContextPlanError as error:
+                last_error = str(error)
+                log_event(
+                    logger,
+                    logging.WARNING,
+                    "heartbeat_plan_invalid",
+                    stage="heartbeat_plan",
+                    turn_id=turn_id,
+                    call_id=call_id,
+                    round=attempt + 1,
+                    reason=last_error,
+                    duration_ms=int((time.monotonic() - started) * 1000),
+                )
+                if attempt == 0:
+                    request.extend(
+                        [
+                            {"role": "assistant", "content": response.content},
+                            {
+                                "role": "user",
+                                "content": [
+                                    *[
+                                        _tool_error_block(call.id, last_error)
+                                        for call in response.tool_calls
+                                    ],
+                                    {
+                                        "type": "text",
+                                        "text": (
+                                            "[Trusted protocol correction: call "
+                                            f"{HEARTBEAT_PLAN_TOOL_NAME} exactly once "
+                                            "with corrected arguments.]"
+                                        ),
+                                    },
+                                ],
+                            },
+                        ]
+                    )
+                    continue
+                break
+            log_event(
+                logger,
+                logging.INFO,
+                "heartbeat_plan_complete",
+                stage="heartbeat_plan",
+                turn_id=turn_id,
+                call_id=call_id,
+                round=attempt + 1,
+                intent=plan["activity"]["intent"],
+                queries=len(plan["activity"]["recall_queries"]),
+                duration_ms=int((time.monotonic() - started) * 1000),
+            )
+            return plan
+        plan = degraded_heartbeat_plan(str(state.get("activity") or ""), last_error)
+        log_event(
+            logger,
+            logging.WARNING,
+            "heartbeat_plan_degraded",
+            stage="heartbeat_plan",
+            turn_id=turn_id,
+            reason=last_error,
+        )
+        return plan
+
     def _reply_wait_system_prompt(self) -> str:
         return _live_prompt(REPLY_WAIT_PROMPT_PATH, REPLY_WAIT_SYSTEM_PROMPT)
 
@@ -2709,32 +2857,6 @@ class TurnRunner:
         contact_window = self.store.heartbeat_contact_window(
             notification_key, self.config.notifications
         )
-        activity = str(state["activity"])
-        attention_query = "\n".join(
-            [
-                activity,
-                str(state.get("activity_result") or ""),
-            ]
-        )[-12000:]
-        episodes = recall_episode_context(
-            self.store,
-            attention_query,
-            self.config.summary_results,
-            self.config.summary_tokens,
-            self.config.recent_raw_tokens,
-        )
-        memories = self.store.memory_context(
-            attention_query, self.config.memory_results, self.config.memory_tokens
-        )
-        learned = self.store.reflection_memory_context(
-            attention_query,
-            max(1, self.config.memory_results // 2),
-            max(1000, self.config.memory_tokens // 2),
-        )
-        owner_preferences = self.store.always_memory_context()
-        recent_memories = self.store.recent_memory_context(
-            max(100, self.config.memory_tokens // 8)
-        )
         recent_conversation, _ = assemble_recent_conversation(
             self.store, self.config.recent_turns, self.config.recent_raw_tokens
         )
@@ -2765,6 +2887,59 @@ class TurnRunner:
             recent_topics.append(topic)
             topic_tokens += size
         goals = self.store.active_goals_context(authority="agent")
+        conversation = self.store.heartbeat_conversation_snapshot()
+        plan = await self._plan_heartbeat_context(
+            turn_id,
+            state=state,
+            self_context=self_context,
+            conversation=conversation,
+            recent_topics=recent_topics,
+            recent_conversation=recent_conversation,
+            goals=goals,
+        )
+        planned_activity = plan["activity"]
+        recall_plan = {
+            "intent_units": [
+                {
+                    "id": "heartbeat",
+                    "recall_queries": planned_activity["recall_queries"],
+                }
+            ],
+            "episode_actions": [],
+            "uncertainty": plan["uncertainty"],
+        }
+        retrieval = build_plan_retrieval(self.store, recall_plan, self.config)
+        recalled = assemble_main_context(
+            self.store,
+            retrieval,
+            self.config.summary_tokens,
+            self.config.recent_raw_tokens,
+        )
+        log_event(
+            logger,
+            logging.INFO,
+            "heartbeat_recall_complete",
+            stage="heartbeat_recall",
+            turn_id=turn_id,
+            queries=len(planned_activity["recall_queries"]),
+            memories=len(retrieval["confirmed_memories"]),
+            reflections=len(retrieval["reflection_memories"]),
+            episodes=len(retrieval["episodes"]),
+        )
+        log_event(
+            logger,
+            logging.DEBUG,
+            "heartbeat_recall_selected",
+            stage="heartbeat_recall",
+            turn_id=turn_id,
+            queries=planned_activity["recall_queries"],
+            memory_keys=[
+                item["key"] for item in retrieval["confirmed_memories"]
+            ],
+            episode_ids=[
+                item["episode_id"] for item in retrieval["episodes"]
+            ],
+        )
         artifact_root = self._artifact_root().resolve()
         minimum = max(1, int(self.config.heartbeat.min_interval_seconds / 60))
         maximum = max(minimum, int(self.config.heartbeat.max_interval_seconds / 60))
@@ -2801,6 +2976,18 @@ class TurnRunner:
                 "cooled_reply_expectation",
                 self.store.cooled_reply_expectation_context(),
             ),
+            (
+                "heartbeat_plan",
+                json.dumps(
+                    {
+                        "intent": planned_activity["intent"],
+                        "reason": planned_activity["reason"],
+                        "uncertainty": plan["uncertainty"],
+                    },
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ),
+            ),
             ("active_goals", goals),
             (
                 "recent_topic_reference",
@@ -2810,11 +2997,11 @@ class TurnRunner:
                 "recent_conversation",
                 recent_conversation,
             ),
-            ("episode_directory", episodes),
-            ("owner_preferences", owner_preferences),
-            ("recent_memories", recent_memories),
-            ("confirmed_owner_memory", memories),
-            ("reflection_memory", learned),
+            ("episode_directory", recalled["episodes"]),
+            ("owner_preferences", recalled["owner_preferences"]),
+            ("recent_memories", recalled["recent_memories"]),
+            ("confirmed_owner_memory", recalled["confirmed_memories"]),
+            ("reflection_memory", recalled["reflection_memories"]),
         )
         system = [
             *self._system(),
@@ -2836,14 +3023,10 @@ class TurnRunner:
                 ],
             },
         ]
-        memory_search = [
-            spec for spec in MEMORY_TOOL_SPECS if spec["name"] == "memory_search"
-        ]
         goal_create = [
             spec for spec in AGENDA_TOOL_SPECS if spec["name"] == "goal_create"
         ]
         tools = [
-            *memory_search,
             *goal_create,
             *self._self_directed_tool_specs(),
             REPLY_EXPECTATION_CLOSE_SPEC,

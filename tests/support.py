@@ -2,8 +2,14 @@ import json
 from typing import Any
 
 from momoi.models import ProviderResponse, ToolCall
-from momoi.runtime.context_planner import CONTEXT_PLAN_TOOL_NAME
-from momoi.runtime.turns import CONTEXT_PLANNER_SYSTEM_PROMPT
+from momoi.runtime.context_planner import (
+    CONTEXT_PLAN_TOOL_NAME,
+    HEARTBEAT_PLAN_TOOL_NAME,
+)
+from momoi.runtime.turns import (
+    CONTEXT_PLANNER_SYSTEM_PROMPT,
+    HEARTBEAT_PLANNER_SYSTEM_PROMPT,
+)
 
 
 def context_plan_response(messages: list[dict[str, Any]]) -> ProviderResponse:
@@ -55,6 +61,32 @@ def context_plan_response(messages: list[dict[str, Any]]) -> ProviderResponse:
     )
 
 
+def heartbeat_plan_response(messages: list[dict[str, Any]]) -> ProviderResponse:
+    payload = json.loads(str(messages[0]["content"]))
+    previous = payload["previous_activity"]
+    plan = {
+        "version": 1,
+        "activity": {
+            "intent": str(previous.get("activity") or "spend time freely"),
+            "reason": "Continue the current activity for this test.",
+            "recall_queries": [],
+        },
+        "uncertainty": [],
+    }
+    call = ToolCall("heartbeat-plan", HEARTBEAT_PLAN_TOOL_NAME, plan)
+    return ProviderResponse(
+        [
+            {
+                "type": "tool_use",
+                "id": call.id,
+                "name": call.name,
+                "input": call.arguments,
+            }
+        ],
+        [call],
+    )
+
+
 class PlannerAwareProvider:
     def __init__(self, delegate: object) -> None:
         self.delegate = delegate
@@ -68,6 +100,8 @@ class PlannerAwareProvider:
     ) -> ProviderResponse:
         if system == CONTEXT_PLANNER_SYSTEM_PROMPT:
             return context_plan_response(messages)
+        if system == HEARTBEAT_PLANNER_SYSTEM_PROMPT:
+            return heartbeat_plan_response(messages)
         return await self.delegate.complete(  # type: ignore[attr-defined,no-any-return]
             system, messages, tools, **kwargs
         )
