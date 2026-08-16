@@ -26,14 +26,61 @@ logger = logging.getLogger(__name__)
 
 
 class PromptRenderer:
+    def _workspace_prompt_state(self) -> dict[str, str]:
+        state = getattr(self, "_loaded_workspace_prompts", None)
+        if state is None:
+            state = {}
+            self._loaded_workspace_prompts = state
+        return state
+
+    def _log_workspace_prompt(
+        self,
+        name: str,
+        path: Any,
+        text: str,
+        *,
+        optional: bool,
+    ) -> None:
+        fingerprint = f"{path}\0{text}"
+        state = self._workspace_prompt_state()
+        if state.get(name) == fingerprint:
+            return
+        state[name] = fingerprint
+        fields = {
+            "name": name,
+            "path": str(path) if path is not None else "",
+            "chars": len(text),
+        }
+        if text:
+            log_event(
+                logger,
+                logging.INFO,
+                "workspace_prompt_loaded",
+                preview=safe_preview(text, 160),
+                **fields,
+            )
+            return
+        log_event(
+            logger,
+            logging.INFO,
+            "workspace_prompt_missing",
+            optional=optional,
+            **fields,
+        )
+
+    def _workspace_soul(self) -> str:
+        path = getattr(self.config, "soul_prompt_path", None)
+        fallback = str(getattr(self.config, "soul_prompt", "") or "")
+        text = _live_prompt(path, fallback) if path is not None else fallback
+        self._log_workspace_prompt("soul", path, text, optional=False)
+        return text
 
     def _system(self) -> list[dict[str, Any]]:
         system_prompt = self.config.system_prompt
-        soul_prompt = self.config.soul_prompt
         soul_path = getattr(self.config, "soul_prompt_path", None)
         if soul_path is not None:
             system_prompt = _live_prompt(SYSTEM_PROMPT_PATH, system_prompt)
-            soul_prompt = _live_prompt(soul_path, soul_prompt)
+        soul_prompt = self._workspace_soul()
         text = (
             system_prompt.replace(
                 "{{SOUL}}", soul_prompt or "No additional Soul is configured."
@@ -92,24 +139,8 @@ class PromptRenderer:
             if path is not None
             else str(getattr(self.config, "heartbeat_prompt", "") or "")
         )
-        if not log:
-            return text
-        if text:
-            log_event(
-                logger,
-                logging.INFO,
-                "heartbeat_guidance_loaded",
-                path=str(path) if path is not None else "",
-                chars=len(text),
-                preview=safe_preview(text, 160),
-            )
-        else:
-            log_event(
-                logger,
-                logging.INFO,
-                "heartbeat_guidance_missing",
-                path=str(path) if path is not None else "",
-            )
+        if log:
+            self._log_workspace_prompt("heartbeat", path, text, optional=True)
         return text
 
     def _heartbeat_system_prompt(self) -> str:

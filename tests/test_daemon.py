@@ -176,17 +176,36 @@ class DaemonTest(unittest.TestCase):
                 "# Workspace heartbeat guidance", daemon._heartbeat_system_prompt()
             )
 
+            daemon._loaded_workspace_prompts = {}
             heartbeat.write_text("偶尔整理自己的摄影兴趣。")
             with self.assertLogs("momoi.runtime.prompt_renderer", level="INFO") as logs:
                 self.assertIn("摄影兴趣", daemon._workspace_heartbeat_guidance())
             self.assertTrue(
-                any("heartbeat_guidance_loaded" in message for message in logs.output)
+                any("workspace_prompt_loaded" in message for message in logs.output)
             )
             heartbeat.unlink()
             with self.assertLogs("momoi.runtime.prompt_renderer", level="INFO") as logs:
                 self.assertEqual(daemon._workspace_heartbeat_guidance(), "")
             self.assertTrue(
-                any("heartbeat_guidance_missing" in message for message in logs.output)
+                any("workspace_prompt_missing" in message for message in logs.output)
+            )
+
+            daemon._loaded_workspace_prompts = {}
+            with self.assertLogs("momoi.runtime.prompt_renderer", level="INFO") as logs:
+                self.assertIn("New soul", daemon._workspace_soul())
+            self.assertTrue(
+                any("workspace_prompt_loaded" in message for message in logs.output)
+            )
+            soul.write_text("Changed soul")
+            with self.assertLogs("momoi.runtime.prompt_renderer", level="INFO") as logs:
+                self.assertIn("Changed soul", daemon._workspace_soul())
+            self.assertTrue(
+                any("workspace_prompt_loaded" in message for message in logs.output)
+            )
+            self.assertEqual(daemon._workspace_soul(), "Changed soul")
+            self.assertEqual(
+                daemon._loaded_workspace_prompts["soul"],
+                f"{soul}\0Changed soul",
             )
 
     def test_shared_style_card_is_injected(self) -> None:

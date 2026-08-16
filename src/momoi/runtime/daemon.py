@@ -83,6 +83,12 @@ class MomoiDaemon(TurnRunner):
                 **(config.usage.settings or {}),
             )
             self.store.set_usage_plugin(usage_plugin)
+            log_event(
+                logger,
+                logging.INFO,
+                "usage_plugin_loaded",
+                provider=config.usage.provider,
+            )
         self.dashboard = (
             DashboardService(
                 self.store,

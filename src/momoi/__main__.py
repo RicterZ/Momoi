@@ -232,6 +232,8 @@ async def run(
             for item in config.channel_configs
         ),
         primary_channel=getattr(config.channel, "plugin", "unknown"),
+        soul_prompt_path=str(config.soul_prompt_path or ""),
+        soul_prompt_chars=len(config.soul_prompt),
         heartbeat_prompt_path=str(config.heartbeat_prompt_path or ""),
         heartbeat_prompt_chars=len(config.heartbeat_prompt),
     )

@@ -66,16 +66,31 @@ def _expand(value: str) -> str:
 
 def load_mcp_servers(path: Path | None) -> dict[str, dict[str, Any]]:
     if path is None or not path.exists():
+        log_event(
+            logger,
+            logging.INFO,
+            "mcp_config_missing",
+            path=str(path) if path is not None else "",
+        )
         return {}
     raw = json.loads(path.read_text(encoding="utf-8"))
     servers = raw.get("mcpServers") if isinstance(raw, dict) else None
     if not isinstance(servers, dict):
         raise ValueError("mcp.json must contain an mcpServers object")
-    return {
+    loaded = {
         str(name): config
         for name, config in servers.items()
         if isinstance(config, dict) and not config.get("disabled", False)
     }
+    log_event(
+        logger,
+        logging.INFO,
+        "mcp_config_loaded",
+        path=str(path),
+        servers=len(loaded),
+        names=",".join(sorted(loaded)) or None,
+    )
+    return loaded
 
 
 class MCPManager:
