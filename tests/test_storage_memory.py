@@ -2050,6 +2050,71 @@ class StorageMemoryTest(unittest.TestCase):
             )
             store.close()
 
+    def test_heartbeat_commits_memory_and_reminder_mutations(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            event = IncomingMessage(
+                "owner-evidence",
+                "owner-evidence",
+                "以后查微博登录状态时先看 session",
+                time.time(),
+                time.time(),
+            )
+            store.add_event(event)
+            store.discard_events([event])
+            draft = TurnDraft()
+            memory = MemoryTools(store).execute(
+                ToolCall(
+                    "remember",
+                    "memory_remember",
+                    {
+                        "kind": "shared",
+                        "key": "shared.weibo.session_check",
+                        "content": "查微博登录状态时先检查 session",
+                        "evidence": event.text,
+                        "activation": "recall",
+                        "ttl_hours": 0,
+                    },
+                ),
+                [event],
+                draft,
+            )
+            reminder = AgendaTools(store).execute(
+                ToolCall(
+                    "reminder",
+                    "reminder_create",
+                    {
+                        "text": "看看微博登录状态",
+                        "fire_at": (
+                            datetime.now().astimezone() + timedelta(hours=1)
+                        ).isoformat(),
+                    },
+                ),
+                draft,
+                authority="agent",
+                source_event_id="heartbeat:test",
+                allow_notify=False,
+            )
+            self.assertTrue(memory["ok"])
+            self.assertTrue(reminder["ok"])
+            store.begin_turn("heartbeat-tools", "autonomous", ["heartbeat:test"])
+            store.commit_heartbeat(
+                "heartbeat-tools",
+                owner_event_revision=1,
+                notification_config=NotificationConfig(),
+                activity="整理微博使用方式",
+                result="记下规则并安排检查",
+                next_heartbeat_at=time.time() + 3600,
+                mood_update=None,
+                messages=[],
+                reason="test",
+                draft=draft,
+                memory_events=[event],
+            )
+            self.assertTrue(store.has_memory("shared", "shared.weibo.session_check"))
+            self.assertIn("看看微博登录状态", store.active_reminders_context())
+            store.close()
+
     def test_expected_reply_keeps_heartbeat_attention_until_owner_returns(self) -> None:
         heartbeat = HeartbeatConfig(
             enabled=False,

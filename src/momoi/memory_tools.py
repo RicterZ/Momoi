@@ -127,7 +127,8 @@ def _episode_time_range(
 MEMORY_TOOL_POLICY = """### Memory tools
 
 Writing a memory is a judgment, not a reflex. Ask whether the owner just
-stated a fact that later Turns must treat as true. Ordinary chat, venting,
+stated a fact in authenticated owner evidence available to this Turn that
+later Turns must treat as true. Ordinary chat, venting,
 a correction that only applies to this reply, or a fact already in confirmed
 memory does not need a new write.
 
@@ -318,8 +319,9 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
     {
         "name": "memory_remember",
         "description": (
-            "Stage one memory the authenticated user just stated in the current "
-            "input. Default activation is recall. Use always only for a standing "
+            "Stage one memory supported by an exact quote from authenticated owner "
+            "evidence available to this Turn. Default activation is recall. Use "
+            "always only for a standing "
             "rule that should color ordinary chat even off-topic; 记住 and how-to "
             "playbooks are recall. The write commits only when this turn finishes "
             "successfully."
@@ -371,7 +373,10 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
                 },
                 "evidence": {
                     "type": "string",
-                    "description": "Exact contiguous quote from one current user message.",
+                    "description": (
+                        "Exact contiguous quote from one authenticated owner message "
+                        "available to this Turn."
+                    ),
                 },
                 "importance": {
                     "type": "number",
@@ -403,7 +408,7 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
         "name": "memory_forget",
         "description": (
             "Forget one committed long-term memory when the authenticated user "
-            "explicitly requests it in the current input."
+            "explicitly requested it in owner evidence available to this Turn."
         ),
         "input_schema": {
             "type": "object",
@@ -412,7 +417,10 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
                 "key": {"type": "string"},
                 "evidence": {
                     "type": "string",
-                    "description": "Exact contiguous quote from one current user message.",
+                    "description": (
+                        "Exact contiguous quote from one authenticated owner message "
+                        "available to this Turn."
+                    ),
                 },
             },
             "required": ["kind", "key", "evidence"],
@@ -446,7 +454,8 @@ _MEMORY_ERROR_MESSAGES = {
     "invalid_key": "key must be a lowercase stable identifier using dots or hyphens.",
     "invalid_content": "content must contain between 1 and 2000 characters.",
     "evidence_not_in_current_input": (
-        "evidence must be one exact contiguous quote from a current owner message."
+        "evidence must be one exact contiguous quote from authenticated owner "
+        "evidence available to this Turn."
     ),
     "invalid_replace_confirmed": "replace_confirmed must be a boolean.",
     "invalid_ttl": "ttl_hours must be within the allowed range for recent memory.",

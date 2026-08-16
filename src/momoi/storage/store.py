@@ -1072,6 +1072,15 @@ class Store(MemoryStore, DeliveryStore):
         ).fetchall()
         return [self._incoming_message(row) for row in rows]
 
+    def recent_owner_events(self, limit: int = 20) -> list[IncomingMessage]:
+        rows = self._db.execute(
+            """SELECT * FROM events
+               WHERE processed=1 AND content NOT LIKE '/%'
+               ORDER BY received_at DESC, rowid DESC LIMIT ?""",
+            (max(0, limit),),
+        ).fetchall()
+        return [self._incoming_message(row) for row in reversed(rows)]
+
     def heartbeat_conversation_snapshot(self) -> dict[str, object]:
         revision = int(
             self._db.execute("SELECT COALESCE(MAX(rowid), 0) FROM events").fetchone()[0]
@@ -3875,6 +3884,7 @@ class Store(MemoryStore, DeliveryStore):
         reason: str,
         reply_expectation: str = "",
         draft: TurnDraft | None = None,
+        memory_events: list[IncomingMessage] | None = None,
         reply_initial_interval_seconds: float = 60,
         notification_channel: str = "",
     ) -> int:
@@ -3890,6 +3900,7 @@ class Store(MemoryStore, DeliveryStore):
             reason=reason,
             reply_expectation=reply_expectation,
             draft=draft,
+            memory_events=memory_events,
             reply_initial_interval_seconds=reply_initial_interval_seconds,
             notification_channel=notification_channel,
         )
@@ -3908,6 +3919,7 @@ class Store(MemoryStore, DeliveryStore):
         reason: str,
         reply_expectation: str = "",
         draft: TurnDraft | None = None,
+        memory_events: list[IncomingMessage] | None = None,
         pending_reply_turn_id: str | None = None,
         continue_reply_wait: bool = False,
         reply_initial_interval_seconds: float = 60,
@@ -4030,6 +4042,15 @@ class Store(MemoryStore, DeliveryStore):
                 )
             else:
                 self._apply_goal_mutations(draft, now)
+                self._apply_reminder_mutations(draft, now)
+                for memory in draft.memories if draft else []:
+                    self._remember(memory, memory_events or [], now)
+                for conflict in draft.memory_conflicts if draft else []:
+                    self._propose_memory_conflict(
+                        conflict, memory_events or [], now
+                    )
+                for forgotten in draft.forgotten_memories if draft else []:
+                    self._forget_memory(forgotten, memory_events or [], now)
                 activity_since = (
                     current["activity_since"]
                     if current["activity"] == activity

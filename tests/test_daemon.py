@@ -93,6 +93,34 @@ class DaemonTest(unittest.TestCase):
         self.assertNotIn("Built-in runtime tools", owner[1]["text"])
         self.assertIn("Agenda tools", owner[1]["text"])
 
+    def test_heartbeat_self_directed_tools_allow_configured_mcp_effects(self) -> None:
+        daemon = object.__new__(MomoiDaemon)
+        daemon.config = SimpleNamespace(
+            autonomy=SimpleNamespace(
+                allowed_tools=(
+                    "list_dir",
+                    "mcp__homeassistant*",
+                )
+            )
+        )
+        daemon.mcp = SimpleNamespace(
+            tool_specs=[
+                {"name": "mcp__homeassistant__GetLiveContext"},
+                {"name": "mcp__homeassistant__HassTurnOn"},
+            ]
+        )
+        names = {
+            spec["name"] for spec in daemon._self_directed_tool_specs()
+        }
+        self.assertEqual(
+            names,
+            {
+                "list_dir",
+                "mcp__homeassistant__GetLiveContext",
+                "mcp__homeassistant__HassTurnOn",
+            },
+        )
+
     def test_emotion_catalog_is_cached_system_block(self) -> None:
         daemon = object.__new__(MomoiDaemon)
         daemon.config = SimpleNamespace(
@@ -1342,7 +1370,17 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         ):
                             raise AssertionError(__)
                         expected = {
+                            "memory_search",
+                            "conversation_search",
+                            "conversation_read",
+                            "memory_remember",
+                            "memory_forget",
                             "goal_create",
+                            "goal_update",
+                            "goal_finish",
+                            "goal_cancel",
+                            "reminder_create",
+                            "reminder_cancel",
                             "curl",
                             "read_file",
                             "list_dir",
@@ -1543,7 +1581,10 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             or "浏览微博关注流" not in request
                             or "shared.weibo.login_expired_notify" not in request
                             or "微博登录过期时主动提醒" not in request
-                            or "memory_search" in names
+                            or "memory_search" not in names
+                            or "memory_remember" not in names
+                            or "goal_update" not in names
+                            or "reminder_create" not in names
                         ):
                             raise AssertionError((system, request, names))
                         call = ToolCall(

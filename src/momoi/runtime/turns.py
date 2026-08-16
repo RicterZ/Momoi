@@ -1,4 +1,5 @@
 import asyncio
+import fnmatch
 import json
 import logging
 import re
@@ -1887,14 +1888,17 @@ class TurnRunner:
             return False
 
     def _self_directed_tool_specs(self) -> list[dict[str, Any]]:
-        allowed = set(self.config.autonomy.allowed_tools)
+        patterns = self.config.autonomy.allowed_tools
         return [
             spec
             for spec in [
                 *SELF_DIRECTED_BUILTIN_TOOL_SPECS,
-                *self.mcp.read_only_tool_specs,
+                *self.mcp.tool_specs,
             ]
-            if spec["name"] in allowed
+            if any(
+                fnmatch.fnmatchcase(str(spec["name"]), pattern)
+                for pattern in patterns
+            )
         ]
 
     def _send_message_tool_spec(
@@ -2989,6 +2993,7 @@ class TurnRunner:
                 ),
             ),
             ("active_goals", goals),
+            ("pending_reminders", self.store.active_reminders_context()),
             (
                 "recent_topic_reference",
                 json.dumps(recent_topics, ensure_ascii=False),
@@ -3023,22 +3028,23 @@ class TurnRunner:
                 ],
             },
         ]
-        goal_create = [
-            spec for spec in AGENDA_TOOL_SPECS if spec["name"] == "goal_create"
-        ]
         tools = [
-            *goal_create,
+            *MEMORY_TOOL_SPECS,
+            *AGENDA_TOOL_SPECS,
             *self._self_directed_tool_specs(),
             REPLY_EXPECTATION_CLOSE_SPEC,
             self._send_message_tool_spec(delivery_channel.name),
             heartbeat_respond_tool_spec(),
         ]
         draft = TurnDraft()
+        memory_events = self.store.recent_owner_events(
+            max(20, self.config.recent_turns * 4)
+        )
         reply = await self._run_tool_loop(
             system,
             messages,
             tools,
-            [],
+            memory_events,
             draft,
             authority="agent",
             source_event_id=f"heartbeat:{turn_id}",
@@ -3046,9 +3052,10 @@ class TurnRunner:
             turn_id=turn_id,
             require_response=True,
             heartbeat_turn=True,
+            dynamic_tool_policies=True,
             heartbeat_owner_event_revision=owner_event_revision,
             heartbeat_notification_key=notification_key,
-            allowed_capabilities={"read", "write"},
+            allowed_capabilities={"read", "write", "external_effect"},
             artifact_root=artifact_root,
             delivery_channel=delivery_channel,
         )
@@ -3076,6 +3083,7 @@ class TurnRunner:
             reason=decision["reason"],
             reply_expectation=decision["reply_expectation"],
             draft=draft,
+            memory_events=memory_events,
             reply_initial_interval_seconds=(
                 self.config.heartbeat.reply_initial_interval_seconds
             ),
