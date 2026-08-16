@@ -353,6 +353,29 @@ REFLECTION_FINISH_SPEC: dict[str, Any] = {
                     "additionalProperties": False,
                 },
             },
+            "recent_memory_actions": {
+                "type": "array",
+                "maxItems": 8,
+                "description": (
+                    "Review active recent memories by memory_id. Use extend when the "
+                    "state remains active, promote_recall when it became durable, "
+                    "or forget when it is finished or stale."
+                ),
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "memory_id": {"type": "integer", "minimum": 1},
+                        "action": {
+                            "type": "string",
+                            "enum": ["extend", "promote_recall", "forget"],
+                        },
+                        "ttl_hours": {"type": "number", "minimum": 1, "maximum": 168},
+                        "reason": {"type": "string", "minLength": 1, "maxLength": 400},
+                    },
+                    "required": ["memory_id", "action", "reason"],
+                    "additionalProperties": False,
+                },
+            },
             "conversation_actions": {
                 "type": "array",
                 "maxItems": 32,

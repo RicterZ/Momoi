@@ -4437,6 +4437,7 @@ class Store(MemoryStore, DeliveryStore):
         memories: list[dict[str, object]],
         always_memory_actions: list[dict[str, object]] | None = None,
         conversation_actions: list[dict[str, object]] | None = None,
+        recent_memory_actions: list[dict[str, object]] | None = None,
     ) -> None:
         reflection_id = f"reflection:{local_date}"
         now = time.time()
@@ -4483,6 +4484,9 @@ class Store(MemoryStore, DeliveryStore):
                 always_memory_actions or [],
                 source_id=reflection_id,
                 now=now,
+            )
+            self.apply_recent_memory_actions(
+                recent_memory_actions or [], source_id=reflection_id, now=now
             )
             self.apply_conversation_actions(conversation_actions or [], now=now)
             self._db.execute(

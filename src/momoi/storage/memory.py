@@ -355,10 +355,69 @@ class MemoryStore:
                 str(memory["kind"]), str(memory["key"]), "forgotten", now
             )
 
+    def apply_recent_memory_actions(
+        self,
+        actions: list[dict[str, object]],
+        *,
+        source_id: str,
+        now: float,
+    ) -> None:
+        for item in actions:
+            row = self._db.execute(
+                """SELECT id, kind, key, content FROM memories
+                   WHERE id=? AND activation='recent' AND superseded_by IS NULL""",
+                (int(item["memory_id"]),),
+            ).fetchone()
+            if row is None:
+                continue
+            action = item["action"]
+            if action == "extend":
+                expires_at = memory_expires_at("recent", float(item["ttl_hours"]), now)
+                self._db.execute(
+                    "UPDATE memories SET expires_at=?, updated_at=? WHERE id=?",
+                    (expires_at, now, row["id"]),
+                )
+            elif action == "promote_recall":
+                self._db.execute(
+                    "UPDATE memories SET activation='recall', expires_at=NULL, updated_at=? WHERE id=?",
+                    (now, row["id"]),
+                )
+            elif action == "forget":
+                self._db.execute(
+                    """INSERT INTO memory_tombstones
+                       (kind, key, source_event_id, evidence_quote, created_at)
+                       VALUES (?, ?, ?, ?, ?)
+                       ON CONFLICT(kind, key) DO UPDATE SET
+                         source_event_id=excluded.source_event_id,
+                         evidence_quote=excluded.evidence_quote,
+                         created_at=excluded.created_at""",
+                    (row["kind"], row["key"], source_id, str(item["reason"]), now),
+                )
+                self._resolve_memory_conflicts(row["kind"], row["key"], "forgotten", now)
+
     def recent_memory_context(self, token_budget: int) -> str:
         self.purge_expired_memories()
         return self._compact_memory_context(
             "老师近期需要保持的上下文", self._memory_rows("recent"), token_budget
+        )
+
+    def recent_memory_inventory_context(self) -> str:
+        self.purge_expired_memories()
+        rows = self._db.execute(
+            """SELECT id, kind, key, content, expires_at, updated_at
+               FROM memories AS m
+               WHERE m.activation='recent' AND m.superseded_by IS NULL
+                 AND (m.expires_at IS NULL OR m.expires_at > ?)
+                 AND (m.expires_at IS NOT NULL OR m.updated_at >= ?)
+               ORDER BY m.updated_at DESC, m.id DESC LIMIT 32""",
+            (time.time(), time.time() - RECENT_MEMORY_WINDOW_SECONDS),
+        ).fetchall()
+        if not rows:
+            return "No active recent memories are stored."
+        return "\n".join(
+            f"memory_id={row['id']} [{row['kind']}:{row['key']}] "
+            f"{row['content']} expires_at={context_timestamp(row['expires_at']) if row['expires_at'] else 'legacy-window'}"
+            for row in rows
         )
 
     def memory_context(self, query: str, max_results: int, token_budget: int) -> str:

@@ -3231,6 +3231,7 @@ class TurnRunner:
         recent_memories = self.store.recent_memory_context(
             max(100, self.config.memory_tokens // 8)
         )
+        recent_memory_inventory = self.store.recent_memory_inventory_context()
         episodes = recall_episode_context(
             self.store,
             query,
@@ -3253,6 +3254,7 @@ class TurnRunner:
             ("always_memory_inventory", self.store.always_memory_inventory_context()),
             ("open_conversations", self.store.open_conversation_inventory_context()),
             ("recent_memories", recent_memories),
+            ("recent_memory_inventory", recent_memory_inventory),
             ("confirmed_owner_memory", confirmed_memory),
             ("reflection_memory", learned),
         )
@@ -3334,6 +3336,11 @@ class TurnRunner:
                     knowledge_source,
                     always_memory_ids,
                     open_episode_ids,
+                    {
+                        int(item["id"])
+                        for item in self.store.list_memories(32)
+                        if item.get("activation") == "recent"
+                    },
                 )
                 if decision is not None:
                     self.store.commit_reflection(
@@ -3343,6 +3350,7 @@ class TurnRunner:
                         decision["memories"],
                         decision["always_memory_actions"],
                         decision["conversation_actions"],
+                        decision["recent_memory_actions"],
                     )
                     self.agenda_changed.set()
                     log_event(
