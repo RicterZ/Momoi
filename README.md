@@ -4,7 +4,7 @@ EN | [中文](./README.zh-CN.md)
 
 > A persistent personal AI companion for private chat — with memory, agency, mood, and a life rhythm of her own.
 
-Momoi is a headless, single-owner AI agent that lives in private chat through NapCat/QQ or Tencent Weixin iLink. She can talk naturally, remember shared context, use tools, manage long-running tasks, react to events from your home and services, and decide when it is genuinely worth starting a conversation.
+Momoi is a headless, single-owner AI agent that lives in private chat through NapCat/QQ or Tencent Weixin iLink. She can talk naturally, remember shared context, use tools, manage long-running tasks, react to external events, and decide when it is genuinely worth starting a conversation.
 
 The goal is not to build another question-and-answer bot. The goal is to create one continuous person who can stay with you, understand what is happening, and get things done.
 
@@ -18,7 +18,7 @@ Most chatbots are stateless request handlers with a personality prompt attached.
 - **Context before response.** She first understands what this moment is about, then brings back the shared history that matters — not the entire chat log.
 - **Agency, not turn-taking.** She can acknowledge a task, use tools, send useful progress, and continue until the work is complete or genuinely blocked.
 - **Autonomy with restraint.** Goals, reminders, and heartbeats let her act over time without turning every timer into an unwanted notification.
-- **One life across every channel.** QQ messages, home events, webhooks, scheduled work, and proactive thoughts all reach the same Momoi.
+- **One life across every channel.** QQ messages, webhooks, scheduled work, and proactive thoughts all reach the same Momoi.
 - **Honest execution.** She only claims an external action succeeded after receiving a confirming result.
 
 ## Product design
@@ -26,15 +26,27 @@ Most chatbots are stateless request handlers with a personality prompt attached.
 ```mermaid
 flowchart TB
   subgraph reach["How she is reached"]
-    direction LR
+    direction TB
     owner["Owner message"]
-    events["Webhook event"]
-    goal["Goal"]
-    heartbeat["Heartbeat"]
+    subgraph also[" "]
+      direction LR
+      events["Webhook event"]
+      goal["Goal"]
+      heartbeat["Heartbeat"]
+    end
   end
   momoi["One continuous Momoi"]
   out["Natural conversation and actions"]
-  reach --> momoi --> out
+  subgraph keep["What she keeps"]
+    direction LR
+    reflection["Daily reflection"]
+    memory["Lasting memory"]
+    history["Shared history"]
+    agenda["Goals and reminders"]
+  end
+  reach --> momoi
+  momoi --> out
+  momoi --> keep
 ```
 
 Momoi can be reached in four ways:
@@ -42,11 +54,41 @@ Momoi can be reached in four ways:
 | Entry | Purpose |
 | --- | --- |
 | Owner message | Conversation, questions, corrections, and immediate tasks |
-| Webhook event | Events from Home Assistant, Jellyfin, cameras, or other services |
+| Webhook event | Events from other services |
 | Goal | Work that must continue later or repeat with fresh reasoning and tools |
 | Heartbeat | A low-priority autonomous Turn to explore, make artifacts, continue her own work, and decide whether to speak |
 
-They share the same identity and relevant context. A webhook notification should sound like the person you were just talking to, not a separate automation bot.
+They share the same identity and relevant context. Conversation, daily reflection, and memory stay with her. A webhook notification should sound like the person you were just talking to, not a separate automation bot.
+
+### How a moment works
+
+Momoi does not turn the latest message into a reply in one shot. The important part is what she is given before she speaks.
+
+```mermaid
+flowchart TB
+  subgraph who["Who she is"]
+    direction LR
+    rules["Ground rules"]
+    soul["Soul"]
+    voice["How she talks"]
+  end
+  subgraph now["This moment"]
+    direction TB
+    you["Your current words"]
+    reading["A private reading of this moment"]
+    need["Only the memory and history it needs"]
+    state["Time, mood, and open work"]
+  end
+  who --> now
+  now --> speak["Talk, act, or stay quiet"]
+  speak --> close["Close the beat"]
+```
+
+**Who she is stays in front of every moment.** The same ground rules, Soul, and speaking style sit there every time. They say who she is, how she talks, and what may count as evidence. Personality cannot override those rules, and recalled memory cannot rewrite who she is.
+
+**This moment is assembled, not dumped.** Recent conversation is already with her. She first privately understands what this moment is about, then brings back only the older memory and shared history it needs. Your current words are the only current intent. Everything else — older chat, shared history, preferences, goals, daily notes, mood — is context she may use, not a new instruction. Your newest correction wins over older memory. What she learned on her own sits lower than what you actually said.
+
+**Speaking and closing stay separate.** She may send a message, finish the work, or stay quiet, then settle the beat — her mood, what she is doing, and whether she is still waiting. Goals and heartbeats follow the same shape: the same person, a freshly assembled moment, then a decision to speak or not.
 
 ## Core experience
 
@@ -86,7 +128,7 @@ Goal and Heartbeat notifications respect quiet hours, cooldowns, and pending own
 - Carry relevant context, memories, preferences, and commitments over time
 - Use connected tools and services to complete real tasks
 - Manage one-time reminders and work that continues or repeats
-- Respond naturally to events from the home and other services, or stay quiet when they add nothing
+- Respond naturally to external events, or stay quiet when they add nothing
 - Exchange chat media and use optional image reactions
 - Maintain mood, activity, reflection, and bounded initiative
 - Stop work or recover safely when an external result is uncertain
@@ -189,7 +231,7 @@ momoi emotion del --slug very-happy-dance
 
 Place a standard `mcp.json` in the workspace to connect MCP servers.
 
-This is the intended way to add Home Assistant, search, media management, or other domain-specific capabilities. Momoi stays focused on being the agent; mature external services remain external plugins.
+This is the intended way to add search or other domain-specific capabilities. Momoi stays focused on being the agent; mature external services remain external plugins.
 
 ## Receive external events
 
@@ -199,44 +241,10 @@ Enable webhooks in `config.json`, choose a reachable bind address, and set a tok
 curl -X POST http://127.0.0.1:8787/webhooks/event-message \
   -H "Authorization: Bearer $MOMOI_WEBHOOK_TOKEN" \
   -H "Content-Type: application/json" \
-  --data '{"event_prompt":"The washing machine has finished. Remind the owner to collect the laundry."}'
+  --data '{"event_prompt":"The watched page has a new update. Tell the owner what changed."}'
 ```
 
 The example workspace also includes a neutral `url-check-event` workflow that demonstrates a validated command step followed by a natural notification.
-
-## Manage persistent goals
-
-Momoi can create goals during conversation. They can also be inspected and managed from the CLI:
-
-```bash
-momoi goal add \
-  --title "Daily weather" \
-  --success "Send useful weather and riding advice every morning" \
-  --action "Check the weather for the owner's area" \
-  --daily 07:30
-
-momoi goal list
-momoi goal list --all
-momoi goal del <goal-id-or-prefix> --reason "No longer needed"
-```
-
-Use `--at` for a future one-time review or `--every-seconds` for a recurring interval.
-
-## CLI commands
-
-`--workspace /path/to/workspace` may be placed before any command.
-
-| Command | Purpose |
-| --- | --- |
-| `momoi run [--dashboard] [--dashboard-host <host>] [--dashboard-port <port>]` | Start the daemon and optionally open the Web dashboard |
-| `momoi --version` | Print the installed version |
-| `momoi channel login <name>` | Authenticate a configured channel when it needs login |
-| `momoi emotion add --slug <slug> --path <file> --desc <text>` | Add or update an image reaction asset |
-| `momoi emotion list` | List image reaction assets |
-| `momoi emotion del --slug <slug>` | Delete an image reaction asset |
-| `momoi goal add --title <title> --success <text> --action <text> [--at <time> \| --every-seconds <seconds> \| --daily HH:MM]` | Create a persistent goal |
-| `momoi goal list [--all]` | List active or all goals |
-| `momoi goal del <goal-id-or-prefix> [--reason <text>]` | Cancel a goal |
 
 ## Owner controls
 
@@ -250,25 +258,9 @@ Use `--at` for a future one-time review or `--every-seconds` for a recurring int
 
 When `/resolve` or `/resume` is needed, Momoi sends a recovery message that includes the short `<id>` and the command form to use. Copy that command and replace only the result or current-state text. She will not repeat the uncertain action just because the process restarted.
 
-## Current scope
-
-- One trusted owner across one or more private-chat channels
-- No group-chat or multi-user isolation
-- Designed for a trusted personal environment
-- Connected tools receive the real access granted to them
-
-Protect the workspace, API keys, webhook/dashboard passphrases, and connected MCP services.
-
-## Development
-
-```bash
-uv run python -m unittest discover -s tests -v
-uvx ruff check src tests
-```
-
 ## Documentation
 
 - [Configuration and capability access](./docs/CONFIG.md)
 - [Webhook workflows](./docs/WORKFLOW.md)
 
-Momoi is not defined by a specific model, smart-home platform, or message provider. She is the continuity between identity, context, memory, action, and time.
+Momoi is not defined by a specific model or message provider. She is the continuity between identity, context, memory, action, and time.

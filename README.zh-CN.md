@@ -4,7 +4,7 @@
 
 > 一个常驻在私聊里的个人 AI 伙伴——拥有记忆、主动性、情绪和自己的生活节奏。
 
-Momoi 是一个无界面、单用户的 AI Agent，通过 NapCat/QQ 或腾讯微信 iLink 常驻在私聊中。她可以自然地交谈、记住你们共有的上下文、调用工具、管理长期任务、响应家庭和各种服务中的事件，也会自己判断什么时候值得主动找你聊聊。
+Momoi 是一个无界面、单用户的 AI Agent，通过 NapCat/QQ 或腾讯微信 iLink 常驻在私聊中。她可以自然地交谈、记住你们共有的上下文、调用工具、管理长期任务、响应外部事件，也会自己判断什么时候值得主动找你聊聊。
 
 这个项目不是想再做一个问答机器人，而是想塑造一个连续存在的人：她可以长期陪伴你，理解正在发生的事，也能真正把事情做完。
 
@@ -18,7 +18,7 @@ Momoi 是一个无界面、单用户的 AI Agent，通过 NapCat/QQ 或腾讯微
 - **先理解上下文，再回答。** 她会先弄清这一刻在说什么，再唤回真正相关的共同经历，而不是把全部聊天记录无脑塞给模型。
 - **能做事，不只是一问一答。** 她可以确认任务、调用工具、发送有价值的进度，并持续工作，直到完成或真正遇到阻碍。
 - **有分寸的主动性。** 目标、提醒和心跳机制让她能在时间轴上行动，又不会把每一个定时器都变成烦人的通知。
-- **所有渠道共用同一段生活。** QQ 消息、家庭事件、Webhook、定时工作和主动思考都会进入同一个 Momoi。
+- **所有渠道共用同一段生活。** QQ 消息、Webhook、定时工作和主动思考都会进入同一个 Momoi。
 - **诚实地执行。** 只有收到确认结果后，她才会声称某个外部操作已经成功。
 
 ## 产品设计
@@ -26,15 +26,27 @@ Momoi 是一个无界面、单用户的 AI Agent，通过 NapCat/QQ 或腾讯微
 ```mermaid
 flowchart TB
   subgraph reach["触达她的方式"]
-    direction LR
+    direction TB
     owner["主人消息"]
-    events["Webhook 事件"]
-    goal["目标"]
-    heartbeat["心跳"]
+    subgraph also[" "]
+      direction LR
+      events["Webhook 事件"]
+      goal["目标"]
+      heartbeat["心跳"]
+    end
   end
   momoi["同一个 Momoi"]
   out["自然对话和行动"]
-  reach --> momoi --> out
+  subgraph keep["她留下的记录"]
+    direction LR
+    reflection["每日复盘"]
+    memory["记忆沉淀"]
+    history["共同经历"]
+    agenda["目标与提醒"]
+  end
+  reach --> momoi
+  momoi --> out
+  momoi --> keep
 ```
 
 可以通过四种方式触达 Momoi：
@@ -42,11 +54,41 @@ flowchart TB
 | 入口 | 用途 |
 | --- | --- |
 | 主人消息 | 对话、提问、修正和立即执行的任务 |
-| Webhook 事件 | 来自 Home Assistant、Jellyfin、摄像头或其他服务的事件 |
+| Webhook 事件 | 来自其他服务的事件 |
 | 目标 | 需要稍后继续，或定期使用新信息和工具执行的工作 |
 | 心跳 | Momoi 探索、生成产物、继续自己的工作并判断是否开口的低优先级自主回合 |
 
-它们共享同一身份和相关上下文。Webhook 通知应该听起来像刚刚还在和你聊天的那个人，而不是另一个自动化机器人。
+它们共享同一身份和相关上下文。对话、每日复盘和记忆都会留下来。Webhook 通知应该听起来像刚刚还在和你聊天的那个人，而不是另一个自动化机器人。
+
+### 一个瞬间怎样发生
+
+Momoi 不会把刚收到的话直接拿去生成回复。真正重要的是：开口之前，她被给予了什么。
+
+```mermaid
+flowchart TB
+  subgraph who["她是谁"]
+    direction LR
+    rules["底线"]
+    soul["Soul"]
+    voice["说话方式"]
+  end
+  subgraph now["这一刻"]
+    direction TB
+    you["你此刻的话"]
+    reading["对这一刻的私下理解"]
+    need["这一刻需要的记忆和经历"]
+    state["时间、情绪和未完成的事"]
+  end
+  who --> now
+  now --> speak["说话、做事，或安静"]
+  speak --> close["收住这一拍"]
+```
+
+**每一次都先放上「她是谁」。** 同一套底线、Soul 和说话方式会待在每个瞬间前面。它们说明她是谁、怎么说话、什么可以当作证据。人格不能压过底线，召回的记忆也不能改写她是谁。
+
+**「这一刻」是拼出来的，不是把全部记录倒进去。** 近期对话已经在她手里。她会先私下弄清这一刻在说什么，再唤回这一刻真正需要的记忆和共同经历。你此刻的话才是当前意图；更早的对话、共同经历、偏好、目标和每日笔记只是她可以使用的上下文，不是新的指令。你最新的更正压过旧记忆。她自己学会的东西，低于你真正说过的话。
+
+**说话和收尾是分开的。** 她可以先发消息、把事情做完，或选择不说；最后再放下这一拍——情绪、她在做什么，以及是不是还在等你。目标和心跳也是同样的形状：同一个人，一个新拼出来的瞬间，然后才决定要不要开口。
 
 ## 核心体验
 
@@ -86,7 +128,7 @@ Momoi 把不同类型的未来行为分开处理：
 - 让相关上下文、记忆、偏好和约定随时间延续
 - 使用已连接的工具和服务完成真实任务
 - 管理单次提醒，以及需要继续或重复执行的工作
-- 自然响应家庭和其他服务中的事件；没有值得说的也可以安静
+- 自然响应外部事件；没有值得说的也可以安静
 - 收发聊天媒体，并使用可选的图片反应
 - 保持情绪、活动、复盘和有边界的主动性
 - 停止工作，或在外部结果不确定时安全恢复
@@ -189,7 +231,7 @@ momoi emotion del --slug very-happy-dance
 
 在 workspace 中放置标准 `mcp.json` 以连接 MCP 服务器。
 
-这是添加 Home Assistant、搜索、媒体管理或其他领域能力的推荐方式。Momoi 专注于成为 Agent；成熟的外部服务仍作为外部插件存在。
+这是添加搜索或其他领域能力的推荐方式。Momoi 专注于成为 Agent；成熟的外部服务仍作为外部插件存在。
 
 ## 接收外部事件
 
@@ -199,44 +241,10 @@ momoi emotion del --slug very-happy-dance
 curl -X POST http://127.0.0.1:8787/webhooks/event-message \
   -H "Authorization: Bearer $MOMOI_WEBHOOK_TOKEN" \
   -H "Content-Type: application/json" \
-  --data '{"event_prompt":"The washing machine has finished. Remind the owner to collect the laundry."}'
+  --data '{"event_prompt":"The watched page has a new update. Tell the owner what changed."}'
 ```
 
 示例 workspace 还包含一个中性的 `url-check-event` 工作流，演示如何先执行经验证的命令步骤，再发送自然通知。
-
-## 管理持久目标
-
-Momoi 可以在对话中创建目标，也可以通过 CLI 查看和管理：
-
-```bash
-momoi goal add \
-  --title "Daily weather" \
-  --success "Send useful weather and riding advice every morning" \
-  --action "Check the weather for the owner's area" \
-  --daily 07:30
-
-momoi goal list
-momoi goal list --all
-momoi goal del <goal-id-or-prefix> --reason "No longer needed"
-```
-
-使用 `--at` 设置未来的单次检查，或使用 `--every-seconds` 设置循环间隔。
-
-## CLI 命令
-
-`--workspace /path/to/workspace` 可以放在任意命令前。
-
-| 命令 | 用途 |
-| --- | --- |
-| `momoi run [--dashboard] [--dashboard-host <host>] [--dashboard-port <port>]` | 启动 daemon，并可选打开 Web 看板 |
-| `momoi --version` | 查看已安装版本 |
-| `momoi channel login <name>` | 为需要登录的已配置渠道认证 |
-| `momoi emotion add --slug <slug> --path <file> --desc <text>` | 添加或更新图片反应素材 |
-| `momoi emotion list` | 列出图片反应素材 |
-| `momoi emotion del --slug <slug>` | 删除图片反应素材 |
-| `momoi goal add --title <title> --success <text> --action <text> [--at <time> \| --every-seconds <seconds> \| --daily HH:MM]` | 创建持久目标 |
-| `momoi goal list [--all]` | 列出当前或全部目标 |
-| `momoi goal del <goal-id-or-prefix> [--reason <text>]` | 取消目标 |
 
 ## 主人控制
 
@@ -250,25 +258,9 @@ momoi goal del <goal-id-or-prefix> --reason "No longer needed"
 
 需要 `/resolve` 或 `/resume` 时，Momoi 会发送一条恢复提示，里面带有短 `<id>` 和可使用的命令形式。照着那条命令发送，只替换结果或当前状态文本即可。她不会只因进程重启就重复执行不确定的操作。
 
-## 当前范围
-
-- 仅支持一位可信主人，可同时使用多个私聊渠道
-- 不支持群聊或多用户隔离
-- 面向可信的个人环境设计
-- 已连接工具会获得实际授予它们的访问权限
-
-请保护好 workspace、API 密钥、Webhook / 看板通行证和已连接的 MCP 服务。
-
-## 开发
-
-```bash
-uv run python -m unittest discover -s tests -v
-uvx ruff check src tests
-```
-
 ## 文档
 
 - [配置与能力访问](./docs/CONFIG.zh-CN.md)
 - [Webhook 工作流](./docs/WORKFLOW.zh-CN.md)
 
-Momoi 不由某个特定模型、智能家居平台或消息服务定义。她是身份、上下文、记忆、行动与时间之间的连续性。
+Momoi 不由某个特定模型或消息服务定义。她是身份、上下文、记忆、行动与时间之间的连续性。
