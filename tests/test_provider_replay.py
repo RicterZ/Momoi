@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, call, patch
 
 from aiohttp import web
 from aiohttp.test_utils import TestServer
@@ -41,13 +41,15 @@ class ProviderReplayTests(unittest.IsolatedAsyncioTestCase):
             provider = OpenAIProvider(
                 _config(str(server.make_url("/")).rstrip("/"), "openai")
             )
-            with patch("momoi.provider.asyncio.sleep", new=AsyncMock()):
+            sleep = AsyncMock()
+            with patch("momoi.provider.asyncio.sleep", new=sleep):
                 async with provider:
                     response = await provider.complete(
                         "system", [{"role": "user", "content": "test"}]
                     )
             self.assertEqual(response.content[0]["text"], "ok")
             self.assertEqual(attempts, 2)
+            self.assertEqual(sleep.await_args_list, [call(1)])
         finally:
             await server.close()
 
@@ -68,13 +70,15 @@ class ProviderReplayTests(unittest.IsolatedAsyncioTestCase):
             provider = AnthropicProvider(
                 _config(str(server.make_url("/")).rstrip("/"), "anthropic")
             )
-            with patch("momoi.provider.asyncio.sleep", new=AsyncMock()):
+            sleep = AsyncMock()
+            with patch("momoi.provider.asyncio.sleep", new=sleep):
                 async with provider:
                     response = await provider.complete(
                         "system", [{"role": "user", "content": "test"}]
                     )
             self.assertEqual(response.content[0]["text"], "ok")
             self.assertEqual(attempts, 2)
+            self.assertEqual(sleep.await_args_list, [call(1)])
         finally:
             await server.close()
 

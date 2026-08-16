@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from time import monotonic, time
-from typing import Any, Callable
+from typing import Any, Awaitable, Callable
 from urllib.parse import urlsplit
 
 import aiohttp
@@ -203,6 +203,105 @@ def _persist_usage(
         )
 
 
+def _record_response(
+    data: dict[str, Any],
+    *,
+    protocol: str,
+    attempt_started: float,
+    dump_path: Path | None,
+    usage_sink: Callable[..., None] | None,
+    model: str,
+) -> tuple[int, dict[str, float | int | bool] | None]:
+    _dump_response(dump_path, data)
+    duration_ms = int((monotonic() - attempt_started) * 1000)
+    metrics = _log_usage(data, protocol=protocol, duration_ms=duration_ms)
+    _persist_usage(usage_sink, metrics, model=model)
+    return duration_ms, metrics
+
+
+def _anthropic_should_retry(error: Exception) -> bool:
+    return getattr(error, "_http_status", 0) >= 500 or isinstance(
+        error,
+        (ProviderResponseError, aiohttp.ClientError, asyncio.TimeoutError),
+    )
+
+
+def _openai_should_retry(error: Exception) -> bool:
+    return getattr(error, "_http_status", 0) >= 500 or isinstance(
+        error,
+        (ProviderResponseError, aiohttp.ClientError, asyncio.TimeoutError),
+    )
+
+
+async def _retry_request(
+    *,
+    protocol: str,
+    max_retries: int,
+    request_fields: dict[str, Any],
+    operation: Callable[[float], Awaitable[ProviderResponse]],
+    should_retry: Callable[[Exception], bool],
+) -> ProviderResponse:
+    last_error: Exception | None = None
+    for attempt in range(max_retries + 1):
+        attempt_started = monotonic()
+        log_event(
+            logger,
+            logging.DEBUG,
+            "llm_request",
+            protocol=protocol,
+            **request_fields,
+            attempt=attempt + 1,
+            attempt_max=max_retries + 1,
+        )
+        try:
+            return await operation(attempt_started)
+        except (
+            ProviderError,
+            aiohttp.ClientError,
+            asyncio.TimeoutError,
+        ) as error:
+            last_error = error
+            status = getattr(error, "_http_status", None)
+            reason = (
+                safe_preview(str(error), 300)
+                if isinstance(error, ProviderError)
+                else None
+            )
+            if attempt < max_retries and should_retry(error):
+                delay = _retry_delay(attempt)
+                _log_retry(
+                    protocol,
+                    attempt,
+                    max_retries,
+                    delay,
+                    status=status,
+                    error=error if status is None else None,
+                    reason=(
+                        reason
+                        if isinstance(error, ProviderResponseError)
+                        else None
+                    ),
+                )
+                await asyncio.sleep(delay)
+                continue
+            _log_failure(
+                protocol,
+                attempt,
+                max_retries,
+                int((monotonic() - attempt_started) * 1000),
+                error,
+                status=status,
+                reason=reason,
+            )
+            if isinstance(error, (ProviderError,)):
+                raise
+            break
+    name = "OpenAI" if protocol == "openai" else "Anthropic"
+    raise ProviderError(
+        f"{name}-compatible request failed: {type(last_error).__name__}"
+    )
+
+
 def _dump_request(
     dump_dir: Path | None,
     enabled: bool,
@@ -324,7 +423,9 @@ def _log_openai_unusable_response(
     )
 
 
-async def _http_error(response: aiohttp.ClientResponse, protocol: str) -> ProviderError:
+async def _http_error(
+    response: aiohttp.ClientResponse, protocol: str
+) -> ProviderError:
     body = await response.text()
     try:
         error_data = json.loads(body)
@@ -332,7 +433,11 @@ async def _http_error(response: aiohttp.ClientResponse, protocol: str) -> Provid
     except (ValueError, TypeError, AttributeError):
         detail = body.strip()[:300]
     suffix = f": {detail}" if detail else ""
-    return ProviderError(f"{protocol} endpoint returned HTTP {response.status}{suffix}")
+    error = ProviderError(
+        f"{protocol} endpoint returned HTTP {response.status}{suffix}"
+    )
+    error._http_status = response.status  # type: ignore[attr-defined]
+    return error
 
 
 class AnthropicProvider:
@@ -381,174 +486,98 @@ class AnthropicProvider:
             "anthropic-version": "2023-06-01",
             "content-type": "application/json",
         }
-        last_error: Exception | None = None
-        for attempt in range(self.config.max_retries + 1):
-            attempt_started = monotonic()
-            log_event(
-                logger,
-                logging.DEBUG,
-                "llm_request",
-                protocol="anthropic",
-                model=self.config.model,
-                messages=len(messages),
-                tools=len(tools or []),
-                require_tool=require_tool,
-                attempt=attempt + 1,
-                attempt_max=self.config.max_retries + 1,
-            )
-            try:
-                async with self._session.post(
-                    _api_url(self.config.base_url, "/messages"), json=payload, headers=headers
-                ) as response:
-                    if response.status >= 500 and attempt < self.config.max_retries:
-                        await response.read()
-                        delay = _retry_delay(attempt)
-                        _log_retry(
-                            "anthropic",
-                            attempt,
-                            self.config.max_retries,
-                            delay,
-                            status=response.status,
-                        )
-                        await asyncio.sleep(delay)
-                        continue
-                    if response.status != 200:
-                        error = await _http_error(response, "Anthropic-compatible")
-                        _log_failure(
-                            "anthropic",
-                            attempt,
-                            self.config.max_retries,
-                            int((monotonic() - attempt_started) * 1000),
-                            error,
-                            status=response.status,
-                            reason=safe_preview(str(error), 300),
-                        )
-                        raise error
-                    try:
-                        data = await response.json()
-                    except (aiohttp.ClientError, ValueError) as error:
-                        raise ProviderResponseError(
-                            "Anthropic-compatible endpoint returned invalid JSON"
-                        ) from error
-                    if not isinstance(data, dict):
-                        raise ProviderResponseError(
-                            "Anthropic-compatible endpoint returned non-object JSON"
-                        )
-                    _dump_response(dump_path, data)
-                    duration_ms = int((monotonic() - attempt_started) * 1000)
-                    _persist_usage(
-                        self.usage_sink,
-                        _log_usage(
-                            data, protocol="anthropic", duration_ms=duration_ms
-                        ),
-                        model=self.config.model,
+        async def request(attempt_started: float) -> ProviderResponse:
+            async with self._session.post(
+                _api_url(self.config.base_url, "/messages"),
+                json=payload,
+                headers=headers,
+            ) as response:
+                if response.status != 200:
+                    raise await _http_error(response, "Anthropic-compatible")
+                try:
+                    data = await response.json()
+                except (aiohttp.ClientError, ValueError) as error:
+                    raise ProviderResponseError(
+                        "Anthropic-compatible endpoint returned invalid JSON"
+                    ) from error
+                if not isinstance(data, dict):
+                    raise ProviderResponseError(
+                        "Anthropic-compatible endpoint returned non-object JSON"
                     )
-                    content = [
-                        block
-                        for block in data.get("content", [])
-                        if isinstance(block, dict)
-                    ]
-                    tool_calls = []
-                    for block in content:
-                        if block.get("type") != "tool_use":
-                            continue
-                        raw_input = block.get("input")
-                        tool_calls.append(
-                            ToolCall(
-                                str(block.get("id") or ""),
-                                str(block.get("name") or ""),
-                                raw_input if isinstance(raw_input, dict) else {},
-                                (
-                                    None
-                                    if isinstance(raw_input, dict)
-                                    else "tool_arguments_must_be_object"
-                                ),
-                            )
+                duration_ms, metrics = _record_response(
+                    data,
+                    protocol="anthropic",
+                    attempt_started=attempt_started,
+                    dump_path=dump_path,
+                    usage_sink=self.usage_sink,
+                    model=self.config.model,
+                )
+                content = [
+                    block
+                    for block in data.get("content", [])
+                    if isinstance(block, dict)
+                ]
+                tool_calls = []
+                for block in content:
+                    if block.get("type") != "tool_use":
+                        continue
+                    raw_input = block.get("input")
+                    tool_calls.append(
+                        ToolCall(
+                            str(block.get("id") or ""),
+                            str(block.get("name") or ""),
+                            raw_input if isinstance(raw_input, dict) else {},
+                            (
+                                None
+                                if isinstance(raw_input, dict)
+                                else "tool_arguments_must_be_object"
+                            ),
                         )
-                    if tool_calls:
-                        log_event(
-                            logger,
-                            logging.DEBUG,
-                            "llm_response",
-                            protocol="anthropic",
-                            response_kind="tools",
-                            tool_count=len(tool_calls),
-                            tool_names=",".join(call.name for call in tool_calls),
-                            duration_ms=duration_ms,
-                        )
-                        return ProviderResponse(content, tool_calls, usage_metrics(data))
-                    text = "\n".join(
-                        block.get("text", "")
-                        for block in content
-                        if block.get("type") == "text"
-                    ).strip()
-                    if not text:
-                        error = ProviderError(
-                            "Anthropic-compatible endpoint returned no text content"
-                        )
-                        _log_failure(
-                            "anthropic",
-                            attempt,
-                            self.config.max_retries,
-                            duration_ms,
-                            error,
-                            reason=str(error),
-                        )
-                        raise error
+                    )
+                if tool_calls:
                     log_event(
                         logger,
                         logging.DEBUG,
                         "llm_response",
                         protocol="anthropic",
-                        response_kind="text",
-                        text=_compact_response_text(text),
+                        response_kind="tools",
+                        tool_count=len(tool_calls),
+                        tool_names=",".join(call.name for call in tool_calls),
                         duration_ms=duration_ms,
                     )
-                    return ProviderResponse(content, [], usage_metrics(data))
-            except ProviderResponseError as error:
-                last_error = error
-                if attempt < self.config.max_retries:
-                    delay = _retry_delay(attempt)
-                    _log_retry(
-                        "anthropic",
-                        attempt,
-                        self.config.max_retries,
-                        delay,
-                        error=error,
-                        reason=safe_preview(str(error), 300),
+                    return ProviderResponse(content, tool_calls, metrics)
+                text = "\n".join(
+                    block.get("text", "")
+                    for block in content
+                    if block.get("type") == "text"
+                ).strip()
+                if not text:
+                    raise ProviderError(
+                        "Anthropic-compatible endpoint returned no text content"
                     )
-                    await asyncio.sleep(delay)
-                    continue
-                _log_failure(
-                    "anthropic",
-                    attempt,
-                    self.config.max_retries,
-                    int((monotonic() - attempt_started) * 1000),
-                    error,
-                    reason=safe_preview(str(error), 300),
+                log_event(
+                    logger,
+                    logging.DEBUG,
+                    "llm_response",
+                    protocol="anthropic",
+                    response_kind="text",
+                    text=_compact_response_text(text),
+                    duration_ms=duration_ms,
                 )
-                raise
-            except (aiohttp.ClientError, asyncio.TimeoutError) as error:
-                last_error = error
-                if attempt < self.config.max_retries:
-                    delay = _retry_delay(attempt)
-                    _log_retry(
-                        "anthropic",
-                        attempt,
-                        self.config.max_retries,
-                        delay,
-                        error=error,
-                    )
-                    await asyncio.sleep(delay)
-                    continue
-                _log_failure(
-                    "anthropic",
-                    attempt,
-                    self.config.max_retries,
-                    int((monotonic() - attempt_started) * 1000),
-                    error,
-                )
-        raise ProviderError(f"Anthropic-compatible request failed: {type(last_error).__name__}")
+                return ProviderResponse(content, [], metrics)
+
+        return await _retry_request(
+            protocol="anthropic",
+            max_retries=self.config.max_retries,
+            request_fields={
+                "model": self.config.model,
+                "messages": len(messages),
+                "tools": len(tools or []),
+                "require_tool": require_tool,
+            },
+            operation=request,
+            should_retry=_anthropic_should_retry,
+        )
 
 
 def _text(content: Any, separator: str = "\n") -> str:
@@ -683,190 +712,124 @@ class OpenAIProvider:
             "authorization": f"Bearer {self.config.api_key}",
             "content-type": "application/json",
         }
-        last_error: Exception | None = None
-        for attempt in range(self.config.max_retries + 1):
-            attempt_started = monotonic()
-            log_event(
-                logger,
-                logging.DEBUG,
-                "llm_request",
-                protocol="openai",
-                model=self.config.model,
-                messages=len(messages),
-                tools=len(tools or []),
-                require_tool=require_tool,
-                tool_choice=payload.get("tool_choice"),
-                attempt=attempt + 1,
-                attempt_max=self.config.max_retries + 1,
-            )
-            try:
-                async with self._session.post(
-                    _openai_url(self.config.base_url),
-                    json=payload,
-                    headers=headers,
-                ) as response:
-                    if response.status >= 500 and attempt < self.config.max_retries:
-                        await response.read()
-                        delay = _retry_delay(attempt)
-                        _log_retry(
-                            "openai",
-                            attempt,
-                            self.config.max_retries,
-                            delay,
-                            status=response.status,
-                        )
-                        await asyncio.sleep(delay)
-                        continue
-                    if response.status != 200:
-                        error = await _http_error(response, "OpenAI-compatible")
-                        _log_failure(
-                            "openai",
-                            attempt,
-                            self.config.max_retries,
-                            int((monotonic() - attempt_started) * 1000),
-                            error,
-                            status=response.status,
-                            reason=safe_preview(str(error), 300),
-                        )
-                        raise error
-                    try:
-                        data = await response.json()
-                    except (aiohttp.ClientError, ValueError) as error:
-                        body = await response.text()
-                        _log_openai_unusable_response(response, body, "invalid_json")
-                        raise ProviderResponseError(
-                            f"OpenAI-compatible endpoint returned invalid JSON: {type(error).__name__}"
-                        ) from error
-                    if not isinstance(data, dict):
-                        _log_openai_unusable_response(response, data, "non_object_json")
-                        raise ProviderResponseError(
-                            "OpenAI-compatible endpoint returned non-object JSON"
-                        )
-                    _dump_response(dump_path, data)
-                    duration_ms = int((monotonic() - attempt_started) * 1000)
-                    _persist_usage(
-                        self.usage_sink,
-                        _log_usage(data, protocol="openai", duration_ms=duration_ms),
-                        model=self.config.model,
+        async def request(attempt_started: float) -> ProviderResponse:
+            async with self._session.post(
+                _openai_url(self.config.base_url),
+                json=payload,
+                headers=headers,
+            ) as response:
+                if response.status != 200:
+                    raise await _http_error(response, "OpenAI-compatible")
+                try:
+                    data = await response.json()
+                except (aiohttp.ClientError, ValueError) as error:
+                    body = await response.text()
+                    _log_openai_unusable_response(response, body, "invalid_json")
+                    raise ProviderResponseError(
+                        "OpenAI-compatible endpoint returned invalid JSON: "
+                        f"{type(error).__name__}"
+                    ) from error
+                if not isinstance(data, dict):
+                    _log_openai_unusable_response(response, data, "non_object_json")
+                    raise ProviderResponseError(
+                        "OpenAI-compatible endpoint returned non-object JSON"
                     )
-                    choices = data.get("choices")
-                    if not isinstance(choices, list) or not choices:
-                        _log_openai_unusable_response(response, data, "no_choices")
-                        raise ProviderResponseError(
-                            "OpenAI-compatible endpoint returned no choices"
-                        )
-                    message = choices[0].get("message")
-                    if not isinstance(message, dict):
-                        _log_openai_unusable_response(response, data, "no_message")
-                        raise ProviderResponseError(
-                            "OpenAI-compatible endpoint returned no message"
-                        )
-                    content: list[dict[str, Any]] = []
-                    text = message.get("content")
-                    if isinstance(text, str) and text.strip():
-                        content.append({"type": "text", "text": text})
-                    tool_calls: list[ToolCall] = []
-                    for item in message.get("tool_calls") or []:
-                        function = item.get("function") if isinstance(item, dict) else None
-                        if not isinstance(function, dict):
-                            continue
-                        raw_arguments = function.get("arguments")
-                        argument_error = None
-                        try:
-                            if not isinstance(raw_arguments, str):
-                                raise TypeError
-                            arguments = json.loads(raw_arguments)
-                        except json.JSONDecodeError:
-                            arguments = {}
-                            argument_error = "invalid_tool_arguments_json"
-                        except TypeError:
-                            arguments = {}
-                            argument_error = "tool_arguments_must_be_json"
-                        if not isinstance(arguments, dict):
-                            arguments = {}
-                            argument_error = "tool_arguments_must_be_object"
-                        call = ToolCall(
-                            str(item.get("id") or ""),
-                            str(function.get("name") or ""),
-                            arguments,
-                            argument_error,
-                        )
-                        tool_calls.append(call)
-                        content.append(
-                            {
-                                "type": "tool_use",
-                                "id": call.id,
-                                "name": call.name,
-                                "input": call.arguments,
-                            }
-                        )
-                    if tool_calls:
-                        log_event(
-                            logger,
-                            logging.DEBUG,
-                            "llm_response",
-                            protocol="openai",
-                            response_kind="tools",
-                            tool_count=len(tool_calls),
-                            tool_names=",".join(call.name for call in tool_calls),
-                            duration_ms=duration_ms,
-                        )
-                        return ProviderResponse(content, tool_calls, usage_metrics(data))
-                    if not content:
-                        raise ProviderResponseError(
-                            "OpenAI-compatible endpoint returned no text content"
-                        )
+                duration_ms, metrics = _record_response(
+                    data,
+                    protocol="openai",
+                    attempt_started=attempt_started,
+                    dump_path=dump_path,
+                    usage_sink=self.usage_sink,
+                    model=self.config.model,
+                )
+                choices = data.get("choices")
+                if not isinstance(choices, list) or not choices:
+                    _log_openai_unusable_response(response, data, "no_choices")
+                    raise ProviderResponseError(
+                        "OpenAI-compatible endpoint returned no choices"
+                    )
+                message = choices[0].get("message")
+                if not isinstance(message, dict):
+                    _log_openai_unusable_response(response, data, "no_message")
+                    raise ProviderResponseError(
+                        "OpenAI-compatible endpoint returned no message"
+                    )
+                content: list[dict[str, Any]] = []
+                text = message.get("content")
+                if isinstance(text, str) and text.strip():
+                    content.append({"type": "text", "text": text})
+                tool_calls: list[ToolCall] = []
+                for item in message.get("tool_calls") or []:
+                    function = item.get("function") if isinstance(item, dict) else None
+                    if not isinstance(function, dict):
+                        continue
+                    raw_arguments = function.get("arguments")
+                    argument_error = None
+                    try:
+                        if not isinstance(raw_arguments, str):
+                            raise TypeError
+                        arguments = json.loads(raw_arguments)
+                    except json.JSONDecodeError:
+                        arguments = {}
+                        argument_error = "invalid_tool_arguments_json"
+                    except TypeError:
+                        arguments = {}
+                        argument_error = "tool_arguments_must_be_json"
+                    if not isinstance(arguments, dict):
+                        arguments = {}
+                        argument_error = "tool_arguments_must_be_object"
+                    call = ToolCall(
+                        str(item.get("id") or ""),
+                        str(function.get("name") or ""),
+                        arguments,
+                        argument_error,
+                    )
+                    tool_calls.append(call)
+                    content.append(
+                        {
+                            "type": "tool_use",
+                            "id": call.id,
+                            "name": call.name,
+                            "input": call.arguments,
+                        }
+                    )
+                if tool_calls:
                     log_event(
                         logger,
                         logging.DEBUG,
                         "llm_response",
                         protocol="openai",
-                        response_kind="text",
-                        text=_compact_response_text(text),
+                        response_kind="tools",
+                        tool_count=len(tool_calls),
+                        tool_names=",".join(call.name for call in tool_calls),
                         duration_ms=duration_ms,
                     )
-                    return ProviderResponse(content, [], usage_metrics(data))
-            except ProviderResponseError as error:
-                last_error = error
-                if attempt < self.config.max_retries:
-                    delay = _retry_delay(attempt)
-                    _log_retry(
-                        "openai",
-                        attempt,
-                        self.config.max_retries,
-                        delay,
-                        error=error,
-                        reason=safe_preview(str(error), 300),
+                    return ProviderResponse(content, tool_calls, metrics)
+                if not content:
+                    raise ProviderResponseError(
+                        "OpenAI-compatible endpoint returned no text content"
                     )
-                    await asyncio.sleep(delay)
-                    continue
-                _log_failure(
-                    "openai",
-                    attempt,
-                    self.config.max_retries,
-                    int((monotonic() - attempt_started) * 1000),
-                    error,
-                    reason=safe_preview(str(error), 300),
+                log_event(
+                    logger,
+                    logging.DEBUG,
+                    "llm_response",
+                    protocol="openai",
+                    response_kind="text",
+                    text=_compact_response_text(text),
+                    duration_ms=duration_ms,
                 )
-                raise
-            except (aiohttp.ClientError, asyncio.TimeoutError) as error:
-                last_error = error
-                if attempt < self.config.max_retries:
-                    delay = _retry_delay(attempt)
-                    _log_retry(
-                        "openai",
-                        attempt,
-                        self.config.max_retries,
-                        delay,
-                        error=error,
-                    )
-                    await asyncio.sleep(delay)
-                    continue
-                _log_failure(
-                    "openai",
-                    attempt,
-                    self.config.max_retries,
-                    int((monotonic() - attempt_started) * 1000),
-                    error,
-                )
-        raise ProviderError(f"OpenAI-compatible request failed: {type(last_error).__name__}")
+                return ProviderResponse(content, [], metrics)
+
+        return await _retry_request(
+            protocol="openai",
+            max_retries=self.config.max_retries,
+            request_fields={
+                "model": self.config.model,
+                "messages": len(messages),
+                "tools": len(tools or []),
+                "require_tool": require_tool,
+                "tool_choice": payload.get("tool_choice"),
+            },
+            operation=request,
+            should_retry=_openai_should_retry,
+        )
