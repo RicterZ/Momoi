@@ -15,7 +15,7 @@ The goal is not to build another question-and-answer bot. The goal is to create 
 Most chatbots are stateless request handlers with a personality prompt attached. Momoi is designed differently:
 
 - **One continuous identity.** Personality, relationship, memory, mood, current activity, and unfinished threads carry across conversations and restarts.
-- **Context before response.** Momoi recalls what matters to the current moment instead of blindly sending the entire chat history to the model.
+- **Context before response.** She first understands what this moment is about, then brings back the shared history that matters — not the entire chat log.
 - **Agency, not turn-taking.** She can acknowledge a task, use tools, send useful progress, and continue until the work is complete or genuinely blocked.
 - **Autonomy with restraint.** Goals, reminders, and heartbeats let her act over time without turning every timer into an unwanted notification.
 - **One life across every channel.** QQ messages, home events, webhooks, scheduled work, and proactive thoughts all reach the same Momoi.
@@ -48,11 +48,11 @@ They share the same identity and relevant context. A webhook notification should
 
 ### Natural private conversation
 
-Momoi follows the rhythm of private chat instead of treating every message as an isolated request. Consecutive thoughts, corrections, and extra details can become one coherent conversation. Replies stay natural to the moment, common chat media keeps its meaning, longer work can surface useful progress, and silence remains valid when the exchange is already complete.
+Momoi follows the rhythm of private chat instead of treating every message as an isolated request. Consecutive thoughts, corrections, and extra details can become one coherent conversation. Replies stay natural to the moment, common chat media keeps its meaning, longer work can surface useful progress, and silence remains valid when the exchange is already complete. If she asked something and is still waiting, she may follow up briefly a few times, then let the wait cool.
 
 ### Context that survives
 
-Momoi carries recent conversation, shared history, stable preferences, ongoing commitments, mood, and activity across ordinary and autonomous moments. Older material returns when it is relevant, while durable memory stays grounded in what the owner actually said.
+Momoi carries recent conversation, shared history, stable preferences, ongoing commitments, mood, and activity across ordinary and autonomous moments. Shared experiences settle into lasting threads and come back only when they matter. Durable memory stays grounded in what the owner actually said.
 
 ### Agentic task execution
 
@@ -71,8 +71,8 @@ Momoi separates different kinds of future behavior:
 | Reminder | “Remind me to stretch in one hour” | Delivers known content at the requested time |
 | Goal | “Every morning, check the weather and give me a riding recommendation” | Wakes up, gathers fresh information, reasons, and continues the task |
 | Heartbeat | Momoi's own activity and initiative | May use allowed tools, create her own Goal, share a useful result, or remain silent |
-| Reflection | Form durable learning each day | Reviews the day that just ended without sending a message |
-| Webhook | An external event happened | Handles the predefined event workflow in Momoi's normal voice |
+| Reflection | Form durable learning each day | Reviews the day that just ended, keeps what should last, and does not send a message |
+| Webhook | An external event happened | Handles the event in Momoi's normal voice, or stays silent when it would add nothing |
 
 Goal and Heartbeat notifications respect quiet hours, cooldowns, and pending owner messages. Silence is a valid decision; Heartbeat is not a scheduled “Are you there?” generator.
 
@@ -82,11 +82,11 @@ Goal and Heartbeat notifications respect quiet hours, cooldowns, and pending own
 - Carry relevant context, memories, preferences, and commitments over time
 - Use connected tools and services to complete real tasks
 - Manage one-time reminders and work that continues or repeats
-- Respond naturally to events from the home and other services
+- Respond naturally to events from the home and other services, or stay quiet when they add nothing
 - Exchange chat media and use optional image reactions
 - Maintain mood, activity, reflection, and bounded initiative
 - Stop work or recover safely when an external result is uncertain
-- Browse and tidy conversations, reflections, memories, reactions, and goals in a local Web dashboard
+- Browse and tidy conversations, reflections, memories, reactions, reminders, goals, and thinking in a local Web dashboard
 
 ## Getting started
 
@@ -137,7 +137,7 @@ Then start Momoi and send a private message from either owner account. Replies s
 
 ### Web dashboard
 
-When you want to see what Momoi has been chatting about, remembering, or working on, open the Web dashboard alongside her. It is less a control panel and more a small window into her records: conversations, daily reflections, memories, image reactions, and goals. From there you can also edit memories, manage reactions, and adjust goals that are still in progress.
+When you want to see what Momoi has been chatting about, remembering, or working on, open the Web dashboard alongside her. It is less a control panel and more a small window into her records: conversations, daily reflections, memories, image reactions, reminders, goals, and how she thought through a moment. From there you can also edit memories, manage reactions, and adjust goals or reminders that are still in progress.
 
 Put an access passphrase in `config.json` first:
 
@@ -167,6 +167,8 @@ momoi --workspace /path/to/workspace run
 
 Edit `~/.momoi/prompts/SOUL.md` to define Momoi's identity, relationship, values, interests, and natural speaking style.
 
+Edit `~/.momoi/HEARTBEAT.md` if you want to shape how she spends her own time — what she may explore, make, or leave quiet.
+
 Add image reactions with a description of when they fit:
 
 ```bash
@@ -187,7 +189,7 @@ This is the intended way to add Home Assistant, search, media management, or oth
 
 ## Receive external events
 
-Enable webhooks in `config.json`, choose a reachable bind address, and set a token. The included `event-message` workflow turns an event into a natural message using Momoi's current context.
+Enable webhooks in `config.json`, choose a reachable bind address, and set a token. The included `event-message` workflow turns an event into a natural message using Momoi's current context. If the event would add nothing to the current conversation, she can finish silently.
 
 ```bash
 curl -X POST http://127.0.0.1:8787/webhooks/event-message \
