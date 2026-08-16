@@ -1,7 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Momoi">
-  <rect x="4" y="4" width="26" height="26" rx="7" fill="#43b8f5"/>
-  <g transform="rotate(-2 15 15)">
-    <rect x="2" y="2" width="26" height="26" rx="7" fill="#ff658d" stroke="#20243a" stroke-width="2"/>
-    <path fill="#fff" d="M8 22.6V8.8h3.15L15 16.7 20.85 8.8H24v13.8h-2.95v-8.15L15.4 21.2h-.8L10.95 14.45V22.6z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Momoi">
+  <rect x="11" y="11" width="46" height="46" rx="12" fill="#43b8f5"/>
+  <g transform="rotate(-2 30 30)">
+    <rect x="7" y="7" width="46" height="46" rx="12" fill="#ff658d" stroke="#20243a" stroke-width="3.5"/>
+    <path fill="#fff" d="M18.6 41.2V18.8h5.2L30 31.2l6.2-12.4h5.2v22.4h-4.8V27.8L31 39.6h-2L23.4 27.8v13.4z"/>
   </g>
 </svg>

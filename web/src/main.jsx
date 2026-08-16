@@ -149,6 +149,36 @@ function formatRate(value) {
   return `${Number(value || 0).toFixed(1)}%`;
 }
 
+function useNarrowScreen() {
+  const [narrow, setNarrow] = useState(() =>
+    typeof window !== "undefined" && window.matchMedia("(max-width: 760px)").matches,
+  );
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 760px)");
+    const sync = () => setNarrow(media.matches);
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
+  return narrow;
+}
+
+function summarizeDaily(rows) {
+  const list = rows || [];
+  const requests = list.reduce((sum, row) => sum + (Number(row.requests) || 0), 0);
+  const input = list.reduce((sum, row) => sum + (Number(row.input_tokens) || 0), 0);
+  const cacheRead = list.reduce((sum, row) => sum + (Number(row.cache_read_tokens) || 0), 0);
+  const estimatedCost = list.reduce(
+    (sum, row) => sum + (Number(row.estimated_cost) || 0),
+    0,
+  );
+  return {
+    requests,
+    estimated_cost: estimatedCost,
+    cache_hit_rate: input ? (cacheRead / input) * 100 : 0,
+  };
+}
+
 function memoryKindLabel(kind) {
   return (
     {
@@ -305,103 +335,110 @@ function DataView({ path, refreshKey, token, children }) {
 function Overview({ refreshKey, token }) {
   return (
     <DataView path="/api/overview" refreshKey={refreshKey} token={token}>
-      {(data) => {
-        const groups = [
-          {
-            kind: "archive",
-            label: "Life archive",
-            title: "生活档案",
-            tone: "pink",
-            items: [
-              ["聊天主题", data.counts.conversations, "#conversations"],
-              ["消息", data.counts.messages, "#conversations"],
-              ["记忆", data.counts.memories, "#memories"],
-              ["每日复盘", data.counts.reflections, "#reflections"],
-            ],
-          },
-          {
-            kind: "agenda",
-            label: "Agenda",
-            title: "待办事项",
-            tone: "blue",
-            items: [
-              ["进行中 Goals", data.counts.goals, "#goals"],
-              ["待提醒", data.counts.reminders, "#reminders"],
-            ],
-          },
-          {
-            kind: "stickers",
-            label: "Expression",
-            title: "表情包",
-            tone: "blue",
-            items: [["可用素材", data.counts.emotions, "#emotions"]],
-          },
-        ];
-        const usage = data.usage || {};
-        return (
-          <>
-            <OverviewSection label="Usage" note="账户余额与近 30 日调用">
-              <UsageChart
-                rows={usage.daily}
-                totals={usage.totals}
-                balance={data.balance}
+      {(data) => <OverviewBody data={data} />}
+    </DataView>
+  );
+}
+
+function OverviewBody({ data }) {
+  const narrow = useNarrowScreen();
+  const usage = data.usage || {};
+  const groups = [
+    {
+      kind: "archive",
+      label: "Life archive",
+      title: "生活档案",
+      tone: "pink",
+      items: [
+        ["聊天主题", data.counts.conversations, "#conversations"],
+        ["消息", data.counts.messages, "#conversations"],
+        ["记忆", data.counts.memories, "#memories"],
+        ["每日复盘", data.counts.reflections, "#reflections"],
+      ],
+    },
+    {
+      kind: "agenda",
+      label: "Agenda",
+      title: "待办事项",
+      tone: "blue",
+      items: [
+        ["进行中 Goals", data.counts.goals, "#goals"],
+        ["待提醒", data.counts.reminders, "#reminders"],
+      ],
+    },
+    {
+      kind: "stickers",
+      label: "Expression",
+      title: "表情包",
+      tone: "blue",
+      items: [["可用素材", data.counts.emotions, "#emotions"]],
+    },
+  ];
+  return (
+    <>
+      <OverviewSection
+        label="Usage"
+        note={narrow ? "账户余额与近 7 日调用" : "账户余额与近 30 日调用"}
+      >
+        <UsageChart
+          rows={usage.daily}
+          totals={usage.totals}
+          balance={data.balance}
+          days={narrow ? 7 : 30}
+        />
+      </OverviewSection>
+      <OverviewSection label="Now" note="当前活动与心情">
+        <div className="overview-grid">
+          <article className="panel">
+            <span className="panel-label">Current activity</span>
+            <h2 className="state-name">{data.activity.name}</h2>
+            <p className="state-detail">
+              {data.activity.result || "Momoi 正在按自己的节奏生活。"}
+            </p>
+            <p className="secondary">始于 {formatDate(data.activity.since)}</p>
+          </article>
+          <article className="panel">
+            <span className="panel-label">Mood</span>
+            <h2 className="state-name">{data.mood.state}</h2>
+            <p className="state-detail">{data.mood.cause}</p>
+            <div className="intensity" aria-label="情绪强度">
+              <span
+                style={{
+                  width: `${Math.max(
+                    0,
+                    Math.min(100, Number(data.mood.intensity || 0) * 100),
+                  )}%`,
+                }}
               />
-            </OverviewSection>
-            <OverviewSection label="Now" note="当前活动与心情">
-              <div className="overview-grid">
-                <article className="panel">
-                  <span className="panel-label">Current activity</span>
-                  <h2 className="state-name">{data.activity.name}</h2>
-                  <p className="state-detail">
-                    {data.activity.result || "Momoi 正在按自己的节奏生活。"}
-                  </p>
-                  <p className="secondary">始于 {formatDate(data.activity.since)}</p>
-                </article>
-                <article className="panel">
-                  <span className="panel-label">Mood</span>
-                  <h2 className="state-name">{data.mood.state}</h2>
-                  <p className="state-detail">{data.mood.cause}</p>
-                  <div className="intensity" aria-label="情绪强度">
-                    <span
-                      style={{
-                        width: `${Math.max(
-                          0,
-                          Math.min(100, Number(data.mood.intensity || 0) * 100),
-                        )}%`,
-                      }}
-                    />
-                  </div>
-                </article>
+            </div>
+          </article>
+        </div>
+      </OverviewSection>
+      <OverviewSection label="Momoi records" note="生活记录与待办概览">
+        <div className="overview-groups">
+          {groups.map((group) => (
+            <article
+              className={`overview-group ${group.tone} ${group.kind}`}
+              key={group.title}
+            >
+              <div className="overview-group-head">
+                <span className="panel-label">{group.label}</span>
               </div>
-            </OverviewSection>
-            <OverviewSection label="Momoi records" note="生活记录与待办概览">
-              <div className="overview-groups">
-                {groups.map((group) => (
-                  <article
-                    className={`overview-group ${group.tone} ${group.kind}`}
-                    key={group.title}
-                  >
-                    <div className="overview-group-head">
-                      <span className="panel-label">{group.label}</span>
-                    </div>
-                    <h2>{group.title}</h2>
-                    <div className="overview-stats">
-                      {group.items.map(([label, value, href]) => (
-                        <a href={href} key={label}>
-                          <strong>{value}</strong>
-                          <span>{label}</span>
-                          <i aria-hidden="true">↗</i>
-                        </a>
-                      ))}
-                    </div>
-                  </article>
+              <h2>{group.title}</h2>
+              <div className="overview-stats">
+                {group.items.map(([label, value, href]) => (
+                  <a href={href} key={label}>
+                    <strong>{value}</strong>
+                    <span>{label}</span>
+                    <i aria-hidden="true">↗</i>
+                  </a>
                 ))}
               </div>
-            </OverviewSection>
-          </>
-        );
-      }}
-    </DataView>
+            </article>
+          ))}
+        </div>
+      </OverviewSection>
+    </>
   );
 }
 
@@ -430,12 +467,16 @@ function linePath(points) {
     .join(" ");
 }
 
-function UsageChart({ rows, totals, balance }) {
+function UsageChart({ rows, totals, balance, days = 30 }) {
   const [hover, setHover] = useState(null);
-  const daily = rows || [];
-  const width = 720;
-  const height = 220;
-  const pad = { top: 22, right: 18, bottom: 36, left: 18 };
+  const compact = days <= 7;
+  const daily = (rows || []).slice(-days);
+  const shown = compact ? summarizeDaily(daily) : totals;
+  const width = compact ? 390 : 720;
+  const height = compact ? 268 : 220;
+  const pad = compact
+    ? { top: 18, right: 14, bottom: 44, left: 14 }
+    : { top: 22, right: 18, bottom: 36, left: 18 };
   const innerW = width - pad.left - pad.right;
   const innerH = height - pad.top - pad.bottom;
   const costs = daily.map((row) => Number(row.estimated_cost) || 0);
@@ -462,7 +503,7 @@ function UsageChart({ rows, totals, balance }) {
   const active = hover == null ? null : daily[hover];
 
   return (
-    <section className="usage-chart-card">
+    <section className={`usage-chart-card${compact ? " is-compact" : ""}`}>
       <div className="usage-chart-head">
         <div className="usage-legend">
           <span className="usage-legend-item pink">估算金额</span>
@@ -476,23 +517,25 @@ function UsageChart({ rows, totals, balance }) {
         </div>
         <div>
           <span>请求</span>
-          <strong>{totals?.requests ?? 0}</strong>
+          <strong>{shown?.requests ?? 0}</strong>
         </div>
         <div>
           <span>缓存命中</span>
-          <strong>{formatRate(totals?.cache_hit_rate)}</strong>
+          <strong>{formatRate(shown?.cache_hit_rate)}</strong>
         </div>
         <div>
           <span>估算金额</span>
-          <strong>{formatYuan(totals?.estimated_cost)}</strong>
+          <strong>{formatYuan(shown?.estimated_cost)}</strong>
         </div>
       </div>
       <div className="usage-chart-frame">
         <svg
           viewBox={`0 0 ${width} ${height}`}
           role="img"
-          aria-label="近 30 日用量折线图"
-          onMouseLeave={() => setHover(null)}
+          aria-label={`近 ${days} 日用量图`}
+          onMouseLeave={() => {
+            if (!compact) setHover(null);
+          }}
         >
           {[0.25, 0.5, 0.75, 1].map((step) => (
             <line
@@ -508,8 +551,10 @@ function UsageChart({ rows, totals, balance }) {
             const req = Number(row.requests) || 0;
             if (!req || !maxReq) return null;
             const slot = innerW / count;
-            const barW = Math.min(14, Math.max(slot * 0.55, 3));
-            const barH = (req / maxReq) * innerH * 0.58;
+            const barW = compact
+              ? Math.min(28, Math.max(slot * 0.62, 12))
+              : Math.min(14, Math.max(slot * 0.55, 3));
+            const barH = (req / maxReq) * innerH * (compact ? 0.62 : 0.58);
             return (
               <rect
                 key={`bar-${row.date}`}
@@ -529,16 +574,17 @@ function UsageChart({ rows, totals, balance }) {
                   className="usage-dot pink"
                   cx={costPoints[index].x}
                   cy={costPoints[index].y}
-                  r={hover === index ? 5.5 : 3.6}
+                  r={hover === index ? (compact ? 7 : 5.5) : compact ? 5.2 : 3.6}
                 />
               )}
               <rect
                 className="usage-hit"
                 x={xAt(index) - innerW / count / 2}
                 y={pad.top}
-                width={Math.max(innerW / count, 12)}
+                width={Math.max(innerW / count, compact ? 28 : 12)}
                 height={innerH}
                 onMouseEnter={() => setHover(index)}
+                onPointerDown={() => setHover(index)}
               />
             </g>
           ))}
@@ -547,7 +593,7 @@ function UsageChart({ rows, totals, balance }) {
               key={row.date}
               className="usage-tick"
               x={xAt(index)}
-              y={height - 10}
+              y={height - (compact ? 14 : 10)}
               textAnchor="middle"
             >
               {shortDate(row.date)}
@@ -1593,10 +1639,8 @@ function currentMonth() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
 
-function monthLabel(value) {
-  const [year, month] = String(value).split("-");
-  if (!year || !month) return value;
-  return `${year} / ${Number(month)}`;
+function olderMonths(available, month) {
+  return (available || []).filter((value) => value < month);
 }
 
 function thinkingFlowTitle(item) {
@@ -1608,73 +1652,165 @@ function thinkingFlowTitle(item) {
 function thinkingStageCode(stage) {
   return (
     {
-      owner: "OWNER",
+      owner: "MOMOI",
       webhook: "HOOK",
       context_plan: "PLAN",
       heartbeat: "BEAT",
       heartbeat_plan: "HPLAN",
       reflection: "NOTE",
-    }[String(stage || "").trim()] || "THINK"
+    }[String(stage || "").trim()] || "MOMOI"
   );
 }
 
 function Thinking({ refreshKey, token }) {
-  const [month, setMonth] = useState(currentMonth);
+  const [items, setItems] = useState([]);
   const [selectedId, setSelectedId] = useState("");
   const [detail, setDetail] = useState({});
+  const [status, setStatus] = useState({ loading: true });
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const pager = useRef({ available: [], month: "", cursor: null });
+  const busy = useRef(false);
+  const allowAuto = useRef(true);
 
+  useEffect(() => {
+    if (!token) {
+      setStatus({ error: new Error("unauthorized") });
+      return undefined;
+    }
+    const controller = new AbortController();
+    busy.current = false;
+    allowAuto.current = true;
+    pager.current = { available: [], month: "", cursor: null };
+    setItems([]);
+    setSelectedId("");
+    setDetail({});
+    setHasMore(false);
+    setLoadingMore(false);
+    setStatus({ loading: true });
+
+    (async () => {
+      try {
+        let rows = [];
+        let month = currentMonth();
+        let available = [];
+        while (true) {
+          const data = await api(
+            `/api/thinking?month=${encodeURIComponent(month)}&limit=64`,
+            { signal: controller.signal, token },
+          );
+          available = data.months?.length ? data.months : [data.month || month];
+          const incoming = data.items || [];
+          rows = mergeThinkingItems(rows, incoming);
+          pager.current = {
+            available,
+            month: data.month || month,
+            cursor: data.next_cursor ?? null,
+          };
+          if (rows.length || !olderMonths(available, pager.current.month).length) {
+            break;
+          }
+          month = olderMonths(available, pager.current.month).at(-1);
+        }
+        if (controller.signal.aborted) return;
+        setItems(rows);
+        setHasMore(thinkingHasMore(pager.current));
+        setStatus({});
+      } catch (error) {
+        if (error.name !== "AbortError") setStatus({ error });
+      }
+    })();
+
+    return () => controller.abort();
+  }, [refreshKey, token]);
+
+  async function loadOlder() {
+    if (busy.current || !thinkingHasMore(pager.current) || !token) return;
+    busy.current = true;
+    setLoadingMore(true);
+    try {
+      let added = 0;
+      while (thinkingHasMore(pager.current)) {
+        const nextMonth =
+          pager.current.cursor != null
+            ? pager.current.month
+            : olderMonths(pager.current.available, pager.current.month).at(-1);
+        if (!nextMonth) break;
+        const query = new URLSearchParams({ month: nextMonth, limit: "64" });
+        if (pager.current.cursor != null && nextMonth === pager.current.month) {
+          query.set("cursor", String(pager.current.cursor));
+        }
+        const data = await api(`/api/thinking?${query}`, { token });
+        const incoming = data.items || [];
+        pager.current = {
+          available: data.months?.length ? data.months : pager.current.available,
+          month: data.month || nextMonth,
+          cursor: data.next_cursor ?? null,
+        };
+        if (incoming.length) {
+          added += incoming.length;
+          setItems((rows) => mergeThinkingItems(rows, incoming));
+          break;
+        }
+      }
+      if (!added && !thinkingHasMore(pager.current)) setHasMore(false);
+      else setHasMore(thinkingHasMore(pager.current));
+    } catch (error) {
+      if (error.name !== "AbortError") setStatus({ error });
+    } finally {
+      busy.current = false;
+      setLoadingMore(false);
+    }
+  }
+
+  if (status.loading) return <Loading>正在读取思考…</Loading>;
+  if (status.error) return <ErrorState error={status.error} />;
+  if (!items.length) return <Empty text="还没有思考记录。" />;
+  const active = items.find((item) => item.id === selectedId) || items[0];
   return (
-    <DataView
-      path={`/api/thinking?month=${encodeURIComponent(month)}`}
-      refreshKey={`${refreshKey}:${month}`}
+    <ThinkingLayout
+      items={items}
+      active={active}
+      detail={detail}
       token={token}
-    >
-      {({ items, months, month: resolvedMonth }) => {
-        const available = months?.length ? months : [resolvedMonth || month];
-        const rows = items || [];
-        const active = rows.find((item) => item.id === selectedId) || rows[0];
-        return (
-          <>
-            <section className="section-tools thinking-toolbar">
-              <label className="thinking-month">
-                <span>月份</span>
-                <select
-                  value={resolvedMonth || month}
-                  onChange={(event) => {
-                    setMonth(event.target.value);
-                    setSelectedId("");
-                  }}
-                >
-                  {available.map((value) => (
-                    <option value={value} key={value}>
-                      {monthLabel(value)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </section>
-            {rows.length ? (
-              <ThinkingLayout
-                items={rows}
-                active={active}
-                detail={detail}
-                token={token}
-                onSelect={setSelectedId}
-                setDetail={setDetail}
-              />
-            ) : (
-              <Empty text="这个月还没有思考记录。" />
-            )}
-          </>
-        );
-      }}
-    </DataView>
+      hasMore={hasMore}
+      loadingMore={loadingMore}
+      allowAuto={allowAuto}
+      onLoadOlder={loadOlder}
+      onSelect={setSelectedId}
+      setDetail={setDetail}
+    />
   );
 }
 
-function ThinkingLayout({ items, active, detail, token, onSelect, setDetail }) {
+function mergeThinkingItems(rows, incoming) {
+  const seen = new Set(rows.map((item) => item.id));
+  const next = incoming.filter((item) => item?.id && !seen.has(item.id));
+  return next.length ? [...rows, ...next] : rows;
+}
+
+function thinkingHasMore(state) {
+  return state.cursor != null || olderMonths(state.available, state.month).length > 0;
+}
+
+function ThinkingLayout({
+  items,
+  active,
+  detail,
+  token,
+  hasMore,
+  loadingMore,
+  allowAuto,
+  onLoadOlder,
+  onSelect,
+  setDetail,
+}) {
   const turnId = String(active?.turn_id || "").trim();
   const activeId = String(active?.id || "");
+  const listRef = useRef(null);
+  const moreRef = useRef(null);
+  const loadOlderRef = useRef(onLoadOlder);
+  loadOlderRef.current = onLoadOlder;
   useEffect(() => {
     if (!token || !activeId) {
       setDetail({});
@@ -1693,9 +1829,33 @@ function ThinkingLayout({ items, active, detail, token, onSelect, setDetail }) {
     return () => controller.abort();
   }, [activeId, setDetail, token, turnId]);
 
+  useEffect(() => {
+    const root = listRef.current;
+    const target = moreRef.current;
+    if (!root || !target || !hasMore) return undefined;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        if (!allowAuto.current) return;
+        allowAuto.current = false;
+        loadOlderRef.current();
+      },
+      { root, rootMargin: "80px" },
+    );
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [allowAuto, hasMore, items.length]);
+
   return (
     <section className="record-layout">
-      <div className="record-list" aria-label="思考 Turn">
+      <div
+        className="record-list"
+        aria-label="思考 Turn"
+        ref={listRef}
+        onScroll={() => {
+          allowAuto.current = true;
+        }}
+      >
         {items.map((item) => (
           <button
             className={`record-item ${item.id === activeId ? "active" : ""}`}
@@ -1711,6 +1871,17 @@ function ThinkingLayout({ items, active, detail, token, onSelect, setDetail }) {
             </time>
           </button>
         ))}
+        {hasMore || loadingMore ? (
+          <button
+            className="record-list-more"
+            type="button"
+            ref={moreRef}
+            disabled={loadingMore}
+            onClick={onLoadOlder}
+          >
+            {loadingMore ? "正在加载…" : "更早的思考"}
+          </button>
+        ) : null}
       </div>
       <div className="conversation">
         {detail.loading && <Loading>正在读取思考…</Loading>}
@@ -1737,26 +1908,20 @@ function ThinkingDetail({ item, calls }) {
   return (
     <>
       <header className="conversation-head">
-        <div className="conversation-head-row">
-          {episodeId ? (
-            <a
-              className="tag thinking-conversation"
-              href={`#conversations/${encodeURIComponent(episodeId)}`}
-            >
-              {episodeTitle}
-            </a>
-          ) : (
-            <span className="panel-label">thinking</span>
-          )}
-        </div>
         <h2>{thinkingFlowTitle(item || { stages: flow.map((call) => call.stage) })}</h2>
+        {episodeId ? (
+          <a
+            className="tag thinking-conversation"
+            href={`#conversations/${encodeURIComponent(episodeId)}`}
+          >
+            {episodeTitle}
+          </a>
+        ) : null}
       </header>
       <div className="messages">
         {flow.map((call) => (
           <article className="message" key={call.call_id}>
-            <div
-              className={`message-role ${call.stage === "owner" ? "owner" : "momoi"}`}
-            >
+            <div className="message-role momoi">
               {thinkingStageCode(call.stage)}
             </div>
             <div className="message-body">
@@ -1858,6 +2023,7 @@ function App() {
   const locked = !token;
   const [pageTitle, eyebrow] = pages[view];
   const View = viewComponents[view];
+  const isRecord = view === "conversations" || view === "thinking";
 
   useEffect(() => {
     if (!token) return undefined;
@@ -1886,7 +2052,7 @@ function App() {
   return (
     <>
       <div
-        className={`shell${locked ? " is-locked" : ""}`}
+        className={`shell${locked ? " is-locked" : ""}${isRecord ? " is-record" : ""}`}
         aria-hidden={locked || undefined}
         inert={locked || undefined}
       >
@@ -1917,7 +2083,7 @@ function App() {
             <span>SYSTEM ONLINE</span>
           </div>
         </aside>
-        <main>
+        <main className={isRecord ? "is-record" : undefined}>
           <header className="topbar">
             <div>
               <p className="eyebrow">{eyebrow}</p>

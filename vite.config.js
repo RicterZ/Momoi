@@ -89,11 +89,40 @@ function previewThinkingCalls() {
       reasoning:
         "Webhook 任务：衣服洗好了。\n\n对照 recent_conversation，老师没有正在等这条。旧 Episode 笔记写过「烘干结束提醒并非老师要求」。webhook 合同说：如果只是重复已知状态，可以静默。\n\n决定：不发 send_message，直接 respond。",
     },
+    {
+      turn_id: "july-quest-note",
+      call_id: "july-quest-1",
+      created_at: at(-40 * 24 * 60),
+      stage: "heartbeat",
+      round: 1,
+      model: "deepseek-v4-flash",
+      tools: ["respond"],
+      reasoning_chars: 640,
+      excerpt: "七月那次心跳只整理了关卡节奏，没有打扰老师。",
+      reasoning: "老师不在。关卡节奏可以再压一拍，先记在活动结果里，不发消息。",
+    },
+    {
+      turn_id: "june-sticker-plan",
+      call_id: "june-sticker-1",
+      created_at: at(-70 * 24 * 60),
+      stage: "context_plan",
+      round: 1,
+      model: "deepseek-v4-flash",
+      tools: ["submit_context_plan"],
+      reasoning_chars: 880,
+      excerpt: "六月在想表情包分类，先按老师最近用过的召回。",
+      reasoning: "老师在问表情包。先召回最近用过的贴纸，不要把分类方案一次倒完。",
+    },
   ];
 }
 
+function previewMonthKey(timestamp) {
+  const date = new Date(Number(timestamp) * 1000);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
 function previewThinkingList(params) {
-  const month = params.get("month") || new Date().toISOString().slice(0, 7);
+  const requested = params.get("month") || new Date().toISOString().slice(0, 7);
   const buckets = new Map();
   for (const call of previewThinkingCalls()) {
     const key = call.turn_id || `call:${call.call_id}`;
@@ -134,12 +163,15 @@ function previewThinkingList(params) {
     };
   });
   items.sort((left, right) => right.updated_at - left.updated_at);
+  const months = [...new Set(items.map((item) => previewMonthKey(item.updated_at)))].sort();
+  const month = months.includes(requested) ? requested : requested;
+  const page = items.filter((item) => previewMonthKey(item.updated_at) === month);
   return {
     ok: true,
     month,
-    months: [month],
-    items,
-    count: items.length,
+    months: months.includes(month) ? months : [...months, month].sort(),
+    items: page,
+    count: page.length,
   };
 }
 
