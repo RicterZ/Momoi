@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" role="img" aria-label="Momoi">
-  <rect width="180" height="180" fill="#ff658d"/>
+  <rect width="180" height="180" fill="#fff"/>
   <rect x="32" y="32" width="124" height="124" rx="32" fill="#43b8f5"/>
   <g transform="rotate(-2 82 82)">
     <rect x="20" y="20" width="124" height="124" rx="32" fill="#ff658d" stroke="#20243a" stroke-width="7"/>
