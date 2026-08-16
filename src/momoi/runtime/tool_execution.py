@@ -8,6 +8,7 @@ from typing import Any
 from ..agenda_tools import AGENDA_TOOL_SPECS
 from ..builtin_tools import BUILTIN_TOOL_SPECS, SELF_DIRECTED_BUILTIN_TOOL_SPECS
 from ..channel import Channel, ChannelMessage
+from ..contracts import ToolResult
 from ..emotions import EMOTION_PREFIX, emotion_slug
 from ..logging_context import TRACE, compact_log_value, log_context, log_event, new_trace_id, safe_preview
 from ..memory_tools import MEMORY_TOOL_SPECS
@@ -732,7 +733,7 @@ class ToolExecutionService:
 
     def _normalize_tool_result(
         self, call: ToolCall, result: object, source: str
-    ) -> dict[str, Any]:
+    ) -> ToolResult:
         raw = dict(result) if isinstance(result, dict) else {"value": result}
         ok = raw.get("ok") is True
         error = None if ok else str(raw.get("error") or "tool_failed")

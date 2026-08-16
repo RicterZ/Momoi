@@ -26,11 +26,14 @@ from ..models import AgentReply, IncomingMessage, OwnerInputStatus
 from ..provider import AnthropicProvider, OpenAIProvider
 from ..storage import Store
 from ..webhooks import WebhookService
+from .jobs import (
+    HEARTBEAT_QUEUE_ITEM,
+    REFLECTION_QUEUE_PREFIX,
+    AutonomousJob,
+)
 from .turns import TurnRunner
 
 logger = logging.getLogger(__name__)
-HEARTBEAT_QUEUE_ITEM = "__momoi_heartbeat__"
-REFLECTION_QUEUE_PREFIX = "__momoi_reflection__:"
 AGENDA_POLL_SECONDS = 5
 _DEFAULT_DAEMON_POLICY = DaemonPolicy()
 # Kept as compatibility constants for imports and existing tests.
@@ -116,7 +119,7 @@ class MomoiDaemon(TurnRunner):
         self.webhook_requests: asyncio.Queue[
             tuple[str, str, asyncio.Future[AgentReply]]
         ] = asyncio.Queue()
-        self.autonomous: asyncio.Queue[str] = asyncio.Queue()
+        self.autonomous: asyncio.Queue[str | AutonomousJob] = asyncio.Queue()
         self.episode_annealing_requested = asyncio.Event()
         self.outbox_changed = asyncio.Event()
         self.agenda_changed = asyncio.Event()
@@ -264,7 +267,7 @@ class MomoiDaemon(TurnRunner):
                     command="heartbeat",
                 )
                 self._manual_heartbeat_channel = message.channel
-                await self.autonomous.put(HEARTBEAT_QUEUE_ITEM)
+                await self.autonomous.put(AutonomousJob.heartbeat())
             else:
                 log_event(
                     logger,
@@ -291,7 +294,7 @@ class MomoiDaemon(TurnRunner):
                     local_date=reflection["local_date"],
                 )
                 await self.autonomous.put(
-                    REFLECTION_QUEUE_PREFIX + str(reflection["local_date"])
+                    AutonomousJob.reflection(str(reflection["local_date"]))
                 )
             else:
                 log_event(
@@ -345,25 +348,23 @@ class MomoiDaemon(TurnRunner):
                         self._webhook_turn_active = False
                     continue
                 if kind == "goal":
-                    goal_id = str(item)
+                    job = AutonomousJob.from_legacy(item)
                     self._stop_requested = False
-                    if goal_id == HEARTBEAT_QUEUE_ITEM:
+                    if job.kind == "heartbeat":
                         target_channel = self._manual_heartbeat_channel
                         self._manual_heartbeat_channel = None
                         work = self._complete_heartbeat_turn(stop, target_channel)
-                    elif goal_id.startswith(REFLECTION_QUEUE_PREFIX):
-                        work = self._complete_reflection_turn(
-                            goal_id.removeprefix(REFLECTION_QUEUE_PREFIX), stop
-                        )
+                    elif job.kind == "reflection":
+                        work = self._complete_reflection_turn(job.id, stop)
                     else:
-                        work = self._complete_goal_turn(goal_id, stop)
+                        work = self._complete_goal_turn(job.id, stop)
                     self._active_turn = asyncio.create_task(work)
                     try:
                         await self._active_turn
                     except asyncio.CancelledError:
                         if not self._stop_requested:
                             raise
-                        if goal_id == HEARTBEAT_QUEUE_ITEM:
+                        if job.kind == "heartbeat":
                             self.store.release_heartbeat_claim(
                                 self._heartbeat_retry_delay()
                             )
@@ -374,8 +375,8 @@ class MomoiDaemon(TurnRunner):
                                 stage="heartbeat",
                                 reason="owner_stop",
                             )
-                        elif goal_id.startswith(REFLECTION_QUEUE_PREFIX):
-                            local_date = goal_id.removeprefix(REFLECTION_QUEUE_PREFIX)
+                        elif job.kind == "reflection":
+                            local_date = job.id
                             self.store.release_reflection(
                                 local_date, "owner_stop", delay_seconds=3600
                             )
@@ -388,13 +389,13 @@ class MomoiDaemon(TurnRunner):
                                 reason="owner_stop",
                             )
                         else:
-                            self.store.release_goal_claim(goal_id, defer_seconds=900)
+                            self.store.release_goal_claim(job.id, defer_seconds=900)
                             log_event(
                                 logger,
                                 logging.INFO,
                                 "turn_cancelled",
                                 stage="goal",
-                                goal_id=goal_id,
+                                goal_id=job.id,
                                 reason="owner_stop",
                             )
                     finally:
@@ -531,21 +532,21 @@ class MomoiDaemon(TurnRunner):
                     task.cancel()
             raise
 
-    def _next_autonomous(self) -> str:
+    def _next_autonomous(self) -> AutonomousJob:
         return self._prioritize_autonomous(self.autonomous.get_nowait())
 
-    def _prioritize_autonomous(self, item: str) -> str:
-        if item != HEARTBEAT_QUEUE_ITEM or self.autonomous.empty():
-            if not item.startswith(REFLECTION_QUEUE_PREFIX) or self.autonomous.empty():
-                return item
-            next_item = self.autonomous.get_nowait()
-            if next_item == HEARTBEAT_QUEUE_ITEM:
-                self.autonomous.put_nowait(next_item)
-                return item
-        else:
-            next_item = self.autonomous.get_nowait()
-        self.autonomous.put_nowait(item)
-        return next_item
+    def _prioritize_autonomous(
+        self, item: str | AutonomousJob
+    ) -> AutonomousJob:
+        current = AutonomousJob.from_legacy(item)
+        if self.autonomous.empty():
+            return current
+        next_job = AutonomousJob.from_legacy(self.autonomous.get_nowait())
+        if next_job.priority < current.priority:
+            self.autonomous.put_nowait(current)
+            return next_job
+        self.autonomous.put_nowait(next_job)
+        return current
 
     async def _request_webhook_turn(
         self, prompt: str, turn_id: str
@@ -688,7 +689,7 @@ class MomoiDaemon(TurnRunner):
                     next_review_at=goal.get("next_review_timestamp"),
                     schedule=goal.get("schedule"),
                 )
-                await self.autonomous.put(str(goal["id"]))
+                await self.autonomous.put(AutonomousJob.goal(str(goal["id"])))
                 continue
             reflection = self.store.claim_due_reflection(
                 self.config.reflection, self.config.notifications.timezone
@@ -702,7 +703,7 @@ class MomoiDaemon(TurnRunner):
                     local_date=reflection["local_date"],
                 )
                 await self.autonomous.put(
-                    REFLECTION_QUEUE_PREFIX + str(reflection["local_date"])
+                    AutonomousJob.reflection(str(reflection["local_date"]))
                 )
                 continue
             heartbeat = self.store.claim_due_heartbeat(
@@ -715,7 +716,7 @@ class MomoiDaemon(TurnRunner):
                     "heartbeat_queued",
                     stage="scheduler",
                 )
-                await self.autonomous.put(HEARTBEAT_QUEUE_ITEM)
+                await self.autonomous.put(AutonomousJob.heartbeat())
                 continue
             due_times = [
                 due

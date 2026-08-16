@@ -3,6 +3,7 @@ import logging
 import re
 import uuid
 
+from ..contracts import ContextPlan
 from ..logging_context import log_event
 
 
@@ -333,7 +334,7 @@ def parse_context_plan(
     candidates: list[dict[str, object]],
     turn_id: str,
     revision: int,
-) -> dict[str, object]:
+) -> ContextPlan:
     if isinstance(text, dict):
         value = text
     else:
@@ -698,7 +699,7 @@ def parse_context_plan(
 
 def degraded_context_plan(
     owner_messages: list[dict[str, str]], reason: str
-) -> dict[str, object]:
+) -> ContextPlan:
     segments: list[tuple[list[str], str]] = []
     for message in owner_messages:
         parts = [

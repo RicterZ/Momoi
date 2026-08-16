@@ -9,6 +9,7 @@ from momoi.runtime.daemon import (
     REFLECTION_QUEUE_PREFIX,
     MomoiDaemon,
 )
+from momoi.runtime.jobs import AutonomousJob
 
 
 class AutonomousQueueTests(unittest.IsolatedAsyncioTestCase):
@@ -36,11 +37,29 @@ class AutonomousQueueTests(unittest.IsolatedAsyncioTestCase):
             daemon.autonomous.put_nowait("goal-1")
             self.assertEqual(
                 await daemon._next_work(),
-                ("goal", REFLECTION_QUEUE_PREFIX + "2030-01-01"),
+                ("goal", AutonomousJob.reflection("2030-01-01")),
             )
-            self.assertEqual(await daemon._next_work(), ("goal", "goal-1"))
-            self.assertEqual(await daemon._next_work(), ("goal", HEARTBEAT_QUEUE_ITEM))
+            self.assertEqual(
+                await daemon._next_work(), ("goal", AutonomousJob.goal("goal-1"))
+            )
+            self.assertEqual(
+                await daemon._next_work(), ("goal", AutonomousJob.heartbeat())
+            )
             daemon.store.close()
+
+    def test_legacy_strings_and_reserved_goal_ids_are_unambiguous(self):
+        self.assertEqual(
+            AutonomousJob.from_legacy(HEARTBEAT_QUEUE_ITEM),
+            AutonomousJob.heartbeat(),
+        )
+        self.assertEqual(
+            AutonomousJob.from_legacy(REFLECTION_QUEUE_PREFIX + "2030-01-01"),
+            AutonomousJob.reflection("2030-01-01"),
+        )
+        self.assertEqual(
+            AutonomousJob.goal(HEARTBEAT_QUEUE_ITEM).kind,
+            "goal",
+        )
 
 
 if __name__ == "__main__":

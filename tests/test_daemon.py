@@ -31,6 +31,7 @@ from momoi.runtime import (
     MomoiDaemon,
 )
 from momoi.runtime.daemon import REFLECTION_QUEUE_PREFIX
+from momoi.runtime.jobs import AutonomousJob
 from momoi.runtime.protocol import MOOD_UPDATE_SCHEMA
 from momoi.models import (
     AgentReply,
@@ -702,7 +703,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             await daemon._receive(command)
             await daemon._receive(command)
 
-            self.assertEqual(await daemon.autonomous.get(), HEARTBEAT_QUEUE_ITEM)
+            self.assertEqual(await daemon.autonomous.get(), AutonomousJob.heartbeat())
             self.assertEqual(daemon._manual_heartbeat_channel, "napcat")
             self.assertTrue(daemon.autonomous.empty())
             self.assertEqual(daemon.store.pending_events(), [])
@@ -740,7 +741,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
 
             local_date = datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
             queued = await daemon.autonomous.get()
-            self.assertEqual(queued, REFLECTION_QUEUE_PREFIX + local_date)
+            self.assertEqual(queued, AutonomousJob.reflection(local_date))
             self.assertTrue(daemon.autonomous.empty())
             self.assertEqual(daemon.store.pending_events(), [])
             reflection = daemon.store.reflection(local_date)
@@ -764,7 +765,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 )
             )
             self.assertEqual(
-                await daemon.autonomous.get(), REFLECTION_QUEUE_PREFIX + local_date
+                await daemon.autonomous.get(), AutonomousJob.reflection(local_date)
             )
             self.assertEqual(daemon.store.reflection(local_date)["state"], "running")
             daemon.store.close()
@@ -1207,8 +1208,12 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             daemon.autonomous.put_nowait(HEARTBEAT_QUEUE_ITEM)
             daemon.autonomous.put_nowait("goal-1")
-            self.assertEqual(await daemon._next_work(), ("goal", "goal-1"))
-            self.assertEqual(await daemon._next_work(), ("goal", HEARTBEAT_QUEUE_ITEM))
+            self.assertEqual(
+                await daemon._next_work(), ("goal", AutonomousJob.goal("goal-1"))
+            )
+            self.assertEqual(
+                await daemon._next_work(), ("goal", AutonomousJob.heartbeat())
+            )
             daemon.store.close()
 
     async def test_goal_provider_failure_retries_same_occurrence(self) -> None:
