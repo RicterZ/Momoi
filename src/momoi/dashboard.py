@@ -35,8 +35,11 @@ _ROOT_STATIC = {
     "favicon.ico": ("favicon.svg", "image/svg+xml"),
     "manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
     "apple-touch-icon.png": ("apple-touch-icon.png", "image/png"),
+    "apple-touch-icon-v2.png": ("apple-touch-icon.png", "image/png"),
     "icon-192.png": ("icon-192.png", "image/png"),
+    "icon-192-v2.png": ("icon-192.png", "image/png"),
     "icon-512.png": ("icon-512.png", "image/png"),
+    "icon-512-v2.png": ("icon-512.png", "image/png"),
 }
 
 
@@ -235,7 +238,7 @@ def create_dashboard_app(
         return web.Response(
             body=resource.read_bytes(),
             content_type=content_type,
-            headers={"Cache-Control": "public, max-age=86400"},
+            headers={"Cache-Control": "public, max-age=3600"},
         )
 
     async def health(_request: web.Request) -> web.Response:

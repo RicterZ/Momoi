@@ -167,7 +167,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(manifest.status, 200)
         self.assertEqual(manifest.content_type, "application/manifest+json")
         self.assertEqual((await manifest.json())["display"], "standalone")
-        touch = await self.client.get("/apple-touch-icon.png")
+        touch = await self.client.get("/apple-touch-icon-v2.png")
         self.assertEqual(touch.status, 200)
         self.assertEqual(touch.content_type, "image/png")
         unknown = await self.client.get("/not-a-static-file")
