@@ -1,0 +1,203 @@
+import json
+import tempfile
+import time
+import unittest
+from datetime import datetime
+from pathlib import Path
+from momoi.config import load_config
+from momoi.logging_context import log_context
+from momoi.memory_tools import MemoryTools
+from momoi.models import ToolCall, TurnDraft
+from momoi.provider import _anthropic_reasoning, _openai_reasoning, _persist_thinking
+from momoi.storage import Store
+from momoi.storage.thinking import (
+    decode_reasoning,
+    encode_reasoning,
+    month_key,
+)
+from momoi.thinking_tools import ThinkingTools
+
+
+def _config(directory: Path, thinking: str | None = None) -> Path:
+    path = directory / "config.json"
+    storage = {"database": "data/momoi.sqlite3"}
+    if thinking is not None:
+        storage["thinking"] = thinking
+    path.write_text(
+        json.dumps(
+            {
+                "llm": {
+                    "base_url": "http://127.0.0.1",
+                    "api_key": "key",
+                    "model": "model",
+                },
+                "channels": {
+                    "primary": "napcat",
+                    "enabled": {
+                        "napcat": {"url": "ws://localhost", "owner_qq": "1"},
+                    },
+                },
+                "context": {},
+                "storage": storage,
+                "logging": {},
+            }
+        )
+    )
+    (directory / "prompts").mkdir()
+    (directory / "prompts" / "SOUL.md").write_text("soul")
+    return path
+
+
+class ThinkingStoreTests(unittest.TestCase):
+    def test_config_defaults_thinking_to_database_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = load_config(_config(root))
+            self.assertEqual(config.thinking, config.database.parent)
+
+    def test_config_resolves_custom_thinking_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = load_config(_config(root, "thoughts"))
+            self.assertEqual(config.thinking, (root / "thoughts").resolve())
+
+    def test_encodes_short_text_plain_and_long_text_gzip(self) -> None:
+        codec, blob = encode_reasoning("短")
+        self.assertEqual(codec, "plain")
+        self.assertEqual(decode_reasoning(codec, blob), "短")
+        long_text = "衣服洗好了。" * 200
+        codec, blob = encode_reasoning(long_text)
+        self.assertEqual(codec, "gzip")
+        self.assertLess(len(blob), len(long_text.encode()))
+        self.assertEqual(decode_reasoning(codec, blob), long_text)
+
+    def test_records_and_reads_by_turn_and_keyword(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            now = time.time()
+            store.record_thinking_call(
+                created_at=now,
+                turn_id="turn-laundry",
+                call_id="call-1",
+                stage="webhook",
+                round=1,
+                model="test",
+                tools=["respond"],
+                reasoning="适用性检查后决定静默，不发送衣服洗好了提醒。",
+            )
+            found = store.search_thinking(query="衣服洗好了")
+            self.assertTrue(found["ok"])
+            self.assertEqual(found["count"], 1)
+            self.assertEqual(found["calls"][0]["turn_id"], "turn-laundry")
+            self.assertEqual(found["calls"][0]["tools"], ["respond"])
+            self.assertIn("衣服洗好了", found["calls"][0]["excerpt"])
+            read = store.read_thinking("turn-laundry")
+            self.assertTrue(read["ok"])
+            self.assertIn("静默", read["calls"][0]["reasoning"])
+            month = month_key(now)
+            self.assertTrue(
+                (Path(directory) / f"thinking-{month}.sqlite3").is_file()
+            )
+            store.close()
+
+    def test_search_can_use_turn_id_without_scanning_unrelated_months(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store._db.execute(
+                """INSERT INTO turns
+                   (id, kind, source_ids_json, state, started_at, updated_at)
+                   VALUES ('turn-old', 'owner', '[]', 'completed', ?, ?)""",
+                (time.time(), time.time()),
+            )
+            store._db.commit()
+            store.record_thinking_call(
+                created_at=time.time(),
+                turn_id="turn-old",
+                call_id="call-2",
+                stage="owner",
+                round=1,
+                reasoning="老师在问为什么没提醒。",
+            )
+            found = store.search_thinking(turn_id="turn-old")
+            self.assertEqual(found["count"], 1)
+            store.close()
+
+    def test_tools_search_and_read(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store.record_thinking_call(
+                created_at=time.time(),
+                turn_id="webhook:abc:0",
+                call_id="call-3",
+                stage="webhook",
+                round=1,
+                tools=["respond"],
+                reasoning="烘干结束提醒并非老师要求，所以这次也静默。",
+            )
+            tools = ThinkingTools(store)
+            searched = tools.execute(
+                ToolCall(
+                    "t1",
+                    "thinking_search",
+                    {"query": "静默", "time_range": {"kind": "recent", "days": 7}},
+                )
+            )
+            self.assertTrue(searched["ok"])
+            self.assertEqual(searched["count"], 1)
+            read = tools.execute(
+                ToolCall("t2", "thinking_read", {"turn_id": "webhook:abc:0"})
+            )
+            self.assertTrue(read["ok"])
+            self.assertIn("静默", read["calls"][0]["reasoning"])
+            routed = MemoryTools(store).execute(
+                ToolCall("t3", "thinking_search", {"turn_id": "webhook:abc:0"}),
+                [],
+                TurnDraft(),
+            )
+            self.assertTrue(routed["ok"])
+            self.assertEqual(routed["time_range"], {"kind": "turn"})
+            store.close()
+
+    def test_extracts_and_persists_provider_reasoning(self) -> None:
+        self.assertEqual(
+            _openai_reasoning({"reasoning_content": "先核对记忆"}),
+            "先核对记忆",
+        )
+        self.assertEqual(
+            _anthropic_reasoning(
+                [
+                    {"type": "thinking", "thinking": "先想一步"},
+                    {"type": "text", "text": "hello"},
+                    {"type": "redacted_thinking", "data": "hidden"},
+                ]
+            ),
+            "先想一步",
+        )
+        recorded: dict[str, object] = {}
+
+        def sink(**kwargs: object) -> None:
+            recorded.update(kwargs)
+
+        with log_context(turn_id="turn-1", call_id="call-1", stage="owner", round=2):
+            _persist_thinking(
+                sink, reasoning="决定提醒", tools=["send_message"], model="test"
+            )
+        self.assertEqual(recorded["turn_id"], "turn-1")
+        self.assertEqual(recorded["call_id"], "call-1")
+        self.assertEqual(recorded["stage"], "owner")
+        self.assertEqual(recorded["round"], 2)
+        self.assertEqual(recorded["tools"], ["send_message"])
+        self.assertEqual(recorded["reasoning"], "决定提醒")
+
+    def test_writes_into_the_month_of_created_at(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            july = datetime(2026, 7, 16, 12).astimezone()
+            store.record_thinking_call(
+                created_at=july.timestamp(),
+                turn_id="turn-july",
+                call_id="call-july",
+                reasoning="七月的思考",
+            )
+            self.assertTrue((Path(directory) / "thinking-2026-07.sqlite3").is_file())
+            store.close()

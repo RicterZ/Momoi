@@ -117,6 +117,7 @@ class AppConfig:
     heartbeat_prompt: str = ""
     soul_prompt_path: Path | None = None
     heartbeat_prompt_path: Path | None = None
+    thinking: Path | None = None
     channels: tuple[object, ...] = ()
     policies: RuntimePolicies = RuntimePolicies()
 
@@ -250,6 +251,14 @@ def load_config(path: str | Path) -> AppConfig:
     if not database.is_absolute():
         database = (config_path.parent / database).resolve()
     database.parent.mkdir(parents=True, exist_ok=True)
+    thinking_value = storage_raw.get("thinking")
+    if thinking_value in (None, ""):
+        thinking_dir = database.parent
+    else:
+        thinking_dir = Path(str(thinking_value)).expanduser()
+        if not thinking_dir.is_absolute():
+            thinking_dir = (config_path.parent / thinking_dir).resolve()
+    thinking_dir.mkdir(parents=True, exist_ok=True)
     tools_raw = _mapping(raw.get("tools", {}), "tools")
     turn_raw = _mapping(raw.get("turn", {}), "turn")
     webhook_raw = _mapping(raw.get("webhooks", {}), "webhooks")
@@ -414,5 +423,6 @@ def load_config(path: str | Path) -> AppConfig:
         workspace=config_path.parent,
         soul_prompt_path=soul_path,
         heartbeat_prompt_path=heartbeat_path,
+        thinking=thinking_dir,
         channels=channel_configs,
     )

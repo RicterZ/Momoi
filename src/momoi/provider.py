@@ -13,6 +13,7 @@ import aiohttp
 from .config import LLMConfig
 from .logging_context import TRACE, current_log_context, log_event, safe_preview
 from .models import ProviderResponse, ToolCall
+from .storage.thinking import persist_thinking_failure
 from .text_replacement import cyber_keyword_pre_hook
 
 logger = logging.getLogger(__name__)
@@ -201,6 +202,48 @@ def _persist_usage(
             error_type=type(error).__name__,
             exc_info=True,
         )
+
+
+def _persist_thinking(
+    sink: Callable[..., None] | None,
+    *,
+    reasoning: str,
+    tools: list[str],
+    model: str,
+) -> None:
+    if sink is None:
+        return
+    context = current_log_context()
+    try:
+        sink(
+            created_at=time(),
+            turn_id=str(context.get("turn_id") or ""),
+            call_id=str(context.get("call_id") or ""),
+            stage=str(context.get("stage") or ""),
+            round=int(context.get("round") or 0),
+            model=model,
+            tools=tools,
+            reasoning=reasoning,
+        )
+    except Exception as error:
+        persist_thinking_failure(error)
+
+
+def _openai_reasoning(message: dict[str, Any]) -> str:
+    for key in ("reasoning_content", "reasoning"):
+        value = message.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+    return ""
+
+
+def _anthropic_reasoning(content: list[dict[str, Any]]) -> str:
+    parts = [
+        str(block.get("thinking") or block.get("text") or "")
+        for block in content
+        if isinstance(block, dict) and block.get("type") in {"thinking", "redacted_thinking"}
+    ]
+    return "\n".join(part for part in parts if part.strip())
 
 
 def _record_response(
@@ -444,6 +487,7 @@ class AnthropicProvider:
         self.config = config
         self.dump_dir = dump_dir
         self.usage_sink: Callable[..., None] | None = None
+        self.thinking_sink: Callable[..., None] | None = None
         self._session: aiohttp.ClientSession | None = None
 
     async def __aenter__(self) -> "AnthropicProvider":
@@ -533,6 +577,12 @@ class AnthropicProvider:
                             ),
                         )
                     )
+                _persist_thinking(
+                    self.thinking_sink,
+                    reasoning=_anthropic_reasoning(content),
+                    tools=[call.name for call in tool_calls],
+                    model=self.config.model,
+                )
                 if tool_calls:
                     log_event(
                         logger,
@@ -661,6 +711,7 @@ class OpenAIProvider:
         self.config = config
         self.dump_dir = dump_dir
         self.usage_sink: Callable[..., None] | None = None
+        self.thinking_sink: Callable[..., None] | None = None
         self._session: aiohttp.ClientSession | None = None
 
     async def __aenter__(self) -> "OpenAIProvider":
@@ -792,6 +843,12 @@ class OpenAIProvider:
                             "input": call.arguments,
                         }
                     )
+                _persist_thinking(
+                    self.thinking_sink,
+                    reasoning=_openai_reasoning(message),
+                    tools=[call.name for call in tool_calls],
+                    model=self.config.model,
+                )
                 if tool_calls:
                     log_event(
                         logger,

@@ -348,12 +348,31 @@ def load_catalog(
         if incompatible:
             continue
         workflows[workflow_id] = {"id": workflow_id, "inputs": inputs, "steps": steps}
+        log_event(
+            logger,
+            logging.INFO,
+            "workflow_loaded",
+            workflow_id=workflow_id,
+            steps=len(steps),
+            path=str(path),
+        )
+    log_event(
+        logger,
+        logging.INFO,
+        "workflow_catalog_loaded",
+        path=str(workflows_path),
+        workflows=len(workflows),
+        executors=len(executors),
+        workflow_ids=",".join(sorted(workflows)) or None,
+        executor_ids=",".join(sorted(executors)) or None,
+    )
     if not workflows:
         log_event(
             logger,
             logging.WARNING,
             "workflow_catalog_empty",
             path=str(workflows_path),
+            executors=len(executors),
         )
     return workflows, executors
 

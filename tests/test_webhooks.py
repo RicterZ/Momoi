@@ -96,9 +96,29 @@ steps:
 """,
                 encoding="utf-8",
             )
-            workflows, executors = load_catalog(workflows_path, executors_path)
+            with self.assertLogs("momoi.webhooks", level="INFO") as logs:
+                workflows, executors = load_catalog(workflows_path, executors_path)
             self.assertEqual(set(workflows), {"event-message"})
             self.assertEqual(set(executors), {"echo-ok"})
+            events = [record.momoi_event for record in logs.records]
+            self.assertIn("workflow_loaded", events)
+            self.assertIn("workflow_catalog_loaded", events)
+            loaded = next(
+                record
+                for record in logs.records
+                if record.momoi_event == "workflow_loaded"
+            )
+            self.assertEqual(loaded.momoi_fields["workflow_id"], "event-message")
+            self.assertEqual(loaded.momoi_fields["steps"], 1)
+            catalog = next(
+                record
+                for record in logs.records
+                if record.momoi_event == "workflow_catalog_loaded"
+            )
+            self.assertEqual(catalog.momoi_fields["workflows"], 1)
+            self.assertEqual(catalog.momoi_fields["executors"], 1)
+            self.assertEqual(catalog.momoi_fields["workflow_ids"], "event-message")
+            self.assertEqual(catalog.momoi_fields["executor_ids"], "echo-ok")
 
     def test_incompatible_channel_executor_only_disables_its_workflow(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

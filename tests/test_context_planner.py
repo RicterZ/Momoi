@@ -416,6 +416,8 @@ class ContextPlannerTest(unittest.TestCase):
                     "conversation_read",
                     "memory_remember",
                     "memory_forget",
+                    "thinking_search",
+                    "thinking_read",
                     "goal_create",
                     "goal_update",
                     "goal_finish",

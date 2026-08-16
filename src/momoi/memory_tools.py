@@ -23,6 +23,7 @@ from .storage import (
     Store,
     truncate_tokens,
 )
+from .thinking_tools import THINKING_TOOL_SPECS, ThinkingTools
 
 logger = logging.getLogger(__name__)
 _DEFAULT_EPISODE_LOOKBACK_DAYS = 30
@@ -436,7 +437,7 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
             "additionalProperties": False,
         },
     },
-]
+] + THINKING_TOOL_SPECS
 
 
 _MEMORY_ERROR_MESSAGES = {
@@ -485,6 +486,7 @@ class MemoryTools:
     def __init__(self, store: Store, policy: MemoryPolicy = MemoryPolicy()) -> None:
         self.store = store
         self.policy = policy
+        self.thinking = ThinkingTools(store)
 
     def execute(
         self,
@@ -493,6 +495,8 @@ class MemoryTools:
         draft: TurnDraft,
     ) -> dict[str, Any]:
         try:
+            if call.name in {"thinking_search", "thinking_read"}:
+                return self.thinking.execute(call)
             if call.name == "memory_search":
                 return self._search(call.arguments, draft)
             if call.name == "conversation_search":

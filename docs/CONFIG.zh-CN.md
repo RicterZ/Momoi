@@ -208,14 +208,17 @@ momoi --workspace ~/.momoi run
 ```json
 {
   "storage": {
-    "database": "data/momoi.sqlite3"
+    "database": "data/momoi.sqlite3",
+    "thinking": null
   }
 }
 ```
 
 `database` 为必填项。相对路径以 workspace 为基准解析，父目录会自动创建。
 
-请备份完整 workspace，以保留对话历史、记忆、目标、提醒、情绪素材和待投递状态。
+`thinking` 是按月存放模型思考记录的目录（`thinking-YYYY-MM.sqlite3`）。省略或设为 `null` 时，使用与 `database` 相同的目录。相对路径以 workspace 为基准解析。
+
+请备份完整 workspace，以保留对话历史、记忆、目标、提醒、情绪素材、待投递状态和思考记录。
 
 ## MCP 与工具结果
 

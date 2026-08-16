@@ -3,11 +3,13 @@ from typing import Any
 from ..agenda_tools import AGENDA_TOOL_POLICY
 from ..mcp_client import MCP_TOOL_POLICY
 from ..memory_tools import MEMORY_TOOL_POLICY
+from ..thinking_tools import THINKING_TOOL_POLICY
 from .turn_support import (
     AGENDA_POLICY_TOOLS,
     HEARTBEAT_PROMPT_PATH,
     HEARTBEAT_SYSTEM_PROMPT,
     MEMORY_POLICY_TOOLS,
+    THINKING_POLICY_TOOLS,
     REPLY_WAIT_PROMPT_PATH,
     REPLY_WAIT_SYSTEM_PROMPT,
     STYLE_CARD_PROMPT_PATH,
@@ -62,6 +64,8 @@ class PromptRenderer:
             policies.append(AGENDA_TOOL_POLICY.strip())
         if names & MEMORY_POLICY_TOOLS:
             policies.append(MEMORY_TOOL_POLICY.strip())
+        if names & THINKING_POLICY_TOOLS:
+            policies.append(THINKING_TOOL_POLICY.strip())
         mcp_names = {str(tool.get("name") or "") for tool in self.mcp.tool_specs}
         if names & mcp_names:
             policies.append(MCP_TOOL_POLICY.strip())

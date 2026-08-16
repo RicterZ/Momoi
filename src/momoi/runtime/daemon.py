@@ -69,7 +69,12 @@ class MomoiDaemon(TurnRunner):
         self.config = config
         self.daemon_policy = config.policies.daemon
         self._artifact_root().mkdir(parents=True, exist_ok=True)
-        self.store = Store(config.database, config.workspace, config.policies.memory)
+        self.store = Store(
+            config.database,
+            config.workspace,
+            config.policies.memory,
+            thinking=config.thinking,
+        )
         usage_plugin = None
         if config.usage.provider:
             usage_plugin = load_usage_plugin(
@@ -109,6 +114,7 @@ class MomoiDaemon(TurnRunner):
             else AnthropicProvider(config.llm, dump_dir)
         )
         self.provider.usage_sink = self.store.record_llm_call
+        self.provider.thinking_sink = self.store.record_thinking_call
         self.mcp = MCPManager(config.mcp_config)
         self.incoming: asyncio.Queue[IncomingMessage] = asyncio.Queue()
         self._deferred_incoming: deque[IncomingMessage] = deque()

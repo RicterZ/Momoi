@@ -53,6 +53,7 @@ AGENDA_POLICY_TOOLS = frozenset(
     }
 )
 MEMORY_POLICY_TOOLS = frozenset({"memory_remember", "memory_forget"})
+THINKING_POLICY_TOOLS = frozenset({"thinking_search", "thinking_read"})
 
 
 def live_prompt(path: Any, fallback: str, *, optional: bool = False) -> str:

@@ -49,6 +49,7 @@ from .memory import (
     truncate_tokens,
 )
 from .scheduling import next_schedule_at, quiet_until
+from .thinking import ThinkingStore
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +88,7 @@ class Store(MemoryStore, DeliveryStore):
         memory_policy: MemoryPolicy = MemoryPolicy(),
         search_backend: SearchBackend | None = None,
         episode_search_backend: EpisodeSearchBackend | None = None,
+        thinking: Path | None = None,
     ) -> None:
         database = Path(path).expanduser().resolve()
         self._workspace = (workspace or database.parent).expanduser().resolve()
@@ -100,6 +102,10 @@ class Store(MemoryStore, DeliveryStore):
         self._db.row_factory = sqlite3.Row
         self._db.execute("PRAGMA journal_mode=WAL")
         self._db.execute("PRAGMA foreign_keys=ON")
+        self._thinking = ThinkingStore(
+            Path(thinking) if thinking is not None else database.parent,
+            self._search_backend,
+        )
         self._usage_plugin: UsagePlugin | None = None
         self._migrate()
         self._compact_recall_index_if_pending()
@@ -115,6 +121,7 @@ class Store(MemoryStore, DeliveryStore):
         return self._search_backend
 
     def close(self) -> None:
+        self._thinking.close()
         self._db.close()
 
     @staticmethod
@@ -1306,6 +1313,61 @@ class Store(MemoryStore, DeliveryStore):
                     1 if metrics.get("cache_reported") else 0,
                 ),
             )
+
+    def record_thinking_call(
+        self,
+        *,
+        created_at: float,
+        turn_id: str = "",
+        call_id: str = "",
+        stage: str = "",
+        round: int = 0,
+        model: str = "",
+        tools: list[str] | None = None,
+        reasoning: str = "",
+    ) -> None:
+        self._thinking.record(
+            created_at=created_at,
+            turn_id=turn_id,
+            call_id=call_id,
+            stage=stage,
+            round=round,
+            model=model,
+            tools=list(tools or []),
+            reasoning=reasoning,
+        )
+
+    def search_thinking(
+        self,
+        *,
+        turn_id: str = "",
+        query: str = "",
+        after: float | None = None,
+        before: float | None = None,
+        stage: str = "",
+        limit: int = 5,
+        cursor: int = 0,
+    ) -> dict[str, object]:
+        hint_at = None
+        if turn_id and after is None and before is None:
+            row = self._db.execute(
+                "SELECT started_at FROM turns WHERE id=?", (turn_id,)
+            ).fetchone()
+            if row is not None:
+                hint_at = float(row["started_at"])
+        return self._thinking.search(
+            turn_id=turn_id,
+            query=query,
+            after=after,
+            before=before,
+            stage=stage,
+            limit=limit,
+            cursor=cursor,
+            hint_at=hint_at,
+        )
+
+    def read_thinking(self, turn_id: str, call_id: str = "") -> dict[str, object]:
+        return self._thinking.read(turn_id, call_id)
 
     def dashboard_usage(
         self, *, days: int = 30, now: float | None = None

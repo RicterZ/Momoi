@@ -208,14 +208,17 @@ Set a recall result count or token budget to `0` to disable that automatic recal
 ```json
 {
   "storage": {
-    "database": "data/momoi.sqlite3"
+    "database": "data/momoi.sqlite3",
+    "thinking": null
   }
 }
 ```
 
 `database` is required. A relative path is resolved from the workspace, and its parent directory is created automatically.
 
-Back up the complete workspace to preserve conversation history, memory, goals, reminders, emotion assets, and pending delivery state.
+`thinking` is the directory for monthly model-thinking files (`thinking-YYYY-MM.sqlite3`). Omit it or set `null` to use the same directory as `database`. A relative path is resolved from the workspace.
+
+Back up the complete workspace to preserve conversation history, memory, goals, reminders, emotion assets, pending delivery state, and recorded thinking.
 
 ## MCP and tool results
 

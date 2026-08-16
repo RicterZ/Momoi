@@ -83,7 +83,11 @@ def parse_args() -> argparse.Namespace:
 def emotion(args: argparse.Namespace) -> None:
     config_path = args.workspace / "config.json"
     config = load_config(config_path)
-    store = Store(config.database, args.workspace)
+    store = Store(
+        config.database,
+        args.workspace,
+        thinking=getattr(config, "thinking", None),
+    )
     try:
         if args.emotion_command == "add":
             previous = store.emotion(args.slug)
@@ -117,7 +121,11 @@ def emotion(args: argparse.Namespace) -> None:
 
 def goal(args: argparse.Namespace) -> None:
     config = load_config(args.workspace / "config.json")
-    store = Store(config.database, args.workspace)
+    store = Store(
+        config.database,
+        args.workspace,
+        thinking=getattr(config, "thinking", None),
+    )
     try:
         if args.goal_command == "list":
             for item in store.list_goals(args.include_closed):
