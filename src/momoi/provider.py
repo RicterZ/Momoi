@@ -304,12 +304,11 @@ async def _retry_request(
 
 def _dump_request(
     dump_dir: Path | None,
-    enabled: bool,
     provider: str,
     payload: dict[str, Any],
     require_tool: bool,
 ) -> Path | None:
-    if not enabled or dump_dir is None:
+    if dump_dir is None or not logger.isEnabledFor(TRACE):
         return None
     try:
         timestamp = datetime.now(timezone.utc)
@@ -479,7 +478,7 @@ class AnthropicProvider:
                 payload["tool_choice"] = {"type": "any"}
         payload = cyber_keyword_pre_hook.replace_strings(payload)
         dump_path = _dump_request(
-            self.dump_dir, self.config.dump_prompts, "anthropic", payload, require_tool
+            self.dump_dir, "anthropic", payload, require_tool
         )
         headers = {
             "x-api-key": self.config.api_key,
@@ -706,7 +705,7 @@ class OpenAIProvider:
                 payload["tool_choice"] = "required"
         payload = cyber_keyword_pre_hook.replace_strings(payload)
         dump_path = _dump_request(
-            self.dump_dir, self.config.dump_prompts, "openai", payload, require_tool
+            self.dump_dir, "openai", payload, require_tool
         )
         headers = {
             "authorization": f"Bearer {self.config.api_key}",

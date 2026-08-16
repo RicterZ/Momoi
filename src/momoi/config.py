@@ -24,7 +24,6 @@ class LLMConfig:
     timeout_seconds: float
     max_retries: int
     api_format: str = "anthropic"
-    dump_prompts: bool = False
     tool_choice: bool = True
 
 
@@ -175,7 +174,6 @@ def load_config(path: str | Path) -> AppConfig:
     api_format = str(llm_raw.get("api_format", "anthropic")).lower()
     if api_format not in {"anthropic", "openai"}:
         raise ConfigError("llm.api_format must be anthropic or openai")
-    dump_prompts = _boolean(llm_raw.get("dump_prompts", False), "llm.dump_prompts")
     tool_choice = _boolean(llm_raw.get("tool_choice", True), "llm.tool_choice")
 
     if "channel" in raw and "channels" in raw:
@@ -319,7 +317,6 @@ def load_config(path: str | Path) -> AppConfig:
             timeout_seconds=_positive(llm_raw.get("timeout_seconds", 300), "llm.timeout_seconds"),
             max_retries=max(0, int(llm_raw.get("max_retries", 3))),
             api_format=api_format,
-            dump_prompts=dump_prompts,
             tool_choice=tool_choice,
         ),
         channel=channel_config,

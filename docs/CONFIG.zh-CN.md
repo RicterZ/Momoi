@@ -65,7 +65,6 @@ MCP 是添加由模型控制能力的常规方式。工作流用于事件驱动�
     "temperature": 0.6,
     "timeout_seconds": 300,
     "max_retries": 3,
-    "dump_prompts": false,
     "tool_choice": true
   }
 }
@@ -81,7 +80,6 @@ MCP 是添加由模型控制能力的常规方式。工作流用于事件驱动�
 | `temperature` | 否 | `0.6` | 采样温度 |
 | `timeout_seconds` | 否 | `300` | 必须为正数的请求超时时间 |
 | `max_retries` | 否 | `3` | 短暂连接和服务端错误的重试次数；OpenAI 兼容端点还会重试成功但不可用的响应 |
-| `dump_prompts` | 否 | `false` | 将发给 LLM 的完整请求和原始响应保存到 workspace 的 `llm-dumps/`，用于排查和提示词 review |
 | `tool_choice` | 否 | `true` | OpenAI 兼容请求要求模型调用工具；Thinking mode 等不支持 `tool_choice` 的模型需设为 `false` |
 
 对于 Anthropic 兼容 provider，Momoi 请求 `/v1/messages`。对于 OpenAI 兼容 provider，只含 host 的 URL 会请求 `/v1/chat/completions`；已经包含网关路径的 URL 则在该路径下请求 `/chat/completions`。
@@ -490,7 +488,7 @@ Owner Turn 独占对主人输入的回复权。存在未处理的主人消息、
 | --- | --- | --- |
 | `level` | `DEBUG` | Python 日志级别；支持 `TRACE`、`DEBUG`、`INFO`、`WARNING`、`ERROR`、`CRITICAL` |
 
-正常运行使用 `INFO`，开发时使用 `DEBUG`。DEBUG 日志可能包含主人消息、模型输出和工具状态，应当作私密数据保护。
+正常运行使用 `INFO`，开发时使用 `DEBUG`。`TRACE` 还会把发给 LLM 的完整请求和原始响应写到 workspace 的 `llm-dumps/`。DEBUG 和 TRACE 日志可能包含主人消息、模型输出和工具状态，应当作私密数据保护。
 
 ## 应用更改
 

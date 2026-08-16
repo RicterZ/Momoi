@@ -65,7 +65,6 @@ This makes the workspace relocatable. Absolute paths are also accepted where a p
     "temperature": 0.6,
     "timeout_seconds": 300,
     "max_retries": 3,
-    "dump_prompts": false,
     "tool_choice": true
   }
 }
@@ -81,7 +80,6 @@ This makes the workspace relocatable. Absolute paths are also accepted where a p
 | `temperature` | No | `0.6` | Sampling temperature |
 | `timeout_seconds` | No | `300` | Positive request timeout |
 | `max_retries` | No | `3` | Retries for transient connection and server errors; OpenAI-compatible endpoints also retry unusable successful responses |
-| `dump_prompts` | No | `false` | Save complete LLM requests and raw responses under `llm-dumps/` in the workspace for diagnostics and prompt review |
 | `tool_choice` | No | `true` | Require tool use in OpenAI-compatible requests; set to `false` for models such as Thinking mode that reject `tool_choice` |
 
 For Anthropic-compatible providers, Momoi calls `/v1/messages`. For OpenAI-compatible providers, a host-only URL receives `/v1/chat/completions`; a URL that already contains a gateway path receives `/chat/completions` below that path.
@@ -490,7 +488,7 @@ Open `http://127.0.0.1:8788` by default. Use `--dashboard-host` and `--dashboard
 | --- | --- | --- |
 | `level` | `DEBUG` | Python logging level; supports `TRACE`, `DEBUG`, `INFO`, `WARNING`, `ERROR`, and `CRITICAL` |
 
-Use `INFO` for normal operation and `DEBUG` for development. DEBUG logs may contain owner messages, model output, and tool status; treat them as private data.
+Use `INFO` for normal operation and `DEBUG` for development. `TRACE` also writes complete LLM requests and raw responses under `llm-dumps/` in the workspace. DEBUG and TRACE logs may contain owner messages, model output, and tool status; treat them as private data.
 
 ## Apply changes
 

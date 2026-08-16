@@ -54,7 +54,6 @@ class ConfigurationTest(unittest.TestCase):
             path.write_text(json.dumps(value))
             config = load_config(path)
             self.assertIsInstance(config.channel, NapCatConfig)
-            self.assertFalse(config.llm.dump_prompts)
             self.assertTrue(config.llm.tool_choice)
             self.assertEqual(config.llm.max_tokens, 16384)
             self.assertEqual(config.llm.timeout_seconds, 300)

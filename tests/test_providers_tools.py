@@ -1,7 +1,9 @@
 import asyncio
 import json
+import logging
 import tempfile
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -21,6 +23,7 @@ from momoi.models import (
     ProviderResponse,
     ToolCall,
 )
+from momoi.logging_context import TRACE
 from momoi.provider import (
     AnthropicProvider,
     OpenAIProvider,
@@ -35,6 +38,17 @@ from momoi.runtime import (
 )
 from momoi.runtime.turns import _sections, _truncate_tool_result_json
 from tests.support import with_context_planner
+
+
+@contextmanager
+def _provider_trace_logs():
+    logger = logging.getLogger("momoi.provider")
+    previous = logger.level
+    logger.setLevel(TRACE)
+    try:
+        yield
+    finally:
+        logger.setLevel(previous)
 
 
 class ProvidersToolsTest(unittest.TestCase):
@@ -303,7 +317,7 @@ class ProvidersToolsTest(unittest.TestCase):
 
 
 class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
-    async def test_openai_provider_dumps_final_request_when_enabled(self) -> None:
+    async def test_openai_provider_dumps_final_request_at_trace(self) -> None:
         requests: list[dict[str, object]] = []
 
         async def completion(request: web.Request) -> web.Response:
@@ -327,18 +341,18 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                     timeout_seconds=1,
                     max_retries=0,
                     api_format="openai",
-                    dump_prompts=True,
                 ),
                 dump_dir,
             )
             try:
                 async with provider:
-                    await provider.complete(
-                        "system",
-                        [{"role": "user", "content": "测试"}],
-                        [{"name": "respond", "input_schema": {"type": "object"}}],
-                        require_tool=True,
-                    )
+                    with _provider_trace_logs():
+                        await provider.complete(
+                            "system",
+                            [{"role": "user", "content": "测试"}],
+                            [{"name": "respond", "input_schema": {"type": "object"}}],
+                            require_tool=True,
+                        )
             finally:
                 await server.close()
             dumps = list(dump_dir.glob("*.json"))
@@ -393,18 +407,18 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                     timeout_seconds=1,
                     max_retries=0,
                     api_format="openai",
-                    dump_prompts=True,
                 ),
                 dump_dir,
             )
             try:
                 async with provider:
-                    await provider.complete(
-                        "system",
-                        [{"role": "user", "content": "测试"}],
-                        [{"name": "respond", "input_schema": {"type": "object"}}],
-                        require_tool=True,
-                    )
+                    with _provider_trace_logs():
+                        await provider.complete(
+                            "system",
+                            [{"role": "user", "content": "测试"}],
+                            [{"name": "respond", "input_schema": {"type": "object"}}],
+                            require_tool=True,
+                        )
             finally:
                 await server.close()
             dumps = list(dump_dir.glob("*.json"))
@@ -415,6 +429,40 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                 dumped["response"]["choices"][0]["message"]["reasoning_content"],
                 "先核对记忆再改 activation",
             )
+
+    async def test_openai_provider_skips_dump_without_trace(self) -> None:
+        async def completion(_: web.Request) -> web.Response:
+            return web.json_response(
+                {"choices": [{"message": {"role": "assistant", "content": "ok"}}]}
+            )
+
+        server = TestServer(web.Application())
+        server.app.router.add_post("/v1/chat/completions", completion)
+        await server.start_server()
+        with tempfile.TemporaryDirectory() as directory:
+            dump_dir = Path(directory) / "llm-dumps"
+            provider = OpenAIProvider(
+                LLMConfig(
+                    base_url=str(server.make_url("/")).rstrip("/"),
+                    api_key="test",
+                    model="test",
+                    max_tokens=100,
+                    temperature=0,
+                    timeout_seconds=1,
+                    max_retries=0,
+                    api_format="openai",
+                ),
+                dump_dir,
+            )
+            try:
+                async with provider:
+                    await provider.complete(
+                        "system",
+                        [{"role": "user", "content": "测试"}],
+                    )
+            finally:
+                await server.close()
+            self.assertEqual(list(dump_dir.glob("*.json")), [])
 
     async def test_anthropic_provider_retries_server_error_and_reports_client_error(
         self,
