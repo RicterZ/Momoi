@@ -408,6 +408,10 @@ class MemoryStore:
                WHERE m.activation='recent' AND m.superseded_by IS NULL
                  AND (m.expires_at IS NULL OR m.expires_at > ?)
                  AND (m.expires_at IS NOT NULL OR m.updated_at >= ?)
+                 AND NOT EXISTS (
+                     SELECT 1 FROM memory_tombstones AS t
+                     WHERE t.kind=m.kind AND t.key=m.key
+                 )
                ORDER BY m.updated_at DESC, m.id DESC LIMIT 32""",
             (time.time(), time.time() - RECENT_MEMORY_WINDOW_SECONDS),
         ).fetchall()
