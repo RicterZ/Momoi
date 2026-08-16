@@ -4594,6 +4594,7 @@ class Store(MemoryStore, DeliveryStore):
     def list_memories(self, limit: int = 200) -> list[dict[str, object]]:
         if limit <= 0:
             return []
+        self.purge_expired_memories()
         now = time.time()
         rows = self._db.execute(
             """SELECT id, kind, key, content, activation, authority,
@@ -4602,6 +4603,7 @@ class Store(MemoryStore, DeliveryStore):
                FROM memories AS m
                WHERE m.superseded_by IS NULL
                  AND (m.expires_at IS NULL OR m.expires_at > ?)
+                 AND (m.activation<>'recent' OR m.updated_at>=?)
                  AND NOT EXISTS (
                      SELECT 1 FROM memory_tombstones AS t
                      WHERE t.kind=m.kind AND t.key=m.key
@@ -4613,7 +4615,7 @@ class Store(MemoryStore, DeliveryStore):
                         END,
                         m.updated_at DESC, m.id DESC
                LIMIT ?""",
-            (now, limit),
+            (now, now - 7 * 24 * 60 * 60, limit),
         ).fetchall()
         results: list[dict[str, object]] = []
         for row in rows:

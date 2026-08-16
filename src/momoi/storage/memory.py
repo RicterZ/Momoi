@@ -155,6 +155,39 @@ def lexical_units(text: str, *, strict: bool = False) -> set[str]:
 
 
 class MemoryStore:
+    def purge_expired_memories(self, *, now: float | None = None) -> int:
+        now = time.time() if now is None else now
+        cutoff = now - RECENT_MEMORY_WINDOW_SECONDS
+        rows = self._db.execute(
+            """SELECT id FROM memories AS m
+               WHERE m.superseded_by IS NULL
+                 AND (m.expires_at IS NOT NULL AND m.expires_at <= ?
+                      OR m.activation='recent' AND m.expires_at IS NULL
+                         AND m.updated_at < ?)
+                 AND NOT EXISTS (
+                     SELECT 1 FROM memory_tombstones AS t
+                     WHERE t.kind=m.kind AND t.key=m.key
+                 )""",
+            (now, cutoff),
+        ).fetchall()
+        if not rows:
+            return 0
+        ids = [int(row["id"]) for row in rows]
+        placeholders = ",".join("?" for _ in ids)
+        self._db.execute(
+            f"DELETE FROM memory_evidence WHERE memory_id IN ({placeholders})",
+            ids,
+        )
+        self._db.execute(
+            f"DELETE FROM memory_conflicts WHERE existing_memory_id IN ({placeholders})",
+            ids,
+        )
+        self._db.execute(
+            f"DELETE FROM memories WHERE id IN ({placeholders})", ids
+        )
+        self._db.commit()
+        return len(ids)
+
     def _memory_rows(
         self, activation: str, *, now: float | None = None
     ) -> list[sqlite3.Row]:
@@ -318,6 +351,7 @@ class MemoryStore:
             )
 
     def recent_memory_context(self, token_budget: int) -> str:
+        self.purge_expired_memories()
         return self._compact_memory_context(
             "老师近期需要保持的上下文", self._memory_rows("recent"), token_budget
         )
@@ -454,6 +488,7 @@ class MemoryStore:
             return []
         if activation is not None and activation not in MEMORY_ACTIVATIONS:
             raise ValueError("invalid memory activation")
+        self.purge_expired_memories()
         rows = self._db.execute(
             """SELECT id, kind, key, content, authority, evidence_quote,
                       activation, importance, updated_at,
@@ -462,12 +497,13 @@ class MemoryStore:
                FROM memories
                WHERE superseded_by IS NULL
                  AND (expires_at IS NULL OR expires_at > ?)
+                 AND (activation<>'recent' OR updated_at>=?)
                  AND (? IS NULL OR activation=?)
                  AND NOT EXISTS (
                      SELECT 1 FROM memory_tombstones AS t
                      WHERE t.kind=memories.kind AND t.key=memories.key
                  )""",
-            (time.time(), activation, activation),
+            (time.time(), time.time() - RECENT_MEMORY_WINDOW_SECONDS, activation, activation),
         ).fetchall()
         query_units = lexical_units(query)
         core_kinds = {"profile", "relationship", "shared"}
