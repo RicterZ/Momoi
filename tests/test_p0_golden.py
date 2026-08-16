@@ -1,0 +1,122 @@
+import tempfile
+import unittest
+from pathlib import Path
+
+from momoi.agenda_tools import AgendaTools
+from momoi.memory_tools import MemoryTools
+from momoi.models import AgentReply, IncomingMessage, ToolCall, TurnDraft
+from momoi.storage import Store
+
+
+class P0GoldenTests(unittest.TestCase):
+    def test_owner_turn_side_effect_snapshot(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            event = IncomingMessage(
+                "event-1", "message-1", "记住我喜欢乌龙茶，再提醒我买茶", 1, 1
+            )
+            store.add_event(event)
+            draft = TurnDraft()
+            self.assertTrue(
+                MemoryTools(store).execute(
+                    ToolCall(
+                        "memory-1",
+                        "memory_remember",
+                        {
+                            "kind": "preference",
+                            "key": "drink.oolong",
+                            "content": "喜欢乌龙茶",
+                            "evidence": "喜欢乌龙茶",
+                        },
+                    ),
+                    [event],
+                    draft,
+                )["ok"]
+            )
+            self.assertTrue(
+                AgendaTools(store).execute(
+                    ToolCall(
+                        "reminder-1",
+                        "reminder_create",
+                        {
+                            "text": "买乌龙茶",
+                            "fire_at": "2030-01-01T12:00:00+00:00",
+                        },
+                    ),
+                    draft,
+                    authority="owner",
+                    source_event_id=event.event_id,
+                    allow_notify=False,
+                )["ok"]
+            )
+            store.commit_turn(
+                [event],
+                event.text,
+                AgentReply(["记住了，也安排了提醒。"]),
+                draft,
+                turn_id="turn-1",
+                target_channel="test",
+            )
+            store.record_turn_usage("turn-1", 12, 3)
+            outbox = store.due_outbox()[0]
+            reminder = store.list_reminders(1)[0]
+            memory = dict(
+                store._db.execute(
+                    """SELECT kind, key, content, activation FROM memories
+                       WHERE kind='preference' AND key='drink.oolong'"""
+                ).fetchone()
+            )
+            snapshot = {
+                "outbox": {
+                    "turn_id": outbox.turn_id,
+                    "text": outbox.text,
+                    "state": outbox.state,
+                    "channel": outbox.channel,
+                },
+                "memory": memory,
+                "reminder": {
+                    key: reminder[key]
+                    for key in ("text", "status", "fire_at", "schedule")
+                },
+                "usage": store.turn_usage("turn-1"),
+                "turn": dict(
+                    store._db.execute(
+                        "SELECT state, stage, failure_reason FROM turns WHERE id='turn-1'"
+                    ).fetchone()
+                ),
+            }
+            snapshot["usage"].pop("started_at")
+            self.assertEqual(
+                snapshot,
+                {
+                    "outbox": {
+                        "turn_id": "turn-1",
+                        "text": "记住了，也安排了提醒。",
+                        "state": "pending",
+                        "channel": "test",
+                    },
+                    "memory": {
+                        "kind": "preference",
+                        "key": "drink.oolong",
+                        "content": "喜欢乌龙茶",
+                        "activation": "recall",
+                    },
+                    "reminder": {
+                        "text": "买乌龙茶",
+                        "status": "pending",
+                        "fire_at": 1893499200.0,
+                        "schedule": None,
+                    },
+                    "usage": {"llm_calls": 1, "input": 12, "output": 3},
+                    "turn": {
+                        "state": "completed",
+                        "stage": "completed",
+                        "failure_reason": None,
+                    },
+                },
+            )
+            store.close()
+
+
+if __name__ == "__main__":
+    unittest.main()

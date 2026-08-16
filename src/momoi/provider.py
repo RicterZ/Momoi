@@ -424,7 +424,16 @@ class AnthropicProvider:
                             reason=safe_preview(str(error), 300),
                         )
                         raise error
-                    data = await response.json()
+                    try:
+                        data = await response.json()
+                    except (aiohttp.ClientError, ValueError) as error:
+                        raise ProviderResponseError(
+                            "Anthropic-compatible endpoint returned invalid JSON"
+                        ) from error
+                    if not isinstance(data, dict):
+                        raise ProviderResponseError(
+                            "Anthropic-compatible endpoint returned non-object JSON"
+                        )
                     _dump_response(dump_path, data)
                     duration_ms = int((monotonic() - attempt_started) * 1000)
                     _persist_usage(
@@ -496,6 +505,29 @@ class AnthropicProvider:
                         duration_ms=duration_ms,
                     )
                     return ProviderResponse(content, [], usage_metrics(data))
+            except ProviderResponseError as error:
+                last_error = error
+                if attempt < self.config.max_retries:
+                    delay = _retry_delay(attempt)
+                    _log_retry(
+                        "anthropic",
+                        attempt,
+                        self.config.max_retries,
+                        delay,
+                        error=error,
+                        reason=safe_preview(str(error), 300),
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                _log_failure(
+                    "anthropic",
+                    attempt,
+                    self.config.max_retries,
+                    int((monotonic() - attempt_started) * 1000),
+                    error,
+                    reason=safe_preview(str(error), 300),
+                )
+                raise
             except (aiohttp.ClientError, asyncio.TimeoutError) as error:
                 last_error = error
                 if attempt < self.config.max_retries:

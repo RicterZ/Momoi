@@ -622,11 +622,13 @@ class TurnRunner:
         ]
         goals_by_id: dict[str, dict[str, object]] = {}
         for goal in [
-            *self.store.search_goals(owner_query, 8),
+            *self.store.search_goals(
+                owner_query, self.config.policies.context.max_visible_goals
+            ),
             *self.store.list_goals(),
         ]:
             goals_by_id.setdefault(str(goal["id"]), goal)
-            if len(goals_by_id) == 8:
+            if len(goals_by_id) == self.config.policies.context.max_visible_goals:
                 break
         candidate_goals = [
             {
@@ -645,11 +647,18 @@ class TurnRunner:
         ]
         reminders_by_id: dict[str, dict[str, object]] = {}
         for reminder in [
-            *self.store.search_reminders(owner_query, 8),
-            *self.store.list_reminders(8),
+            *self.store.search_reminders(
+                owner_query, self.config.policies.context.max_visible_reminders
+            ),
+            *self.store.list_reminders(
+                self.config.policies.context.max_visible_reminders
+            ),
         ]:
             reminders_by_id.setdefault(str(reminder["id"]), reminder)
-            if len(reminders_by_id) == 8:
+            if (
+                len(reminders_by_id)
+                == self.config.policies.context.max_visible_reminders
+            ):
                 break
         candidate_reminders = [
             {

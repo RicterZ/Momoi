@@ -27,6 +27,7 @@ from ..models import (
     IncomingMessage,
     TurnDraft,
 )
+from ..policies import MemoryPolicy
 from .delivery import DeliveryStore
 from .memory import (
     MemoryStore,
@@ -68,9 +69,15 @@ def _add_context_timestamps(
 
 
 class Store(MemoryStore, DeliveryStore):
-    def __init__(self, path: Path, workspace: Path | None = None) -> None:
+    def __init__(
+        self,
+        path: Path,
+        workspace: Path | None = None,
+        memory_policy: MemoryPolicy = MemoryPolicy(),
+    ) -> None:
         database = Path(path).expanduser().resolve()
         self._workspace = (workspace or database.parent).expanduser().resolve()
+        self._memory_policy = memory_policy
         self._db = sqlite3.connect(database)
         self._db.row_factory = sqlite3.Row
         self._db.execute("PRAGMA journal_mode=WAL")

@@ -7,6 +7,7 @@ from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .channel import load_channel_config
+from .policies import RuntimePolicies
 
 
 class ConfigError(ValueError):
@@ -117,6 +118,7 @@ class AppConfig:
     soul_prompt_path: Path | None = None
     heartbeat_prompt_path: Path | None = None
     channels: tuple[object, ...] = ()
+    policies: RuntimePolicies = RuntimePolicies()
 
     @property
     def channel_configs(self) -> tuple[object, ...]:

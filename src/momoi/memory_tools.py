@@ -14,12 +14,11 @@ from .models import (
     ToolCall,
     TurnDraft,
 )
+from .policies import MemoryPolicy
 from .storage import (
     ALWAYS_MEMORY_KINDS,
     MEMORY_ACTIVATIONS,
     MEMORY_KINDS,
-    RECENT_MEMORY_MAX_TTL_HOURS,
-    RECENT_MEMORY_MIN_TTL_HOURS,
     Store,
     lexical_units,
     truncate_tokens,
@@ -474,8 +473,9 @@ def _memory_error(code: str) -> dict[str, object]:
 
 
 class MemoryTools:
-    def __init__(self, store: Store) -> None:
+    def __init__(self, store: Store, policy: MemoryPolicy = MemoryPolicy()) -> None:
         self.store = store
+        self.policy = policy
 
     def execute(
         self,
@@ -713,9 +713,9 @@ class MemoryTools:
             return _memory_error("invalid_ttl")
         if activation == "recent":
             if not (
-                RECENT_MEMORY_MIN_TTL_HOURS
+                self.policy.recent_min_ttl_hours
                 <= float(raw_ttl)
-                <= RECENT_MEMORY_MAX_TTL_HOURS
+                <= self.policy.recent_max_ttl_hours
             ):
                 return _memory_error("invalid_ttl")
             ttl_hours = float(raw_ttl)

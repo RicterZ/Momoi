@@ -16,6 +16,7 @@ from ..channel import (
     create_channel,
 )
 from ..config import AppConfig
+from ..policies import DaemonPolicy
 from ..dashboard import DashboardService
 from ..extensions import load_usage_plugin
 from ..logging_context import TRACE, log_event, safe_preview
@@ -31,24 +32,28 @@ logger = logging.getLogger(__name__)
 HEARTBEAT_QUEUE_ITEM = "__momoi_heartbeat__"
 REFLECTION_QUEUE_PREFIX = "__momoi_reflection__:"
 AGENDA_POLL_SECONDS = 5
-MESSAGE_GAP_MIN_SECONDS = 4.0
-MESSAGE_GAP_MAX_SECONDS = 7.0
-MESSAGE_GAP_MIN_CHARS = 4
-MESSAGE_GAP_SATURATION_CHARS = 60
+_DEFAULT_DAEMON_POLICY = DaemonPolicy()
+# Kept as compatibility constants for imports and existing tests.
+MESSAGE_GAP_MIN_SECONDS = _DEFAULT_DAEMON_POLICY.message_gap_min_seconds
+MESSAGE_GAP_MAX_SECONDS = _DEFAULT_DAEMON_POLICY.message_gap_max_seconds
+MESSAGE_GAP_MIN_CHARS = _DEFAULT_DAEMON_POLICY.message_gap_min_chars
+MESSAGE_GAP_SATURATION_CHARS = _DEFAULT_DAEMON_POLICY.message_gap_saturation_chars
 
 
-def _message_gap_bounds(text: str) -> tuple[float, float]:
+def _message_gap_bounds(
+    text: str, policy: DaemonPolicy = _DEFAULT_DAEMON_POLICY
+) -> tuple[float, float]:
     ratio = min(
         1.0,
         max(
             0.0,
-            (len(text.strip()) - MESSAGE_GAP_MIN_CHARS)
-            / (MESSAGE_GAP_SATURATION_CHARS - MESSAGE_GAP_MIN_CHARS),
+            (len(text.strip()) - policy.message_gap_min_chars)
+            / (policy.message_gap_saturation_chars - policy.message_gap_min_chars),
         ),
     )
-    lower = MESSAGE_GAP_MIN_SECONDS + 2 * ratio
+    lower = policy.message_gap_min_seconds + 2 * ratio
     upper = lower + 1
-    return lower, min(MESSAGE_GAP_MAX_SECONDS, upper)
+    return lower, min(policy.message_gap_max_seconds, upper)
 
 
 class MomoiDaemon(TurnRunner):
@@ -59,8 +64,9 @@ class MomoiDaemon(TurnRunner):
         dashboard: tuple[str, int] | None = None,
     ) -> None:
         self.config = config
+        self.daemon_policy = config.policies.daemon
         self._artifact_root().mkdir(parents=True, exist_ok=True)
-        self.store = Store(config.database, config.workspace)
+        self.store = Store(config.database, config.workspace, config.policies.memory)
         usage_plugin = None
         if config.usage.provider:
             usage_plugin = load_usage_plugin(
@@ -81,7 +87,7 @@ class MomoiDaemon(TurnRunner):
         )
         self.store.ensure_heartbeat(config.heartbeat)
         self.agenda_tools = AgendaTools(self.store)
-        self.memory_tools = MemoryTools(self.store)
+        self.memory_tools = MemoryTools(self.store, config.policies.memory)
         self.builtin_tools = BuiltinTools(config.workspace or config.database.parent)
         created = (
             (channel,)
@@ -772,7 +778,9 @@ class MomoiDaemon(TurnRunner):
                     continue
                 delivery = (row.channel, row.turn_id)
                 if delivery == previous_delivery:
-                    delay = random.uniform(*_message_gap_bounds(row.text))
+                    delay = random.uniform(
+                        *_message_gap_bounds(row.text, self.daemon_policy)
+                    )
                     log_event(
                         logger,
                         TRACE,

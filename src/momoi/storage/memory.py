@@ -4,6 +4,7 @@ import sqlite3
 import time
 
 from ..context_time import context_timestamp
+from ..policies import MemoryPolicy
 from ..models import (
     IncomingMessage,
     MemoryCandidate,
@@ -23,20 +24,24 @@ MEMORY_KINDS = {
 MEMORY_ACTIVATIONS = {"always", "recent", "recall"}
 ALWAYS_MEMORY_KINDS = {"profile", "preference", "relationship"}
 RECENT_MEMORY_WINDOW_SECONDS = 7 * 24 * 60 * 60
-RECENT_MEMORY_MIN_TTL_HOURS = 1
-RECENT_MEMORY_MAX_TTL_HOURS = 7 * 24
+_DEFAULT_MEMORY_POLICY = MemoryPolicy()
+RECENT_MEMORY_MIN_TTL_HOURS = _DEFAULT_MEMORY_POLICY.recent_min_ttl_hours
+RECENT_MEMORY_MAX_TTL_HOURS = _DEFAULT_MEMORY_POLICY.recent_max_ttl_hours
 ALWAYS_MEMORY_TOKEN_BUDGET = 1200
 CJK_STOP_CHARS = set("的了是在我你他她它们和就都也很还把被让要会呢吧啊哦呀")
 
 
 def memory_expires_at(
-    activation: str, ttl_hours: float, now: float
+    activation: str,
+    ttl_hours: float,
+    now: float,
+    policy: MemoryPolicy = _DEFAULT_MEMORY_POLICY,
 ) -> float | None:
     if activation != "recent":
         return None
     hours = min(
-        RECENT_MEMORY_MAX_TTL_HOURS,
-        max(RECENT_MEMORY_MIN_TTL_HOURS, float(ttl_hours)),
+        policy.recent_max_ttl_hours,
+        max(policy.recent_min_ttl_hours, float(ttl_hours)),
     )
     return now + hours * 3600
 
@@ -156,6 +161,8 @@ def lexical_units(text: str, *, strict: bool = False) -> set[str]:
 
 
 class MemoryStore:
+    _memory_policy: MemoryPolicy
+
     def purge_expired_memories(self, *, now: float | None = None) -> int:
         now = time.time() if now is None else now
         cutoff = now - RECENT_MEMORY_WINDOW_SECONDS
@@ -321,7 +328,12 @@ class MemoryStore:
                 "recent" if item["action"] == "demote_recent" else "recall"
             )
             expires_at = (
-                memory_expires_at(activation, RECENT_MEMORY_MAX_TTL_HOURS, now)
+                memory_expires_at(
+                    activation,
+                    self._memory_policy.recent_max_ttl_hours,
+                    now,
+                    self._memory_policy,
+                )
                 if activation == "recent"
                 else None
             )
@@ -371,7 +383,9 @@ class MemoryStore:
                 continue
             action = item["action"]
             if action == "extend":
-                expires_at = memory_expires_at("recent", float(item["ttl_hours"]), now)
+                expires_at = memory_expires_at(
+                    "recent", float(item["ttl_hours"]), now, self._memory_policy
+                )
                 self._db.execute(
                     "UPDATE memories SET expires_at=?, updated_at=? WHERE id=?",
                     (expires_at, now, row["id"]),
@@ -504,7 +518,8 @@ class MemoryStore:
                 not core
                 and (
                     overlap == 0
-                    or overlap / max(1, len(query_units)) < 0.1
+                    or overlap / max(1, len(query_units))
+                    < self._memory_policy.lexical_overlap_floor
                 )
             ):
                 continue
@@ -673,7 +688,9 @@ class MemoryStore:
                ORDER BY id DESC LIMIT 1""",
             (memory.kind, memory.key),
         ).fetchone()
-        expires_at = memory_expires_at(memory.activation, memory.ttl_hours, now)
+        expires_at = memory_expires_at(
+            memory.activation, memory.ttl_hours, now, self._memory_policy
+        )
         if old and old["content"] == memory.content:
             self._db.execute(
                 """UPDATE memories SET source_event_id=?, evidence_quote=?,
