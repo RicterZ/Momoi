@@ -62,7 +62,7 @@ def _search_or(
                 )
 
     rows = list(ranked.values())
-    rows.sort(key=lambda item: (-item[1], -item[2], item[3]))
+    rows.sort(key=lambda item: (-item[1], item[3], -item[2]))
     return [item[0] for item in rows[:max_results]]
 
 
