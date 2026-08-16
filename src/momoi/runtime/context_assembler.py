@@ -9,6 +9,7 @@ from ..config import AppConfig
 from ..context_time import context_timestamp
 from ..logging_context import log_event, safe_preview
 from ..storage import Store, estimate_tokens, truncate_tokens
+from .budget import SECTION_BUDGET_ALLOCATOR
 
 
 _LEGACY_OWNER_HEADER = "# Current owner messages\n"
@@ -109,32 +110,15 @@ def _selected_by_unit(
                     rows.append(row)
         candidates.append((str(unit["id"]), rows))
 
-    selected: dict[object, dict[str, object]] = {}
-    used = 0
-    rounds = max((len(rows) for _, rows in candidates), default=0)
-    for index in range(rounds):
-        for unit_id, rows in candidates:
-            if index >= len(rows):
-                continue
-            row = rows[index]
-            key = identity(row)
-            existing = selected.get(key)
-            if existing is not None:
-                unit_ids = existing["unit_ids"]
-                if unit_id not in unit_ids:
-                    unit_ids.append(unit_id)
-                _merge_matches(existing, row)
-                continue
-            if index > 0 and len(selected) >= max_results:
-                continue
-            size = estimate_tokens(render(row))
-            if used + size > token_budget:
-                continue
-            item = snapshot(row)
-            item["unit_ids"] = [unit_id]
-            selected[key] = item
-            used += size
-    return list(selected.values())
+    return SECTION_BUDGET_ALLOCATOR.select(
+        candidates,
+        identity,
+        render,
+        snapshot,
+        _merge_matches,
+        max_results,
+        token_budget,
+    )
 
 
 def build_plan_retrieval(

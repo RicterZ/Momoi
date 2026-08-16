@@ -44,6 +44,7 @@ from .context_assembler import (
     _historical_content,
     recall_episode_context,
 )
+from .budget import TOOL_RESULT_FITTER
 from .context_candidates import (
     DEFAULT_EPISODE_CANDIDATE_POLICY,
     EpisodeCandidatePolicy,
@@ -179,38 +180,7 @@ def _tool_error_block(call_id: str, error: object) -> dict[str, Any]:
 
 
 def _truncate_tool_result_json(value: str, limit: int) -> str:
-    try:
-        parsed = json.loads(value)
-    except (json.JSONDecodeError, TypeError):
-        parsed = {
-            "ok": False,
-            "error": "tool_result_truncated",
-            "message": safe_preview(value, max(100, limit // 2)),
-        }
-    if not isinstance(parsed, dict):
-        parsed = {"ok": True, "value": parsed}
-    preserved = {
-        key: parsed[key]
-        for key in ("ok", "error", "message", "provenance")
-        if key in parsed
-    }
-    if "message" in preserved:
-        preserved["message"] = safe_preview(
-            preserved["message"], max(100, limit // 3)
-        )
-    omitted = {
-        key: value
-        for key, value in parsed.items()
-        if key not in preserved and key not in {"truncated", "original_chars"}
-    }
-    preserved.update(
-        {
-            "truncated": True,
-            "original_chars": len(value),
-            "content": safe_preview(omitted, max(100, limit // 2)),
-        }
-    )
-    return json.dumps(preserved, ensure_ascii=False, default=str)
+    return TOOL_RESULT_FITTER.fit(value, limit)
 
 
 def _conversation_guidance(plan: dict[str, object]) -> str:

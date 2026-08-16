@@ -55,73 +55,21 @@ def _merged_always_memory_content(target: str, source: str) -> str:
 
 
 def estimate_tokens(text: str) -> int:
-    ascii_chars = sum(ord(char) < 128 for char in text)
-    return max(1, math.ceil((len(text) - ascii_chars) + ascii_chars / 4))
+    from ..runtime.budget import TEXT_SIZER
+
+    return TEXT_SIZER.estimate(text)
 
 
 def truncate_tokens(text: str, token_budget: int) -> str:
-    if token_budget <= 0:
-        return ""
-    if estimate_tokens(text) <= token_budget:
-        return text
-    marker = "…[truncated]"
-    if estimate_tokens(marker) > token_budget:
-        marker = ""
-    low, high = 0, len(text)
-    while low < high:
-        middle = (low + high + 1) // 2
-        if estimate_tokens(text[:middle] + marker) <= token_budget:
-            low = middle
-        else:
-            high = middle - 1
-    return text[:low] + marker
+    from ..runtime.budget import MEMORY_TEXT_FITTER
+
+    return MEMORY_TEXT_FITTER.truncate(text, token_budget)
 
 
 def excerpt_tokens(text: str, terms: set[str], token_budget: int) -> str:
-    if token_budget <= 0:
-        return ""
-    if estimate_tokens(text) <= token_budget:
-        return text
-    folded = text.casefold()
-    matches = [
-        (folded.find(term.casefold()), term)
-        for term in terms
-        if term and folded.find(term.casefold()) >= 0
-    ]
-    if not matches:
-        return truncate_tokens(text, token_budget)
-    anchor = max(
-        matches,
-        key=lambda match: (
-            sum(
-                len(term)
-                for position, term in matches
-                if abs(position - match[0]) <= 500
-            ),
-            len(match[1]),
-            -match[0],
-        ),
-    )[0]
-    marker = "…"
-    marker_tokens = estimate_tokens(marker)
-    left_budget = max(0, (token_budget - marker_tokens) // 3)
-    left = text[:anchor]
-    low, high = 0, len(left)
-    while low < high:
-        middle = (low + high) // 2
-        if estimate_tokens(left[middle:]) <= left_budget:
-            high = middle
-        else:
-            low = middle + 1
-    prefix = left[low:]
-    remaining = max(
-        1,
-        token_budget
-        - estimate_tokens(prefix)
-        - (marker_tokens if low else 0),
-    )
-    suffix = truncate_tokens(text[anchor:], remaining)
-    return (marker if low else "") + prefix + suffix
+    from ..runtime.budget import MEMORY_TEXT_FITTER
+
+    return MEMORY_TEXT_FITTER.excerpt(text, terms, token_budget)
 
 
 def token_chunk(text: str, offset: int, token_budget: int) -> tuple[str, int | None]:
