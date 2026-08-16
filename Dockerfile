@@ -45,9 +45,16 @@ RUN pip wheel --no-deps --wheel-dir /wheels .
 
 FROM python:3.13-slim-trixie AS release
 
+ARG VERSION=0.1.0
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     HOME=/home/momoi
+
+LABEL org.opencontainers.image.title="Momoi" \
+      org.opencontainers.image.description="A persistent personal AI companion for private chat." \
+      org.opencontainers.image.source="https://github.com/RicterZ/Momoi" \
+      org.opencontainers.image.version="${VERSION}"
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates ffmpeg nodejs npm tzdata \
@@ -58,6 +65,10 @@ COPY --from=build /wheels /wheels
 RUN pip install --no-cache-dir --no-index /wheels/*.whl \
     && rm -rf /wheels
 
+COPY config.example /usr/share/momoi/example
+COPY docker/entrypoint.sh /usr/local/bin/momoi-entrypoint
+RUN chmod +x /usr/local/bin/momoi-entrypoint
+
 EXPOSE 8787 8788
-ENTRYPOINT ["momoi"]
+ENTRYPOINT ["momoi-entrypoint"]
 CMD ["run", "--dashboard"]

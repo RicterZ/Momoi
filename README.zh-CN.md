@@ -213,7 +213,7 @@ momoi --workspace /path/to/workspace run
 
 ## 部署
 
-常驻运行通常用 Dockerfile。她仍然需要一个私聊渠道，以及一个 LLM。
+发布的镜像是 `ricterz/momoi`（`linux/amd64` 和 `linux/arm64`）。她仍然需要一个私聊渠道，以及一个 LLM。
 
 ### 你需要什么
 
@@ -223,36 +223,6 @@ momoi --workspace /path/to/workspace run
 - 兼容 Anthropic Messages 或 OpenAI Chat Completions 的 LLM 端点
 
 一个渠道就够。两个可以一起开。
-
-### 准备 workspace
-
-```bash
-mkdir -p ~/.momoi
-cp -R config.example/. ~/.momoi/
-```
-
-编辑 `~/.momoi/config.json` 并设置：
-
-- LLM API 格式、端点、密钥和模型
-- 要用的渠道，以及哪个作为 `primary`
-- 本地时区
-- 一张足够长的随机 `dashboard.token`
-- 如果有其他服务要推事件，打开 Webhook：启用、绑定 `0.0.0.0`，并设置一张足够长的随机 `webhooks.token`
-
-只用微信时，从 `channels.enabled` 里去掉 `napcat`，并把 `primary` 设为 `weixin`。只用 QQ 时，去掉 `weixin`。
-
-示例 workspace 默认关闭 Webhook，并绑定在 `127.0.0.1`。在 Docker 里这个地址只有容器内部能到，所以要改成：
-
-```json
-{
-  "webhooks": {
-    "enabled": true,
-    "host": "0.0.0.0",
-    "port": 8787,
-    "token": "replace-with-a-random-token"
-  }
-}
-```
 
 ### 接入 NapCat
 
@@ -269,56 +239,58 @@ docker run -d --name napcat \
   mlikiowa/napcat-docker:latest
 ```
 
-打开 `http://127.0.0.1:6099/webui`。首次登录的 token 在 `docker logs napcat` 里。扫描 QQ 二维码，再打开 OneBot WebSocket。然后把这个地址和你的 QQ 号写进 `config.json`：
-
-```json
-{
-  "channels": {
-    "primary": "napcat",
-    "enabled": {
-      "napcat": {
-        "url": "ws://host.docker.internal:3001",
-        "owner_qq": "your-qq-number"
-      }
-    }
-  }
-}
-```
-
-只有这个 QQ 会被当作主人。
-
-### 登录微信
-
-先构建一次镜像，再在同一个 workspace 里扫描 iLink 二维码：
-
-```bash
-docker build -t momoi .
-docker run --rm -it \
-  -v "$HOME/.momoi:/home/momoi/.momoi" \
-  momoi channel login weixin
-```
-
-登录状态会留在 workspace 里。之后让 `weixin` 留在 `channels.enabled` 即可。
+打开 `http://127.0.0.1:6099/webui`。首次登录的 token 在 `docker logs napcat` 里。扫描 QQ 二维码，再打开 OneBot WebSocket。只有这个 QQ 会被当作主人。
 
 ### 运行 Momoi
 
 ```bash
-docker build -t momoi .
-docker run -d --name momoi \
+docker run -d --name momoi --restart unless-stopped \
   --add-host=host.docker.internal:host-gateway \
   -e TZ=Asia/Shanghai \
+  -e MOMOI_LLM_BASE_URL=https://api.example.com \
+  -e MOMOI_LLM_API_KEY=replace-me \
+  -e MOMOI_LLM_MODEL=model-name \
+  -e MOMOI_OWNER_QQ=your-qq-number \
   -v "$HOME/.momoi:/home/momoi/.momoi" \
-  -p 8787:8787 \
-  -p 8788:8788 \
-  --restart unless-stopped \
-  momoi
+  -p 8787:8787 -p 8788:8788 \
+  ricterz/momoi:0.1.0
 ```
 
-打开 `http://127.0.0.1:8788`，输入看板通行证。从主人 QQ 或刚才扫码的微信发一条私聊即可。回复留在发起对话的渠道，主动消息发送到 `primary`。
+第一次启动会把示例 workspace 写进 `~/.momoi`，把 NapCat 指到 `ws://host.docker.internal:3001`，在 `0.0.0.0:8787` 打开 Webhook，并在 `docker logs momoi` 里打印看板和 Webhook token。打开 `http://127.0.0.1:8788`。从主人 QQ 发一条私聊即可。回复留在发起对话的渠道，主动消息发送到 `primary`。
 
-如果打开了 Webhook，其他服务用 `Authorization: Bearer <webhooks.token>` 向 `http://<host>:8787/webhooks/<workflow>` 发 POST。这个端口只适合放在可信网络。
+其他服务用 `Authorization: Bearer <webhook-token>` 向 `http://<host>:8787/webhooks/<workflow>` 发 POST。这个端口只适合放在可信网络。
 
-容器里的 home 是 `/home/momoi`，默认 workspace 是 `/home/momoi/.momoi`，请一直挂上这个目录。如果 NapCat 和 Momoi 在同一个 Docker 网络里，可以把地址写成 `ws://napcat:3001`，不必用 `host.docker.internal`。
+要在本仓库里一起启动 NapCat 和 Momoi：
+
+```bash
+export MOMOI_LLM_BASE_URL=https://api.example.com
+export MOMOI_LLM_API_KEY=replace-me
+export MOMOI_LLM_MODEL=model-name
+export MOMOI_OWNER_QQ=your-qq-number
+docker compose up -d
+```
+
+Compose 会自动使用 `ws://napcat:3001`。
+
+### 登录微信
+
+在同一个 workspace 里扫描 iLink 二维码，然后下次启动加上 `MOMOI_PRIMARY=weixin`：
+
+```bash
+docker run --rm -it \
+  -v "$HOME/.momoi:/home/momoi/.momoi" \
+  ricterz/momoi:0.1.0 channel login weixin
+```
+
+登录状态会留在 workspace 里。只用微信时可以不设 `MOMOI_OWNER_QQ`。
+
+### 从源码构建
+
+```bash
+docker build -t momoi .
+```
+
+然后用上面同样的 `docker run`，把 `ricterz/momoi:0.1.0` 换成 `momoi`。容器里的 home 是 `/home/momoi`，请一直挂上 `~/.momoi`。
 
 ## 个性化 Momoi
 

@@ -262,6 +262,78 @@ class ConfigurationTest(unittest.TestCase):
                 },
             )
 
+    def test_environment_overrides_docker_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "prompts").mkdir()
+            (root / "prompts" / "SOUL.md").write_text("Test soul")
+            path = root / "config.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "llm": {
+                            "base_url": "https://example.com",
+                            "api_key": "key",
+                            "model": "model",
+                        },
+                        "channels": {
+                            "primary": "napcat",
+                            "enabled": {
+                                "napcat": {
+                                    "url": "ws://localhost",
+                                    "owner_qq": "123",
+                                },
+                                "weixin": {},
+                            },
+                        },
+                        "dashboard": {"token": "dash-secret"},
+                        "webhooks": {
+                            "enabled": False,
+                            "host": "127.0.0.1",
+                            "token": "old-hook",
+                        },
+                        "notifications": {"timezone": "UTC"},
+                        "context": {},
+                        "storage": {"database": "momoi.sqlite3"},
+                        "logging": {},
+                    }
+                )
+            )
+            with patch.dict(
+                "os.environ",
+                {
+                    "MOMOI_LLM_API_FORMAT": "openai",
+                    "MOMOI_LLM_BASE_URL": "https://llm.example",
+                    "MOMOI_LLM_API_KEY": "sk-from-env",
+                    "MOMOI_LLM_MODEL": "env-model",
+                    "MOMOI_NAPCAT_URL": "ws://napcat:3001",
+                    "MOMOI_OWNER_QQ": "999",
+                    "MOMOI_PRIMARY": "weixin",
+                    "MOMOI_TIMEZONE": "Asia/Shanghai",
+                    "MOMOI_DASHBOARD_TOKEN": "env-dash",
+                    "MOMOI_WEBHOOKS_ENABLED": "true",
+                    "MOMOI_WEBHOOKS_HOST": "0.0.0.0",
+                    "MOMOI_WEBHOOKS_TOKEN": "env-hook",
+                },
+                clear=False,
+            ):
+                config = load_config(path)
+            self.assertEqual(config.llm.api_format, "openai")
+            self.assertEqual(config.llm.base_url, "https://llm.example")
+            self.assertEqual(config.llm.api_key, "sk-from-env")
+            self.assertEqual(config.llm.model, "env-model")
+            self.assertEqual(config.channel.plugin, "weixin")
+            napcat = next(
+                item for item in config.channel_configs if item.plugin == "napcat"
+            )
+            self.assertEqual(napcat.url, "ws://napcat:3001")
+            self.assertEqual(napcat.owner_qq, "999")
+            self.assertEqual(config.notifications.timezone, "Asia/Shanghai")
+            self.assertEqual(config.dashboard.token, "env-dash")
+            self.assertTrue(config.webhooks.enabled)
+            self.assertEqual(config.webhooks.host, "0.0.0.0")
+            self.assertEqual(config.webhooks.token, "env-hook")
+
     def test_dashboard_flag_requires_token(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

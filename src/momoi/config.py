@@ -1,4 +1,5 @@
 import json
+import os
 import re
 from dataclasses import dataclass
 from importlib.resources import files
@@ -160,10 +161,83 @@ def _clock(value: Any, name: str) -> str | None:
     return text
 
 
+def _env(name: str) -> str:
+    return os.environ.get(name, "").strip()
+
+
+def _env_bool(name: str) -> bool | None:
+    value = _env(name).lower()
+    if not value:
+        return None
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+    raise ConfigError(f"{name} must be true or false")
+
+
+def _apply_env_overrides(raw: dict[str, Any]) -> None:
+    llm = raw.setdefault("llm", {})
+    if isinstance(llm, dict):
+        if value := _env("MOMOI_LLM_API_FORMAT"):
+            llm["api_format"] = value
+        if value := _env("MOMOI_LLM_BASE_URL"):
+            llm["base_url"] = value
+        if value := _env("MOMOI_LLM_API_KEY"):
+            llm["api_key"] = value
+        if value := _env("MOMOI_LLM_MODEL"):
+            llm["model"] = value
+
+    channels = raw.get("channels")
+    if isinstance(channels, dict):
+        if value := _env("MOMOI_PRIMARY"):
+            channels["primary"] = value
+        enabled = channels.get("enabled")
+        napcat = enabled.get("napcat") if isinstance(enabled, dict) else None
+        if isinstance(napcat, dict):
+            if value := _env("MOMOI_NAPCAT_URL"):
+                napcat["url"] = value
+            if value := _env("MOMOI_OWNER_QQ"):
+                napcat["owner_qq"] = value
+    else:
+        channel = raw.get("channel")
+        settings = channel.get("settings") if isinstance(channel, dict) else None
+        if isinstance(settings, dict):
+            if value := _env("MOMOI_NAPCAT_URL"):
+                settings["url"] = value
+            if value := _env("MOMOI_OWNER_QQ"):
+                settings["owner_qq"] = value
+
+    notifications = raw.setdefault("notifications", {})
+    if isinstance(notifications, dict) and (value := _env("MOMOI_TIMEZONE")):
+        notifications["timezone"] = value
+
+    dashboard = raw.setdefault("dashboard", {})
+    if isinstance(dashboard, dict) and (value := _env("MOMOI_DASHBOARD_TOKEN")):
+        dashboard["token"] = value
+
+    webhooks = raw.setdefault("webhooks", {})
+    if isinstance(webhooks, dict):
+        enabled = _env_bool("MOMOI_WEBHOOKS_ENABLED")
+        if enabled is not None:
+            webhooks["enabled"] = enabled
+        if value := _env("MOMOI_WEBHOOKS_HOST"):
+            webhooks["host"] = value
+        if value := _env("MOMOI_WEBHOOKS_TOKEN"):
+            webhooks["token"] = value
+
+    usage = raw.setdefault("usage", {})
+    if isinstance(usage, dict) and (value := _env("MOMOI_USAGE_API_KEY")):
+        usage["api_key"] = value
+
+
 def load_config(path: str | Path) -> AppConfig:
     config_path = Path(path).expanduser().resolve()
     with config_path.open("r", encoding="utf-8") as file:
         raw = json.load(file)
+    if not isinstance(raw, dict):
+        raise ConfigError("config.json must be a table/object")
+    _apply_env_overrides(raw)
 
     llm_raw = _mapping(raw.get("llm"), "llm")
     model = str(llm_raw.get("model") or "")

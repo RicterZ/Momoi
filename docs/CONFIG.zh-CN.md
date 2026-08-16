@@ -84,7 +84,23 @@ MCP 是添加由模型控制能力的常规方式。工作流用于事件驱动�
 
 对于 Anthropic 兼容 provider，Momoi 请求 `/v1/messages`。对于 OpenAI 兼容 provider，只含 host 的 URL 会请求 `/v1/chat/completions`；已经包含网关路径的 URL 则在该路径下请求 `/chat/completions`。
 
-`config.json` 不会展开环境变量。如果其中包含凭据，请妥善保管并限制文件权限。
+`config.json` 不会展开 `${VAR}` 占位符。如果其中包含凭据，请妥善保管并限制文件权限。Docker 和一键启动可以用下面的 `MOMOI_*` 环境变量覆盖对应字段；进程里环境变量优先于文件。
+
+| 变量 | 覆盖字段 |
+| --- | --- |
+| `MOMOI_LLM_API_FORMAT` | `llm.api_format` |
+| `MOMOI_LLM_BASE_URL` | `llm.base_url` |
+| `MOMOI_LLM_API_KEY` | `llm.api_key` |
+| `MOMOI_LLM_MODEL` | `llm.model` |
+| `MOMOI_NAPCAT_URL` | NapCat `url` |
+| `MOMOI_OWNER_QQ` | NapCat `owner_qq` |
+| `MOMOI_PRIMARY` | `channels.primary` |
+| `MOMOI_TIMEZONE` | `notifications.timezone` |
+| `MOMOI_DASHBOARD_TOKEN` | `dashboard.token` |
+| `MOMOI_WEBHOOKS_ENABLED` | `webhooks.enabled` |
+| `MOMOI_WEBHOOKS_HOST` | `webhooks.host` |
+| `MOMOI_WEBHOOKS_TOKEN` | `webhooks.token` |
+| `MOMOI_USAGE_API_KEY` | `usage.api_key` |
 
 ## Channel
 

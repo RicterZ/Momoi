@@ -84,7 +84,23 @@ This makes the workspace relocatable. Absolute paths are also accepted where a p
 
 For Anthropic-compatible providers, Momoi calls `/v1/messages`. For OpenAI-compatible providers, a host-only URL receives `/v1/chat/completions`; a URL that already contains a gateway path receives `/chat/completions` below that path.
 
-`config.json` does not expand environment variables. Keep it private and restrict its file permissions if it contains credentials.
+`config.json` does not expand `${VAR}` placeholders. Keep it private and restrict its file permissions if it contains credentials. Docker and one-command runs can override the fields below with `MOMOI_*` environment variables; those values win over the file for that process.
+
+| Variable | Overrides |
+| --- | --- |
+| `MOMOI_LLM_API_FORMAT` | `llm.api_format` |
+| `MOMOI_LLM_BASE_URL` | `llm.base_url` |
+| `MOMOI_LLM_API_KEY` | `llm.api_key` |
+| `MOMOI_LLM_MODEL` | `llm.model` |
+| `MOMOI_NAPCAT_URL` | NapCat `url` |
+| `MOMOI_OWNER_QQ` | NapCat `owner_qq` |
+| `MOMOI_PRIMARY` | `channels.primary` |
+| `MOMOI_TIMEZONE` | `notifications.timezone` |
+| `MOMOI_DASHBOARD_TOKEN` | `dashboard.token` |
+| `MOMOI_WEBHOOKS_ENABLED` | `webhooks.enabled` |
+| `MOMOI_WEBHOOKS_HOST` | `webhooks.host` |
+| `MOMOI_WEBHOOKS_TOKEN` | `webhooks.token` |
+| `MOMOI_USAGE_API_KEY` | `usage.api_key` |
 
 ## Channel
 
