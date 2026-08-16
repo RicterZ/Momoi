@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 import time
 from collections.abc import Callable
 from typing import Any
@@ -17,11 +18,16 @@ logger = logging.getLogger(__name__)
 
 
 def _query_alternatives(query: str) -> list[str]:
-    return list(
-        dict.fromkeys(
-            part.strip() for part in query.split("|") if part.strip()
-        )
-    )[:12]
+    alternatives: list[str] = []
+    seen: set[str] = set()
+    for part in re.split(r"[|｜\n]", str(query)):
+        normalized = " ".join(part.strip().split())
+        folded = normalized.casefold()
+        if not normalized or folded in seen:
+            continue
+        seen.add(folded)
+        alternatives.append(normalized[:500])
+    return alternatives[:12]
 
 
 def _search_or(
@@ -56,14 +62,7 @@ def _search_or(
                 )
 
     rows = list(ranked.values())
-    rows.sort(
-        key=lambda item: (
-            item[1],
-            -item[3],
-            item[2],
-        ),
-        reverse=True,
-    )
+    rows.sort(key=lambda item: (-item[1], -item[2], item[3]))
     return [item[0] for item in rows[:max_results]]
 
 
