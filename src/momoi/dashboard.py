@@ -276,6 +276,45 @@ def create_dashboard_app(
         days = _bounded_int(request, "days", 30, 1, 366)
         return web.json_response(store.dashboard_usage(days=days))
 
+    async def thinking(request: web.Request) -> web.Response:
+        try:
+            return web.json_response(
+                store.dashboard_thinking(
+                    month=str(request.query.get("month") or ""),
+                    limit=_bounded_int(request, "limit", 64, 1, 200),
+                    cursor=_bounded_int(request, "cursor", 0, 0, 100_000),
+                )
+            )
+        except ValueError as error:
+            raise web.HTTPBadRequest(text=str(error)) from None
+
+    async def thinking_turn(request: web.Request) -> web.Response:
+        turn_id = request.match_info["turn_id"]
+        item = store.read_thinking(
+            turn_id,
+            str(request.query.get("call_id") or "").strip(),
+        )
+        if not item.get("ok"):
+            raise web.HTTPNotFound(text="thinking not found")
+        payload = {
+            "ok": True,
+            "items": item.get("calls") or [],
+            "count": item.get("count") or 0,
+        }
+        episode = store.episodes_for_turns([turn_id]).get(turn_id)
+        if episode:
+            payload.update(episode)
+        return web.json_response(payload)
+
+    async def thinking_call(request: web.Request) -> web.Response:
+        item = store.read_thinking("", request.match_info["call_id"])
+        if not item.get("ok"):
+            raise web.HTTPNotFound(text="thinking not found")
+        calls = item.get("calls") or []
+        if not calls:
+            raise web.HTTPNotFound(text="thinking not found")
+        return web.json_response({"ok": True, "item": calls[0]})
+
     async def conversations(request: web.Request) -> web.Response:
         limit = _bounded_int(request, "limit", 64, 1, 200)
         return web.json_response({"items": store.list_dashboard_conversations(limit)})
@@ -525,6 +564,9 @@ def create_dashboard_app(
     app.router.add_get("/api/health", health)
     app.router.add_get("/api/overview", overview)
     app.router.add_get("/api/usage", usage)
+    app.router.add_get("/api/thinking", thinking)
+    app.router.add_get("/api/thinking/calls/{call_id}", thinking_call)
+    app.router.add_get("/api/thinking/{turn_id}", thinking_turn)
     app.router.add_get("/api/conversations", conversations)
     app.router.add_get("/api/conversations/{episode_id}", conversation)
     app.router.add_get("/api/reflections", reflections)

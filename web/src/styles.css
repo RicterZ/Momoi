@@ -83,7 +83,12 @@ button, a { -webkit-tap-highlight-color: transparent; }
   letter-spacing: .15em;
 }
 
-nav { display: grid; gap: 10px; }
+nav {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 0 3px 4px 0;
+}
 nav a {
   display: grid;
   grid-template-columns: 34px 1fr;
@@ -938,6 +943,20 @@ h2, h3, p { overflow-wrap: anywhere; }
   flex: 0 0 auto;
 }
 .tags { display: flex; flex-wrap: wrap; gap: 7px; }
+a.tag {
+  text-decoration: none;
+  cursor: pointer;
+}
+a.tag:hover {
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0 var(--pink);
+}
+.thinking-conversation {
+  max-width: min(360px, 70%);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .tag, .status {
   display: inline-flex;
   align-items: center;
@@ -983,6 +1002,36 @@ h2, h3, p { overflow-wrap: anywhere; }
   margin-bottom: 16px;
 }
 .section-tools p { margin: 0; color: var(--muted); font-size: 13px; }
+.thinking-toolbar {
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+}
+.thinking-month {
+  display: grid;
+  gap: 6px;
+}
+.thinking-month span {
+  color: var(--soft);
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: .12em;
+}
+.thinking-month select {
+  min-width: 132px;
+  padding: 9px 12px;
+  border: 2px solid var(--ink);
+  border-radius: 10px;
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: 3px 3px 0 var(--blue);
+  font: inherit;
+}
+.thinking-month select:focus {
+  outline: none;
+  box-shadow: 2px 2px 0 var(--pink);
+}
+.thinking-body { font-size: 14px; }
 .filter { display: flex; gap: 6px; }
 .filter button {
   padding: 7px 10px;
@@ -1263,6 +1312,8 @@ h2, h3, p { overflow-wrap: anywhere; }
   .usage-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .usage-home-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .usage-chart-head { align-items: start; flex-direction: column; gap: 10px; }
+  .thinking-toolbar { flex-direction: column; align-items: stretch; }
+  .thinking-month select { width: 100%; }
   .record-layout { display: block; }
   .record-list {
     display: flex;

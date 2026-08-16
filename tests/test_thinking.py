@@ -201,3 +201,31 @@ class ThinkingStoreTests(unittest.TestCase):
             )
             self.assertTrue((Path(directory) / "thinking-2026-07.sqlite3").is_file())
             store.close()
+
+    def test_dashboard_thinking_defaults_to_the_current_month(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store.record_thinking_call(
+                created_at=time.time(),
+                turn_id="turn-dash",
+                call_id="call-dash",
+                stage="owner",
+                reasoning="看板只读查看当时的判断。",
+            )
+            store.record_thinking_call(
+                created_at=time.time() + 1,
+                turn_id="turn-dash",
+                call_id="call-dash-2",
+                stage="owner",
+                round=2,
+                tools=["respond"],
+                reasoning="收束。",
+            )
+            listed = store.dashboard_thinking()
+            self.assertTrue(listed["ok"])
+            self.assertEqual(listed["count"], 1)
+            self.assertEqual(listed["items"][0]["turn_id"], "turn-dash")
+            self.assertEqual(listed["items"][0]["call_count"], 2)
+            self.assertEqual(listed["items"][0]["stages"], ["owner"])
+            self.assertIn(listed["month"], listed["months"])
+            store.close()

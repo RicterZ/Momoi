@@ -459,7 +459,7 @@ Use a long random token and place a TLS reverse proxy in front of Momoi when the
 
 ## Dashboard
 
-The local Web dashboard is a small window into Momoi's records: conversations, daily reflections, memories, image reactions, and goals. From there you can also edit memories, manage reactions, and adjust goals that are still in progress.
+The local Web dashboard is a small window into Momoi's records: conversations, daily reflections, memories, image reactions, goals, and recorded model thinking. From there you can also edit memories, manage reactions, and adjust goals that are still in progress. Thinking is read-only.
 
 It starts only with `momoi run --dashboard`. Bind address and port come from the CLI; `config.json` holds the access passphrase.
 

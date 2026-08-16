@@ -42,8 +42,18 @@ def month_key(when: float) -> str:
     return datetime.fromtimestamp(when).astimezone().strftime("%Y-%m")
 
 
+def parse_month(value: str) -> str:
+    text = str(value or "").strip()
+    if not _FILE.fullmatch(f"thinking-{text}.sqlite3"):
+        raise ValueError("invalid_month")
+    year, month_number = (int(part) for part in text.split("-"))
+    if not 1 <= month_number <= 12:
+        raise ValueError("invalid_month")
+    return text
+
+
 def month_bounds(month: str) -> tuple[float, float]:
-    year, month_number = (int(part) for part in month.split("-"))
+    year, month_number = (int(part) for part in parse_month(month).split("-"))
     start = datetime(year, month_number, 1).astimezone()
     if month_number == 12:
         end = datetime(year + 1, 1, 1).astimezone()
@@ -81,6 +91,9 @@ class ThinkingStore:
         for connection in self._dbs.values():
             connection.close()
         self._dbs.clear()
+
+    def available_months(self) -> list[str]:
+        return self._available_months()
 
     def record(
         self,
@@ -162,14 +175,18 @@ class ThinkingStore:
         return result
 
     def read(self, turn_id: str, call_id: str = "") -> dict[str, Any]:
-        if not turn_id.strip():
+        if not turn_id.strip() and not call_id.strip():
             return {"ok": False, "error": "missing_turn_id"}
-        months = self._months_for(None, None, turn_id=turn_id)
+        months = (
+            self._months_for(None, None, turn_id=turn_id)
+            if turn_id.strip()
+            else self._available_months()[-_MAX_ALL_MONTHS :]
+        )
         found: list[dict[str, Any]] = []
         for month in months:
-            found.extend(self._scan_month(month, turn_id, None, None, ""))
-        if call_id:
-            found = [row for row in found if row["call_id"] == call_id]
+            found.extend(
+                self._scan_month(month, turn_id, None, None, "", call_id=call_id)
+            )
         found.sort(key=lambda item: (float(item["created_at"]), int(item["round"])))
         if not found:
             return {"ok": False, "error": "thinking_not_found"}
@@ -227,12 +244,16 @@ class ThinkingStore:
         after: float | None,
         before: float | None,
         stage: str,
+        call_id: str = "",
     ) -> list[dict[str, Any]]:
         clauses = ["1=1"]
         values: list[object] = []
         if turn_id:
             clauses.append("turn_id=?")
             values.append(turn_id)
+        if call_id:
+            clauses.append("call_id=?")
+            values.append(call_id)
         if after is not None:
             clauses.append("created_at>=?")
             values.append(after)

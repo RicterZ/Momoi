@@ -13,6 +13,7 @@ const pages = {
   emotions: ["表情包", "MOMOI // STICKERS"],
   goals: ["任务列表", "MOMOI // QUESTS"],
   reminders: ["提醒", "MOMOI // REMINDERS"],
+  thinking: ["思考记录", "MOMOI // THINKING"],
 };
 
 const navItems = [
@@ -23,7 +24,23 @@ const navItems = [
   ["emotions", "05", "表情包"],
   ["goals", "06", "任务列表"],
   ["reminders", "07", "提醒"],
+  ["thinking", "08", "思考"],
 ];
+
+const thinkingStageLabels = {
+  owner: "主人对话",
+  webhook: "Webhook",
+  context_plan: "上下文规划",
+  heartbeat: "心跳",
+  heartbeat_plan: "心跳规划",
+  reflection: "复盘",
+};
+
+function thinkingStageLabel(stage) {
+  const key = String(stage || "").trim();
+  if (!key) return "未标记";
+  return thinkingStageLabels[key] || key;
+}
 
 const activationOrder = ["always", "recent", "recall"];
 const activationLabels = {
@@ -153,16 +170,20 @@ function memoryKindLabel(kind) {
 
 function useHashRoute() {
   const read = () => {
-    const value = window.location.hash.slice(1);
-    return pages[value] ? value : "overview";
+    const raw = window.location.hash.slice(1);
+    const [page, ...rest] = raw.split("/");
+    return {
+      view: pages[page] ? page : "overview",
+      param: rest.length ? decodeURIComponent(rest.join("/")) : "",
+    };
   };
-  const [view, setView] = useState(read);
+  const [route, setRoute] = useState(read);
   useEffect(() => {
-    const route = () => setView(read());
-    window.addEventListener("hashchange", route);
-    return () => window.removeEventListener("hashchange", route);
+    const onChange = () => setRoute(read());
+    window.addEventListener("hashchange", onChange);
+    return () => window.removeEventListener("hashchange", onChange);
   }, []);
-  return view;
+  return route;
 }
 
 function Loading({ children = "正在读取 Momoi 的生活记录…" }) {
@@ -549,22 +570,34 @@ function UsageChart({ rows, totals, balance }) {
   );
 }
 
-function Conversations({ refreshKey, token }) {
-  const [selected, setSelected] = useState(null);
+function Conversations({ refreshKey, token, routeParam }) {
+  const [selected, setSelected] = useState(routeParam || null);
   const [detail, setDetail] = useState({ loading: false });
+  useEffect(() => {
+    if (routeParam) setSelected(routeParam);
+  }, [routeParam]);
+  function select(id) {
+    setSelected(id);
+    window.location.hash = id
+      ? `conversations/${encodeURIComponent(id)}`
+      : "conversations";
+  }
   return (
     <DataView path="/api/conversations?limit=100" refreshKey={refreshKey} token={token}>
       {(data) => {
         const items = data.items || [];
         if (!items.length) return <Empty />;
-        const activeId = selected || items[0].id;
+        const activeId =
+          (selected && items.some((item) => item.id === selected)
+            ? selected
+            : items[0].id);
         return (
           <ConversationLayout
             items={items}
             activeId={activeId}
             detail={detail}
             token={token}
-            onSelect={setSelected}
+            onSelect={select}
             setDetail={setDetail}
           />
         );
@@ -1555,6 +1588,196 @@ function Emotions({ refreshKey, token, onMutated }) {
   );
 }
 
+function currentMonth() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function monthLabel(value) {
+  const [year, month] = String(value).split("-");
+  if (!year || !month) return value;
+  return `${year} / ${Number(month)}`;
+}
+
+function thinkingFlowTitle(item) {
+  const stages = (item.stages || [item.stage]).filter((stage) => stage !== undefined);
+  const labels = stages.map((stage) => thinkingStageLabel(stage));
+  return labels.length ? labels.join(" → ") : "未标记";
+}
+
+function thinkingStageCode(stage) {
+  return (
+    {
+      owner: "OWNER",
+      webhook: "HOOK",
+      context_plan: "PLAN",
+      heartbeat: "BEAT",
+      heartbeat_plan: "HPLAN",
+      reflection: "NOTE",
+    }[String(stage || "").trim()] || "THINK"
+  );
+}
+
+function Thinking({ refreshKey, token }) {
+  const [month, setMonth] = useState(currentMonth);
+  const [selectedId, setSelectedId] = useState("");
+  const [detail, setDetail] = useState({});
+
+  return (
+    <DataView
+      path={`/api/thinking?month=${encodeURIComponent(month)}`}
+      refreshKey={`${refreshKey}:${month}`}
+      token={token}
+    >
+      {({ items, months, month: resolvedMonth }) => {
+        const available = months?.length ? months : [resolvedMonth || month];
+        const rows = items || [];
+        const active = rows.find((item) => item.id === selectedId) || rows[0];
+        return (
+          <>
+            <section className="section-tools thinking-toolbar">
+              <label className="thinking-month">
+                <span>月份</span>
+                <select
+                  value={resolvedMonth || month}
+                  onChange={(event) => {
+                    setMonth(event.target.value);
+                    setSelectedId("");
+                  }}
+                >
+                  {available.map((value) => (
+                    <option value={value} key={value}>
+                      {monthLabel(value)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </section>
+            {rows.length ? (
+              <ThinkingLayout
+                items={rows}
+                active={active}
+                detail={detail}
+                token={token}
+                onSelect={setSelectedId}
+                setDetail={setDetail}
+              />
+            ) : (
+              <Empty text="这个月还没有思考记录。" />
+            )}
+          </>
+        );
+      }}
+    </DataView>
+  );
+}
+
+function ThinkingLayout({ items, active, detail, token, onSelect, setDetail }) {
+  const turnId = String(active?.turn_id || "").trim();
+  const activeId = String(active?.id || "");
+  useEffect(() => {
+    if (!token || !activeId) {
+      setDetail({});
+      return undefined;
+    }
+    const controller = new AbortController();
+    setDetail({ loading: true });
+    const path = turnId
+      ? `/api/thinking/${encodeURIComponent(turnId)}`
+      : `/api/thinking/calls/${encodeURIComponent(activeId.replace(/^call:/, ""))}`;
+    api(path, { signal: controller.signal, token })
+      .then((data) => setDetail({ data }))
+      .catch((error) => {
+        if (error.name !== "AbortError") setDetail({ error });
+      });
+    return () => controller.abort();
+  }, [activeId, setDetail, token, turnId]);
+
+  return (
+    <section className="record-layout">
+      <div className="record-list" aria-label="思考 Turn">
+        {items.map((item) => (
+          <button
+            className={`record-item ${item.id === activeId ? "active" : ""}`}
+            type="button"
+            key={item.id}
+            onClick={() => onSelect(item.id)}
+          >
+            <h3>{thinkingFlowTitle(item)}</h3>
+            <p>{item.excerpt || "这次没有可见推理。"}</p>
+            <time>
+              {formatDate(item.updated_at || item.created_at)}
+              {item.call_count > 1 ? ` · ${item.call_count} 次调用` : ""}
+            </time>
+          </button>
+        ))}
+      </div>
+      <div className="conversation">
+        {detail.loading && <Loading>正在读取思考…</Loading>}
+        {detail.error && <ErrorState error={detail.error} />}
+        {detail.data && (
+          <ThinkingDetail
+            item={active}
+            calls={detail.data.items || (detail.data.item ? [detail.data.item] : [])}
+          />
+        )}
+      </div>
+    </section>
+  );
+}
+
+function ThinkingDetail({ item, calls }) {
+  const flow = [...calls].sort((left, right) => {
+    const time = Number(left.created_at || 0) - Number(right.created_at || 0);
+    return time !== 0 ? time : Number(left.round || 0) - Number(right.round || 0);
+  });
+  if (!flow.length) return <Empty text="这个 Turn 还没有思考记录。" />;
+  const episodeId = item?.episode_id;
+  const episodeTitle = item?.episode_title || "查看聊天记录";
+  return (
+    <>
+      <header className="conversation-head">
+        <div className="conversation-head-row">
+          {episodeId ? (
+            <a
+              className="tag thinking-conversation"
+              href={`#conversations/${encodeURIComponent(episodeId)}`}
+            >
+              {episodeTitle}
+            </a>
+          ) : (
+            <span className="panel-label">thinking</span>
+          )}
+        </div>
+        <h2>{thinkingFlowTitle(item || { stages: flow.map((call) => call.stage) })}</h2>
+      </header>
+      <div className="messages">
+        {flow.map((call) => (
+          <article className="message" key={call.call_id}>
+            <div
+              className={`message-role ${call.stage === "owner" ? "owner" : "momoi"}`}
+            >
+              {thinkingStageCode(call.stage)}
+            </div>
+            <div className="message-body">
+              <p className="message-content thinking-body">
+                {call.reasoning || call.excerpt || "这次调用没有可见推理。"}
+              </p>
+              <div className="message-meta">
+                <time>{formatDate(call.created_at)}</time>
+                <span>
+                  {thinkingStageLabel(call.stage)}
+                  {call.tools?.length ? ` · ${call.tools.join(" / ")}` : ""}
+                </span>
+              </div>
+            </div>
+          </article>
+        ))}
+      </div>
+    </>
+  );
+}
+
 const viewComponents = {
   overview: Overview,
   conversations: Conversations,
@@ -1563,6 +1786,7 @@ const viewComponents = {
   emotions: Emotions,
   goals: Goals,
   reminders: Reminders,
+  thinking: Thinking,
 };
 
 function TokenGate({ value, onChange, onUnlock }) {
@@ -1627,7 +1851,7 @@ function TokenGate({ value, onChange, onUnlock }) {
 }
 
 function App() {
-  const view = useHashRoute();
+  const { view, param } = useHashRoute();
   const [refreshKey, setRefreshKey] = useState(0);
   const [token, setToken] = useState(readToken);
   const [tokenDraft, setTokenDraft] = useState("");
@@ -1712,6 +1936,7 @@ function App() {
             <View
               refreshKey={refreshKey}
               token={token}
+              routeParam={param}
               onMutated={() => setRefreshKey((value) => value + 1)}
             />
           </div>

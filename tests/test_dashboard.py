@@ -246,6 +246,45 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(usage["today"]["cache_read_tokens"], 100)
         self.assertEqual(len(usage["daily"]), 7)
 
+    async def test_thinking_endpoint_lists_and_reads_calls(self) -> None:
+        now = time.time()
+        self.store.record_thinking_call(
+            created_at=now,
+            turn_id="turn-one",
+            call_id="call-think",
+            stage="owner",
+            round=1,
+            model="test",
+            tools=["respond"],
+            reasoning="决定先说明为什么没有提醒。",
+        )
+        listed = await (
+            await self.client.get("/api/thinking", headers=self._auth())
+        ).json()
+        self.assertTrue(listed["ok"])
+        self.assertEqual(listed["items"][0]["turn_id"], "turn-one")
+        self.assertEqual(listed["items"][0]["call_count"], 1)
+        self.assertEqual(listed["items"][0]["stages"], ["owner"])
+        self.assertEqual(listed["items"][0]["episode_id"], "episode-one")
+        self.assertEqual(listed["items"][0]["episode_title"], "一次测试聊天")
+        self.assertIn("没有提醒", listed["items"][0]["excerpt"])
+        detail = await (
+            await self.client.get(
+                "/api/thinking/turn-one", headers=self._auth()
+            )
+        ).json()
+        self.assertEqual(detail["items"][0]["reasoning"], "决定先说明为什么没有提醒。")
+        call = await (
+            await self.client.get(
+                "/api/thinking/calls/call-think", headers=self._auth()
+            )
+        ).json()
+        self.assertEqual(call["item"]["turn_id"], "turn-one")
+        bad = await self.client.get(
+            "/api/thinking?month=2026-13", headers=self._auth()
+        )
+        self.assertEqual(bad.status, 400)
+
     async def test_dashboard_rejects_invalid_limits(self) -> None:
         response = await self.client.get(
             "/api/conversations?limit=nope", headers=self._auth()
