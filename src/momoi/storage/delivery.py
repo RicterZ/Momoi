@@ -146,6 +146,71 @@ class DeliveryStore:
         day = datetime.fromtimestamp(when).astimezone().date().isoformat()
         return f"webhook:day:{day}", f"家里事件 {day}"
 
+    @staticmethod
+    def _heartbeat_day_episode(when: float) -> tuple[str, str]:
+        day = datetime.fromtimestamp(when).astimezone().date().isoformat()
+        return f"heartbeat:day:{day}", f"Momoi Heartbeat {day}"
+
+    def _heartbeat_turn_time(self, turn_id: str, fallback: float) -> float:
+        row = self._db.execute(
+            """SELECT MIN(created_at) AS created_at FROM messages
+               WHERE turn_id=? AND delivery_state='internal'
+                 AND content LIKE '[AUTONOMOUS HEARTBEAT RECORD;%'""",
+            (turn_id,),
+        ).fetchone()
+        return (
+            float(row["created_at"])
+            if row is not None and row["created_at"] is not None
+            else fallback
+        )
+
+    def _migrate_heartbeat_day_episodes(self) -> None:
+        migration = "heartbeat_day_episodes_v1"
+        if self._db.execute(
+            "SELECT 1 FROM schema_metadata WHERE key=?", (migration,)
+        ).fetchone():
+            return
+        rows = self._db.execute(
+            """SELECT turn_id, MIN(created_at) AS created_at,
+                      GROUP_CONCAT(content, '\n') AS content
+               FROM messages
+               WHERE delivery_state='internal'
+                 AND content LIKE '[AUTONOMOUS HEARTBEAT RECORD;%'
+               GROUP BY turn_id ORDER BY created_at"""
+        ).fetchall()
+        previous_episode_ids: set[str] = set()
+        for row in rows:
+            turn_id = str(row["turn_id"])
+            when = float(row["created_at"])
+            previous_episode_ids.update(
+                str(item["episode_id"])
+                for item in self._db.execute(
+                    "SELECT episode_id FROM episode_turns WHERE turn_id=?",
+                    (turn_id,),
+                ).fetchall()
+            )
+            self._db.execute("DELETE FROM episode_turns WHERE turn_id=?", (turn_id,))
+            episode_key, title = self._heartbeat_day_episode(when)
+            self._ensure_autonomous_episode(
+                episode_key,
+                turn_id,
+                title,
+                when,
+                str(row["content"]),
+            )
+        for episode_id in previous_episode_ids:
+            self._db.execute(
+                """DELETE FROM conversation_episodes
+                   WHERE id=? AND NOT EXISTS (
+                       SELECT 1 FROM episode_turns WHERE episode_id=?
+                   )""",
+                (episode_id, episode_id),
+            )
+        self._db.execute(
+            "INSERT OR REPLACE INTO schema_metadata(key, value) VALUES (?, '1')",
+            (migration,),
+        )
+
     def record_webhook_event(
         self,
         run_id: str,

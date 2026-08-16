@@ -555,6 +555,7 @@ class Store(MemoryStore, DeliveryStore):
                SELECT id, source_event_id, evidence_quote, created_at FROM memories"""
         )
         self._backfill_episode_recall_terms()
+        self._migrate_heartbeat_day_episodes()
         self._db.execute("UPDATE goals SET review_claimed_at=NULL")
         self._db.execute("UPDATE reminders SET claimed_at=NULL WHERE status='pending'")
         self._db.execute(
@@ -1706,6 +1707,27 @@ class Store(MemoryStore, DeliveryStore):
             if successor is None:
                 break
             episode_id = str(successor["from_episode_id"])
+        current = self._db.execute(
+            "SELECT status FROM conversation_episodes WHERE id=?", (episode_id,)
+        ).fetchone()
+        if current is not None and current["status"] == "closed":
+            predecessor = episode_id
+            episode_id = uuid.uuid5(
+                uuid.NAMESPACE_URL,
+                f"momoi:autonomous-successor:{predecessor}:{turn_id}",
+            ).hex
+            self._db.execute(
+                """INSERT OR IGNORE INTO conversation_episodes
+                   (id, title, salience, created_at, updated_at)
+                   VALUES (?, ?, 0.4, ?, ?)""",
+                (episode_id, title[:200], now, now),
+            )
+            self._db.execute(
+                """INSERT OR IGNORE INTO episode_links
+                   (from_episode_id, to_episode_id, kind)
+                   VALUES (?, ?, 'continues')""",
+                (episode_id, predecessor),
+            )
         linked = self._db.execute(
             """SELECT 1 FROM episode_turns
                WHERE episode_id=? AND turn_id=?""",
@@ -4175,10 +4197,11 @@ class Store(MemoryStore, DeliveryStore):
                         heartbeat_source,
                     ),
                 )
+                episode_key, title = self._heartbeat_day_episode(now)
                 self._ensure_autonomous_episode(
-                    "heartbeat-life",
+                    episode_key,
                     turn_id,
-                    "Momoi autonomous life",
+                    title,
                     now,
                     activity,
                     result,
@@ -5819,15 +5842,22 @@ class Store(MemoryStore, DeliveryStore):
                 ),
             )
         if visible_messages:
-            episode_key = (
-                "heartbeat-life"
+            episode_key, title = (
+                self._heartbeat_day_episode(
+                    self._heartbeat_turn_time(str(row["turn_id"]), now)
+                )
                 if row["goal_id"] == "heartbeat"
-                else f"goal:{row['goal_id']}"
+                else (
+                    f"goal:{row['goal_id']}",
+                    self._episode_title(
+                        visible_messages[0], "Autonomous conversation"
+                    ),
+                )
             )
             self._ensure_autonomous_episode(
                 episode_key,
                 str(row["turn_id"]),
-                self._episode_title(visible_messages[0], "Autonomous conversation"),
+                title,
                 now,
                 visible_messages,
             )

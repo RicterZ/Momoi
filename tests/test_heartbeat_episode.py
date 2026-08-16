@@ -1,0 +1,151 @@
+import tempfile
+import unittest
+from datetime import datetime
+from pathlib import Path
+from unittest.mock import patch
+
+from momoi.config import NotificationConfig
+from momoi.storage import Store
+
+
+class HeartbeatEpisodeTests(unittest.TestCase):
+    def _commit(self, store: Store, turn_id: str, now: float) -> str:
+        with patch("momoi.storage.store.time.time", return_value=now):
+            store.begin_turn(turn_id, "autonomous", [f"heartbeat:{turn_id}"])
+            store.commit_heartbeat(
+                turn_id,
+                owner_event_revision=0,
+                notification_config=NotificationConfig(),
+                activity="刷微博",
+                result=f"记录 {turn_id}",
+                next_heartbeat_at=now + 60,
+                mood_update=None,
+                messages=[],
+                reason="test",
+            )
+        return str(
+            store._db.execute(
+                "SELECT episode_id FROM episode_turns WHERE turn_id=?", (turn_id,)
+            ).fetchone()["episode_id"]
+        )
+
+    def test_heartbeat_uses_one_episode_per_local_day(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            day_one = datetime(2026, 8, 16, 10).astimezone().timestamp()
+            first = self._commit(store, "heartbeat-1", day_one)
+            second = self._commit(store, "heartbeat-2", day_one + 3600)
+            next_day = self._commit(store, "heartbeat-3", day_one + 86400)
+            self.assertEqual(first, second)
+            self.assertNotEqual(first, next_day)
+            self.assertEqual(
+                store.episode(first)["title"],
+                f"Momoi Heartbeat {datetime.fromtimestamp(day_one).astimezone().date()}",
+            )
+            store.close()
+
+    def test_closed_daily_episode_is_not_reopened(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            now = datetime(2026, 8, 16, 10).astimezone().timestamp()
+            closed = self._commit(store, "heartbeat-closed", now)
+            store._db.execute(
+                """UPDATE conversation_episodes
+                   SET status='closed', closed_at=? WHERE id=?""",
+                (now, closed),
+            )
+            store._db.commit()
+            successor = self._commit(store, "heartbeat-after-close", now + 3600)
+            self.assertNotEqual(closed, successor)
+            self.assertEqual(store.episode(closed)["status"], "closed")
+            self.assertNotEqual(store.episode(successor)["status"], "closed")
+            store.close()
+
+    def test_existing_heartbeat_life_records_migrate_on_reopen(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "momoi.sqlite3"
+            store = Store(path)
+            now = datetime(2026, 8, 16, 17, 6, 36).astimezone().timestamp()
+            turn_id = "legacy-heartbeat"
+            record = (
+                "[AUTONOMOUS HEARTBEAT RECORD; not sent to the owner]\n"
+                "Activity: 刷微博\nResult: 看了今天的消息"
+            )
+            with store._db:
+                store._db.execute(
+                    """INSERT INTO turns
+                       (id, kind, source_ids_json, state, started_at, updated_at)
+                       VALUES (?, 'autonomous', '[]', 'completed', ?, ?)""",
+                    (turn_id, now, now),
+                )
+                store._db.execute(
+                    """INSERT INTO messages
+                       (turn_id, role, content, created_at, source_event_ids_json,
+                        delivery_state)
+                       VALUES (?, 'assistant', ?, ?, '[]', 'internal')""",
+                    (turn_id, record, now),
+                )
+                store._ensure_autonomous_episode(
+                    "heartbeat-life",
+                    turn_id,
+                    "小桃主动陪伴老师（下班前后陪伴）",
+                    now,
+                    record,
+                )
+                store._db.execute(
+                    "DELETE FROM schema_metadata WHERE key='heartbeat_day_episodes_v1'"
+                )
+            store.close()
+
+            reopened = Store(path)
+            episode_id = reopened._db.execute(
+                "SELECT episode_id FROM episode_turns WHERE turn_id=?", (turn_id,)
+            ).fetchone()["episode_id"]
+            self.assertEqual(
+                reopened.episode(str(episode_id))["title"],
+                f"Momoi Heartbeat {datetime.fromtimestamp(now).astimezone().date()}",
+            )
+            reopened.close()
+
+    def test_delayed_notification_stays_with_heartbeat_day(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            heartbeat_at = datetime(2026, 8, 16, 23, 59).astimezone().timestamp()
+            delivered_at = heartbeat_at + 120
+            turn_id = "heartbeat-delayed"
+            with patch("momoi.storage.store.time.time", return_value=heartbeat_at):
+                store.begin_turn(turn_id, "autonomous", ["heartbeat:delayed"])
+                store.commit_heartbeat(
+                    turn_id,
+                    owner_event_revision=0,
+                    notification_config=NotificationConfig(),
+                    activity="刷微博",
+                    result="发现一条消息",
+                    next_heartbeat_at=heartbeat_at + 60,
+                    mood_update=None,
+                    messages=[],
+                    reason="test",
+                )
+            episode_id = store._db.execute(
+                "SELECT episode_id FROM episode_turns WHERE turn_id=?", (turn_id,)
+            ).fetchone()["episode_id"]
+            with store._db:
+                store._db.execute(
+                    """INSERT INTO notifications
+                       (id, turn_id, goal_id, notification_key, priority, reason,
+                        messages_json, state, not_before, claimed_at, created_at)
+                       VALUES ('delayed', ?, 'heartbeat', 'heartbeat.chat',
+                               'normal', 'test', '["有新消息"]', 'pending', ?, ?, ?)""",
+                    (turn_id, delivered_at, delivered_at, heartbeat_at),
+                )
+            with patch("momoi.storage.store.time.time", return_value=delivered_at):
+                self.assertTrue(store.queue_notification("delayed"))
+            linked = store._db.execute(
+                "SELECT episode_id FROM episode_turns WHERE turn_id=?", (turn_id,)
+            ).fetchall()
+            self.assertEqual({str(row["episode_id"]) for row in linked}, {episode_id})
+            store.close()
+
+
+if __name__ == "__main__":
+    unittest.main()
