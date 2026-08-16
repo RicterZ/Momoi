@@ -548,6 +548,34 @@ class MessagingTest(unittest.TestCase):
             ["file", "text"],
         )
 
+    def test_commit_turn_uses_owner_occurred_at_for_user_message(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            first = IncomingMessage(
+                "napcat:1:10", "10", "嗯 好 约定好了", 1_755_349_611.0, 1_755_349_640.0
+            )
+            second = IncomingMessage(
+                "napcat:1:11", "11", "那就这么定", 1_755_349_620.0, 1_755_349_641.0
+            )
+            before = time.time()
+            store.commit_turn(
+                [first, second],
+                "嗯 好 约定好了",
+                AgentReply(["嗯！约定好了"]),
+                turn_id="turn-owner-time",
+            )
+            after = time.time()
+            rows = store._db.execute(
+                """SELECT role, created_at FROM messages
+                   WHERE turn_id='turn-owner-time' ORDER BY id"""
+            ).fetchall()
+            self.assertEqual([row["role"] for row in rows], ["user", "assistant"])
+            self.assertEqual(rows[0]["created_at"], first.occurred_at)
+            self.assertGreaterEqual(rows[1]["created_at"], before)
+            self.assertLessEqual(rows[1]["created_at"], after)
+            self.assertGreater(rows[1]["created_at"], rows[0]["created_at"])
+            store.close()
+
 
 class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
     async def test_outbox_waits_only_between_messages_in_the_same_turn(self) -> None:

@@ -126,6 +126,17 @@ def _add_context_timestamps(
             )
 
 
+def _owner_message_created_at(
+    events: list[IncomingMessage], now: float
+) -> float:
+    times = [
+        float(event.occurred_at or event.received_at)
+        for event in events
+        if event.occurred_at or event.received_at
+    ]
+    return min(times) if times else now
+
+
 class Store(MemoryStore, DeliveryStore):
     def __init__(
         self,
@@ -5674,6 +5685,7 @@ class Store(MemoryStore, DeliveryStore):
         turn_id = turn_id or uuid.uuid4().hex
         event_ids = [event.event_id for event in events]
         now = time.time()
+        user_created_at = _owner_message_created_at(events, now)
         with self._db:
             source_json = json.dumps(event_ids, ensure_ascii=False)
             self._db.execute(
@@ -5703,7 +5715,7 @@ class Store(MemoryStore, DeliveryStore):
                 (
                     turn_id,
                     user_text,
-                    now,
+                    user_created_at,
                     source_json,
                 ),
             )
