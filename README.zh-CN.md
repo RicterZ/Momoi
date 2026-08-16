@@ -24,13 +24,17 @@ Momoi 是一个无界面、单用户的 AI Agent，通过 NapCat/QQ 或腾讯微
 ## 产品设计
 
 ```mermaid
-flowchart LR
-  owner["主人 · 私聊"] --> momoi
-  events["家庭和互联网事件"] --> momoi
-  time["目标 · 提醒 · 心跳"] --> momoi
-  momoi["Momoi<br/>身份 · 上下文 · 记忆 · 情绪 · 规划"] <--> tools["MCP 和工具"]
-  momoi --> conversation["自然对话和行动"]
-  conversation --> owner
+flowchart TB
+  subgraph reach["触达她的方式"]
+    direction LR
+    owner["主人消息"]
+    events["Webhook 事件"]
+    goal["目标"]
+    heartbeat["心跳"]
+  end
+  momoi["同一个 Momoi"]
+  out["自然对话和行动"]
+  reach --> momoi --> out
 ```
 
 可以通过四种方式触达 Momoi：

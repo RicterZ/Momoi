@@ -24,13 +24,17 @@ Most chatbots are stateless request handlers with a personality prompt attached.
 ## Product design
 
 ```mermaid
-flowchart LR
-  owner["Owner · private chat"] --> momoi
-  events["Home and internet events"] --> momoi
-  time["Goals · reminders · heartbeat"] --> momoi
-  momoi["Momoi<br/>identity · context · memory · mood · planning"] <--> tools["MCP and tools"]
-  momoi --> conversation["Natural conversation and actions"]
-  conversation --> owner
+flowchart TB
+  subgraph reach["How she is reached"]
+    direction LR
+    owner["Owner message"]
+    events["Webhook event"]
+    goal["Goal"]
+    heartbeat["Heartbeat"]
+  end
+  momoi["One continuous Momoi"]
+  out["Natural conversation and actions"]
+  reach --> momoi --> out
 ```
 
 Momoi can be reached in four ways:
