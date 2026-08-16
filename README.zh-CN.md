@@ -237,8 +237,22 @@ cp -R config.example/. ~/.momoi/
 - 要用的渠道，以及哪个作为 `primary`
 - 本地时区
 - 一张足够长的随机 `dashboard.token`
+- 如果有其他服务要推事件，打开 Webhook：启用、绑定 `0.0.0.0`，并设置一张足够长的随机 `webhooks.token`
 
 只用微信时，从 `channels.enabled` 里去掉 `napcat`，并把 `primary` 设为 `weixin`。只用 QQ 时，去掉 `weixin`。
+
+示例 workspace 默认关闭 Webhook，并绑定在 `127.0.0.1`。在 Docker 里这个地址只有容器内部能到，所以要改成：
+
+```json
+{
+  "webhooks": {
+    "enabled": true,
+    "host": "0.0.0.0",
+    "port": 8787,
+    "token": "replace-with-a-random-token"
+  }
+}
+```
 
 ### 接入 NapCat
 
@@ -294,12 +308,15 @@ docker run -d --name momoi \
   --add-host=host.docker.internal:host-gateway \
   -e TZ=Asia/Shanghai \
   -v "$HOME/.momoi:/home/momoi/.momoi" \
+  -p 8787:8787 \
   -p 8788:8788 \
   --restart unless-stopped \
   momoi
 ```
 
 打开 `http://127.0.0.1:8788`，输入看板通行证。从主人 QQ 或刚才扫码的微信发一条私聊即可。回复留在发起对话的渠道，主动消息发送到 `primary`。
+
+如果打开了 Webhook，其他服务用 `Authorization: Bearer <webhooks.token>` 向 `http://<host>:8787/webhooks/<workflow>` 发 POST。这个端口只适合放在可信网络。
 
 容器里的 home 是 `/home/momoi`，默认 workspace 是 `/home/momoi/.momoi`，请一直挂上这个目录。如果 NapCat 和 Momoi 在同一个 Docker 网络里，可以把地址写成 `ws://napcat:3001`，不必用 `host.docker.internal`。
 

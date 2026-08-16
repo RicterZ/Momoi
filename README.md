@@ -237,8 +237,22 @@ Edit `~/.momoi/config.json` and set:
 - The channels you will use, and which one is `primary`
 - Your local timezone
 - A long random `dashboard.token`
+- Webhooks, if another service will push events: enable them, bind `0.0.0.0`, and set a long random `webhooks.token`
 
 If you only use Weixin, remove `napcat` from `channels.enabled` and set `primary` to `weixin`. If you only use QQ, remove `weixin`.
+
+The example workspace keeps webhooks off and bound to `127.0.0.1`. In Docker that address is only visible inside the container, so turn them on like this:
+
+```json
+{
+  "webhooks": {
+    "enabled": true,
+    "host": "0.0.0.0",
+    "port": 8787,
+    "token": "replace-with-a-random-token"
+  }
+}
+```
 
 ### Connect NapCat
 
@@ -294,12 +308,15 @@ docker run -d --name momoi \
   --add-host=host.docker.internal:host-gateway \
   -e TZ=Asia/Shanghai \
   -v "$HOME/.momoi:/home/momoi/.momoi" \
+  -p 8787:8787 \
   -p 8788:8788 \
   --restart unless-stopped \
   momoi
 ```
 
 Open `http://127.0.0.1:8788` and enter the dashboard passphrase. Send a private message from the owner QQ or the Weixin account you scanned. Replies stay on the channel where the conversation started; proactive messages use `primary`.
+
+If webhooks are enabled, other services POST to `http://<host>:8787/webhooks/<workflow>` with `Authorization: Bearer <webhooks.token>`. Keep that port on a trusted network.
 
 The container home is `/home/momoi`, so the default workspace is `/home/momoi/.momoi`. Keep that volume. If NapCat is on the same Docker network, you can use `ws://napcat:3001` instead of `host.docker.internal`.
 
