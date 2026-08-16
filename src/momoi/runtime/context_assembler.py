@@ -277,6 +277,9 @@ def build_plan_retrieval(
             max(100, config.memory_tokens // 8)
         ),
         "reflection_memories": reflection,
+        "core_reflection_memories": store.core_reflection_memory_context(
+            min(900, max(200, config.memory_tokens // 6))
+        ),
         "goals": goals,
         "reminders": reminders,
         "memory_conflicts": conflicts,
@@ -539,6 +542,9 @@ def assemble_main_context(
         "owner_preferences": str(retrieval.get("owner_preferences") or ""),
         "recent_memories": str(retrieval.get("recent_memories") or ""),
         "reflection_memories": reflection,
+        "core_reflection_memories": str(
+            retrieval.get("core_reflection_memories") or ""
+        ),
         "goals": _goal_lines(retrieval.get("goals")),
         "reminders": _reminder_lines(retrieval.get("reminders")),
         "memory_conflicts": _conflict_lines(retrieval.get("memory_conflicts")),

@@ -400,6 +400,29 @@ class MemoryStore:
             used += size
         return "\n".join(lines) if len(lines) > 1 else ""
 
+    def core_reflection_memory_context(self, token_budget: int = 900) -> str:
+        if token_budget <= 0:
+            return ""
+        rows = self._db.execute(
+            """SELECT kind, key, content, confidence
+               FROM reflection_memories
+               WHERE kind IN ('owner_profile', 'self_insight', 'relationship', 'practice')
+               ORDER BY confidence DESC, updated_at DESC, id DESC"""
+        ).fetchall()
+        lines = [
+            "These are stable, fallible Momoi learnings; owner-confirmed memory and "
+            "the current owner input always take precedence."
+        ]
+        used = estimate_tokens(lines[0])
+        for row in rows:
+            line = f"- [{row['kind']}:{row['key']}] {row['content']}"
+            size = estimate_tokens(line)
+            if len(lines) > 1 and used + size > token_budget:
+                break
+            lines.append(line)
+            used += size
+        return "\n".join(lines) if len(lines) > 1 else ""
+
     def search_reflection_memories(
         self, query: str, max_results: int, *, include_core: bool = False
     ) -> list[dict[str, object]]:

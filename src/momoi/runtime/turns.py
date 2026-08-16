@@ -493,6 +493,7 @@ class TurnRunner:
                     ("recent_memories", recalled["recent_memories"]),
                     ("confirmed_owner_memory", recalled["confirmed_memories"]),
                     ("reflection_memory", recalled["reflection_memories"]),
+                    ("core_reflection_memory", recalled["core_reflection_memories"]),
                     ("pending_memory_conflicts", conflicts),
                     ("active_goals", recalled["goals"]),
                     ("pending_reminders", recalled["reminders"]),
@@ -1148,6 +1149,7 @@ class TurnRunner:
             ("recent_memories", recalled["recent_memories"]),
             ("confirmed_owner_memory", recalled["confirmed_memories"]),
             ("reflection_memory", recalled["reflection_memories"]),
+            ("core_reflection_memory", recalled["core_reflection_memories"]),
             ("pending_memory_conflicts", memory_conflicts),
             ("active_goals", recalled["goals"]),
             ("pending_reminders", recalled["reminders"]),
@@ -3051,6 +3053,7 @@ class TurnRunner:
             ("recent_memories", recalled["recent_memories"]),
             ("confirmed_owner_memory", recalled["confirmed_memories"]),
             ("reflection_memory", recalled["reflection_memories"]),
+            ("core_reflection_memory", recalled["core_reflection_memories"]),
         )
         system = [
             *self._system(),
