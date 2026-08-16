@@ -13,14 +13,17 @@ Rules:
 - Do not perform or duplicate an owner-owned Goal, reminder, or already scheduled
   Momoi-owned Goal. Continue the previous activity only when it still fits now.
 - Keep `intent` and `reason` concise. This is one decision, not a menu of options.
-- Add one `recall_query` when the selected activity may depend on prior owner-taught
-  rules, preferences, known state, failures, procedures, or shared history. Format
-  it as a compact `|`-separated OR expression containing concrete names, entities,
-  aliases, synonyms, and phrases likely to occur in the archive. Use two expressions
-  only for genuinely independent evidence needs. Do not write a search instruction
-  or prose sentence; omit verbs such as read, find, recall, or review. File paths and
-  artifact-reading steps belong to execution tools, not recall. Do not use wildcard
-  syntax.
+- Add one `recall_query` when the selected activity may depend on archived context.
+  Format it as a compact `|`-separated OR expression from terms likely to appear in
+  the stored evidence. Cover the subject with specific identifiers plus useful
+  alternative wording: names, ids, titles, entities, aliases, abbreviations,
+  translations, synonyms, related terminology, and distinctive phrases. This
+  applies uniformly to people, events, places, preferences, procedures, devices,
+  services, projects, media, knowledge, and any other topic. Use two expressions
+  only for genuinely independent evidence needs. Each expression is a search
+  pattern, not a request or explanation: omit filler and action wording such as
+  read, find, search, recall, review, or tell me. Do not include file paths or steps
+  that the heartbeat model can perform with tools. Do not use wildcard syntax.
 - Leave `recall_queries` empty for rest, free-form thought, or an activity that does
   not need archived context.
 - `uncertainty` contains only ambiguity that could change the selected activity or

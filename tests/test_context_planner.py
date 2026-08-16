@@ -180,11 +180,13 @@ class ContextPlannerTest(unittest.TestCase):
             CONTEXT_PLANNER_SYSTEM_PROMPT,
         )
         self.assertIn(
-            "expressions only for genuinely independent evidence needs",
+            "only for genuinely independent evidence needs",
             CONTEXT_PLANNER_SYSTEM_PROMPT,
         )
         self.assertIn("`|`-separated OR expression", CONTEXT_PLANNER_SYSTEM_PROMPT)
-        self.assertIn("File paths", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn("people, events, places, preferences", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn("any other topic", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn("Do not include file paths", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertIn(
             "could change the reply, recall target, or Episode action",
             CONTEXT_PLANNER_SYSTEM_PROMPT,
