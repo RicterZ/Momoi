@@ -25,7 +25,6 @@ from .turn_support import (
     CONTEXT_PLANNER_SYSTEM_PROMPT,
     HEARTBEAT_PLANNER_SYSTEM_PROMPT,
     OwnerMessagesChanged,
-    live_prompt as _live_prompt,
     plan_log_episodes as _plan_log_episodes,
     plan_log_units as _plan_log_units,
     tool_error_block as _tool_error_block,
@@ -393,13 +392,7 @@ class ContextService:
                         "recent_conversation": recent_conversation,
                         "active_goals": goals,
                         "workspace_heartbeat_guidance": (
-                            _live_prompt(
-                                self.config.heartbeat_prompt_path,
-                                "",
-                                optional=True,
-                            )
-                            if self.config.heartbeat_prompt_path is not None
-                            else self.config.heartbeat_prompt
+                            self._workspace_heartbeat_guidance()
                         ),
                     },
                     ensure_ascii=False,

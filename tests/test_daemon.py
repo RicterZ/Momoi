@@ -176,6 +176,19 @@ class DaemonTest(unittest.TestCase):
                 "# Workspace heartbeat guidance", daemon._heartbeat_system_prompt()
             )
 
+            heartbeat.write_text("偶尔整理自己的摄影兴趣。")
+            with self.assertLogs("momoi.runtime.prompt_renderer", level="INFO") as logs:
+                self.assertIn("摄影兴趣", daemon._workspace_heartbeat_guidance())
+            self.assertTrue(
+                any("heartbeat_guidance_loaded" in message for message in logs.output)
+            )
+            heartbeat.unlink()
+            with self.assertLogs("momoi.runtime.prompt_renderer", level="INFO") as logs:
+                self.assertEqual(daemon._workspace_heartbeat_guidance(), "")
+            self.assertTrue(
+                any("heartbeat_guidance_missing" in message for message in logs.output)
+            )
+
     def test_shared_style_card_is_injected(self) -> None:
         daemon = object.__new__(MomoiDaemon)
         daemon.config = SimpleNamespace(

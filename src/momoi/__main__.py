@@ -232,6 +232,8 @@ async def run(
             for item in config.channel_configs
         ),
         primary_channel=getattr(config.channel, "plugin", "unknown"),
+        heartbeat_prompt_path=str(config.heartbeat_prompt_path or ""),
+        heartbeat_prompt_chars=len(config.heartbeat_prompt),
     )
     dashboard_bind = (dashboard_host, dashboard_port) if dashboard else None
     await MomoiDaemon(config, dashboard=dashboard_bind).run(stop)

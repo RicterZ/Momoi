@@ -1,6 +1,8 @@
+import logging
 from typing import Any
 
 from ..agenda_tools import AGENDA_TOOL_POLICY
+from ..logging_context import log_event, safe_preview
 from ..mcp_client import MCP_TOOL_POLICY
 from ..memory_tools import MEMORY_TOOL_POLICY
 from ..thinking_tools import THINKING_TOOL_POLICY
@@ -18,6 +20,9 @@ from .turn_support import (
     live_prompt as _live_prompt,
     sections as _sections,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class PromptRenderer:
@@ -80,14 +85,36 @@ class PromptRenderer:
             },
         ]
 
-    def _heartbeat_system_prompt(self) -> str:
-        prompt = _live_prompt(HEARTBEAT_PROMPT_PATH, HEARTBEAT_SYSTEM_PROMPT)
+    def _workspace_heartbeat_guidance(self, *, log: bool = True) -> str:
         path = getattr(self.config, "heartbeat_prompt_path", None)
-        workspace_prompt = (
+        text = (
             _live_prompt(path, "", optional=True)
             if path is not None
-            else self.config.heartbeat_prompt
+            else str(getattr(self.config, "heartbeat_prompt", "") or "")
         )
+        if not log:
+            return text
+        if text:
+            log_event(
+                logger,
+                logging.INFO,
+                "heartbeat_guidance_loaded",
+                path=str(path) if path is not None else "",
+                chars=len(text),
+                preview=safe_preview(text, 160),
+            )
+        else:
+            log_event(
+                logger,
+                logging.INFO,
+                "heartbeat_guidance_missing",
+                path=str(path) if path is not None else "",
+            )
+        return text
+
+    def _heartbeat_system_prompt(self) -> str:
+        prompt = _live_prompt(HEARTBEAT_PROMPT_PATH, HEARTBEAT_SYSTEM_PROMPT)
+        workspace_prompt = self._workspace_heartbeat_guidance(log=False)
         if workspace_prompt:
             prompt += "\n\n# Workspace heartbeat guidance\n\n" + workspace_prompt
         return prompt

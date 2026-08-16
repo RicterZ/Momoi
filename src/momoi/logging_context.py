@@ -118,6 +118,8 @@ _EVENT_GROUPS = {
     "goal_deferred": "AGENDA",
     "goal_queued": "AGENDA",
     "heartbeat_deferred": "AGENDA",
+    "heartbeat_guidance_loaded": "HEARTBEAT",
+    "heartbeat_guidance_missing": "HEARTBEAT",
     "heartbeat_queued": "AGENDA",
     "reflection_queued": "AGENDA",
     "reminder_fired": "AGENDA",
