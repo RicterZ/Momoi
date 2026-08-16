@@ -18,7 +18,7 @@ from ..channel import (
 from ..config import AppConfig
 from ..dashboard import DashboardService
 from ..extensions import load_usage_plugin
-from ..logging_context import log_event, safe_preview
+from ..logging_context import TRACE, log_event, safe_preview
 from ..memory_tools import MemoryTools
 from ..mcp_client import MCPManager
 from ..models import AgentReply, IncomingMessage, OwnerInputStatus
@@ -220,14 +220,12 @@ class MomoiDaemon(TurnRunner):
     async def _receive(self, event: IncomingMessage | OwnerInputStatus) -> None:
         if isinstance(event, OwnerInputStatus):
             self._touch_owner_activity(event.channel)
-            log_event(
-                logger, logging.DEBUG, "owner_input_status", channel=event.channel
-            )
+            log_event(logger, TRACE, "owner_input_status", channel=event.channel)
             return
         message = event
         log_event(
             logger,
-            logging.DEBUG,
+            logging.INFO,
             "owner_message_received",
             channel=message.channel,
             event_id=message.event_id,
@@ -301,13 +299,6 @@ class MomoiDaemon(TurnRunner):
                 )
             return
         if self.store.add_event(message):
-            log_event(
-                logger,
-                logging.INFO,
-                "owner_message_accepted",
-                channel=message.channel,
-                event_id=message.event_id,
-            )
             await self.incoming.put(message)
             annealing = self._active_annealing
             if annealing is not None and not annealing.done():
@@ -624,7 +615,7 @@ class MomoiDaemon(TurnRunner):
                     raise
                 log_event(
                     logger,
-                    logging.INFO,
+                    logging.DEBUG,
                     "episode_anneal_cancelled",
                     stage="episode_anneal",
                     reason="owner_update",
@@ -784,7 +775,7 @@ class MomoiDaemon(TurnRunner):
                     delay = random.uniform(*_message_gap_bounds(row.text))
                     log_event(
                         logger,
-                        logging.DEBUG,
+                        TRACE,
                         "outbox_delay",
                         stage="delivery",
                         turn_id=row.turn_id,
@@ -800,7 +791,7 @@ class MomoiDaemon(TurnRunner):
                 try:
                     log_event(
                         logger,
-                        logging.DEBUG,
+                        TRACE,
                         "outbox_send",
                         stage="delivery",
                         turn_id=row.turn_id,
@@ -871,7 +862,7 @@ class MomoiDaemon(TurnRunner):
                     previous_delivery = delivery
                     log_event(
                         logger,
-                        logging.INFO,
+                        logging.DEBUG,
                         "outbox_sent",
                         stage="delivery",
                         turn_id=row.turn_id,

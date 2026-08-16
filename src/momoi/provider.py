@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 import aiohttp
 
 from .config import LLMConfig
-from .logging_context import current_log_context, log_event, safe_preview
+from .logging_context import TRACE, current_log_context, log_event, safe_preview
 from .models import ProviderResponse, ToolCall
 from .text_replacement import cyber_keyword_pre_hook
 
@@ -151,7 +151,7 @@ def _log_usage(
     if not metrics:
         log_event(
             logger,
-            logging.DEBUG,
+            TRACE,
             "llm_usage",
             protocol=protocol,
             available=False,
@@ -160,7 +160,7 @@ def _log_usage(
         return None
     log_event(
         logger,
-        logging.DEBUG,
+        TRACE,
         "llm_usage",
         protocol=protocol,
         duration_ms=duration_ms,

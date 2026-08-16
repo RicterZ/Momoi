@@ -17,7 +17,6 @@ _SENSITIVE_KEY = re.compile(
     re.IGNORECASE,
 )
 _PREFERRED_FIELDS = (
-    "event",
     "stage",
     "turn_id",
     "call_id",
@@ -40,7 +39,10 @@ _PREFERRED_FIELDS = (
     "error_type",
     "reason",
 )
+TRACE = 5
+logging.addLevelName(TRACE, "TRACE")
 _LEVEL_COLORS = {
+    TRACE: "\033[2;37m",
     logging.DEBUG: "\033[36m",
     logging.INFO: "\033[32m",
     logging.WARNING: "\033[33m",
@@ -48,8 +50,80 @@ _LEVEL_COLORS = {
     logging.CRITICAL: "\033[1;31m",
 }
 _COLOR_RESET = "\033[0m"
-
-
+_EVENT_GROUPS = {
+    "service_start": "SERVICE",
+    "channel_start": "SERVICE",
+    "channel_connected": "SERVICE",
+    "owner_message_received": "OWNER",
+    "owner_command_accepted": "OWNER",
+    "owner_command_ignored": "OWNER",
+    "context_plan_complete": "PLAN",
+    "context_plan_invalid": "PLAN",
+    "context_plan_degraded": "PLAN",
+    "context_plan_normalized": "PLAN",
+    "context_recall": "RECALL",
+    "heartbeat_plan_complete": "PLAN",
+    "heartbeat_plan_invalid": "PLAN",
+    "heartbeat_plan_degraded": "PLAN",
+    "llm_response": "MODEL",
+    "llm_retry": "MODEL",
+    "llm_failure": "MODEL",
+    "tool_start": "TOOL",
+    "tool_end": "TOOL",
+    "turn_complete": "TURN",
+    "turn_failure": "TURN",
+    "outbox_retry": "DELIVERY",
+    "outbox_ambiguous": "DELIVERY",
+    "outbox_failure": "DELIVERY",
+    "channel_disconnected": "CHANNEL",
+    "channel_frame_invalid": "CHANNEL",
+    "channel_inbound_failure": "CHANNEL",
+    "channel_media_failure": "CHANNEL",
+    "channel_message_dropped": "CHANNEL",
+    "channel_notify_failure": "CHANNEL",
+    "channel_poll_failure": "CHANNEL",
+    "channel_poll_rejected": "CHANNEL",
+    "channel_reference_failure": "CHANNEL",
+    "channel_session_stale": "CHANNEL",
+    "channel_stop": "CHANNEL",
+    "mcp_call_end": "MCP",
+    "mcp_call_failure": "MCP",
+    "mcp_cleanup_failure": "MCP",
+    "mcp_connect_failure": "MCP",
+    "mcp_connected": "MCP",
+    "mcp_connection_interrupted": "MCP",
+    "mcp_reconnect_failure": "MCP",
+    "mcp_worker_failure": "MCP",
+    "webhook_api_started": "WEBHOOK",
+    "webhook_delivery_end": "WEBHOOK",
+    "webhook_run_accepted": "WEBHOOK",
+    "webhook_run_complete": "WEBHOOK",
+    "webhook_run_failure": "WEBHOOK",
+    "webhook_step_end": "WEBHOOK",
+    "webhook_step_start": "WEBHOOK",
+    "workflow_catalog_empty": "WORKFLOW",
+    "workflow_executor_skipped": "WORKFLOW",
+    "workflow_skipped": "WORKFLOW",
+    "agenda_tool_failure": "AGENDA",
+    "memory_tool_failure": "MEMORY",
+    "dashboard_start": "SERVICE",
+    "mood_changed": "TURN",
+    "notification_queued": "DELIVERY",
+    "owner_updates_injected": "OWNER",
+    "goal_deferred": "AGENDA",
+    "goal_queued": "AGENDA",
+    "heartbeat_deferred": "AGENDA",
+    "heartbeat_queued": "AGENDA",
+    "reflection_queued": "AGENDA",
+    "reminder_fired": "AGENDA",
+    "prompt_reload_failed": "SERVICE",
+    "recall_index_compaction_complete": "STORAGE",
+    "recall_index_compaction_failure": "STORAGE",
+    "recall_index_compaction_start": "STORAGE",
+    "recall_index_migration_complete": "STORAGE",
+    "recall_index_migration_failure": "STORAGE",
+    "recall_index_migration_start": "STORAGE",
+}
 def new_trace_id() -> str:
     return uuid.uuid4().hex[:16]
 
@@ -122,6 +196,51 @@ def safe_preview(value: Any, limit: int = 1000) -> str:
     return rendered[: max(0, limit - 3)].rstrip() + "..."
 
 
+def compact_log_value(
+    value: Any,
+    *,
+    string_limit: int = 500,
+    item_limit: int = 20,
+) -> Any:
+    value = _redact(value)
+    if isinstance(value, str):
+        if len(value) <= string_limit:
+            return value.replace("\r", "\\r").replace("\n", "\\n")
+        return (
+            value[: max(0, string_limit - 3)]
+            .rstrip()
+            .replace("\r", "\\r")
+            .replace("\n", "\\n")
+            + "..."
+        )
+    if isinstance(value, Mapping):
+        items = list(value.items())
+        compact = {
+            str(key): compact_log_value(
+                item,
+                string_limit=string_limit,
+                item_limit=item_limit,
+            )
+            for key, item in items[:item_limit]
+        }
+        if len(items) > item_limit:
+            compact["_omitted"] = len(items) - item_limit
+        return compact
+    if isinstance(value, (list, tuple)):
+        compact = [
+            compact_log_value(
+                item,
+                string_limit=string_limit,
+                item_limit=item_limit,
+            )
+            for item in value[:item_limit]
+        ]
+        if len(value) > item_limit:
+            compact.append(f"... {len(value) - item_limit} more")
+        return compact
+    return value
+
+
 def _format_value(value: Any) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
@@ -129,6 +248,13 @@ def _format_value(value: Any) -> str:
         return "null"
     if isinstance(value, (int, float)):
         return str(value)
+    if isinstance(value, (Mapping, list, tuple)):
+        return json.dumps(
+            compact_log_value(value),
+            ensure_ascii=False,
+            separators=(",", ":"),
+            default=str,
+        )
     rendered = safe_preview(value)
     if _SAFE_TOKEN.fullmatch(rendered):
         return rendered
@@ -167,9 +293,10 @@ class KeyValueFormatter(logging.Formatter):
         timestamp = datetime.fromtimestamp(record.created).astimezone().strftime(
             "%Y-%m-%d %H:%M:%S"
         )
-        prefix = f"{timestamp} {record.levelname} {record.name}"
+        level = record.levelname.ljust(7)
         event = getattr(record, "momoi_event", None)
         if not event:
+            prefix = f"{timestamp} {level} {record.name}"
             message = record.getMessage().replace("\r", "\\r").replace("\n", "\\n")
             if record.exc_info:
                 exception = safe_preview(self.formatException(record.exc_info), 2000)
@@ -181,7 +308,6 @@ class KeyValueFormatter(logging.Formatter):
         fields: dict[str, Any] = {}
         fields.update(getattr(record, "momoi_context", {}) or {})
         fields.update(getattr(record, "momoi_fields", {}) or {})
-        fields["event"] = event
         if record.getMessage() and record.getMessage() != event:
             fields["message"] = record.getMessage()
         if record.exc_info:
@@ -191,7 +317,12 @@ class KeyValueFormatter(logging.Formatter):
         ordered = [
             key for key in _PREFERRED_FIELDS if key in fields
         ] + sorted(key for key in fields if key not in _PREFERRED_FIELDS)
-        rendered = " ".join(f"{key}={_format_value(fields[key])}" for key in ordered)
+        rendered = " ".join(
+            f"{key}={_format_value(fields[key])}"
+            for key in ordered
+        )
+        group = _EVENT_GROUPS.get(event, record.name.rsplit(".", 1)[-1].upper())
+        prefix = f"{timestamp} {level} {group:<9} event={event}"
         return self._colorize(record, f"{prefix} {rendered}".rstrip())
 
     def _colorize(self, record: logging.LogRecord, value: str) -> str:

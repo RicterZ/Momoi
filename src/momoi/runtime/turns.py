@@ -23,7 +23,14 @@ from ..builtin_tools import (
 from ..channel import Channel, ChannelMessage
 from ..context_time import context_timestamp
 from ..emotions import EMOTION_PREFIX, emotion_slug
-from ..logging_context import log_context, log_event, new_trace_id, safe_preview
+from ..logging_context import (
+    TRACE,
+    compact_log_value,
+    log_context,
+    log_event,
+    new_trace_id,
+    safe_preview,
+)
 from ..mcp_client import MCP_TOOL_POLICY
 from ..memory_tools import MEMORY_TOOL_POLICY, MEMORY_TOOL_SPECS
 from ..models import AgentReply, IncomingMessage, ProviderResponse, ToolCall, TurnDraft
@@ -223,6 +230,51 @@ def _conversation_guidance(plan: dict[str, object]) -> str:
         {"owner_intent_units": intent_units, "uncertainty": uncertainty},
         ensure_ascii=False,
         separators=(",", ":"),
+    )
+
+
+def _plan_log_units(plan: dict[str, object]) -> list[dict[str, object]]:
+    return [
+        {
+            "id": unit.get("id"),
+            "act": unit.get("speech_act"),
+            "text": unit.get("text"),
+            "intent": unit.get("intent"),
+            "references": unit.get("references", []),
+            "queries": unit.get("recall_queries", []),
+        }
+        for unit in plan.get("intent_units", [])
+        if isinstance(unit, dict)
+    ]
+
+
+def _plan_log_episodes(plan: dict[str, object]) -> list[dict[str, object]]:
+    actions = plan.get("episode_actions", plan.get("episode_bindings", []))
+    return [
+        {
+            "action": action.get("action"),
+            "episode": action.get(
+                "episode_ref", action.get("episode_id")
+            ),
+            "units": action.get("unit_ids", []),
+            **(
+                {"title": action.get("title")}
+                if action.get("title")
+                else {}
+            ),
+        }
+        for action in actions
+        if isinstance(action, dict)
+    ]
+
+
+def _turn_tool_names(draft: TurnDraft) -> list[str]:
+    return list(
+        dict.fromkeys(
+            str(item.get("tool") or "")
+            for item in draft.tool_calls
+            if item.get("tool")
+        )
     )
 
 
@@ -540,7 +592,7 @@ class TurnRunner:
         )
         log_event(
             logger,
-            logging.DEBUG,
+            TRACE,
             "episode_candidates_ranked",
             stage="context_plan",
             turn_id=turn_id,
@@ -683,7 +735,7 @@ class TurnRunner:
                 raw_plan = response.tool_calls[0].arguments
                 log_event(
                     logger,
-                    logging.DEBUG,
+                    TRACE,
                     "context_plan_received",
                     stage="context_plan",
                     turn_id=turn_id,
@@ -691,20 +743,7 @@ class TurnRunner:
                     round=attempt + 1,
                     revision=revision,
                     tool_call_id=response.tool_calls[0].id,
-                    version=raw_plan.get("version"),
-                    intent_units=safe_preview(
-                        raw_plan.get("intent_units"), 900
-                    ),
-                    episode_bindings=safe_preview(
-                        raw_plan.get("episode_actions", raw_plan.get("episode_bindings")),
-                        900,
-                    ),
-                    episode_links=safe_preview(
-                        raw_plan.get("episode_links"), 500
-                    ),
-                    uncertainty=safe_preview(
-                        raw_plan.get("uncertainty"), 500
-                    ),
+                    raw_plan=compact_log_value(raw_plan, string_limit=300),
                 )
                 plan = parse_context_plan(
                     raw_plan,
@@ -786,6 +825,9 @@ class TurnRunner:
                 revision=revision,
                 units=len(units) if isinstance(units, list) else 0,
                 episodes=len(bindings) if isinstance(bindings, list) else 0,
+                plan_units=_plan_log_units(plan),
+                episode_actions=_plan_log_episodes(plan),
+                uncertainty=plan.get("uncertainty", []),
                 duration_ms=int((time.monotonic() - call_started) * 1000),
             )
             return self._stored_context_plan(saved)
@@ -1160,12 +1202,21 @@ class TurnRunner:
         log_event(
             logger,
             logging.INFO,
-            "turn_commit",
+            "turn_complete",
             stage="owner",
             turn_id=turn_id,
             channel=channel.name,
             events=len(batch),
-            messages=len(reply.messages),
+            owner_text=safe_preview(owner_content, 500),
+            visible_messages=len(reply.messages),
+            tools=_turn_tool_names(draft),
+            tool_calls=len(draft.tool_calls),
+            memories=len(draft.memories),
+            forgotten_memories=len(draft.forgotten_memories),
+            goals=len(draft.goals),
+            reminders=len(draft.reminders),
+            expects_reply=reply.expects_reply,
+            llm=self.store.turn_usage(turn_id),
         )
         self.outbox_changed.set()
         self.agenda_changed.set()
@@ -1464,7 +1515,7 @@ class TurnRunner:
                 plain_text = self._context_plan_response_text(response.content)
                 log_event(
                     logger,
-                    logging.DEBUG,
+                    TRACE,
                     "respond_received",
                     stage=stage,
                     turn_id=turn_id,
@@ -1506,7 +1557,7 @@ class TurnRunner:
                 if reply is not None:
                     log_event(
                         logger,
-                        logging.DEBUG,
+                        TRACE,
                         "respond_accepted",
                         stage=stage,
                         turn_id=turn_id,
@@ -1519,7 +1570,7 @@ class TurnRunner:
                     return reply
                 log_event(
                     logger,
-                    logging.DEBUG,
+                    TRACE,
                     "respond_rejected",
                     stage=stage,
                     turn_id=turn_id,
@@ -1578,7 +1629,11 @@ class TurnRunner:
                     channel=delivery_channel.name,
                     tool_call_id=call.id,
                     tool_name=call.name,
-                    arguments=safe_preview(call.arguments, 1000),
+                    arguments=compact_log_value(
+                        call.arguments,
+                        string_limit=800,
+                        item_limit=30,
+                    ),
                 )
                 if call.argument_error:
                     result = {
@@ -1760,13 +1815,27 @@ class TurnRunner:
                     tool_name=call.name,
                     ok=bool(result.get("ok")),
                     error=result.get("error"),
-                    result=safe_preview(result, 1000),
+                    result=compact_log_value(
+                        result,
+                        string_limit=800,
+                        item_limit=30,
+                    ),
                     result_message=(
                         safe_preview(log_message, 500)
                         if log_message is not None
                         else None
                     ),
                     duration_ms=int((time.monotonic() - tool_started) * 1000),
+                )
+                draft.tool_calls.append(
+                    {
+                        "tool": call.name,
+                        "ok": bool(result.get("ok")),
+                        "error": result.get("error"),
+                        "duration_ms": int(
+                            (time.monotonic() - tool_started) * 1000
+                        ),
+                    }
                 )
                 results.append(_tool_result_block(call.id, result))
                 if accept_owner_updates:
@@ -2000,7 +2069,7 @@ class TurnRunner:
                         estimated = size()
         log_event(
             logger,
-            logging.DEBUG,
+            TRACE,
             "llm_context_fit",
             estimated_input=estimated,
             input_limit=self.config.max_input_tokens,
@@ -2162,7 +2231,7 @@ class TurnRunner:
             self.store.complete_background_turn(turn_id)
             log_event(
                 logger,
-                logging.INFO,
+                logging.DEBUG,
                 "episode_consolidation_complete",
                 stage="episode_consolidate",
                 turn_id=turn_id,
@@ -2268,7 +2337,7 @@ class TurnRunner:
                 )
                 log_event(
                     logger,
-                    logging.INFO,
+                    logging.DEBUG,
                     "episode_anneal_complete",
                     stage="episode_anneal",
                     turn_id=turn_id,
@@ -2919,31 +2988,6 @@ class TurnRunner:
             self.config.summary_tokens,
             self.config.recent_raw_tokens,
         )
-        log_event(
-            logger,
-            logging.INFO,
-            "heartbeat_recall_complete",
-            stage="heartbeat_recall",
-            turn_id=turn_id,
-            queries=len(planned_activity["recall_queries"]),
-            memories=len(retrieval["confirmed_memories"]),
-            reflections=len(retrieval["reflection_memories"]),
-            episodes=len(retrieval["episodes"]),
-        )
-        log_event(
-            logger,
-            logging.DEBUG,
-            "heartbeat_recall_selected",
-            stage="heartbeat_recall",
-            turn_id=turn_id,
-            queries=planned_activity["recall_queries"],
-            memory_keys=[
-                item["key"] for item in retrieval["confirmed_memories"]
-            ],
-            episode_ids=[
-                item["episode_id"] for item in retrieval["episodes"]
-            ],
-        )
         artifact_root = self._artifact_root().resolve()
         minimum = max(1, int(self.config.heartbeat.min_interval_seconds / 60))
         maximum = max(minimum, int(self.config.heartbeat.max_interval_seconds / 60))
@@ -3095,13 +3139,21 @@ class TurnRunner:
         log_event(
             logger,
             logging.INFO,
-            "turn_commit",
+            "turn_complete",
             stage="heartbeat",
             turn_id=turn_id,
             channel=delivery_channel.name,
-            messages=committed_messages,
+            activity=decision["activity"],
+            result=safe_preview(decision["result"], 500),
+            visible_messages=committed_messages,
+            tools=_turn_tool_names(draft),
+            tool_calls=len(draft.tool_calls),
+            memories=len(draft.memories),
+            forgotten_memories=len(draft.forgotten_memories),
             goals=len(draft.goals),
+            reminders=len(draft.reminders),
             next_minutes=decision["next_check_minutes"],
+            llm=self.store.turn_usage(turn_id),
         )
 
     async def _complete_reflection_turn(
@@ -3293,7 +3345,7 @@ class TurnRunner:
                     log_event(
                         logger,
                         logging.INFO,
-                        "turn_commit",
+                        "turn_complete",
                         stage="reflection",
                         turn_id=turn_id,
                         call_id=call_id,
@@ -3475,11 +3527,16 @@ class TurnRunner:
         log_event(
             logger,
             logging.INFO,
-            "turn_commit",
+            "turn_complete",
             stage="goal",
             turn_id=turn_id,
             goal_id=goal_id,
             notified=bool(draft.notification_messages),
+            tools=_turn_tool_names(draft),
+            tool_calls=len(draft.tool_calls),
+            goals=len(draft.goals),
+            reminders=len(draft.reminders),
+            llm=self.store.turn_usage(turn_id),
         )
         self.agenda_changed.set()
 

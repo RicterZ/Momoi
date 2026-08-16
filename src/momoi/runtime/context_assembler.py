@@ -6,7 +6,7 @@ from typing import Any
 
 from ..config import AppConfig
 from ..context_time import context_timestamp
-from ..logging_context import log_event
+from ..logging_context import log_event, safe_preview
 from ..storage import Store, estimate_tokens, truncate_tokens
 
 
@@ -267,7 +267,7 @@ def build_plan_retrieval(
         config.memory_results,
         config.memory_tokens // 2,
     )
-    return {
+    retrieval = {
         "version": 2,
         # Episode bindings route the current Turn into storage. Only explicit
         # recall queries select historical Episode context.
@@ -283,6 +283,67 @@ def build_plan_retrieval(
         "memory_conflicts": conflicts,
         "uncertainty": plan.get("uncertainty", []),
     }
+    log_event(
+        logger,
+        logging.INFO,
+        "context_recall",
+        stage="context_recall",
+        queries=[
+            {
+                "unit": str(unit.get("id") or ""),
+                "patterns": [
+                    str(query) for query in unit.get("recall_queries", [])
+                ],
+            }
+            for unit in units
+            if isinstance(unit, dict) and unit.get("recall_queries")
+        ],
+        episodes=[
+            {
+                "id": item["episode_id"],
+                "units": item["unit_ids"],
+            }
+            for item in recalled_episodes
+        ],
+        memories=[
+            {
+                "key": item["key"],
+                "units": item["unit_ids"],
+            }
+            for item in confirmed
+        ],
+        reflections=[
+            {
+                "key": item["key"],
+                "units": item["unit_ids"],
+            }
+            for item in reflection
+        ],
+        goals=[
+            {"id": item["id"], "units": item["unit_ids"]}
+            for item in goals
+        ],
+        reminders=[
+            {"id": item["id"], "units": item["unit_ids"]}
+            for item in reminders
+        ],
+        counts={
+            "episodes": len(recalled_episodes),
+            "memories": len(confirmed),
+            "reflections": len(reflection),
+            "goals": len(goals),
+            "reminders": len(reminders),
+            "conflicts": len(conflicts),
+        },
+    )
+    log_event(
+        logger,
+        logging.DEBUG,
+        "context_recall_detail",
+        stage="context_recall",
+        selected=safe_preview(retrieval, 5000),
+    )
+    return retrieval
 
 
 def _supports(item: dict[str, object]) -> str:
