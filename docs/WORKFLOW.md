@@ -18,7 +18,7 @@ In `config.json`:
     "port": 8787,
     "token": "replace-with-a-random-token",
     "workflows": "workflows",
-    "executors": "workflow-executors.yaml"
+    "executors": "workflows/workflow-executors.yaml"
   }
 }
 ```
@@ -67,7 +67,7 @@ Command steps are defined separately from Workflows. The model never writes or e
 
 The generic example checks an HTTP endpoint before sending a message.
 
-`workflow-executors.yaml`:
+`workflows/workflow-executors.yaml`:
 
 ```yaml
 version: 1
@@ -217,7 +217,7 @@ The prompt describes what happened and what Momoi should communicate. It should 
 | --- | --- | --- |
 | `id` | Yes | Unique step ID within the Workflow |
 | `uses` | Yes | `exec` |
-| `executor` | Yes | Name from `workflow-executors.yaml` |
+| `executor` | Yes | Name from `workflows/workflow-executors.yaml` |
 | `args` | Yes | One entry for every declared executor parameter |
 
 Each argument value must be exactly one `${inputs.<name>}` template. Partial interpolation such as `prefix-${inputs.target}` is rejected. Use a separate fixed `argv` token for prefixes and flags.

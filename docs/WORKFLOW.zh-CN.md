@@ -18,7 +18,7 @@
     "port": 8787,
     "token": "replace-with-a-random-token",
     "workflows": "workflows",
-    "executors": "workflow-executors.yaml"
+    "executors": "workflows/workflow-executors.yaml"
   }
 }
 ```
@@ -67,7 +67,7 @@ Momoi 会获得当前对话上下文、相关记忆、目标、提醒、情绪�
 
 通用示例会先检查一个 HTTP endpoint，然后发送消息。
 
-`workflow-executors.yaml`：
+`workflows/workflow-executors.yaml`：
 
 ```yaml
 version: 1
@@ -217,7 +217,7 @@ prompt 用来描述发生了什么，以及 Momoi 应该传达什么。它不应
 | --- | --- | --- |
 | `id` | 是 | 工作流内唯一的步骤 ID |
 | `uses` | 是 | `exec` |
-| `executor` | 是 | `workflow-executors.yaml` 中的名称 |
+| `executor` | 是 | `workflows/workflow-executors.yaml` 中的名称 |
 | `args` | 是 | 已声明执行器每个参数各一项 |
 
 每个参数值必须完整等于一个 `${inputs.<name>}` 模板。会拒绝 `prefix-${inputs.target}` 这样的部分插值。前缀和 flag 应使用独立的固定 `argv` token。

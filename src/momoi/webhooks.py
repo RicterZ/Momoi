@@ -239,7 +239,10 @@ def load_catalog(
     if not workflows_path.is_dir():
         raise WorkflowError(f"workflow directory not found: {workflows_path}")
     workflows: dict[str, dict[str, Any]] = {}
+    skipped_executors = executors_path.resolve()
     for path in sorted(workflows_path.glob("*.yaml")):
+        if path.resolve() == skipped_executors:
+            continue
         root = _load_yaml(path)
         _only(root, {"version", "id", "description", "inputs", "steps"}, str(path))
         if root.get("version") != 1:

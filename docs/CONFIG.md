@@ -42,8 +42,8 @@ Relative paths in `config.json` are resolved from the directory containing that 
 ├── prompts/
 │   └── SOUL.md
 ├── workflows/
-│   └── *.yaml
-├── workflow-executors.yaml
+│   ├── *.yaml
+│   └── workflow-executors.yaml
 ├── emotion/
 ├── channel/
 │   └── weixin/       # created only when the Weixin channel is used
@@ -438,7 +438,7 @@ Maintenance is coalesced and processes one Episode batch at a time. A new owner 
     "port": 8787,
     "token": "replace-with-a-random-token",
     "workflows": "workflows",
-    "executors": "workflow-executors.yaml"
+    "executors": "workflows/workflow-executors.yaml"
   }
 }
 ```
@@ -450,7 +450,7 @@ Maintenance is coalesced and processes one Episode batch at a time. A new owner 
 | `port` | `8787` | TCP port from `1` to `65535` |
 | `token` | empty | Bearer token; required when webhooks are enabled |
 | `workflows` | `workflows` | Directory containing workflow YAML files |
-| `executors` | `workflow-executors.yaml` | File containing predefined command executors |
+| `executors` | `workflows/workflow-executors.yaml` | File containing predefined command executors; may live inside the workflows directory and is skipped when loading workflows |
 
 Use a long random token and place a TLS reverse proxy in front of Momoi when the endpoint crosses an untrusted network. Continue with [WORKFLOW.md](./WORKFLOW.md).
 

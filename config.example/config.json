@@ -93,7 +93,7 @@
     "port": 8787,
     "token": "replace-with-a-random-token",
     "workflows": "workflows",
-    "executors": "workflow-executors.yaml"
+    "executors": "workflows/workflow-executors.yaml"
   },
   "dashboard": {
     "token": "replace-with-a-long-random-secret"

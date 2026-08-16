@@ -281,7 +281,7 @@ def load_config(path: str | Path) -> AppConfig:
     ).resolve()
     executor_path = (
         config_path.parent
-        / str(webhook_raw.get("executors", "workflow-executors.yaml"))
+        / str(webhook_raw.get("executors", "workflows/workflow-executors.yaml"))
     ).resolve()
     heartbeat_min = _positive(
         heartbeat_raw.get("min_interval_seconds", 1800),

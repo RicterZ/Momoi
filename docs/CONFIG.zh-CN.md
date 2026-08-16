@@ -42,8 +42,8 @@ MCP 是添加由模型控制能力的常规方式。工作流用于事件驱动�
 ├── prompts/
 │   └── SOUL.md
 ├── workflows/
-│   └── *.yaml
-├── workflow-executors.yaml
+│   ├── *.yaml
+│   └── workflow-executors.yaml
 ├── emotion/
 ├── channel/
 │   └── weixin/       # 启用微信渠道时创建
@@ -438,7 +438,7 @@ Owner Turn 独占对主人输入的回复权。存在未处理的主人消息、
     "port": 8787,
     "token": "replace-with-a-random-token",
     "workflows": "workflows",
-    "executors": "workflow-executors.yaml"
+    "executors": "workflows/workflow-executors.yaml"
   }
 }
 ```
@@ -450,7 +450,7 @@ Owner Turn 独占对主人输入的回复权。存在未处理的主人消息、
 | `port` | `8787` | `1` 到 `65535` 的 TCP 端口 |
 | `token` | 空 | Bearer token；启用 Webhook 时必填 |
 | `workflows` | `workflows` | 包含工作流 YAML 文件的目录 |
-| `executors` | `workflow-executors.yaml` | 包含预定义命令执行器的文件 |
+| `executors` | `workflows/workflow-executors.yaml` | 包含预定义命令执行器的文件；可放在工作流目录内，加载时会自动跳过 |
 
 使用长随机 token。如果 endpoint 经过不可信网络，请在 Momoi 前部署 TLS 反向代理。继续阅读 [WORKFLOW.zh-CN.md](./WORKFLOW.zh-CN.md)。
 

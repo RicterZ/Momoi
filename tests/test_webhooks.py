@@ -30,7 +30,7 @@ class WebhooksTest(unittest.TestCase):
     def test_webhook_catalog_binds_only_declared_inputs_to_named_exec(self) -> None:
         root = Path(__file__).resolve().parents[1] / "config.example"
         workflows, executors = load_catalog(
-            root / "workflows", root / "workflow-executors.yaml"
+            root / "workflows", root / "workflows" / "workflow-executors.yaml"
         )
         channel_variables = {
             "channel_url": "ws://napcat.test/ws",
@@ -68,6 +68,37 @@ class WebhooksTest(unittest.TestCase):
                 {"event_prompt": "测试", "command": "rm -rf /"},
                 channel_variables,
             )
+
+    def test_catalog_skips_executors_file_inside_workflows_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workflows_path = Path(directory) / "workflows"
+            workflows_path.mkdir()
+            executors_path = workflows_path / "workflow-executors.yaml"
+            executors_path.write_text(
+                """version: 1
+executors:
+  echo-ok:
+    parameters: {}
+    argv: ['true']
+    env: {}
+""",
+                encoding="utf-8",
+            )
+            (workflows_path / "event.yaml").write_text(
+                """version: 1
+id: event-message
+inputs:
+  event_prompt: {type: string, required: true}
+steps:
+  - id: notify
+    uses: message
+    prompt: '${inputs.event_prompt}'
+""",
+                encoding="utf-8",
+            )
+            workflows, executors = load_catalog(workflows_path, executors_path)
+            self.assertEqual(set(workflows), {"event-message"})
+            self.assertEqual(set(executors), {"echo-ok"})
 
     def test_incompatible_channel_executor_only_disables_its_workflow(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -324,7 +355,7 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                     enabled=True,
                     token="test",
                     workflows=root / "workflows",
-                    executors=root / "workflow-executors.yaml",
+                    executors=root / "workflows" / "workflow-executors.yaml",
                 ),
                 {"channel_url": "ws://napcat.test/ws", "owner_id": "20000"},
                 store,
@@ -453,7 +484,7 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                     enabled=True,
                     token="test",
                     workflows=root / "workflows",
-                    executors=root / "workflow-executors.yaml",
+                    executors=root / "workflows" / "workflow-executors.yaml",
                 ),
                 {"channel_url": "ws://napcat.test/ws", "owner_id": "20000"},
                 store,
@@ -538,7 +569,7 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                     enabled=True,
                     token="test",
                     workflows=root / "workflows",
-                    executors=root / "workflow-executors.yaml",
+                    executors=root / "workflows" / "workflow-executors.yaml",
                 ),
                 {"channel_url": "ws://napcat.test/ws", "owner_id": "20000"},
                 store,
