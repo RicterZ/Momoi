@@ -209,6 +209,100 @@ momoi run --dashboard
 momoi --workspace /path/to/workspace run
 ```
 
+要在机器上常驻运行，见 [部署](#部署)。
+
+## 部署
+
+常驻运行通常用 Dockerfile。她仍然需要一个私聊渠道，以及一个 LLM。
+
+### 你需要什么
+
+- Docker
+- 如果要用 QQ，需要一个 NapCat 容器
+- 如果要用微信，需要一个能扫描 iLink 登录二维码的微信账号
+- 兼容 Anthropic Messages 或 OpenAI Chat Completions 的 LLM 端点
+
+一个渠道就够。两个可以一起开。
+
+### 准备 workspace
+
+```bash
+mkdir -p ~/.momoi
+cp -R config.example/. ~/.momoi/
+```
+
+编辑 `~/.momoi/config.json` 并设置：
+
+- LLM API 格式、端点、密钥和模型
+- 要用的渠道，以及哪个作为 `primary`
+- 本地时区
+- 一张足够长的随机 `dashboard.token`
+
+只用微信时，从 `channels.enabled` 里去掉 `napcat`，并把 `primary` 设为 `weixin`。只用 QQ 时，去掉 `weixin`。
+
+### 接入 NapCat
+
+先启动 NapCat，再用主人 QQ 登录：
+
+```bash
+docker run -d --name napcat \
+  -e NAPCAT_UID="$(id -u)" \
+  -e NAPCAT_GID="$(id -g)" \
+  -p 3001:3001 \
+  -p 6099:6099 \
+  -v napcat-qq:/app/.config/QQ \
+  --restart unless-stopped \
+  mlikiowa/napcat-docker:latest
+```
+
+打开 `http://127.0.0.1:6099/webui`。首次登录的 token 在 `docker logs napcat` 里。扫描 QQ 二维码，再打开 OneBot WebSocket。然后把这个地址和你的 QQ 号写进 `config.json`：
+
+```json
+{
+  "channels": {
+    "primary": "napcat",
+    "enabled": {
+      "napcat": {
+        "url": "ws://host.docker.internal:3001",
+        "owner_qq": "your-qq-number"
+      }
+    }
+  }
+}
+```
+
+只有这个 QQ 会被当作主人。
+
+### 登录微信
+
+先构建一次镜像，再在同一个 workspace 里扫描 iLink 二维码：
+
+```bash
+docker build -t momoi .
+docker run --rm -it \
+  -v "$HOME/.momoi:/home/momoi/.momoi" \
+  momoi channel login weixin
+```
+
+登录状态会留在 workspace 里。之后让 `weixin` 留在 `channels.enabled` 即可。
+
+### 运行 Momoi
+
+```bash
+docker build -t momoi .
+docker run -d --name momoi \
+  --add-host=host.docker.internal:host-gateway \
+  -e TZ=Asia/Shanghai \
+  -v "$HOME/.momoi:/home/momoi/.momoi" \
+  -p 8788:8788 \
+  --restart unless-stopped \
+  momoi
+```
+
+打开 `http://127.0.0.1:8788`，输入看板通行证。从主人 QQ 或刚才扫码的微信发一条私聊即可。回复留在发起对话的渠道，主动消息发送到 `primary`。
+
+容器里的 home 是 `/home/momoi`，默认 workspace 是 `/home/momoi/.momoi`，请一直挂上这个目录。如果 NapCat 和 Momoi 在同一个 Docker 网络里，可以把地址写成 `ws://napcat:3001`，不必用 `host.docker.internal`。
+
 ## 个性化 Momoi
 
 编辑 `~/.momoi/prompts/SOUL.md`，定义 Momoi 的身份、关系、价值观、兴趣和自然说话方式。

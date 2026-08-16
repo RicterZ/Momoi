@@ -209,6 +209,100 @@ Pass `--workspace` before any command to use another workspace:
 momoi --workspace /path/to/workspace run
 ```
 
+To keep her running on a machine, use [Deploy](#deploy).
+
+## Deploy
+
+The usual way to keep Momoi running is the Dockerfile. She still needs one private-chat channel and an LLM.
+
+### What you need
+
+- Docker
+- A NapCat container, if you want QQ
+- A Weixin account that can scan the iLink login QR code, if you want Weixin
+- An Anthropic Messages-compatible or OpenAI Chat Completions-compatible LLM endpoint
+
+One channel is enough. Both can run at the same time.
+
+### Prepare the workspace
+
+```bash
+mkdir -p ~/.momoi
+cp -R config.example/. ~/.momoi/
+```
+
+Edit `~/.momoi/config.json` and set:
+
+- Your LLM API format, endpoint, key, and model
+- The channels you will use, and which one is `primary`
+- Your local timezone
+- A long random `dashboard.token`
+
+If you only use Weixin, remove `napcat` from `channels.enabled` and set `primary` to `weixin`. If you only use QQ, remove `weixin`.
+
+### Connect NapCat
+
+Start NapCat, then sign in with the owner QQ:
+
+```bash
+docker run -d --name napcat \
+  -e NAPCAT_UID="$(id -u)" \
+  -e NAPCAT_GID="$(id -g)" \
+  -p 3001:3001 \
+  -p 6099:6099 \
+  -v napcat-qq:/app/.config/QQ \
+  --restart unless-stopped \
+  mlikiowa/napcat-docker:latest
+```
+
+Open `http://127.0.0.1:6099/webui`. The first-login token is in `docker logs napcat`. Scan the QQ QR code, then turn on the OneBot WebSocket. Put that socket and your QQ number in `config.json`:
+
+```json
+{
+  "channels": {
+    "primary": "napcat",
+    "enabled": {
+      "napcat": {
+        "url": "ws://host.docker.internal:3001",
+        "owner_qq": "your-qq-number"
+      }
+    }
+  }
+}
+```
+
+Only that QQ is treated as the owner.
+
+### Sign in to Weixin
+
+Build the image once, then scan the iLink QR code in the same workspace:
+
+```bash
+docker build -t momoi .
+docker run --rm -it \
+  -v "$HOME/.momoi:/home/momoi/.momoi" \
+  momoi channel login weixin
+```
+
+The login stays in the workspace. After that, keep `weixin` in `channels.enabled`.
+
+### Run Momoi
+
+```bash
+docker build -t momoi .
+docker run -d --name momoi \
+  --add-host=host.docker.internal:host-gateway \
+  -e TZ=Asia/Shanghai \
+  -v "$HOME/.momoi:/home/momoi/.momoi" \
+  -p 8788:8788 \
+  --restart unless-stopped \
+  momoi
+```
+
+Open `http://127.0.0.1:8788` and enter the dashboard passphrase. Send a private message from the owner QQ or the Weixin account you scanned. Replies stay on the channel where the conversation started; proactive messages use `primary`.
+
+The container home is `/home/momoi`, so the default workspace is `/home/momoi/.momoi`. Keep that volume. If NapCat is on the same Docker network, you can use `ws://napcat:3001` instead of `host.docker.internal`.
+
 ## Personalize Momoi
 
 Edit `~/.momoi/prompts/SOUL.md` to define Momoi's identity, relationship, values, interests, and natural speaking style.
