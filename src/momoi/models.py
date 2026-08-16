@@ -97,3 +97,4 @@ class TurnDraft:
     notification_priority: str = "normal"
     notification_reason: str = ""
     close_reply_expectation: bool = False
+    tool_calls: list[dict[str, Any]] = field(default_factory=list)

@@ -15,6 +15,7 @@ from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamable_http_client
 
 from .logging_context import (
+    TRACE,
     captured_log_context,
     current_log_context,
     log_event,
@@ -234,7 +235,7 @@ class MCPManager:
                         future.set_result(result)
                     log_event(
                         logger,
-                        logging.DEBUG,
+                        TRACE,
                         "mcp_call_end",
                         server=name,
                         tool_name=self._wire_name(name, tool),
