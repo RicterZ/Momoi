@@ -234,10 +234,25 @@ class DaemonTest(unittest.TestCase):
         self.assertIn("still wants a reaction", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("A beat does not need new information", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("such beats may be", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("hidden reasoning before drafting", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("already complete as a stance or reaction", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("leftover plans are not a second job", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn(
             "explicit request genuinely depends on its content",
             STYLE_CARD_SYSTEM_PROMPT,
         )
+
+    def test_system_prompt_routes_reply_shape_through_hidden_reasoning(self) -> None:
+        system = (
+            Path(__file__).resolve().parents[1]
+            / "src"
+            / "momoi"
+            / "prompts"
+            / "system.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn("In hidden reasoning, before drafting any owner-visible line", system)
+        self.assertIn("single main response to the owner's latest move", system)
+        self.assertIn("not wording polish after the content is chosen", system)
 
     def test_mood_update_parser_accepts_open_state_labels(self) -> None:
         mood, error = MomoiDaemon._parse_mood_update(
