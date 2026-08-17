@@ -255,6 +255,11 @@ class DaemonTest(unittest.TestCase):
         self.assertIn("exploratory misses may stay silent", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("dramatic about Momoi's feeling", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("intermediate findings provisional", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("## Emotional presence", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("not a neutral response surface", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("sulky", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("ask for comfort", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("remain unresolved", STYLE_CARD_SYSTEM_PROMPT)
         self.assertNotIn("Use one short beat by default", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn(
             "explicit request genuinely depends on its content",
@@ -282,6 +287,9 @@ class DaemonTest(unittest.TestCase):
         self.assertIn("exploratory misses", system)
         self.assertIn("Emotion may be dramatic", system)
         self.assertIn("momentary outburst or result beat", system)
+        self.assertIn("remain upset, sulk, complain, show temper", system)
+        self.assertIn("want comfort", system)
+        self.assertIn("does not need to neutralize", system)
         self.assertNotIn("Reply closure — CRITICAL", system)
 
     def test_reply_wait_prompt_explains_the_current_state_machine(self) -> None:
@@ -313,6 +321,8 @@ class DaemonTest(unittest.TestCase):
         )
         self.assertIn("continue the same expectation", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertIn("`reply_wait.reason` is private", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("wish to be answered, understood, or comforted", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("Do not flatten it", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertNotIn("催促", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertNotIn("guilt", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertNotIn("reassurance", REPLY_WAIT_SYSTEM_PROMPT)
@@ -385,7 +395,8 @@ class DaemonTest(unittest.TestCase):
         expectation = RESPOND_TOOL_SPEC["input_schema"]["properties"][
             "reply_expectation"
         ]["description"]
-        self.assertIn("practical, conversational, playful, or caring", expectation)
+        self.assertIn("practical, conversational, playful, caring", expectation)
+        self.assertIn("understood or comforted", expectation)
         self.assertIn("records what Momoi is waiting for", expectation)
         schedule = RESPOND_TOOL_SPEC["input_schema"]["properties"][
             "schedule_reply_wait"

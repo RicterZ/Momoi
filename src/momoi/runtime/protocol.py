@@ -139,7 +139,8 @@ RESPOND_TOOL_SPEC: dict[str, Any] = {
                 "maxLength": 300,
                 "description": (
                     "What Momoi genuinely hopes to hear next after the last visible "
-                    "message. It may be practical, conversational, playful, or caring; "
+                    "message. It may be practical, conversational, playful, caring, "
+                    "emotional, or a wish to be understood or comforted; "
                     "this records what Momoi is waiting for. "
                     "Use an empty string when Momoi is not waiting for anything."
                 ),
