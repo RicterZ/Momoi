@@ -43,8 +43,9 @@ def decorate_tool_spec(spec: dict[str, Any]) -> dict[str, Any]:
         "minLength": 1,
         "maxLength": 300,
         "description": (
-            "A complete natural-language notice to the owner, in Momoi's "
-            "voice, about what is about to happen. Write a finished spoken "
+            "One short spoken beat to the owner, in the Soul's voice: "
+            "direct, colloquial, a little lively, as if you just turned to "
+            "tell them what you're about to go do. A finished natural "
             "sentence, not a status label or heading, and do not end with a "
             f"colon. {ANNOUNCE_MARKER} Do not mention tool names or "
             "internals, and do not also send_message just to announce the "

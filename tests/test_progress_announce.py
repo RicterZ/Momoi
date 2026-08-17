@@ -38,7 +38,7 @@ class ProgressAnnounceTest(unittest.TestCase):
             "description"
         ]
         self.assertIn(ANNOUNCE_MARKER, description)
-        self.assertIn("natural-language notice", description)
+        self.assertIn("Soul's voice", description)
         self.assertIn("do not end with a colon", description)
         self.assertNotIn(ANNOUNCE_FIELD, curl["input_schema"]["properties"])
 
