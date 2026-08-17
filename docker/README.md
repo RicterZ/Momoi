@@ -18,17 +18,17 @@ docker run -d --name momoi --restart unless-stopped \
   -e MOMOI_OWNER_QQ=your-qq-number \
   -v "$HOME/.momoi:/home/momoi/.momoi" \
   -p 8787:8787 -p 8788:8788 \
-  ricterz/momoi:0.2.0
+  ricterz/momoi:latest
 ```
 
-The first start copies a workspace into the volume, turns on webhooks at `0.0.0.0:8787`, and prints the dashboard and webhook tokens in `docker logs momoi`. Open `http://127.0.0.1:8788`.
+The first start copies a workspace into the volume, turns on webhooks at `0.0.0.0:8787`, and prints the dashboard and webhook tokens in `docker logs momoi`. Open `http://127.0.0.1:8788`. Pin a version tag from the Tags tab if you do not want `latest`.
 
 For Weixin instead of QQ, omit `MOMOI_OWNER_QQ` and run:
 
 ```bash
 docker run --rm -it \
   -v "$HOME/.momoi:/home/momoi/.momoi" \
-  ricterz/momoi:0.2.0 channel login weixin
+  ricterz/momoi:latest channel login weixin
 ```
 
 Then set `MOMOI_PRIMARY=weixin` on the next start.

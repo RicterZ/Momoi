@@ -46,3 +46,11 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           build-args: |
             VERSION=${{ steps.meta.outputs.version }}
+
+      - uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ricterz
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ricterz/momoi
+          short-description: A persistent personal AI companion for private chat.
+          readme-filepath: ./docker/README.md
