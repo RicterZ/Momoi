@@ -45,8 +45,9 @@ class ProgressAnnounceTest(unittest.TestCase):
         ]
         self.assertIn(ANNOUNCE_MARKER, description)
         self.assertIn("Soul's voice", description)
-        self.assertIn("continue from the last tool result", description)
-        self.assertIn("Do not recap or expand", description)
+        self.assertIn("Never narrate what this tool does", description)
+        self.assertIn("If this Turn has no tool result yet", description)
+        self.assertIn("After a tool result, continue from that result", description)
         self.assertIn("colon-ended label", description)
         self.assertNotIn(ANNOUNCE_FIELD, curl["input_schema"]["properties"])
 
