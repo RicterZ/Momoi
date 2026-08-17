@@ -2174,10 +2174,12 @@ class StorageMemoryTest(unittest.TestCase):
             row = store.due_outbox()[0]
             with patch("momoi.storage.delivery.time.time", return_value=1000):
                 self.assertTrue(store.mark_sent(row.id, 60))
+            initial_pending = store.pending_owner_reply(1000)
             self.assertEqual(
-                store.pending_owner_reply(1000)["expected_response"],
-                "主人对晚餐的选择",
+                initial_pending["expected_response"], "主人对晚餐的选择"
             )
+            self.assertEqual(initial_pending["followup_attempts"], 0)
+            self.assertEqual(initial_pending["delivered_followups"], 0)
             self.assertEqual(store.next_heartbeat_due_at(False), 1060)
             self.assertIsNotNone(
                 store.claim_due_heartbeat(heartbeat, NotificationConfig(), now=1060)
@@ -2206,6 +2208,8 @@ class StorageMemoryTest(unittest.TestCase):
             pending = store.pending_owner_reply(1060)
             self.assertEqual(pending["expected_response"], "主人对晚餐的选择")
             self.assertEqual(pending["heartbeat_checks"], 1)
+            self.assertEqual(pending["followup_attempts"], 1)
+            self.assertEqual(pending["delivered_followups"], 0)
             self.assertEqual(
                 pending["previous_check_reason"], "晚餐选择还需要主人回复"
             )
@@ -2228,6 +2232,7 @@ class StorageMemoryTest(unittest.TestCase):
             pending = store.pending_owner_reply(1070)
             self.assertEqual(pending["expected_response"], "主人对晚餐的选择")
             self.assertEqual(pending["heartbeat_checks"], 1)
+            self.assertEqual(pending["followup_attempts"], 1)
             self.assertEqual(pending["delivered_followups"], 1)
             self.assertEqual(store.next_heartbeat_due_at(False), 1240)
 

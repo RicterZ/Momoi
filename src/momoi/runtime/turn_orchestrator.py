@@ -976,13 +976,13 @@ class TurnOrchestrator:
                 ],
             }
         ]
+        wait_tools = [reply_wait_respond_tool_spec()]
+        if int(pending.get("followup_attempts") or 0) == 0:
+            wait_tools.insert(0, self._send_message_tool_spec(delivery_channel.name))
         reply = await self._run_tool_loop(
             system,
             messages,
-            [
-                self._send_message_tool_spec(delivery_channel.name),
-                reply_wait_respond_tool_spec(),
-            ],
+            wait_tools,
             [],
             TurnDraft(),
             authority="agent",

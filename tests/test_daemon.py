@@ -53,6 +53,7 @@ from momoi.runtime.turns import (
 )
 from momoi.runtime.context_planner import degraded_context_plan
 from momoi.runtime.daemon import _message_gap_bounds
+from momoi.runtime.turn_support import REPLY_WAIT_SYSTEM_PROMPT
 from momoi.storage import estimate_tokens
 from tests.support import context_plan_response, with_context_planner
 
@@ -269,6 +270,29 @@ class DaemonTest(unittest.TestCase):
         self.assertIn("merely to justify it with informational value", system)
         self.assertNotIn("Reply closure — CRITICAL", system)
 
+    def test_reply_wait_prompt_anneals_contact_instead_of_escalating(self) -> None:
+        system = (
+            Path(__file__).resolve().parents[1]
+            / "src"
+            / "momoi"
+            / "prompts"
+            / "system.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn("not a prediction that the owner might keep chatting", system)
+        self.assertIn("optional reaction, quip, or continuation", system)
+        self.assertIn("reassess the conversation", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn(
+            "possibility of another reaction, quip, tease, or continuation",
+            REPLY_WAIT_SYSTEM_PROMPT,
+        )
+        self.assertIn("owner silence is increasing evidence", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("less likely and no more forceful", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("ceiling, not a sequence", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("At most one visible follow-up", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("inventing a missing", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertNotIn("continue the same emotional thread", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertNotIn("clearer and more direct", REPLY_WAIT_SYSTEM_PROMPT)
+
     def test_mood_update_parser_accepts_open_state_labels(self) -> None:
         mood, error = MomoiDaemon._parse_mood_update(
             {
@@ -329,6 +353,12 @@ class DaemonTest(unittest.TestCase):
             "do not merge it with explanation",
             SEND_MESSAGE_TOOL_SPEC["description"],
         )
+        expectation = RESPOND_TOOL_SPEC["input_schema"]["properties"][
+            "reply_expectation"
+        ]["description"]
+        self.assertIn("concrete unanswered question", expectation)
+        self.assertIn("not a prediction", expectation)
+        self.assertIn("landed acknowledgment, concession, or close", expectation)
         self.assertIn("conversational Turn", RESPOND_TOOL_SPEC["description"])
         self.assertNotIn("messages", RESPOND_TOOL_SPEC["input_schema"]["properties"])
         heartbeat_respond = heartbeat_respond_tool_spec()
@@ -944,6 +974,66 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             ):
                 self.assertEqual(after[key], before[key])
             self.assertIsNone(daemon.store.pending_owner_reply())
+            daemon.store.close()
+
+    async def test_reply_wait_disables_visible_followup_after_one_attempt(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(
+                AppConfig(
+                    llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
+                    channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                    system_prompt="test",
+                    recent_raw_tokens=1000,
+                    recent_turns=2,
+                    memory_results=2,
+                    memory_tokens=1000,
+                    database=Path(directory) / "momoi.sqlite3",
+                    log_level="INFO",
+                )
+            )
+            pending = {
+                "source_turn": "question",
+                "source_messages": [],
+                "expected_response": "主人对问题的回答",
+                "waiting_since": "2026-08-17T12:00:00+08:00",
+                "waiting_minutes": 4,
+                "heartbeat_checks": 1,
+                "previous_check_reason": "问题仍然开放",
+                "check_index": 2,
+                "max_checks": 3,
+                "stage_delay_minutes": 3,
+                "final_check": False,
+                "channel": "napcat",
+                "followup_attempts": 1,
+                "delivered_followups": 0,
+            }
+            terminal = AgentReply(
+                [],
+                reply_wait={
+                    "continue_waiting": False,
+                    "reason": "沉默说明这次对话已经自然结束",
+                },
+            )
+            with (
+                patch.object(
+                    daemon.store, "pending_owner_reply", return_value=pending
+                ),
+                patch.object(
+                    daemon,
+                    "_run_tool_loop",
+                    new_callable=AsyncMock,
+                    return_value=terminal,
+                ) as run,
+                patch.object(daemon, "_commit_reply_wait_state"),
+            ):
+                await daemon._complete_reply_wait(
+                    "reply-wait-second", "napcat", owner_event_revision=0
+                )
+
+            tools = run.await_args.args[2]
+            self.assertEqual([tool["name"] for tool in tools], ["respond"])
             daemon.store.close()
 
     async def test_heartbeat_defers_while_owner_reply_is_in_flight(self) -> None:

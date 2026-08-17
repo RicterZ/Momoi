@@ -138,8 +138,10 @@ RESPOND_TOOL_SPEC: dict[str, Any] = {
                 "type": "string",
                 "maxLength": 300,
                 "description": (
-                    "What Momoi is genuinely waiting for after the Turn's last visible "
-                    "message. Use an empty string when no reply is expected."
+                    "The concrete unanswered question, request, or relational bid "
+                    "whose reply Momoi still wants after the last visible message. "
+                    "This is not a prediction of optional continued chat. Use an "
+                    "empty string after a landed acknowledgment, concession, or close."
                 ),
             },
             "mood": MOOD_DECISION_SCHEMA,

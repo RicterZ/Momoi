@@ -3942,6 +3942,18 @@ class Store(MemoryStore, DeliveryStore):
                  )""",
             (since,),
         ).fetchone()[0]
+        followup_attempts = self._db.execute(
+            """SELECT COUNT(DISTINCT notification.id)
+               FROM notifications AS notification
+               WHERE notification.notification_key='heartbeat.reply_followup'
+                 AND notification.created_at>=?
+                 AND EXISTS (
+                     SELECT 1 FROM outbox
+                     WHERE outbox.turn_id=notification.turn_id
+                       AND outbox.state NOT IN ('failed', 'superseded')
+                 )""",
+            (since,),
+        ).fetchone()[0]
         source_turn = str(row["pending_reply_turn_id"] or "")
         source_messages = [
             {
@@ -3972,6 +3984,7 @@ class Store(MemoryStore, DeliveryStore):
             ],
             "final_check": int(row["pending_reply_checks"] or 0) >= 2,
             "channel": str(row["pending_reply_channel"] or ""),
+            "followup_attempts": int(followup_attempts or 0),
             "delivered_followups": int(followups or 0),
         }
 
