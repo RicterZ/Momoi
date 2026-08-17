@@ -947,6 +947,13 @@ class TurnOrchestrator:
                 "delivered_followups",
             )
         }
+        later_check_available = int(pending.get("heartbeat_checks") or 0) == 0
+        model_pending["later_check_available"] = later_check_available
+        model_pending["later_check_in_minutes"] = (
+            int(self.config.heartbeat.reply_followup_interval_seconds / 60)
+            if later_check_available
+            else None
+        )
         current_input = _sections(
             ("pending_owner_reply", json.dumps(model_pending, ensure_ascii=False)),
             (

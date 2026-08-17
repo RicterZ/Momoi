@@ -296,10 +296,12 @@ class DaemonTest(unittest.TestCase):
         self.assertIn("not an obligation on the owner", system)
         self.assertIn("reassess the conversation", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertIn("Decide freely whether", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("False ends the remaining checks immediately", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertIn("at most two checks", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertIn("hard ceiling", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertIn("never a sequence Momoi is expected to finish", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("later_check_available` is true", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("schedules that one later decision", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("this is the final decision", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertIn("Either choice is compatible", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertNotIn("continue the same emotional thread", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertNotIn("clearer and more direct", REPLY_WAIT_SYSTEM_PROMPT)
@@ -978,6 +980,10 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn("<pending_owner_reply>", request)
             self.assertIn("waiting_minutes", request)
             self.assertIn("previous_check_reason", request)
+            self.assertIn("later_check_available", request)
+            self.assertIn("later_check_in_minutes", request)
+            self.assertIn("\\\"later_check_available\\\": true", request)
+            self.assertIn("\\\"later_check_in_minutes\\\": 7", request)
             for hidden_scheduler_field in (
                 "check_index",
                 "max_checks",
@@ -1058,6 +1064,9 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 [tool["name"] for tool in tools], ["send_message", "respond"]
             )
+            request = json.dumps(run.await_args.args[:2], ensure_ascii=False)
+            self.assertIn("\\\"later_check_available\\\": false", request)
+            self.assertIn("\\\"later_check_in_minutes\\\": null", request)
             daemon.store.close()
 
     async def test_heartbeat_defers_while_owner_reply_is_in_flight(self) -> None:
