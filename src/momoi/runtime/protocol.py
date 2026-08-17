@@ -232,10 +232,13 @@ def reply_wait_respond_tool_spec() -> dict[str, Any]:
 SEND_MESSAGE_TOOL_SPEC: dict[str, Any] = {
     "name": "send_message",
     "description": (
-        "Emit non-empty owner-visible beats without ending the Turn. Keep each item "
-        "as one complete beat. Text may share a beat with images; file, video, audio, "
-        "and record must be their own items, and mixed input is split. After the "
-        "result, call respond to close the Turn."
+        "Emit the already-decided non-empty owner-visible conversational acts "
+        "without ending the Turn. The messages array only delivers and formats "
+        "those acts; splitting text into items does not create another act or "
+        "justify more content. Keep each item as one complete message. Text may "
+        "share a message with images; file, video, audio, and record must be their "
+        "own items, and mixed input is split. After the result, call respond to "
+        "close the Turn."
     ),
     "input_schema": {
         "type": "object",

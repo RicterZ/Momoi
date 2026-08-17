@@ -8,6 +8,7 @@ from momoi.runtime import MomoiDaemon
 from momoi.runtime.progress_announce import (
     ANNOUNCE_FIELD,
     ANNOUNCE_MARKER,
+    announce_error_message,
     announce_field,
     apply_tool_announce,
     decorate_tool_spec,
@@ -46,11 +47,19 @@ class ProgressAnnounceTest(unittest.TestCase):
         self.assertIn(ANNOUNCE_MARKER, description)
         self.assertIn("Soul's voice", description)
         self.assertIn("Never narrate what this tool does", description)
-        self.assertIn("same reply logic as send_message", description)
+        self.assertIn("same reply-closure logic as send_message", description)
+        self.assertIn("still-unmet current reply need", description)
+        self.assertIn("do not append another conversational move", description)
         self.assertIn("If this Turn has no tool result yet", description)
         self.assertIn("After a tool result, continue from that result", description)
         self.assertIn("colon-ended label", description)
         self.assertNotIn(ANNOUNCE_FIELD, curl["input_schema"]["properties"])
+
+    def test_missing_announce_retry_asks_for_reply_not_tool_caption(self) -> None:
+        message = announce_error_message(ANNOUNCE_FIELD, "say_to_owner_required")
+        self.assertIn("answers the owner", message)
+        self.assertIn("rather than captioning the tool", message)
+        self.assertNotIn("what you are about to do", message)
 
     def test_keeps_native_message_argument(self) -> None:
         spec = {

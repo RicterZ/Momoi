@@ -52,14 +52,15 @@ def decorate_tool_spec(spec: dict[str, Any]) -> dict[str, Any]:
         "maxLength": 300,
         "description": (
             "A short spoken line the owner will hear, in the Soul's voice. "
-            "Choose it with the same reply logic as send_message: the owner's "
-            "answer, not this tool's caption. Never narrate what this tool "
-            "does. If this Turn has no tool result yet, answer the owner: "
-            "accept and go, without recapping the request. After a tool "
-            "result, continue from that result; do not answer the original "
-            "request again. A finished spoken sentence, not a colon-ended "
-            f"label. {ANNOUNCE_MARKER} Do not also send_message for the "
-            "same action."
+            "Choose it with the same reply-closure logic as send_message: "
+            "satisfy the owner's still-unmet current reply need, not this "
+            "tool's caption, and do not append another conversational move. "
+            "Never narrate what this tool does. If this Turn has no tool result "
+            "yet, answer the owner: accept and go, without recapping the "
+            "request. After a tool result, continue from that result; do not "
+            "answer the original request again. A finished spoken sentence, "
+            f"not a colon-ended label. {ANNOUNCE_MARKER} Do not also "
+            "send_message for the same action."
         ),
     }
     required = list(schema.get("required") or [])
@@ -71,9 +72,9 @@ def decorate_tool_spec(spec: dict[str, Any]) -> dict[str, Any]:
 
 def announce_error_message(field: str, error: str) -> str:
     return (
-        f"This tool requires a short owner-visible {field} that naturally "
-        "tells the owner what you are about to do. Call it again with that "
-        "field set."
+        f"This tool requires a short owner-visible {field} that answers the "
+        "owner before work begins rather than captioning the tool. Call it "
+        "again with that field set."
     )
 
 

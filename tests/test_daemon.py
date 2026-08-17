@@ -219,7 +219,7 @@ class DaemonTest(unittest.TestCase):
 
         self.assertEqual(daemon._system()[0]["text"], STYLE_CARD_SYSTEM_PROMPT)
 
-    def test_style_card_calibrates_standalone_sticker_replies(self) -> None:
+    def test_style_card_calibrates_social_reply_closure(self) -> None:
         self.assertIn(
             "standalone sticker or reaction image", STYLE_CARD_SYSTEM_PROMPT
         )
@@ -231,18 +231,27 @@ class DaemonTest(unittest.TestCase):
             "only accepts or closes a beat that already landed",
             STYLE_CARD_SYSTEM_PROMPT,
         )
-        self.assertIn("still wants a reaction", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("A beat does not need new information", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("such beats may be", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("hidden reasoning before drafting", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("already complete as a stance or reaction", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("leftover plans are not a second job", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("social chat that still wants", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("complete conversational act", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("information density", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("may stand alone", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn(
+            "do not themselves supply another conversational move",
+            STYLE_CARD_SYSTEM_PROMPT,
+        )
+        self.assertIn(
+            "Splitting text into messages is presentation only",
+            STYLE_CARD_SYSTEM_PROMPT,
+        )
+        self.assertIn("even inside the same message", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertNotIn("Use one short beat by default", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertNotIn("low-information beat", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn(
             "explicit request genuinely depends on its content",
             STYLE_CARD_SYSTEM_PROMPT,
         )
 
-    def test_system_prompt_routes_reply_shape_through_hidden_reasoning(self) -> None:
+    def test_system_prompt_closes_satisfied_reply_needs(self) -> None:
         system = (
             Path(__file__).resolve().parents[1]
             / "src"
@@ -250,9 +259,13 @@ class DaemonTest(unittest.TestCase):
             / "prompts"
             / "system.md"
         ).read_text(encoding="utf-8")
-        self.assertIn("In hidden reasoning, before drafting any owner-visible line", system)
-        self.assertIn("single main response to the owner's latest move", system)
-        self.assertIn("not wording polish after the content is chosen", system)
+        self.assertIn("Reply closure — CRITICAL", system)
+        self.assertIn("privately track only the reply needs", system)
+        self.assertIn("remembered formatting preferences govern presentation only", system)
+        self.assertIn("After each candidate clause or message", system)
+        self.assertIn("if nothing remains, stop drafting", system)
+        self.assertIn("without adding a new proposition", system)
+        self.assertIn("still-unmet current reply need", system)
 
     def test_mood_update_parser_accepts_open_state_labels(self) -> None:
         mood, error = MomoiDaemon._parse_mood_update(
@@ -306,6 +319,14 @@ class DaemonTest(unittest.TestCase):
         )
         self.assertIn("non-empty", SEND_MESSAGE_TOOL_SPEC["description"])
         self.assertIn("owner-visible", SEND_MESSAGE_TOOL_SPEC["description"])
+        self.assertIn(
+            "already-decided non-empty owner-visible conversational acts",
+            SEND_MESSAGE_TOOL_SPEC["description"],
+        )
+        self.assertIn(
+            "splitting text into items does not create another act",
+            SEND_MESSAGE_TOOL_SPEC["description"],
+        )
         self.assertIn("conversational Turn", RESPOND_TOOL_SPEC["description"])
         self.assertNotIn("messages", RESPOND_TOOL_SPEC["input_schema"]["properties"])
         heartbeat_respond = heartbeat_respond_tool_spec()
