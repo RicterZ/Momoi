@@ -903,6 +903,7 @@ class TurnOrchestrator:
             goals=len(draft.goals),
             reminders=len(draft.reminders),
             expects_reply=reply.expects_reply,
+            schedule_reply_wait=reply.should_schedule_reply_wait,
             llm=self.store.turn_usage(turn_id),
         )
         self.outbox_changed.set()
@@ -1232,11 +1233,13 @@ class TurnOrchestrator:
             "messages": reply.messages,
             "expects_reply": reply.expects_reply,
             "reply_expectation": reply.reply_expectation,
+            "schedule_reply_wait": reply.should_schedule_reply_wait,
             "mood_update": reply.mood_update,
         }
         if not contact_window["allowed"]:
             decision["messages"] = []
             decision["reply_expectation"] = ""
+            decision["schedule_reply_wait"] = False
         committed_messages = self._commit_heartbeat_state(
             turn_id,
             owner_event_revision=owner_event_revision,
@@ -1247,7 +1250,11 @@ class TurnOrchestrator:
             mood_update=decision["mood_update"],
             messages=decision["messages"],
             reason=decision["reason"],
-            reply_expectation=decision["reply_expectation"],
+            reply_expectation=(
+                decision["reply_expectation"]
+                if decision["schedule_reply_wait"]
+                else ""
+            ),
             draft=draft,
             memory_events=memory_events,
             reply_initial_interval_seconds=(

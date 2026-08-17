@@ -76,11 +76,19 @@ def parse_response(
         return None, error
     if require_reply_wait:
         expects_reply, expectation = False, ""
+        schedule_reply_wait = False
     else:
         reply_expectation, error = parse_reply_expectation(arguments)
         if reply_expectation is None:
             return None, error
         expects_reply, expectation = reply_expectation
+        schedule_reply_wait = arguments.get(
+            "schedule_reply_wait", expects_reply
+        )
+        if not isinstance(schedule_reply_wait, bool):
+            return None, "invalid_reply_wait_schedule"
+        if schedule_reply_wait and not expects_reply:
+            return None, "reply_wait_without_expectation"
     heartbeat = arguments.get("heartbeat")
     reply_wait = arguments.get("reply_wait")
     if require_heartbeat:
@@ -136,6 +144,7 @@ def parse_response(
         mood_update=mood,
         expects_reply=expects_reply,
         reply_expectation=expectation,
+        schedule_reply_wait=schedule_reply_wait,
         heartbeat=heartbeat if require_heartbeat else None,
         reply_wait=reply_wait if require_reply_wait else None,
     ), None

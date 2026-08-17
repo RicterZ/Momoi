@@ -361,7 +361,7 @@ class DeliveryStore:
                     visible,
                 )
             self._apply_mood_update(reply.mood_update, now)
-            if reply.expects_reply:
+            if reply.should_schedule_reply_wait:
                 self._bind_turn_reply_expectation(
                     turn_id, reply.reply_expectation, reply_initial_delay
                 )

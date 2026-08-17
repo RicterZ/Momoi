@@ -294,6 +294,8 @@ class DaemonTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("practical, conversational, playful, or caring", system)
         self.assertIn("not an obligation on the owner", system)
+        self.assertIn("Independently set `schedule_reply_wait`", system)
+        self.assertIn("false leaves the expectation passive", system)
         self.assertIn("reassess the conversation", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertIn("Decide freely whether", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertIn("at most two checks", REPLY_WAIT_SYSTEM_PROMPT)
@@ -348,6 +350,9 @@ class DaemonTest(unittest.TestCase):
             (None, "invalid_mood_decision"),
         )
         self.assertIn("mood", RESPOND_TOOL_SPEC["input_schema"]["required"])
+        self.assertIn(
+            "schedule_reply_wait", RESPOND_TOOL_SPEC["input_schema"]["required"]
+        )
         self.assertNotIn("continuity", RESPOND_TOOL_SPEC["input_schema"]["properties"])
         self.assertNotIn("delivery", RESPOND_TOOL_SPEC["input_schema"]["properties"])
         self.assertNotIn("expects_reply", RESPOND_TOOL_SPEC["input_schema"]["properties"])
@@ -373,6 +378,11 @@ class DaemonTest(unittest.TestCase):
         ]["description"]
         self.assertIn("practical, conversational, playful, or caring", expectation)
         self.assertIn("not an obligation on the owner", expectation)
+        schedule = RESPOND_TOOL_SPEC["input_schema"]["properties"][
+            "schedule_reply_wait"
+        ]["description"]
+        self.assertIn("Decide this independently", schedule)
+        self.assertIn("keeps any expectation passive", schedule)
         self.assertIn("conversational Turn", RESPOND_TOOL_SPEC["description"])
         self.assertNotIn("messages", RESPOND_TOOL_SPEC["input_schema"]["properties"])
         heartbeat_respond = heartbeat_respond_tool_spec()

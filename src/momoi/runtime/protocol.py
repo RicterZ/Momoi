@@ -144,10 +144,20 @@ RESPOND_TOOL_SPEC: dict[str, Any] = {
                     "Use an empty string when Momoi is not waiting for anything."
                 ),
             },
+            "schedule_reply_wait": {
+                "type": "boolean",
+                "description": (
+                    "Whether to schedule an active reply-wait decision in about "
+                    "three minutes. Decide this independently from hoping for a "
+                    "reply. False keeps any expectation passive and schedules nothing; "
+                    "true requires a non-empty reply_expectation."
+                ),
+            },
             "mood": MOOD_DECISION_SCHEMA,
         },
         "required": [
             "reply_expectation",
+            "schedule_reply_wait",
             "mood",
         ],
         "additionalProperties": False,

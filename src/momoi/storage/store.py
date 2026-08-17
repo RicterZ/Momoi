@@ -6038,6 +6038,7 @@ class Store(MemoryStore, DeliveryStore):
                 {
                     "channel": target_channel,
                     "expects_reply": bool(reply.expects_reply),
+                    "schedule_reply_wait": reply.should_schedule_reply_wait,
                     "reply_expectation": (
                         reply.reply_expectation if reply.expects_reply else ""
                     ),
@@ -6076,7 +6077,7 @@ class Store(MemoryStore, DeliveryStore):
                 "UPDATE events SET processed=1 WHERE id=?",
                 ((event_id,) for event_id in event_ids),
             )
-            if reply.expects_reply:
+            if reply.should_schedule_reply_wait:
                 self._bind_turn_reply_expectation(
                     turn_id, reply.reply_expectation, reply_initial_delay
                 )

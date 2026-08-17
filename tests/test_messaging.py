@@ -375,6 +375,7 @@ class MessagingTest(unittest.TestCase):
             {
                 "expects_reply": True,
                 "reply_expectation": "主人晚上的安排",
+                "schedule_reply_wait": False,
                 "mood": {"decision": "unchanged"},
             }
         )
@@ -382,6 +383,25 @@ class MessagingTest(unittest.TestCase):
         self.assertEqual(reply.messages, [])
         self.assertTrue(reply.expects_reply)
         self.assertEqual(reply.reply_expectation, "主人晚上的安排")
+        self.assertFalse(reply.schedule_reply_wait)
+        scheduled, error = MomoiDaemon._parse_response(
+            {
+                "reply_expectation": "主人晚上的安排",
+                "schedule_reply_wait": True,
+                "mood": {"decision": "unchanged"},
+            }
+        )
+        self.assertIsNone(error)
+        self.assertTrue(scheduled.schedule_reply_wait)
+        invalid_schedule, error = MomoiDaemon._parse_response(
+            {
+                "reply_expectation": "",
+                "schedule_reply_wait": True,
+                "mood": {"decision": "unchanged"},
+            }
+        )
+        self.assertIsNone(invalid_schedule)
+        self.assertEqual(error, "reply_wait_without_expectation")
         legacy, error = MomoiDaemon._parse_response(
             {
                 "messages": ["旧协议消息"],

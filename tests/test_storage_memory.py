@@ -2281,6 +2281,33 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertEqual(store.next_heartbeat_due_at(False), 1380)
             store.close()
 
+    def test_passive_reply_expectation_does_not_start_wait_checks(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store.commit_turn(
+                [],
+                "",
+                AgentReply(
+                    ["喝完愿意的话跟我说一声"],
+                    expects_reply=True,
+                    reply_expectation="老师喝完水后的回应",
+                    schedule_reply_wait=False,
+                ),
+                turn_id="passive-expectation",
+            )
+            row = store.due_outbox()[0]
+            self.assertEqual(
+                store._db.execute(
+                    "SELECT reply_expectation FROM outbox WHERE id=?", (row.id,)
+                ).fetchone()[0],
+                "",
+            )
+            with patch("momoi.storage.delivery.time.time", return_value=1000):
+                self.assertFalse(store.mark_sent(row.id, 180))
+            self.assertIsNone(store.pending_owner_reply(1000))
+            self.assertIsNone(store.next_heartbeat_due_at(False))
+            store.close()
+
     def test_expected_reply_can_follow_an_already_sent_progress_message(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")

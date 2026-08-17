@@ -68,8 +68,17 @@ class AgentReply:
     mood_update: dict[str, Any] | None = None
     expects_reply: bool = False
     reply_expectation: str = ""
+    schedule_reply_wait: bool | None = None
     heartbeat: dict[str, Any] | None = None
     reply_wait: dict[str, Any] | None = None
+
+    @property
+    def should_schedule_reply_wait(self) -> bool:
+        return (
+            self.expects_reply
+            if self.schedule_reply_wait is None
+            else self.schedule_reply_wait
+        )
 
 
 @dataclass(frozen=True)
