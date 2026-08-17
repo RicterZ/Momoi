@@ -469,6 +469,25 @@ class ToolExecutionService:
             for index, call in enumerate(response.tool_calls):
                 tool_started = time.monotonic()
                 source = self._tool_source(call.name, allow_notify=allow_notify)
+                journal_tool = source in {"mcp", "builtin", "agenda", "memory"}
+                if journal_tool:
+                    journal_arguments = dict(call.arguments)
+                    journal_arguments.pop("say_to_owner", None)
+                    self._journal_turn_item(
+                        turn_id,
+                        "tool_call",
+                        {
+                            "tool_call_id": call.id,
+                            "name": call.name,
+                            "source": source,
+                            "arguments": compact_log_value(
+                                journal_arguments,
+                                string_limit=500,
+                                item_limit=20,
+                            ),
+                        },
+                        trust="runtime",
+                    )
                 log_event(
                     logger,
                     logging.DEBUG,
@@ -725,6 +744,27 @@ class ToolExecutionService:
                         ),
                     }
                 )
+                if journal_tool:
+                    self._journal_turn_item(
+                        turn_id,
+                        "tool_result",
+                        {
+                            "tool_call_id": call.id,
+                            "name": call.name,
+                            "ok": bool(result.get("ok")),
+                            "error": result.get("error"),
+                            "result": compact_log_value(
+                                result,
+                                string_limit=800,
+                                item_limit=30,
+                            ),
+                        },
+                        trust=(
+                            "untrusted_tool_data"
+                            if source in {"mcp", "builtin"}
+                            else "runtime"
+                        ),
+                    )
                 results.append(_tool_result_block(call.id, result))
                 if accept_owner_updates:
                     updates = await self._settle_owner_updates(
@@ -775,6 +815,32 @@ class ToolExecutionService:
                 }
             )
             force_response = True
+
+    def _journal_turn_item(
+        self,
+        turn_id: str,
+        item_type: str,
+        payload: dict[str, object],
+        *,
+        trust: str,
+    ) -> None:
+        try:
+            self.store.append_turn_journal(
+                turn_id,
+                item_type,
+                payload,
+                visibility="internal",
+                trust=trust,
+            )
+        except Exception:
+            log_event(
+                logger,
+                logging.WARNING,
+                "turn_journal_failed",
+                turn_id=turn_id,
+                item_type=item_type,
+                exc_info=True,
+            )
 
     def _tool_source(self, name: str, *, allow_notify: bool) -> str:
         if name in {

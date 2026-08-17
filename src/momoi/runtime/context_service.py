@@ -8,7 +8,11 @@ from ..context_time import context_timestamp
 from ..logging_context import TRACE, compact_log_value, log_context, log_event, new_trace_id, safe_preview
 from ..models import IncomingMessage
 from ..storage import estimate_tokens
-from .context_assembler import assemble_main_context, build_plan_retrieval, _historical_content
+from .context_assembler import (
+    assemble_main_context,
+    assemble_recent_turns,
+    build_plan_retrieval,
+)
 from .context_candidates import DEFAULT_EPISODE_CANDIDATE_POLICY, EpisodeCandidatePolicy, collect_episode_candidates, full_candidate_context
 from .context_planner import (
     CONTEXT_PLAN_TOOL_NAME,
@@ -53,17 +57,17 @@ class ContextService:
 
         revision = self.store.next_context_plan_revision(turn_id)
         owner_query = "\n".join(event.text for event in events)
-        recent_conversation = [
-            {**message, "content": _historical_content(message.get("content"))}
-            for message in self.store.recent_conversation_messages(
-                self.config.recent_turns,
-                self.config.recent_raw_tokens,
-                min(event.received_at for event in events),
-            )
-        ]
-        recent_turn_ids = list(
-            dict.fromkeys(str(message["turn_id"]) for message in recent_conversation)
+        recent_turns, _ = assemble_recent_turns(
+            self.store,
+            self.config.recent_turns,
+            self.config.recent_raw_tokens,
+            min(event.received_at for event in events),
         )
+        recent_turn_ids = [
+            str(turn["turn_id"])
+            for turn in recent_turns.get("turns", [])
+            if isinstance(turn, dict)
+        ]
         candidates = collect_episode_candidates(
             self.store,
             owner_query,
@@ -152,7 +156,7 @@ class ContextService:
                 "content": json.dumps(
                     {
                         "owner_messages": owner_messages,
-                        "recent_conversation": recent_conversation,
+                        "recent_turns": recent_turns,
                         "candidate_episodes": candidate_context,
                         "candidate_goals": candidate_goals,
                         "candidate_reminders": candidate_reminders,

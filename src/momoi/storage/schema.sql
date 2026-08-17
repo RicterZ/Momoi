@@ -365,6 +365,21 @@ CREATE TABLE IF NOT EXISTS turn_progress (
     created_at REAL NOT NULL,
     PRIMARY KEY (turn_id, tool_call_id, part_index)
 );
+CREATE TABLE IF NOT EXISTS turn_journal (
+    turn_id TEXT NOT NULL,
+    sequence INTEGER NOT NULL,
+    created_at REAL NOT NULL,
+    item_type TEXT NOT NULL,
+    visibility TEXT NOT NULL CHECK (visibility IN ('owner', 'internal')),
+    trust TEXT NOT NULL CHECK (
+        trust IN ('owner', 'runtime', 'context_data', 'untrusted_tool_data')
+    ),
+    payload_json TEXT NOT NULL,
+    PRIMARY KEY (turn_id, sequence),
+    FOREIGN KEY (turn_id) REFERENCES turns(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS turn_journal_recent
+    ON turn_journal(turn_id, created_at, sequence);
 CREATE TABLE IF NOT EXISTS webhook_runs (
     id TEXT PRIMARY KEY,
     workflow_id TEXT NOT NULL,

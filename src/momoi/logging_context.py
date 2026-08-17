@@ -7,15 +7,17 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime
 from typing import Any, Iterator, Mapping
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 
 _CONTEXT: ContextVar[dict[str, Any]] = ContextVar("momoi_log_context", default={})
 _SAFE_TOKEN = re.compile(r"^[A-Za-z0-9_.:/@+-]+$")
 _SENSITIVE_KEY = re.compile(
-    r"^(?:api[_-]?key|authorization|cookie|credentials?|password|secret|"
-    r"access[_-]?token|refresh[_-]?token)$",
+    r"^(?:(?:x[_-]?)?api[_-]?key|authorization|cookie|credentials?|password|"
+    r"secret|token|access[_-]?token|refresh[_-]?token|private[_-]?key)$",
     re.IGNORECASE,
 )
+_URL_KEY = re.compile(r"(?:url|uri|endpoint)$", re.IGNORECASE)
 _PREFERRED_FIELDS = (
     "stage",
     "turn_id",
@@ -165,6 +167,33 @@ def captured_log_context(snapshot: Mapping[str, Any]) -> Iterator[dict[str, Any]
 def _redact(value: Any, key: str = "") -> Any:
     if key and _SENSITIVE_KEY.search(key):
         return "[redacted]"
+    if key and _URL_KEY.search(key) and isinstance(value, str):
+        try:
+            parsed = urlsplit(value)
+            query = urlencode(
+                [
+                    (
+                        item_key,
+                        (
+                            "[redacted]"
+                            if _SENSITIVE_KEY.search(item_key)
+                            else item_value
+                        ),
+                    )
+                    for item_key, item_value in parse_qsl(
+                        parsed.query, keep_blank_values=True
+                    )
+                ]
+            )
+            host = parsed.hostname or ""
+            if parsed.port is not None:
+                host = f"{host}:{parsed.port}"
+            netloc = f"[redacted]@{host}" if parsed.username else parsed.netloc
+            return urlunsplit(
+                (parsed.scheme, netloc, parsed.path, query, parsed.fragment)
+            )
+        except (TypeError, ValueError):
+            return "[redacted-url]"
     if isinstance(value, Mapping):
         if value.get("type") == "base64" and isinstance(value.get("data"), str):
             return {

@@ -206,8 +206,8 @@ momoi --workspace ~/.momoi run
 | --- | --- | --- |
 | `soul_prompt` | `prompts/SOUL.md` | 相对于 workspace 的人格文件 |
 | `heartbeat_prompt` | `prompts/HEARTBEAT.md` | workspace 心跳指引；文件不存在时不注入 |
-| `recent_raw_tokens` | `32000` | 以原始形式保留近期对话的预算 |
-| `recent_turns` | `6` | 以原始形式保留的近期已完成对话回合上限 |
+| `recent_raw_tokens` | `32000` | 近期 Turn 标准记录的预算 |
+| `recent_turns` | `6` | 纳入考虑的近期已完成 Turn 上限 |
 | `memory_results` | `6` | 自动召回的持久记忆最大数量 |
 | `memory_tokens` | `8000` | 召回持久记忆的 token 预算 |
 | `max_input_tokens` | `96000` | 包括工具 schema 在内的完整模型输入目标上限 |
@@ -217,7 +217,7 @@ momoi --workspace ~/.momoi run
 
 `max_input_tokens` 应低于 provider 真实的上下文窗口。这些数值是构建上下文的预算，不代表每个 provider 都会以相同方式计算 token。
 
-`recent_raw_tokens` 限制以原始形式保留的近期对话，`recent_turns` 限制纳入考虑的近期已完成对话回合数。`recent_episode_hours` 会加入配置窗口内全部活跃的 Episode，与关键词召回相互独立；`summary_results` 默认将关键词召回限制为最多 12 个 Episode。两组结果按 Episode 去重后排序：近期且命中关键词的优先，其次是其他关键词命中，最后是仅近期活跃的 Episode；在关键词组内，命中的关键词 alternative 越多越靠前。`summary_tokens` 由合并后的 Episode 摘要共同使用。
+`recent_raw_tokens` 限制提供给 Context Planner 和主模型的近期 Turn 标准记录，`recent_turns` 限制纳入考虑的近期已完成 Turn 数。每条记录会把可见消息、安全投影后的工具调用与结果、上下文理解和已提交 mutation 保留在同一条时间线中。`recent_episode_hours` 会加入配置窗口内全部活跃的 Episode，与关键词召回相互独立；`summary_results` 默认将关键词召回限制为最多 12 个 Episode。两组结果按 Episode 去重后排序：近期且命中关键词的优先，其次是其他关键词命中，最后是仅近期活跃的 Episode；在关键词组内，命中的关键词 alternative 越多越靠前。`summary_tokens` 由合并后的 Episode 摘要共同使用。
 
 将某个召回层的结果数量或 token 预算设为 `0` 可关闭该层自动召回。对应工具已启用时，显式记忆和对话搜索工具仍然可用。
 

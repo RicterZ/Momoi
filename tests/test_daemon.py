@@ -268,6 +268,8 @@ class DaemonTest(unittest.TestCase):
         self.assertIn("without explanation or new information", system)
         self.assertIn("Decide separately whether", system)
         self.assertIn("merely to justify it with informational value", system)
+        self.assertIn("`<recent_turns>` preserves each recent Turn", system)
+        self.assertIn("actually persisted", system)
         self.assertNotIn("Reply closure — CRITICAL", system)
 
     def test_reply_wait_prompt_anneals_contact_instead_of_escalating(self) -> None:
@@ -2173,6 +2175,20 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 [(row["tool_call_id"], row["text"]) for row in progress],
                 [("curl-one", "先说这一句")],
             )
+            journal = [
+                json.loads(row["payload_json"])
+                for row in daemon.store._db.execute(
+                    """SELECT payload_json FROM turn_journal
+                       WHERE turn_id=? ORDER BY sequence""",
+                    (turn_id,),
+                ).fetchall()
+            ]
+            self.assertEqual(
+                [item["name"] for item in journal],
+                ["curl", "curl", "curl", "curl", "curl", "curl"],
+            )
+            self.assertNotIn("say_to_owner", json.dumps(journal, ensure_ascii=False))
+            self.assertIn("first-result", json.dumps(journal, ensure_ascii=False))
             daemon.store.close()
 
     async def test_owner_turn_does_not_retry_after_provider_exhausts_retries(

@@ -2107,6 +2107,166 @@ class Store(MemoryStore, DeliveryStore):
             used += size
         return [item for group in reversed(selected) for item in group]
 
+    def recent_turn_records(
+        self,
+        turn_limit: int,
+        before_timestamp: float | None = None,
+    ) -> list[dict[str, object]]:
+        if turn_limit <= 0:
+            return []
+        turns = self._db.execute(
+            """SELECT t.* FROM turns AS t
+               WHERE t.state<>'running'
+                 AND (? IS NULL OR t.updated_at < ?)
+                 AND (
+                     t.kind='owner' OR EXISTS (
+                         SELECT 1 FROM messages AS m
+                         WHERE m.turn_id=t.id
+                           AND (
+                               m.role IN ('user', 'event')
+                               OR m.delivery_state IN ('delivered', 'uncertain')
+                           )
+                     )
+                 )
+               ORDER BY t.updated_at DESC LIMIT ?""",
+            (before_timestamp, before_timestamp, turn_limit),
+        ).fetchall()
+        records: list[dict[str, object]] = []
+        for turn in reversed(turns):
+            turn_id = str(turn["id"])
+            timeline: list[dict[str, object]] = []
+            for message in self._db.execute(
+                """SELECT id, role, content, created_at, delivery_state
+                   FROM messages WHERE turn_id=? ORDER BY id""",
+                (turn_id,),
+            ).fetchall():
+                role = str(message["role"])
+                timeline.append(
+                    {
+                        "type": (
+                            "owner_message"
+                            if role == "user"
+                            else ("event" if role == "event" else "assistant_message")
+                        ),
+                        "timestamp": context_timestamp(message["created_at"]),
+                        "text": str(message["content"]),
+                        "delivery": str(message["delivery_state"]),
+                        "trust": "owner" if role == "user" else "context_data",
+                        "_sort": (
+                            float(message["created_at"]),
+                            0,
+                            int(message["id"]),
+                        ),
+                    }
+                )
+            final: dict[str, object] = {
+                "state": str(turn["state"]),
+                "external_effect": bool(turn["external_effect_started"]),
+                "failure": str(turn["failure_reason"] or ""),
+                "llm": {
+                    "calls": int(turn["llm_calls"]),
+                    "input_tokens": int(turn["input_tokens"]),
+                    "output_tokens": int(turn["output_tokens"]),
+                },
+            }
+            for item in self._db.execute(
+                """SELECT sequence, created_at, item_type, visibility, trust,
+                          payload_json
+                   FROM turn_journal WHERE turn_id=?
+                   ORDER BY sequence""",
+                (turn_id,),
+            ).fetchall():
+                try:
+                    payload = json.loads(str(item["payload_json"]))
+                except (TypeError, json.JSONDecodeError):
+                    payload = {"error": "invalid_journal_payload"}
+                if not isinstance(payload, dict):
+                    payload = {"value": payload}
+                if item["item_type"] == "final":
+                    final.update(payload)
+                    continue
+                timeline.append(
+                    {
+                        "type": str(item["item_type"]),
+                        "timestamp": context_timestamp(item["created_at"]),
+                        "visibility": str(item["visibility"]),
+                        "trust": str(item["trust"]),
+                        **payload,
+                        "_sort": (
+                            float(item["created_at"]),
+                            1,
+                            int(item["sequence"]),
+                        ),
+                    }
+                )
+            timeline.sort(key=lambda item: item["_sort"])
+            for item in timeline:
+                item.pop("_sort", None)
+            plan_row = self._db.execute(
+                """SELECT plan_json FROM context_plans WHERE turn_id=?
+                   ORDER BY revision DESC LIMIT 1""",
+                (turn_id,),
+            ).fetchone()
+            interpretation: dict[str, object] = {}
+            if plan_row is not None:
+                try:
+                    plan = json.loads(str(plan_row["plan_json"]))
+                except (TypeError, json.JSONDecodeError):
+                    plan = {}
+                if isinstance(plan, dict):
+                    units = plan.get("intent_units")
+                    interpretation = {
+                        "intents": [
+                            {
+                                key: unit.get(key)
+                                for key in (
+                                    "id",
+                                    "text",
+                                    "intent",
+                                    "speech_act",
+                                    "references",
+                                )
+                                if key in unit
+                            }
+                            for unit in units or []
+                            if isinstance(unit, dict)
+                        ],
+                        "episode_actions": [
+                            {
+                                key: action.get(key)
+                                for key in (
+                                    "action",
+                                    "episode_ref",
+                                    "episode_id",
+                                    "title",
+                                    "unit_ids",
+                                )
+                                if key in action
+                            }
+                            for action in plan.get(
+                                "episode_actions", plan.get("episode_bindings", [])
+                            )
+                            if isinstance(action, dict)
+                        ],
+                        "uncertainty": [
+                            str(value) for value in plan.get("uncertainty", [])
+                        ],
+                    }
+            records.append(
+                {
+                    "turn_id": turn_id,
+                    "kind": str(turn["kind"]),
+                    "state": str(turn["state"]),
+                    "channel": str(final.get("channel") or ""),
+                    "started_at": context_timestamp(turn["started_at"]),
+                    "completed_at": context_timestamp(turn["updated_at"]),
+                    "interpretation": interpretation,
+                    "timeline": timeline,
+                    "final": final,
+                }
+            )
+        return records
+
     def list_episode_candidates(
         self, limit: int = 20, *, after: float | None = None
     ) -> list[dict[str, object]]:
@@ -5569,6 +5729,75 @@ class Store(MemoryStore, DeliveryStore):
             )
         return retry_at
 
+    def append_turn_journal(
+        self,
+        turn_id: str,
+        item_type: str,
+        payload: dict[str, object],
+        *,
+        visibility: str = "internal",
+        trust: str = "runtime",
+        created_at: float | None = None,
+    ) -> int:
+        if visibility not in {"owner", "internal"}:
+            raise ValueError("invalid journal visibility")
+        if trust not in {
+            "owner",
+            "runtime",
+            "context_data",
+            "untrusted_tool_data",
+        }:
+            raise ValueError("invalid journal trust")
+        now = time.time() if created_at is None else float(created_at)
+        with self._db:
+            return self._append_turn_journal(
+                turn_id,
+                item_type,
+                payload,
+                visibility=visibility,
+                trust=trust,
+                created_at=now,
+            )
+
+    def _append_turn_journal(
+        self,
+        turn_id: str,
+        item_type: str,
+        payload: dict[str, object],
+        *,
+        visibility: str,
+        trust: str,
+        created_at: float,
+    ) -> int:
+        sequence = int(
+            self._db.execute(
+                """SELECT COALESCE(MAX(sequence), 0) + 1
+                   FROM turn_journal WHERE turn_id=?""",
+                (turn_id,),
+            ).fetchone()[0]
+        )
+        self._db.execute(
+            """INSERT INTO turn_journal
+               (turn_id, sequence, created_at, item_type, visibility, trust,
+                payload_json)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                turn_id,
+                sequence,
+                created_at,
+                str(item_type),
+                visibility,
+                trust,
+                json.dumps(
+                    payload,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    default=str,
+                ),
+            ),
+        )
+        return sequence
+
     def begin_tool_call(
         self,
         turn_id: str,
@@ -5803,6 +6032,46 @@ class Store(MemoryStore, DeliveryStore):
             self._apply_goal_mutations(draft, now)
             self._apply_reminder_mutations(draft, now)
             self._apply_cooled_reply_action(draft, now)
+            self._append_turn_journal(
+                turn_id,
+                "final",
+                {
+                    "channel": target_channel,
+                    "expects_reply": bool(reply.expects_reply),
+                    "reply_expectation": (
+                        reply.reply_expectation if reply.expects_reply else ""
+                    ),
+                    "closed_cooled_reply_expectation": bool(
+                        draft and draft.close_reply_expectation
+                    ),
+                    "mood_change": reply.mood_update,
+                    "mutations": {
+                        "memories": [
+                            vars(memory)
+                            for memory in (draft.memories if draft else [])
+                        ],
+                        "forgotten_memories": [
+                            vars(memory)
+                            for memory in (
+                                draft.forgotten_memories if draft else []
+                            )
+                        ],
+                        "memory_conflicts": [
+                            vars(conflict)
+                            for conflict in (
+                                draft.memory_conflicts if draft else []
+                            )
+                        ],
+                        "goals": list(draft.goals.values()) if draft else [],
+                        "reminders": (
+                            list(draft.reminders.values()) if draft else []
+                        ),
+                    },
+                },
+                visibility="internal",
+                trust="runtime",
+                created_at=now,
+            )
             self._db.executemany(
                 "UPDATE events SET processed=1 WHERE id=?",
                 ((event_id,) for event_id in event_ids),

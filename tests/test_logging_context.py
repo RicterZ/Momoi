@@ -47,12 +47,20 @@ class LoggingContextTest(unittest.TestCase):
         rendered = safe_preview(
             {
                 "api_key": "secret",
+                "X-API-Key": "also-secret",
+                "token": "token-secret",
+                "url": "https://user:pass@example.com/path?token=secret&q=visible",
                 "max_tokens": 8192,
                 "image": "data:image/png;base64,abcdef",
                 "text": "a\nb",
             }
         )
         self.assertIn('"api_key":"[redacted]"', rendered)
+        self.assertIn('"X-API-Key":"[redacted]"', rendered)
+        self.assertIn('"token":"[redacted]"', rendered)
+        self.assertIn("[redacted]@example.com", rendered)
+        self.assertIn("token=%5Bredacted%5D", rendered)
+        self.assertIn("q=visible", rendered)
         self.assertIn('"max_tokens":8192', rendered)
         self.assertIn("[omitted 6 base64 chars]", rendered)
         self.assertIn(r"a\nb", rendered)

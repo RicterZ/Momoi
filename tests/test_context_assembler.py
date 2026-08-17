@@ -1,3 +1,4 @@
+import json
 import tempfile
 import time
 import unittest
@@ -5,10 +6,11 @@ from pathlib import Path
 
 from momoi.channel.napcat import NapCatConfig
 from momoi.config import AppConfig, LLMConfig
-from momoi.models import AgentReply, IncomingMessage
+from momoi.models import AgentReply, IncomingMessage, MemoryCandidate, TurnDraft
 from momoi.runtime.context_assembler import (
     _search_or,
     assemble_main_context,
+    assemble_recent_turns,
     build_plan_retrieval,
     recall_episode_context,
 )
@@ -69,6 +71,114 @@ def plan(query: str, episode_id: str = "episode-mail") -> dict[str, object]:
 
 
 class ContextAssemblerTest(unittest.TestCase):
+    def test_recent_turns_keep_messages_tools_and_committed_mutations_together(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            event = IncomingMessage(
+                "owner-correction",
+                "owner-correction",
+                "这是个双关",
+                1,
+                1,
+            )
+            store.add_event(event)
+            store.begin_turn("turn-correction", "owner", [event.event_id])
+            store.save_context_plan(
+                "turn-correction",
+                1,
+                [event.event_id],
+                {
+                    "version": 2,
+                    "intent_units": [
+                        {
+                            "id": "u1",
+                            "event_ids": [event.event_id],
+                            "text": event.text,
+                            "intent": "纠正网络梗理解",
+                            "speech_act": "correction",
+                            "references": [],
+                            "recall_queries": [],
+                        }
+                    ],
+                    "episode_actions": [
+                        {"action": "none", "unit_ids": ["u1"]}
+                    ],
+                    "episode_links": [],
+                    "uncertainty": [],
+                },
+            )
+            store.append_turn_journal(
+                "turn-correction",
+                "tool_call",
+                {
+                    "tool_call_id": "remember",
+                    "name": "memory_remember",
+                    "source": "memory",
+                    "arguments": {
+                        "kind": "shared",
+                        "key": "meme.example",
+                        "content": "一个待更正的解释",
+                        "evidence": "这是个双关",
+                    },
+                },
+            )
+            store.append_turn_journal(
+                "turn-correction",
+                "tool_result",
+                {
+                    "tool_call_id": "remember",
+                    "name": "memory_remember",
+                    "ok": True,
+                    "error": None,
+                    "result": {"ok": True, "state": "staged"},
+                },
+            )
+            draft = TurnDraft(
+                memories=[
+                    MemoryCandidate(
+                        "shared",
+                        "meme.example",
+                        "一个待更正的解释",
+                        "这是个双关",
+                        activation="recall",
+                    )
+                ]
+            )
+            store.commit_turn(
+                [event],
+                event.text,
+                AgentReply(["我先这样理解"]),
+                draft,
+                turn_id="turn-correction",
+            )
+
+            document, rendered = assemble_recent_turns(store, 2, 4000)
+
+            records = document["turns"]
+            self.assertEqual(len(records), 1)
+            record = records[0]
+            self.assertEqual(record["turn_id"], "turn-correction")
+            self.assertEqual(
+                record["interpretation"]["intents"][0]["speech_act"],
+                "correction",
+            )
+            types = [item["type"] for item in record["timeline"]]
+            self.assertIn("owner_message", types)
+            self.assertIn("tool_call", types)
+            self.assertIn("tool_result", types)
+            self.assertIn("assistant_message", types)
+            self.assertEqual(
+                record["final"]["mutations"]["memories"][0]["key"],
+                "meme.example",
+            )
+            parsed = json.loads(rendered)
+            self.assertEqual(parsed["version"], 1)
+            self.assertEqual(parsed["turns"][0]["turn_id"], "turn-correction")
+            self.assertIn("meme.example", rendered)
+            store.close()
+
     def test_recent_episode_window_is_injected_without_keyword_recall(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
@@ -503,7 +613,7 @@ class ContextAssemblerTest(unittest.TestCase):
                 store, retrieval, 2000, 2000, recent_turns=1
             )
 
-            self.assertIn("蓝绿发布", assembled["recent_conversation"])
+            self.assertIn("蓝绿发布", assembled["recent_turns"])
             self.assertIn("Sakana", assembled["owner_preferences"])
             store.close()
 

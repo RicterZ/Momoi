@@ -1,3 +1,4 @@
+import copy
 import json
 import logging
 import re
@@ -575,6 +576,93 @@ def assemble_recent_conversation(
     return recent, {int(message["id"]) for message in recent_messages}
 
 
+def _compact_turn_record(
+    record: dict[str, object], token_budget: int
+) -> dict[str, object]:
+    compact = copy.deepcopy(record)
+    timeline = compact.get("timeline")
+    if not isinstance(timeline, list):
+        return compact
+    per_item = max(32, token_budget // max(1, len(timeline)))
+    for item in timeline:
+        if not isinstance(item, dict):
+            continue
+        if isinstance(item.get("text"), str):
+            item["text"] = truncate_tokens(str(item["text"]), per_item)
+        if item.get("type") == "tool_result" and "result" in item:
+            rendered = json.dumps(
+                item["result"],
+                ensure_ascii=False,
+                separators=(",", ":"),
+                default=str,
+            )
+            if estimate_tokens(rendered) > per_item:
+                item["result"] = {
+                    "ok": item.get("ok"),
+                    "error": item.get("error"),
+                    "summary": truncate_tokens(rendered, per_item),
+                    "truncated": True,
+                }
+        if item.get("type") == "tool_call" and "arguments" in item:
+            rendered = json.dumps(
+                item["arguments"],
+                ensure_ascii=False,
+                separators=(",", ":"),
+                default=str,
+            )
+            if estimate_tokens(rendered) > per_item:
+                item["arguments"] = {
+                    "summary": truncate_tokens(rendered, per_item),
+                    "truncated": True,
+                }
+    return compact
+
+
+def assemble_recent_turns(
+    store: Store,
+    turn_limit: int,
+    token_budget: int,
+    before_timestamp: float | None = None,
+) -> tuple[dict[str, object], str]:
+    if turn_limit <= 0 or token_budget <= 0:
+        empty: dict[str, object] = {"version": 1, "turns": []}
+        return empty, json.dumps(empty, separators=(",", ":"))
+    records = store.recent_turn_records(turn_limit, before_timestamp)
+    selected: list[dict[str, object]] = []
+    used = 0
+    for record in reversed(records):
+        rendered = json.dumps(
+            record,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            default=str,
+        )
+        size = estimate_tokens(rendered)
+        candidate = record
+        if not selected and size > token_budget:
+            candidate = _compact_turn_record(record, token_budget)
+            rendered = json.dumps(
+                candidate,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                default=str,
+            )
+            size = estimate_tokens(rendered)
+        if selected and used + size > token_budget:
+            break
+        selected.append(candidate)
+        used += size
+    selected.reverse()
+    document: dict[str, object] = {"version": 1, "turns": selected}
+    rendered = json.dumps(
+        document,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        default=str,
+    )
+    return document, rendered
+
+
 def assemble_main_context(
     store: Store,
     retrieval: dict[str, object],
@@ -583,7 +671,7 @@ def assemble_main_context(
     recent_turns: int = 0,
     recent_before_timestamp: float | None = None,
 ) -> dict[str, str]:
-    recent, _ = assemble_recent_conversation(
+    _recent_turn_records, recent_turns = assemble_recent_turns(
         store,
         recent_turns, raw_token_budget, recent_before_timestamp
     )
@@ -593,7 +681,7 @@ def assemble_main_context(
             "These are fallible, lower-authority daily learnings.\n" + reflection
         )
     return {
-        "recent_conversation": recent,
+        "recent_turns": recent_turns,
         "episodes": _episode_context(
             store,
             retrieval.get("episodes"),

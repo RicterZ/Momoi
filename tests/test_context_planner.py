@@ -176,9 +176,16 @@ class ContextPlannerTest(unittest.TestCase):
             CONTEXT_PLANNER_SYSTEM_PROMPT,
         )
         self.assertIn(
-            "Recent conversation is the first source of continuity",
+            "Recent Turns are the first source of continuity",
             CONTEXT_PLANNER_SYSTEM_PROMPT,
         )
+        self.assertIn("tool calls, results", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn(
+            "correction may invalidate an older persisted fact",
+            CONTEXT_PLANNER_SYSTEM_PROMPT,
+        )
+        self.assertIn("queued`, `failed`, and", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn("causal completeness", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertIn(
             "only for genuinely independent evidence needs",
             CONTEXT_PLANNER_SYSTEM_PROMPT,
@@ -735,7 +742,7 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                             r"^\d{4}-\d{2}-\d{2}T",
                         )
                         recent = json.dumps(
-                            payload["recent_conversation"], ensure_ascii=False
+                            payload["recent_turns"], ensure_ascii=False
                         )
                         provider_self.planner_recent = recent
                         self.assertIn("RECENT CONTEXT 1", recent)
@@ -762,6 +769,7 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                         text = str(content)
                     provider_self.main_rendered = text
                     self.assertIn("<context_resolution>", text)
+                    self.assertIn("<recent_turns>", text)
                     self.assertIn('"speech_act":"casual_share"', text)
                     self.assertNotIn("<context_plan>", text)
                     self.assertNotIn("browse social feed", text)
