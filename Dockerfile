@@ -15,8 +15,6 @@ RUN npm run build
 
 FROM python:3.13-slim-trixie AS python-dependencies
 
-ARG NAP_MSG_COMMIT=2399e825a473f4875067ca8e920026d524142218
-
 WORKDIR /build
 COPY pyproject.toml ./
 RUN python - <<'PY'
@@ -29,9 +27,7 @@ pathlib.Path("/tmp/requirements.txt").write_text(
 )
 PY
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip wheel --wheel-dir /wheels \
-        --requirement /tmp/requirements.txt \
-        "nap-msg @ https://github.com/RicterZ/Openclaw-NapcatQQ/archive/${NAP_MSG_COMMIT}.zip#subdirectory=nap-msg"
+    pip wheel --wheel-dir /wheels --requirement /tmp/requirements.txt
 
 
 FROM python-dependencies AS build
@@ -57,7 +53,7 @@ LABEL org.opencontainers.image.title="Momoi" \
       org.opencontainers.image.version="${VERSION}"
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates ffmpeg nodejs npm tzdata \
+    && apt-get install -y --no-install-recommends ca-certificates nodejs npm tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
