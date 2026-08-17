@@ -219,7 +219,7 @@ class DaemonTest(unittest.TestCase):
 
         self.assertEqual(daemon._system()[0]["text"], STYLE_CARD_SYSTEM_PROMPT)
 
-    def test_style_card_calibrates_social_reply_closure(self) -> None:
+    def test_style_card_allows_standalone_non_propositional_speech(self) -> None:
         self.assertIn(
             "standalone sticker or reaction image", STYLE_CARD_SYSTEM_PROMPT
         )
@@ -231,27 +231,29 @@ class DaemonTest(unittest.TestCase):
             "only accepts or closes a beat that already landed",
             STYLE_CARD_SYSTEM_PROMPT,
         )
-        self.assertIn("social chat that still wants", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("complete conversational act", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("information density", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("may stand alone", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("ordinary social chat that", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("non-propositional social utterance", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("first-class visible speech", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("own message item", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("carry no new information", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("may be frequent", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn(
-            "do not themselves supply another conversational move",
+            "Preserve that independent beat",
             STYLE_CARD_SYSTEM_PROMPT,
         )
+        self.assertIn("Decide separately", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn(
-            "Splitting text into messages is presentation only",
-            STYLE_CARD_SYSTEM_PROMPT,
+            "whether anything else naturally follows", STYLE_CARD_SYSTEM_PROMPT
         )
-        self.assertIn("even inside the same message", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("whole reply", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("balance or justify it", STYLE_CARD_SYSTEM_PROMPT)
         self.assertNotIn("Use one short beat by default", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertNotIn("low-information beat", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn(
             "explicit request genuinely depends on its content",
             STYLE_CARD_SYSTEM_PROMPT,
         )
 
-    def test_system_prompt_closes_satisfied_reply_needs(self) -> None:
+    def test_system_prompt_treats_non_propositional_speech_as_first_class(self) -> None:
         system = (
             Path(__file__).resolve().parents[1]
             / "src"
@@ -259,13 +261,13 @@ class DaemonTest(unittest.TestCase):
             / "prompts"
             / "system.md"
         ).read_text(encoding="utf-8")
-        self.assertIn("Reply closure — CRITICAL", system)
-        self.assertIn("privately track only the reply needs", system)
-        self.assertIn("remembered formatting preferences govern presentation only", system)
-        self.assertIn("After each candidate clause or message", system)
-        self.assertIn("if nothing remains, stop drafting", system)
-        self.assertIn("without adding a new proposition", system)
-        self.assertIn("still-unmet current reply need", system)
+        self.assertIn("immediate non-propositional expression", system)
+        self.assertIn("first-class visible speech", system)
+        self.assertIn("own `send_message` item", system)
+        self.assertIn("without explanation or new information", system)
+        self.assertIn("Decide separately whether", system)
+        self.assertIn("merely to justify it with informational value", system)
+        self.assertNotIn("Reply closure — CRITICAL", system)
 
     def test_mood_update_parser_accepts_open_state_labels(self) -> None:
         mood, error = MomoiDaemon._parse_mood_update(
@@ -320,11 +322,11 @@ class DaemonTest(unittest.TestCase):
         self.assertIn("non-empty", SEND_MESSAGE_TOOL_SPEC["description"])
         self.assertIn("owner-visible", SEND_MESSAGE_TOOL_SPEC["description"])
         self.assertIn(
-            "already-decided non-empty owner-visible conversational acts",
+            "non-propositional expression may be its own message item",
             SEND_MESSAGE_TOOL_SPEC["description"],
         )
         self.assertIn(
-            "splitting text into items does not create another act",
+            "do not merge it with explanation",
             SEND_MESSAGE_TOOL_SPEC["description"],
         )
         self.assertIn("conversational Turn", RESPOND_TOOL_SPEC["description"])

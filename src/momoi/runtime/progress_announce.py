@@ -52,15 +52,14 @@ def decorate_tool_spec(spec: dict[str, Any]) -> dict[str, Any]:
         "maxLength": 300,
         "description": (
             "A short spoken line the owner will hear, in the Soul's voice. "
-            "Choose it with the same reply-closure logic as send_message: "
-            "satisfy the owner's still-unmet current reply need, not this "
-            "tool's caption, and do not append another conversational move. "
-            "Never narrate what this tool does. If this Turn has no tool result "
-            "yet, answer the owner: accept and go, without recapping the "
-            "request. After a tool result, continue from that result; do not "
-            "answer the original request again. A finished spoken sentence, "
-            f"not a colon-ended label. {ANNOUNCE_MARKER} Do not also "
-            "send_message for the same action."
+            "Choose it as a standalone spoken reply to the owner, not this "
+            "tool's caption. It does not need to explain the action or add "
+            "informational value. Never narrate what this tool does. If this "
+            "Turn has no tool result yet, answer the owner: accept and go, "
+            "without recapping the request. After a tool result, continue from "
+            "that result; do not answer the original request again. A finished "
+            f"spoken sentence, not a colon-ended label. {ANNOUNCE_MARKER} Do "
+            "not also send_message for the same action."
         ),
     }
     required = list(schema.get("required") or [])
