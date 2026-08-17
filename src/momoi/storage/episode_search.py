@@ -1,7 +1,9 @@
+import hashlib
+import json
 from dataclasses import dataclass
 from typing import Protocol
 
-from ..search import SearchBackend, search_alternatives
+from ..search import RankedSearchBackend, SearchBackend, search_alternatives
 
 
 @dataclass(frozen=True)
@@ -25,6 +27,36 @@ class EpisodeSearchDocument:
     salience: float
     messages: tuple[EpisodeSearchMessage, ...]
 
+    @property
+    def search_id(self) -> str:
+        return self.episode_id
+
+    @property
+    def search_revision(self) -> str:
+        payload = {
+            "metadata": self.metadata,
+            "last_activity_at": self.last_activity_at,
+            "salience": self.salience,
+            "messages": [
+                {
+                    "id": message.id,
+                    "turn_id": message.turn_id,
+                    "ordinal": message.ordinal,
+                    "role": message.role,
+                    "delivery_state": message.delivery_state,
+                    "searchable_text": message.searchable_text,
+                }
+                for message in self.messages
+            ],
+        }
+        serialized = json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
 
 @dataclass(frozen=True)
 class EpisodeSearchHit:
@@ -35,17 +67,15 @@ class EpisodeSearchHit:
     matched_keywords: tuple[str, ...] = ()
 
 
-class EpisodeSearchBackend(Protocol):
-    def search_one(
-        self,
-        keyword: str,
-        documents: list[EpisodeSearchDocument],
-        max_results: int,
-    ) -> list[EpisodeSearchHit]: ...
+class EpisodeSearchBackend(
+    RankedSearchBackend[EpisodeSearchDocument, EpisodeSearchHit],
+    Protocol,
+):
+    """Episode-specific specialization of the ranked document backend."""
 
 
 class StringEpisodeSearchBackend:
-    """Exact string implementation; vector search can replace this adapter."""
+    """Exact-string ranked document baseline."""
 
     def __init__(self, text_backend: SearchBackend) -> None:
         self.text_backend = text_backend
