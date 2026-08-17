@@ -284,7 +284,7 @@ class DaemonTest(unittest.TestCase):
         self.assertIn("momentary outburst or result beat", system)
         self.assertNotIn("Reply closure — CRITICAL", system)
 
-    def test_reply_wait_prompt_anneals_contact_instead_of_escalating(self) -> None:
+    def test_reply_wait_prompt_explains_the_current_state_machine(self) -> None:
         system = (
             Path(__file__).resolve().parents[1]
             / "src"
@@ -296,17 +296,24 @@ class DaemonTest(unittest.TestCase):
         self.assertIn("not an obligation on the owner", system)
         self.assertIn("Independently set `schedule_reply_wait`", system)
         self.assertIn("false leaves the expectation passive", system)
-        self.assertIn("reassess the conversation", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("Decide freely whether", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("at most two checks", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("hard ceiling", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("never a sequence Momoi is expected to finish", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("later_check_available` is true", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("schedules that one later decision", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("this is the final decision", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("Either choice is compatible", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertNotIn("continue the same emotional thread", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertNotIn("clearer and more direct", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("revisits one reply expectation", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("whether a natural owner-visible beat belongs", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn(
+            "visible-message decision and the scheduling decision independently",
+            REPLY_WAIT_SYSTEM_PROMPT,
+        )
+        self.assertIn("neither forces", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("nor forces it to remain active", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("controls only the active schedule", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("one later re-evaluation", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("no later re-evaluation exists", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn(
+            "existence of a later opportunity is not a reason to use it",
+            REPLY_WAIT_SYSTEM_PROMPT,
+        )
+        self.assertIn("continue the same expectation", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("`reply_wait.reason` is private", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertNotIn("催促", REPLY_WAIT_SYSTEM_PROMPT)
 
     def test_mood_update_parser_accepts_open_state_labels(self) -> None:
         mood, error = MomoiDaemon._parse_mood_update(
