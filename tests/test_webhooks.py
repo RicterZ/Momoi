@@ -247,6 +247,7 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             class Provider:
                 calls = 0
                 tool_names: list[list[str]] = []
+                tools: list[dict[str, object]] = []
                 systems: list[object] = []
                 conversations: list[list[dict[str, object]]] = []
 
@@ -262,10 +263,15 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                     self.conversations.append(messages)
                     self.tool_names.append([str(tool["name"]) for tool in tools])
                     if self.calls == 1:
+                        self.tools = tools
+                    if self.calls == 1:
                         call = ToolCall(
                             "fetch-packages",
                             "curl",
-                            {"url": "http://static.test/package_state.json"},
+                            {
+                                "url": "http://static.test/package_state.json",
+                                "say_to_owner": "我先去看一下快递到了没。",
+                            },
                         )
                     elif self.calls == 2:
                         self.assert_tool_result(messages)
@@ -332,7 +338,23 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 provider.tool_names[0], ["send_message", "curl", "respond"]
             )
+            curl_spec = next(
+                tool for tool in provider.tools if tool["name"] == "curl"
+            )
+            self.assertIn("say_to_owner", curl_spec["input_schema"]["required"])
             self.assertEqual(tools.last_call.name, "curl")
+            self.assertEqual(
+                tools.last_call.arguments,
+                {"url": "http://static.test/package_state.json"},
+            )
+            outbox = [
+                str(row["text"])
+                for row in daemon.store._db.execute(
+                    "SELECT text FROM outbox ORDER BY id"
+                )
+            ]
+            self.assertIn("我先去看一下快递到了没。", outbox)
+            self.assertIn("有一个快递到了，取件码是 1234。", outbox)
             system_text = json.dumps(provider.systems[0], ensure_ascii=False)
             context_text = json.dumps(provider.conversations[0], ensure_ascii=False)
             self.assertIn("natural soul", system_text)

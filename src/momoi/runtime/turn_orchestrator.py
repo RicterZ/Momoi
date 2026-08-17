@@ -326,7 +326,7 @@ class TurnOrchestrator:
             messages,
             [
                 self._send_message_tool_spec(channel.name),
-                CURL_TOOL_SPEC,
+                *self._announced_tool_specs([CURL_TOOL_SPEC], mcp=False),
                 RESPOND_TOOL_SPEC,
             ],
             [],

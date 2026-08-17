@@ -14,6 +14,14 @@ from ..logging_context import TRACE, compact_log_value, log_context, log_event, 
 from ..memory_tools import MEMORY_TOOL_SPECS
 from ..models import AgentReply, IncomingMessage, ToolCall, TurnDraft
 from ..storage import estimate_tokens
+from .progress_announce import (
+    announce_error_message,
+    announce_field,
+    apply_tool_announce,
+    decorate_tool_spec,
+    should_announce,
+    should_deliver_announce,
+)
 from .protocol import (
     AUTONOMOUS_FINISH_SPEC,
     REPLY_EXPECTATION_CLOSE_SPEC,
@@ -42,8 +50,8 @@ class ToolExecutionService:
             self._send_message_tool_spec(channel_name),
             *MEMORY_TOOL_SPECS,
             *AGENDA_TOOL_SPECS,
-            *BUILTIN_TOOL_SPECS,
-            *self.mcp.tool_specs,
+            *self._announced_tool_specs(BUILTIN_TOOL_SPECS, mcp=False),
+            *self._announced_tool_specs(self.mcp.tool_specs, mcp=True),
             REPLY_EXPECTATION_CLOSE_SPEC,
             RESPOND_TOOL_SPEC,
         ]
@@ -555,9 +563,46 @@ class ToolExecutionService:
                 elif self.mcp.has_tool(call.name) or self.builtin_tools.has_tool(
                     call.name
                 ):
+                    result = None
                     if not call.id:
                         result = {"ok": False, "error": "missing_tool_call_id"}
                     else:
+                        announce = next(
+                            (
+                                announce_field(spec)
+                                for spec in request_tools
+                                if spec.get("name") == call.name
+                            ),
+                            None,
+                        )
+                        if announce:
+                            text, announce_error = apply_tool_announce(
+                                call.arguments,
+                                announce,
+                                deliver=should_deliver_announce(
+                                    heartbeat_turn=heartbeat_turn,
+                                    reply_wait_turn=reply_wait_turn,
+                                    autonomous_goal=bool(autonomous_goal_id),
+                                ),
+                            )
+                            if announce_error is not None:
+                                result = {
+                                    "ok": False,
+                                    "error": announce_error,
+                                    "message": announce_error_message(
+                                        announce, announce_error
+                                    ),
+                                }
+                            elif text is not None:
+                                self.store.queue_progress(
+                                    turn_id,
+                                    call.id,
+                                    [text],
+                                    self.channel.name,
+                                )
+                                visible_since_owner_update = True
+                                self.outbox_changed.set()
+                    if result is None:
                         capability = (
                             self.mcp.capability(call.name)
                             if source == "mcp"
@@ -780,6 +825,16 @@ class ToolExecutionService:
             return True
         except (OSError, ValueError):
             return False
+
+    def _announced_tool_specs(
+        self, specs: list[dict[str, Any]], *, mcp: bool
+    ) -> list[dict[str, Any]]:
+        return [
+            decorate_tool_spec(spec)
+            if should_announce(str(spec.get("name") or ""), mcp=mcp)
+            else spec
+            for spec in specs
+        ]
 
     def _self_directed_tool_specs(self) -> list[dict[str, Any]]:
         patterns = self.config.autonomy.allowed_tools
