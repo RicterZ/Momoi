@@ -2,13 +2,21 @@ import copy
 from typing import Any
 
 
-ANNOUNCE_BUILTINS = frozenset({"curl"})
+ANNOUNCE_LOCAL_TOOLS = frozenset(
+    {
+        "curl",
+        "goal_create",
+        "goal_cancel",
+        "reminder_create",
+        "reminder_cancel",
+    }
+)
 ANNOUNCE_FIELD = "say_to_owner"
 ANNOUNCE_MARKER = "Delivered on the primary channel before this tool runs."
 
 
 def should_announce(name: str, *, mcp: bool) -> bool:
-    return mcp or name in ANNOUNCE_BUILTINS
+    return mcp or name in ANNOUNCE_LOCAL_TOOLS
 
 
 def should_deliver_announce(

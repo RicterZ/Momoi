@@ -49,7 +49,7 @@ class ToolExecutionService:
         return [
             self._send_message_tool_spec(channel_name),
             *MEMORY_TOOL_SPECS,
-            *AGENDA_TOOL_SPECS,
+            *self._announced_tool_specs(AGENDA_TOOL_SPECS, mcp=False),
             *self._announced_tool_specs(BUILTIN_TOOL_SPECS, mcp=False),
             *self._announced_tool_specs(self.mcp.tool_specs, mcp=True),
             REPLY_EXPECTATION_CLOSE_SPEC,
