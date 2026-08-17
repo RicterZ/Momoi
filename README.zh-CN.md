@@ -253,7 +253,7 @@ docker run -d --name momoi --restart unless-stopped \
   -e MOMOI_OWNER_QQ=your-qq-number \
   -v "$HOME/.momoi:/home/momoi/.momoi" \
   -p 8787:8787 -p 8788:8788 \
-  ricterz/momoi:0.1.0
+  ricterz/momoi:0.2.0
 ```
 
 第一次启动会把示例 workspace 写进 `~/.momoi`，把 NapCat 指到 `ws://host.docker.internal:3001`，在 `0.0.0.0:8787` 打开 Webhook，并在 `docker logs momoi` 里打印看板和 Webhook token。打开 `http://127.0.0.1:8788`。从主人 QQ 发一条私聊即可。回复留在发起对话的渠道，主动消息发送到 `primary`。
@@ -279,7 +279,7 @@ Compose 会自动使用 `ws://napcat:3001`。
 ```bash
 docker run --rm -it \
   -v "$HOME/.momoi:/home/momoi/.momoi" \
-  ricterz/momoi:0.1.0 channel login weixin
+  ricterz/momoi:0.2.0 channel login weixin
 ```
 
 登录状态会留在 workspace 里。只用微信时可以不设 `MOMOI_OWNER_QQ`。
@@ -290,7 +290,7 @@ docker run --rm -it \
 docker build -t momoi .
 ```
 
-然后用上面同样的 `docker run`，把 `ricterz/momoi:0.1.0` 换成 `momoi`。容器里的 home 是 `/home/momoi`，请一直挂上 `~/.momoi`。
+然后用上面同样的 `docker run`，把 `ricterz/momoi:0.2.0` 换成 `momoi`。容器里的 home 是 `/home/momoi`，请一直挂上 `~/.momoi`。
 
 ## 个性化 Momoi
 

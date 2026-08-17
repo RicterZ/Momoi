@@ -253,7 +253,7 @@ docker run -d --name momoi --restart unless-stopped \
   -e MOMOI_OWNER_QQ=your-qq-number \
   -v "$HOME/.momoi:/home/momoi/.momoi" \
   -p 8787:8787 -p 8788:8788 \
-  ricterz/momoi:0.1.0
+  ricterz/momoi:0.2.0
 ```
 
 The first start creates `~/.momoi` from the example workspace, points NapCat at `ws://host.docker.internal:3001`, binds webhooks on `0.0.0.0:8787`, and prints the dashboard and webhook tokens in `docker logs momoi`. Open `http://127.0.0.1:8788`. Send a private message from the owner QQ. Replies stay on the channel where the conversation started; proactive messages use `primary`.
@@ -279,7 +279,7 @@ Scan the iLink QR code in the same workspace, then set `MOMOI_PRIMARY=weixin` on
 ```bash
 docker run --rm -it \
   -v "$HOME/.momoi:/home/momoi/.momoi" \
-  ricterz/momoi:0.1.0 channel login weixin
+  ricterz/momoi:0.2.0 channel login weixin
 ```
 
 The login stays in the workspace. You can omit `MOMOI_OWNER_QQ` if you only use Weixin.
@@ -290,7 +290,7 @@ The login stays in the workspace. You can omit `MOMOI_OWNER_QQ` if you only use 
 docker build -t momoi .
 ```
 
-Then use the same `docker run` as above, replacing `ricterz/momoi:0.1.0` with `momoi`. The container home is `/home/momoi`, so keep the `~/.momoi` volume.
+Then use the same `docker run` as above, replacing `ricterz/momoi:0.2.0` with `momoi`. The container home is `/home/momoi`, so keep the `~/.momoi` volume.
 
 ## Personalize Momoi
 

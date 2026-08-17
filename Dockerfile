@@ -45,7 +45,7 @@ RUN pip wheel --no-deps --wheel-dir /wheels .
 
 FROM python:3.13-slim-trixie AS release
 
-ARG VERSION=0.1.0
+ARG VERSION=0.2.0
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
