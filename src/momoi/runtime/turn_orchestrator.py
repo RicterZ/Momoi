@@ -740,10 +740,11 @@ class TurnOrchestrator:
         pending = self.store.pending_owner_reply()
         if claim_kind != "reply" or not pending:
             return self.config.heartbeat.min_interval_seconds
-        checks = min(int(pending["heartbeat_checks"]), 2)
-        return self.config.heartbeat.reply_initial_interval_seconds * (1, 3, 6)[
-            checks
-        ]
+        return (
+            self.config.heartbeat.reply_initial_interval_seconds
+            if int(pending["heartbeat_checks"]) == 0
+            else self.config.heartbeat.reply_followup_interval_seconds
+        )
 
     @staticmethod
     def _render_batch(batch: list[IncomingMessage]) -> str:
@@ -989,13 +990,13 @@ class TurnOrchestrator:
                 ],
             }
         ]
-        wait_tools = [reply_wait_respond_tool_spec()]
-        if int(pending.get("followup_attempts") or 0) == 0:
-            wait_tools.insert(0, self._send_message_tool_spec(delivery_channel.name))
         reply = await self._run_tool_loop(
             system,
             messages,
-            wait_tools,
+            [
+                self._send_message_tool_spec(delivery_channel.name),
+                reply_wait_respond_tool_spec(),
+            ],
             [],
             TurnDraft(),
             authority="agent",
@@ -1021,7 +1022,9 @@ class TurnOrchestrator:
             initial_interval_seconds=(
                 self.config.heartbeat.reply_initial_interval_seconds
             ),
-            max_interval_seconds=self.config.heartbeat.max_interval_seconds,
+            followup_interval_seconds=(
+                self.config.heartbeat.reply_followup_interval_seconds
+            ),
             notification_channel=delivery_channel.name,
         )
         self.agenda_changed.set()

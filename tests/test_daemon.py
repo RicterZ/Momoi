@@ -292,22 +292,15 @@ class DaemonTest(unittest.TestCase):
             / "prompts"
             / "system.md"
         ).read_text(encoding="utf-8")
-        self.assertIn("cannot manufacture an expectation", system)
-        self.assertIn("low-stakes request to report back", system)
-        self.assertIn("optional compliance, reaction, banter", system)
+        self.assertIn("practical, conversational, playful, or caring", system)
+        self.assertIn("not an obligation on the owner", system)
         self.assertIn("reassess the conversation", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn(
-            "possibility of another reaction, quip, tease, or continuation",
-            REPLY_WAIT_SYSTEM_PROMPT,
-        )
-        self.assertIn("owner silence is increasing evidence", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("less likely and no more forceful", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("never a conversational sequence", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("materially different action", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("carrying out the suggestion", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("stop waiting instead of deferring", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("At most one visible follow-up", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("inventing a missing", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("Decide freely whether", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("False ends the remaining checks immediately", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("at most two checks", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("hard ceiling", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("never a sequence Momoi is expected to finish", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("Either choice is compatible", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertNotIn("continue the same emotional thread", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertNotIn("clearer and more direct", REPLY_WAIT_SYSTEM_PROMPT)
 
@@ -376,9 +369,8 @@ class DaemonTest(unittest.TestCase):
         expectation = RESPOND_TOOL_SPEC["input_schema"]["properties"][
             "reply_expectation"
         ]["description"]
-        self.assertIn("materially affect Momoi's next action", expectation)
-        self.assertIn("low-stakes request to", expectation)
-        self.assertIn("landed acknowledgment, concession, or close", expectation)
+        self.assertIn("practical, conversational, playful, or caring", expectation)
+        self.assertIn("not an obligation on the owner", expectation)
         self.assertIn("conversational Turn", RESPOND_TOOL_SPEC["description"])
         self.assertNotIn("messages", RESPOND_TOOL_SPEC["input_schema"]["properties"])
         heartbeat_respond = heartbeat_respond_tool_spec()
@@ -1006,7 +998,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(daemon.store.pending_owner_reply())
             daemon.store.close()
 
-    async def test_reply_wait_disables_visible_followup_after_one_attempt(
+    async def test_reply_wait_keeps_optional_followup_available_each_check(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1032,9 +1024,9 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 "heartbeat_checks": 1,
                 "previous_check_reason": "问题仍然开放",
                 "check_index": 2,
-                "max_checks": 3,
-                "stage_delay_minutes": 3,
-                "final_check": False,
+                "max_checks": 2,
+                "stage_delay_minutes": 7,
+                "final_check": True,
                 "channel": "napcat",
                 "followup_attempts": 1,
                 "delivered_followups": 0,
@@ -1063,7 +1055,9 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 )
 
             tools = run.await_args.args[2]
-            self.assertEqual([tool["name"] for tool in tools], ["respond"])
+            self.assertEqual(
+                [tool["name"] for tool in tools], ["send_message", "respond"]
+            )
             daemon.store.close()
 
     async def test_heartbeat_defers_while_owner_reply_is_in_flight(self) -> None:

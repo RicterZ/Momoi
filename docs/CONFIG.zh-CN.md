@@ -370,7 +370,8 @@ MCP 环境值、远程 URL 和 header 支持从 Momoi 进程环境展开 `${VARI
     "initial_delay_seconds": 900,
     "min_interval_seconds": 1800,
     "max_interval_seconds": 5400,
-    "reply_initial_interval_seconds": 60
+    "reply_initial_interval_seconds": 180,
+    "reply_followup_interval_seconds": 420
   }
 }
 ```
@@ -381,7 +382,8 @@ MCP 环境值、远程 URL 和 header 支持从 Momoi 进程环境展开 `${VARI
 | `initial_delay_seconds` | `900` | 新 workspace 第一次心跳前的延迟 |
 | `min_interval_seconds` | `1800` | Momoi 可选择的最短下次间隔 |
 | `max_interval_seconds` | `5400` | Momoi 可选择的最长下次间隔（默认 90 分钟） |
-| `reply_initial_interval_seconds` | `60` | 主动等待主人回复时，第一次心跳前的延迟 |
+| `reply_initial_interval_seconds` | `180` | 第一次独立回复等待判断前的延迟 |
+| `reply_followup_interval_seconds` | `420` | 第一次选择继续等待后，到第二次最终判断的延迟 |
 
 所有间隔必须为正数，最大间隔不能小于普通最短间隔。
 
@@ -391,7 +393,7 @@ MCP 环境值、远程 URL 和 header 支持从 Momoi 进程环境展开 `${VARI
 
 在主人私聊中发送 `/heartbeat` 可以立即触发一次心跳，即使自动心跳没有开启。已有心跳正在排队或执行时，重复命令会自动去重。
 
-当一条已送达回复明确期待主人回应时，Momoi 会在 `reply_initial_interval_seconds` 后提高注意力，即使自动心跳未开启。回复关注使用独立时钟，不会覆盖普通的 `next_heartbeat_at` 节奏。程序会以约 1、3、6 分钟的间隔做三次短时检查；模型每次独立判断是否跟进以及是否继续等待。第三次之后即使仍在等待，也会恢复普通心跳节奏。主人发来任何新消息都会结束旧的等待状态、取消已安排的检查，并取消尚未送达的跟进。
+当一条已送达回复明确期待主人回应时，Momoi 会在 `reply_initial_interval_seconds` 后进行第一次独立判断，即使自动心跳未开启。若模型选择继续等待，则在 `reply_followup_interval_seconds` 后进行第二次也是最终判断（默认约为第 3 分钟和第 10 分钟）。任一轮都可以立即结束等待；两轮只是硬上限，不是必须走完的流程。回复关注使用独立时钟，不会覆盖普通的 `next_heartbeat_at` 节奏。主人发来任何新消息都会结束旧的等待状态、取消已安排的检查，并取消尚未送达的跟进。
 
 Owner Turn 独占对主人输入的回复权。存在未处理的主人消息、正在执行的 Owner Turn，或尚未送达的 Owner 回复时，心跳会被推迟。心跳会记录自己读取的主人事件版本；若提交前对话已经变化，可见输出会被丢弃，内部心跳活动仍会保留。
 

@@ -138,11 +138,10 @@ RESPOND_TOOL_SPEC: dict[str, Any] = {
                 "type": "string",
                 "maxLength": 300,
                 "description": (
-                    "The concrete answer that will materially affect Momoi's next "
-                    "action or resolve a genuine unanswered question or interpersonal "
-                    "need. Do not create an expectation from a low-stakes request to "
-                    "report back, acknowledge advice, comply, or keep chatting. Use "
-                    "an empty string after a landed acknowledgment, concession, or close."
+                    "What Momoi genuinely hopes to hear next after the last visible "
+                    "message. It may be practical, conversational, playful, or caring; "
+                    "this records an expectation, not an obligation on the owner. "
+                    "Use an empty string when Momoi is not waiting for anything."
                 ),
             },
             "mood": MOOD_DECISION_SCHEMA,
