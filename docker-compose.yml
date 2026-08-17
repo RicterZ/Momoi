@@ -13,7 +13,7 @@ services:
       - napcat-qq:/app/.config/QQ
 
   momoi:
-    image: ricterz/momoi:0.2.0
+    image: ricterz/momoi:0.2.1
     container_name: momoi
     restart: unless-stopped
     depends_on:
