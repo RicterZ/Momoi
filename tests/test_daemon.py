@@ -1274,15 +1274,18 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 ) -> ProviderResponse:
                     self.calls += 1
                     if self.calls <= 3:
+                        arguments = {
+                            "title": "坏任务",
+                            "success_criteria": "测试",
+                            "next_action": "测试",
+                            "next_review_at": "",
+                        }
+                        if self.calls == 1:
+                            arguments["say_to_owner"] = "我先试着创建这个任务"
                         call = ToolCall(
                             f"bad-goal-{self.calls}",
                             "goal_create",
-                            {
-                                "title": "坏任务",
-                                "success_criteria": "测试",
-                                "next_action": "测试",
-                                "next_review_at": "",
-                            },
+                            arguments,
                         )
                     elif self.calls == 4:
                         self.assert_terminal_tools(tools)
@@ -2078,6 +2081,17 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             raise AssertionError(schema)
                         calls = [
                             ToolCall(
+                                "curl-missing",
+                                "curl",
+                                {"url": "https://missing.example"},
+                            )
+                        ]
+                    elif self.calls == 2:
+                        history = json.dumps(messages, ensure_ascii=False)
+                        if "owner_work_acknowledgement_required" not in history:
+                            raise AssertionError(messages)
+                        calls = [
+                            ToolCall(
                                 "curl-one",
                                 "curl",
                                 {
@@ -2094,7 +2108,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 },
                             ),
                         ]
-                    elif self.calls == 2:
+                    elif self.calls == 3:
                         history = json.dumps(messages, ensure_ascii=False)
                         if (
                             "先说这一句" not in history
@@ -2110,7 +2124,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 {"url": "https://three.example"},
                             )
                         ]
-                    elif self.calls == 3:
+                    elif self.calls == 4:
                         calls = [
                             ToolCall(
                                 "send",
@@ -2160,7 +2174,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 delivery_channel=daemon.channel,
             )
 
-            self.assertEqual(provider.calls, 4)
+            self.assertEqual(provider.calls, 5)
             self.assertEqual(reply.messages, [])
             self.assertEqual(execute.await_count, 3)
             for await_call in execute.await_args_list:

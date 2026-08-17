@@ -52,17 +52,28 @@ def decorate_tool_spec(spec: dict[str, Any]) -> dict[str, Any]:
         "maxLength": 300,
         "description": (
             "Optional spoken bridge the owner will hear in the Soul's voice. "
-            "Omit this field to run the tool silently. This is a standalone "
-            "reply to the owner, not the tool's caption; never narrate a retry "
-            "or promise an unverified outcome. If this Turn has no tool result "
-            "yet, accept and go without recapping the request. After a tool "
-            "result, continue from what that result actually showed—a finding, "
-            "failure, or changed route—and never reopen the original request. "
+            "On the first external-work batch after a new owner request, the "
+            "first such tool must include this field unless send_message already "
+            "acknowledged the work. Later tool rounds may omit it to run silently. "
+            "This is a standalone reply to the owner, not the tool's caption; "
+            "never narrate a retry or promise an unverified outcome. If this Turn "
+            "has no tool result yet, accept and go without recapping the request. "
+            "After a tool result, continue from what that result actually showed—a "
+            "finding, failure, or changed route—and never reopen the original request. "
             f"A finished spoken sentence, not a colon-ended label. "
             f"{ANNOUNCE_MARKER} Do not also send_message for the same action."
         ),
     }
     return decorated
+
+
+def initial_announce_error_message(field: str) -> str:
+    return (
+        f"Before the first external-work tool batch for this owner request, "
+        f"include one natural owner-visible {field} on the first such tool, or "
+        "send_message before it. Do not caption the tool or promise success. "
+        "Later tool rounds may omit the field and run silently."
+    )
 
 
 def take_announce_message(

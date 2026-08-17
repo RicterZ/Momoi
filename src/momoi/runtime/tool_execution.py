@@ -19,6 +19,7 @@ from .progress_announce import (
     announce_field,
     apply_tool_announce,
     decorate_tool_spec,
+    initial_announce_error_message,
     should_announce,
     should_deliver_announce,
 )
@@ -86,6 +87,7 @@ class ToolExecutionService:
         failed_tool_rounds = 0
         history_messages = max(0, len(messages) - 1)
         visible_since_owner_update = False
+        owner_work_acknowledged = False
         llm_round = 0
         stage = (
             "reply_wait"
@@ -104,6 +106,7 @@ class ToolExecutionService:
             )
             if updates:
                 visible_since_owner_update = False
+                owner_work_acknowledged = False
                 context_plan, recalled = await self._prepare_owner_context(
                     current_events, turn_id
                 )
@@ -191,6 +194,7 @@ class ToolExecutionService:
                     )
                 )
                 visible_since_owner_update = False
+                owner_work_acknowledged = False
                 context_plan, recalled = await self._prepare_owner_context(
                     current_events, turn_id
                 )
@@ -245,6 +249,7 @@ class ToolExecutionService:
             )
             if updates:
                 visible_since_owner_update = False
+                owner_work_acknowledged = False
                 messages.append({"role": "assistant", "content": response.content})
                 if response.tool_calls:
                     messages.append(
@@ -444,6 +449,59 @@ class ToolExecutionService:
                 )
                 force_response = True
                 continue
+            missing_announce = self._missing_initial_work_announce(
+                response.tool_calls,
+                request_tools,
+                owner_work_acknowledged=owner_work_acknowledged,
+                deliver=should_deliver_announce(
+                    heartbeat_turn=heartbeat_turn,
+                    reply_wait_turn=reply_wait_turn,
+                    autonomous_goal=bool(autonomous_goal_id),
+                ),
+            )
+            if missing_announce is not None:
+                missing_call_id, field = missing_announce
+                messages.append(
+                    {"role": "assistant", "content": copy.deepcopy(response.content)}
+                )
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": [
+                            (
+                                _tool_result_block(
+                                    call.id,
+                                    {
+                                        "ok": False,
+                                        "error": "owner_work_acknowledgement_required",
+                                        "message": initial_announce_error_message(field),
+                                    },
+                                )
+                                if call.id == missing_call_id
+                                else _tool_error_block(
+                                    call.id,
+                                    "superseded_by_owner_work_acknowledgement",
+                                )
+                            )
+                            for call in response.tool_calls
+                        ],
+                    }
+                )
+                failed_tool_rounds += 1
+                if failed_tool_rounds >= MAX_CONSECUTIVE_TOOL_FAILURES:
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                "[Trusted runtime protocol stop. Tool calls failed "
+                                "validation three consecutive times. Do not retry tools "
+                                "in this Turn. Use send_message for the last concrete "
+                                "failure reason, then call respond to close the Turn.]"
+                            ),
+                        }
+                    )
+                    force_response = True
+                continue
             # Tool execution strips harness-only arguments in place. Preserve an
             # independent assistant-history copy so the next model round still
             # knows exactly what the owner already heard.
@@ -584,6 +642,7 @@ class ToolExecutionService:
                                 turn_id, call.id, progress, target.name
                             )
                             visible_since_owner_update = True
+                            owner_work_acknowledged = True
                             self.outbox_changed.set()
                             result = {
                                 "ok": True,
@@ -638,6 +697,7 @@ class ToolExecutionService:
                                 )
                                 announce_delivered_in_batch = True
                                 visible_since_owner_update = True
+                                owner_work_acknowledged = True
                                 self.outbox_changed.set()
                     if result is None:
                         capability = (
@@ -815,6 +875,35 @@ class ToolExecutionService:
                 }
             )
             force_response = True
+
+    @staticmethod
+    def _missing_initial_work_announce(
+        calls: list[ToolCall],
+        request_tools: list[dict[str, Any]],
+        *,
+        owner_work_acknowledged: bool,
+        deliver: bool,
+    ) -> tuple[str, str] | None:
+        if owner_work_acknowledged or not deliver:
+            return None
+        announce_fields = {
+            str(spec.get("name") or ""): announce_field(spec)
+            for spec in request_tools
+        }
+        for index, call in enumerate(calls):
+            field = announce_fields.get(call.name)
+            if not field:
+                continue
+            if any(
+                earlier.name == "send_message"
+                and bool(earlier.arguments.get("messages"))
+                for earlier in calls[:index]
+            ):
+                return None
+            if str(call.arguments.get(field) or "").strip():
+                return None
+            return call.id, field
+        return None
 
     def _journal_turn_item(
         self,

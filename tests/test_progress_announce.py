@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 from momoi.builtin_tools import BUILTIN_TOOL_SPECS
 from momoi.mcp_client import MCP_TOOL_POLICY
+from momoi.models import ToolCall
 from momoi.runtime import MomoiDaemon
 from momoi.runtime.progress_announce import (
     ANNOUNCE_FIELD,
@@ -11,6 +12,7 @@ from momoi.runtime.progress_announce import (
     announce_field,
     apply_tool_announce,
     decorate_tool_spec,
+    initial_announce_error_message,
     should_announce,
     should_deliver_announce,
     take_announce_message,
@@ -45,7 +47,9 @@ class ProgressAnnounceTest(unittest.TestCase):
         ]
         self.assertIn(ANNOUNCE_MARKER, description)
         self.assertIn("Soul's voice", description)
-        self.assertIn("Omit this field to run the tool silently", description)
+        self.assertIn("first external-work batch", description)
+        self.assertIn("first such tool must include", description)
+        self.assertIn("Later tool rounds may omit it", description)
         self.assertIn("not the tool's caption", description)
         self.assertIn("never narrate a retry", description)
         self.assertIn("promise an unverified outcome", description)
@@ -54,6 +58,59 @@ class ProgressAnnounceTest(unittest.TestCase):
         self.assertIn("never reopen the original request", description)
         self.assertIn("colon-ended label", description)
         self.assertNotIn(ANNOUNCE_FIELD, curl["input_schema"]["properties"])
+
+    def test_initial_announce_error_explains_conditional_requirement(self) -> None:
+        message = initial_announce_error_message(ANNOUNCE_FIELD)
+        self.assertIn("first external-work tool batch", message)
+        self.assertIn("send_message before it", message)
+        self.assertIn("Later tool rounds may omit", message)
+
+    def test_first_external_batch_requires_one_initial_acknowledgement(self) -> None:
+        curl = next(spec for spec in BUILTIN_TOOL_SPECS if spec["name"] == "curl")
+        tools = [decorate_tool_spec(curl)]
+        missing = MomoiDaemon._missing_initial_work_announce(
+            [ToolCall("first", "curl", {"url": "https://example.com"})],
+            tools,
+            owner_work_acknowledged=False,
+            deliver=True,
+        )
+        self.assertEqual(missing, ("first", ANNOUNCE_FIELD))
+
+        announced = MomoiDaemon._missing_initial_work_announce(
+            [
+                ToolCall(
+                    "first",
+                    "curl",
+                    {
+                        "url": "https://example.com",
+                        ANNOUNCE_FIELD: "嗯，我看看",
+                    },
+                )
+            ],
+            tools,
+            owner_work_acknowledged=False,
+            deliver=True,
+        )
+        self.assertIsNone(announced)
+
+        later_silent = MomoiDaemon._missing_initial_work_announce(
+            [ToolCall("later", "curl", {"url": "https://example.com"})],
+            tools,
+            owner_work_acknowledged=True,
+            deliver=True,
+        )
+        self.assertIsNone(later_silent)
+
+        message_then_tool = MomoiDaemon._missing_initial_work_announce(
+            [
+                ToolCall("say", "send_message", {"messages": ["我先看看"]}),
+                ToolCall("first", "curl", {"url": "https://example.com"}),
+            ],
+            tools,
+            owner_work_acknowledged=False,
+            deliver=True,
+        )
+        self.assertIsNone(message_then_tool)
 
     def test_keeps_native_message_argument(self) -> None:
         spec = {
