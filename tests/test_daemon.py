@@ -248,6 +248,13 @@ class DaemonTest(unittest.TestCase):
         )
         self.assertIn("whole reply", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("balance or justify it", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("## Result beats", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("before the task is complete", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("novel and relevant to the owner", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("stand alone as one message item", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("exploratory misses may stay silent", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("dramatic about Momoi's feeling", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("intermediate findings provisional", STYLE_CARD_SYSTEM_PROMPT)
         self.assertNotIn("Use one short beat by default", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn(
             "explicit request genuinely depends on its content",
@@ -270,6 +277,11 @@ class DaemonTest(unittest.TestCase):
         self.assertIn("merely to justify it with informational value", system)
         self.assertIn("`<recent_turns>` preserves each recent Turn", system)
         self.assertIn("actually persisted", system)
+        self.assertIn("owner-relevant result beat", system)
+        self.assertIn("A task need not be complete before Momoi speaks", system)
+        self.assertIn("exploratory misses", system)
+        self.assertIn("Emotion may be dramatic", system)
+        self.assertIn("momentary outburst or result beat", system)
         self.assertNotIn("Reply closure — CRITICAL", system)
 
     def test_reply_wait_prompt_anneals_contact_instead_of_escalating(self) -> None:
@@ -355,6 +367,8 @@ class DaemonTest(unittest.TestCase):
             "do not merge it with explanation",
             SEND_MESSAGE_TOOL_SPEC["description"],
         )
+        self.assertIn("after a meaningful tool result", SEND_MESSAGE_TOOL_SPEC["description"])
+        self.assertIn("Result beats may land while work continues", SEND_MESSAGE_TOOL_SPEC["description"])
         expectation = RESPOND_TOOL_SPEC["input_schema"]["properties"][
             "reply_expectation"
         ]["description"]

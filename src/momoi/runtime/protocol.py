@@ -235,11 +235,12 @@ SEND_MESSAGE_TOOL_SPEC: dict[str, Any] = {
     "name": "send_message",
     "description": (
         "Emit non-empty owner-visible messages without ending the Turn. In ordinary "
-        "social chat, a non-propositional expression may be its own message item; "
-        "do not merge it with explanation or add information merely to make it "
-        "look complete. Text may share a message with images; file, video, audio, "
-        "and record must be their own items, and mixed input is split. After the "
-        "result, call respond to close the Turn."
+        "social chat or after a meaningful tool result, a non-propositional "
+        "expression may be its own message item; do not merge it with explanation "
+        "or add information merely to make it look complete. Result beats may land "
+        "while work continues. Text may share a message with images; file, video, "
+        "audio, and record must be their own items, and mixed input is split. After "
+        "the result, call respond to close the Turn."
     ),
     "input_schema": {
         "type": "object",
