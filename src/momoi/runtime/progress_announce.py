@@ -51,30 +51,18 @@ def decorate_tool_spec(spec: dict[str, Any]) -> dict[str, Any]:
         "minLength": 1,
         "maxLength": 300,
         "description": (
-            "A short spoken line the owner will hear, in the Soul's voice. "
-            "Choose it as a standalone spoken reply to the owner, not this "
-            "tool's caption. It does not need to explain the action or add "
-            "informational value. Never narrate what this tool does. If this "
-            "Turn has no tool result yet, answer the owner: accept and go, "
-            "without recapping the request. After a tool result, continue from "
-            "that result; do not answer the original request again. A finished "
-            f"spoken sentence, not a colon-ended label. {ANNOUNCE_MARKER} Do "
-            "not also send_message for the same action."
+            "Optional spoken bridge the owner will hear in the Soul's voice. "
+            "Omit this field to run the tool silently. This is a standalone "
+            "reply to the owner, not the tool's caption; never narrate a retry "
+            "or promise an unverified outcome. If this Turn has no tool result "
+            "yet, accept and go without recapping the request. After a tool "
+            "result, continue from what that result actually showed—a finding, "
+            "failure, or changed route—and never reopen the original request. "
+            f"A finished spoken sentence, not a colon-ended label. "
+            f"{ANNOUNCE_MARKER} Do not also send_message for the same action."
         ),
     }
-    required = list(schema.get("required") or [])
-    if ANNOUNCE_FIELD not in required:
-        required.append(ANNOUNCE_FIELD)
-    schema["required"] = required
     return decorated
-
-
-def announce_error_message(field: str, error: str) -> str:
-    return (
-        f"This tool requires a short owner-visible {field} that answers the "
-        "owner before work begins rather than captioning the tool. Call it "
-        "again with that field set."
-    )
 
 
 def take_announce_message(
@@ -83,7 +71,7 @@ def take_announce_message(
     raw = arguments.pop(field, None)
     text = str(raw or "").strip()
     if not text:
-        return None, "say_to_owner_required"
+        return None, None
     return text, None
 
 

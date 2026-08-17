@@ -1910,6 +1910,181 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             daemon.store.close()
 
+    async def test_optional_tool_announce_preserves_history_and_limits_parallel_batch(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(
+                AppConfig(
+                    llm=LLMConfig(
+                        "http://127.0.0.1",
+                        "test",
+                        "test",
+                        100,
+                        0,
+                        1,
+                        0,
+                        "openai",
+                    ),
+                    channel=NapCatConfig(
+                        "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
+                    ),
+                    system_prompt="test",
+                    recent_raw_tokens=1000,
+                    recent_turns=2,
+                    memory_results=2,
+                    memory_tokens=1000,
+                    database=Path(directory) / "momoi.sqlite3",
+                    log_level="INFO",
+                )
+            )
+            event = IncomingMessage(
+                "owner-announce", "owner-announce", "帮我继续查", 1, 1
+            )
+            daemon.store.add_event(event)
+            turn_id = daemon._turn_id(event.event_id)
+            plan = degraded_context_plan(
+                [
+                    {
+                        "event_id": event.event_id,
+                        "channel": event.channel,
+                        "text": event.text,
+                    }
+                ],
+                "test",
+            )
+            daemon.store.begin_turn(turn_id, "owner", [event.event_id])
+            daemon.store.save_context_plan(
+                turn_id, 1, [event.event_id], plan
+            )
+            execute = AsyncMock(
+                side_effect=[
+                    {"ok": True, "value": "first-result"},
+                    {"ok": True, "value": "second-result"},
+                    {"ok": True, "value": "third-result"},
+                ]
+            )
+            daemon.builtin_tools.execute = execute  # type: ignore[method-assign]
+
+            class Provider:
+                calls = 0
+
+                async def complete(
+                    self,
+                    _system: object,
+                    messages: list[dict[str, object]],
+                    tools: list[dict[str, object]],
+                    **_: object,
+                ) -> ProviderResponse:
+                    self.calls += 1
+                    if self.calls == 1:
+                        curl = next(tool for tool in tools if tool["name"] == "curl")
+                        schema = curl["input_schema"]
+                        if "say_to_owner" not in schema["properties"]:
+                            raise AssertionError(schema)
+                        if "say_to_owner" in schema.get("required", []):
+                            raise AssertionError(schema)
+                        calls = [
+                            ToolCall(
+                                "curl-one",
+                                "curl",
+                                {
+                                    "url": "https://one.example",
+                                    "say_to_owner": "先说这一句",
+                                },
+                            ),
+                            ToolCall(
+                                "curl-two",
+                                "curl",
+                                {
+                                    "url": "https://two.example",
+                                    "say_to_owner": "同批这句不应投递",
+                                },
+                            ),
+                        ]
+                    elif self.calls == 2:
+                        history = json.dumps(messages, ensure_ascii=False)
+                        if (
+                            "先说这一句" not in history
+                            or "同批这句不应投递" in history
+                            or "first-result" not in history
+                            or "second-result" not in history
+                        ):
+                            raise AssertionError(messages)
+                        calls = [
+                            ToolCall(
+                                "curl-three",
+                                "curl",
+                                {"url": "https://three.example"},
+                            )
+                        ]
+                    elif self.calls == 3:
+                        calls = [
+                            ToolCall(
+                                "send",
+                                "send_message",
+                                {"messages": ["查完了"]},
+                            )
+                        ]
+                    else:
+                        calls = [
+                            ToolCall(
+                                "finish",
+                                "respond",
+                                {
+                                    "reply_expectation": "",
+                                    "mood": {"decision": "unchanged"},
+                                },
+                            )
+                        ]
+                    return ProviderResponse(
+                        [
+                            {
+                                "type": "tool_use",
+                                "id": call.id,
+                                "name": call.name,
+                                "input": call.arguments,
+                            }
+                            for call in calls
+                        ],
+                        calls,
+                    )
+
+            provider = Provider()
+            daemon.provider = provider  # type: ignore[assignment]
+            reply = await daemon._run_tool_loop(
+                daemon._system(),
+                [{"role": "user", "content": event.text}],
+                daemon._owner_tool_specs(plan),
+                [event],
+                TurnDraft(),
+                authority="owner",
+                source_event_id=event.event_id,
+                allow_notify=False,
+                turn_id=turn_id,
+                require_response=True,
+                accept_owner_updates=False,
+                dynamic_tool_policies=True,
+                delivery_channel=daemon.channel,
+            )
+
+            self.assertEqual(provider.calls, 4)
+            self.assertEqual(reply.messages, [])
+            self.assertEqual(execute.await_count, 3)
+            for await_call in execute.await_args_list:
+                self.assertNotIn("say_to_owner", await_call.args[0].arguments)
+            progress = daemon.store._db.execute(
+                """SELECT tool_call_id, text FROM turn_progress
+                   WHERE turn_id=? AND tool_call_id LIKE 'curl-%'
+                   ORDER BY created_at""",
+                (turn_id,),
+            ).fetchall()
+            self.assertEqual(
+                [(row["tool_call_id"], row["text"]) for row in progress],
+                [("curl-one", "先说这一句")],
+            )
+            daemon.store.close()
+
     async def test_owner_turn_does_not_retry_after_provider_exhausts_retries(
         self,
     ) -> None:

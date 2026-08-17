@@ -8,7 +8,6 @@ from momoi.runtime import MomoiDaemon
 from momoi.runtime.progress_announce import (
     ANNOUNCE_FIELD,
     ANNOUNCE_MARKER,
-    announce_error_message,
     announce_field,
     apply_tool_announce,
     decorate_tool_spec,
@@ -40,26 +39,21 @@ class ProgressAnnounceTest(unittest.TestCase):
         decorated = decorate_tool_spec(curl)
         self.assertEqual(announce_field(curl), None)
         self.assertEqual(announce_field(decorated), ANNOUNCE_FIELD)
-        self.assertIn(ANNOUNCE_FIELD, decorated["input_schema"]["required"])
+        self.assertNotIn(ANNOUNCE_FIELD, decorated["input_schema"]["required"])
         description = decorated["input_schema"]["properties"][ANNOUNCE_FIELD][
             "description"
         ]
         self.assertIn(ANNOUNCE_MARKER, description)
         self.assertIn("Soul's voice", description)
-        self.assertIn("Never narrate what this tool does", description)
-        self.assertIn("standalone spoken reply to the owner", description)
-        self.assertIn("does not need to explain the action", description)
-        self.assertIn("or add informational value", description)
-        self.assertIn("If this Turn has no tool result yet", description)
-        self.assertIn("After a tool result, continue from that result", description)
+        self.assertIn("Omit this field to run the tool silently", description)
+        self.assertIn("not the tool's caption", description)
+        self.assertIn("never narrate a retry", description)
+        self.assertIn("promise an unverified outcome", description)
+        self.assertIn("If this Turn has no tool result", description)
+        self.assertIn("continue from what that result actually showed", description)
+        self.assertIn("never reopen the original request", description)
         self.assertIn("colon-ended label", description)
         self.assertNotIn(ANNOUNCE_FIELD, curl["input_schema"]["properties"])
-
-    def test_missing_announce_retry_asks_for_reply_not_tool_caption(self) -> None:
-        message = announce_error_message(ANNOUNCE_FIELD, "say_to_owner_required")
-        self.assertIn("answers the owner", message)
-        self.assertIn("rather than captioning the tool", message)
-        self.assertNotIn("what you are about to do", message)
 
     def test_keeps_native_message_argument(self) -> None:
         spec = {
@@ -73,7 +67,7 @@ class ProgressAnnounceTest(unittest.TestCase):
         }
         decorated = decorate_tool_spec(spec)
         self.assertEqual(announce_field(decorated), ANNOUNCE_FIELD)
-        self.assertIn(ANNOUNCE_FIELD, decorated["input_schema"]["required"])
+        self.assertEqual(decorated["input_schema"]["required"], ["message"])
         self.assertEqual(
             decorated["input_schema"]["properties"]["message"],
             {"type": "string"},
@@ -86,12 +80,18 @@ class ProgressAnnounceTest(unittest.TestCase):
         self.assertIsNone(error)
         self.assertEqual(arguments, {"url": "https://example.com"})
 
-    def test_take_announce_message_requires_text(self) -> None:
+    def test_take_announce_message_allows_silence(self) -> None:
         arguments = {"url": "https://example.com", ANNOUNCE_FIELD: "  "}
         text, error = take_announce_message(arguments, ANNOUNCE_FIELD)
         self.assertIsNone(text)
-        self.assertEqual(error, "say_to_owner_required")
+        self.assertIsNone(error)
         self.assertNotIn(ANNOUNCE_FIELD, arguments)
+
+        arguments = {"url": "https://example.com"}
+        text, error = take_announce_message(arguments, ANNOUNCE_FIELD)
+        self.assertIsNone(text)
+        self.assertIsNone(error)
+        self.assertEqual(arguments, {"url": "https://example.com"})
 
     def test_owner_specs_advertise_say_to_owner_heartbeat_specs_do_not(self) -> None:
         daemon = object.__new__(MomoiDaemon)
@@ -156,7 +156,7 @@ class ProgressAnnounceTest(unittest.TestCase):
         self.assertIsNone(error)
         self.assertEqual(arguments, {"url": "https://example.com"})
 
-    def test_owner_turn_requires_and_returns_say_to_owner(self) -> None:
+    def test_owner_turn_returns_optional_say_to_owner(self) -> None:
         arguments = {"url": "https://example.com", ANNOUNCE_FIELD: "我去搜一下"}
         text, error = apply_tool_announce(
             arguments,

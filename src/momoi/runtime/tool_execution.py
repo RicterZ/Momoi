@@ -1,3 +1,4 @@
+import copy
 import fnmatch
 import json
 import logging
@@ -15,7 +16,6 @@ from ..memory_tools import MEMORY_TOOL_SPECS
 from ..models import AgentReply, IncomingMessage, ToolCall, TurnDraft
 from ..storage import estimate_tokens
 from .progress_announce import (
-    announce_error_message,
     announce_field,
     apply_tool_announce,
     decorate_tool_spec,
@@ -444,10 +444,28 @@ class ToolExecutionService:
                 )
                 force_response = True
                 continue
-            messages.append({"role": "assistant", "content": response.content})
+            # Tool execution strips harness-only arguments in place. Preserve an
+            # independent assistant-history copy so the next model round still
+            # knows exactly what the owner already heard.
+            assistant_history_content = copy.deepcopy(response.content)
+            messages.append(
+                {"role": "assistant", "content": assistant_history_content}
+            )
+            history_tool_inputs = {
+                str(block.get("id") or ""): block.get("input")
+                for block in (
+                    assistant_history_content
+                    if isinstance(assistant_history_content, list)
+                    else []
+                )
+                if isinstance(block, dict)
+                and block.get("type") == "tool_use"
+                and isinstance(block.get("input"), dict)
+            }
             results: list[dict[str, Any]] = []
             updates = []
             allowed_tool_names = {str(spec["name"]) for spec in request_tools}
+            announce_delivered_in_batch = False
             for index, call in enumerate(response.tool_calls):
                 tool_started = time.monotonic()
                 source = self._tool_source(call.name, allow_notify=allow_notify)
@@ -576,30 +594,30 @@ class ToolExecutionService:
                             None,
                         )
                         if announce:
-                            text, announce_error = apply_tool_announce(
+                            text, _ = apply_tool_announce(
                                 call.arguments,
                                 announce,
                                 deliver=should_deliver_announce(
                                     heartbeat_turn=heartbeat_turn,
                                     reply_wait_turn=reply_wait_turn,
                                     autonomous_goal=bool(autonomous_goal_id),
-                                ),
+                                )
+                                and not announce_delivered_in_batch,
                             )
-                            if announce_error is not None:
-                                result = {
-                                    "ok": False,
-                                    "error": announce_error,
-                                    "message": announce_error_message(
-                                        announce, announce_error
-                                    ),
-                                }
-                            elif text is not None:
+                            history_arguments = history_tool_inputs.get(call.id)
+                            if isinstance(history_arguments, dict):
+                                if text is None:
+                                    history_arguments.pop(announce, None)
+                                else:
+                                    history_arguments[announce] = text
+                            if text is not None:
                                 self.store.queue_progress(
                                     turn_id,
                                     call.id,
                                     [text],
                                     self.channel.name,
                                 )
+                                announce_delivered_in_batch = True
                                 visible_since_owner_update = True
                                 self.outbox_changed.set()
                     if result is None:
