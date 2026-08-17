@@ -35,8 +35,11 @@ CHANNEL_MESSAGE_SCHEMA: dict[str, Any] = {
             "type": "string",
             "minLength": 1,
             "description": (
-                "One complete owner-visible message item. A single line break is "
-                "allowed, but blank lines must be separate array items."
+                "One owner-visible private-chat bubble. It may be a complete "
+                "sentence, a fragment, an interjection, a partial thought, or a "
+                "non-propositional emotional expression. Do not expand it merely "
+                "to make it informative or grammatically complete. A single line "
+                "break is allowed, but blank lines must be separate array items."
             ),
         },
         {
@@ -245,9 +248,11 @@ def reply_wait_respond_tool_spec() -> dict[str, Any]:
 SEND_MESSAGE_TOOL_SPEC: dict[str, Any] = {
     "name": "send_message",
     "description": (
-        "Emit non-empty owner-visible messages without ending the Turn. In ordinary "
+        "Emit non-empty owner-visible chat bubbles without ending the Turn. Bubble "
+        "boundaries express timing, impulse, and conversational rhythm rather than "
+        "semantic jobs. In ordinary "
         "social chat or after a meaningful tool result, a non-propositional "
-        "expression may be its own message item; do not merge it with explanation "
+        "expression may be its own bubble; do not merge it with explanation "
         "or add information merely to make it look complete. Result beats may land "
         "while work continues. Text may share a message with images; file, video, "
         "audio, and record must be their own items, and mixed input is split. After "

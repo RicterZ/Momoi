@@ -32,7 +32,7 @@ from momoi.runtime import (
 )
 from momoi.runtime.daemon import REFLECTION_QUEUE_PREFIX
 from momoi.runtime.jobs import AutonomousJob
-from momoi.runtime.protocol import MOOD_UPDATE_SCHEMA
+from momoi.runtime.protocol import CHANNEL_MESSAGE_SCHEMA, MOOD_UPDATE_SCHEMA
 from momoi.models import (
     AgentReply,
     IncomingMessage,
@@ -233,25 +233,19 @@ class DaemonTest(unittest.TestCase):
             STYLE_CARD_SYSTEM_PROMPT,
         )
         self.assertIn("ordinary social chat that", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("non-propositional social utterance", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("first-class visible speech", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("own message item", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("carry no new information", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("may be frequent", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn(
-            "Preserve that independent beat",
-            STYLE_CARD_SYSTEM_PROMPT,
-        )
-        self.assertIn("Decide separately", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn(
-            "whether anything else naturally follows", STYLE_CARD_SYSTEM_PROMPT
-        )
-        self.assertIn("whole reply", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("balance or justify it", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("Expressive micro-bubbles", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("normal and frequent", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("fragmentary, incomplete", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("Message boundaries express timing", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("require separate semantic jobs", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("freely mix fragments", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("preserve it as its own", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("rewriting it into a fuller", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("not complete, justify, or balance", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("## Result beats", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("before the task is complete", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("novel and relevant to the owner", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("stand alone as one message item", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("stand alone as one chat bubble", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("exploratory misses may stay silent", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("dramatic about Momoi's feeling", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("intermediate findings provisional", STYLE_CARD_SYSTEM_PROMPT)
@@ -280,6 +274,10 @@ class DaemonTest(unittest.TestCase):
         self.assertIn("without explanation or new information", system)
         self.assertIn("Decide separately whether", system)
         self.assertIn("merely to justify it with informational value", system)
+        self.assertIn("one non-empty private-chat bubble", system)
+        self.assertIn("timing, impulse, and conversational rhythm", system)
+        self.assertIn("fragment, a partial thought", system)
+        self.assertNotIn("one complete non-empty message", system)
         self.assertIn("`<recent_turns>` preserves each recent Turn", system)
         self.assertIn("actually persisted", system)
         self.assertIn("owner-relevant result beat", system)
@@ -383,7 +381,12 @@ class DaemonTest(unittest.TestCase):
         self.assertIn("non-empty", SEND_MESSAGE_TOOL_SPEC["description"])
         self.assertIn("owner-visible", SEND_MESSAGE_TOOL_SPEC["description"])
         self.assertIn(
-            "non-propositional expression may be its own message item",
+            "non-propositional expression may be its own bubble",
+            SEND_MESSAGE_TOOL_SPEC["description"],
+        )
+        self.assertIn("chat bubbles", SEND_MESSAGE_TOOL_SPEC["description"])
+        self.assertIn(
+            "timing, impulse, and conversational rhythm",
             SEND_MESSAGE_TOOL_SPEC["description"],
         )
         self.assertIn(
@@ -392,6 +395,13 @@ class DaemonTest(unittest.TestCase):
         )
         self.assertIn("after a meaningful tool result", SEND_MESSAGE_TOOL_SPEC["description"])
         self.assertIn("Result beats may land while work continues", SEND_MESSAGE_TOOL_SPEC["description"])
+        bubble_description = CHANNEL_MESSAGE_SCHEMA["oneOf"][0]["description"]
+        self.assertIn("private-chat bubble", bubble_description)
+        self.assertIn("fragment", bubble_description)
+        self.assertIn("interjection", bubble_description)
+        self.assertIn("partial thought", bubble_description)
+        self.assertIn("grammatically complete", bubble_description)
+        self.assertNotIn("complete owner-visible message item", bubble_description)
         expectation = RESPOND_TOOL_SPEC["input_schema"]["properties"][
             "reply_expectation"
         ]["description"]
