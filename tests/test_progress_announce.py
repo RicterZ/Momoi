@@ -45,7 +45,9 @@ class ProgressAnnounceTest(unittest.TestCase):
         ]
         self.assertIn(ANNOUNCE_MARKER, description)
         self.assertIn("Soul's voice", description)
-        self.assertIn("do not end with a colon", description)
+        self.assertIn("continue from the last tool result", description)
+        self.assertIn("Do not recap or expand", description)
+        self.assertIn("colon-ended label", description)
         self.assertNotIn(ANNOUNCE_FIELD, curl["input_schema"]["properties"])
 
     def test_keeps_native_message_argument(self) -> None:

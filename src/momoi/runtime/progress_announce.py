@@ -51,13 +51,12 @@ def decorate_tool_spec(spec: dict[str, Any]) -> dict[str, Any]:
         "minLength": 1,
         "maxLength": 300,
         "description": (
-            "One short spoken beat to the owner, in the Soul's voice: "
-            "direct, colloquial, a little lively, as if you just turned to "
-            "tell them what you're about to go do. A finished natural "
-            "sentence, not a status label or heading, and do not end with a "
-            f"colon. {ANNOUNCE_MARKER} Do not mention tool names or "
-            "internals, and do not also send_message just to announce the "
-            "same action."
+            "One short chat beat in the Soul's voice. The first beat may "
+            "accept and go; later beats in this Turn continue from the last "
+            "tool result, not another acceptance. Do not recap or expand "
+            "what they already asked. A finished spoken sentence, not a "
+            f"colon-ended label, and no tool names or internals. {ANNOUNCE_MARKER} "
+            "Do not also send_message for the same action."
         ),
     }
     required = list(schema.get("required") or [])
