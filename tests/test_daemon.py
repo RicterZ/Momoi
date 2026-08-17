@@ -232,6 +232,8 @@ class DaemonTest(unittest.TestCase):
             STYLE_CARD_SYSTEM_PROMPT,
         )
         self.assertIn("still wants a reaction", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("A beat does not need new information", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("such beats may be", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn(
             "explicit request genuinely depends on its content",
             STYLE_CARD_SYSTEM_PROMPT,
