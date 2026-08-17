@@ -292,8 +292,9 @@ class DaemonTest(unittest.TestCase):
             / "prompts"
             / "system.md"
         ).read_text(encoding="utf-8")
-        self.assertIn("not a prediction that the owner might keep chatting", system)
-        self.assertIn("optional reaction, quip, or continuation", system)
+        self.assertIn("cannot manufacture an expectation", system)
+        self.assertIn("low-stakes request to report back", system)
+        self.assertIn("optional compliance, reaction, banter", system)
         self.assertIn("reassess the conversation", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertIn(
             "possibility of another reaction, quip, tease, or continuation",
@@ -301,7 +302,10 @@ class DaemonTest(unittest.TestCase):
         )
         self.assertIn("owner silence is increasing evidence", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertIn("less likely and no more forceful", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("ceiling, not a sequence", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("never a conversational sequence", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("materially different action", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("carrying out the suggestion", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("stop waiting instead of deferring", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertIn("At most one visible follow-up", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertIn("inventing a missing", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertNotIn("continue the same emotional thread", REPLY_WAIT_SYSTEM_PROMPT)
@@ -372,8 +376,8 @@ class DaemonTest(unittest.TestCase):
         expectation = RESPOND_TOOL_SPEC["input_schema"]["properties"][
             "reply_expectation"
         ]["description"]
-        self.assertIn("concrete unanswered question", expectation)
-        self.assertIn("not a prediction", expectation)
+        self.assertIn("materially affect Momoi's next action", expectation)
+        self.assertIn("low-stakes request to", expectation)
         self.assertIn("landed acknowledgment, concession, or close", expectation)
         self.assertIn("conversational Turn", RESPOND_TOOL_SPEC["description"])
         self.assertNotIn("messages", RESPOND_TOOL_SPEC["input_schema"]["properties"])
@@ -980,6 +984,16 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(run.await_args.kwargs["reply_wait_turn"])
             request = json.dumps(run.await_args.args[:2], ensure_ascii=False)
             self.assertIn("<pending_owner_reply>", request)
+            self.assertIn("waiting_minutes", request)
+            self.assertIn("previous_check_reason", request)
+            for hidden_scheduler_field in (
+                "check_index",
+                "max_checks",
+                "stage_delay_minutes",
+                "final_check",
+                "heartbeat_checks",
+            ):
+                self.assertNotIn(hidden_scheduler_field, request)
             self.assertNotIn("<autonomous_heartbeat>", request)
             after = daemon.store.self_state()
             for key in (

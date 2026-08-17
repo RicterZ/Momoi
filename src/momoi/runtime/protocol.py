@@ -138,10 +138,11 @@ RESPOND_TOOL_SPEC: dict[str, Any] = {
                 "type": "string",
                 "maxLength": 300,
                 "description": (
-                    "The concrete unanswered question, request, or relational bid "
-                    "whose reply Momoi still wants after the last visible message. "
-                    "This is not a prediction of optional continued chat. Use an "
-                    "empty string after a landed acknowledgment, concession, or close."
+                    "The concrete answer that will materially affect Momoi's next "
+                    "action or resolve a genuine unanswered question or interpersonal "
+                    "need. Do not create an expectation from a low-stakes request to "
+                    "report back, acknowledge advice, comply, or keep chatting. Use "
+                    "an empty string after a landed acknowledgment, concession, or close."
                 ),
             },
             "mood": MOOD_DECISION_SCHEMA,

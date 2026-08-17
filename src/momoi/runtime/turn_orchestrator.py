@@ -933,8 +933,21 @@ class TurnOrchestrator:
         recent, _ = assemble_recent_conversation(
             self.store, self.config.recent_turns, self.config.recent_raw_tokens
         )
+        model_pending = {
+            key: pending.get(key)
+            for key in (
+                "source_turn",
+                "source_messages",
+                "expected_response",
+                "waiting_since",
+                "waiting_minutes",
+                "previous_check_reason",
+                "followup_attempts",
+                "delivered_followups",
+            )
+        }
         current_input = _sections(
-            ("pending_owner_reply", json.dumps(pending, ensure_ascii=False)),
+            ("pending_owner_reply", json.dumps(model_pending, ensure_ascii=False)),
             (
                 "runtime_state",
                 (
