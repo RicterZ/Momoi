@@ -228,6 +228,11 @@ class DaemonTest(unittest.TestCase):
             "Do not reply merely to prove it was noticed", STYLE_CARD_SYSTEM_PROMPT
         )
         self.assertIn(
+            "only accepts or closes a beat that already landed",
+            STYLE_CARD_SYSTEM_PROMPT,
+        )
+        self.assertIn("still wants a reaction", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn(
             "explicit request genuinely depends on its content",
             STYLE_CARD_SYSTEM_PROMPT,
         )
