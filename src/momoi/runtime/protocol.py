@@ -140,7 +140,7 @@ RESPOND_TOOL_SPEC: dict[str, Any] = {
                 "description": (
                     "What Momoi genuinely hopes to hear next after the last visible "
                     "message. It may be practical, conversational, playful, or caring; "
-                    "this records an expectation, not an obligation on the owner. "
+                    "this records what Momoi is waiting for. "
                     "Use an empty string when Momoi is not waiting for anything."
                 ),
             },

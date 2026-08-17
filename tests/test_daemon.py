@@ -293,7 +293,7 @@ class DaemonTest(unittest.TestCase):
             / "system.md"
         ).read_text(encoding="utf-8")
         self.assertIn("practical, conversational, playful, or caring", system)
-        self.assertIn("not an obligation on the owner", system)
+        self.assertIn("records what Momoi is waiting for", system)
         self.assertIn("Independently set `schedule_reply_wait`", system)
         self.assertIn("false leaves the expectation passive", system)
         self.assertIn("revisits one reply expectation", REPLY_WAIT_SYSTEM_PROMPT)
@@ -314,6 +314,8 @@ class DaemonTest(unittest.TestCase):
         self.assertIn("continue the same expectation", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertIn("`reply_wait.reason` is private", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertNotIn("催促", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertNotIn("guilt", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertNotIn("reassurance", REPLY_WAIT_SYSTEM_PROMPT)
 
     def test_mood_update_parser_accepts_open_state_labels(self) -> None:
         mood, error = MomoiDaemon._parse_mood_update(
@@ -384,7 +386,7 @@ class DaemonTest(unittest.TestCase):
             "reply_expectation"
         ]["description"]
         self.assertIn("practical, conversational, playful, or caring", expectation)
-        self.assertIn("not an obligation on the owner", expectation)
+        self.assertIn("records what Momoi is waiting for", expectation)
         schedule = RESPOND_TOOL_SPEC["input_schema"]["properties"][
             "schedule_reply_wait"
         ]["description"]
