@@ -369,9 +369,7 @@ This policy applies to proactive Goal and Heartbeat contacts. Goal notifications
     "enabled": false,
     "initial_delay_seconds": 900,
     "min_interval_seconds": 1800,
-    "max_interval_seconds": 5400,
-    "reply_initial_interval_seconds": 180,
-    "reply_followup_interval_seconds": 420
+    "max_interval_seconds": 5400
   }
 }
 ```
@@ -382,8 +380,6 @@ This policy applies to proactive Goal and Heartbeat contacts. Goal notifications
 | `initial_delay_seconds` | `900` | Delay before the first heartbeat in a new workspace |
 | `min_interval_seconds` | `1800` | Smallest next interval Momoi may select |
 | `max_interval_seconds` | `5400` | Largest next interval Momoi may select (90 minutes by default) |
-| `reply_initial_interval_seconds` | `180` | Delay before the first independent reply-wait decision |
-| `reply_followup_interval_seconds` | `420` | Delay from the first continued wait to the second and final decision |
 
 Intervals must be positive, and the maximum must not be smaller than the ordinary minimum.
 
@@ -393,7 +389,7 @@ A heartbeat may use explicitly allowed read-only tools, search memory, create fi
 
 Send `/heartbeat` in the private owner chat to trigger one evaluation immediately, even when automatic heartbeat scheduling is disabled. A command received while another heartbeat is queued or running is deduplicated.
 
-When a delivered reply explicitly expects an owner response, Momoi makes its first independent wait decision after `reply_initial_interval_seconds`, even if automatic heartbeats are disabled. If the model chooses to continue waiting, the second and final decision runs after `reply_followup_interval_seconds` (by default at roughly minute 3 and minute 10). Either decision may end the wait immediately; two checks are a hard ceiling, not a required sequence. Reply attention has its own schedule and never replaces the ordinary `next_heartbeat_at` rhythm. Any owner message ends the old waiting state, cancels its scheduled check, and cancels an unsent follow-up.
+When a delivered reply explicitly starts active reply waiting, Momoi makes independent decisions at roughly minute 3 and, only if the first decision continues waiting, minute 10. Either decision may end the wait immediately; two checks are a hard ceiling, not a required sequence. This schedule is built into the runtime rather than configured as ordinary heartbeat policy. Reply attention has its own clock and never replaces the ordinary `next_heartbeat_at` rhythm. Any owner message ends the old waiting state, cancels its scheduled check, and cancels an unsent follow-up.
 
 Owner Turns exclusively answer owner input. A heartbeat is deferred while owner events, an Owner Turn, or its outgoing reply are in flight. It records the owner-event revision it read and discards visible heartbeat output if the conversation changes before commit; internal heartbeat activity is still retained.
 

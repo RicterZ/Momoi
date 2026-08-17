@@ -28,6 +28,11 @@ from ..models import (
     TurnDraft,
 )
 from ..policies import MemoryPolicy
+from ..reply_wait import (
+    REPLY_WAIT_FIRST_CHECK_SECONDS,
+    REPLY_WAIT_FOLLOWUP_DELAY_SECONDS,
+    REPLY_WAIT_MAX_CHECKS,
+)
 from ..search import (
     SearchBackend,
     StringSearchBackend,
@@ -4138,11 +4143,17 @@ class Store(MemoryStore, DeliveryStore):
             "heartbeat_checks": int(row["pending_reply_checks"] or 0),
             "previous_check_reason": str(row["pending_reply_last_reason"] or ""),
             "check_index": int(row["pending_reply_checks"] or 0) + 1,
-            "max_checks": 2,
-            "stage_delay_minutes": (3, 7)[
+            "max_checks": REPLY_WAIT_MAX_CHECKS,
+            "stage_delay_minutes": (
+                int(REPLY_WAIT_FIRST_CHECK_SECONDS / 60),
+                int(REPLY_WAIT_FOLLOWUP_DELAY_SECONDS / 60),
+            )[
                 min(int(row["pending_reply_checks"] or 0), 1)
             ],
-            "final_check": int(row["pending_reply_checks"] or 0) >= 1,
+            "final_check": (
+                int(row["pending_reply_checks"] or 0)
+                >= REPLY_WAIT_MAX_CHECKS - 1
+            ),
             "channel": str(row["pending_reply_channel"] or ""),
             "followup_attempts": int(followup_attempts or 0),
             "delivered_followups": int(followups or 0),
@@ -4317,8 +4328,6 @@ class Store(MemoryStore, DeliveryStore):
         continue_waiting: bool,
         reason: str,
         mood_update: dict[str, object] | None,
-        initial_interval_seconds: float,
-        followup_interval_seconds: float,
         notification_channel: str = "",
     ) -> int:
         state = self.self_state()
@@ -4334,8 +4343,6 @@ class Store(MemoryStore, DeliveryStore):
             reason=reason,
             pending_reply_turn_id=pending_reply_turn_id,
             continue_reply_wait=continue_waiting,
-            reply_initial_interval_seconds=initial_interval_seconds,
-            reply_followup_interval_seconds=followup_interval_seconds,
             notification_channel=notification_channel,
             reply_wait_only=True,
         )
@@ -4355,7 +4362,6 @@ class Store(MemoryStore, DeliveryStore):
         reply_expectation: str = "",
         draft: TurnDraft | None = None,
         memory_events: list[IncomingMessage] | None = None,
-        reply_initial_interval_seconds: float = 180,
         notification_channel: str = "",
     ) -> int:
         return self._commit_scheduled_turn(
@@ -4371,7 +4377,6 @@ class Store(MemoryStore, DeliveryStore):
             reply_expectation=reply_expectation,
             draft=draft,
             memory_events=memory_events,
-            reply_initial_interval_seconds=reply_initial_interval_seconds,
             notification_channel=notification_channel,
         )
 
@@ -4392,8 +4397,6 @@ class Store(MemoryStore, DeliveryStore):
         memory_events: list[IncomingMessage] | None = None,
         pending_reply_turn_id: str | None = None,
         continue_reply_wait: bool = False,
-        reply_initial_interval_seconds: float = 180,
-        reply_followup_interval_seconds: float = 420,
         notification_channel: str = "",
         reply_wait_only: bool = False,
     ) -> int:
@@ -4476,8 +4479,8 @@ class Store(MemoryStore, DeliveryStore):
                 )
             if pending_reply_is_current:
                 checks = int(pending["pending_reply_checks"] or 0)
-                if continue_reply_wait and checks < 1:
-                    delay = reply_followup_interval_seconds
+                if continue_reply_wait and checks < REPLY_WAIT_MAX_CHECKS - 1:
+                    delay = REPLY_WAIT_FOLLOWUP_DELAY_SECONDS
                     next_reply_check_at = now + delay
                     self._db.execute(
                         """UPDATE self_state SET
@@ -4645,7 +4648,7 @@ class Store(MemoryStore, DeliveryStore):
                 )
                 if reply_expectation:
                     self._bind_turn_reply_expectation(
-                        turn_id, reply_expectation, reply_initial_interval_seconds
+                            turn_id, reply_expectation
                     )
             elif messages:
                 self._db.execute(
@@ -5918,7 +5921,6 @@ class Store(MemoryStore, DeliveryStore):
         draft: TurnDraft | None = None,
         turn_id: str | None = None,
         target_channel: str = "",
-        reply_initial_delay: float = 60,
     ) -> str:
         assistant_messages = reply.messages
         normalized_messages = [
@@ -6079,7 +6081,7 @@ class Store(MemoryStore, DeliveryStore):
             )
             if reply.should_schedule_reply_wait:
                 self._bind_turn_reply_expectation(
-                    turn_id, reply.reply_expectation, reply_initial_delay
+                    turn_id, reply.reply_expectation
                 )
             self._db.execute(
                 """UPDATE turns SET state='completed', stage='completed',

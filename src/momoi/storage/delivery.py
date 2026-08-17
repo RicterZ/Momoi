@@ -6,6 +6,7 @@ from datetime import datetime
 
 from ..channel import normalize_channel_message
 from ..models import AgentReply, OutboxMessage
+from ..reply_wait import REPLY_WAIT_FIRST_CHECK_SECONDS
 
 
 class DeliveryStore:
@@ -266,7 +267,6 @@ class DeliveryStore:
         turn_id: str,
         reply: AgentReply,
         target_channel: str = "",
-        reply_initial_delay: float = 60,
     ) -> list[int]:
         step = self.webhook_step(run_id, step_index)
         if step is None:
@@ -363,7 +363,7 @@ class DeliveryStore:
             self._apply_mood_update(reply.mood_update, now)
             if reply.should_schedule_reply_wait:
                 self._bind_turn_reply_expectation(
-                    turn_id, reply.reply_expectation, reply_initial_delay
+                    turn_id, reply.reply_expectation
                 )
             outbox_ids = [
                 int(row["id"])
@@ -557,9 +557,7 @@ class DeliveryStore:
                 (time.time() + 2, error, outbox_id),
             )
 
-    def mark_sent(
-        self, outbox_id: int, reply_initial_delay: float | None = None
-    ) -> bool:
+    def mark_sent(self, outbox_id: int) -> bool:
         activated = False
         with self._db:
             row = self._db.execute(
@@ -573,12 +571,11 @@ class DeliveryStore:
             )
             self._sync_outbox_message(outbox_id, "sent")
             expectation = str(row["reply_expectation"] or "").strip() if row else ""
-            if expectation and reply_initial_delay is not None and row:
+            if expectation and row:
                 activated = self._activate_reply_expectation(
                     str(row["turn_id"]),
                     expectation,
                     str(row["target_channel"] or ""),
-                    reply_initial_delay,
                 )
         return activated
 
@@ -587,7 +584,6 @@ class DeliveryStore:
         turn_id: str,
         expectation: str,
         target_channel: str,
-        reply_initial_delay: float,
     ) -> bool:
         if self._db.execute(
             "SELECT 1 FROM events WHERE processed=0 LIMIT 1"
@@ -598,7 +594,7 @@ class DeliveryStore:
             """SELECT pending_reply_expectation, pending_reply_next_check_at
                FROM self_state WHERE id=1"""
         ).fetchone()
-        due = now + reply_initial_delay
+        due = now + REPLY_WAIT_FIRST_CHECK_SECONDS
         already_waiting = bool(
             state and str(state["pending_reply_expectation"] or "").strip()
         )
@@ -622,9 +618,7 @@ class DeliveryStore:
             )
         return True
 
-    def _bind_turn_reply_expectation(
-        self, turn_id: str, expectation: str, reply_initial_delay: float
-    ) -> bool:
+    def _bind_turn_reply_expectation(self, turn_id: str, expectation: str) -> bool:
         row = self._db.execute(
             """SELECT id, state, target_channel FROM outbox
                WHERE turn_id=? ORDER BY id DESC LIMIT 1""",
@@ -642,7 +636,6 @@ class DeliveryStore:
             turn_id,
             expectation,
             str(row["target_channel"] or ""),
-            reply_initial_delay,
         )
 
     def mark_ambiguous(self, outbox_id: int, attempts: int, error: str) -> None:

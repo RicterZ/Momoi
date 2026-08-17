@@ -2184,7 +2184,7 @@ class StorageMemoryTest(unittest.TestCase):
             )
             row = store.due_outbox()[0]
             with patch("momoi.storage.delivery.time.time", return_value=1000):
-                self.assertTrue(store.mark_sent(row.id, 180))
+                self.assertTrue(store.mark_sent(row.id))
             initial_pending = store.pending_owner_reply(1000)
             self.assertEqual(
                 initial_pending["expected_response"], "主人对晚餐的选择"
@@ -2212,8 +2212,6 @@ class StorageMemoryTest(unittest.TestCase):
                     reason="晚餐选择还需要主人回复",
                     pending_reply_turn_id="owner-question",
                     continue_waiting=True,
-                    initial_interval_seconds=180,
-                    followup_interval_seconds=420,
                 )
             self.assertEqual(store.next_heartbeat_due_at(False), 1600)
             pending = store.pending_owner_reply(1180)
@@ -2239,7 +2237,7 @@ class StorageMemoryTest(unittest.TestCase):
                 "",
             )
             with patch("momoi.storage.delivery.time.time", return_value=1190):
-                self.assertFalse(store.mark_sent(stale_followup.id, 180))
+                self.assertFalse(store.mark_sent(stale_followup.id))
             pending = store.pending_owner_reply(1190)
             self.assertEqual(pending["expected_response"], "主人对晚餐的选择")
             self.assertEqual(pending["heartbeat_checks"], 1)
@@ -2277,7 +2275,7 @@ class StorageMemoryTest(unittest.TestCase):
                 target_channel="weixin",
             )
             with patch("momoi.storage.delivery.time.time", return_value=1200):
-                self.assertTrue(store.mark_sent(store.due_outbox()[0].id, 180))
+                self.assertTrue(store.mark_sent(store.due_outbox()[0].id))
             self.assertEqual(store.next_heartbeat_due_at(False), 1380)
             store.close()
 
@@ -2303,7 +2301,7 @@ class StorageMemoryTest(unittest.TestCase):
                 "",
             )
             with patch("momoi.storage.delivery.time.time", return_value=1000):
-                self.assertFalse(store.mark_sent(row.id, 180))
+                self.assertFalse(store.mark_sent(row.id))
             self.assertIsNone(store.pending_owner_reply(1000))
             self.assertIsNone(store.next_heartbeat_due_at(False))
             store.close()
@@ -2317,7 +2315,7 @@ class StorageMemoryTest(unittest.TestCase):
             )
             outbox = store.due_outbox()[0]
             with patch("momoi.storage.delivery.time.time", return_value=1000):
-                self.assertFalse(store.mark_sent(outbox.id, 60))
+                self.assertFalse(store.mark_sent(outbox.id))
 
             with patch("momoi.storage.delivery.time.time", return_value=1010):
                 store.commit_turn(
@@ -2329,7 +2327,6 @@ class StorageMemoryTest(unittest.TestCase):
                         reply_expectation="老师想说的后续",
                     ),
                     turn_id="live-reply",
-                    reply_initial_delay=75,
                 )
 
             self.assertEqual(
@@ -2340,7 +2337,7 @@ class StorageMemoryTest(unittest.TestCase):
             )
             pending = store.pending_owner_reply(1010)
             self.assertEqual(pending["expected_response"], "老师想说的后续")
-            self.assertEqual(store.next_heartbeat_due_at(False), 1085)
+            self.assertEqual(store.next_heartbeat_due_at(False), 1190)
             store.close()
 
     def test_expected_reply_follows_pending_progress_only_after_delivery(self) -> None:
@@ -2363,8 +2360,8 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertIsNone(store.pending_owner_reply())
 
             with patch("momoi.storage.delivery.time.time", return_value=1000):
-                self.assertTrue(store.mark_sent(store.due_outbox()[0].id, 60))
-            self.assertEqual(store.next_heartbeat_due_at(False), 1060)
+                self.assertTrue(store.mark_sent(store.due_outbox()[0].id))
+            self.assertEqual(store.next_heartbeat_due_at(False), 1180)
             store.close()
 
     def test_expected_reply_requires_a_visible_turn_message(self) -> None:
@@ -2398,10 +2395,10 @@ class StorageMemoryTest(unittest.TestCase):
             )
             store._db.execute("UPDATE self_state SET next_heartbeat_at=4900 WHERE id=1")
             with patch("momoi.storage.delivery.time.time", return_value=1000):
-                self.assertTrue(store.mark_sent(store.due_outbox()[0].id, 60))
+                self.assertTrue(store.mark_sent(store.due_outbox()[0].id))
             state = store.self_state()
             self.assertEqual(state["next_heartbeat_at"], 4900)
-            self.assertEqual(state["pending_reply_next_check_at"], 1060)
+            self.assertEqual(state["pending_reply_next_check_at"], 1180)
 
             store.add_event(
                 IncomingMessage("answer", "answer", "我喜欢求稳", 1020, 1020)
@@ -2431,8 +2428,6 @@ class StorageMemoryTest(unittest.TestCase):
                     reason="这段等待已经自然结束",
                     pending_reply_turn_id="question",
                     continue_waiting=False,
-                    initial_interval_seconds=180,
-                    followup_interval_seconds=420,
                 )
             self.assertIsNone(store.pending_owner_reply(1100))
             self.assertEqual(
@@ -2499,8 +2494,6 @@ class StorageMemoryTest(unittest.TestCase):
                     reason="仍然想听主人回答",
                     pending_reply_turn_id="question",
                     continue_waiting=True,
-                    initial_interval_seconds=180,
-                    followup_interval_seconds=420,
                 )
             self.assertIsNone(store.pending_owner_reply(1100))
             self.assertIsNone(store.next_heartbeat_due_at(False))
@@ -2770,8 +2763,8 @@ class StorageMemoryTest(unittest.TestCase):
             )
             store._db.execute("UPDATE self_state SET next_heartbeat_at=1030 WHERE id=1")
             with patch("momoi.storage.delivery.time.time", return_value=1000):
-                self.assertTrue(store.mark_sent(store.due_outbox()[0].id, 60))
-            self.assertEqual(store.next_heartbeat_due_at(False), 1060)
+                self.assertTrue(store.mark_sent(store.due_outbox()[0].id))
+            self.assertEqual(store.next_heartbeat_due_at(False), 1180)
             self.assertEqual(store.next_heartbeat_due_at(True), 1030)
             store.close()
 

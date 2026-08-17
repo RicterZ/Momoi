@@ -67,9 +67,7 @@
     "enabled": false,
     "initial_delay_seconds": 900,
     "min_interval_seconds": 1800,
-    "max_interval_seconds": 5400,
-    "reply_initial_interval_seconds": 180,
-    "reply_followup_interval_seconds": 420
+    "max_interval_seconds": 5400
   },
   "autonomy": {
     "allowed_tools": [

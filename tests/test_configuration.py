@@ -168,8 +168,8 @@ class ConfigurationTest(unittest.TestCase):
                 (root / "prompts" / "HEARTBEAT.md").resolve(),
             )
             self.assertEqual(config.heartbeat.max_interval_seconds, 5400)
-            self.assertEqual(config.heartbeat.reply_initial_interval_seconds, 180)
-            self.assertEqual(config.heartbeat.reply_followup_interval_seconds, 420)
+            self.assertFalse(hasattr(config.heartbeat, "reply_initial_interval_seconds"))
+            self.assertFalse(hasattr(config.heartbeat, "reply_followup_interval_seconds"))
             self.assertEqual(config.dashboard.token, "")
 
             (root / "prompts" / "HEARTBEAT.md").unlink()

@@ -454,7 +454,6 @@ class WebhookService:
         complete_turn: Callable[[str, str], Awaitable[AgentReply]],
         wake_outbox: Callable[[], None],
         primary_channel: str = "",
-        reply_initial_delay: float = 60,
     ) -> None:
         if config.workflows is None or config.executors is None:
             raise WorkflowError("webhook paths are not configured")
@@ -464,7 +463,6 @@ class WebhookService:
         self.complete_turn = complete_turn
         self.wake_outbox = wake_outbox
         self.primary_channel = primary_channel
-        self.reply_initial_delay = reply_initial_delay
         self.workflows, self.executors = load_catalog(
             config.workflows, config.executors, set(channel_variables)
         )
@@ -615,7 +613,6 @@ class WebhookService:
                         turn_id,
                         reply,
                         self.primary_channel,
-                        self.reply_initial_delay,
                     )
                     if not outbox_ids:
                         continue

@@ -14,6 +14,10 @@ from ..logging_context import log_context, log_event, new_trace_id, safe_preview
 from ..memory_tools import MEMORY_TOOL_SPECS
 from ..models import AgentReply, IncomingMessage, ProviderResponse, TurnDraft
 from ..provider import ProviderError
+from ..reply_wait import (
+    REPLY_WAIT_FIRST_CHECK_SECONDS,
+    REPLY_WAIT_FOLLOWUP_DELAY_SECONDS,
+)
 from ..storage import estimate_tokens, truncate_tokens
 from ..text_replacement import cyber_keyword_pre_hook
 from .context_assembler import (
@@ -453,7 +457,6 @@ class TurnOrchestrator:
             AgentReply([failure_message]),
             turn_id=turn_id,
             target_channel=channel.name,
-            reply_initial_delay=self.config.heartbeat.reply_initial_interval_seconds,
         )
         self.outbox_changed.set()
         self.store.record_turn_failure(turn_id, failure_reason)
@@ -741,9 +744,9 @@ class TurnOrchestrator:
         if claim_kind != "reply" or not pending:
             return self.config.heartbeat.min_interval_seconds
         return (
-            self.config.heartbeat.reply_initial_interval_seconds
+            REPLY_WAIT_FIRST_CHECK_SECONDS
             if int(pending["heartbeat_checks"]) == 0
-            else self.config.heartbeat.reply_followup_interval_seconds
+            else REPLY_WAIT_FOLLOWUP_DELAY_SECONDS
         )
 
     @staticmethod
@@ -884,7 +887,6 @@ class TurnOrchestrator:
             draft,
             turn_id=turn_id,
             target_channel=channel.name,
-            reply_initial_delay=self.config.heartbeat.reply_initial_interval_seconds,
         )
         log_event(
             logger,
@@ -951,7 +953,7 @@ class TurnOrchestrator:
         later_check_available = int(pending.get("heartbeat_checks") or 0) == 0
         model_pending["later_check_available"] = later_check_available
         model_pending["later_check_in_minutes"] = (
-            int(self.config.heartbeat.reply_followup_interval_seconds / 60)
+            int(REPLY_WAIT_FOLLOWUP_DELAY_SECONDS / 60)
             if later_check_available
             else None
         )
@@ -1027,12 +1029,6 @@ class TurnOrchestrator:
             continue_waiting=bool(reply.reply_wait["continue_waiting"]),
             reason=str(reply.reply_wait["reason"]),
             mood_update=reply.mood_update,
-            initial_interval_seconds=(
-                self.config.heartbeat.reply_initial_interval_seconds
-            ),
-            followup_interval_seconds=(
-                self.config.heartbeat.reply_followup_interval_seconds
-            ),
             notification_channel=delivery_channel.name,
         )
         self.agenda_changed.set()
@@ -1257,9 +1253,6 @@ class TurnOrchestrator:
             ),
             draft=draft,
             memory_events=memory_events,
-            reply_initial_interval_seconds=(
-                self.config.heartbeat.reply_initial_interval_seconds
-            ),
             notification_channel=delivery_channel.name,
         )
         self.agenda_changed.set()

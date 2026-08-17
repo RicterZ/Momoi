@@ -148,7 +148,6 @@ class MomoiDaemon(TurnRunner):
                 self._request_webhook_turn,
                 self.outbox_changed.set,
                 self.channel.name,
-                config.heartbeat.reply_initial_interval_seconds,
             )
             if config.webhooks.enabled
             else None
@@ -874,10 +873,7 @@ class MomoiDaemon(TurnRunner):
                         duration_ms=int((monotonic() - send_started) * 1000),
                     )
                 else:
-                    reply_waiting = self.store.mark_sent(
-                        row.id,
-                        self.config.heartbeat.reply_initial_interval_seconds,
-                    )
+                    reply_waiting = self.store.mark_sent(row.id)
                     if reply_waiting:
                         self.agenda_changed.set()
                     previous_delivery = delivery
