@@ -12,6 +12,7 @@ from momoi.runtime.context_assembler import (
     assemble_main_context,
     assemble_recent_turns,
     build_plan_retrieval,
+    project_recent_turns_for_planner,
     recall_episode_context,
 )
 from momoi.storage import Store, estimate_tokens
@@ -177,6 +178,49 @@ class ContextAssemblerTest(unittest.TestCase):
             self.assertEqual(parsed["version"], 1)
             self.assertEqual(parsed["turns"][0]["turn_id"], "turn-correction")
             self.assertIn("meme.example", rendered)
+
+            projected = project_recent_turns_for_planner(document)
+            projected_record = projected["turns"][0]
+            projected_timeline = projected_record["timeline"]
+            tool_call = next(
+                item for item in projected_timeline if item["type"] == "tool_call"
+            )
+            tool_result = next(
+                item for item in projected_timeline if item["type"] == "tool_result"
+            )
+            self.assertEqual(tool_call["call"], "t1")
+            self.assertEqual(tool_result["call"], "t1")
+            self.assertEqual(tool_call["name"], "memory_remember")
+            self.assertEqual(
+                tool_call["arguments"],
+                {
+                    "kind": "shared",
+                    "key": "meme.example",
+                    "content": "一个待更正的解释",
+                    "evidence": "这是个双关",
+                },
+            )
+            self.assertEqual(tool_result["result"], {"ok": True, "state": "staged"})
+            self.assertTrue(tool_result["ok"])
+            self.assertNotIn("tool_call_id", tool_call)
+            self.assertNotIn("source", tool_call)
+            self.assertNotIn("trust", tool_result)
+            self.assertNotIn("llm", projected_record["final"])
+            owner_message = next(
+                item
+                for item in projected_timeline
+                if item["type"] == "owner_message"
+            )
+            self.assertEqual(owner_message["text"], "这是个双关")
+            self.assertEqual(owner_message["trust"], "owner")
+            self.assertEqual(
+                next(
+                    item
+                    for item in document["turns"][0]["timeline"]
+                    if item["type"] == "tool_call"
+                )["tool_call_id"],
+                "remember",
+            )
             store.close()
 
     def test_recent_episode_window_is_injected_without_keyword_recall(self) -> None:

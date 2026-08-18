@@ -663,6 +663,80 @@ def assemble_recent_turns(
     return document, rendered
 
 
+def project_recent_turns_for_planner(
+    document: dict[str, object],
+) -> dict[str, object]:
+    """Keep planner-relevant history while preserving complete tool semantics."""
+    projected_turns: list[dict[str, object]] = []
+    turns = document.get("turns")
+    for raw_turn in turns if isinstance(turns, list) else []:
+        if not isinstance(raw_turn, dict):
+            continue
+        turn = {
+            key: copy.deepcopy(value)
+            for key, value in raw_turn.items()
+            if key != "timeline"
+        }
+        final = turn.get("final")
+        if isinstance(final, dict):
+            final.pop("llm", None)
+            final.pop("state", None)
+            final.pop("channel", None)
+
+        call_ids: dict[str, str] = {}
+
+        def call_ref(value: object) -> str:
+            raw = str(value or "")
+            if not raw:
+                return ""
+            if raw not in call_ids:
+                call_ids[raw] = f"t{len(call_ids) + 1}"
+            return call_ids[raw]
+
+        timeline: list[dict[str, object]] = []
+        raw_timeline = raw_turn.get("timeline")
+        for raw_item in raw_timeline if isinstance(raw_timeline, list) else []:
+            if not isinstance(raw_item, dict):
+                continue
+            item_type = str(raw_item.get("type") or "")
+            if item_type == "tool_call":
+                timeline.append(
+                    {
+                        "type": item_type,
+                        "call": call_ref(raw_item.get("tool_call_id")),
+                        "name": copy.deepcopy(raw_item.get("name")),
+                        "arguments": copy.deepcopy(raw_item.get("arguments")),
+                        "timestamp": copy.deepcopy(raw_item.get("timestamp")),
+                        "visibility": copy.deepcopy(raw_item.get("visibility")),
+                    }
+                )
+                continue
+            if item_type == "tool_result":
+                timeline.append(
+                    {
+                        "type": item_type,
+                        "call": call_ref(raw_item.get("tool_call_id")),
+                        "name": copy.deepcopy(raw_item.get("name")),
+                        "ok": copy.deepcopy(raw_item.get("ok")),
+                        "error": copy.deepcopy(raw_item.get("error")),
+                        "result": copy.deepcopy(raw_item.get("result")),
+                        "timestamp": copy.deepcopy(raw_item.get("timestamp")),
+                        "visibility": copy.deepcopy(raw_item.get("visibility")),
+                    }
+                )
+                continue
+            if item_type in {"owner_message", "assistant_message", "event"}:
+                timeline.append(copy.deepcopy(raw_item))
+                continue
+            timeline.append(copy.deepcopy(raw_item))
+        turn["timeline"] = timeline
+        projected_turns.append(turn)
+    return {
+        "version": document.get("version", 1),
+        "turns": projected_turns,
+    }
+
+
 def assemble_main_context(
     store: Store,
     retrieval: dict[str, object],

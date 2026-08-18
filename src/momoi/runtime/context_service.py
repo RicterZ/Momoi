@@ -12,6 +12,7 @@ from .context_assembler import (
     assemble_main_context,
     assemble_recent_turns,
     build_plan_retrieval,
+    project_recent_turns_for_planner,
 )
 from .context_candidates import DEFAULT_EPISODE_CANDIDATE_POLICY, EpisodeCandidatePolicy, collect_episode_candidates, full_candidate_context
 from .context_planner import (
@@ -68,6 +69,7 @@ class ContextService:
             for turn in recent_turns.get("turns", [])
             if isinstance(turn, dict)
         ]
+        planner_recent_turns = project_recent_turns_for_planner(recent_turns)
         candidates = collect_episode_candidates(
             self.store,
             owner_query,
@@ -157,7 +159,7 @@ class ContextService:
                     {
                         "candidate_goals": candidate_goals,
                         "candidate_reminders": candidate_reminders,
-                        "recent_turns": recent_turns,
+                        "recent_turns": planner_recent_turns,
                         "candidate_episodes": candidate_context,
                         "owner_messages": owner_messages,
                     },
