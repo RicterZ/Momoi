@@ -363,6 +363,8 @@ class ConfigurationTest(unittest.TestCase):
                     "MOMOI_WEBHOOKS_ENABLED": "true",
                     "MOMOI_WEBHOOKS_HOST": "0.0.0.0",
                     "MOMOI_WEBHOOKS_TOKEN": "env-hook",
+                    "MOMOI_ASR_SECRET_ID": "env-asr-id",
+                    "MOMOI_ASR_SECRET_KEY": "env-asr-key",
                 },
                 clear=False,
             ):
@@ -382,6 +384,8 @@ class ConfigurationTest(unittest.TestCase):
             self.assertTrue(config.webhooks.enabled)
             self.assertEqual(config.webhooks.host, "0.0.0.0")
             self.assertEqual(config.webhooks.token, "env-hook")
+            self.assertEqual(config.asr.settings["secret_id"], "env-asr-id")  # type: ignore[index]
+            self.assertEqual(config.asr.settings["secret_key"], "env-asr-key")  # type: ignore[index]
 
     def test_dashboard_flag_requires_token(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

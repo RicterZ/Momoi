@@ -101,6 +101,41 @@ For Anthropic-compatible providers, Momoi calls `/v1/messages`. For OpenAI-compa
 | `MOMOI_WEBHOOKS_HOST` | `webhooks.host` |
 | `MOMOI_WEBHOOKS_TOKEN` | `webhooks.token` |
 | `MOMOI_USAGE_API_KEY` | `usage.api_key` |
+| `MOMOI_ASR_SECRET_ID` | `asr.settings.secret_id` |
+| `MOMOI_ASR_SECRET_KEY` | `asr.settings.secret_key` |
+
+## Inbound speech recognition
+
+```json
+{
+  "asr": {
+    "enabled": false,
+    "provider": "tencent",
+    "timeout_seconds": 30,
+    "max_audio_bytes": 3145728,
+    "settings": {
+      "secret_id": "replace-me",
+      "secret_key": "replace-me",
+      "region": "",
+      "engine": "16k_zh"
+    }
+  }
+}
+```
+
+| Field | Default | Description |
+| --- | --- | --- |
+| `enabled` | `false` | Enable ASR for inbound NapCat voice messages |
+| `provider` | `tencent` | Built-in `tencent`, or a dotted Python class naming an `ASRProvider` subclass |
+| `timeout_seconds` | `30` | Positive timeout for one provider request |
+| `max_audio_bytes` | `3145728` | Maximum audio size passed to the provider |
+| `settings` | `{}` | Arguments forwarded to the provider constructor |
+
+The built-in Tencent provider uses the sentence-recognition API. `secret_id` and `secret_key` are required when it is enabled; `region` may be empty and `engine` defaults to `16k_zh`. NapCat first asks `get_record` to convert the exclusive voice bubble to MP3. On success the Channel emits one ordinary text message; when ASR is disabled or fails it emits the `[QQ 语音消息暂时无法转写]` text placeholder. The database, batching pipeline, and LLM never receive an audio path, `record` segment, or ASR state.
+
+External ASR providers are currently injected into NapCat only. Weixin continues to use the platform-provided `voice_item.text` and never calls this provider.
+
+A custom provider must subclass `momoi.asr.ASRProvider` and implement async `transcribe(AudioInput) -> str`. `timeout_seconds` is forwarded to the constructor together with `settings`.
 
 ## Channel
 

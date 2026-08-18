@@ -101,6 +101,41 @@ MCP 是添加由模型控制能力的常规方式。工作流用于事件驱动�
 | `MOMOI_WEBHOOKS_HOST` | `webhooks.host` |
 | `MOMOI_WEBHOOKS_TOKEN` | `webhooks.token` |
 | `MOMOI_USAGE_API_KEY` | `usage.api_key` |
+| `MOMOI_ASR_SECRET_ID` | `asr.settings.secret_id` |
+| `MOMOI_ASR_SECRET_KEY` | `asr.settings.secret_key` |
+
+## 入站语音识别
+
+```json
+{
+  "asr": {
+    "enabled": false,
+    "provider": "tencent",
+    "timeout_seconds": 30,
+    "max_audio_bytes": 3145728,
+    "settings": {
+      "secret_id": "replace-me",
+      "secret_key": "replace-me",
+      "region": "",
+      "engine": "16k_zh"
+    }
+  }
+}
+```
+
+| 字段 | 默认值 | 说明 |
+| --- | --- | --- |
+| `enabled` | `false` | 为 NapCat 入站语音启用 ASR |
+| `provider` | `tencent` | 内置 `tencent`，或 `ASRProvider` 子类的 Python 点分类名 |
+| `timeout_seconds` | `30` | 单次 provider 请求的正数超时 |
+| `max_audio_bytes` | `3145728` | 送入 provider 前允许的最大音频字节数 |
+| `settings` | `{}` | 传给 provider 构造函数的参数 |
+
+内置 Tencent provider 使用一句话识别接口。启用时必须填写 `secret_id` 和 `secret_key`；`region` 可留空，`engine` 默认 `16k_zh`。NapCat 会先通过 `get_record` 把独占语音气泡转换为 MP3，再交给 provider。成功后，Channel 对下层只产生一条普通文本消息；ASR 关闭或失败时产生 `[QQ 语音消息暂时无法转写]` 文本占位。数据库、批处理和 LLM 不接收音频路径、`record` segment 或 ASR 状态。
+
+当前外部 ASR provider 只注入 NapCat。微信继续使用平台返回的 `voice_item.text`，不会调用这里配置的 provider。
+
+自定义 provider 需继承 `momoi.asr.ASRProvider` 并实现异步 `transcribe(AudioInput) -> str`。`timeout_seconds` 会和 `settings` 一起作为构造参数传入。
 
 ## Channel
 

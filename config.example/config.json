@@ -10,6 +10,18 @@
     "max_retries": 3,
     "tool_choice": true
   },
+  "asr": {
+    "enabled": false,
+    "provider": "tencent",
+    "timeout_seconds": 30,
+    "max_audio_bytes": 3145728,
+    "settings": {
+      "secret_id": "replace-me",
+      "secret_key": "replace-me",
+      "region": "",
+      "engine": "16k_zh"
+    }
+  },
   "channels": {
     "primary": "napcat",
     "enabled": {
