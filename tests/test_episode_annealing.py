@@ -7,6 +7,7 @@ from pathlib import Path
 
 from momoi.channel.napcat import NapCatConfig
 from momoi.config import AppConfig, LLMConfig
+from momoi.logging_context import current_log_context
 from momoi.models import AgentReply, IncomingMessage, ProviderResponse
 from momoi.runtime import MomoiDaemon
 from momoi.runtime.context_assembler import assemble_main_context
@@ -536,6 +537,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
 
             class Provider:
                 systems: list[object] = []
+                contexts: list[dict[str, object]] = []
 
                 async def complete(
                     provider_self,
@@ -545,6 +547,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                     **_: object,
                 ) -> ProviderResponse:
                     provider_self.systems.append(system)
+                    provider_self.contexts.append(current_log_context())
                     if system == EPISODE_CONSOLIDATION_SYSTEM_PROMPT:
                         payload = json.loads(str(messages[0]["content"]))
                         latest = payload["turns"][-1]["turn_id"]
@@ -610,6 +613,16 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                     EPISODE_CONSOLIDATION_SYSTEM_PROMPT,
                     EPISODE_SUMMARY_SYSTEM_PROMPT,
                 ],
+            )
+            self.assertEqual(
+                [context["stage"] for context in provider.contexts],
+                ["episode_consolidate", "episode_anneal"],
+            )
+            self.assertTrue(
+                all(context.get("turn_id") for context in provider.contexts)
+            )
+            self.assertTrue(
+                all(context.get("call_id") for context in provider.contexts)
             )
             self.assertEqual(
                 daemon.store._db.execute(

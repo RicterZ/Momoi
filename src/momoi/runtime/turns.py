@@ -176,12 +176,18 @@ class TurnRunner(
             }
         ]
         try:
-            response = await asyncio.wait_for(
-                self.provider.complete(
-                    EPISODE_CONSOLIDATION_SYSTEM_PROMPT, request, []
-                ),
-                timeout=self.config.episode_annealing.max_seconds,
-            )
+            call_id = new_trace_id()
+            with log_context(
+                stage="episode_consolidate",
+                turn_id=turn_id,
+                call_id=call_id,
+            ):
+                response = await asyncio.wait_for(
+                    self.provider.complete(
+                        EPISODE_CONSOLIDATION_SYSTEM_PROMPT, request, []
+                    ),
+                    timeout=self.config.episode_annealing.max_seconds,
+                )
             text = re.sub(
                 r"<think>.*?</think>",
                 "",
@@ -236,6 +242,7 @@ class TurnRunner(
                 "episode_consolidation_complete",
                 stage="episode_consolidate",
                 turn_id=turn_id,
+                call_id=call_id,
                 turns=len(turn_ids),
                 linked=linked,
                 deferred=deferred,
