@@ -734,6 +734,16 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual(tools, [CONTEXT_PLAN_TOOL_SPEC])
                         payload = json.loads(str(messages[0]["content"]))
                         self.assertEqual(
+                            list(payload),
+                            [
+                                "candidate_goals",
+                                "candidate_reminders",
+                                "recent_turns",
+                                "candidate_episodes",
+                                "owner_messages",
+                            ],
+                        )
+                        self.assertEqual(
                             payload["owner_messages"][0]["text"],
                             "刷微博，也看下之前等的邮件",
                         )

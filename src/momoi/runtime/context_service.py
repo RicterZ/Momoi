@@ -155,11 +155,11 @@ class ContextService:
                 "role": "user",
                 "content": json.dumps(
                     {
-                        "owner_messages": owner_messages,
-                        "recent_turns": recent_turns,
-                        "candidate_episodes": candidate_context,
                         "candidate_goals": candidate_goals,
                         "candidate_reminders": candidate_reminders,
+                        "recent_turns": recent_turns,
+                        "candidate_episodes": candidate_context,
+                        "owner_messages": owner_messages,
                     },
                     ensure_ascii=False,
                     separators=(",", ":"),
