@@ -60,6 +60,15 @@ class UsageConfig:
 
 
 @dataclass(frozen=True)
+class ASRConfig:
+    enabled: bool = False
+    provider: str = "tencent"
+    timeout_seconds: float = 30
+    max_audio_bytes: int = 3 * 1024 * 1024
+    settings: dict[str, object] | None = None
+
+
+@dataclass(frozen=True)
 class HeartbeatConfig:
     enabled: bool = False
     initial_delay_seconds: float = 900
@@ -120,6 +129,7 @@ class AppConfig:
     thinking: Path | None = None
     channels: tuple[object, ...] = ()
     policies: RuntimePolicies = RuntimePolicies()
+    asr: ASRConfig = ASRConfig()
 
     @property
     def channel_configs(self) -> tuple[object, ...]:
@@ -228,6 +238,15 @@ def _apply_env_overrides(raw: dict[str, Any]) -> None:
     usage = raw.setdefault("usage", {})
     if isinstance(usage, dict) and (value := _env("MOMOI_USAGE_API_KEY")):
         usage["api_key"] = value
+
+    asr = raw.setdefault("asr", {})
+    if isinstance(asr, dict):
+        settings = asr.setdefault("settings", {})
+        if isinstance(settings, dict):
+            if value := _env("MOMOI_ASR_SECRET_ID"):
+                settings["secret_id"] = value
+            if value := _env("MOMOI_ASR_SECRET_KEY"):
+                settings["secret_key"] = value
 
 
 def load_config(path: str | Path) -> AppConfig:
@@ -345,6 +364,27 @@ def load_config(path: str | Path) -> AppConfig:
         for key, value in usage_raw.items()
         if key not in {"provider", "api_key"}
     }
+    asr_raw = _mapping(raw.get("asr", {}), "asr")
+    asr_enabled = _boolean(asr_raw.get("enabled", False), "asr.enabled")
+    asr_provider = str(asr_raw.get("provider") or "tencent").strip()
+    if not asr_provider:
+        raise ConfigError("asr.provider must not be empty")
+    asr_settings = _mapping(asr_raw.get("settings", {}), "asr.settings")
+    asr_timeout = _positive(
+        asr_raw.get("timeout_seconds", 30), "asr.timeout_seconds"
+    )
+    asr_max_audio_bytes = int(asr_raw.get("max_audio_bytes", 3 * 1024 * 1024))
+    if asr_max_audio_bytes <= 0:
+        raise ConfigError("asr.max_audio_bytes must be positive")
+    if asr_enabled and asr_provider == "tencent":
+        if not str(asr_settings.get("secret_id") or "").strip():
+            raise ConfigError(
+                "asr.settings.secret_id is required when Tencent ASR is enabled"
+            )
+        if not str(asr_settings.get("secret_key") or "").strip():
+            raise ConfigError(
+                "asr.settings.secret_key is required when Tencent ASR is enabled"
+            )
     heartbeat_raw = _mapping(raw.get("heartbeat", {}), "heartbeat")
     autonomy_raw = _mapping(raw.get("autonomy", {}), "autonomy")
     reflection_raw = _mapping(raw.get("reflection", {}), "reflection")
@@ -496,4 +536,11 @@ def load_config(path: str | Path) -> AppConfig:
         heartbeat_prompt_path=heartbeat_path,
         thinking=thinking_dir,
         channels=channel_configs,
+        asr=ASRConfig(
+            enabled=asr_enabled,
+            provider=asr_provider,
+            timeout_seconds=asr_timeout,
+            max_audio_bytes=asr_max_audio_bytes,
+            settings=dict(asr_settings) or None,
+        ),
     )

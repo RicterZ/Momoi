@@ -13,6 +13,7 @@ from momoi.agenda_tools import AgendaTools
 from momoi.channel.napcat import NapCatConfig
 from momoi.channel.weixin import WeixinConfig
 from momoi.config import (
+    ASRConfig,
     ConfigError,
     DashboardConfig,
     NotificationConfig,
@@ -28,6 +29,53 @@ from momoi.storage import Store
 
 
 class ConfigurationTest(unittest.TestCase):
+    def test_loads_and_validates_asr_configuration(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "prompts").mkdir()
+            (root / "prompts" / "SOUL.md").write_text("Test soul")
+            path = root / "config.json"
+            value = {
+                "llm": {
+                    "base_url": "https://example.com",
+                    "api_key": "key",
+                    "model": "model",
+                },
+                "channel": {
+                    "plugin": "napcat",
+                    "settings": {"url": "ws://localhost", "owner_qq": "123"},
+                },
+                "context": {},
+                "storage": {"database": "momoi.sqlite3"},
+                "logging": {},
+            }
+            path.write_text(json.dumps(value))
+            config = load_config(path)
+            self.assertEqual(config.asr, ASRConfig())
+
+            value["asr"] = {
+                "enabled": True,
+                "provider": "tencent",
+                "timeout_seconds": 12,
+                "max_audio_bytes": 1024,
+                "settings": {
+                    "secret_id": "id",
+                    "secret_key": "secret",
+                    "region": "ap-shanghai",
+                },
+            }
+            path.write_text(json.dumps(value))
+            config = load_config(path)
+            self.assertTrue(config.asr.enabled)
+            self.assertEqual(config.asr.timeout_seconds, 12)
+            self.assertEqual(config.asr.max_audio_bytes, 1024)
+            self.assertEqual(config.asr.settings["region"], "ap-shanghai")  # type: ignore[index]
+
+            value["asr"]["settings"]["secret_key"] = ""  # type: ignore[index]
+            path.write_text(json.dumps(value))
+            with self.assertRaisesRegex(ConfigError, "secret_key is required"):
+                load_config(path)
+
     def test_loads_multiple_channels_and_validates_primary(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
