@@ -11,7 +11,7 @@ from urllib.parse import quote, urlparse
 
 import aiohttp
 
-from .. import AmbiguousSend, NotConnected, SendRejected
+from .. import AmbiguousSend, IncomingVoice, NotConnected, SendRejected
 from ...logging_context import log_event
 from .api import WeixinAPI, WeixinHTTPError
 from .config import WeixinConfig, WeixinState
@@ -263,12 +263,18 @@ class WeixinChannel:
             {2: "image_item", 3: "voice_item", 4: "file_item", 5: "video_item"}[kind]
         )
         value = value if isinstance(value, dict) else {}
-        if kind == MESSAGE_VOICE and str(value.get("text") or "").strip():
+        if kind == MESSAGE_VOICE:
+            converted = await self.convert_voice(
+                IncomingVoice(native_text=str(value.get("text") or ""))
+            )
+        else:
+            converted = None
+        if converted:
             return [
                 {
                     "type": "text",
                     "data": {
-                        "text": str(value["text"]).strip(),
+                        "text": converted,
                         "source": "weixin_voice_transcription",
                     },
                 }
@@ -303,6 +309,9 @@ class WeixinChannel:
                 "unavailable": True,
             }
         return [{"type": segment_type, "data": data}]
+
+    async def convert_voice(self, voice: IncomingVoice) -> str | None:
+        return voice.native_text.strip() or None
 
     async def send_message(self, payload: dict[str, Any]) -> str:
         if payload.get("action") == "forward":

@@ -9,7 +9,7 @@ from unittest.mock import patch
 import aiohttp
 from aiohttp import web
 
-from momoi.channel import AmbiguousSend, SendRejected, create_channel
+from momoi.channel import AmbiguousSend, IncomingVoice, SendRejected, create_channel
 from momoi.channel.weixin import (
     WeixinChannel,
     WeixinConfig,
@@ -37,6 +37,17 @@ async def serve(handler):
 
 
 class WeixinTest(unittest.TestCase):
+    def test_weixin_voice_conversion_uses_native_text(self) -> None:
+        async def run() -> None:
+            channel = WeixinChannel(self.config(tempfile.gettempdir()))
+            self.assertEqual(
+                await channel.convert_voice(IncomingVoice(native_text=" 平台转写 ")),
+                "平台转写",
+            )
+            self.assertIsNone(await channel.convert_voice(IncomingVoice()))
+
+        asyncio.run(run())
+
     def config(self, directory: str) -> WeixinConfig:
         return WeixinConfig.from_mapping({}, Path(directory))
 

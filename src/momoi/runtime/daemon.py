@@ -7,10 +7,12 @@ from time import monotonic
 from typing import Any
 
 from ..agenda_tools import AgendaTools
+from ..asr import ASRProvider, load_asr_provider
 from ..builtin_tools import BuiltinTools
 from ..channel import (
     AmbiguousSend,
     Channel,
+    ChannelDependencies,
     NotConnected,
     SendRejected,
     create_channel,
@@ -65,6 +67,7 @@ class MomoiDaemon(TurnRunner):
         config: AppConfig,
         channel: Channel | None = None,
         dashboard: tuple[str, int] | None = None,
+        asr_provider: ASRProvider | None = None,
     ) -> None:
         self.config = config
         self.daemon_policy = config.policies.daemon
@@ -103,10 +106,27 @@ class MomoiDaemon(TurnRunner):
         self.agenda_tools = AgendaTools(self.store)
         self.memory_tools = MemoryTools(self.store, config.policies.memory)
         self.builtin_tools = BuiltinTools(config.workspace or config.database.parent)
+        self.asr_provider = asr_provider if config.asr.enabled else None
+        if config.asr.enabled and self.asr_provider is None:
+            settings = dict(config.asr.settings or {})
+            settings.setdefault("timeout_seconds", config.asr.timeout_seconds)
+            self.asr_provider = load_asr_provider(config.asr.provider, **settings)
+
+        def build_channel(item: object) -> Channel:
+            dependencies = (
+                ChannelDependencies(
+                    asr_provider=self.asr_provider,
+                    asr_max_audio_bytes=config.asr.max_audio_bytes,
+                )
+                if getattr(item, "plugin", "") == "napcat"
+                else None
+            )
+            return create_channel(item, dependencies)
+
         created = (
             (channel,)
             if channel is not None
-            else tuple(create_channel(item) for item in config.channel_configs)
+            else tuple(build_channel(item) for item in config.channel_configs)
         )
         self.channels = {item.name: item for item in created}
         if len(self.channels) != len(created):

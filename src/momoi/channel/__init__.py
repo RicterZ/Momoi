@@ -3,9 +3,11 @@ import importlib
 import json
 import re
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
+from ..asr import ASRProvider
 from ..models import IncomingMessage, OwnerInputStatus
 
 
@@ -33,6 +35,19 @@ class SendRejected(ChannelError):
     pass
 
 
+@dataclass(frozen=True)
+class IncomingVoice:
+    source: str = ""
+    native_text: str = ""
+    format: str = ""
+
+
+@dataclass(frozen=True)
+class ChannelDependencies:
+    asr_provider: ASRProvider | None = None
+    asr_max_audio_bytes: int = 3 * 1024 * 1024
+
+
 class Channel(Protocol):
     name: str
     prompt_context: str
@@ -51,6 +66,8 @@ class Channel(Protocol):
 
     def workflow_variables(self) -> dict[str, str]: ...
 
+    async def convert_voice(self, voice: IncomingVoice) -> str | None: ...
+
 
 def load_channel_config(name: str, value: object, workspace: Path) -> Any:
     loader = getattr(_plugin(name), "load_config", None)
@@ -59,12 +76,14 @@ def load_channel_config(name: str, value: object, workspace: Path) -> Any:
     return loader(value, workspace)
 
 
-def create_channel(config: Any) -> Channel:
+def create_channel(
+    config: Any, dependencies: ChannelDependencies | None = None
+) -> Channel:
     name = str(getattr(config, "plugin", ""))
     factory = getattr(_plugin(name), "create_channel", None)
     if not callable(factory):
         raise ValueError(f"channel plugin has no factory: {name}")
-    return factory(config)
+    return factory(config, dependencies)
 
 
 async def login_channel(config: Any) -> None:

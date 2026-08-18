@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 
+from momoi.asr import ASRProvider, AudioInput
 from momoi.channel import (
     NotConnected,
     SendRejected,
@@ -18,6 +19,7 @@ from momoi.channel.napcat import (
     image_blocks,
     incoming_segments,
     render_segments,
+    VOICE_UNAVAILABLE_TEXT,
 )
 from momoi.channel.weixin import WeixinConfig
 from momoi.config import (
@@ -39,6 +41,76 @@ from tests.support import with_context_planner
 
 
 class MessagingTest(unittest.TestCase):
+    def test_napcat_converts_voice_bubbles_before_emitting_message(self) -> None:
+        class Provider(ASRProvider):
+            def __init__(self) -> None:
+                self.inputs: list[AudioInput] = []
+
+            async def transcribe(self, audio: AudioInput) -> str:
+                self.inputs.append(audio)
+                return "语音转写结果"
+
+        async def run() -> None:
+            provider = Provider()
+            client = NapCatChannel(
+                NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                provider,
+                1024,
+            )
+            requests: list[tuple[str, dict[str, object]]] = []
+
+            async def request(
+                action: str, params: dict[str, object]
+            ) -> dict[str, object]:
+                requests.append((action, params))
+                return {
+                    "status": "ok",
+                    "retcode": 0,
+                    "data": {"base64": base64.b64encode(b"voice").decode()},
+                }
+
+            client._request_action = request  # type: ignore[method-assign]
+            accepted: list[IncomingMessage] = []
+
+            async def receive(message: IncomingMessage) -> None:
+                accepted.append(message)
+
+            payload = {
+                "post_type": "message",
+                "message_type": "private",
+                "self_id": 10000,
+                "user_id": 20000,
+                "message_id": 1,
+                "message": [{"type": "record", "data": {"file": "voice.silk"}}],
+            }
+            await client._handle_payload(payload, receive)
+
+            self.assertEqual(
+                requests,
+                [("get_record", {"file": "voice.silk", "out_format": "mp3"})],
+            )
+            self.assertEqual(provider.inputs, [AudioInput(b"voice", "mp3")])
+            self.assertEqual(accepted[0].text, "语音转写结果")
+            self.assertEqual(
+                accepted[0].segments,
+                ({"type": "text", "data": {"text": "语音转写结果"}},),
+            )
+
+            disabled = NapCatChannel(
+                NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20)
+            )
+            placeholders: list[IncomingMessage] = []
+
+            async def receive_disabled(message: IncomingMessage) -> None:
+                placeholders.append(message)
+
+            await disabled._handle_payload(payload, receive_disabled)
+            self.assertEqual(placeholders[0].text, VOICE_UNAVAILABLE_TEXT)
+            self.assertEqual(placeholders[0].segments[0]["type"], "text")
+            self.assertNotIn("voice.silk", str(placeholders[0].segments))
+
+        asyncio.run(run())
+
     def test_napcat_forwards_only_owner_input_status_notices(self) -> None:
         async def run() -> None:
             client = NapCatChannel(

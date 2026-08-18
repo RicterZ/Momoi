@@ -14,15 +14,19 @@ import aiohttp
 
 from .. import (
     AmbiguousSend,
+    ChannelDependencies,
     ChannelError,
+    IncomingVoice,
     NotConnected,
     SendRejected,
 )
+from ...asr import ASRProvider, AudioInput
 from ...logging_context import log_event
 from ...models import IncomingMessage, OwnerInputStatus
 from .face_names import QQ_FACE_NAMES
 
 logger = logging.getLogger(__name__)
+VOICE_UNAVAILABLE_TEXT = "[QQ 语音消息暂时无法转写]"
 
 
 @dataclass(frozen=True)
@@ -78,8 +82,15 @@ class NapCatChannel:
     name = "napcat"
     prompt_context = "Authenticated private QQ conversation through NapCat with the single owner."
 
-    def __init__(self, config: NapCatConfig) -> None:
+    def __init__(
+        self,
+        config: NapCatConfig,
+        asr_provider: ASRProvider | None = None,
+        asr_max_audio_bytes: int = 3 * 1024 * 1024,
+    ) -> None:
         self.config = config
+        self.asr_provider = asr_provider
+        self.asr_max_audio_bytes = asr_max_audio_bytes
         self.quiet_seconds = config.quiet_seconds
         self.max_batch_seconds = config.max_batch_seconds
         self._session: aiohttp.ClientSession | None = None
@@ -217,7 +228,8 @@ class NapCatChannel:
         ):
             return
         async with self._inbound_lock:
-            segments = await self._enrich_segments(incoming_segments(payload))
+            segments = await self._convert_voice_segments(incoming_segments(payload))
+            segments = await self._enrich_segments(segments)
             text = render_segments(segments)
             message_id = str(payload.get("message_id", ""))
             if not text or not message_id:
@@ -235,6 +247,63 @@ class NapCatChannel:
                     channel=self.name,
                 )
             )
+
+    async def _convert_voice_segments(
+        self, segments: tuple[dict[str, Any], ...]
+    ) -> tuple[dict[str, Any], ...]:
+        converted: list[dict[str, Any]] = []
+        for segment in segments:
+            if segment.get("type") != "record":
+                converted.append(segment)
+                continue
+            data = segment.get("data")
+            data = data if isinstance(data, dict) else {}
+            text = await self.convert_voice(
+                IncomingVoice(source=str(data.get("file") or ""))
+            )
+            converted.append(
+                {
+                    "type": "text",
+                    "data": {"text": text or VOICE_UNAVAILABLE_TEXT},
+                }
+            )
+        return tuple(converted)
+
+    async def convert_voice(self, voice: IncomingVoice) -> str | None:
+        provider = self.asr_provider
+        if provider is None:
+            return VOICE_UNAVAILABLE_TEXT
+        if not voice.source.strip():
+            return VOICE_UNAVAILABLE_TEXT
+        try:
+            response = await self._request_action(
+                "get_record",
+                {"file": voice.source.strip(), "out_format": "mp3"},
+            )
+            data = response.get("data")
+            encoded = data.get("base64") if isinstance(data, dict) else None
+            if not isinstance(encoded, str) or not encoded:
+                raise ValueError("get_record returned no audio")
+            content = base64.b64decode(encoded, validate=True)
+            if not content:
+                raise ValueError("get_record returned empty audio")
+            if len(content) > self.asr_max_audio_bytes:
+                raise ValueError("audio exceeds ASR size limit")
+            text = (await provider.transcribe(AudioInput(content, "mp3"))).strip()
+            if not text:
+                raise ValueError("ASR returned empty text")
+            return text
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            log_event(
+                logger,
+                logging.WARNING,
+                "channel_voice_conversion_failure",
+                channel=self.name,
+                error_type=type(error).__name__,
+            )
+            return VOICE_UNAVAILABLE_TEXT
 
     async def _enrich_segments(
         self, segments: tuple[dict[str, Any], ...]
@@ -527,10 +596,17 @@ def load_config(value: object, _workspace: Path) -> NapCatConfig:
     return NapCatConfig.from_mapping(value)
 
 
-def create_channel(config: object) -> NapCatChannel:
+def create_channel(
+    config: object, dependencies: ChannelDependencies | None = None
+) -> NapCatChannel:
     if not isinstance(config, NapCatConfig):
         raise ValueError("napcat requires NapCatConfig")
-    return NapCatChannel(config)
+    dependencies = dependencies or ChannelDependencies()
+    return NapCatChannel(
+        config,
+        dependencies.asr_provider,
+        dependencies.asr_max_audio_bytes,
+    )
 
 
 def incoming_segments(payload: dict[str, Any]) -> tuple[dict[str, Any], ...]:
