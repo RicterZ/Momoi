@@ -83,7 +83,7 @@ def create_channel(
     factory = getattr(_plugin(name), "create_channel", None)
     if not callable(factory):
         raise ValueError(f"channel plugin has no factory: {name}")
-    return factory(config, dependencies)
+    return factory(config) if dependencies is None else factory(config, dependencies)
 
 
 async def login_channel(config: Any) -> None:

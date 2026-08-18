@@ -3,7 +3,6 @@ from pathlib import Path
 
 import aiohttp
 
-from .. import ChannelDependencies
 from .api import login as _login
 from .channel import WeixinChannel, render_segments
 from .config import WeixinConfig, WeixinState
@@ -13,9 +12,7 @@ def load_config(value: object, workspace: Path) -> WeixinConfig:
     return WeixinConfig.from_mapping(value, workspace)
 
 
-def create_channel(
-    config: object, _dependencies: ChannelDependencies | None = None
-) -> WeixinChannel:
+def create_channel(config: object) -> WeixinChannel:
     if not isinstance(config, WeixinConfig):
         raise ValueError("weixin requires WeixinConfig")
     return WeixinChannel(config)
