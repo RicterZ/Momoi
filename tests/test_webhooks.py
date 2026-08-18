@@ -388,8 +388,12 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                         "intensity": 0.5,
                         "cause": "门口出现需要关注的动态",
                     },
-                    expects_reply=True,
-                    reply_expectation="主人是否需要继续留意门口",
+                    reply_wait={
+                        "wait": True,
+                        "delay_minutes": 5,
+                        "expected_information": "主人是否需要继续留意门口",
+                        "reason": "门口动态需要主人决定是否继续观察",
+                    },
                 )
 
             service = WebhookService(
@@ -430,12 +434,15 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                 await asyncio.sleep(0.01)
             self.assertEqual(generated, ["门口检测到有人，请自然提醒我。"])
             self.assertEqual(rows[0].text, "门口好像有人，需要我继续帮你留意吗？")
-            self.assertEqual(
+            stored_wait = json.loads(
                 store._db.execute(
                     "SELECT reply_expectation FROM outbox WHERE id=?", (rows[0].id,)
-                ).fetchone()[0],
-                "主人是否需要继续留意门口",
+                ).fetchone()[0]
             )
+            self.assertEqual(
+                stored_wait["expected_information"], "主人是否需要继续留意门口"
+            )
+            self.assertEqual(stored_wait["delay_minutes"], 5)
             self.assertEqual(store.self_state()["mood_state"], "focused")
             self.assertEqual(
                 store.webhook_run(str(first["id"]))["state"], "waiting_delivery"

@@ -8,8 +8,8 @@ class TurnCommitter:
     def _commit_autonomous(self, *args: Any, **kwargs: Any) -> str:
         return self.store.commit_autonomous_turn(*args, **kwargs)
 
-    def _commit_reply_wait_state(self, *args: Any, **kwargs: Any) -> int:
-        return self.store.commit_reply_wait(*args, **kwargs)
+    def _commit_reply_followup_state(self, *args: Any, **kwargs: Any) -> int:
+        return self.store.commit_reply_followup(*args, **kwargs)
 
     def _commit_heartbeat_state(self, *args: Any, **kwargs: Any) -> int:
         return self.store.commit_heartbeat(*args, **kwargs)

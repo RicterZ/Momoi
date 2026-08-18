@@ -14,10 +14,7 @@ from ..logging_context import log_context, log_event, new_trace_id, safe_preview
 from ..memory_tools import MEMORY_TOOL_SPECS
 from ..models import AgentReply, IncomingMessage, ProviderResponse, TurnDraft
 from ..provider import ProviderError
-from ..reply_wait import (
-    REPLY_WAIT_FIRST_CHECK_SECONDS,
-    REPLY_WAIT_FOLLOWUP_DELAY_SECONDS,
-)
+from ..reply_wait import REPLY_FOLLOWUP_RETRY_SECONDS
 from ..storage import estimate_tokens, truncate_tokens
 from ..text_replacement import cyber_keyword_pre_hook
 from .context_assembler import (
@@ -30,10 +27,8 @@ from .protocol import (
     AUTONOMOUS_FINISH_SPEC,
     CURL_TOOL_SPEC,
     REFLECTION_FINISH_SPEC,
-    REPLY_EXPECTATION_CLOSE_SPEC,
     RESPOND_TOOL_SPEC,
     heartbeat_respond_tool_spec,
-    reply_wait_respond_tool_spec,
 )
 from .turn_support import (
     ExternalToolTurnError,
@@ -224,7 +219,7 @@ class TurnOrchestrator:
                     ("active_goals", recalled["goals"]),
                     ("pending_reminders", recalled["reminders"]),
                     (
-                        "cooled_reply_expectation",
+                        "interrupted_reply_expectation",
                         self.store.cooled_reply_expectation_context(),
                     ),
                 ),
@@ -627,7 +622,7 @@ class TurnOrchestrator:
                 else state.get("next_heartbeat_at")
             )
         )
-        turn_kind = "reply-wait" if claim_kind == "reply" else "heartbeat"
+        turn_kind = "reply-followup" if claim_kind == "reply" else "heartbeat"
         turn_id = self._turn_id(turn_kind, scheduled_at)
         turn_state = self.store.begin_turn(
             turn_id, "autonomous", [f"{turn_kind}:{scheduled_at}"]
@@ -743,11 +738,7 @@ class TurnOrchestrator:
         pending = self.store.pending_owner_reply()
         if claim_kind != "reply" or not pending:
             return self.config.heartbeat.min_interval_seconds
-        return (
-            REPLY_WAIT_FIRST_CHECK_SECONDS
-            if int(pending["heartbeat_checks"]) == 0
-            else REPLY_WAIT_FOLLOWUP_DELAY_SECONDS
-        )
+        return REPLY_FOLLOWUP_RETRY_SECONDS
 
     @staticmethod
     def _render_batch(batch: list[IncomingMessage]) -> str:
@@ -842,7 +833,7 @@ class TurnOrchestrator:
             ("active_goals", recalled["goals"]),
             ("pending_reminders", recalled["reminders"]),
             (
-                "cooled_reply_expectation",
+                "interrupted_reply_expectation",
                 self.store.cooled_reply_expectation_context(),
             ),
             ("open_reconciliations", reconciliations),
@@ -934,31 +925,8 @@ class TurnOrchestrator:
             self.config.notifications,
             apply_cooldown=False,
         )
-        recent, _ = assemble_recent_conversation(
-            self.store, self.config.recent_turns, self.config.recent_raw_tokens
-        )
-        model_pending = {
-            key: pending.get(key)
-            for key in (
-                "source_turn",
-                "source_messages",
-                "expected_response",
-                "waiting_since",
-                "waiting_minutes",
-                "previous_check_reason",
-                "followup_attempts",
-                "delivered_followups",
-            )
-        }
-        later_check_available = int(pending.get("heartbeat_checks") or 0) == 0
-        model_pending["later_check_available"] = later_check_available
-        model_pending["later_check_in_minutes"] = (
-            int(REPLY_WAIT_FOLLOWUP_DELAY_SECONDS / 60)
-            if later_check_available
-            else None
-        )
         current_input = _sections(
-            ("pending_owner_reply", json.dumps(model_pending, ensure_ascii=False)),
+            ("pending_owner_reply", json.dumps(pending, ensure_ascii=False)),
             (
                 "runtime_state",
                 (
@@ -978,7 +946,6 @@ class TurnOrchestrator:
                     separators=(",", ":"),
                 ),
             ),
-            ("recent_conversation", recent),
         )
         system = [
             *self._system(),
@@ -1005,12 +972,12 @@ class TurnOrchestrator:
             messages,
             [
                 self._send_message_tool_spec(delivery_channel.name),
-                reply_wait_respond_tool_spec(),
+                RESPOND_TOOL_SPEC,
             ],
             [],
             TurnDraft(),
             authority="agent",
-            source_event_id=f"reply-wait:{turn_id}",
+            source_event_id=f"reply-followup:{turn_id}",
             allow_notify=False,
             turn_id=turn_id,
             require_response=True,
@@ -1019,15 +986,18 @@ class TurnOrchestrator:
             heartbeat_notification_key=notification_key,
             delivery_channel=delivery_channel,
         )
-        if not isinstance(reply, AgentReply) or reply.reply_wait is None:
-            raise RuntimeError("Reply wait Turn ended without reply_wait state")
-        self._commit_reply_wait_state(
+        if reply is None:
+            self.store.clear_heartbeat_claim()
+            self.store.cancel_turn(turn_id)
+            return
+        if not isinstance(reply, AgentReply):
+            raise RuntimeError("Reply follow-up Turn ended without respond state")
+        self._commit_reply_followup_state(
             turn_id,
             owner_event_revision=owner_event_revision,
             notification_config=self.config.notifications,
             pending_reply_turn_id=str(pending["source_turn"]),
-            continue_waiting=bool(reply.reply_wait["continue_waiting"]),
-            reason=str(reply.reply_wait["reason"]),
+            reason=str(pending["reason"]),
             mood_update=reply.mood_update,
             notification_channel=delivery_channel.name,
         )
@@ -1139,10 +1109,6 @@ class TurnOrchestrator:
                 ),
             ),
             (
-                "cooled_reply_expectation",
-                self.store.cooled_reply_expectation_context(),
-            ),
-            (
                 "heartbeat_plan",
                 json.dumps(
                     {
@@ -1195,7 +1161,6 @@ class TurnOrchestrator:
             *MEMORY_TOOL_SPECS,
             *AGENDA_TOOL_SPECS,
             *self._self_directed_tool_specs(),
-            REPLY_EXPECTATION_CLOSE_SPEC,
             self._send_message_tool_spec(delivery_channel.name),
             heartbeat_respond_tool_spec(),
         ]
@@ -1227,15 +1192,18 @@ class TurnOrchestrator:
         decision = {
             **reply.heartbeat,
             "messages": reply.messages,
-            "expects_reply": reply.expects_reply,
             "reply_expectation": reply.reply_expectation,
             "schedule_reply_wait": reply.should_schedule_reply_wait,
+            "reply_wait_minutes": reply.reply_wait_delay_minutes,
+            "reply_wait_reason": reply.reply_wait_reason,
             "mood_update": reply.mood_update,
         }
         if not contact_window["allowed"]:
             decision["messages"] = []
             decision["reply_expectation"] = ""
             decision["schedule_reply_wait"] = False
+            decision["reply_wait_minutes"] = 0
+            decision["reply_wait_reason"] = ""
         committed_messages = self._commit_heartbeat_state(
             turn_id,
             owner_event_revision=owner_event_revision,
@@ -1251,6 +1219,8 @@ class TurnOrchestrator:
                 if decision["schedule_reply_wait"]
                 else ""
             ),
+            reply_wait_minutes=decision["reply_wait_minutes"],
+            reply_wait_reason=decision["reply_wait_reason"],
             draft=draft,
             memory_events=memory_events,
             notification_channel=delivery_channel.name,

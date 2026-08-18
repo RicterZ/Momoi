@@ -28,11 +28,7 @@ from ..models import (
     TurnDraft,
 )
 from ..policies import MemoryPolicy
-from ..reply_wait import (
-    REPLY_WAIT_FIRST_CHECK_SECONDS,
-    REPLY_WAIT_FOLLOWUP_DELAY_SECONDS,
-    REPLY_WAIT_MAX_CHECKS,
-)
+from ..reply_wait import encode_reply_wait
 from ..search import (
     SearchBackend,
     StringSearchBackend,
@@ -414,9 +410,13 @@ class Store(MemoryStore, DeliveryStore):
             ("pending_reply_last_reason", "TEXT NOT NULL DEFAULT ''"),
             ("pending_reply_channel", "TEXT NOT NULL DEFAULT ''"),
             ("pending_reply_next_check_at", "REAL"),
+            ("pending_reply_delay_minutes", "INTEGER NOT NULL DEFAULT 0"),
             ("cooled_reply_expectation", "TEXT NOT NULL DEFAULT ''"),
             ("cooled_reply_source_turn_id", "TEXT NOT NULL DEFAULT ''"),
             ("cooled_reply_since", "REAL"),
+            ("cooled_reply_due_at", "REAL"),
+            ("cooled_reply_delay_minutes", "INTEGER NOT NULL DEFAULT 0"),
+            ("cooled_reply_waiting_since", "REAL"),
             ("cooled_reply_review_at", "REAL"),
             ("cooled_reply_checks", "INTEGER NOT NULL DEFAULT 0"),
             ("cooled_reply_reason", "TEXT NOT NULL DEFAULT ''"),
@@ -1011,6 +1011,7 @@ class Store(MemoryStore, DeliveryStore):
                        pending_reply_expectation='', pending_reply_since=NULL,
                        pending_reply_checks=0, pending_reply_last_reason='',
                        pending_reply_channel='',
+                       pending_reply_delay_minutes=0,
                        pending_reply_next_check_at=NULL,
                        updated_at=? WHERE id=1""",
                     (now,),
@@ -1022,9 +1023,11 @@ class Store(MemoryStore, DeliveryStore):
                 )
         return cursor.rowcount == 1
 
-    def _cool_active_reply(self, now: float, reason: str) -> bool:
+    def _cool_active_reply(self, now: float, _reason: str) -> bool:
         row = self._db.execute(
-            """SELECT pending_reply_turn_id, pending_reply_expectation
+            """SELECT pending_reply_turn_id, pending_reply_expectation,
+                      pending_reply_since, pending_reply_last_reason,
+                      pending_reply_delay_minutes, pending_reply_next_check_at
                FROM self_state WHERE id=1"""
         ).fetchone()
         expectation = str(row["pending_reply_expectation"] or "").strip() if row else ""
@@ -1033,25 +1036,47 @@ class Store(MemoryStore, DeliveryStore):
         self._db.execute(
             """UPDATE self_state SET cooled_reply_expectation=?,
                    cooled_reply_source_turn_id=?, cooled_reply_since=?,
-                   cooled_reply_review_at=?, cooled_reply_checks=0,
+                   cooled_reply_due_at=?, cooled_reply_delay_minutes=?,
+                   cooled_reply_waiting_since=?, cooled_reply_review_at=NULL,
+                   cooled_reply_checks=0,
                    cooled_reply_reason=?, updated_at=? WHERE id=1""",
             (
                 expectation,
                 str(row["pending_reply_turn_id"] or ""),
                 now,
-                now + 86400,
-                reason[:300],
+                row["pending_reply_next_check_at"],
+                int(row["pending_reply_delay_minutes"] or 0),
+                row["pending_reply_since"],
+                str(row["pending_reply_last_reason"] or "")[:500],
                 now,
             ),
         )
+        self._release_reply_episode_hold(
+            str(row["pending_reply_turn_id"] or ""),
+            now,
+        )
         return True
+
+    def _release_reply_episode_hold(self, turn_id: str, now: float) -> None:
+        if not turn_id:
+            return
+        self._db.execute(
+            """UPDATE conversation_episodes
+               SET status='closing', closed_at=NULL, updated_at=?
+               WHERE status='open' AND open_loops_json='[]'
+                 AND id IN (
+                     SELECT episode_id FROM episode_turns WHERE turn_id=?
+                 )""",
+            (now, turn_id),
+        )
 
     def cooled_reply_expectation_context(self, now: float | None = None) -> str:
         now = time.time() if now is None else now
         row = self._db.execute(
             """SELECT cooled_reply_expectation, cooled_reply_source_turn_id,
-                      cooled_reply_since, cooled_reply_review_at,
-                      cooled_reply_checks, cooled_reply_reason
+                      cooled_reply_since, cooled_reply_due_at,
+                      cooled_reply_delay_minutes, cooled_reply_waiting_since,
+                      cooled_reply_reason
                FROM self_state WHERE id=1"""
         ).fetchone()
         expectation = str(row["cooled_reply_expectation"] or "").strip() if row else ""
@@ -1073,45 +1098,45 @@ class Store(MemoryStore, DeliveryStore):
             }
             for item in source_rows
         ]
-        review_at = float(row["cooled_reply_review_at"] or now)
         return json.dumps(
             {
-                "state": "cooled",
-                "expected_response": expectation,
+                "state": "owner_replied_before_deadline",
+                "expected_information": expectation,
+                "reason": str(row["cooled_reply_reason"] or ""),
                 "source_turn": source_turn,
                 "source_messages": source_messages,
-                "cooled_at": context_timestamp(row["cooled_reply_since"] or now),
-                "age_minutes": max(
-                    0,
-                    int((now - float(row["cooled_reply_since"] or now)) / 60),
+                "waiting_since": context_timestamp(
+                    row["cooled_reply_waiting_since"] or now
                 ),
-                "cleanup_due": now >= review_at,
-                "review_at": context_timestamp(review_at),
-                "review_count": int(row["cooled_reply_checks"] or 0),
-                "reason": str(row["cooled_reply_reason"] or ""),
+                "interrupted_at": context_timestamp(row["cooled_reply_since"] or now),
+                "deadline": context_timestamp(row["cooled_reply_due_at"] or now),
+                "delay_minutes": int(row["cooled_reply_delay_minutes"] or 0),
+                "elapsed_minutes": max(
+                    0,
+                    int(
+                        (
+                            float(row["cooled_reply_since"] or now)
+                            - float(row["cooled_reply_waiting_since"] or now)
+                        )
+                        / 60
+                    ),
+                ),
             },
             ensure_ascii=False,
             separators=(",", ":"),
         )
 
     def _apply_cooled_reply_action(
-        self, draft: TurnDraft | None, now: float
+        self, _draft: TurnDraft | None, now: float
     ) -> None:
-        if draft is not None and draft.close_reply_expectation:
-            self._db.execute(
-                """UPDATE self_state SET cooled_reply_expectation='',
-                   cooled_reply_source_turn_id='', cooled_reply_since=NULL,
-                   cooled_reply_review_at=NULL, cooled_reply_checks=0,
-                   cooled_reply_reason='', updated_at=? WHERE id=1""",
-                (now,),
-            )
-            return
         self._db.execute(
-            """UPDATE self_state SET cooled_reply_review_at=?,
-               cooled_reply_checks=cooled_reply_checks+1, updated_at=?
-               WHERE id=1 AND cooled_reply_expectation<>''
-                 AND (cooled_reply_review_at IS NULL OR cooled_reply_review_at<=?)""",
-            (now + 86400, now, now),
+            """UPDATE self_state SET cooled_reply_expectation='',
+               cooled_reply_source_turn_id='', cooled_reply_since=NULL,
+               cooled_reply_due_at=NULL, cooled_reply_delay_minutes=0,
+               cooled_reply_waiting_since=NULL, cooled_reply_review_at=NULL,
+               cooled_reply_checks=0, cooled_reply_reason='', updated_at=?
+               WHERE id=1 AND cooled_reply_expectation<>''""",
+            (now,),
         )
 
     def _supersede_heartbeat_contacts(
@@ -1127,7 +1152,10 @@ class Store(MemoryStore, DeliveryStore):
                         WHERE t.id=o.turn_id
                           AND t.kind='autonomous'
                           AND t.state='running'
-                          AND t.source_ids_json LIKE '%\"heartbeat:%'
+                          AND (
+                              t.source_ids_json LIKE '%\"heartbeat:%'
+                              OR t.source_ids_json LIKE '%\"reply-followup:%'
+                          )
                     )
                 ) AND o.state IN ('pending', 'ambiguous')""",
             keys,
@@ -3108,6 +3136,17 @@ class Store(MemoryStore, DeliveryStore):
                          SELECT 1 FROM messages AS m
                          WHERE m.turn_id=t.id AND m.delivery_state='queued'
                      )
+                     AND NOT EXISTS (
+                         SELECT 1 FROM self_state AS state
+                         WHERE state.id=1
+                           AND state.pending_reply_turn_id=t.id
+                           AND state.pending_reply_expectation<>''
+                     )
+                     AND NOT EXISTS (
+                         SELECT 1 FROM outbox AS o
+                         WHERE o.turn_id=t.id AND o.reply_expectation<>''
+                           AND o.state IN ('pending', 'sending', 'ambiguous')
+                     )
                      AND EXISTS (
                          SELECT 1 FROM messages AS m WHERE m.turn_id=t.id
                      )
@@ -3430,6 +3469,14 @@ class Store(MemoryStore, DeliveryStore):
                          JOIN messages AS m ON m.turn_id=et.turn_id
                          WHERE et.episode_id=conversation_episodes.id
                            AND m.delivery_state='queued'
+                     )
+                     AND NOT EXISTS (
+                         SELECT 1 FROM episode_turns AS waiting_turn
+                         JOIN self_state AS state
+                           ON state.pending_reply_turn_id=waiting_turn.turn_id
+                         WHERE waiting_turn.episode_id=conversation_episodes.id
+                           AND state.id=1
+                           AND state.pending_reply_expectation<>''
                      )
                    ORDER BY updated_at""",
                 (now,),
@@ -3887,7 +3934,12 @@ class Store(MemoryStore, DeliveryStore):
         return successor
 
     def _apply_context_plan_episodes(
-        self, turn_id: str, now: float, raw_text: str
+        self,
+        turn_id: str,
+        now: float,
+        raw_text: str,
+        *,
+        keep_open: bool = False,
     ) -> None:
         row = self._db.execute(
             """SELECT plan_json FROM context_plans
@@ -3917,7 +3969,7 @@ class Store(MemoryStore, DeliveryStore):
             topics = list(action.get("topics") or [])
             entities = list(action.get("entities") or [])
             loops = list(action.get("open_loops") or [])
-            status = "open" if loops else "closing"
+            status = "open" if loops or keep_open else "closing"
             if existing is None:
                 self._db.execute(
                     """INSERT INTO conversation_episodes
@@ -3988,7 +4040,7 @@ class Store(MemoryStore, DeliveryStore):
                       )""",
                 (now, now, *selected),
             )
-        else:
+        elif not keep_open:
             self._db.execute(
                 """UPDATE conversation_episodes SET status='closed',
                    closed_at=?, updated_at=?
@@ -4111,36 +4163,14 @@ class Store(MemoryStore, DeliveryStore):
         now = time.time() if now is None else now
         row = self._db.execute(
             """SELECT pending_reply_turn_id, pending_reply_expectation,
-                      pending_reply_since, pending_reply_checks,
-                      pending_reply_last_reason, pending_reply_channel
+                      pending_reply_since, pending_reply_last_reason,
+                      pending_reply_channel, pending_reply_delay_minutes,
+                      pending_reply_next_check_at
                FROM self_state WHERE id=1"""
         ).fetchone()
         if row is None or not str(row["pending_reply_expectation"] or "").strip():
             return None
         since = float(row["pending_reply_since"] or now)
-        followups = self._db.execute(
-            """SELECT COUNT(*) FROM notifications AS notification
-               WHERE notification.notification_key='heartbeat.reply_followup'
-                 AND notification.created_at>=?
-                 AND EXISTS (
-                     SELECT 1 FROM outbox
-                     WHERE outbox.turn_id=notification.turn_id
-                       AND outbox.state='sent'
-                 )""",
-            (since,),
-        ).fetchone()[0]
-        followup_attempts = self._db.execute(
-            """SELECT COUNT(DISTINCT notification.id)
-               FROM notifications AS notification
-               WHERE notification.notification_key='heartbeat.reply_followup'
-                 AND notification.created_at>=?
-                 AND EXISTS (
-                     SELECT 1 FROM outbox
-                     WHERE outbox.turn_id=notification.turn_id
-                       AND outbox.state NOT IN ('failed', 'superseded')
-                 )""",
-            (since,),
-        ).fetchone()[0]
         source_turn = str(row["pending_reply_turn_id"] or "")
         source_messages = [
             {
@@ -4159,26 +4189,13 @@ class Store(MemoryStore, DeliveryStore):
         return {
             "source_turn": source_turn,
             "source_messages": source_messages,
-            "expected_response": str(row["pending_reply_expectation"]),
+            "expected_information": str(row["pending_reply_expectation"]),
+            "reason": str(row["pending_reply_last_reason"] or ""),
             "waiting_since": context_timestamp(since),
             "waiting_minutes": max(0, int((now - since) / 60)),
-            "heartbeat_checks": int(row["pending_reply_checks"] or 0),
-            "previous_check_reason": str(row["pending_reply_last_reason"] or ""),
-            "check_index": int(row["pending_reply_checks"] or 0) + 1,
-            "max_checks": REPLY_WAIT_MAX_CHECKS,
-            "stage_delay_minutes": (
-                int(REPLY_WAIT_FIRST_CHECK_SECONDS / 60),
-                int(REPLY_WAIT_FOLLOWUP_DELAY_SECONDS / 60),
-            )[
-                min(int(row["pending_reply_checks"] or 0), 1)
-            ],
-            "final_check": (
-                int(row["pending_reply_checks"] or 0)
-                >= REPLY_WAIT_MAX_CHECKS - 1
-            ),
+            "delay_minutes": int(row["pending_reply_delay_minutes"] or 0),
+            "deadline": context_timestamp(row["pending_reply_next_check_at"] or now),
             "channel": str(row["pending_reply_channel"] or ""),
-            "followup_attempts": int(followup_attempts or 0),
-            "delivered_followups": int(followups or 0),
         }
 
     def _apply_mood_update(
@@ -4340,14 +4357,13 @@ class Store(MemoryStore, DeliveryStore):
                    heartbeat_claim_kind=NULL WHERE id=1"""
             )
 
-    def commit_reply_wait(
+    def commit_reply_followup(
         self,
         turn_id: str,
         *,
         owner_event_revision: int,
         notification_config: NotificationConfig,
         pending_reply_turn_id: str,
-        continue_waiting: bool,
         reason: str,
         mood_update: dict[str, object] | None,
         notification_channel: str = "",
@@ -4364,9 +4380,8 @@ class Store(MemoryStore, DeliveryStore):
             messages=[],
             reason=reason,
             pending_reply_turn_id=pending_reply_turn_id,
-            continue_reply_wait=continue_waiting,
             notification_channel=notification_channel,
-            reply_wait_only=True,
+            reply_followup_only=True,
         )
 
     def commit_heartbeat(
@@ -4382,6 +4397,8 @@ class Store(MemoryStore, DeliveryStore):
         messages: list[ChannelMessage],
         reason: str,
         reply_expectation: str = "",
+        reply_wait_minutes: int = 0,
+        reply_wait_reason: str = "",
         draft: TurnDraft | None = None,
         memory_events: list[IncomingMessage] | None = None,
         notification_channel: str = "",
@@ -4397,6 +4414,8 @@ class Store(MemoryStore, DeliveryStore):
             messages=messages,
             reason=reason,
             reply_expectation=reply_expectation,
+            reply_wait_minutes=reply_wait_minutes,
+            reply_wait_reason=reply_wait_reason,
             draft=draft,
             memory_events=memory_events,
             notification_channel=notification_channel,
@@ -4415,19 +4434,19 @@ class Store(MemoryStore, DeliveryStore):
         messages: list[ChannelMessage],
         reason: str,
         reply_expectation: str = "",
+        reply_wait_minutes: int = 0,
+        reply_wait_reason: str = "",
         draft: TurnDraft | None = None,
         memory_events: list[IncomingMessage] | None = None,
         pending_reply_turn_id: str | None = None,
-        continue_reply_wait: bool = False,
         notification_channel: str = "",
-        reply_wait_only: bool = False,
+        reply_followup_only: bool = False,
     ) -> int:
         now = time.time()
         current = self.self_state()
         with self._db:
             pending = self._db.execute(
-                """SELECT pending_reply_turn_id, pending_reply_checks,
-                          pending_reply_channel
+                """SELECT pending_reply_turn_id, pending_reply_channel
                    FROM self_state WHERE id=1"""
             ).fetchone()
             pending_reply_is_current = bool(
@@ -4456,7 +4475,7 @@ class Store(MemoryStore, DeliveryStore):
             )["allowed"]:
                 messages = []
             source_json = json.dumps(
-                [f"{'reply-wait' if reply_wait_only else 'heartbeat'}:{turn_id}"]
+                [f"{'reply-followup' if reply_followup_only else 'heartbeat'}:{turn_id}"]
             )
             progress_rows = self._db.execute(
                 """SELECT p.text, p.created_at, p.tool_call_id, p.part_index,
@@ -4476,6 +4495,11 @@ class Store(MemoryStore, DeliveryStore):
                 if row["outbox_id"] is not None
                 and str(row["state"] or "") != "superseded"
             ]
+            message_turn_id = (
+                str(pending_reply_turn_id)
+                if reply_followup_only and pending_reply_is_current
+                else turn_id
+            )
             for row in progress_rows:
                 if row["outbox_id"] is None:
                     continue
@@ -4488,7 +4512,7 @@ class Store(MemoryStore, DeliveryStore):
                            SELECT 1 FROM messages WHERE outbox_id=?
                        )""",
                     (
-                        turn_id,
+                        message_turn_id,
                         row["text"],
                         row["created_at"],
                         source_json,
@@ -4500,36 +4524,69 @@ class Store(MemoryStore, DeliveryStore):
                     ),
                 )
             if pending_reply_is_current:
-                checks = int(pending["pending_reply_checks"] or 0)
-                if continue_reply_wait and checks < REPLY_WAIT_MAX_CHECKS - 1:
-                    delay = REPLY_WAIT_FOLLOWUP_DELAY_SECONDS
-                    next_reply_check_at = now + delay
+                delivery_states = {str(row["state"] or "") for row in progress_rows}
+                followup_delivered = "sent" in delivery_states
+                followup_failed = bool(
+                    delivery_states
+                    and delivery_states <= {"failed", "superseded"}
+                )
+                if reply_followup_only and not (
+                    followup_delivered or followup_failed
+                ):
                     self._db.execute(
-                        """UPDATE self_state SET
-                           pending_reply_checks=pending_reply_checks+1,
-                           pending_reply_last_reason=?,
-                           pending_reply_next_check_at=? WHERE id=1""",
-                        (reason[:500], next_reply_check_at),
+                        """UPDATE self_state SET pending_reply_next_check_at=NULL
+                           WHERE id=1"""
                     )
                 else:
-                    self._cool_active_reply(now, reason)
                     self._db.execute(
                         """UPDATE self_state SET pending_reply_turn_id=NULL,
                            pending_reply_expectation='', pending_reply_since=NULL,
                            pending_reply_checks=0, pending_reply_last_reason='',
-                           pending_reply_channel='',
+                           pending_reply_channel='', pending_reply_delay_minutes=0,
                            pending_reply_next_check_at=NULL
                            WHERE id=1"""
                     )
-                    self._supersede_heartbeat_contacts(
-                        ("heartbeat.reply_followup",),
-                        "reply_waiting_ended",
-                        now,
+                if reply_followup_only and not followup_failed:
+                    self._db.execute(
+                        "UPDATE turns SET updated_at=? WHERE id=?",
+                        (now, pending_reply_turn_id),
                     )
-            if not reply_wait_only:
+                    episode_ids = [
+                        str(row["episode_id"])
+                        for row in self._db.execute(
+                            """SELECT episode_id FROM episode_turns
+                               WHERE turn_id=?""",
+                            (pending_reply_turn_id,),
+                        ).fetchall()
+                    ]
+                    for episode_id in episode_ids:
+                        self._db.execute(
+                            """UPDATE conversation_episodes
+                               SET status=CASE
+                                     WHEN open_loops_json='[]' THEN 'closing'
+                                     ELSE status
+                                   END,
+                                   closed_at=NULL,
+                                   working_summary='',
+                                   working_summary_claims_json='[]',
+                                   narrative_summary='',
+                                   emotional_context_json='{}',
+                                   outcomes_json='[]',
+                                   summarized_through_ordinal=0,
+                                   summary_claimed_at=NULL,
+                                   summary_retry_at=NULL,
+                                   summary_failure_count=0,
+                                   summary_abandoned_at=NULL,
+                                   updated_at=?
+                               WHERE id=?""",
+                            (now, episode_id),
+                        )
+                        self._reindex_episode_terms(episode_id)
+                    self._index_turn_episode_terms(str(pending_reply_turn_id))
+            if not reply_followup_only:
                 self._apply_cooled_reply_action(draft, now)
             self._apply_mood_update(mood_update, now)
-            if reply_wait_only:
+            if reply_followup_only:
                 self._db.execute(
                     """UPDATE self_state SET heartbeat_claimed_at=NULL,
                        heartbeat_claim_kind=NULL, updated_at=? WHERE id=1""",
@@ -4661,7 +4718,15 @@ class Store(MemoryStore, DeliveryStore):
                         notification_key,
                         reason[:500],
                         json.dumps(visible, ensure_ascii=False),
-                        reply_expectation,
+                        (
+                            encode_reply_wait(
+                                reply_expectation,
+                                reply_wait_reason,
+                                reply_wait_minutes,
+                            )
+                            if reply_expectation
+                            else ""
+                        ),
                         now,
                         now,
                         now,
@@ -4670,7 +4735,10 @@ class Store(MemoryStore, DeliveryStore):
                 )
                 if reply_expectation:
                     self._bind_turn_reply_expectation(
-                            turn_id, reply_expectation
+                        turn_id,
+                        reply_expectation,
+                        reply_wait_minutes,
+                        reply_wait_reason,
                     )
             elif messages:
                 self._db.execute(
@@ -4686,7 +4754,15 @@ class Store(MemoryStore, DeliveryStore):
                         notification_key,
                         reason[:500],
                         json.dumps(messages, ensure_ascii=False),
-                        reply_expectation,
+                        (
+                            encode_reply_wait(
+                                reply_expectation,
+                                reply_wait_reason,
+                                reply_wait_minutes,
+                            )
+                            if reply_expectation
+                            else ""
+                        ),
                         now,
                         now,
                         now,
@@ -5973,7 +6049,12 @@ class Store(MemoryStore, DeliveryStore):
                     *(text for text, _kind, _path, _payload in normalized_messages),
                 ]
             )
-            self._apply_context_plan_episodes(turn_id, now, raw_text)
+            self._apply_context_plan_episodes(
+                turn_id,
+                now,
+                raw_text,
+                keep_open=reply.should_schedule_reply_wait,
+            )
             self._db.execute(
                 """INSERT INTO messages
                    (turn_id, role, content, created_at, source_event_ids_json)
@@ -6061,14 +6142,7 @@ class Store(MemoryStore, DeliveryStore):
                 "final",
                 {
                     "channel": target_channel,
-                    "expects_reply": bool(reply.expects_reply),
-                    "schedule_reply_wait": reply.should_schedule_reply_wait,
-                    "reply_expectation": (
-                        reply.reply_expectation if reply.expects_reply else ""
-                    ),
-                    "closed_cooled_reply_expectation": bool(
-                        draft and draft.close_reply_expectation
-                    ),
+                    "reply_wait": reply.reply_wait,
                     "mood_change": reply.mood_update,
                     "mutations": {
                         "memories": [
@@ -6103,7 +6177,10 @@ class Store(MemoryStore, DeliveryStore):
             )
             if reply.should_schedule_reply_wait:
                 self._bind_turn_reply_expectation(
-                    turn_id, reply.reply_expectation
+                    turn_id,
+                    reply.reply_expectation,
+                    reply.reply_wait_delay_minutes,
+                    reply.reply_wait_reason,
                 )
             self._db.execute(
                 """UPDATE turns SET state='completed', stage='completed',

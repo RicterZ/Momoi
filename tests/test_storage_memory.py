@@ -2176,8 +2176,12 @@ class StorageMemoryTest(unittest.TestCase):
                 "",
                 AgentReply(
                     ["今晚想吃什么？"],
-                    expects_reply=True,
-                    reply_expectation="主人对晚餐的选择",
+                    reply_wait={
+                        "wait": True,
+                        "delay_minutes": 5,
+                        "expected_information": "主人对晚餐的选择",
+                        "reason": "晚餐需要按主人的选择来准备",
+                    },
                 ),
                 turn_id="owner-question",
                 target_channel="weixin",
@@ -2187,43 +2191,41 @@ class StorageMemoryTest(unittest.TestCase):
                 self.assertTrue(store.mark_sent(row.id))
             initial_pending = store.pending_owner_reply(1000)
             self.assertEqual(
-                initial_pending["expected_response"], "主人对晚餐的选择"
+                initial_pending["expected_information"], "主人对晚餐的选择"
             )
-            self.assertEqual(initial_pending["followup_attempts"], 0)
-            self.assertEqual(initial_pending["delivered_followups"], 0)
-            self.assertEqual(store.next_heartbeat_due_at(False), 1180)
+            self.assertEqual(initial_pending["delay_minutes"], 5)
+            self.assertEqual(
+                initial_pending["reason"], "晚餐需要按主人的选择来准备"
+            )
+            self.assertEqual(store.next_heartbeat_due_at(False), 1300)
+            self.assertIsNone(store.claim_episode_consolidation_candidate())
             self.assertIsNotNone(
-                store.claim_due_heartbeat(heartbeat, NotificationConfig(), now=1180)
+                store.claim_due_heartbeat(heartbeat, NotificationConfig(), now=1300)
             )
 
-            store.begin_turn("reply-check", "autonomous", ["reply-wait:1180"])
+            store.begin_turn(
+                "reply-followup", "autonomous", ["reply-followup:1300"]
+            )
             store.queue_progress(
-                "reply-check",
+                "reply-followup",
                 "follow-up",
                 ["还没想好的话，我可以帮你挑两个呀。"],
                 "weixin",
             )
-            with patch("momoi.storage.store.time.time", return_value=1180):
-                store.commit_reply_wait(
-                    "reply-check",
+            with patch("momoi.storage.store.time.time", return_value=1300):
+                store.commit_reply_followup(
+                    "reply-followup",
                     owner_event_revision=0,
                     notification_config=NotificationConfig(),
                     mood_update=None,
-                    reason="晚餐选择还需要主人回复",
+                    reason="晚餐需要按主人的选择来准备",
                     pending_reply_turn_id="owner-question",
-                    continue_waiting=True,
                 )
-            self.assertEqual(store.next_heartbeat_due_at(False), 1600)
-            pending = store.pending_owner_reply(1180)
-            self.assertEqual(pending["expected_response"], "主人对晚餐的选择")
-            self.assertEqual(pending["heartbeat_checks"], 1)
-            self.assertEqual(pending["followup_attempts"], 1)
-            self.assertEqual(pending["delivered_followups"], 0)
-            self.assertEqual(
-                pending["previous_check_reason"], "晚餐选择还需要主人回复"
-            )
+            self.assertIsNone(store.next_heartbeat_due_at(False))
+            self.assertIsNotNone(store.pending_owner_reply(1300))
             key = store._db.execute(
-                "SELECT notification_key FROM notifications WHERE turn_id='reply-check'"
+                """SELECT notification_key FROM notifications
+                   WHERE turn_id='reply-followup'"""
             ).fetchone()[0]
             self.assertEqual(key, "heartbeat.reply_followup")
 
@@ -2236,50 +2238,100 @@ class StorageMemoryTest(unittest.TestCase):
                 ).fetchone()[0],
                 "",
             )
-            with patch("momoi.storage.delivery.time.time", return_value=1190):
+            with patch("momoi.storage.delivery.time.time", return_value=1310):
                 self.assertFalse(store.mark_sent(stale_followup.id))
-            pending = store.pending_owner_reply(1190)
-            self.assertEqual(pending["expected_response"], "主人对晚餐的选择")
-            self.assertEqual(pending["heartbeat_checks"], 1)
-            self.assertEqual(pending["followup_attempts"], 1)
-            self.assertEqual(pending["delivered_followups"], 1)
-            self.assertEqual(store.next_heartbeat_due_at(False), 1600)
-
-            answer = IncomingMessage("owner-answer", "answer", "吃面", 1181, 1181)
-            store.add_event(answer)
-            self.assertIsNone(store.pending_owner_reply(1191))
-            self.assertEqual(
-                json.loads(store.cooled_reply_expectation_context(1191))[
-                    "expected_response"
-                ],
-                "主人对晚餐的选择",
-            )
-            self.assertIsNone(store.next_heartbeat_due_at(False))
-            self.assertIsNone(store.next_heartbeat_due_at(True))
+            self.assertIsNone(store.pending_owner_reply(1310))
+            self.assertFalse(store.mark_sending(stale_followup.id))
+            self.assertEqual(store.cooled_reply_expectation_context(1310), "")
             self.assertEqual(
                 store._db.execute(
-                    "SELECT next_heartbeat_at FROM self_state WHERE id=1"
+                    """SELECT COUNT(*) FROM messages
+                       WHERE turn_id='reply-followup'"""
                 ).fetchone()[0],
                 0,
             )
-            self.assertFalse(store.mark_sending(stale_followup.id))
-            store.commit_turn(
-                [answer],
-                "吃面",
-                AgentReply(
-                    ["吃完告诉我呀"],
-                    expects_reply=True,
-                    reply_expectation="主人是否已经吃完",
-                ),
-                turn_id="next-question",
-                target_channel="weixin",
+            source_messages = [
+                str(row["content"])
+                for row in store._db.execute(
+                    """SELECT content FROM messages
+                       WHERE turn_id='owner-question' ORDER BY id"""
+                ).fetchall()
+            ]
+            self.assertIn("还没想好的话，我可以帮你挑两个呀。", source_messages)
+            self.assertEqual(store.recent_turn_record_count(), 1)
+            candidate = store.claim_episode_consolidation_candidate()
+            self.assertEqual(candidate["turns"][0]["turn_id"], "owner-question")
+            self.assertTrue(
+                any(
+                    message["content"] == "还没想好的话，我可以帮你挑两个呀。"
+                    for message in candidate["turns"][0]["messages"]
+                )
             )
-            with patch("momoi.storage.delivery.time.time", return_value=1200):
-                self.assertTrue(store.mark_sent(store.due_outbox()[0].id))
-            self.assertEqual(store.next_heartbeat_due_at(False), 1380)
             store.close()
 
-    def test_passive_reply_expectation_does_not_start_wait_checks(self) -> None:
+    def test_reply_followup_can_deliver_before_execution_commit(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store.commit_turn(
+                [],
+                "",
+                AgentReply(
+                    ["老师会怎么选？"],
+                    reply_wait={
+                        "wait": True,
+                        "delay_minutes": 1,
+                        "expected_information": "老师的选择",
+                        "reason": "需要老师决定下一步",
+                    },
+                ),
+                turn_id="early-source",
+            )
+            with patch("momoi.storage.delivery.time.time", return_value=1000):
+                store.mark_sent(store.due_outbox()[0].id)
+            store.begin_turn(
+                "early-followup",
+                "autonomous",
+                ["reply-followup:1060"],
+            )
+            store.queue_progress(
+                "early-followup",
+                "message",
+                ["老师还没选呢"],
+                "napcat",
+            )
+            followup = store.due_outbox()[0]
+            with patch("momoi.storage.delivery.time.time", return_value=1060):
+                store.mark_sent(followup.id)
+            self.assertIsNotNone(store.pending_owner_reply(1060))
+
+            with patch("momoi.storage.store.time.time", return_value=1061):
+                store.commit_reply_followup(
+                    "early-followup",
+                    owner_event_revision=0,
+                    notification_config=NotificationConfig(),
+                    pending_reply_turn_id="early-source",
+                    reason="需要老师决定下一步",
+                    mood_update=None,
+                )
+            self.assertIsNone(store.pending_owner_reply(1061))
+            self.assertIn(
+                "老师还没选呢",
+                [
+                    str(row["content"])
+                    for row in store._db.execute(
+                        "SELECT content FROM messages WHERE turn_id='early-source'"
+                    ).fetchall()
+                ],
+            )
+            self.assertEqual(
+                store._db.execute(
+                    "SELECT COUNT(*) FROM messages WHERE turn_id='early-followup'"
+                ).fetchone()[0],
+                0,
+            )
+            store.close()
+
+    def test_wait_false_does_not_start_reply_schedule(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
             store.commit_turn(
@@ -2287,9 +2339,7 @@ class StorageMemoryTest(unittest.TestCase):
                 "",
                 AgentReply(
                     ["喝完愿意的话跟我说一声"],
-                    expects_reply=True,
-                    reply_expectation="老师喝完水后的回应",
-                    schedule_reply_wait=False,
+                    reply_wait={"wait": False},
                 ),
                 turn_id="passive-expectation",
             )
@@ -2323,20 +2373,26 @@ class StorageMemoryTest(unittest.TestCase):
                     "",
                     AgentReply(
                         [],
-                        expects_reply=True,
-                        reply_expectation="老师想说的后续",
+                        reply_wait={
+                            "wait": True,
+                            "delay_minutes": 3,
+                            "expected_information": "老师想说的后续",
+                            "reason": "想继续听老师说后续",
+                        },
                     ),
                     turn_id="live-reply",
                 )
 
-            self.assertEqual(
+            stored_wait = json.loads(
                 store._db.execute(
                     "SELECT reply_expectation FROM outbox WHERE id=?", (outbox.id,)
-                ).fetchone()[0],
-                "老师想说的后续",
+                ).fetchone()[0]
+            )
+            self.assertEqual(
+                stored_wait["expected_information"], "老师想说的后续"
             )
             pending = store.pending_owner_reply(1010)
-            self.assertEqual(pending["expected_response"], "老师想说的后续")
+            self.assertEqual(pending["expected_information"], "老师想说的后续")
             self.assertEqual(store.next_heartbeat_due_at(False), 1190)
             store.close()
 
@@ -2352,8 +2408,12 @@ class StorageMemoryTest(unittest.TestCase):
                 "",
                 AgentReply(
                     [],
-                    expects_reply=True,
-                    reply_expectation="老师的选择",
+                    reply_wait={
+                        "wait": True,
+                        "delay_minutes": 3,
+                        "expected_information": "老师的选择",
+                        "reason": "需要按老师的选择继续",
+                    },
                 ),
                 turn_id="queued-live-reply",
             )
@@ -2373,8 +2433,12 @@ class StorageMemoryTest(unittest.TestCase):
                     "",
                     AgentReply(
                         [],
-                        expects_reply=True,
-                        reply_expectation="不存在的消息",
+                        reply_wait={
+                            "wait": True,
+                            "delay_minutes": 3,
+                            "expected_information": "不存在的消息",
+                            "reason": "用于验证静默Turn不能创建等待",
+                        },
                     ),
                     turn_id="silent-reply",
                 )
@@ -2388,8 +2452,12 @@ class StorageMemoryTest(unittest.TestCase):
                 "",
                 AgentReply(
                     ["你会喜欢这种风险设计吗？"],
-                    expects_reply=True,
-                    reply_expectation="主人的风险偏好",
+                    reply_wait={
+                        "wait": True,
+                        "delay_minutes": 4,
+                        "expected_information": "主人的风险偏好",
+                        "reason": "需要按老师的偏好继续设计风险机制",
+                    },
                 ),
                 turn_id="question",
             )
@@ -2398,7 +2466,7 @@ class StorageMemoryTest(unittest.TestCase):
                 self.assertTrue(store.mark_sent(store.due_outbox()[0].id))
             state = store.self_state()
             self.assertEqual(state["next_heartbeat_at"], 4900)
-            self.assertEqual(state["pending_reply_next_check_at"], 1180)
+            self.assertEqual(state["pending_reply_next_check_at"], 1240)
 
             store.add_event(
                 IncomingMessage("answer", "answer", "我喜欢求稳", 1020, 1020)
@@ -2406,36 +2474,123 @@ class StorageMemoryTest(unittest.TestCase):
             state = store.self_state()
             self.assertIsNone(state["pending_reply_next_check_at"])
             self.assertEqual(store.next_heartbeat_due_at(True), 4900)
+            interrupted = json.loads(store.cooled_reply_expectation_context(1020))
+            self.assertEqual(
+                interrupted["state"], "owner_replied_before_deadline"
+            )
+            self.assertEqual(
+                interrupted["expected_information"], "主人的风险偏好"
+            )
+            self.assertIn("风险机制", interrupted["reason"])
             store.close()
 
-    def test_reply_wait_can_stop_without_changing_heartbeat_state(self) -> None:
+    def test_owner_reply_supersedes_claimed_undelivered_followup(self) -> None:
+        heartbeat = HeartbeatConfig(
+            enabled=False,
+            initial_delay_seconds=60,
+            min_interval_seconds=60,
+            max_interval_seconds=600,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store.commit_turn(
+                [],
+                "",
+                AgentReply(
+                    ["还想听老师回答"],
+                    reply_wait={
+                        "wait": True,
+                        "delay_minutes": 1,
+                        "expected_information": "老师的回答",
+                        "reason": "这个问题需要老师决定",
+                    },
+                ),
+                turn_id="source-question",
+            )
+            with patch("momoi.storage.delivery.time.time", return_value=1000):
+                store.mark_sent(store.due_outbox()[0].id)
+            self.assertIsNotNone(
+                store.claim_due_heartbeat(
+                    heartbeat, NotificationConfig(), now=1060
+                )
+            )
+            store.begin_turn(
+                "claimed-followup",
+                "autonomous",
+                ["reply-followup:1060"],
+            )
+            store.queue_progress(
+                "claimed-followup",
+                "followup-message",
+                ["老师还在吗"],
+                "napcat",
+            )
+            stale = store.due_outbox()[0]
+
+            store.add_event(
+                IncomingMessage("owner-answer", "answer", "我在", 1061, 1061)
+            )
+            self.assertEqual(
+                store._db.execute(
+                    "SELECT state FROM outbox WHERE id=?", (stale.id,)
+                ).fetchone()[0],
+                "superseded",
+            )
+            with patch("momoi.storage.store.time.time", return_value=1061):
+                store.commit_reply_followup(
+                    "claimed-followup",
+                    owner_event_revision=1,
+                    notification_config=NotificationConfig(),
+                    pending_reply_turn_id="source-question",
+                    reason="这个问题需要老师决定",
+                    mood_update=None,
+                )
+            self.assertNotIn(
+                "老师还在吗",
+                [
+                    str(row["content"])
+                    for row in store._db.execute(
+                        "SELECT content FROM messages WHERE turn_id='source-question'"
+                    ).fetchall()
+                ],
+            )
+            store.close()
+
+    def test_reply_followup_clears_wait_without_changing_heartbeat_state(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
             store._db.execute(
                 """UPDATE self_state SET pending_reply_turn_id='question',
                    pending_reply_expectation='主人是否愿意继续聊',
-                   pending_reply_since=1000, pending_reply_checks=2,
+                   pending_reply_since=1000,
+                   pending_reply_last_reason='想知道老师是否继续聊',
+                   pending_reply_delay_minutes=2,
+                   pending_reply_next_check_at=1100,
                    next_heartbeat_at=1100 WHERE id=1"""
             )
             before = store.self_state()
-            store.begin_turn("stop-waiting", "autonomous", ["reply-wait:1100"])
+            store.begin_turn(
+                "reply-followup", "autonomous", ["reply-followup:1100"]
+            )
+            store.queue_progress(
+                "reply-followup",
+                "message",
+                ["还想听老师说说"],
+                "napcat",
+            )
             with patch("momoi.storage.store.time.time", return_value=1100):
-                store.commit_reply_wait(
-                    "stop-waiting",
+                store.commit_reply_followup(
+                    "reply-followup",
                     owner_event_revision=0,
                     notification_config=NotificationConfig(),
                     mood_update=None,
-                    reason="这段等待已经自然结束",
+                    reason="想知道老师是否继续聊",
                     pending_reply_turn_id="question",
-                    continue_waiting=False,
                 )
+            self.assertIsNotNone(store.pending_owner_reply(1100))
+            store.mark_sent(store.due_outbox()[0].id)
             self.assertIsNone(store.pending_owner_reply(1100))
-            self.assertEqual(
-                json.loads(store.cooled_reply_expectation_context(1100))[
-                    "expected_response"
-                ],
-                "主人是否愿意继续聊",
-            )
+            self.assertEqual(store.cooled_reply_expectation_context(1100), "")
             after = store.self_state()
             for key in (
                 "activity",
@@ -2446,60 +2601,98 @@ class StorageMemoryTest(unittest.TestCase):
                 self.assertEqual(after[key], before[key])
             store.close()
 
-    def test_owner_turn_can_keep_then_close_a_cooled_reply_expectation(self) -> None:
+    def test_owner_turn_consumes_interrupted_reply_expectation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
             store._db.execute(
                 """UPDATE self_state SET cooled_reply_expectation='旧期待',
                    cooled_reply_source_turn_id='old', cooled_reply_since=1000,
-                   cooled_reply_review_at=1001 WHERE id=1"""
+                   cooled_reply_waiting_since=900, cooled_reply_due_at=1200,
+                   cooled_reply_delay_minutes=5,
+                   cooled_reply_reason='想听老师回答旧期待' WHERE id=1"""
             )
+            interrupted = json.loads(store.cooled_reply_expectation_context(2000))
+            self.assertEqual(interrupted["expected_information"], "旧期待")
+            self.assertEqual(interrupted["reason"], "想听老师回答旧期待")
             with patch("momoi.storage.store.time.time", return_value=2000):
                 store.commit_turn(
                     [],
                     "",
                     AgentReply([]),
-                    turn_id="keep-expectation",
+                    turn_id="consume-expectation",
                 )
-            kept = json.loads(store.cooled_reply_expectation_context(2000))
-            self.assertFalse(kept["cleanup_due"])
-            self.assertEqual(kept["review_count"], 1)
-            with patch("momoi.storage.store.time.time", return_value=3000):
-                store.commit_turn(
-                    [],
-                    "",
-                    AgentReply([]),
-                    TurnDraft(close_reply_expectation=True),
-                    turn_id="close-expectation",
-                )
-            self.assertEqual(store.cooled_reply_expectation_context(3000), "")
+            self.assertEqual(store.cooled_reply_expectation_context(2000), "")
             store.close()
 
-    def test_reply_wait_anneals_two_checks_then_cools(self) -> None:
+    def test_reply_followup_never_schedules_a_second_check(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
             store._db.execute(
                 """UPDATE self_state SET pending_reply_turn_id='question',
                    pending_reply_expectation='主人是否愿意继续聊',
-                   pending_reply_since=1000, pending_reply_checks=1,
-                   next_heartbeat_at=1100 WHERE id=1"""
+                   pending_reply_since=1000,
+                   pending_reply_last_reason='想听老师回答',
+                   pending_reply_delay_minutes=2,
+                   pending_reply_next_check_at=1100 WHERE id=1"""
             )
-            store.begin_turn("second-check", "autonomous", ["reply-wait:1100"])
+            store.begin_turn(
+                "single-followup", "autonomous", ["reply-followup:1100"]
+            )
+            store.queue_progress(
+                "single-followup",
+                "message",
+                ["老师还没回答呢"],
+                "napcat",
+            )
             with patch("momoi.storage.store.time.time", return_value=1100):
-                store.commit_reply_wait(
-                    "second-check",
+                store.commit_reply_followup(
+                    "single-followup",
                     owner_event_revision=0,
                     notification_config=NotificationConfig(),
                     mood_update=None,
                     reason="仍然想听主人回答",
                     pending_reply_turn_id="question",
-                    continue_waiting=True,
                 )
-            self.assertIsNone(store.pending_owner_reply(1100))
+            self.assertIsNotNone(store.pending_owner_reply(1100))
             self.assertIsNone(store.next_heartbeat_due_at(False))
-            cooled = json.loads(store.cooled_reply_expectation_context(1100))
-            self.assertEqual(cooled["expected_response"], "主人是否愿意继续聊")
-            self.assertTrue(cooled["cleanup_due"] is False)
+            store.mark_sent(store.due_outbox()[0].id)
+            self.assertIsNone(store.pending_owner_reply(1100))
+            self.assertEqual(store.cooled_reply_expectation_context(1100), "")
+            store.close()
+
+    def test_episode_anneal_waits_for_pending_owner_reply(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store.create_episode("等待中的对话", episode_id="waiting-episode")
+            for index in range(1, 4):
+                turn_id = f"waiting-turn-{index}"
+                store.commit_turn(
+                    [],
+                    f"owner-{index}",
+                    AgentReply([f"assistant-{index}"]),
+                    turn_id=turn_id,
+                )
+                store.mark_sent(store.due_outbox()[0].id)
+                store.link_turn_to_episode("waiting-episode", turn_id)
+            store._db.execute(
+                """UPDATE self_state SET
+                   pending_reply_turn_id='waiting-turn-3',
+                   pending_reply_expectation='老师的回答',
+                   pending_reply_last_reason='这段对话仍在等待老师',
+                   pending_reply_delay_minutes=5,
+                   pending_reply_next_check_at=1300 WHERE id=1"""
+            )
+
+            self.assertIsNone(store.claim_episode_annealing_candidate(1, 10000))
+
+            store._db.execute(
+                """UPDATE self_state SET pending_reply_turn_id=NULL,
+                   pending_reply_expectation='', pending_reply_next_check_at=NULL
+                   WHERE id=1"""
+            )
+            self.assertIsNotNone(
+                store.claim_episode_annealing_candidate(1, 10000)
+            )
             store.close()
 
     def test_new_owner_event_suppresses_heartbeat_visible_reply(self) -> None:
@@ -2756,8 +2949,12 @@ class StorageMemoryTest(unittest.TestCase):
                 "",
                 AgentReply(
                     ["到家了吗？"],
-                    expects_reply=True,
-                    reply_expectation="主人是否已经到家",
+                    reply_wait={
+                        "wait": True,
+                        "delay_minutes": 3,
+                        "expected_information": "主人是否已经到家",
+                        "reason": "想确认老师已经安全到家",
+                    },
                 ),
                 turn_id="question",
             )

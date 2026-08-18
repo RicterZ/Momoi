@@ -36,6 +36,7 @@ from momoi.models import (
     ProviderResponse,
     ToolCall,
 )
+from momoi.reply_wait import decode_reply_wait, encode_reply_wait
 from momoi.storage import Store
 from tests.support import with_context_planner
 
@@ -443,37 +444,55 @@ class MessagingTest(unittest.TestCase):
             store.close()
 
     def test_validates_terminal_response_tool(self) -> None:
+        self.assertIsNone(decode_reply_wait("旧版纯文本期待"))
+        encoded = encode_reply_wait("老师的安排", "需要安排晚上活动", 6)
+        self.assertEqual(
+            decode_reply_wait(encoded),
+            {
+                "expected_information": "老师的安排",
+                "reason": "需要安排晚上活动",
+                "delay_minutes": 6,
+            },
+        )
         reply, error = MomoiDaemon._parse_response(
             {
-                "expects_reply": True,
-                "reply_expectation": "主人晚上的安排",
-                "schedule_reply_wait": False,
+                "reply_wait": {"wait": False},
                 "mood": {"decision": "unchanged"},
             }
         )
         self.assertIsNone(error)
         self.assertEqual(reply.messages, [])
-        self.assertTrue(reply.expects_reply)
-        self.assertEqual(reply.reply_expectation, "主人晚上的安排")
-        self.assertFalse(reply.schedule_reply_wait)
+        self.assertFalse(reply.expects_reply)
+        self.assertFalse(reply.should_schedule_reply_wait)
         scheduled, error = MomoiDaemon._parse_response(
             {
-                "reply_expectation": "主人晚上的安排",
-                "schedule_reply_wait": True,
+                "reply_wait": {
+                    "wait": True,
+                    "delay_minutes": 7,
+                    "expected_information": "主人晚上的安排",
+                    "reason": "晚上约好一起玩，需要知道主人什么时候有空",
+                },
                 "mood": {"decision": "unchanged"},
             }
         )
         self.assertIsNone(error)
-        self.assertTrue(scheduled.schedule_reply_wait)
+        self.assertTrue(scheduled.should_schedule_reply_wait)
+        self.assertEqual(scheduled.reply_expectation, "主人晚上的安排")
+        self.assertEqual(scheduled.reply_wait_delay_minutes, 7)
+        self.assertIn("一起玩", scheduled.reply_wait_reason)
         invalid_schedule, error = MomoiDaemon._parse_response(
             {
-                "reply_expectation": "",
-                "schedule_reply_wait": True,
+                "reply_wait": {
+                    "wait": True,
+                    "delay_minutes": 11,
+                    "expected_information": "主人晚上的安排",
+                    "reason": "需要按约定跟进",
+                },
                 "mood": {"decision": "unchanged"},
             }
         )
         self.assertIsNone(invalid_schedule)
-        self.assertEqual(error, "reply_wait_without_expectation")
+        self.assertEqual(error, "invalid_reply_wait_decision")
         legacy, error = MomoiDaemon._parse_response(
             {
                 "messages": ["旧协议消息"],
@@ -486,8 +505,7 @@ class MessagingTest(unittest.TestCase):
         self.assertEqual(error, "messages_not_allowed_in_respond")
         heartbeat, error = MomoiDaemon._parse_response(
             {
-                "expects_reply": False,
-                "reply_expectation": "",
+                "reply_wait": {"wait": False},
                 "mood": {"decision": "unchanged"},
                 "heartbeat": {
                     "activity": "整理关卡灵感",
@@ -502,39 +520,13 @@ class MessagingTest(unittest.TestCase):
         self.assertEqual(heartbeat.heartbeat["activity"], "整理关卡灵感")
         invalid_heartbeat, error = MomoiDaemon._parse_response(
             {
-                "expects_reply": False,
-                "reply_expectation": "",
+                "reply_wait": {"wait": False},
                 "mood": {"decision": "unchanged"},
             },
             require_heartbeat=True,
         )
         self.assertIsNone(invalid_heartbeat)
         self.assertEqual(error, "invalid_heartbeat_state")
-        reply_wait, error = MomoiDaemon._parse_response(
-            {
-                "reply_wait": {
-                    "continue_waiting": True,
-                    "reason": "还想听主人回答",
-                },
-                "mood": {"decision": "unchanged"},
-            },
-            require_reply_wait=True,
-        )
-        self.assertIsNone(error)
-        self.assertTrue(reply_wait.reply_wait["continue_waiting"])
-        invalid_reply_wait, error = MomoiDaemon._parse_response(
-            {
-                "reply_wait": {
-                    "continue_waiting": True,
-                    "reason": "还想听主人回答",
-                },
-                "reply_expectation": "不应混入等待协议",
-                "mood": {"decision": "unchanged"},
-            },
-            require_reply_wait=True,
-        )
-        self.assertIsNone(invalid_reply_wait)
-        self.assertEqual(error, "invalid_reply_wait_state")
         invalid_blank_lines, error = MomoiDaemon._parse_messages(
             {"messages": ["第一条。\n\n第二条。"]}
         )
@@ -551,7 +543,7 @@ class MessagingTest(unittest.TestCase):
             }
         )
         self.assertIsNone(invalid)
-        self.assertEqual(error, "invalid_reply_expectation")
+        self.assertEqual(error, "invalid_reply_wait_decision")
         rich, error = MomoiDaemon._parse_messages(
             {
                 "messages": [
@@ -823,8 +815,12 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "close-after-question",
                                 "respond",
                                 {
-                                    "expects_reply": True,
-                                    "reply_expectation": "老师的选择",
+                                    "reply_wait": {
+                                        "wait": True,
+                                        "delay_minutes": 4,
+                                        "expected_information": "老师的选择",
+                                        "reason": "需要按老师的选择继续",
+                                    },
                                     "mood": {"decision": "unchanged"},
                                 },
                             )
@@ -842,12 +838,13 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
 
             outbox = daemon.store.due_outbox()
             self.assertEqual([row.text for row in outbox], ["老师会选哪一个？"])
-            self.assertEqual(
+            stored_wait = json.loads(
                 daemon.store._db.execute(
                     "SELECT reply_expectation FROM outbox WHERE id=?", (outbox[0].id,)
-                ).fetchone()[0],
-                "老师的选择",
+                ).fetchone()[0]
             )
+            self.assertEqual(stored_wait["expected_information"], "老师的选择")
+            self.assertEqual(stored_wait["delay_minutes"], 4)
             daemon.store.close()
 
     async def test_outbox_does_not_wait_between_different_turns(self) -> None:

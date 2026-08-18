@@ -17,6 +17,11 @@ older supplied Turns only when an explicit reference, unfinished task, tool
 result, or correction needs them; their presence alone is not a reason to
 continue an older topic.
 
+When `interrupted_reply_expectation` is present, the owner replied before that
+deadline and the timer is already cancelled. Use its expected information and
+reason only to resolve the current owner's meaning; do not turn it into a new
+request, open loop, or follow-up schedule.
+
 Episode `match_score` and `match_signals` are retrieval hints, not decisions.
 Choose `continue` only when the Episode is semantically the same concrete
 experience; a top-ranked candidate may still be rejected in favor of `new` or

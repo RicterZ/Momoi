@@ -212,7 +212,7 @@ GET /api/usage?days=1
 - Context Plan 数、intent unit 数、recall query 数、Episode candidate 数；
 - Heartbeat 触发数、静默数、联系 Owner 数、产生实际工作的数量；
 - Episode Anneal 请求数、处理 Turn 数和各决策类型数量；
-- Reply Wait 创建数、检查数、静默数、实际跟进数及 Owner 回应数；
+- Reply Wait 创建数、主人提前回复数、截止触发数、必发跟进数及取消竞态；
 - Goal 运行数、完成数、阻塞数及每个完成 Goal 的消耗；
 - Webhook 事件数、静默数、通知数及外部动作数；
 - 错误、协议修复、Provider 重试和取消调用数。
@@ -271,7 +271,7 @@ cost =
 | Heartbeat | 每次触发、每次实际工作、每次 Owner 联系 |
 | Heartbeat Planner | 每次规划及每次非空活动决定 |
 | Episode Anneal | 每个请求、每个被处理 Turn、每个有效 Episode 决策 |
-| Reply Wait | 每个等待、每次检查、每次实际跟进 |
+| Reply Follow-up | 每个等待、每次截止触发、每次实际跟进 |
 | Goal | 每次运行、每个完成 Goal |
 | Webhook | 每个事件、每个外部动作 |
 
@@ -338,15 +338,18 @@ Context Planner 默认保留当前模型和 reasoning。优先验证：
 
 Anneal 与实时 Context Planner 分开评估。它可以使用强 reasoning，但需要证明高输出对应更稳定、更有用的长期记忆，而不是迁移残留或重复解释。
 
-### Reply Wait
+### Reply Follow-up
 
 检测：
 
-- 每个等待平均检查次数；
-- 第一次、第二次、第三次检查的静默率；
+- AI选择的等待分钟分布；
+- 主人在截止前回复并取消定时器的比例；
+- 截止后单次必发跟进的触发率和Token；
 - 跟进后 Owner 实际回应率；
-- 已经自然结束的对话是否仍然进入等待；
-- 是否存在固定间隔造成的无效检查。
+- 期望信息和理由是否帮助正确理解Owner回复；
+- Owner回复、截止领取和Outbox投递之间是否存在重复发送竞态；
+- 等待期间来源Turn是否正确延迟Consolidation/Anneal；
+- 跟进消息是否并入来源Turn且不额外推进Planner Recent计数。
 
 ### Goal 与 Webhook
 

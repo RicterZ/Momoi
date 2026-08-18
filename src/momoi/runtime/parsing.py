@@ -47,26 +47,49 @@ def parse_messages(
     return messages, None
 
 
-def parse_reply_expectation(
-    arguments: dict[str, Any]
-) -> tuple[tuple[bool, str] | None, str | None]:
-    expectation = arguments.get("reply_expectation")
-    if not isinstance(expectation, str) or len(expectation) > 300:
-        return None, "invalid_reply_expectation"
-    expectation = expectation.strip()
-    return (bool(expectation), expectation), None
+def parse_reply_wait_decision(
+    value: object,
+) -> tuple[dict[str, Any] | None, str | None]:
+    if not isinstance(value, dict):
+        return None, "invalid_reply_wait_decision"
+    wait = value.get("wait")
+    if wait is False and set(value) == {"wait"}:
+        return {"wait": False}, None
+    if wait is not True or set(value) != {
+        "wait",
+        "delay_minutes",
+        "expected_information",
+        "reason",
+    }:
+        return None, "invalid_reply_wait_decision"
+    delay = value.get("delay_minutes")
+    expected = value.get("expected_information")
+    reason = value.get("reason")
+    if (
+        not isinstance(delay, int)
+        or isinstance(delay, bool)
+        or not 1 <= delay <= 10
+        or not isinstance(expected, str)
+        or not expected.strip()
+        or len(expected) > 300
+        or not isinstance(reason, str)
+        or not reason.strip()
+        or len(reason) > 500
+    ):
+        return None, "invalid_reply_wait_decision"
+    return {
+        "wait": True,
+        "delay_minutes": delay,
+        "expected_information": expected.strip(),
+        "reason": reason.strip(),
+    }, None
 
 
 def parse_response(
     arguments: dict[str, Any],
     *,
     require_heartbeat: bool = False,
-    require_reply_wait: bool = False,
 ) -> tuple[AgentReply | None, str | None]:
-    if require_heartbeat and require_reply_wait:
-        return None, "conflicting_terminal_state"
-    if require_reply_wait and set(arguments) != {"reply_wait", "mood"}:
-        return None, "invalid_reply_wait_state"
     if "messages" in arguments:
         return None, "messages_not_allowed_in_respond"
     messages: list[ChannelMessage] = []
@@ -74,23 +97,17 @@ def parse_response(
     mood, error = parse_mood_decision(arguments.get("mood"))
     if error is not None:
         return None, error
-    if require_reply_wait:
-        expects_reply, expectation = False, ""
-        schedule_reply_wait = False
-    else:
-        reply_expectation, error = parse_reply_expectation(arguments)
-        if reply_expectation is None:
-            return None, error
-        expects_reply, expectation = reply_expectation
-        schedule_reply_wait = arguments.get(
-            "schedule_reply_wait", expects_reply
-        )
-        if not isinstance(schedule_reply_wait, bool):
-            return None, "invalid_reply_wait_schedule"
-        if schedule_reply_wait and not expects_reply:
-            return None, "reply_wait_without_expectation"
+    raw_reply_wait = arguments.get("reply_wait")
+    if (
+        "reply_wait" not in arguments
+        and arguments.get("reply_expectation") == ""
+        and arguments.get("schedule_reply_wait") in {None, False}
+    ):
+        raw_reply_wait = {"wait": False}
+    reply_wait, error = parse_reply_wait_decision(raw_reply_wait)
+    if reply_wait is None:
+        return None, error
     heartbeat = arguments.get("heartbeat")
-    reply_wait = arguments.get("reply_wait")
     if require_heartbeat:
         if not isinstance(heartbeat, dict):
             return None, "invalid_heartbeat_state"
@@ -123,30 +140,11 @@ def parse_response(
         }
     elif heartbeat is not None:
         return None, "heartbeat_state_not_allowed"
-    if require_reply_wait:
-        if (
-            not isinstance(reply_wait, dict)
-            or set(reply_wait) != {"continue_waiting", "reason"}
-            or not isinstance(reply_wait["continue_waiting"], bool)
-            or not isinstance(reply_wait["reason"], str)
-            or not reply_wait["reason"].strip()
-            or len(reply_wait["reason"]) > 500
-        ):
-            return None, "invalid_reply_wait_state"
-        reply_wait = {
-            **reply_wait,
-            "reason": reply_wait["reason"].strip(),
-        }
-    elif reply_wait is not None:
-        return None, "reply_wait_state_not_allowed"
     return AgentReply(
         messages,
         mood_update=mood,
-        expects_reply=expects_reply,
-        reply_expectation=expectation,
-        schedule_reply_wait=schedule_reply_wait,
         heartbeat=heartbeat if require_heartbeat else None,
-        reply_wait=reply_wait if require_reply_wait else None,
+        reply_wait=reply_wait,
     ), None
 
 

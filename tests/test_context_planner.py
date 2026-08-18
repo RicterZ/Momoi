@@ -181,6 +181,9 @@ class ContextPlannerTest(unittest.TestCase):
         )
         self.assertIn("active_recent_turn_ids", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertIn(
+            "interrupted_reply_expectation", CONTEXT_PLANNER_SYSTEM_PROMPT
+        )
+        self.assertIn(
             "their presence alone is not a reason to",
             CONTEXT_PLANNER_SYSTEM_PROMPT,
         )
@@ -442,7 +445,6 @@ class ContextPlannerTest(unittest.TestCase):
                     "write_file",
                     "apply_patch",
                     "sleep",
-                    "reply_expectation_close",
                     "respond",
                 ],
             )
@@ -746,6 +748,7 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "recent_turns",
                                 "active_recent_turn_ids",
                                 "candidate_episodes",
+                                "interrupted_reply_expectation",
                                 "owner_messages",
                             ],
                         )
@@ -767,6 +770,9 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual(
                             payload["active_recent_turn_ids"],
                             ["recent-turn-1", "recent-turn-2"],
+                        )
+                        self.assertIsNone(
+                            payload["interrupted_reply_expectation"]
                         )
                         self.assertEqual(len(payload["candidate_goals"]), 8)
                         self.assertEqual(

@@ -27,7 +27,6 @@ from momoi.runtime import (
     RESPOND_TOOL_SPEC,
     SEND_MESSAGE_TOOL_SPEC,
     heartbeat_respond_tool_spec,
-    reply_wait_respond_tool_spec,
     MomoiDaemon,
 )
 from momoi.runtime.daemon import REFLECTION_QUEUE_PREFIX
@@ -298,32 +297,15 @@ class DaemonTest(unittest.TestCase):
             / "prompts"
             / "system.md"
         ).read_text(encoding="utf-8")
-        self.assertIn("practical, conversational, playful, or caring", system)
-        self.assertIn("records what Momoi is waiting for", system)
-        self.assertIn("Independently set `schedule_reply_wait`", system)
-        self.assertIn("false leaves the expectation passive", system)
-        self.assertIn("revisits one reply expectation", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("whether a natural owner-visible beat belongs", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn(
-            "visible-message decision and the scheduling decision independently",
-            REPLY_WAIT_SYSTEM_PROMPT,
-        )
-        self.assertIn("neither forces", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("nor forces it to remain active", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("controls only the active schedule", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("one later re-evaluation", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("no later re-evaluation exists", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn(
-            "existence of a later opportunity is not a reason to use it",
-            REPLY_WAIT_SYSTEM_PROMPT,
-        )
-        self.assertIn("continue the same expectation", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("`reply_wait.reason` is private", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("wish to be answered, understood, or comforted", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("Do not flatten it", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertNotIn("催促", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertNotIn("guilt", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertNotIn("reassurance", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("choose 1–10 whole minutes", system)
+        self.assertIn("mandatory follow-up", system)
+        self.assertIn("<interrupted_reply_expectation>", system)
+        self.assertIn("timer is already cancelled", system)
+        self.assertIn("follow-up must be sent now", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("reconsider contact", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("Send exactly one", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("`expected_information` and `reason`", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("Set `reply_wait.wait` to false", REPLY_WAIT_SYSTEM_PROMPT)
 
     def test_mood_update_parser_accepts_open_state_labels(self) -> None:
         mood, error = MomoiDaemon._parse_mood_update(
@@ -367,9 +349,7 @@ class DaemonTest(unittest.TestCase):
             (None, "invalid_mood_decision"),
         )
         self.assertIn("mood", RESPOND_TOOL_SPEC["input_schema"]["required"])
-        self.assertIn(
-            "schedule_reply_wait", RESPOND_TOOL_SPEC["input_schema"]["required"]
-        )
+        self.assertIn("reply_wait", RESPOND_TOOL_SPEC["input_schema"]["required"])
         self.assertNotIn("continuity", RESPOND_TOOL_SPEC["input_schema"]["properties"])
         self.assertNotIn("delivery", RESPOND_TOOL_SPEC["input_schema"]["properties"])
         self.assertNotIn("expects_reply", RESPOND_TOOL_SPEC["input_schema"]["properties"])
@@ -402,17 +382,19 @@ class DaemonTest(unittest.TestCase):
         self.assertIn("partial thought", bubble_description)
         self.assertIn("grammatically complete", bubble_description)
         self.assertNotIn("complete owner-visible message item", bubble_description)
-        expectation = RESPOND_TOOL_SPEC["input_schema"]["properties"][
-            "reply_expectation"
-        ]["description"]
-        self.assertIn("practical, conversational, playful, caring", expectation)
-        self.assertIn("understood or comforted", expectation)
-        self.assertIn("records what Momoi is waiting for", expectation)
-        schedule = RESPOND_TOOL_SPEC["input_schema"]["properties"][
-            "schedule_reply_wait"
-        ]["description"]
-        self.assertIn("Decide this independently", schedule)
-        self.assertIn("keeps any expectation passive", schedule)
+        wait_shapes = RESPOND_TOOL_SPEC["input_schema"]["properties"]["reply_wait"][
+            "oneOf"
+        ]
+        self.assertEqual(
+            [shape["properties"]["wait"]["enum"][0] for shape in wait_shapes],
+            [False, True],
+        )
+        self.assertEqual(
+            wait_shapes[1]["properties"]["delay_minutes"]["minimum"], 1
+        )
+        self.assertEqual(
+            wait_shapes[1]["properties"]["delay_minutes"]["maximum"], 10
+        )
         self.assertIn("conversational Turn", RESPOND_TOOL_SPEC["description"])
         self.assertNotIn("messages", RESPOND_TOOL_SPEC["input_schema"]["properties"])
         heartbeat_respond = heartbeat_respond_tool_spec()
@@ -422,10 +404,6 @@ class DaemonTest(unittest.TestCase):
         self.assertNotIn(
             "continue_waiting_for_reply",
             heartbeat_respond["input_schema"]["properties"]["heartbeat"]["properties"],
-        )
-        reply_wait_respond = reply_wait_respond_tool_spec()
-        self.assertEqual(
-            reply_wait_respond["input_schema"]["required"], ["reply_wait", "mood"]
         )
 
     def test_context_budget_drops_old_history_and_truncates_tool_results(self) -> None:
@@ -1118,11 +1096,12 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 await daemon._complete_heartbeat_turn(asyncio.Event())
 
             self.assertEqual(
-                complete.await_args.args[0], daemon._turn_id("reply-wait", 1060.0)
+                complete.await_args.args[0],
+                daemon._turn_id("reply-followup", 1060.0),
             )
             daemon.store.close()
 
-    async def test_reply_wait_turn_has_only_wait_tools_and_preserves_heartbeat(
+    async def test_reply_followup_is_mandatory_and_preserves_heartbeat(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1144,25 +1123,25 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                    last_heartbeat_at=900, next_heartbeat_at=1660,
                    pending_reply_turn_id='question',
                    pending_reply_expectation='主人是否愿意继续聊',
-                   pending_reply_since=1000, pending_reply_next_check_at=1060
+                   pending_reply_since=1000,
+                   pending_reply_last_reason='因为还想听老师回答',
+                   pending_reply_delay_minutes=1,
+                   pending_reply_next_check_at=1060
                    WHERE id=1"""
             )
             daemon.store.begin_turn(
-                "reply-wait-turn", "autonomous", ["reply-wait:1060"]
+                "reply-followup-turn", "autonomous", ["reply-followup:1060"]
             )
             before = daemon.store.self_state()
             terminal = AgentReply(
                 [],
-                reply_wait={
-                    "continue_waiting": False,
-                    "reason": "这段等待自然冷却了",
-                },
+                reply_wait={"wait": False},
             )
             with patch.object(
                 daemon, "_run_tool_loop", new_callable=AsyncMock, return_value=terminal
             ) as run:
                 await daemon._complete_reply_wait(
-                    "reply-wait-turn", "napcat", owner_event_revision=0
+                    "reply-followup-turn", "napcat", owner_event_revision=0
                 )
 
             tools = run.await_args.args[2]
@@ -1171,19 +1150,9 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             request = json.dumps(run.await_args.args[:2], ensure_ascii=False)
             self.assertIn("<pending_owner_reply>", request)
             self.assertIn("waiting_minutes", request)
-            self.assertIn("previous_check_reason", request)
-            self.assertIn("later_check_available", request)
-            self.assertIn("later_check_in_minutes", request)
-            self.assertIn("\\\"later_check_available\\\": true", request)
-            self.assertIn("\\\"later_check_in_minutes\\\": 7", request)
-            for hidden_scheduler_field in (
-                "check_index",
-                "max_checks",
-                "stage_delay_minutes",
-                "final_check",
-                "heartbeat_checks",
-            ):
-                self.assertNotIn(hidden_scheduler_field, request)
+            self.assertIn("expected_information", request)
+            self.assertIn("因为还想听老师回答", request)
+            self.assertNotIn("<recent_conversation>", request)
             self.assertNotIn("<autonomous_heartbeat>", request)
             after = daemon.store.self_state()
             for key in (
@@ -1193,10 +1162,11 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 "next_heartbeat_at",
             ):
                 self.assertEqual(after[key], before[key])
-            self.assertIsNone(daemon.store.pending_owner_reply())
+            self.assertIsNotNone(daemon.store.pending_owner_reply())
+            self.assertIsNone(daemon.store.next_heartbeat_due_at(False))
             daemon.store.close()
 
-    async def test_reply_wait_keeps_optional_followup_available_each_check(
+    async def test_reply_followup_uses_stored_reason_without_rechecking(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1216,25 +1186,17 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             pending = {
                 "source_turn": "question",
                 "source_messages": [],
-                "expected_response": "主人对问题的回答",
+                "expected_information": "主人对问题的回答",
+                "reason": "这个问题需要老师决定",
                 "waiting_since": "2026-08-17T12:00:00+08:00",
                 "waiting_minutes": 4,
-                "heartbeat_checks": 1,
-                "previous_check_reason": "问题仍然开放",
-                "check_index": 2,
-                "max_checks": 2,
-                "stage_delay_minutes": 7,
-                "final_check": True,
+                "delay_minutes": 4,
+                "deadline": "2026-08-17T12:04:00+08:00",
                 "channel": "napcat",
-                "followup_attempts": 1,
-                "delivered_followups": 0,
             }
             terminal = AgentReply(
                 [],
-                reply_wait={
-                    "continue_waiting": False,
-                    "reason": "沉默说明这次对话已经自然结束",
-                },
+                reply_wait={"wait": False},
             )
             with (
                 patch.object(
@@ -1246,7 +1208,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     new_callable=AsyncMock,
                     return_value=terminal,
                 ) as run,
-                patch.object(daemon, "_commit_reply_wait_state"),
+                patch.object(daemon, "_commit_reply_followup_state"),
             ):
                 await daemon._complete_reply_wait(
                     "reply-wait-second", "napcat", owner_event_revision=0
@@ -1257,8 +1219,108 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 [tool["name"] for tool in tools], ["send_message", "respond"]
             )
             request = json.dumps(run.await_args.args[:2], ensure_ascii=False)
-            self.assertIn("\\\"later_check_available\\\": false", request)
-            self.assertIn("\\\"later_check_in_minutes\\\": null", request)
+            self.assertIn("这个问题需要老师决定", request)
+            self.assertNotIn("continue_waiting", request)
+            self.assertNotIn("later_check", request)
+            daemon.store.close()
+
+    async def test_reply_followup_requires_message_and_cannot_rearm(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(
+                AppConfig(
+                    llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
+                    channel=NapCatConfig(
+                        "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
+                    ),
+                    system_prompt="test",
+                    recent_raw_tokens=1000,
+                    recent_turns=2,
+                    memory_results=2,
+                    memory_tokens=1000,
+                    database=Path(directory) / "momoi.sqlite3",
+                    log_level="INFO",
+                )
+            )
+            daemon.store._db.execute(
+                """UPDATE self_state SET pending_reply_turn_id='question',
+                   pending_reply_expectation='主人对问题的回答',
+                   pending_reply_since=1000,
+                   pending_reply_last_reason='这个问题需要老师决定',
+                   pending_reply_delay_minutes=1,
+                   pending_reply_channel='napcat',
+                   pending_reply_next_check_at=1060 WHERE id=1"""
+            )
+            daemon.store.begin_turn(
+                "mandatory-followup",
+                "autonomous",
+                ["reply-followup:1060"],
+            )
+
+            class Provider:
+                calls = 0
+
+                async def complete(
+                    provider_self,
+                    _system: object,
+                    _messages: list[dict[str, object]],
+                    _tools: list[dict[str, object]],
+                    **_: object,
+                ) -> ProviderResponse:
+                    provider_self.calls += 1
+                    if provider_self.calls == 1:
+                        call = ToolCall(
+                            "early-respond",
+                            "respond",
+                            {
+                                "reply_wait": {"wait": False},
+                                "mood": {"decision": "unchanged"},
+                            },
+                        )
+                    elif provider_self.calls == 2:
+                        call = ToolCall(
+                            "required-message",
+                            "send_message",
+                            {"messages": ["老师还没回答我呢"]},
+                        )
+                    elif provider_self.calls == 3:
+                        call = ToolCall(
+                            "rearm",
+                            "respond",
+                            {
+                                "reply_wait": {
+                                    "wait": True,
+                                    "delay_minutes": 2,
+                                    "expected_information": "老师的回答",
+                                    "reason": "还想再等一次",
+                                },
+                                "mood": {"decision": "unchanged"},
+                            },
+                        )
+                    else:
+                        call = ToolCall(
+                            "close",
+                            "respond",
+                            {
+                                "reply_wait": {"wait": False},
+                                "mood": {"decision": "unchanged"},
+                            },
+                        )
+                    return ProviderResponse([], [call])
+
+            provider = Provider()
+            daemon.provider = provider  # type: ignore[assignment]
+            await daemon._complete_reply_wait(
+                "mandatory-followup",
+                "napcat",
+                owner_event_revision=0,
+            )
+
+            self.assertEqual(provider.calls, 4)
+            self.assertIsNotNone(daemon.store.pending_owner_reply())
+            outbox = daemon.store.due_outbox()
+            self.assertEqual([row.text for row in outbox], ["老师还没回答我呢"])
+            daemon.store.mark_sent(outbox[0].id)
+            self.assertIsNone(daemon.store.pending_owner_reply())
             daemon.store.close()
 
     async def test_heartbeat_defers_while_owner_reply_is_in_flight(self) -> None:
@@ -1788,7 +1850,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "list_dir",
                             "write_file",
                             "send_message",
-                            "reply_expectation_close",
                             "respond",
                         }
                         if names != expected:
@@ -1823,9 +1884,15 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             f"heartbeat-{self.calls}",
                             "respond",
                             {
-                                "expects_reply": expects_reply,
-                                "reply_expectation": (
-                                    "主人对关卡点子的回应" if expects_reply else ""
+                                "reply_wait": (
+                                    {
+                                        "wait": True,
+                                        "delay_minutes": 4,
+                                        "expected_information": "主人对关卡点子的回应",
+                                        "reason": "想听老师对新关卡点子的看法",
+                                    }
+                                    if expects_reply
+                                    else {"wait": False}
                                 ),
                                 "mood": {"decision": "unchanged"},
                                 "heartbeat": {

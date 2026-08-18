@@ -13,7 +13,7 @@ from .parsing import (
     parse_mood_decision,
     parse_mood_update,
     parse_reflection_finish,
-    parse_reply_expectation,
+    parse_reply_wait_decision,
     parse_response,
 )
 from .turn_support import (
@@ -50,7 +50,7 @@ class TurnRunner(
     _parse_response = staticmethod(parse_response)
     _parse_mood_decision = staticmethod(parse_mood_decision)
     _parse_mood_update = staticmethod(parse_mood_update)
-    _parse_reply_expectation = staticmethod(parse_reply_expectation)
+    _parse_reply_wait_decision = staticmethod(parse_reply_wait_decision)
     _parse_reflection_finish = staticmethod(parse_reflection_finish)
 
     @staticmethod

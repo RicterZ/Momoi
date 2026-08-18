@@ -25,10 +25,8 @@ from .progress_announce import (
 )
 from .protocol import (
     AUTONOMOUS_FINISH_SPEC,
-    REPLY_EXPECTATION_CLOSE_SPEC,
     RESPOND_TOOL_SPEC,
     heartbeat_respond_tool_spec,
-    reply_wait_respond_tool_spec,
     send_message_tool_spec,
 )
 from .turn_support import (
@@ -55,7 +53,6 @@ class ToolExecutionService:
             *self._announced_tool_specs(AGENDA_TOOL_SPECS, mcp=False),
             *self._announced_tool_specs(BUILTIN_TOOL_SPECS, mcp=False),
             *self._announced_tool_specs(self.mcp.tool_specs, mcp=True),
-            REPLY_EXPECTATION_CLOSE_SPEC,
             RESPOND_TOOL_SPEC,
         ]
 
@@ -92,7 +89,7 @@ class ToolExecutionService:
         owner_work_acknowledged = False
         llm_round = 0
         stage = (
-            "reply_wait"
+            "reply_followup"
             if reply_wait_turn
             else (
                 "heartbeat"
@@ -101,6 +98,8 @@ class ToolExecutionService:
             )
         )
         while True:
+            if reply_wait_turn and self.store.pending_owner_reply() is None:
+                return None
             updates = (
                 await self._settle_owner_updates(current_events, delivery_channel.name)
                 if accept_owner_updates
@@ -124,13 +123,9 @@ class ToolExecutionService:
                 force_autonomous_finish = False
                 failed_tool_rounds = 0
             terminal_tool = (
-                reply_wait_respond_tool_spec()
-                if reply_wait_turn
-                else (
-                    heartbeat_respond_tool_spec()
-                    if heartbeat_turn
-                    else RESPOND_TOOL_SPEC
-                )
+                heartbeat_respond_tool_spec()
+                if heartbeat_turn
+                else RESPOND_TOOL_SPEC
             )
             request_tools = (
                 [self._send_message_tool_spec(delivery_channel.name), terminal_tool]
@@ -367,7 +362,6 @@ class ToolExecutionService:
                 reply, error = self._parse_response(
                     response.tool_calls[0].arguments,
                     require_heartbeat=heartbeat_turn,
-                    require_reply_wait=reply_wait_turn,
                 )
                 if reply is not None and plain_text:
                     reply = None
@@ -394,6 +388,20 @@ class ToolExecutionService:
                 ):
                     reply = None
                     error = "reply_expectation_without_visible_message"
+                if (
+                    reply is not None
+                    and reply_wait_turn
+                    and not visible_since_owner_update
+                ):
+                    reply = None
+                    error = "reply_followup_message_required"
+                if (
+                    reply is not None
+                    and reply_wait_turn
+                    and reply.should_schedule_reply_wait
+                ):
+                    reply = None
+                    error = "reply_followup_cannot_schedule_another_wait"
                 if reply is not None:
                     log_event(
                         logger,
@@ -652,12 +660,6 @@ class ToolExecutionService:
                                 "channel": target.name,
                                 "messages": len(progress),
                             }
-                elif call.name == "reply_expectation_close":
-                    if reply_wait_turn or authority not in {"owner", "agent"}:
-                        result = {"ok": False, "error": "tool_not_allowed"}
-                    else:
-                        draft.close_reply_expectation = True
-                        result = {"ok": True, "state": "closed"}
                 elif self.mcp.has_tool(call.name) or self.builtin_tools.has_tool(
                     call.name
                 ):
@@ -937,7 +939,6 @@ class ToolExecutionService:
         if name in {
             "respond",
             "send_message",
-            "reply_expectation_close",
             "autonomous_finish",
         }:
             return "runtime"

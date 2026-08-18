@@ -6,7 +6,7 @@ from datetime import datetime
 
 from ..channel import normalize_channel_message
 from ..models import AgentReply, OutboxMessage
-from ..reply_wait import REPLY_WAIT_FIRST_CHECK_SECONDS
+from ..reply_wait import decode_reply_wait, encode_reply_wait
 
 
 class DeliveryStore:
@@ -363,7 +363,10 @@ class DeliveryStore:
             self._apply_mood_update(reply.mood_update, now)
             if reply.should_schedule_reply_wait:
                 self._bind_turn_reply_expectation(
-                    turn_id, reply.reply_expectation
+                    turn_id,
+                    reply.reply_expectation,
+                    reply.reply_wait_delay_minutes,
+                    reply.reply_wait_reason,
                 )
             outbox_ids = [
                 int(row["id"])
@@ -570,19 +573,70 @@ class DeliveryStore:
                 (outbox_id,),
             )
             self._sync_outbox_message(outbox_id, "sent")
-            expectation = str(row["reply_expectation"] or "").strip() if row else ""
-            if expectation and row:
+            decision = decode_reply_wait(row["reply_expectation"]) if row else None
+            if decision and row:
                 activated = self._activate_reply_expectation(
                     str(row["turn_id"]),
-                    expectation,
+                    decision,
                     str(row["target_channel"] or ""),
                 )
+                if not activated:
+                    self._release_reply_episode_hold(
+                        str(row["turn_id"]),
+                        time.time(),
+                    )
+            if row:
+                self._finalize_reply_followup_delivery(
+                    str(row["turn_id"]),
+                    delivered=True,
+                )
         return activated
+
+    def _finalize_reply_followup_delivery(
+        self,
+        execution_turn_id: str,
+        *,
+        delivered: bool,
+    ) -> None:
+        followup = self._db.execute(
+            """SELECT t.state FROM turns AS t
+               WHERE t.id=? AND (
+                   t.source_ids_json LIKE '%"reply-followup:%'
+                   OR EXISTS (
+                       SELECT 1 FROM notifications
+                       WHERE turn_id=t.id
+                         AND notification_key='heartbeat.reply_followup'
+                   )
+               )
+               UNION ALL
+               SELECT 'completed' FROM notifications
+               WHERE turn_id=? AND notification_key='heartbeat.reply_followup'
+               LIMIT 1""",
+            (execution_turn_id, execution_turn_id),
+        ).fetchone()
+        if followup is None:
+            return
+        if delivered and str(followup["state"]) == "running":
+            return
+        state = self._db.execute(
+            """SELECT pending_reply_turn_id FROM self_state WHERE id=1"""
+        ).fetchone()
+        source_turn_id = str(state["pending_reply_turn_id"] or "") if state else ""
+        if not delivered:
+            self._release_reply_episode_hold(source_turn_id, time.time())
+        self._db.execute(
+            """UPDATE self_state SET pending_reply_turn_id=NULL,
+               pending_reply_expectation='', pending_reply_since=NULL,
+               pending_reply_checks=0, pending_reply_last_reason='',
+               pending_reply_channel='', pending_reply_delay_minutes=0,
+               pending_reply_next_check_at=NULL, updated_at=? WHERE id=1""",
+            (time.time(),),
+        )
 
     def _activate_reply_expectation(
         self,
         turn_id: str,
-        expectation: str,
+        decision: dict[str, object],
         target_channel: str,
     ) -> bool:
         if self._db.execute(
@@ -590,35 +644,36 @@ class DeliveryStore:
         ).fetchone():
             return False
         now = time.time()
-        state = self._db.execute(
-            """SELECT pending_reply_expectation, pending_reply_next_check_at
-               FROM self_state WHERE id=1"""
-        ).fetchone()
-        due = now + REPLY_WAIT_FIRST_CHECK_SECONDS
-        already_waiting = bool(
-            state and str(state["pending_reply_expectation"] or "").strip()
+        expectation = str(decision["expected_information"])
+        reason = str(decision["reason"])
+        delay_minutes = int(decision["delay_minutes"])
+        due = now + delay_minutes * 60
+        self._db.execute(
+            """UPDATE self_state SET pending_reply_turn_id=?,
+               pending_reply_expectation=?, pending_reply_channel=?,
+               pending_reply_since=?, pending_reply_checks=0,
+               pending_reply_last_reason=?, pending_reply_delay_minutes=?,
+               pending_reply_next_check_at=?, updated_at=? WHERE id=1""",
+            (
+                turn_id,
+                expectation,
+                target_channel,
+                now,
+                reason[:500],
+                delay_minutes,
+                due,
+                now,
+            ),
         )
-        if already_waiting and state["pending_reply_next_check_at"] is not None:
-            due = float(state["pending_reply_next_check_at"])
-        if already_waiting:
-            self._db.execute(
-                """UPDATE self_state SET pending_reply_turn_id=?,
-                   pending_reply_expectation=?, pending_reply_channel=?,
-                   pending_reply_next_check_at=?, updated_at=? WHERE id=1""",
-                (turn_id, expectation, target_channel, due, now),
-            )
-        else:
-            self._db.execute(
-                """UPDATE self_state SET pending_reply_turn_id=?,
-                   pending_reply_expectation=?, pending_reply_channel=?,
-                   pending_reply_since=?, pending_reply_checks=0,
-                   pending_reply_last_reason='',
-                   pending_reply_next_check_at=?, updated_at=? WHERE id=1""",
-                (turn_id, expectation, target_channel, now, due, now),
-            )
         return True
 
-    def _bind_turn_reply_expectation(self, turn_id: str, expectation: str) -> bool:
+    def _bind_turn_reply_expectation(
+        self,
+        turn_id: str,
+        expectation: str,
+        delay_minutes: int,
+        reason: str,
+    ) -> bool:
         row = self._db.execute(
             """SELECT id, state, target_channel FROM outbox
                WHERE turn_id=? ORDER BY id DESC LIMIT 1""",
@@ -626,32 +681,69 @@ class DeliveryStore:
         ).fetchone()
         if row is None:
             raise ValueError("reply expectation requires a visible message")
+        encoded = encode_reply_wait(expectation, reason, delay_minutes)
         self._db.execute(
             "UPDATE outbox SET reply_expectation=? WHERE id=?",
-            (expectation, row["id"]),
+            (encoded, row["id"]),
         )
         if row["state"] != "sent":
             return False
         return self._activate_reply_expectation(
             turn_id,
-            expectation,
+            {
+                "expected_information": expectation,
+                "reason": reason,
+                "delay_minutes": delay_minutes,
+            },
             str(row["target_channel"] or ""),
         )
 
     def mark_ambiguous(self, outbox_id: int, attempts: int, error: str) -> None:
         state = "ambiguous" if attempts < 2 else "failed"
         with self._db:
+            row = self._db.execute(
+                "SELECT turn_id, reply_expectation FROM outbox WHERE id=?",
+                (outbox_id,),
+            ).fetchone()
             self._db.execute(
                 """UPDATE outbox SET state=?, possible_duplicate=1,
                    next_attempt_at=?, last_error=? WHERE id=?""",
                 (state, time.time() + 2, error, outbox_id),
             )
             self._sync_outbox_message(outbox_id, state)
+            if (
+                state == "failed"
+                and row is not None
+                and decode_reply_wait(row["reply_expectation"])
+            ):
+                self._release_reply_episode_hold(
+                    str(row["turn_id"]),
+                    time.time(),
+                )
+            if state == "failed" and row is not None:
+                self._finalize_reply_followup_delivery(
+                    str(row["turn_id"]),
+                    delivered=False,
+                )
 
     def mark_failed(self, outbox_id: int, error: str) -> None:
         with self._db:
+            row = self._db.execute(
+                "SELECT turn_id, reply_expectation FROM outbox WHERE id=?",
+                (outbox_id,),
+            ).fetchone()
             self._db.execute(
                 "UPDATE outbox SET state='failed', last_error=? WHERE id=?",
                 (error, outbox_id),
             )
             self._sync_outbox_message(outbox_id, "failed")
+            if row is not None and decode_reply_wait(row["reply_expectation"]):
+                self._release_reply_episode_hold(
+                    str(row["turn_id"]),
+                    time.time(),
+                )
+            if row is not None:
+                self._finalize_reply_followup_delivery(
+                    str(row["turn_id"]),
+                    delivered=False,
+                )

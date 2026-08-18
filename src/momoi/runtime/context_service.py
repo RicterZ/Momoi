@@ -153,6 +153,7 @@ class ContextService:
             }
             for reminder in reminders_by_id.values()
         ]
+        interrupted_reply = self.store.cooled_reply_expectation_context()
         request: list[dict[str, Any]] = [
             {
                 "role": "user",
@@ -163,6 +164,11 @@ class ContextService:
                         "recent_turns": planner_recent_turns,
                         "active_recent_turn_ids": active_recent_turn_ids,
                         "candidate_episodes": candidate_context,
+                        "interrupted_reply_expectation": (
+                            json.loads(interrupted_reply)
+                            if interrupted_reply
+                            else None
+                        ),
                         "owner_messages": owner_messages,
                     },
                     ensure_ascii=False,

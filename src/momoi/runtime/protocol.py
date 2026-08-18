@@ -127,6 +127,58 @@ MOOD_DECISION_SCHEMA: dict[str, Any] = {
         },
     ]
 }
+REPLY_WAIT_DECISION_SCHEMA: dict[str, Any] = {
+    "oneOf": [
+        {
+            "type": "object",
+            "properties": {
+                "wait": {"type": "boolean", "enum": [False]},
+            },
+            "required": ["wait"],
+            "additionalProperties": False,
+        },
+        {
+            "type": "object",
+            "properties": {
+                "wait": {"type": "boolean", "enum": [True]},
+                "delay_minutes": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10,
+                    "description": (
+                        "Whole minutes to wait after the last visible message is "
+                        "successfully delivered."
+                    ),
+                },
+                "expected_information": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 300,
+                    "description": (
+                        "What Momoi expects the owner's reply to communicate."
+                    ),
+                },
+                "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500,
+                    "description": (
+                        "Why a follow-up must be sent if the owner has not replied "
+                        "by the selected deadline. This is private runtime context."
+                    ),
+                },
+            },
+            "required": [
+                "wait",
+                "delay_minutes",
+                "expected_information",
+                "reason",
+            ],
+            "additionalProperties": False,
+        },
+    ]
+}
+
 RESPOND_TOOL_SPEC: dict[str, Any] = {
     "name": "respond",
     "description": (
@@ -137,31 +189,11 @@ RESPOND_TOOL_SPEC: dict[str, Any] = {
     "input_schema": {
         "type": "object",
         "properties": {
-            "reply_expectation": {
-                "type": "string",
-                "maxLength": 300,
-                "description": (
-                    "What Momoi genuinely hopes to hear next after the last visible "
-                    "message. It may be practical, conversational, playful, caring, "
-                    "emotional, or a wish to be understood or comforted; "
-                    "this records what Momoi is waiting for. "
-                    "Use an empty string when Momoi is not waiting for anything."
-                ),
-            },
-            "schedule_reply_wait": {
-                "type": "boolean",
-                "description": (
-                    "Whether to schedule an active reply-wait decision in about "
-                    "three minutes. Decide this independently from hoping for a "
-                    "reply. False keeps any expectation passive and schedules nothing; "
-                    "true requires a non-empty reply_expectation."
-                ),
-            },
+            "reply_wait": REPLY_WAIT_DECISION_SCHEMA,
             "mood": MOOD_DECISION_SCHEMA,
         },
         "required": [
-            "reply_expectation",
-            "schedule_reply_wait",
+            "reply_wait",
             "mood",
         ],
         "additionalProperties": False,
@@ -189,22 +221,6 @@ HEARTBEAT_STATE_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 
-REPLY_WAIT_STATE_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "continue_waiting": {
-            "type": "boolean",
-            "description": (
-                "Whether Momoi still genuinely wants to wait for the pending reply."
-            ),
-        },
-        "reason": {"type": "string", "minLength": 1, "maxLength": 500},
-    },
-    "required": ["continue_waiting", "reason"],
-    "additionalProperties": False,
-}
-
-
 def heartbeat_respond_tool_spec() -> dict[str, Any]:
     schema = RESPOND_TOOL_SPEC["input_schema"]
     return {
@@ -224,27 +240,6 @@ def heartbeat_respond_tool_spec() -> dict[str, Any]:
             "required": [*schema["required"], "heartbeat"],
         },
     }
-
-
-def reply_wait_respond_tool_spec() -> dict[str, Any]:
-    return {
-        "name": "respond",
-        "description": (
-            "Required terminal state update for a pending-reply wait Turn. It never "
-            "sends messages; use send_message first for an optional follow-up."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "reply_wait": REPLY_WAIT_STATE_SCHEMA,
-                "mood": MOOD_DECISION_SCHEMA,
-            },
-            "required": ["reply_wait", "mood"],
-            "additionalProperties": False,
-        },
-    }
-
-
 SEND_MESSAGE_TOOL_SPEC: dict[str, Any] = {
     "name": "send_message",
     "description": (
@@ -271,16 +266,6 @@ SEND_MESSAGE_TOOL_SPEC: dict[str, Any] = {
         "additionalProperties": False,
     },
 }
-
-REPLY_EXPECTATION_CLOSE_SPEC: dict[str, Any] = {
-    "name": "reply_expectation_close",
-    "description": (
-        "Close the cooled owner-reply expectation when the conversation has answered it "
-        "or it no longer matters. This only changes private relationship state."
-    ),
-    "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
-}
-
 
 def send_message_tool_spec(
     channel_names: list[str], primary_channel: str
