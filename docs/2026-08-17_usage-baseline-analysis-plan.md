@@ -2,7 +2,7 @@
 
 本文定义 Momoi 在开发基本稳定后连续采集 2–3 个完整自然日的数据，并据此评估请求放大、输入与输出 Token、缓存效率、费用结构及各核心设计的质量成本。
 
-> 2026-08-16 是 Episode Anneal 存量迁移日；2026-08-17 多次修改提示词、Schema 和部署，造成上下文增长及缓存前缀失效。两天都不进入稳态基线。8 月 17 日数据只作为开发压力态参考，其 LLM dump 已按 `Asia/Shanghai` 自然日删除；`llm_usage` 记录仍保留。
+> 2026-08-16 是 Episode Anneal 存量迁移日；2026-08-17 多次修改提示词、Schema 和部署，造成上下文增长及缓存前缀失效。两天都不进入稳态基线。2026-08-18 17:07 CST 部署 Planner 6+6 缓存实验；当天部署前数据不进入新方案基线，部署后作为冷启动和滚动周期诊断。旧 LLM dump 已清理，`llm_usage` 记录仍保留。
 
 ## 目标和原则
 
@@ -27,9 +27,10 @@
 
 首选窗口为：
 
-- 第一天：2026-08-18 00:00–23:59 CST；
-- 第二天：2026-08-19 00:00–23:59 CST；
-- 第三天：2026-08-20 00:00–23:59 CST，可用于确认前两天不是偶然波动。
+- 部署诊断：2026-08-18 17:07 CST 起，只用于冷启动、Append 和换块行为；
+- 第一天：2026-08-19 00:00–23:59 CST；
+- 第二天：2026-08-20 00:00–23:59 CST；
+- 第三天：2026-08-21 00:00–23:59 CST，可用于确认前两天不是偶然波动。
 
 至少采集两个完整自然日；满足以下任一条件时延长到三天以上：
 
@@ -49,6 +50,98 @@
 - 无存量迁移和人工批量任务；
 - 不删除采集窗口内的 dump、thinking 或用量记录；
 - 若必须部署，记录精确时间和变更项，将部署前后拆成不同区段，不混合计算缓存率。
+
+## Planner 6+6 缓存实验
+
+### 部署边界
+
+- 代码：`00a6c5c`、`96a0162`、`994d3f6`；
+- 容器创建时间：2026-08-18 17:07:47.973953 CST；
+- 容器 ID：`de2891c6413e511426b9d29de5fa68ed4f4f4640e3d2fedffea9c2cbbcfaf230`；
+- 旧 dump 清理：781 个，约 110.8 MiB，清理后为 0；
+- 新数据起点：首个新 Planner dump 为 2026-08-18 17:08:57 CST。
+
+今天的 `/api/usage?days=1` 同时包含部署前后调用，不作为实验聚合结果。实验分析必须以容器创建时间为下界，从调用级 `llm_usage` 和新 dump 精确切片。
+
+### 方案
+
+- Planner Base：6 个已完成可见 Turn；
+- Append：最多 6 个新 Turn；
+- 实际请求中的日志长度：6 → 7 → 8 → 9 → 10 → 11 → 6；
+- Active：最新 6 个 Turn，通过 `active_recent_turn_ids` 标记；
+- Planner Recent Token 上限：线上自动取 88K；
+- 超过 Token 上限时提前丢弃旧 Base，当前 Append 块保持稳定增长；
+- Goals 和 Reminders 保持在 Recent 日志前，状态不变时与 Append 前缀一起缓存；
+- Episode candidates 和当前 Owner 消息保持在动态尾部；
+- Planner 专用投影完整保留工具名称、参数、结果、成功/错误、时间和可见性。
+
+较旧但仍在 Base 中、已经退出 Active 6 的 Turn 只用于明确引用、未完成工作、工具结果和纠错；不得仅因其存在而继续旧话题。
+
+### 首轮验证
+
+2026-08-18 17:08:57 CST 的首轮 Planner 请求：
+
+- Prompt Token：26,177；
+- Cache Read：0；
+- Output Token：1,995；
+- Recent Turns：9；
+- Active Turns：6；
+- Payload 顺序与 `active_recent_turn_ids` 提示词均已生效。
+
+这是新 System Prompt、Tool Schema 和容器后的冷启动调用，必须单列，不能计入暖缓存平均值。
+
+### 量化假设
+
+在 Goals 没有变化、Provider 缓存未过期且形成完整循环时，预期：
+
+- Context Planner Token 加权缓存率约 55%–65%；
+- 未缓存输入较逐轮滑动下降约 35%–45%；
+- Planner 输入费用下降约 30%–40%；
+- Planner 总费用下降约 18%–25%；
+- Raw 输入会上升，但主要增加为低价 Cache Read；
+- reasoning、Episode候选和工具语义信息保持不变。
+
+### 每轮检测项
+
+对部署后的每个 Context Planner dump记录：
+
+- Recent Turn 数和 Active Turn 数；
+- Base/Append 位置及是否发生换块；
+- Prompt、Cache Read、Uncached和Output Token；
+- Token 加权缓存率；
+- Goals/Reminders内容哈希是否变化；
+- System Prompt和Tool Schema哈希；
+- Planner校验失败、重试或降级；
+- 当前消息是否错误续接已退出Active范围的旧话题；
+- 对之前工具调用的名称、参数和结果是否仍可正确引用；
+- Episode绑定、Recall Query和省略指代是否正确。
+
+冷启动、Goals变化、Prompt/Schema变化、Provider缓存失效和6轮换块必须单独标记，不能与普通Append热调用混合解释。
+
+### 验收条件
+
+至少观察：
+
+- 一个完整6+6循环；
+- 一次正常换块；
+- 两个完整自然日；
+- 工具密集、普通聊天、旧话题干扰和明确跨轮引用样本。
+
+量化验收：
+
+- 暖调用缓存率符合循环位置的增长趋势；
+- 完整循环Token加权缓存率不低于50%；
+- Fresh Input和估算输入费用较旧滑动方案下降；
+- Planner重试率、降级率不高于旧方案；
+- P90输入不逼近160K预算，且88K Recent上限保留约30%输入空间。
+
+质量验收：
+
+- Active 6之外的背景Turn不导致无依据续旧话题；
+- 明确引用较旧Base Turn时仍能正确解析；
+- 工具名称、参数、结果和状态不丢失；
+- Goal、Reminder、Episode和Memory召回无可见回归；
+- Owner更正、“没接上”或重复解释的比例不增加。
 
 ## 需要准备的数据
 
