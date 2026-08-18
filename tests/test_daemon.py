@@ -464,6 +464,158 @@ class DaemonTest(unittest.TestCase):
         self.assertEqual(messages[0]["content"], "当前消息")
         self.assertLessEqual(estimated, 5000)
 
+    def test_context_budget_breaks_expanding_compression_and_keeps_going(
+        self,
+    ) -> None:
+        daemon = object.__new__(MomoiDaemon)
+        daemon.config = SimpleNamespace(max_input_tokens=100)
+        expanding = "bad" * 400
+        compressible = "good" * 400
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "tool_result", "content": expanding},
+                    {"type": "tool_result", "content": compressible},
+                ],
+            }
+        ]
+
+        def truncate(value: str, _limit: int) -> str:
+            return value + "!" if value.startswith("bad") else '{"ok":true}'
+
+        with (
+            patch(
+                "momoi.runtime.tool_execution._truncate_tool_result_json",
+                side_effect=truncate,
+            ) as truncator,
+            self.assertLogs("momoi.runtime.turns", level="WARNING") as logs,
+        ):
+            remaining = daemon._fit_context(
+                [{"type": "text", "text": "system"}],
+                messages,
+                [],
+                0,
+            )
+
+        self.assertEqual(remaining, 0)
+        self.assertEqual(messages[0]["content"][0]["content"], expanding)
+        self.assertEqual(
+            messages[0]["content"][1]["content"], '{"ok":true}'
+        )
+        self.assertEqual(truncator.call_count, 2)
+        self.assertTrue(
+            any(
+                "tool_result_truncation_stalled" in message
+                for message in logs.output
+            )
+        )
+        self.assertTrue(
+            any("llm_context_oversize" in message for message in logs.output)
+        )
+
+    def test_context_budget_breaks_real_tool_result_expansion(self) -> None:
+        daemon = object.__new__(MomoiDaemon)
+        daemon.config = SimpleNamespace(max_input_tokens=100)
+        result = json.dumps(
+            {
+                "ok": False,
+                "error": "mcp_tool_error",
+                "truncated": False,
+                "provenance": {
+                    "source": "mcp",
+                    "tool": "mcp__brave-search__brave_web_search",
+                },
+                "result": {
+                    "content": [
+                        {"type": "text", "text": "x" * 389},
+                    ],
+                    "isError": True,
+                },
+                "message": "x" * 390,
+            }
+        )
+        messages = [
+            {
+                "role": "user",
+                "content": [{"type": "tool_result", "content": result}],
+            }
+        ]
+
+        with self.assertLogs("momoi.runtime.turns", level="WARNING") as logs:
+            remaining = daemon._fit_context(
+                [{"type": "text", "text": "system"}],
+                messages,
+                [],
+                0,
+            )
+
+        self.assertEqual(remaining, 0)
+        self.assertEqual(messages[0]["content"][0]["content"], result)
+        self.assertTrue(
+            any(
+                "tool_result_truncation_stalled" in message
+                for message in logs.output
+            )
+        )
+
+    def test_context_budget_caps_compression_attempts(self) -> None:
+        daemon = object.__new__(MomoiDaemon)
+        daemon.config = SimpleNamespace(max_input_tokens=100)
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "tool_result", "content": "界" * 1100},
+                ],
+            }
+        ]
+        with (
+            patch(
+                "momoi.runtime.tool_execution._truncate_tool_result_json",
+                side_effect=lambda value, _limit: value[:-1],
+            ) as truncator,
+            self.assertLogs("momoi.runtime.turns", level="WARNING") as logs,
+        ):
+            daemon._fit_context(
+                [{"type": "text", "text": "system"}],
+                messages,
+                [],
+                0,
+            )
+
+        self.assertEqual(truncator.call_count, 16)
+        self.assertEqual(len(messages[0]["content"][0]["content"]), 1084)
+        self.assertTrue(
+            any(
+                "tool_result_truncation_stalled" in message
+                for message in logs.output
+            )
+        )
+
+    def test_context_budget_allows_uncompressible_single_turn_oversize(
+        self,
+    ) -> None:
+        daemon = object.__new__(MomoiDaemon)
+        daemon.config = SimpleNamespace(max_input_tokens=100)
+        messages = [{"role": "user", "content": "current" * 1000}]
+
+        with self.assertLogs("momoi.runtime.turns", level="WARNING") as logs:
+            remaining = daemon._fit_context(
+                [{"type": "text", "text": "system"}],
+                messages,
+                [],
+                0,
+            )
+
+        self.assertEqual(remaining, 0)
+        self.assertEqual(messages[0]["content"], "current" * 1000)
+        self.assertTrue(
+            any(
+                "llm_context_oversize" in message for message in logs.output
+            )
+        )
+
 
 class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
     async def test_input_status_extends_open_owner_batch(self) -> None:

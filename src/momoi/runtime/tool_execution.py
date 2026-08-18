@@ -42,6 +42,8 @@ from .turn_support import (
 )
 
 logger = logging.getLogger("momoi.runtime.turns")
+MAX_TOOL_RESULT_TRUNCATION_ATTEMPTS = 16
+
 
 class ToolExecutionService:
     def _owner_tool_specs(
@@ -1091,6 +1093,8 @@ class ToolExecutionService:
 
         estimated = size()
         dropped = 0
+        truncated = 0
+        compression_breakers = 0
         # ponytail: repeated estimation is fine at single-user scale; profile before optimizing.
         while estimated > self.config.max_input_tokens and history_messages:
             messages.pop(0)
@@ -1110,16 +1114,65 @@ class ToolExecutionService:
                     ):
                         continue
                     result = block.get("content")
+                    attempts = 0
                     while (
                         isinstance(result, str)
                         and len(result) > 1000
                         and estimated > self.config.max_input_tokens
                     ):
-                        result = _truncate_tool_result_json(
+                        if attempts >= MAX_TOOL_RESULT_TRUNCATION_ATTEMPTS:
+                            compression_breakers += 1
+                            log_event(
+                                logger,
+                                logging.WARNING,
+                                "tool_result_truncation_stalled",
+                                reason="attempt_limit",
+                                attempts=attempts,
+                                result_chars=len(result),
+                                estimated_input=estimated,
+                                input_limit=self.config.max_input_tokens,
+                            )
+                            break
+                        attempts += 1
+                        candidate = _truncate_tool_result_json(
                             result, max(1000, len(result) // 2)
                         )
-                        block["content"] = result
-                        estimated = size()
+                        if len(candidate) >= len(result):
+                            compression_breakers += 1
+                            log_event(
+                                logger,
+                                logging.WARNING,
+                                "tool_result_truncation_stalled",
+                                reason="non_shrinking_result",
+                                attempts=attempts,
+                                before_chars=len(result),
+                                after_chars=len(candidate),
+                                estimated_input=estimated,
+                                input_limit=self.config.max_input_tokens,
+                            )
+                            break
+                        before_estimated = estimated
+                        block["content"] = candidate
+                        candidate_estimated = size()
+                        if candidate_estimated >= before_estimated:
+                            block["content"] = result
+                            compression_breakers += 1
+                            log_event(
+                                logger,
+                                logging.WARNING,
+                                "tool_result_truncation_stalled",
+                                reason="non_shrinking_input",
+                                attempts=attempts,
+                                before_chars=len(result),
+                                after_chars=len(candidate),
+                                before_estimated=before_estimated,
+                                after_estimated=candidate_estimated,
+                                input_limit=self.config.max_input_tokens,
+                            )
+                            break
+                        result = candidate
+                        estimated = candidate_estimated
+                        truncated += 1
         log_event(
             logger,
             TRACE,
@@ -1127,6 +1180,8 @@ class ToolExecutionService:
             estimated_input=estimated,
             input_limit=self.config.max_input_tokens,
             history_dropped=dropped,
+            tool_results_truncated=truncated,
+            compression_breakers=compression_breakers,
         )
         if estimated > self.config.max_input_tokens:
             log_event(
@@ -1135,6 +1190,10 @@ class ToolExecutionService:
                 "llm_context_oversize",
                 estimated_input=estimated,
                 input_limit=self.config.max_input_tokens,
+                single_turn_context=history_messages == 0,
+                proceeding=True,
+                history_dropped=dropped,
+                compression_breakers=compression_breakers,
             )
         return history_messages
 
