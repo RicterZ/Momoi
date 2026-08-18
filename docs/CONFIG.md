@@ -227,6 +227,10 @@ Protocol-specific parsing, content rendering, and connection logs belong in that
     "heartbeat_prompt": "prompts/HEARTBEAT.md",
     "recent_raw_tokens": 32000,
     "recent_turns": 6,
+    "planner_recent_base_turns": 6,
+    "planner_recent_append_turns": 6,
+    "planner_active_recent_turns": 6,
+    "planner_recent_tokens": 52800,
     "memory_results": 6,
     "memory_tokens": 8000,
     "max_input_tokens": 96000,
@@ -243,6 +247,10 @@ Protocol-specific parsing, content rendering, and connection logs belong in that
 | `heartbeat_prompt` | `prompts/HEARTBEAT.md` | Workspace heartbeat guidance; omitted when the file is absent |
 | `recent_raw_tokens` | `32000` | Budget for canonical recent Turn records |
 | `recent_turns` | `6` | Maximum recent completed Turns considered |
+| `planner_recent_base_turns` | `recent_turns` | Turns in the Planner's cache-stable base block |
+| `planner_recent_append_turns` | `recent_turns` | Turns appended before the Planner rotates its base block |
+| `planner_active_recent_turns` | `recent_turns` | Newest Turns treated as the Planner's default conversational focus |
+| `planner_recent_tokens` | automatic | Planner-only recent-log budget; capped at `88000` and reduced with the input budget |
 | `memory_results` | `6` | Maximum durable memories recalled automatically |
 | `memory_tokens` | `8000` | Token budget for recalled durable memory |
 | `max_input_tokens` | `96000` | Target ceiling for the complete model input, including tool schemas |
@@ -252,7 +260,9 @@ Protocol-specific parsing, content rendering, and connection logs belong in that
 
 Set `max_input_tokens` below the provider's real context window. These are context-building budgets, not a promise that every provider counts tokens identically.
 
-`recent_raw_tokens` limits the canonical recent Turn records supplied to the context planner and main model, and `recent_turns` limits how many completed Turns are considered. Each record keeps its visible messages, safely projected tool calls and results, interpretation, and committed mutations together in one timeline. `recent_episode_hours` adds every Episode active in the configured window, independent of keyword recall. `summary_results` limits keyword-recalled Episodes to 12 by default. The two sets are deduplicated, then ordered with recent keyword matches first, other keyword matches next, and recent-only Episodes last. More matched keyword alternatives rank ahead within the keyword groups. `summary_tokens` is shared by the merged Episode summaries.
+`recent_raw_tokens` and `recent_turns` continue to govern recent Turns for the main model. The Context Planner uses a separate blocked log: a stable base is followed by appended Turns, and a full append block becomes the next base. `planner_active_recent_turns` marks the actual conversational focus; older Turns retained for caching are used only for explicit references, unfinished work, tool results, and corrections. The Planner projection still preserves tool names, arguments, results, success or error state, timestamps, and visibility. When omitted, `planner_recent_tokens` is the smaller of `max_input_tokens × 55%` and `88000`, reserving room for dynamic candidates, provider-counting variance, and roughly 30% input headroom.
+
+`recent_episode_hours` adds every Episode active in the configured window, independent of keyword recall. `summary_results` limits keyword-recalled Episodes to 12 by default. The two sets are deduplicated, then ordered with recent keyword matches first, other keyword matches next, and recent-only Episodes last. More matched keyword alternatives rank ahead within the keyword groups. `summary_tokens` is shared by the merged Episode summaries.
 
 Set a recall result count or token budget to `0` to disable that automatic recall layer. Explicit memory and conversation search tools remain available to the agent when their tool is enabled.
 

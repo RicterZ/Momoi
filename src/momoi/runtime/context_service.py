@@ -10,9 +10,8 @@ from ..models import IncomingMessage
 from ..storage import estimate_tokens
 from .context_assembler import (
     assemble_main_context,
-    assemble_recent_turns,
+    assemble_planner_recent_turns,
     build_plan_retrieval,
-    project_recent_turns_for_planner,
 )
 from .context_candidates import DEFAULT_EPISODE_CANDIDATE_POLICY, EpisodeCandidatePolicy, collect_episode_candidates, full_candidate_context
 from .context_planner import (
@@ -58,23 +57,25 @@ class ContextService:
 
         revision = self.store.next_context_plan_revision(turn_id)
         owner_query = "\n".join(event.text for event in events)
-        recent_turns, _ = assemble_recent_turns(
-            self.store,
-            self.config.recent_turns,
-            self.config.recent_raw_tokens,
-            min(event.received_at for event in events),
+        planner_recent_turns, active_recent_turn_ids = (
+            assemble_planner_recent_turns(
+                self.store,
+                self.config.planner_recent_base_turns or self.config.recent_turns,
+                self.config.planner_recent_append_turns or self.config.recent_turns,
+                self.config.planner_active_recent_turns or self.config.recent_turns,
+                self.config.planner_recent_tokens
+                or min(
+                    88000,
+                    max(1000, int(self.config.max_input_tokens * 0.55)),
+                ),
+                min(event.received_at for event in events),
+            )
         )
-        recent_turn_ids = [
-            str(turn["turn_id"])
-            for turn in recent_turns.get("turns", [])
-            if isinstance(turn, dict)
-        ]
-        planner_recent_turns = project_recent_turns_for_planner(recent_turns)
         candidates = collect_episode_candidates(
             self.store,
             owner_query,
             candidate_policy,
-            recent_turn_ids=recent_turn_ids,
+            recent_turn_ids=active_recent_turn_ids,
         )
         log_event(
             logger,
@@ -160,6 +161,7 @@ class ContextService:
                         "candidate_goals": candidate_goals,
                         "candidate_reminders": candidate_reminders,
                         "recent_turns": planner_recent_turns,
+                        "active_recent_turn_ids": active_recent_turn_ids,
                         "candidate_episodes": candidate_context,
                         "owner_messages": owner_messages,
                     },

@@ -2112,6 +2112,28 @@ class Store(MemoryStore, DeliveryStore):
             used += size
         return [item for group in reversed(selected) for item in group]
 
+    def recent_turn_record_count(
+        self,
+        before_timestamp: float | None = None,
+    ) -> int:
+        row = self._db.execute(
+            """SELECT COUNT(*) AS count FROM turns AS t
+               WHERE t.state<>'running'
+                 AND (? IS NULL OR t.updated_at < ?)
+                 AND (
+                     t.kind='owner' OR EXISTS (
+                         SELECT 1 FROM messages AS m
+                         WHERE m.turn_id=t.id
+                           AND (
+                               m.role IN ('user', 'event')
+                               OR m.delivery_state IN ('delivered', 'uncertain')
+                           )
+                     )
+                 )""",
+            (before_timestamp, before_timestamp),
+        ).fetchone()
+        return int(row["count"]) if row is not None else 0
+
     def recent_turn_records(
         self,
         turn_limit: int,

@@ -227,6 +227,10 @@ momoi --workspace ~/.momoi run
     "heartbeat_prompt": "prompts/HEARTBEAT.md",
     "recent_raw_tokens": 32000,
     "recent_turns": 6,
+    "planner_recent_base_turns": 6,
+    "planner_recent_append_turns": 6,
+    "planner_active_recent_turns": 6,
+    "planner_recent_tokens": 52800,
     "memory_results": 6,
     "memory_tokens": 8000,
     "max_input_tokens": 96000,
@@ -243,6 +247,10 @@ momoi --workspace ~/.momoi run
 | `heartbeat_prompt` | `prompts/HEARTBEAT.md` | workspace 心跳指引；文件不存在时不注入 |
 | `recent_raw_tokens` | `32000` | 近期 Turn 标准记录的预算 |
 | `recent_turns` | `6` | 纳入考虑的近期已完成 Turn 上限 |
+| `planner_recent_base_turns` | `recent_turns` | Planner 缓存稳定块的 Turn 数 |
+| `planner_recent_append_turns` | `recent_turns` | Planner 在切换稳定块前最多追加的 Turn 数 |
+| `planner_active_recent_turns` | `recent_turns` | Planner 默认作为当前对话焦点的最新 Turn 数 |
+| `planner_recent_tokens` | 自动 | Planner 专用 Recent 日志预算；默认不超过 `88000`，并随输入预算缩小 |
 | `memory_results` | `6` | 自动召回的持久记忆最大数量 |
 | `memory_tokens` | `8000` | 召回持久记忆的 token 预算 |
 | `max_input_tokens` | `96000` | 包括工具 schema 在内的完整模型输入目标上限 |
@@ -252,7 +260,9 @@ momoi --workspace ~/.momoi run
 
 `max_input_tokens` 应低于 provider 真实的上下文窗口。这些数值是构建上下文的预算，不代表每个 provider 都会以相同方式计算 token。
 
-`recent_raw_tokens` 限制提供给 Context Planner 和主模型的近期 Turn 标准记录，`recent_turns` 限制纳入考虑的近期已完成 Turn 数。每条记录会把可见消息、安全投影后的工具调用与结果、上下文理解和已提交 mutation 保留在同一条时间线中。`recent_episode_hours` 会加入配置窗口内全部活跃的 Episode，与关键词召回相互独立；`summary_results` 默认将关键词召回限制为最多 12 个 Episode。两组结果按 Episode 去重后排序：近期且命中关键词的优先，其次是其他关键词命中，最后是仅近期活跃的 Episode；在关键词组内，命中的关键词 alternative 越多越靠前。`summary_tokens` 由合并后的 Episode 摘要共同使用。
+`recent_raw_tokens` 和 `recent_turns` 继续控制主模型的近期 Turn。Context Planner 使用独立的分块日志：保留一个稳定 Base，在其后追加新 Turn；追加块满后，新块成为下一轮 Base。`planner_active_recent_turns` 标记真正的当前焦点，较旧但仍在缓存块中的 Turn 只用于明确引用、未完成工作、工具结果和纠错。Planner 投影仍保留工具名称、参数、结果、成功/错误、时间和可见性。`planner_recent_tokens` 未配置时取 `max_input_tokens × 55%` 与 `88000` 中较小者；这是为动态候选、Provider 计数偏差和约 30% 输入空白预留空间。
+
+`recent_episode_hours` 会加入配置窗口内全部活跃的 Episode，与关键词召回相互独立；`summary_results` 默认将关键词召回限制为最多 12 个 Episode。两组结果按 Episode 去重后排序：近期且命中关键词的优先，其次是其他关键词命中，最后是仅近期活跃的 Episode；在关键词组内，命中的关键词 alternative 越多越靠前。`summary_tokens` 由合并后的 Episode 摘要共同使用。
 
 将某个召回层的结果数量或 token 预算设为 `0` 可关闭该层自动召回。对应工具已启用时，显式记忆和对话搜索工具仍然可用。
 

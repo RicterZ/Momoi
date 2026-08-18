@@ -179,6 +179,11 @@ class ContextPlannerTest(unittest.TestCase):
             "Recent Turns are the first source of continuity",
             CONTEXT_PLANNER_SYSTEM_PROMPT,
         )
+        self.assertIn("active_recent_turn_ids", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn(
+            "their presence alone is not a reason to",
+            CONTEXT_PLANNER_SYSTEM_PROMPT,
+        )
         self.assertIn("tool calls, results", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertIn(
             "correction may invalidate an older persisted fact",
@@ -739,6 +744,7 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "candidate_goals",
                                 "candidate_reminders",
                                 "recent_turns",
+                                "active_recent_turn_ids",
                                 "candidate_episodes",
                                 "owner_messages",
                             ],
@@ -757,7 +763,11 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                         provider_self.planner_recent = recent
                         self.assertIn("RECENT CONTEXT 1", recent)
                         self.assertIn("RECENT CONTEXT 2", recent)
-                        self.assertNotIn("GLOBAL RAW MUST NOT LEAK", recent)
+                        self.assertIn("GLOBAL RAW MUST NOT LEAK", recent)
+                        self.assertEqual(
+                            payload["active_recent_turn_ids"],
+                            ["recent-turn-1", "recent-turn-2"],
+                        )
                         self.assertEqual(len(payload["candidate_goals"]), 8)
                         self.assertEqual(
                             payload["candidate_goals"][0]["id"], "goal-8"

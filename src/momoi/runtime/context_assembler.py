@@ -737,6 +737,83 @@ def project_recent_turns_for_planner(
     }
 
 
+def assemble_planner_recent_turns(
+    store: Store,
+    base_turns: int,
+    append_turns: int,
+    active_turns: int,
+    token_budget: int,
+    before_timestamp: float | None = None,
+) -> tuple[dict[str, object], list[str]]:
+    base_turns = max(1, int(base_turns))
+    append_turns = max(1, int(append_turns))
+    active_turns = max(1, int(active_turns))
+    token_budget = max(1, int(token_budget))
+
+    total = store.recent_turn_record_count(before_timestamp)
+    phase = total % append_turns
+    turn_limit = base_turns if phase == 0 else base_turns + phase
+    raw_turns = store.recent_turn_records(turn_limit, before_timestamp)
+    projected = project_recent_turns_for_planner(
+        {"version": 1, "turns": raw_turns}
+    )
+    projected_turns = projected["turns"]
+    if not isinstance(projected_turns, list):
+        projected_turns = []
+
+    def size(turn: dict[str, object]) -> int:
+        return estimate_tokens(
+            json.dumps(
+                turn,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                default=str,
+            )
+        )
+
+    envelope = estimate_tokens('{"version":1,"turns":[]}')
+    if (
+        phase > 0
+        and len(projected_turns) > phase
+        and envelope
+        + sum(size(turn) for turn in projected_turns if isinstance(turn, dict))
+        > token_budget
+    ):
+        raw_turns = raw_turns[-phase:]
+        projected_turns = projected_turns[-phase:]
+
+    selected: list[dict[str, object]] = []
+    used = envelope
+    for raw_turn, turn in reversed(list(zip(raw_turns, projected_turns))):
+        if not isinstance(turn, dict):
+            continue
+        turn_size = size(turn)
+        if selected and used + turn_size > token_budget:
+            break
+        if not selected and used + turn_size > token_budget:
+            compact = _compact_turn_record(
+                raw_turn,
+                max(1, token_budget - envelope),
+            )
+            compact_document = project_recent_turns_for_planner(
+                {"version": 1, "turns": [compact]}
+            )
+            compact_turns = compact_document.get("turns")
+            if isinstance(compact_turns, list) and compact_turns:
+                turn = compact_turns[0]
+                turn_size = size(turn)
+        selected.append(turn)
+        used += turn_size
+    selected.reverse()
+    document: dict[str, object] = {"version": 1, "turns": selected}
+    active_ids = [
+        str(turn.get("turn_id") or "")
+        for turn in selected[-active_turns:]
+        if str(turn.get("turn_id") or "")
+    ]
+    return document, active_ids
+
+
 def assemble_main_context(
     store: Store,
     retrieval: dict[str, object],

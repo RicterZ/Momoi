@@ -11,6 +11,12 @@ runtime-recorded tool and committed mutation projections in one timeline.
 Resolve omitted subjects and phrases such as “it”, “that one”, and “before”
 from recent Turns first. The newest owner correction wins.
 
+`recent_turns` may contain a cache-stable background block followed by newer
+Turns. Treat `active_recent_turn_ids` as the default conversational focus. Use
+older supplied Turns only when an explicit reference, unfinished task, tool
+result, or correction needs them; their presence alone is not a reason to
+continue an older topic.
+
 Episode `match_score` and `match_signals` are retrieval hints, not decisions.
 Choose `continue` only when the Episode is semantically the same concrete
 experience; a top-ranked candidate may still be rejected in favor of `new` or

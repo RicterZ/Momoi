@@ -10,6 +10,7 @@ from momoi.models import AgentReply, IncomingMessage, MemoryCandidate, TurnDraft
 from momoi.runtime.context_assembler import (
     _search_or,
     assemble_main_context,
+    assemble_planner_recent_turns,
     assemble_recent_turns,
     build_plan_retrieval,
     project_recent_turns_for_planner,
@@ -72,6 +73,120 @@ def plan(query: str, episode_id: str = "episode-mail") -> dict[str, object]:
 
 
 class ContextAssemblerTest(unittest.TestCase):
+    def test_planner_recent_turns_use_six_plus_six_cache_blocks(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+
+            def add(index: int) -> None:
+                event = IncomingMessage(
+                    f"event-{index}",
+                    f"event-{index}",
+                    f"owner-{index}",
+                    index,
+                    index,
+                )
+                store.add_event(event)
+                store.begin_turn(f"turn-{index}", "owner", [event.event_id])
+                store.commit_turn(
+                    [event],
+                    event.text,
+                    AgentReply([f"assistant-{index}"]),
+                    turn_id=f"turn-{index}",
+                )
+                outbox_id = store._db.execute(
+                    "SELECT id FROM outbox WHERE turn_id=?",
+                    (f"turn-{index}",),
+                ).fetchone()["id"]
+                store.mark_sent(int(outbox_id))
+
+            for index in range(1, 7):
+                add(index)
+            six, active = assemble_planner_recent_turns(
+                store, 6, 6, 6, 88000
+            )
+            self.assertEqual(
+                [turn["turn_id"] for turn in six["turns"]],
+                [f"turn-{index}" for index in range(1, 7)],
+            )
+            self.assertEqual(active, [f"turn-{index}" for index in range(1, 7)])
+
+            add(7)
+            seven, active = assemble_planner_recent_turns(
+                store, 6, 6, 6, 88000
+            )
+            self.assertEqual(
+                [turn["turn_id"] for turn in seven["turns"]],
+                [f"turn-{index}" for index in range(1, 8)],
+            )
+            self.assertEqual(active, [f"turn-{index}" for index in range(2, 8)])
+            six_prefix = json.dumps(
+                six, ensure_ascii=False, separators=(",", ":")
+            )[:-2]
+            self.assertTrue(
+                json.dumps(
+                    seven, ensure_ascii=False, separators=(",", ":")
+                ).startswith(six_prefix)
+            )
+
+            for index in range(8, 12):
+                add(index)
+            eleven, active = assemble_planner_recent_turns(
+                store, 6, 6, 6, 88000
+            )
+            self.assertEqual(len(eleven["turns"]), 11)
+            self.assertEqual(active, [f"turn-{index}" for index in range(6, 12)])
+
+            add(12)
+            twelve, active = assemble_planner_recent_turns(
+                store, 6, 6, 6, 88000
+            )
+            self.assertEqual(
+                [turn["turn_id"] for turn in twelve["turns"]],
+                [f"turn-{index}" for index in range(7, 13)],
+            )
+            self.assertEqual(active, [f"turn-{index}" for index in range(7, 13)])
+            store.close()
+
+    def test_planner_recent_turns_drop_previous_block_at_token_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            for index in range(1, 8):
+                event = IncomingMessage(
+                    f"event-{index}",
+                    f"event-{index}",
+                    f"owner-{index}-" + ("x" * 1000),
+                    index,
+                    index,
+                )
+                store.add_event(event)
+                store.begin_turn(f"turn-{index}", "owner", [event.event_id])
+                store.commit_turn(
+                    [event],
+                    event.text,
+                    AgentReply([f"assistant-{index}"]),
+                    turn_id=f"turn-{index}",
+                )
+
+            one, _ = assemble_planner_recent_turns(
+                store, 1, 1, 1, 88000
+            )
+            one_size = estimate_tokens(
+                json.dumps(one, ensure_ascii=False, separators=(",", ":"))
+            )
+            selected, active = assemble_planner_recent_turns(
+                store,
+                6,
+                6,
+                6,
+                one_size + 10,
+            )
+            self.assertEqual(
+                [turn["turn_id"] for turn in selected["turns"]],
+                ["turn-7"],
+            )
+            self.assertEqual(active, ["turn-7"])
+            store.close()
+
     def test_recent_turns_keep_messages_tools_and_committed_mutations_together(
         self,
     ) -> None:

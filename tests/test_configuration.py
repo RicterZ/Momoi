@@ -107,6 +107,10 @@ class ConfigurationTest(unittest.TestCase):
             self.assertEqual(config.llm.timeout_seconds, 300)
             self.assertEqual(config.summary_results, 12)
             self.assertEqual(config.recent_episode_hours, 6)
+            self.assertEqual(config.planner_recent_base_turns, 6)
+            self.assertEqual(config.planner_recent_append_turns, 6)
+            self.assertEqual(config.planner_active_recent_turns, 6)
+            self.assertEqual(config.planner_recent_tokens, 52800)
             self.assertTrue(config.episode_annealing.enabled)
             self.assertEqual(config.episode_annealing.idle_seconds, 60)
             self.assertEqual(config.episode_annealing.max_seconds, 650)
@@ -157,8 +161,22 @@ class ConfigurationTest(unittest.TestCase):
             self.assertEqual(load_config(path).recent_episode_hours, 2.5)
 
             value["context"]["summary_results"] = 99  # type: ignore[index]
+            value["context"]["planner_recent_base_turns"] = 7  # type: ignore[index]
+            value["context"]["planner_recent_append_turns"] = 5  # type: ignore[index]
+            value["context"]["planner_active_recent_turns"] = 4  # type: ignore[index]
+            value["context"]["planner_recent_tokens"] = 42000  # type: ignore[index]
             path.write_text(json.dumps(value))
-            self.assertEqual(load_config(path).summary_results, 12)
+            configured = load_config(path)
+            self.assertEqual(configured.summary_results, 12)
+            self.assertEqual(configured.planner_recent_base_turns, 7)
+            self.assertEqual(configured.planner_recent_append_turns, 5)
+            self.assertEqual(configured.planner_active_recent_turns, 4)
+            self.assertEqual(configured.planner_recent_tokens, 42000)
+
+            del value["context"]["planner_recent_tokens"]  # type: ignore[index]
+            value["context"]["max_input_tokens"] = 160000  # type: ignore[index]
+            path.write_text(json.dumps(value))
+            self.assertEqual(load_config(path).planner_recent_tokens, 88000)
 
             value["context"]["recent_episode_hours"] = -1  # type: ignore[index]
             path.write_text(json.dumps(value))
