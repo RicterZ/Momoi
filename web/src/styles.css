@@ -555,22 +555,15 @@ main.is-record .error {
   height: 36px;
   place-items: center;
   border: 2px solid var(--ink);
-  border-radius: 0;
+  border-radius: 10px;
   color: #fff;
   background: var(--pink);
   box-shadow: 3px 3px 0 var(--blue);
-  animation: loading-hop 640ms steps(2, end) infinite;
+  font-weight: 900;
+  animation: loading-hop 900ms ease-in-out infinite alternate;
 }
-.loading-mark .pixel-mark {
-  width: 18px;
-  height: 14px;
-  image-rendering: pixelated;
-}
-.loading-mark .is-fill,
-.loading-mark .is-shine { fill: #fff; }
-.loading-mark .is-ink { fill: var(--ink); }
 @keyframes loading-hop {
-  50% { transform: translateY(-6px); }
+  to { transform: translateY(-5px) rotate(3deg); }
 }
 .empty span { color: var(--pink); font-size: 44px; font-weight: 800; }
 .empty h2 {
