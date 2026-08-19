@@ -422,7 +422,7 @@ function Loading({ children = "正在读取 Momoi 的生活记录…" }) {
 function Empty({ text = "Momoi 开始运行后，内容会出现在这里。" }) {
   return (
     <div className="empty">
-      <PixelSprite className="pixel-mark is-solo" grid={MARK_PIXELS} />
+      <span>—</span>
       <h2>这里还没有记录</h2>
       <p>{text}</p>
     </div>
