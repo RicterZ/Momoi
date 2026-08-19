@@ -917,20 +917,23 @@ main.is-record .error {
 }
 .usage-legend {
   display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
   gap: 14px;
 }
 .usage-legend-item {
-  position: relative;
-  padding-left: 16px;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
   color: var(--muted);
   font-size: 12px;
   font-weight: 750;
+  white-space: nowrap;
 }
 .usage-legend-item::before {
   content: "";
-  position: absolute;
-  left: 0;
-  top: 6px;
+  flex: none;
   width: 10px;
   height: 10px;
   border: 2px solid var(--ink);
@@ -1514,7 +1517,10 @@ a.tag:hover {
   .usage-home-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .usage-home-stats > div { padding: 12px; }
   .usage-home-stats strong { font-size: 20px; }
-  .usage-chart-head { align-items: start; flex-direction: column; gap: 10px; }
+  .usage-chart-head {
+    align-items: center;
+    justify-content: flex-end;
+  }
   .usage-legend-item { font-size: 13px; }
   .usage-chart-card { padding: 14px 12px 10px; }
   .usage-chart-frame svg { min-height: 180px; }
