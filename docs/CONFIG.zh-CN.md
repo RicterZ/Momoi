@@ -260,7 +260,7 @@ momoi --workspace ~/.momoi run
 
 `max_input_tokens` 应低于 provider 真实的上下文窗口。这些数值是构建上下文的预算，不代表每个 provider 都会以相同方式计算 token。
 
-`recent_raw_tokens` 和 `recent_turns` 继续控制主模型的近期 Turn。Context Planner 使用独立的分块日志：保留一个稳定 Base，在其后追加新 Turn；追加块满后，新块成为下一轮 Base。`planner_active_recent_turns` 标记真正的当前焦点，较旧但仍在缓存块中的 Turn 只用于明确引用、未完成工作、工具结果和纠错。Planner 投影仍保留完整工具名称、参数和结果；历史消息省略可推导的 trust、已送达状态和逐项时间戳，Turn 级 `at` 提供时间锚点，空 Final 和重复的历史 intent 原文不发送。非默认投递状态、失败、副作用、等待、情绪变化和 mutation 仍会显式保留。`planner_recent_tokens` 未配置时取 `max_input_tokens × 55%` 与 `88000` 中较小者；这是为动态候选、Provider 计数偏差和约 30% 输入空白预留空间。
+`recent_raw_tokens` 和 `recent_turns` 继续控制主模型的近期 Turn。Context Planner 使用独立的分块日志：保留一个稳定 Base，在其后追加新 Turn；追加块满后，新块成为下一轮 Base。`planner_active_recent_turns` 标记真正的当前焦点，较旧但仍在缓存块中的 Turn 只用于明确引用、未完成工作、工具结果和纠错。Planner 投影保留工具名称和完整参数；成功、内部可见性、Provenance等默认包装不重复，状态变更工具只返回关键最终状态。Active Turn保留完整工具结果，非Active背景Turn的大型文件、目录、搜索或MCP结果使用带原始大小/数量和头尾预览的结构化截断。历史消息省略可推导的 trust、已送达状态和逐项时间戳，Turn 级 `at` 提供时间锚点，空 Final 和重复的历史 intent 原文不发送。非默认投递状态、失败、副作用、等待、情绪变化和 mutation 仍会显式保留。`planner_recent_tokens` 未配置时取 `max_input_tokens × 55%` 与 `88000` 中较小者；这是为动态候选、Provider 计数偏差和约 30% 输入空白预留空间。
 
 `recent_episode_hours` 会加入配置窗口内全部活跃的 Episode，与关键词召回相互独立；`summary_results` 默认将关键词召回限制为最多 12 个 Episode。两组结果按 Episode 去重后排序：近期且命中关键词的优先，其次是其他关键词命中，最后是仅近期活跃的 Episode；在关键词组内，命中的关键词 alternative 越多越靠前。`summary_tokens` 由合并后的 Episode 摘要共同使用。
 

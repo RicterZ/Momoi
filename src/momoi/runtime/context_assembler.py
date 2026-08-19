@@ -748,8 +748,171 @@ def _planner_final(value: object) -> dict[str, object]:
     return projected
 
 
+def _planner_tail(text: str, token_budget: int) -> str:
+    low = 0
+    high = len(text)
+    while low < high:
+        middle = (low + high) // 2
+        if estimate_tokens(text[middle:]) <= token_budget:
+            high = middle
+        else:
+            low = middle + 1
+    return text[low:]
+
+
+def _planner_clip_text(text: str, token_budget: int) -> object:
+    original_tokens = estimate_tokens(text)
+    if original_tokens <= token_budget:
+        return text
+    head_budget = max(1, token_budget * 2 // 3)
+    tail_budget = max(1, token_budget - head_budget)
+    return {
+        "truncated": True,
+        "original_tokens": original_tokens,
+        "shown_tokens": token_budget,
+        "head": truncate_tokens(text, head_budget),
+        "tail": _planner_tail(text, tail_budget),
+    }
+
+
+def _planner_clip_list(
+    values: list[object],
+    token_budget: int,
+    *,
+    item_limit: int | None = None,
+) -> object:
+    original_tokens = estimate_tokens(
+        json.dumps(values, ensure_ascii=False, separators=(",", ":"), default=str)
+    )
+    limit = len(values) if item_limit is None else min(len(values), item_limit)
+    if original_tokens <= token_budget and len(values) <= limit:
+        return copy.deepcopy(values)
+    head_count = max(1, limit * 4 // 5)
+    tail_count = max(0, limit - head_count)
+    selected = [
+        *copy.deepcopy(values[:head_count]),
+        *(
+            copy.deepcopy(values[-tail_count:])
+            if tail_count
+            else []
+        ),
+    ]
+    while (
+        len(selected) > 1
+        and estimate_tokens(
+            json.dumps(
+                selected,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                default=str,
+            )
+        )
+        > token_budget
+    ):
+        selected.pop(-2 if tail_count and len(selected) > tail_count else -1)
+    return {
+        "truncated": True,
+        "original_items": len(values),
+        "original_tokens": original_tokens,
+        "items": selected,
+    }
+
+
+def _planner_state_result(value: dict[str, object]) -> dict[str, object]:
+    projected = copy.deepcopy(value)
+    goal = projected.get("goal")
+    if isinstance(goal, dict):
+        projected["goal"] = {
+            key: copy.deepcopy(goal[key])
+            for key in (
+                "id",
+                "title",
+                "status",
+                "next_action",
+                "waiting_for",
+                "blocked_reason",
+                "latest_result",
+                "schedule",
+                "next_review_at",
+            )
+            if goal.get(key) not in (None, "", [], {})
+        }
+    reminder = projected.get("reminder")
+    if isinstance(reminder, dict):
+        projected["reminder"] = {
+            key: copy.deepcopy(reminder[key])
+            for key in ("id", "text", "status", "fire_at", "schedule")
+            if reminder.get(key) not in (None, "", [], {})
+        }
+    memory = projected.get("memory")
+    if isinstance(memory, dict):
+        projected["memory"] = {
+            key: copy.deepcopy(memory[key])
+            for key in ("kind", "key", "activation", "ttl_hours")
+            if memory.get(key) not in (None, "", [], {})
+        }
+    return projected
+
+
+def _planner_tool_result(
+    name: str,
+    value: object,
+    *,
+    background: bool,
+) -> object:
+    if not isinstance(value, dict):
+        return copy.deepcopy(value)
+    result = _planner_state_result(value)
+    result.pop("provenance", None)
+    if result.get("ok") is True:
+        result.pop("ok", None)
+    if result.get("error") in (None, ""):
+        result.pop("error", None)
+    if result.get("truncated") is False:
+        result.pop("truncated", None)
+    if not background:
+        return result
+
+    content = result.get("content")
+    if isinstance(content, str):
+        limit = 512 if name == "read_file" else 384 if name == "curl" else 512
+        result["content"] = _planner_clip_text(content, limit)
+    entries = result.get("entries")
+    if isinstance(entries, list):
+        result["entries"] = _planner_clip_list(entries, 384, item_limit=25)
+    results = result.get("results")
+    if isinstance(results, list):
+        result["results"] = _planner_clip_list(results, 512, item_limit=10)
+    mcp_result = result.get("result")
+    if name.startswith("mcp__") and estimate_tokens(
+        json.dumps(
+            mcp_result,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            default=str,
+        )
+    ) > 512:
+        if isinstance(mcp_result, str):
+            result["result"] = _planner_clip_text(mcp_result, 512)
+        elif isinstance(mcp_result, list):
+            result["result"] = _planner_clip_list(mcp_result, 512)
+        else:
+            result["result"] = _planner_clip_text(
+                json.dumps(
+                    mcp_result,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    default=str,
+                ),
+                512,
+            )
+    return result
+
+
 def project_recent_turns_for_planner(
     document: dict[str, object],
+    *,
+    active_turn_ids: set[str] | None = None,
 ) -> dict[str, object]:
     """Keep planner-relevant history while preserving complete tool semantics."""
     projected_turns: list[dict[str, object]] = []
@@ -785,8 +948,13 @@ def project_recent_turns_for_planner(
         final = _planner_final(raw_turn.get("final"))
         if final:
             turn["final"] = final
+        background = (
+            active_turn_ids is not None
+            and str(raw_turn.get("turn_id") or "") not in active_turn_ids
+        )
 
         call_ids: dict[str, str] = {}
+        call_names: dict[str, str] = {}
 
         def call_ref(value: object) -> str:
             raw = str(value or "")
@@ -802,30 +970,42 @@ def project_recent_turns_for_planner(
                 continue
             item_type = str(raw_item.get("type") or "")
             if item_type == "tool_call":
+                raw_call_id = str(raw_item.get("tool_call_id") or "")
+                name = str(raw_item.get("name") or "")
+                if raw_call_id:
+                    call_names[raw_call_id] = name
                 timeline.append(
                     {
                         "type": item_type,
-                        "call": call_ref(raw_item.get("tool_call_id")),
-                        "name": copy.deepcopy(raw_item.get("name")),
+                        "call": call_ref(raw_call_id),
+                        "name": name,
                         "arguments": copy.deepcopy(raw_item.get("arguments")),
-                        "timestamp": copy.deepcopy(raw_item.get("timestamp")),
-                        "visibility": copy.deepcopy(raw_item.get("visibility")),
                     }
                 )
                 continue
             if item_type == "tool_result":
-                timeline.append(
-                    {
-                        "type": item_type,
-                        "call": call_ref(raw_item.get("tool_call_id")),
-                        "name": copy.deepcopy(raw_item.get("name")),
-                        "ok": copy.deepcopy(raw_item.get("ok")),
-                        "error": copy.deepcopy(raw_item.get("error")),
-                        "result": copy.deepcopy(raw_item.get("result")),
-                        "timestamp": copy.deepcopy(raw_item.get("timestamp")),
-                        "visibility": copy.deepcopy(raw_item.get("visibility")),
-                    }
+                raw_call_id = str(raw_item.get("tool_call_id") or "")
+                name = call_names.get(raw_call_id) or str(
+                    raw_item.get("name") or ""
                 )
+                result_item: dict[str, object] = {
+                    "type": item_type,
+                    "call": call_ref(raw_call_id),
+                }
+                if not raw_call_id and name:
+                    result_item["name"] = name
+                if raw_item.get("ok") is False:
+                    result_item["error"] = copy.deepcopy(
+                        raw_item.get("error") or "tool_failed"
+                    )
+                projected_result = _planner_tool_result(
+                    name,
+                    raw_item.get("result"),
+                    background=background,
+                )
+                if projected_result not in (None, "", [], {}):
+                    result_item["result"] = projected_result
+                timeline.append(result_item)
                 continue
             if item_type in {"owner_message", "assistant_message", "event"}:
                 message: dict[str, object] = {
@@ -863,8 +1043,14 @@ def assemble_planner_recent_turns(
     phase = total % append_turns
     turn_limit = base_turns if phase == 0 else base_turns + phase
     raw_turns = store.recent_turn_records(turn_limit, before_timestamp)
+    active_turn_ids = {
+        str(turn.get("turn_id") or "")
+        for turn in raw_turns[-active_turns:]
+        if str(turn.get("turn_id") or "")
+    }
     projected = project_recent_turns_for_planner(
-        {"version": 1, "turns": raw_turns}
+        {"version": 1, "turns": raw_turns},
+        active_turn_ids=active_turn_ids,
     )
     projected_turns = projected["turns"]
     if not isinstance(projected_turns, list):
@@ -905,7 +1091,8 @@ def assemble_planner_recent_turns(
                 max(1, token_budget - envelope),
             )
             compact_document = project_recent_turns_for_planner(
-                {"version": 1, "turns": [compact]}
+                {"version": 1, "turns": [compact]},
+                active_turn_ids=active_turn_ids,
             )
             compact_turns = compact_document.get("turns")
             if isinstance(compact_turns, list) and compact_turns:

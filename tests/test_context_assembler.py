@@ -315,8 +315,12 @@ class ContextAssemblerTest(unittest.TestCase):
                     "evidence": "这是个双关",
                 },
             )
-            self.assertEqual(tool_result["result"], {"ok": True, "state": "staged"})
-            self.assertTrue(tool_result["ok"])
+            self.assertEqual(tool_result["result"], {"state": "staged"})
+            self.assertNotIn("ok", tool_result)
+            self.assertNotIn("error", tool_result)
+            self.assertNotIn("name", tool_result)
+            self.assertNotIn("visibility", tool_result)
+            self.assertNotIn("timestamp", tool_result)
             self.assertNotIn("tool_call_id", tool_call)
             self.assertNotIn("source", tool_call)
             self.assertNotIn("trust", tool_result)
@@ -435,8 +439,163 @@ class ContextAssemblerTest(unittest.TestCase):
             },
         )
         self.assertEqual(turn["timeline"][2]["result"], {"value": 1})
-        self.assertEqual(turn["timeline"][2]["visibility"], "internal")
-        self.assertIn("timestamp", turn["timeline"][2])
+        self.assertNotIn("visibility", turn["timeline"][2])
+        self.assertNotIn("timestamp", turn["timeline"][2])
+
+    def test_planner_projection_compacts_only_background_tool_results(self) -> None:
+        large_content = "结果内容" * 1200
+        entries = [f"file-{index}.txt" for index in range(100)]
+        document = {
+            "version": 1,
+            "turns": [
+                {
+                    "turn_id": "background",
+                    "timeline": [
+                        {
+                            "type": "tool_call",
+                            "tool_call_id": "read",
+                            "name": "read_file",
+                            "arguments": {"path": "/tmp/example.txt"},
+                        },
+                        {
+                            "type": "tool_result",
+                            "tool_call_id": "read",
+                            "name": "read_file",
+                            "ok": True,
+                            "error": None,
+                            "result": {
+                                "ok": True,
+                                "error": None,
+                                "truncated": False,
+                                "provenance": {
+                                    "source": "builtin",
+                                    "tool": "read_file",
+                                },
+                                "path": "/tmp/example.txt",
+                                "content": large_content,
+                            },
+                        },
+                        {
+                            "type": "tool_call",
+                            "tool_call_id": "list",
+                            "name": "list_dir",
+                            "arguments": {"path": "/tmp"},
+                        },
+                        {
+                            "type": "tool_result",
+                            "tool_call_id": "list",
+                            "name": "list_dir",
+                            "ok": True,
+                            "error": None,
+                            "result": {
+                                "ok": True,
+                                "error": None,
+                                "truncated": False,
+                                "provenance": {
+                                    "source": "builtin",
+                                    "tool": "list_dir",
+                                },
+                                "count": len(entries),
+                                "entries": entries,
+                            },
+                        },
+                        {
+                            "type": "tool_call",
+                            "tool_call_id": "goal",
+                            "name": "goal_update",
+                            "arguments": {
+                                "goal_id": "goal-1",
+                                "status": "waiting",
+                                "waiting_for": "老师回复",
+                            },
+                        },
+                        {
+                            "type": "tool_result",
+                            "tool_call_id": "goal",
+                            "name": "goal_update",
+                            "ok": True,
+                            "error": None,
+                            "result": {
+                                "ok": True,
+                                "state": "staged",
+                                "goal": {
+                                    "id": "goal-1",
+                                    "title": "测试目标",
+                                    "status": "waiting",
+                                    "success_criteria": "不需要重复给Planner",
+                                    "authority": "owner",
+                                    "source_event_id": "event",
+                                    "plan": ["第一步", "第二步"],
+                                    "waiting_for": "老师回复",
+                                    "next_action": "等待",
+                                },
+                            },
+                        },
+                        {
+                            "type": "tool_call",
+                            "tool_call_id": "failed",
+                            "name": "curl",
+                            "arguments": {"url": "https://example.com"},
+                        },
+                        {
+                            "type": "tool_result",
+                            "tool_call_id": "failed",
+                            "name": "curl",
+                            "ok": False,
+                            "error": "timeout",
+                            "result": {"ok": False, "error": "timeout"},
+                        },
+                    ],
+                },
+                {
+                    "turn_id": "active",
+                    "timeline": [
+                        {
+                            "type": "tool_call",
+                            "tool_call_id": "active-read",
+                            "name": "read_file",
+                            "arguments": {"path": "/tmp/active.txt"},
+                        },
+                        {
+                            "type": "tool_result",
+                            "tool_call_id": "active-read",
+                            "name": "read_file",
+                            "ok": True,
+                            "error": None,
+                            "result": {
+                                "ok": True,
+                                "error": None,
+                                "content": large_content,
+                            },
+                        },
+                    ],
+                },
+            ],
+        }
+        projected = project_recent_turns_for_planner(
+            document,
+            active_turn_ids={"active"},
+        )
+        background = projected["turns"][0]["timeline"]
+        background_results = [
+            item for item in background if item["type"] == "tool_result"
+        ]
+        self.assertTrue(
+            background_results[0]["result"]["content"]["truncated"]
+        )
+        self.assertEqual(
+            background_results[1]["result"]["entries"]["original_items"],
+            100,
+        )
+        compact_goal = background_results[2]["result"]["goal"]
+        self.assertEqual(compact_goal["id"], "goal-1")
+        self.assertEqual(compact_goal["waiting_for"], "老师回复")
+        self.assertNotIn("success_criteria", compact_goal)
+        self.assertNotIn("plan", compact_goal)
+        self.assertEqual(background_results[3]["error"], "timeout")
+
+        active_result = projected["turns"][1]["timeline"][1]["result"]
+        self.assertEqual(active_result["content"], large_content)
 
     def test_recent_episode_window_is_injected_without_keyword_recall(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

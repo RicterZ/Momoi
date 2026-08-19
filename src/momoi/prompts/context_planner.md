@@ -26,6 +26,14 @@ already present in the timeline; `intent_indexes` are zero-based indexes into
 that Turn's compact `intents`. Projected tool calls and results remain complete
 internal data.
 
+Tool results inherit their tool name from the matching short `call` id. Omitted
+success fields mean the call succeeded; failures keep `error`. State-changing
+tools keep their arguments plus a compact final state instead of repeating the
+entire stored object. Tool results in non-active background Turns may contain a
+structured `truncated` preview with original size/count and head/tail or selected
+items; treat it as evidence of what the tool returned, not as proof that omitted
+content was absent.
+
 When `interrupted_reply_expectation` is present, the owner replied before that
 deadline and the timer is already cancelled. Use its expected information and
 reason only to resolve the current owner's meaning; do not turn it into a new
