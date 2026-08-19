@@ -334,7 +334,7 @@ function previewRecords() {
     next_review_at: now + 86400,
   }));
 
-  const reflections = Array.from({ length: 10 }, (_, index) => {
+  const reflections = Array.from({ length: 40 }, (_, index) => {
     const date = new Date();
     date.setDate(date.getDate() - index);
     return {
@@ -359,6 +359,7 @@ function previewRecords() {
           : [],
     };
   });
+  reflections.sort((left, right) => right.local_date.localeCompare(left.local_date));
 
   return { conversations, conversationDetails, reminders, memories, goals, reflections };
 }
@@ -571,7 +572,20 @@ function previewUsageApi() {
           return;
         }
         if (req.method === "GET" && path === "/api/reflections") {
-          json(res, { items: records.reflections });
+          const params = new URL(req.url, "http://127.0.0.1").searchParams;
+          const limit = Math.min(90, Math.max(1, Number(params.get("limit") || 14) || 14));
+          const cursor = String(params.get("cursor") || "").trim();
+          let rows = records.reflections;
+          if (cursor) {
+            rows = rows.filter((item) => item.local_date < cursor);
+          }
+          const page = rows.slice(0, limit);
+          json(res, {
+            items: page,
+            ...(rows.length > limit
+              ? { next_cursor: page[page.length - 1]?.local_date }
+              : {}),
+          });
           return;
         }
         if (req.method === "GET" && path.startsWith("/api/")) {

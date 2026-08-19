@@ -234,6 +234,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         ).json()
         self.assertEqual(reflections["items"][0]["summary"], "今天完成了测试。")
         self.assertEqual(reflections["items"][0]["memories"][0]["key"], "testing")
+        self.assertNotIn("next_cursor", reflections)
 
         reminders = await (
             await self.client.get("/api/reminders", headers=auth)
@@ -268,6 +269,50 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(usage["today"]["requests"], 1)
         self.assertEqual(usage["today"]["cache_read_tokens"], 100)
         self.assertEqual(len(usage["daily"]), 7)
+
+    async def test_reflections_paginate_older_pages(self) -> None:
+        now = time.time()
+        with self.store._db:
+            for day in range(1, 21):
+                local = f"2026-07-{day:02d}"
+                self.store._db.execute(
+                    """INSERT INTO reflections
+                       (id, local_date, state, scheduled_at, summary, memories_json,
+                        created_at, completed_at)
+                       VALUES (?, ?, 'completed', ?, ?, '[]', ?, ?)""",
+                    (
+                        f"reflection:{local}",
+                        local,
+                        now,
+                        f"复盘 {local}",
+                        now,
+                        now,
+                    ),
+                )
+        first = await (
+            await self.client.get(
+                "/api/reflections?limit=14", headers=self._auth()
+            )
+        ).json()
+        self.assertEqual(len(first["items"]), 14)
+        self.assertEqual(first["items"][0]["local_date"], "2026-08-13")
+        self.assertEqual(first["next_cursor"], first["items"][-1]["local_date"])
+        second = await (
+            await self.client.get(
+                f"/api/reflections?limit=14&cursor={first['next_cursor']}",
+                headers=self._auth(),
+            )
+        ).json()
+        self.assertTrue(second["items"])
+        self.assertLess(second["items"][0]["local_date"], first["next_cursor"])
+        self.assertNotIn(
+            first["items"][-1]["id"],
+            [item["id"] for item in second["items"]],
+        )
+        bad = await self.client.get(
+            "/api/reflections?cursor=nope", headers=self._auth()
+        )
+        self.assertEqual(bad.status, 400)
 
     async def test_overview_exposes_heartbeat_schedule(self) -> None:
         now = time.time()

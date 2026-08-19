@@ -63,6 +63,18 @@ def _bounded_int(
     return min(maximum, max(minimum, value))
 
 
+_LOCAL_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _optional_local_date(request: web.Request, name: str) -> str | None:
+    raw = str(request.query.get(name) or "").strip()
+    if not raw:
+        return None
+    if not _LOCAL_DATE.fullmatch(raw):
+        raise web.HTTPBadRequest(text=f"invalid {name}")
+    return raw
+
+
 def _bearer_token(request: web.Request) -> str:
     authorization = request.headers.get("Authorization", "")
     if authorization.startswith("Bearer "):
@@ -352,8 +364,12 @@ def create_dashboard_app(
         return web.json_response(item)
 
     async def reflections(request: web.Request) -> web.Response:
-        limit = _bounded_int(request, "limit", 90, 1, 366)
-        return web.json_response({"items": store.list_reflections(limit)})
+        return web.json_response(
+            store.list_reflections(
+                _bounded_int(request, "limit", 14, 1, 90),
+                before=_optional_local_date(request, "cursor"),
+            )
+        )
 
     async def memories(request: web.Request) -> web.Response:
         limit = _bounded_int(request, "limit", 200, 1, 500)

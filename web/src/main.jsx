@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import "./styles.css";
 
 const TOKEN_KEY = "momoi-dashboard-token";
+const REFLECTION_PAGE = 14;
 const ConfirmContext = createContext(null);
 
 const pages = {
@@ -997,56 +998,140 @@ function ConversationDetail({ item }) {
 }
 
 function Reflections({ refreshKey, token }) {
-  return (
-    <DataView path="/api/reflections?limit=180" refreshKey={refreshKey} token={token}>
-      {({ items }) =>
-        items.length ? (
-          <>
-            <section className="section-tools">
-              <p>按日期保留 Momoi 对每天经历的整理与学习。</p>
-            </section>
-            <section className="card-list">
-              {items.map((item) => (
-                <article className="reflection-card" key={item.id}>
-                  <div className="card-head">
-                    <h2>{item.local_date}</h2>
-                    <span className="status">{item.state}</span>
-                  </div>
-                  <p className="summary">
-                    {item.summary ||
-                      (item.error ? `等待重试：${item.error}` : "尚未生成复盘。")}
-                  </p>
-                  {!!item.memories?.length && (
-                    <div className="memory-list">
-                      {item.memories.map((memory) => (
-                        <div className="memory" key={`${memory.kind}:${memory.key}`}>
-                          <div className="memory-head">
-                            <span className="memory-kind">
-                              {memoryKindLabel(memory.kind)}
-                            </span>
-                            {Number.isFinite(Number(memory.confidence)) && (
-                              <span className="memory-confidence">
-                                可信度 {Math.round(Number(memory.confidence) * 100)}%
-                              </span>
-                            )}
-                          </div>
-                          <p>{memory.content}</p>
-                          {memory.evidence && (
-                            <small>依据：{memory.evidence}</small>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </article>
-              ))}
-            </section>
-          </>
-        ) : (
-          <Empty />
-        )
+  const [items, setItems] = useState([]);
+  const [status, setStatus] = useState({ loading: true });
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const cursorRef = useRef(null);
+  const busy = useRef(false);
+  const moreRef = useRef(null);
+  const loadOlderRef = useRef(async () => {});
+
+  useEffect(() => {
+    if (!token) {
+      setStatus({ error: new Error("unauthorized") });
+      return undefined;
+    }
+    const controller = new AbortController();
+    busy.current = false;
+    cursorRef.current = null;
+    setItems([]);
+    setHasMore(false);
+    setLoadingMore(false);
+    setStatus({ loading: true });
+    api(`/api/reflections?limit=${REFLECTION_PAGE}`, {
+      signal: controller.signal,
+      token,
+    })
+      .then((data) => {
+        cursorRef.current = data.next_cursor ?? null;
+        setItems(data.items || []);
+        setHasMore(data.next_cursor != null);
+        setStatus({});
+      })
+      .catch((error) => {
+        if (error.name !== "AbortError") setStatus({ error });
+      });
+    return () => controller.abort();
+  }, [refreshKey, token]);
+
+  loadOlderRef.current = async () => {
+    if (busy.current || cursorRef.current == null || !token) return;
+    busy.current = true;
+    setLoadingMore(true);
+    try {
+      const query = new URLSearchParams({
+        limit: String(REFLECTION_PAGE),
+        cursor: cursorRef.current,
+      });
+      const data = await api(`/api/reflections?${query}`, { token });
+      const incoming = data.items || [];
+      cursorRef.current = data.next_cursor ?? null;
+      if (incoming.length) {
+        setItems((rows) => {
+          const seen = new Set(rows.map((item) => item.id));
+          return [...rows, ...incoming.filter((item) => !seen.has(item.id))];
+        });
       }
-    </DataView>
+      setHasMore(data.next_cursor != null);
+    } catch (error) {
+      if (error.name !== "AbortError") setStatus({ error });
+    } finally {
+      busy.current = false;
+      setLoadingMore(false);
+    }
+  };
+
+  useEffect(() => {
+    const target = moreRef.current;
+    if (!target || !hasMore || status.loading) return undefined;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          loadOlderRef.current();
+        }
+      },
+      { rootMargin: "240px" },
+    );
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [hasMore, items.length, status.loading]);
+
+  if (status.loading) return <Loading>正在读取复盘…</Loading>;
+  if (status.error) return <ErrorState error={status.error} />;
+  if (!items.length) return <Empty />;
+
+  return (
+    <>
+      <section className="section-tools">
+        <p>按日期保留 Momoi 对每天经历的整理与学习。</p>
+      </section>
+      <section className="card-list">
+        {items.map((item) => (
+          <article className="reflection-card" key={item.id}>
+            <div className="card-head">
+              <h2>{item.local_date}</h2>
+              <span className="status">{item.state}</span>
+            </div>
+            <p className="summary">
+              {item.summary ||
+                (item.error ? `等待重试：${item.error}` : "尚未生成复盘。")}
+            </p>
+            {!!item.memories?.length && (
+              <div className="memory-list">
+                {item.memories.map((memory) => (
+                  <div className="memory" key={`${memory.kind}:${memory.key}`}>
+                    <div className="memory-head">
+                      <span className="memory-kind">
+                        {memoryKindLabel(memory.kind)}
+                      </span>
+                      {Number.isFinite(Number(memory.confidence)) && (
+                        <span className="memory-confidence">
+                          可信度 {Math.round(Number(memory.confidence) * 100)}%
+                        </span>
+                      )}
+                    </div>
+                    <p>{memory.content}</p>
+                    {memory.evidence && <small>依据：{memory.evidence}</small>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </article>
+        ))}
+      </section>
+      {hasMore || loadingMore ? (
+        <button
+          className="record-list-more"
+          type="button"
+          ref={moreRef}
+          disabled={loadingMore}
+          onClick={() => loadOlderRef.current()}
+        >
+          {loadingMore ? "正在加载…" : "更早的复盘"}
+        </button>
+      ) : null}
+    </>
   );
 }
 

@@ -5111,16 +5111,24 @@ class Store(MemoryStore, DeliveryStore):
         ).fetchone()
         return dict(row) if row else None
 
-    def list_reflections(self, limit: int = 90) -> list[dict[str, object]]:
+    def list_reflections(
+        self, limit: int = 14, *, before: str | None = None
+    ) -> dict[str, object]:
         if limit <= 0:
-            return []
-        rows = self._db.execute(
-            """SELECT * FROM reflections
-               ORDER BY local_date DESC LIMIT ?""",
-            (limit,),
-        ).fetchall()
+            return {"items": []}
+        size = min(366, max(1, int(limit)))
+        query = "SELECT * FROM reflections"
+        params: list[object] = []
+        cursor = str(before or "").strip()
+        if cursor:
+            query += " WHERE local_date < ?"
+            params.append(cursor)
+        query += " ORDER BY local_date DESC LIMIT ?"
+        params.append(size + 1)
+        rows = self._db.execute(query, params).fetchall()
+        extra = len(rows) > size
         results: list[dict[str, object]] = []
-        for row in rows:
+        for row in rows[:size]:
             item = dict(row)
             try:
                 memories = json.loads(str(item.pop("memories_json", "[]")))
@@ -5131,7 +5139,10 @@ class Store(MemoryStore, DeliveryStore):
                 item, ("scheduled_at", "retry_at", "created_at", "completed_at")
             )
             results.append(item)
-        return results
+        payload: dict[str, object] = {"items": results}
+        if extra and results:
+            payload["next_cursor"] = results[-1]["local_date"]
+        return payload
 
     def dashboard_overview(self) -> dict[str, object]:
         counts = {
