@@ -216,8 +216,11 @@ def create_dashboard_app(
     workspace = store._workspace
 
     async def index(_request: web.Request) -> web.Response:
+        page = ASSET_ROOT.joinpath("index.html")
+        if not page.is_file():
+            raise web.HTTPServiceUnavailable(text="dashboard frontend is not built")
         return web.Response(
-            body=ASSET_ROOT.joinpath("index.html").read_bytes(),
+            body=page.read_bytes(),
             content_type="text/html",
             charset="utf-8",
             headers={"Cache-Control": "no-cache"},

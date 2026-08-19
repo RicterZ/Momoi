@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Momoi">
-  <rect width="64" height="64" fill="#fff"/>
-  <rect x="11" y="11" width="46" height="46" rx="12" fill="#43b8f5"/>
-  <g transform="rotate(-2 30 30)">
-    <rect x="7" y="7" width="46" height="46" rx="12" fill="#ff658d" stroke="#20243a" stroke-width="3.5"/>
-    <path fill="#fff" d="M18.6 41.2V18.8h5.2L30 31.2l6.2-12.4h5.2v22.4h-4.8V27.8L31 39.6h-2L23.4 27.8v13.4z"/>
-  </g>
-</svg>

@@ -3,6 +3,7 @@ import re
 import tempfile
 import time
 import unittest
+from importlib.resources import files as package_files
 from io import BytesIO
 from pathlib import Path
 
@@ -16,6 +17,10 @@ from momoi.dashboard import (
     verify_dashboard_jwt,
 )
 from momoi.storage import Store
+
+
+def _dashboard_frontend_built() -> bool:
+    return package_files("momoi").joinpath("dashboard", "index.html").is_file()
 
 
 class DashboardTest(unittest.IsolatedAsyncioTestCase):
@@ -143,6 +148,9 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
     def _auth(self, token: str | None = None) -> dict[str, str]:
         return {"Authorization": f"Bearer {token or self.access_token}"}
 
+    @unittest.skipUnless(
+        _dashboard_frontend_built(), "dashboard frontend is not built"
+    )
     async def test_dashboard_serves_static_ui_with_security_headers(self) -> None:
         response = await self.client.get("/")
         self.assertEqual(response.status, 200)
