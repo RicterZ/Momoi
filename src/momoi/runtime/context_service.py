@@ -57,6 +57,10 @@ class ContextService:
 
         revision = self.store.next_context_plan_revision(turn_id)
         owner_query = "\n".join(event.text for event in events)
+        tool_group_catalog = self._owner_tool_group_catalog()
+        available_tool_groups = {
+            str(group["id"]) for group in tool_group_catalog
+        }
         planner_recent_turns, active_recent_turn_ids = (
             assemble_planner_recent_turns(
                 self.store,
@@ -161,6 +165,7 @@ class ContextService:
                     {
                         "candidate_goals": candidate_goals,
                         "candidate_reminders": candidate_reminders,
+                        "available_tool_groups": tool_group_catalog,
                         "recent_turns": planner_recent_turns,
                         "active_recent_turn_ids": active_recent_turn_ids,
                         "candidate_episodes": candidate_context,
@@ -260,6 +265,7 @@ class ContextService:
                     candidates,
                     turn_id,
                     revision,
+                    available_tool_groups,
                 )
             except ContextPlanError as error:
                 last_error = str(error)
@@ -337,6 +343,7 @@ class ContextService:
                 plan_units=_plan_log_units(plan),
                 episode_actions=_plan_log_episodes(plan),
                 uncertainty=plan.get("uncertainty", []),
+                tool_groups=plan.get("tool_groups", "all"),
                 duration_ms=int((time.monotonic() - call_started) * 1000),
             )
             return self._stored_context_plan(saved)

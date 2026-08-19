@@ -155,6 +155,7 @@ class ContextPlannerTest(unittest.TestCase):
                 "intent_units",
                 "episode_actions",
                 "episode_links",
+                "tool_groups",
                 "uncertainty",
             ],
         )
@@ -163,6 +164,30 @@ class ContextPlannerTest(unittest.TestCase):
             [shape["properties"]["action"]["enum"][0] for shape in action_shapes],
             ["none", "continue", "new"],
         )
+
+    def test_context_plan_selects_only_available_tool_groups(self) -> None:
+        plan = response_plan()
+        plan["tool_groups"] = ["memory", "mcp:gog"]
+        parsed = parse_context_plan(
+            plan,
+            ["event-1"],
+            [],
+            "turn-1",
+            1,
+            {"memory", "agenda", "mcp:gog"},
+        )
+        self.assertEqual(parsed["tool_groups"], ["memory", "mcp:gog"])
+
+        plan["tool_groups"] = ["mcp:missing"]
+        with self.assertRaisesRegex(ContextPlanError, "unknown_tool_group"):
+            parse_context_plan(
+                plan,
+                ["event-1"],
+                [],
+                "turn-1",
+                1,
+                {"memory", "agenda", "mcp:gog"},
+            )
 
     def test_standalone_media_guidance_limits_semantic_inference(self) -> None:
         self.assertIn("low-information social cue", CONTEXT_PLANNER_SYSTEM_PROMPT)
@@ -452,9 +477,21 @@ class ContextPlannerTest(unittest.TestCase):
                     "write_file",
                     "apply_patch",
                     "sleep",
+                    "tool_enable",
                     "respond",
                 ],
             )
+            routed = {**plan, "tool_groups": []}
+            self.assertEqual(
+                [spec["name"] for spec in daemon._owner_tool_specs(routed)],
+                ["send_message", "tool_enable", "respond"],
+            )
+            routed["tool_groups"] = ["memory"]
+            routed_names = [
+                spec["name"] for spec in daemon._owner_tool_specs(routed)
+            ]
+            self.assertIn("memory_search", routed_names)
+            self.assertNotIn("curl", routed_names)
             daemon.store.close()
 
     def test_degraded_plan_splits_message_segments_and_marks_uncertainty(self) -> None:
@@ -752,6 +789,7 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                             [
                                 "candidate_goals",
                                 "candidate_reminders",
+                                "available_tool_groups",
                                 "recent_turns",
                                 "active_recent_turn_ids",
                                 "candidate_episodes",

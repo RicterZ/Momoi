@@ -28,6 +28,7 @@ from .protocol import (
     RESPOND_TOOL_SPEC,
     heartbeat_respond_tool_spec,
     send_message_tool_spec,
+    tool_enable_spec,
 )
 from .turn_support import (
     ExternalToolTurnError,
@@ -44,15 +45,61 @@ MAX_TOOL_RESULT_TRUNCATION_ATTEMPTS = 16
 
 
 class ToolExecutionService:
+    @staticmethod
+    def _mcp_tool_group(name: str) -> str:
+        parts = str(name).split("__", 2)
+        return f"mcp:{parts[1]}" if len(parts) == 3 else "mcp:other"
+
+    def _owner_tool_groups(self) -> dict[str, list[dict[str, Any]]]:
+        groups: dict[str, list[dict[str, Any]]] = {
+            "memory": copy.deepcopy(MEMORY_TOOL_SPECS),
+            "agenda": self._announced_tool_specs(AGENDA_TOOL_SPECS, mcp=False),
+            "builtin": self._announced_tool_specs(BUILTIN_TOOL_SPECS, mcp=False),
+        }
+        for spec in self._announced_tool_specs(self.mcp.tool_specs, mcp=True):
+            group = self._mcp_tool_group(str(spec.get("name") or ""))
+            groups.setdefault(group, []).append(spec)
+        return groups
+
+    def _owner_tool_group_catalog(self) -> list[dict[str, object]]:
+        return [
+            {
+                "id": group,
+                "tool_count": len(specs),
+                "sample_tools": [
+                    str(spec.get("name") or "").split("__")[-1]
+                    for spec in specs[:12]
+                ],
+            }
+            for group, specs in self._owner_tool_groups().items()
+        ]
+
     def _owner_tool_specs(
         self, plan: dict[str, object], channel_name: str | None = None
     ) -> list[dict[str, Any]]:
+        groups = self._owner_tool_groups()
+        raw_selected = plan.get("tool_groups")
+        selected = (
+            [str(group) for group in raw_selected if str(group) in groups]
+            if isinstance(raw_selected, list)
+            else list(groups)
+        )
+        optional = [
+            spec
+            for group in selected
+            for spec in groups.get(group, [])
+        ]
+        group_tools = {
+            group: [
+                str(spec.get("name") or "").split("__")[-1]
+                for spec in specs
+            ]
+            for group, specs in groups.items()
+        }
         return [
             self._send_message_tool_spec(channel_name),
-            *MEMORY_TOOL_SPECS,
-            *self._announced_tool_specs(AGENDA_TOOL_SPECS, mcp=False),
-            *self._announced_tool_specs(BUILTIN_TOOL_SPECS, mcp=False),
-            *self._announced_tool_specs(self.mcp.tool_specs, mcp=True),
+            *optional,
+            tool_enable_spec(group_tools),
             RESPOND_TOOL_SPEC,
         ]
 
@@ -88,6 +135,9 @@ class ToolExecutionService:
         visible_since_owner_update = False
         owner_work_acknowledged = False
         llm_round = 0
+        enable_tool_groups = (
+            self._owner_tool_groups() if authority == "owner" else {}
+        )
         stage = (
             "reply_followup"
             if reply_wait_turn
@@ -660,6 +710,40 @@ class ToolExecutionService:
                                 "channel": target.name,
                                 "messages": len(progress),
                             }
+                elif call.name == "tool_enable":
+                    requested = call.arguments.get("groups")
+                    if (
+                        not isinstance(requested, list)
+                        or not requested
+                        or any(
+                            not isinstance(group, str)
+                            or group not in enable_tool_groups
+                            for group in requested
+                        )
+                    ):
+                        result = {
+                            "ok": False,
+                            "error": "invalid_tool_groups",
+                        }
+                    else:
+                        existing = {
+                            str(spec.get("name") or "") for spec in tools
+                        }
+                        enabled_tools: list[str] = []
+                        for group in dict.fromkeys(requested):
+                            for spec in enable_tool_groups[group]:
+                                name = str(spec.get("name") or "")
+                                if name in existing:
+                                    continue
+                                tools.insert(max(0, len(tools) - 1), spec)
+                                existing.add(name)
+                                enabled_tools.append(name)
+                        result = {
+                            "ok": True,
+                            "state": "enabled",
+                            "groups": list(dict.fromkeys(requested)),
+                            "tools": enabled_tools,
+                        }
                 elif self.mcp.has_tool(call.name) or self.builtin_tools.has_tool(
                     call.name
                 ):
@@ -939,6 +1023,7 @@ class ToolExecutionService:
         if name in {
             "respond",
             "send_message",
+            "tool_enable",
             "autonomous_finish",
         }:
             return "runtime"

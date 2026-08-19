@@ -1118,9 +1118,15 @@ def assemble_main_context(
     recent_turns: int = 0,
     recent_before_timestamp: float | None = None,
 ) -> dict[str, str]:
-    _recent_turn_records, recent_turns = assemble_recent_turns(
+    recent_turn_records, _recent_turns = assemble_recent_turns(
         store,
         recent_turns, raw_token_budget, recent_before_timestamp
+    )
+    compact_recent_turns = json.dumps(
+        project_recent_turns_for_planner(recent_turn_records),
+        ensure_ascii=False,
+        separators=(",", ":"),
+        default=str,
     )
     reflection = _memory_lines(retrieval.get("reflection_memories"))
     if reflection:
@@ -1128,7 +1134,7 @@ def assemble_main_context(
             "These are fallible, lower-authority daily learnings.\n" + reflection
         )
     return {
-        "recent_turns": recent_turns,
+        "recent_turns": compact_recent_turns,
         "episodes": _episode_context(
             store,
             retrieval.get("episodes"),

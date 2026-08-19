@@ -267,6 +267,40 @@ SEND_MESSAGE_TOOL_SPEC: dict[str, Any] = {
     },
 }
 
+
+def tool_enable_spec(group_tools: dict[str, list[str]]) -> dict[str, Any]:
+    group_ids = list(group_tools)
+    catalog = "; ".join(
+        f"{group}: {', '.join(names[:8])}"
+        for group, names in group_tools.items()
+    )
+    return {
+        "name": "tool_enable",
+        "description": (
+            "Enable one or more currently unloaded tool groups when the owner's "
+            "request genuinely requires a capability omitted by context planning. "
+            "After this succeeds, call the newly available native tool. "
+            f"Available groups and sample tools: {catalog}"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "groups": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": max(1, len(group_ids)),
+                    "items": {
+                        "type": "string",
+                        "enum": group_ids,
+                    },
+                }
+            },
+            "required": ["groups"],
+            "additionalProperties": False,
+        },
+    }
+
+
 def send_message_tool_spec(
     channel_names: list[str], primary_channel: str
 ) -> dict[str, Any]:

@@ -1323,6 +1323,89 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(daemon.store.pending_owner_reply())
             daemon.store.close()
 
+    async def test_owner_can_enable_a_planner_omitted_tool_group(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            file_path = root / "note.txt"
+            file_path.write_text("planner fallback works")
+            daemon = MomoiDaemon(
+                AppConfig(
+                    llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
+                    channel=NapCatConfig(
+                        "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
+                    ),
+                    system_prompt="test",
+                    recent_raw_tokens=1000,
+                    recent_turns=2,
+                    memory_results=2,
+                    memory_tokens=1000,
+                    database=root / "momoi.sqlite3",
+                    log_level="INFO",
+                    workspace=root,
+                )
+            )
+            event = IncomingMessage("owner-enable", "owner-enable", "读文件", 1, 1)
+            daemon.store.add_event(event)
+            turn_id = daemon._turn_id(event.event_id)
+            daemon.store.begin_turn(turn_id, "owner", [event.event_id])
+
+            class Provider:
+                calls = 0
+
+                async def complete(
+                    provider_self,
+                    _system: object,
+                    messages: list[dict[str, object]],
+                    tools: list[dict[str, object]],
+                    **_: object,
+                ) -> ProviderResponse:
+                    provider_self.calls += 1
+                    names = [str(tool["name"]) for tool in tools]
+                    if provider_self.calls == 1:
+                        self.assertNotIn("read_file", names)
+                        call = ToolCall(
+                            "enable-builtin",
+                            "tool_enable",
+                            {"groups": ["builtin"]},
+                        )
+                    elif provider_self.calls == 2:
+                        self.assertIn("read_file", names)
+                        call = ToolCall(
+                            "read-note",
+                            "read_file",
+                            {"path": str(file_path)},
+                        )
+                    else:
+                        self.assertIn("planner fallback works", json.dumps(messages))
+                        call = ToolCall(
+                            "finish",
+                            "respond",
+                            {
+                                "reply_wait": {"wait": False},
+                                "mood": {"decision": "unchanged"},
+                            },
+                        )
+                    return ProviderResponse([], [call])
+
+            provider = Provider()
+            daemon.provider = provider  # type: ignore[assignment]
+            reply = await daemon._run_tool_loop(
+                daemon._system(),
+                [{"role": "user", "content": "读文件"}],
+                daemon._owner_tool_specs({"tool_groups": []}, "napcat"),
+                [event],
+                TurnDraft(),
+                authority="owner",
+                source_event_id=event.event_id,
+                allow_notify=False,
+                turn_id=turn_id,
+                require_response=True,
+                delivery_channel=daemon.channel,
+            )
+            self.assertIsInstance(reply, AgentReply)
+            self.assertEqual(provider.calls, 3)
+            daemon.store.close()
+
     async def test_heartbeat_defers_while_owner_reply_is_in_flight(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(
@@ -3046,10 +3129,10 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(current_content[0]["cache_control"], {"type": "ephemeral"})
         current_text = current_content[0]["text"]
         self.assertIn("你好", current_text)
-        self.assertIn("Trusted runtime context", current_text)
+        self.assertNotIn("Trusted runtime context", current_text)
         self.assertLess(
-            current_text.index("<current_owner_messages>"),
             current_text.index("<runtime_state>"),
+            current_text.index("<current_owner_messages>"),
         )
         self.assertIn("</current_owner_messages>", current_text)
         self.assertIn("</runtime_state>", current_text)

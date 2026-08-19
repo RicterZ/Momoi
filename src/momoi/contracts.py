@@ -20,6 +20,7 @@ class ContextPlan(TypedDict):
     episode_actions: NotRequired[list[EpisodeBinding]]
     episode_bindings: NotRequired[list[EpisodeBinding]]
     episode_links: list[dict[str, object]]
+    tool_groups: NotRequired[list[str]]
     uncertainty: list[str]
 
 

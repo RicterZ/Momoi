@@ -264,6 +264,8 @@ Set `max_input_tokens` below the provider's real context window. These are conte
 
 `recent_episode_hours` adds every Episode active in the configured window, independent of keyword recall. `summary_results` limits keyword-recalled Episodes to 12 by default. The two sets are deduplicated, then ordered with recent keyword matches first, other keyword matches next, and recent-only Episodes last. More matched keyword alternatives rank ahead within the keyword groups. `summary_tokens` is shared by the merged Episode summaries.
 
+The Owner model uses the same compact Recent projection. Stable Owner Preferences, Core Reflection, and recent memory precede the current Owner message so their prefix can be reused; the dynamic current message remains last. The Context Planner also selects the tool groups needed now from `memory`, `agenda`, `builtin`, and each `mcp:<server>` group. The main model always retains messaging/terminal tools plus `tool_enable`; if planning omitted a capability, the model can enable that group and call its native tool on the next round. Degraded or older plans without `tool_groups` still load every group for compatibility and availability.
+
 Set a recall result count or token budget to `0` to disable that automatic recall layer. Explicit memory and conversation search tools remain available to the agent when their tool is enabled.
 
 ## Storage

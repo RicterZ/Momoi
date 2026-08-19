@@ -228,6 +228,15 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                     "additionalProperties": False,
                 },
             },
+            "tool_groups": {
+                "type": "array",
+                "maxItems": 32,
+                "items": {"type": "string", "minLength": 1, "maxLength": 100},
+                "description": (
+                    "Available tool-group ids needed to handle the current owner "
+                    "input now. Use an empty array for ordinary conversation."
+                ),
+            },
             "uncertainty": {
                 "type": "array",
                 "maxItems": 4,
@@ -239,6 +248,7 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
             "intent_units",
             "episode_actions",
             "episode_links",
+            "tool_groups",
             "uncertainty",
         ],
         "additionalProperties": False,
@@ -334,6 +344,7 @@ def parse_context_plan(
     candidates: list[dict[str, object]],
     turn_id: str,
     revision: int,
+    available_tool_groups: set[str] | None = None,
 ) -> ContextPlan:
     if isinstance(text, dict):
         value = text
@@ -352,7 +363,7 @@ def parse_context_plan(
         "episode_links",
         "uncertainty",
     }
-    if set(value) != expected:
+    if set(value) not in (expected, {*expected, "tool_groups"}):
         raise ContextPlanError("invalid_top_level")
     if version not in {1, 2}:
         raise ContextPlanError("unsupported_version")
@@ -679,6 +690,19 @@ def parse_context_plan(
         )
     for binding in bindings:
         binding.pop("_ref", None)
+    raw_tool_groups = value.get("tool_groups")
+    tool_groups: list[str] | None = None
+    if raw_tool_groups is not None:
+        tool_groups = _strings(
+            raw_tool_groups,
+            "tool_groups",
+            maximum=32,
+            max_length=100,
+        )
+        if len(set(tool_groups)) != len(tool_groups):
+            raise ContextPlanError("duplicate_tool_group")
+        if available_tool_groups is not None and not set(tool_groups) <= available_tool_groups:
+            raise ContextPlanError("unknown_tool_group")
     return {
         "version": version,
         "intent_units": units,
@@ -688,6 +712,7 @@ def parse_context_plan(
             else {"episode_bindings": bindings}
         ),
         "episode_links": links,
+        **({"tool_groups": tool_groups} if tool_groups is not None else {}),
         "uncertainty": _strings(
             value["uncertainty"],
             "uncertainty",
