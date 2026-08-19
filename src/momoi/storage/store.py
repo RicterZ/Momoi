@@ -147,6 +147,13 @@ def _heartbeat_record_activity(content: str) -> str:
     return match.group(1).strip()[:300] if match else ""
 
 
+def _dashboard_unix(value: object) -> float | None:
+    if value is None:
+        return None
+    stamp = float(value)
+    return stamp if stamp > 0 else None
+
+
 class Store(MemoryStore, DeliveryStore):
     def __init__(
         self,
@@ -5178,6 +5185,7 @@ class Store(MemoryStore, DeliveryStore):
                    ('delivered', 'uncertain', 'internal')"""
         ).fetchone()[0]
         state = self.self_state()
+        waiting = bool(str(state.get("pending_reply_expectation") or "").strip())
         return {
             "counts": counts,
             "mood": {
@@ -5190,6 +5198,17 @@ class Store(MemoryStore, DeliveryStore):
                 "result": state.get("activity_result") or "",
                 "since": state["activity_since"],
                 "since_timestamp": context_timestamp(state["activity_since"]),
+            },
+            "heartbeat": {
+                "next_at": _dashboard_unix(state.get("next_heartbeat_at")),
+                "last_at": _dashboard_unix(state.get("last_heartbeat_at")),
+                "running": state.get("heartbeat_claimed_at") is not None,
+                "kind": state.get("heartbeat_claim_kind"),
+                "reply_check_at": (
+                    _dashboard_unix(state.get("pending_reply_next_check_at"))
+                    if waiting
+                    else None
+                ),
             },
             "latest_message_at": latest_message,
             "latest_message_timestamp": (

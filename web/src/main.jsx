@@ -1,4 +1,4 @@
-import { StrictMode, createContext, useContext, useEffect, useRef, useState } from "react";
+import { StrictMode, createContext, useContext, useEffect, useId, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
@@ -131,6 +131,197 @@ function formatDate(value, dateOnly = false) {
   }).format(date);
 }
 
+function activityMetaItems(activity, heartbeat) {
+  const items = [{ label: "始于", value: formatDate(activity?.since) }];
+  if (heartbeat?.running) {
+    items.push({
+      label: heartbeat.kind === "reply" ? "回复复查" : "心跳",
+      value: "进行中",
+    });
+    return items;
+  }
+  if (heartbeat?.next_at) {
+    items.push({
+      label: "下次心跳",
+      value: formatDate(heartbeat.next_at),
+    });
+  }
+  if (heartbeat?.reply_check_at) {
+    items.push({
+      label: "回复复查",
+      value: formatDate(heartbeat.reply_check_at),
+    });
+  }
+  if (items.length === 1) {
+    items.push({ label: "下次心跳", value: "未排程" });
+  }
+  return items;
+}
+
+function StampMeta({ items }) {
+  return (
+    <p className="stamp-meta">
+      {items.map((item) => (
+        <span className="stamp-meta-item" key={item.label}>
+          <span className="stamp-meta-label">{item.label}</span>
+          <span className="stamp-meta-value">{item.value}</span>
+        </span>
+      ))}
+    </p>
+  );
+}
+
+const HEART_PIXELS = [
+  "..##.##..",
+  ".#++#++#.",
+  "#++*++++#",
+  "#+++++++#",
+  ".#+++++#.",
+  "..#+++#..",
+  "...#+#...",
+  "....#....",
+];
+
+function heartFills(intensity, count = 5) {
+  const total =
+    Math.round(Math.max(0, Math.min(1, Number(intensity) || 0)) * count * 2) / 2;
+  return Array.from({ length: count }, (_, index) =>
+    Math.max(0, Math.min(1, total - index)),
+  );
+}
+
+function PixelHeart({ fill, clipId }) {
+  const pixels = HEART_PIXELS.flatMap((row, y) =>
+    [...row].flatMap((cell, x) => (cell === "." ? [] : [{ x, y, cell }])),
+  );
+  const layer = (className, clip = false) => (
+    <g
+      className={className}
+      clipPath={clip && fill < 1 ? `url(#${clipId})` : undefined}
+    >
+      {pixels.map(({ x, y, cell }) => (
+        <rect
+          key={`${className}-${x}-${y}`}
+          x={x}
+          y={y}
+          width="1"
+          height="1"
+          className={
+            cell === "#" ? "is-ink" : cell === "*" ? "is-shine" : "is-fill"
+          }
+        />
+      ))}
+    </g>
+  );
+  return (
+    <svg
+      className="pixel-heart"
+      viewBox={`0 0 ${HEART_PIXELS[0].length} ${HEART_PIXELS.length}`}
+      shapeRendering="crispEdges"
+      aria-hidden="true"
+    >
+      {fill > 0 && fill < 1 && (
+        <defs>
+          <clipPath id={clipId}>
+            <rect
+              width={HEART_PIXELS[0].length * fill}
+              height={HEART_PIXELS.length}
+            />
+          </clipPath>
+        </defs>
+      )}
+      {layer("pixel-heart-empty")}
+      {fill > 0 && layer("pixel-heart-fill", true)}
+    </svg>
+  );
+}
+
+function MoodHearts({ intensity }) {
+  const uid = useId().replace(/[^a-zA-Z0-9_-]/g, "");
+  const fills = heartFills(intensity);
+  const level = fills.reduce((sum, value) => sum + value, 0);
+  return (
+    <div
+      className="mood-hearts"
+      role="img"
+      aria-label={`情绪强度 ${level} / 5`}
+    >
+      {fills.map((fill, index) => (
+        <PixelHeart key={index} fill={fill} clipId={`${uid}-${index}`} />
+      ))}
+    </div>
+  );
+}
+
+function pixelCells(grid) {
+  return grid.flatMap((row, y) =>
+    [...row].flatMap((cell, x) => (cell === "." ? [] : [{ x, y, cell }])),
+  );
+}
+
+function PixelSprite({ grid, className }) {
+  return (
+    <svg
+      className={className}
+      viewBox={`0 0 ${grid[0].length} ${grid.length}`}
+      shapeRendering="crispEdges"
+      aria-hidden="true"
+    >
+      {pixelCells(grid).map(({ x, y, cell }) => (
+        <rect
+          key={`${x}-${y}`}
+          x={x}
+          y={y}
+          width="1"
+          height="1"
+          className={
+            cell === "#" ? "is-ink" : cell === "*" ? "is-shine" : "is-fill"
+          }
+        />
+      ))}
+    </svg>
+  );
+}
+
+const MARK_PIXELS = [
+  "++.....++",
+  "+++...+++",
+  "++.+.+.++",
+  "++..+..++",
+  "++.....++",
+  "++.....++",
+  "++.....++",
+];
+
+const LED_PIXELS = [
+  ".###.",
+  "#+*+#",
+  "#+++#",
+  "#+++#",
+  ".###.",
+];
+
+const ARROW_PIXELS = [
+  "....###",
+  "...####",
+  "..#.###",
+  ".#..##.",
+  "#...#..",
+  "....#..",
+  "...#...",
+];
+
+function PixelMeter({ value, cells = 8 }) {
+  const filled = Math.round(Math.max(0, Math.min(1, Number(value) || 0)) * cells);
+  return (
+    <span className="pixel-meter" aria-hidden="true">
+      {Array.from({ length: cells }, (_, index) => (
+        <i key={index} className={index < filled ? "is-on" : undefined} />
+      ))}
+    </span>
+  );
+}
+
 function formatTokens(value) {
   const n = Number(value) || 0;
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
@@ -219,7 +410,9 @@ function useHashRoute() {
 function Loading({ children = "正在读取 Momoi 的生活记录…" }) {
   return (
     <div className="loading">
-      <span className="loading-mark">M</span>
+      <span className="loading-mark">
+        <PixelSprite className="pixel-mark" grid={MARK_PIXELS} />
+      </span>
       <span>{children}</span>
     </div>
   );
@@ -228,7 +421,7 @@ function Loading({ children = "正在读取 Momoi 的生活记录…" }) {
 function Empty({ text = "Momoi 开始运行后，内容会出现在这里。" }) {
   return (
     <div className="empty">
-      <span>—</span>
+      <PixelSprite className="pixel-mark is-solo" grid={MARK_PIXELS} />
       <h2>这里还没有记录</h2>
       <p>{text}</p>
     </div>
@@ -395,26 +588,19 @@ function OverviewBody({ data }) {
             <p className="state-detail">
               {data.activity.result || "Momoi 正在按自己的节奏生活。"}
             </p>
-            <p className="secondary">始于 {formatDate(data.activity.since)}</p>
+            <StampMeta items={activityMetaItems(data.activity, data.heartbeat)} />
           </article>
           <article className="panel">
             <span className="panel-label">Mood</span>
-            <h2 className="state-name">{data.mood.state}</h2>
-            <p className="state-detail">{data.mood.cause}</p>
-            <div className="intensity" aria-label="情绪强度">
-              <span
-                style={{
-                  width: `${Math.max(
-                    0,
-                    Math.min(100, Number(data.mood.intensity || 0) * 100),
-                  )}%`,
-                }}
-              />
+            <div className="mood-title">
+              <h2 className="state-name">{data.mood.state}</h2>
+              <MoodHearts intensity={data.mood.intensity} />
             </div>
+            <p className="state-detail">{data.mood.cause}</p>
           </article>
         </div>
       </OverviewSection>
-      <OverviewSection label="Momoi records" note="生活记录与待办概览">
+      <OverviewSection label="Records" note="生活记录与待办概览">
         <div className="overview-groups">
           {groups.map((group) => (
             <article
@@ -430,7 +616,9 @@ function OverviewBody({ data }) {
                   <a href={href} key={label}>
                     <strong>{value}</strong>
                     <span>{label}</span>
-                    <i aria-hidden="true">↗</i>
+                    <i aria-hidden="true">
+                      <PixelSprite className="pixel-arrow" grid={ARROW_PIXELS} />
+                    </i>
                   </a>
                 ))}
               </div>
@@ -519,10 +707,11 @@ function UsageChart({ rows, totals, balance, days = 30 }) {
           <span>请求</span>
           <strong>{shown?.requests ?? 0}</strong>
         </div>
-        <div>
-          <span>缓存命中</span>
-          <strong>{formatRate(shown?.cache_hit_rate)}</strong>
-        </div>
+          <div>
+            <span>缓存命中</span>
+            <strong>{formatRate(shown?.cache_hit_rate)}</strong>
+            <PixelMeter value={(Number(shown?.cache_hit_rate) || 0) / 100} />
+          </div>
         <div>
           <span>估算金额</span>
           <strong>{formatYuan(shown?.estimated_cost)}</strong>
@@ -551,18 +740,24 @@ function UsageChart({ rows, totals, balance, days = 30 }) {
             const req = Number(row.requests) || 0;
             if (!req || !maxReq) return null;
             const slot = innerW / count;
-            const barW = compact
-              ? Math.min(28, Math.max(slot * 0.62, 12))
-              : Math.min(14, Math.max(slot * 0.55, 3));
-            const barH = (req / maxReq) * innerH * (compact ? 0.62 : 0.58);
+            const barW = Math.round(
+              compact
+                ? Math.min(28, Math.max(slot * 0.62, 12))
+                : Math.min(14, Math.max(slot * 0.55, 3)),
+            );
+            const barH = Math.max(
+              2,
+              Math.round((req / maxReq) * innerH * (compact ? 0.62 : 0.58)),
+            );
             return (
               <rect
                 key={`bar-${row.date}`}
                 className="usage-req-bar"
-                x={xAt(index) - barW / 2}
-                y={pad.top + innerH - barH}
+                x={Math.round(xAt(index) - barW / 2)}
+                y={Math.round(pad.top + innerH - barH)}
                 width={barW}
                 height={barH}
+                shapeRendering="crispEdges"
               />
             );
           })}
@@ -570,11 +765,19 @@ function UsageChart({ rows, totals, balance, days = 30 }) {
           {daily.map((row, index) => (
             <g key={row.date}>
               {costPoints[index].cost > 0 && (
-                <circle
+                <rect
                   className="usage-dot pink"
-                  cx={costPoints[index].x}
-                  cy={costPoints[index].y}
-                  r={hover === index ? (compact ? 7 : 5.5) : compact ? 5.2 : 3.6}
+                  x={Math.round(
+                    costPoints[index].x -
+                      (hover === index ? (compact ? 4 : 3) : compact ? 3 : 2),
+                  )}
+                  y={Math.round(
+                    costPoints[index].y -
+                      (hover === index ? (compact ? 4 : 3) : compact ? 3 : 2),
+                  )}
+                  width={hover === index ? (compact ? 8 : 6) : compact ? 6 : 4}
+                  height={hover === index ? (compact ? 8 : 6) : compact ? 6 : 4}
+                  shapeRendering="crispEdges"
                 />
               )}
               <rect
@@ -966,12 +1169,22 @@ function Memories({ refreshKey, token, onMutated }) {
                         {item.evidence && (
                           <p className="secondary">依据：{item.evidence}</p>
                         )}
-                        <p className="secondary">
-                          更新于 {formatDate(item.updated_at)}
-                          {item.expires_at
-                            ? ` · 有效至 ${formatDate(item.expires_at)}`
-                            : ""}
-                        </p>
+                        <StampMeta
+                          items={[
+                            {
+                              label: "更新于",
+                              value: formatDate(item.updated_at),
+                            },
+                            ...(item.expires_at
+                              ? [
+                                  {
+                                    label: "有效至",
+                                    value: formatDate(item.expires_at),
+                                  },
+                                ]
+                              : []),
+                          ]}
+                        />
                         <div className="card-actions">
                           {editingId === item.id ? (
                             <>
@@ -2020,6 +2233,7 @@ function App() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [token, setToken] = useState(readToken);
   const [tokenDraft, setTokenDraft] = useState("");
+  const [version, setVersion] = useState("");
   const locked = !token;
   const [pageTitle, eyebrow] = pages[view];
   const View = viewComponents[view];
@@ -2036,11 +2250,17 @@ function App() {
       cache: "no-store",
       signal: controller.signal,
     })
-      .then((response) => {
+      .then(async (response) => {
         // Only drop a saved JWT when the server rejects it; network blips keep it.
         if (response.status === 401) {
           clearToken();
           setToken("");
+          return;
+        }
+        if (!response.ok) return;
+        const payload = await response.json();
+        if (typeof payload.version === "string" && payload.version.trim()) {
+          setVersion(payload.version.trim());
         }
       })
       .catch((error) => {
@@ -2079,8 +2299,11 @@ function App() {
             ))}
           </nav>
           <div className="sidebar-foot">
-            <span className="status-dot" />
+            <span className="status-led" aria-hidden="true">
+              <PixelSprite className="pixel-led" grid={LED_PIXELS} />
+            </span>
             <span>SYSTEM ONLINE</span>
+            {version ? <span className="sidebar-version">{version}</span> : null}
           </div>
         </aside>
         <main className={isRecord ? "is-record" : undefined}>

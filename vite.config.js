@@ -443,11 +443,12 @@ function previewUsageApi() {
           return;
         }
         if (req.method === "GET" && path === "/api/health") {
-          json(res, { ok: true });
+          json(res, { ok: true, version: "0.2.1" });
           return;
         }
         const records = previewRecords();
         if (req.method === "GET" && path === "/api/overview") {
+          const now = previewNow();
           json(res, {
             counts: {
               conversations: records.conversations.length,
@@ -464,8 +465,15 @@ function previewUsageApi() {
             activity: {
               name: "previewing dashboard",
               result: "本地预览用量折线",
-              since: null,
+              since: now - 3600,
               since_timestamp: null,
+            },
+            heartbeat: {
+              next_at: now + 1800,
+              last_at: now - 3600,
+              running: false,
+              kind: null,
+              reply_check_at: null,
             },
             usage,
             balance: {

@@ -7,6 +7,7 @@ import logging
 import mimetypes
 import re
 import time
+from importlib.metadata import PackageNotFoundError, version as package_version
 from importlib.resources import files
 from pathlib import Path
 
@@ -30,6 +31,15 @@ JWT_TTL_SECONDS = 365 * 24 * 60 * 60
 JWT_SUBJECT = "momoi-dashboard"
 _PUBLIC_ASSET_PATH = re.compile(r"^/api/emotions/[^/]+/asset$")
 _AUTH_TOKEN_PATH = "/api/auth/token"
+
+
+def momoi_version() -> str:
+    try:
+        return package_version("momoi")
+    except PackageNotFoundError:
+        return "0.0.0"
+
+
 _ROOT_STATIC = {
     "favicon.svg": ("favicon.svg", "image/svg+xml"),
     "favicon.ico": ("favicon.svg", "image/svg+xml"),
@@ -242,7 +252,7 @@ def create_dashboard_app(
         )
 
     async def health(_request: web.Request) -> web.Response:
-        return web.json_response({"ok": True})
+        return web.json_response({"ok": True, "version": momoi_version()})
 
     async def issue_token(request: web.Request) -> web.Response:
         secret = str(request.app[DASHBOARD_TOKEN] or "")

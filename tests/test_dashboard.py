@@ -185,6 +185,21 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(overview["usage"]["today"]["requests"], 0)
         self.assertEqual(overview["balance"]["source"], "unavailable")
         self.assertEqual(overview["balance"]["total_balance"], "0")
+        health = await (
+            await self.client.get("/api/health", headers=auth)
+        ).json()
+        self.assertTrue(health["ok"])
+        self.assertTrue(str(health["version"]).strip())
+        self.assertEqual(
+            overview["heartbeat"],
+            {
+                "next_at": None,
+                "last_at": None,
+                "running": False,
+                "kind": None,
+                "reply_check_at": None,
+            },
+        )
 
         conversations = await (
             await self.client.get("/api/conversations", headers=auth)
@@ -245,6 +260,40 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(usage["today"]["requests"], 1)
         self.assertEqual(usage["today"]["cache_read_tokens"], 100)
         self.assertEqual(len(usage["daily"]), 7)
+
+    async def test_overview_exposes_heartbeat_schedule(self) -> None:
+        now = time.time()
+        with self.store._db:
+            self.store._db.execute(
+                """UPDATE self_state SET next_heartbeat_at=?, last_heartbeat_at=?,
+                   pending_reply_expectation='等回复',
+                   pending_reply_next_check_at=? WHERE id=1""",
+                (now + 1800, now - 600, now + 300),
+            )
+        heartbeat = (
+            await (
+                await self.client.get("/api/overview", headers=self._auth())
+            ).json()
+        )["heartbeat"]
+        self.assertAlmostEqual(heartbeat["next_at"], now + 1800, places=3)
+        self.assertAlmostEqual(heartbeat["last_at"], now - 600, places=3)
+        self.assertFalse(heartbeat["running"])
+        self.assertIsNone(heartbeat["kind"])
+        self.assertAlmostEqual(heartbeat["reply_check_at"], now + 300, places=3)
+
+        with self.store._db:
+            self.store._db.execute(
+                """UPDATE self_state SET heartbeat_claimed_at=?,
+                   heartbeat_claim_kind='ordinary' WHERE id=1""",
+                (now,),
+            )
+        heartbeat = (
+            await (
+                await self.client.get("/api/overview", headers=self._auth())
+            ).json()
+        )["heartbeat"]
+        self.assertTrue(heartbeat["running"])
+        self.assertEqual(heartbeat["kind"], "ordinary")
 
     async def test_thinking_endpoint_lists_and_reads_calls(self) -> None:
         now = time.time()
