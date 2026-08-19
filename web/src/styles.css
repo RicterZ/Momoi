@@ -612,9 +612,9 @@ main.is-record .error {
 .state-detail, .secondary { color: var(--muted); line-height: 1.65; }
 .stamp-meta {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: baseline;
-  gap: 8px 0;
+  gap: 0;
   margin: 18px 0 0;
 }
 .stamp-meta-item {
@@ -623,10 +623,11 @@ main.is-record .error {
   gap: 8px;
   white-space: nowrap;
 }
-.stamp-meta-item + .stamp-meta-item {
-  margin-left: 14px;
-  padding-left: 14px;
-  border-left: 2px solid var(--ink);
+.stamp-meta-item + .stamp-meta-item::before {
+  content: "·";
+  margin: 0 12px;
+  color: var(--ink);
+  font-weight: 850;
 }
 .stamp-meta-label {
   color: var(--soft);
@@ -1235,20 +1236,6 @@ a.tag:hover {
 }
 .reflection-card .secondary { margin: 12px 0 0; }
 .reflection-card .stamp-meta { margin-top: 12px; }
-.memory-section .stamp-meta {
-  flex-wrap: nowrap;
-}
-.memory-section .stamp-meta-item + .stamp-meta-item {
-  margin-left: 0;
-  padding-left: 0;
-  border-left: 0;
-}
-.memory-section .stamp-meta-item + .stamp-meta-item::before {
-  content: "·";
-  margin: 0 12px;
-  color: var(--ink);
-  font-weight: 850;
-}
 .reflection-card, .goal-card {
   padding: 24px 26px;
 }
@@ -1562,12 +1549,12 @@ a.tag:hover {
   .emotion-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .memory-list,
   .memory-section .card-list { grid-template-columns: 1fr; }
-  .memory-section .stamp-meta {
+  .stamp-meta {
     flex-direction: column;
     align-items: flex-start;
     gap: 6px;
   }
-  .memory-section .stamp-meta-item + .stamp-meta-item::before {
+  .stamp-meta-item + .stamp-meta-item::before {
     content: none;
     display: none;
     margin: 0;
