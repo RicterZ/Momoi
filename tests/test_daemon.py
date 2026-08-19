@@ -1326,8 +1326,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
     async def test_owner_can_enable_a_planner_omitted_tool_group(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            file_path = root / "note.txt"
-            file_path.write_text("planner fallback works")
             daemon = MomoiDaemon(
                 AppConfig(
                     llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
@@ -1344,6 +1342,32 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     workspace=root,
                 )
             )
+            class MCP:
+                tool_specs = [
+                    {
+                        "name": "mcp__demo__read",
+                        "description": "Read a demo value.",
+                        "input_schema": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": False,
+                        },
+                    }
+                ]
+
+                @staticmethod
+                def has_tool(name: str) -> bool:
+                    return name == "mcp__demo__read"
+
+                @staticmethod
+                def capability(_name: str) -> str:
+                    return "read"
+
+                @staticmethod
+                async def call(_name: str, _arguments: object) -> dict[str, object]:
+                    return {"ok": True, "value": "planner fallback works"}
+
+            daemon.mcp = MCP()  # type: ignore[assignment]
             event = IncomingMessage("owner-enable", "owner-enable", "读文件", 1, 1)
             daemon.store.add_event(event)
             turn_id = daemon._turn_id(event.event_id)
@@ -1362,18 +1386,19 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     provider_self.calls += 1
                     names = [str(tool["name"]) for tool in tools]
                     if provider_self.calls == 1:
-                        self.assertNotIn("read_file", names)
+                        self.assertIn("read_file", names)
+                        self.assertNotIn("mcp__demo__read", names)
                         call = ToolCall(
-                            "enable-builtin",
+                            "enable-demo",
                             "tool_enable",
-                            {"groups": ["builtin"]},
+                            {"servers": ["demo"]},
                         )
                     elif provider_self.calls == 2:
-                        self.assertIn("read_file", names)
+                        self.assertIn("mcp__demo__read", names)
                         call = ToolCall(
-                            "read-note",
-                            "read_file",
-                            {"path": str(file_path)},
+                            "read-demo",
+                            "mcp__demo__read",
+                            {"say_to_owner": "我看看这个值"},
                         )
                     else:
                         self.assertIn("planner fallback works", json.dumps(messages))
@@ -1392,7 +1417,15 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             reply = await daemon._run_tool_loop(
                 daemon._system(),
                 [{"role": "user", "content": "读文件"}],
-                daemon._owner_tool_specs({"tool_groups": []}, "napcat"),
+                daemon._owner_tool_specs(
+                    {
+                        "mcp_route": {
+                            "servers": [],
+                            "reason": "Planner omitted demo",
+                        }
+                    },
+                    "napcat",
+                ),
                 [event],
                 TurnDraft(),
                 authority="owner",
@@ -1932,6 +1965,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "read_file",
                             "list_dir",
                             "write_file",
+                            "tool_enable",
                             "send_message",
                             "respond",
                         }

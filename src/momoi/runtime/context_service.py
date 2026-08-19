@@ -57,9 +57,9 @@ class ContextService:
 
         revision = self.store.next_context_plan_revision(turn_id)
         owner_query = "\n".join(event.text for event in events)
-        tool_group_catalog = self._owner_tool_group_catalog()
-        available_tool_groups = {
-            str(group["id"]) for group in tool_group_catalog
+        mcp_server_catalog = self._mcp_server_catalog()
+        available_mcp_servers = {
+            str(group["id"]) for group in mcp_server_catalog
         }
         planner_recent_turns, active_recent_turn_ids = (
             assemble_planner_recent_turns(
@@ -165,7 +165,7 @@ class ContextService:
                     {
                         "candidate_goals": candidate_goals,
                         "candidate_reminders": candidate_reminders,
-                        "available_tool_groups": tool_group_catalog,
+                        "available_mcp_servers": mcp_server_catalog,
                         "recent_turns": planner_recent_turns,
                         "active_recent_turn_ids": active_recent_turn_ids,
                         "candidate_episodes": candidate_context,
@@ -265,7 +265,7 @@ class ContextService:
                     candidates,
                     turn_id,
                     revision,
-                    available_tool_groups,
+                    available_mcp_servers,
                 )
             except ContextPlanError as error:
                 last_error = str(error)
@@ -343,7 +343,7 @@ class ContextService:
                 plan_units=_plan_log_units(plan),
                 episode_actions=_plan_log_episodes(plan),
                 uncertainty=plan.get("uncertainty", []),
-                tool_groups=plan.get("tool_groups", "all"),
+                mcp_route=plan.get("mcp_route", {"servers": [], "reason": "degraded"}),
                 duration_ms=int((time.monotonic() - call_started) * 1000),
             )
             return self._stored_context_plan(saved)
@@ -395,11 +395,16 @@ class ContextService:
         recent_conversation: str,
         goals: str,
     ) -> dict[str, object]:
+        mcp_server_catalog = self._heartbeat_mcp_server_catalog()
+        available_mcp_servers = {
+            str(server["id"]) for server in mcp_server_catalog
+        }
         request = [
             {
                 "role": "user",
                 "content": json.dumps(
                     {
+                        "available_mcp_servers": mcp_server_catalog,
                         "current_time": datetime.now().astimezone().isoformat(
                             timespec="seconds"
                         ),
@@ -455,7 +460,10 @@ class ContextService:
                     or response.tool_calls[0].name != HEARTBEAT_PLAN_TOOL_NAME
                 ):
                     raise ContextPlanError("heartbeat_plan_tool_required")
-                plan = parse_heartbeat_plan(response.tool_calls[0].arguments)
+                plan = parse_heartbeat_plan(
+                    response.tool_calls[0].arguments,
+                    available_mcp_servers,
+                )
             except ContextPlanError as error:
                 last_error = str(error)
                 log_event(
@@ -504,6 +512,7 @@ class ContextService:
                 round=attempt + 1,
                 intent=plan["activity"]["intent"],
                 queries=len(plan["activity"]["recall_queries"]),
+                mcp_route=plan.get("mcp_route", {}),
                 duration_ms=int((time.monotonic() - started) * 1000),
             )
             return plan

@@ -46,13 +46,12 @@ experience; a top-ranked candidate may still be rejected in favor of `new` or
 
 Rules:
 
-- Select only the supplied `available_tool_groups` needed to handle the current
-  owner input now. Ordinary conversation uses none. Include `memory` for a
-  durable fact/correction that may need persistence or explicit history work,
-  `agenda` for Goals or reminders, `builtin` for local files or HTTP work, and
-  the relevant `mcp:<server>` group for its external service. Do not enable a
-  group merely because it is available; the main agent can request an omitted
-  group later through `tool_enable`.
+- Select only the supplied `available_mcp_servers` needed to handle the current
+  owner input now, and always give a concise non-empty routing reason. Ordinary
+  conversation and work using internal Memory, Conversation, Thinking, Agenda,
+  or Builtin tools selects no MCP server. Do not preload an external server
+  merely because it is available; the main agent can enable an omitted server
+  later through `tool_enable`.
 
 - Cover every event id. Default to one intent unit per semantic goal, even when
   several messages add detail, emotion, acknowledgment, or banter to that same

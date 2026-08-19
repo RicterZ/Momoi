@@ -264,7 +264,7 @@ momoi --workspace ~/.momoi run
 
 `recent_episode_hours` 会加入配置窗口内全部活跃的 Episode，与关键词召回相互独立；`summary_results` 默认将关键词召回限制为最多 12 个 Episode。两组结果按 Episode 去重后排序：近期且命中关键词的优先，其次是其他关键词命中，最后是仅近期活跃的 Episode；在关键词组内，命中的关键词 alternative 越多越靠前。`summary_tokens` 由合并后的 Episode 摘要共同使用。
 
-Owner主模型使用同一套紧凑Recent投影。稳定的Owner Preferences、Core Reflection和近期记忆位于当前Owner消息之前，以便复用前缀；动态当前消息保持在末尾。Context Planner同时从`memory`、`agenda`、`builtin`和各`mcp:<server>`组中选择当前需要的工具。主模型始终保留消息/终止协议和`tool_enable`；若Planner漏选能力，模型可启用缺失组并在下一轮调用原生工具。Planner降级或旧计划没有`tool_groups`时仍加载全部工具，保证兼容与可用性。
+Owner主模型使用同一套紧凑Recent投影。稳定的Owner Preferences、Core Reflection和近期记忆位于当前Owner消息之前，以便复用前缀；动态当前消息保持在末尾。内部Memory、Conversation、Thinking、Agenda和Builtin工具全部常驻。Context Planner只选择当前需要的外部MCP Server，并必须给出路由理由；主模型始终通过`tool_enable`获得紧凑的Server/Tool目录，可在Turn中随时加载漏选Server。Heartbeat Planner和执行循环使用同一套Server级路由，并继续受Autonomy Pattern限制。Planner降级时不预载MCP，但保留`tool_enable`，无需恢复全部外部Schema也不会失能。
 
 将某个召回层的结果数量或 token 预算设为 `0` 可关闭该层自动召回。对应工具已启用时，显式记忆和对话搜索工具仍然可用。
 

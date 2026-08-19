@@ -45,6 +45,13 @@ def context_plan_response(messages: list[dict[str, Any]]) -> ProviderResponse:
             }
         ],
         "episode_links": [],
+        "mcp_route": {
+            "servers": [
+                str(server["id"])
+                for server in payload.get("available_mcp_servers", [])
+            ],
+            "reason": "Load configured test MCP servers.",
+        },
         "uncertainty": [],
     }
     call = ToolCall("context-plan", CONTEXT_PLAN_TOOL_NAME, plan)
@@ -70,6 +77,13 @@ def heartbeat_plan_response(messages: list[dict[str, Any]]) -> ProviderResponse:
             "intent": str(previous.get("activity") or "spend time freely"),
             "reason": "Continue the current activity for this test.",
             "recall_queries": [],
+        },
+        "mcp_route": {
+            "servers": [
+                str(server["id"])
+                for server in payload.get("available_mcp_servers", [])
+            ],
+            "reason": "Load configured test MCP servers.",
         },
         "uncertainty": [],
     }

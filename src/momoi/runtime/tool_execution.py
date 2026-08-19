@@ -48,20 +48,16 @@ class ToolExecutionService:
     @staticmethod
     def _mcp_tool_group(name: str) -> str:
         parts = str(name).split("__", 2)
-        return f"mcp:{parts[1]}" if len(parts) == 3 else "mcp:other"
+        return parts[1] if len(parts) == 3 else "other"
 
-    def _owner_tool_groups(self) -> dict[str, list[dict[str, Any]]]:
-        groups: dict[str, list[dict[str, Any]]] = {
-            "memory": copy.deepcopy(MEMORY_TOOL_SPECS),
-            "agenda": self._announced_tool_specs(AGENDA_TOOL_SPECS, mcp=False),
-            "builtin": self._announced_tool_specs(BUILTIN_TOOL_SPECS, mcp=False),
-        }
+    def _mcp_server_groups(self) -> dict[str, list[dict[str, Any]]]:
+        groups: dict[str, list[dict[str, Any]]] = {}
         for spec in self._announced_tool_specs(self.mcp.tool_specs, mcp=True):
             group = self._mcp_tool_group(str(spec.get("name") or ""))
             groups.setdefault(group, []).append(spec)
         return groups
 
-    def _owner_tool_group_catalog(self) -> list[dict[str, object]]:
+    def _mcp_server_catalog(self) -> list[dict[str, object]]:
         return [
             {
                 "id": group,
@@ -71,18 +67,76 @@ class ToolExecutionService:
                     for spec in specs[:12]
                 ],
             }
-            for group, specs in self._owner_tool_groups().items()
+            for group, specs in self._mcp_server_groups().items()
         ]
+
+    def _self_directed_mcp_server_groups(self) -> dict[str, list[dict[str, Any]]]:
+        patterns = self.config.autonomy.allowed_tools
+        groups: dict[str, list[dict[str, Any]]] = {}
+        for spec in self.mcp.tool_specs:
+            if not any(
+                fnmatch.fnmatchcase(str(spec["name"]), pattern)
+                for pattern in patterns
+            ):
+                continue
+            server = self._mcp_tool_group(str(spec.get("name") or ""))
+            groups.setdefault(server, []).append(spec)
+        return groups
+
+    def _heartbeat_mcp_server_catalog(self) -> list[dict[str, object]]:
+        return [
+            {
+                "id": server,
+                "tool_count": len(specs),
+                "sample_tools": [
+                    str(spec.get("name") or "").split("__")[-1]
+                    for spec in specs[:12]
+                ],
+            }
+            for server, specs in self._self_directed_mcp_server_groups().items()
+        ]
+
+    def _heartbeat_external_tool_specs(
+        self,
+        plan: dict[str, object],
+    ) -> list[dict[str, Any]]:
+        patterns = self.config.autonomy.allowed_tools
+        internal = [
+            spec
+            for spec in SELF_DIRECTED_BUILTIN_TOOL_SPECS
+            if any(
+                fnmatch.fnmatchcase(str(spec["name"]), pattern)
+                for pattern in patterns
+            )
+        ]
+        groups = self._self_directed_mcp_server_groups()
+        route = plan.get("mcp_route")
+        selected = route.get("servers") if isinstance(route, dict) else []
+        selected_servers = selected if isinstance(selected, list) else []
+        mcp_specs = [
+            spec
+            for server in selected_servers
+            for spec in groups.get(str(server), [])
+        ]
+        group_tools = {
+            server: [
+                str(spec.get("name") or "").split("__")[-1]
+                for spec in specs
+            ]
+            for server, specs in groups.items()
+        }
+        return [*internal, *mcp_specs, tool_enable_spec(group_tools)]
 
     def _owner_tool_specs(
         self, plan: dict[str, object], channel_name: str | None = None
     ) -> list[dict[str, Any]]:
-        groups = self._owner_tool_groups()
-        raw_selected = plan.get("tool_groups")
+        groups = self._mcp_server_groups()
+        route = plan.get("mcp_route")
+        raw_selected = route.get("servers") if isinstance(route, dict) else []
         selected = (
             [str(group) for group in raw_selected if str(group) in groups]
             if isinstance(raw_selected, list)
-            else list(groups)
+            else []
         )
         optional = [
             spec
@@ -98,6 +152,9 @@ class ToolExecutionService:
         }
         return [
             self._send_message_tool_spec(channel_name),
+            *copy.deepcopy(MEMORY_TOOL_SPECS),
+            *self._announced_tool_specs(AGENDA_TOOL_SPECS, mcp=False),
+            *self._announced_tool_specs(BUILTIN_TOOL_SPECS, mcp=False),
             *optional,
             tool_enable_spec(group_tools),
             RESPOND_TOOL_SPEC,
@@ -136,7 +193,13 @@ class ToolExecutionService:
         owner_work_acknowledged = False
         llm_round = 0
         enable_tool_groups = (
-            self._owner_tool_groups() if authority == "owner" else {}
+            self._mcp_server_groups()
+            if authority == "owner"
+            else (
+                self._self_directed_mcp_server_groups()
+                if heartbeat_turn
+                else {}
+            )
         )
         stage = (
             "reply_followup"
@@ -711,7 +774,7 @@ class ToolExecutionService:
                                 "messages": len(progress),
                             }
                 elif call.name == "tool_enable":
-                    requested = call.arguments.get("groups")
+                    requested = call.arguments.get("servers")
                     if (
                         not isinstance(requested, list)
                         or not requested
@@ -723,7 +786,7 @@ class ToolExecutionService:
                     ):
                         result = {
                             "ok": False,
-                            "error": "invalid_tool_groups",
+                            "error": "invalid_mcp_servers",
                         }
                     else:
                         existing = {
@@ -741,7 +804,7 @@ class ToolExecutionService:
                         result = {
                             "ok": True,
                             "state": "enabled",
-                            "groups": list(dict.fromkeys(requested)),
+                            "servers": list(dict.fromkeys(requested)),
                             "tools": enabled_tools,
                         }
                 elif self.mcp.has_tool(call.name) or self.builtin_tools.has_tool(

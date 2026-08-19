@@ -1109,6 +1109,7 @@ class TurnOrchestrator:
                     {
                         "intent": planned_activity["intent"],
                         "reason": planned_activity["reason"],
+                        "mcp_route": plan.get("mcp_route", {}),
                         "uncertainty": plan["uncertainty"],
                     },
                     ensure_ascii=False,
@@ -1155,7 +1156,7 @@ class TurnOrchestrator:
         tools = [
             *MEMORY_TOOL_SPECS,
             *AGENDA_TOOL_SPECS,
-            *self._self_directed_tool_specs(),
+            *self._heartbeat_external_tool_specs(plan),
             self._send_message_tool_spec(delivery_channel.name),
             heartbeat_respond_tool_spec(),
         ]

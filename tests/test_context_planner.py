@@ -127,10 +127,16 @@ class ContextPlannerTest(unittest.TestCase):
                     "reason": "看看最近感兴趣的动态",
                     "recall_queries": ["微博登录错误报告规则"],
                 },
+                "mcp_route": {
+                    "servers": ["weibo"],
+                    "reason": "计划浏览微博关注流",
+                },
                 "uncertainty": [],
-            }
+            },
+            {"weibo", "gog"},
         )
         self.assertEqual(plan["activity"]["recall_queries"], ["微博登录错误报告规则"])
+        self.assertEqual(plan["mcp_route"]["servers"], ["weibo"])
         with self.assertRaisesRegex(ContextPlanError, "invalid_heartbeat_activity"):
             parse_heartbeat_plan(
                 {"version": 1, "activity": {}, "uncertainty": []}
@@ -138,6 +144,7 @@ class ContextPlannerTest(unittest.TestCase):
         degraded = degraded_heartbeat_plan("", "invalid_json")
         self.assertEqual(degraded["activity"]["recall_queries"], [])
         self.assertEqual(degraded["activity"]["intent"], "spend time freely")
+        self.assertEqual(degraded["mcp_route"]["servers"], [])
 
     def test_context_plan_shape_lives_in_tool_schema(self) -> None:
         self.assertIn(CONTEXT_PLAN_TOOL_NAME, CONTEXT_PLANNER_SYSTEM_PROMPT)
@@ -155,7 +162,7 @@ class ContextPlannerTest(unittest.TestCase):
                 "intent_units",
                 "episode_actions",
                 "episode_links",
-                "tool_groups",
+                "mcp_route",
                 "uncertainty",
             ],
         )
@@ -165,28 +172,32 @@ class ContextPlannerTest(unittest.TestCase):
             ["none", "continue", "new"],
         )
 
-    def test_context_plan_selects_only_available_tool_groups(self) -> None:
+    def test_context_plan_selects_only_available_mcp_servers(self) -> None:
         plan = response_plan()
-        plan["tool_groups"] = ["memory", "mcp:gog"]
+        plan["mcp_route"] = {
+            "servers": ["gog"],
+            "reason": "主人明确要求检查邮件",
+        }
         parsed = parse_context_plan(
             plan,
             ["event-1"],
             [],
             "turn-1",
             1,
-            {"memory", "agenda", "mcp:gog"},
+            {"homeassistant", "gog"},
         )
-        self.assertEqual(parsed["tool_groups"], ["memory", "mcp:gog"])
+        self.assertEqual(parsed["mcp_route"]["servers"], ["gog"])
+        self.assertIn("邮件", parsed["mcp_route"]["reason"])
 
-        plan["tool_groups"] = ["mcp:missing"]
-        with self.assertRaisesRegex(ContextPlanError, "unknown_tool_group"):
+        plan["mcp_route"]["servers"] = ["missing"]
+        with self.assertRaisesRegex(ContextPlanError, "unknown_mcp_server"):
             parse_context_plan(
                 plan,
                 ["event-1"],
                 [],
                 "turn-1",
                 1,
-                {"memory", "agenda", "mcp:gog"},
+                {"homeassistant", "gog"},
             )
 
     def test_standalone_media_guidance_limits_semantic_inference(self) -> None:
@@ -481,17 +492,37 @@ class ContextPlannerTest(unittest.TestCase):
                     "respond",
                 ],
             )
-            routed = {**plan, "tool_groups": []}
+            routed = {
+                **plan,
+                "mcp_route": {"servers": [], "reason": "不需要外部服务"},
+            }
             self.assertEqual(
                 [spec["name"] for spec in daemon._owner_tool_specs(routed)],
-                ["send_message", "tool_enable", "respond"],
+                [
+                    "send_message",
+                    "memory_search",
+                    "conversation_search",
+                    "conversation_read",
+                    "memory_remember",
+                    "memory_forget",
+                    "thinking_search",
+                    "thinking_read",
+                    "goal_create",
+                    "goal_update",
+                    "goal_finish",
+                    "goal_cancel",
+                    "reminder_create",
+                    "reminder_cancel",
+                    "curl",
+                    "read_file",
+                    "list_dir",
+                    "write_file",
+                    "apply_patch",
+                    "sleep",
+                    "tool_enable",
+                    "respond",
+                ],
             )
-            routed["tool_groups"] = ["memory"]
-            routed_names = [
-                spec["name"] for spec in daemon._owner_tool_specs(routed)
-            ]
-            self.assertIn("memory_search", routed_names)
-            self.assertNotIn("curl", routed_names)
             daemon.store.close()
 
     def test_degraded_plan_splits_message_segments_and_marks_uncertainty(self) -> None:
@@ -789,7 +820,7 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                             [
                                 "candidate_goals",
                                 "candidate_reminders",
-                                "available_tool_groups",
+                                "available_mcp_servers",
                                 "recent_turns",
                                 "active_recent_turn_ids",
                                 "candidate_episodes",

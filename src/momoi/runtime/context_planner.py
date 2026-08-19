@@ -228,13 +228,29 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                     "additionalProperties": False,
                 },
             },
-            "tool_groups": {
-                "type": "array",
-                "maxItems": 32,
-                "items": {"type": "string", "minLength": 1, "maxLength": 100},
+            "mcp_route": {
+                "type": "object",
+                "properties": {
+                    "servers": {
+                        "type": "array",
+                        "maxItems": 32,
+                        "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 100,
+                        },
+                    },
+                    "reason": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 300,
+                    },
+                },
+                "required": ["servers", "reason"],
+                "additionalProperties": False,
                 "description": (
-                    "Available tool-group ids needed to handle the current owner "
-                    "input now. Use an empty array for ordinary conversation."
+                    "External MCP servers needed now and a concise routing reason. "
+                    "Internal tools are always available."
                 ),
             },
             "uncertainty": {
@@ -248,7 +264,7 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
             "intent_units",
             "episode_actions",
             "episode_links",
-            "tool_groups",
+            "mcp_route",
             "uncertainty",
         ],
         "additionalProperties": False,
@@ -286,13 +302,34 @@ HEARTBEAT_PLAN_TOOL_SPEC: dict[str, object] = {
                 "required": ["intent", "reason", "recall_queries"],
                 "additionalProperties": False,
             },
+            "mcp_route": {
+                "type": "object",
+                "properties": {
+                    "servers": {
+                        "type": "array",
+                        "maxItems": 32,
+                        "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 100,
+                        },
+                    },
+                    "reason": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 300,
+                    },
+                },
+                "required": ["servers", "reason"],
+                "additionalProperties": False,
+            },
             "uncertainty": {
                 "type": "array",
                 "maxItems": 4,
                 "items": {"type": "string", "maxLength": 500},
             },
         },
-        "required": ["version", "activity", "uncertainty"],
+        "required": ["version", "activity", "mcp_route", "uncertainty"],
         "additionalProperties": False,
     },
 }
@@ -344,7 +381,7 @@ def parse_context_plan(
     candidates: list[dict[str, object]],
     turn_id: str,
     revision: int,
-    available_tool_groups: set[str] | None = None,
+    available_mcp_servers: set[str] | None = None,
 ) -> ContextPlan:
     if isinstance(text, dict):
         value = text
@@ -363,7 +400,7 @@ def parse_context_plan(
         "episode_links",
         "uncertainty",
     }
-    if set(value) not in (expected, {*expected, "tool_groups"}):
+    if set(value) not in (expected, {*expected, "mcp_route"}):
         raise ContextPlanError("invalid_top_level")
     if version not in {1, 2}:
         raise ContextPlanError("unsupported_version")
@@ -690,19 +727,31 @@ def parse_context_plan(
         )
     for binding in bindings:
         binding.pop("_ref", None)
-    raw_tool_groups = value.get("tool_groups")
-    tool_groups: list[str] | None = None
-    if raw_tool_groups is not None:
-        tool_groups = _strings(
-            raw_tool_groups,
-            "tool_groups",
+    raw_mcp_route = value.get("mcp_route")
+    mcp_route: dict[str, object] | None = None
+    if raw_mcp_route is not None:
+        if not isinstance(raw_mcp_route, dict) or set(raw_mcp_route) != {
+            "servers",
+            "reason",
+        }:
+            raise ContextPlanError("invalid_mcp_route")
+        servers = _strings(
+            raw_mcp_route["servers"],
+            "mcp_servers",
             maximum=32,
             max_length=100,
         )
-        if len(set(tool_groups)) != len(tool_groups):
-            raise ContextPlanError("duplicate_tool_group")
-        if available_tool_groups is not None and not set(tool_groups) <= available_tool_groups:
-            raise ContextPlanError("unknown_tool_group")
+        if len(set(servers)) != len(servers):
+            raise ContextPlanError("duplicate_mcp_server")
+        if (
+            available_mcp_servers is not None
+            and not set(servers) <= available_mcp_servers
+        ):
+            raise ContextPlanError("unknown_mcp_server")
+        mcp_route = {
+            "servers": servers,
+            "reason": _text(raw_mcp_route["reason"], "mcp_reason", 300),
+        }
     return {
         "version": version,
         "intent_units": units,
@@ -712,7 +761,7 @@ def parse_context_plan(
             else {"episode_bindings": bindings}
         ),
         "episode_links": links,
-        **({"tool_groups": tool_groups} if tool_groups is not None else {}),
+        **({"mcp_route": mcp_route} if mcp_route is not None else {}),
         "uncertainty": _strings(
             value["uncertainty"],
             "uncertainty",
@@ -779,6 +828,7 @@ def degraded_context_plan(
 
 def parse_heartbeat_plan(
     value: str | dict[str, object],
+    available_mcp_servers: set[str] | None = None,
 ) -> dict[str, object]:
     if isinstance(value, str):
         try:
@@ -787,7 +837,10 @@ def parse_heartbeat_plan(
             raise ContextPlanError("invalid_json") from error
     if (
         not isinstance(value, dict)
-        or set(value) != {"version", "activity", "uncertainty"}
+        or set(value) not in (
+            {"version", "activity", "uncertainty"},
+            {"version", "activity", "mcp_route", "uncertainty"},
+        )
         or value.get("version") != 1
     ):
         raise ContextPlanError("invalid_heartbeat_plan")
@@ -797,6 +850,31 @@ def parse_heartbeat_plan(
         or set(activity) != {"intent", "reason", "recall_queries"}
     ):
         raise ContextPlanError("invalid_heartbeat_activity")
+    raw_mcp_route = value.get("mcp_route")
+    mcp_route: dict[str, object] | None = None
+    if raw_mcp_route is not None:
+        if not isinstance(raw_mcp_route, dict) or set(raw_mcp_route) != {
+            "servers",
+            "reason",
+        }:
+            raise ContextPlanError("invalid_mcp_route")
+        servers = _strings(
+            raw_mcp_route["servers"],
+            "mcp_servers",
+            maximum=32,
+            max_length=100,
+        )
+        if len(set(servers)) != len(servers):
+            raise ContextPlanError("duplicate_mcp_server")
+        if (
+            available_mcp_servers is not None
+            and not set(servers) <= available_mcp_servers
+        ):
+            raise ContextPlanError("unknown_mcp_server")
+        mcp_route = {
+            "servers": servers,
+            "reason": _text(raw_mcp_route["reason"], "mcp_reason", 300),
+        }
     return {
         "version": 1,
         "activity": {
@@ -809,6 +887,7 @@ def parse_heartbeat_plan(
                 max_length=500,
             ),
         },
+        **({"mcp_route": mcp_route} if mcp_route is not None else {}),
         "uncertainty": _strings(
             value["uncertainty"],
             "heartbeat_uncertainty",
@@ -825,6 +904,13 @@ def degraded_heartbeat_plan(activity: str, reason: str) -> dict[str, object]:
             "intent": activity.strip() or "spend time freely",
             "reason": f"Heartbeat planner failed ({reason}); continue current activity.",
             "recall_queries": [],
+        },
+        "mcp_route": {
+            "servers": [],
+            "reason": (
+                f"Heartbeat planner failed ({reason}); no external MCP server "
+                "is preloaded."
+            ),
         },
         "uncertainty": [f"Heartbeat planner protocol failed: {reason}"],
     }

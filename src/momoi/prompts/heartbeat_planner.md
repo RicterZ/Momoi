@@ -24,6 +24,11 @@ Rules:
   include file paths, tool steps, or wildcard syntax.
 - Leave `recall_queries` empty for rest, free-form thought, or an activity that does
   not need archived context.
+- Select only the supplied `available_mcp_servers` required for the chosen
+  activity, with a concise non-empty reason. Internal Memory, Conversation,
+  Thinking, Agenda, and Builtin tools are always available. Select no external
+  server for rest or internal-only work; the heartbeat model can enable an
+  omitted server later through `tool_enable`.
 - `uncertainty` contains only ambiguity that could change the selected activity or
   its recall target. Usually return none.
 - Do not decide whether to message the owner. The heartbeat model decides that

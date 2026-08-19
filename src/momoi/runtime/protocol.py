@@ -277,15 +277,15 @@ def tool_enable_spec(group_tools: dict[str, list[str]]) -> dict[str, Any]:
     return {
         "name": "tool_enable",
         "description": (
-            "Enable one or more currently unloaded tool groups when the owner's "
-            "request genuinely requires a capability omitted by context planning. "
-            "After this succeeds, call the newly available native tool. "
-            f"Available groups and sample tools: {catalog}"
+            "Enable one or more currently unloaded external MCP servers when the "
+            "current work requires a capability omitted by planning. After this "
+            "succeeds, call the newly available native MCP tool. "
+            f"Available servers and tools: {catalog}"
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "groups": {
+                "servers": {
                     "type": "array",
                     "minItems": 1,
                     "maxItems": max(1, len(group_ids)),
@@ -295,7 +295,7 @@ def tool_enable_spec(group_tools: dict[str, list[str]]) -> dict[str, Any]:
                     },
                 }
             },
-            "required": ["groups"],
+            "required": ["servers"],
             "additionalProperties": False,
         },
     }
