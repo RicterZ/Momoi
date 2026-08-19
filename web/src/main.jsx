@@ -310,16 +310,6 @@ const LED_PIXELS = [
   ".###.",
 ];
 
-const ARROW_PIXELS = [
-  "....###",
-  "...####",
-  "..#.###",
-  ".#..##.",
-  "#...#..",
-  "....#..",
-  "...#...",
-];
-
 function PixelMeter({ value, cells = 8 }) {
   const filled = Math.round(Math.max(0, Math.min(1, Number(value) || 0)) * cells);
   return (
@@ -623,9 +613,7 @@ function OverviewBody({ data }) {
                   <a href={href} key={label}>
                     <strong>{value}</strong>
                     <span>{label}</span>
-                    <i aria-hidden="true">
-                      <PixelSprite className="pixel-arrow" grid={ARROW_PIXELS} />
-                    </i>
+                    <i aria-hidden="true">↗</i>
                   </a>
                 ))}
               </div>

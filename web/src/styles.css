@@ -673,14 +673,6 @@ main.is-record .error {
 .pixel-heart-fill .is-ink { fill: var(--ink); }
 .pixel-heart-fill .is-fill { fill: var(--pink); }
 .pixel-heart-fill .is-shine { fill: #fff; }
-.pixel-arrow {
-  display: block;
-  width: 11px;
-  height: 11px;
-  image-rendering: pixelated;
-}
-.pixel-arrow .is-ink,
-.pixel-arrow .is-fill { fill: var(--soft); }
 .pixel-meter {
   display: flex;
   gap: 2px;
@@ -787,6 +779,9 @@ main.is-record .error {
   top: 10px;
   right: 11px;
   color: var(--soft);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 850;
 }
 .overview-group.agenda .overview-stats,
 .overview-group.stickers .overview-stats {
