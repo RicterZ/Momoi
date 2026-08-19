@@ -572,16 +572,7 @@ main.is-record .error {
 @keyframes loading-hop {
   50% { transform: translateY(-6px); }
 }
-.pixel-mark.is-solo {
-  display: block;
-  width: 36px;
-  height: 28px;
-  margin: 0 auto;
-  image-rendering: pixelated;
-}
-.pixel-mark.is-solo .is-fill,
-.pixel-mark.is-solo .is-shine { fill: var(--pink); }
-.pixel-mark.is-solo .is-ink { fill: var(--ink); }
+.empty span { color: var(--pink); font-size: 44px; font-weight: 800; }
 .empty h2 {
   margin: 12px 0 4px;
   color: var(--ink);
