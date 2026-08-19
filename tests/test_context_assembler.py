@@ -321,13 +321,32 @@ class ContextAssemblerTest(unittest.TestCase):
             self.assertNotIn("source", tool_call)
             self.assertNotIn("trust", tool_result)
             self.assertNotIn("llm", projected_record["final"])
+            self.assertNotIn("kind", projected_record)
+            self.assertNotIn("state", projected_record)
+            self.assertNotIn("completed_at", projected_record)
+            self.assertIn("at", projected_record)
+            projected_intent = projected_record["interpretation"]["intents"][0]
+            self.assertNotIn("id", projected_intent)
+            self.assertNotIn("text", projected_intent)
+            self.assertEqual(projected_intent["speech_act"], "correction")
+            self.assertEqual(
+                projected_record["interpretation"]["episode_actions"][0][
+                    "intent_indexes"
+                ],
+                [0],
+            )
+            self.assertNotIn(
+                "uncertainty", projected_record["interpretation"]
+            )
             owner_message = next(
                 item
                 for item in projected_timeline
                 if item["type"] == "owner_message"
             )
             self.assertEqual(owner_message["text"], "这是个双关")
-            self.assertEqual(owner_message["trust"], "owner")
+            self.assertNotIn("trust", owner_message)
+            self.assertNotIn("delivery", owner_message)
+            self.assertNotIn("timestamp", owner_message)
             self.assertEqual(
                 next(
                     item
@@ -337,6 +356,87 @@ class ContextAssemblerTest(unittest.TestCase):
                 "remember",
             )
             store.close()
+
+    def test_planner_projection_omits_defaults_but_keeps_exceptions(self) -> None:
+        projected = project_recent_turns_for_planner(
+            {
+                "version": 1,
+                "turns": [
+                    {
+                        "turn_id": "turn-1",
+                        "kind": "owner",
+                        "state": "completed",
+                        "channel": "napcat",
+                        "started_at": "2026-08-19T07:34:03+08:00",
+                        "completed_at": "2026-08-19T07:34:37+08:00",
+                        "interpretation": {
+                            "intents": [],
+                            "episode_actions": [],
+                            "uncertainty": [],
+                        },
+                        "final": {
+                            "external_effect": False,
+                            "failure": "",
+                            "reply_wait": {"wait": False},
+                            "mood_change": None,
+                            "mutations": {
+                                "memories": [],
+                                "goals": [],
+                            },
+                        },
+                        "timeline": [
+                            {
+                                "type": "owner_message",
+                                "timestamp": "2026-08-19T07:34:03+08:00",
+                                "text": (
+                                    "2026-08-19T07:34:03+08:00 "
+                                    "[napcat] 抱抱"
+                                ),
+                                "delivery": "delivered",
+                                "trust": "owner",
+                            },
+                            {
+                                "type": "assistant_message",
+                                "timestamp": "2026-08-19T07:34:37+08:00",
+                                "text": "抱紧啦",
+                                "delivery": "uncertain",
+                                "trust": "context_data",
+                            },
+                            {
+                                "type": "tool_result",
+                                "call": "t1",
+                                "name": "example",
+                                "ok": True,
+                                "error": None,
+                                "result": {"value": 1},
+                                "timestamp": "2026-08-19T07:34:20+08:00",
+                                "visibility": "internal",
+                            },
+                        ],
+                    }
+                ],
+            }
+        )
+        turn = projected["turns"][0]
+        self.assertEqual(turn["at"], "2026-08-19T07:34:03+08:00")
+        self.assertEqual(turn["channel"], "napcat")
+        self.assertNotIn("final", turn)
+        self.assertNotIn("interpretation", turn)
+        self.assertEqual(
+            turn["timeline"][0],
+            {"type": "owner_message", "text": "抱抱"},
+        )
+        self.assertEqual(
+            turn["timeline"][1],
+            {
+                "type": "assistant_message",
+                "text": "抱紧啦",
+                "delivery": "uncertain",
+            },
+        )
+        self.assertEqual(turn["timeline"][2]["result"], {"value": 1})
+        self.assertEqual(turn["timeline"][2]["visibility"], "internal")
+        self.assertIn("timestamp", turn["timeline"][2])
 
     def test_recent_episode_window_is_injected_without_keyword_recall(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

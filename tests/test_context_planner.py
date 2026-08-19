@@ -187,6 +187,11 @@ class ContextPlannerTest(unittest.TestCase):
             "their presence alone is not a reason to",
             CONTEXT_PLANNER_SYSTEM_PROMPT,
         )
+        self.assertIn("omitted `kind` means `owner`", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn(
+            "omitted message `delivery` means", CONTEXT_PLANNER_SYSTEM_PROMPT
+        )
+        self.assertIn("intent_indexes", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertIn("tool calls, results", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertIn(
             "correction may invalidate an older persisted fact",

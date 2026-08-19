@@ -663,6 +663,91 @@ def assemble_recent_turns(
     return document, rendered
 
 
+def _planner_message_text(value: object) -> str:
+    text = str(value or "")
+    return re.sub(
+        r"(?m)^\d{4}-\d{2}-\d{2}T\S+\s+\[[^\]\n]+\]\s*",
+        "",
+        text,
+    )
+
+
+def _planner_interpretation(value: object) -> dict[str, object]:
+    if not isinstance(value, dict):
+        return {}
+    raw_intents = value.get("intents")
+    intents: list[dict[str, object]] = []
+    unit_indexes: dict[str, int] = {}
+    for raw in raw_intents if isinstance(raw_intents, list) else []:
+        if not isinstance(raw, dict):
+            continue
+        unit_id = str(raw.get("id") or "")
+        intent = {
+            key: copy.deepcopy(raw[key])
+            for key in ("intent", "speech_act", "references")
+            if raw.get(key) not in (None, "", [], {})
+        }
+        if intent:
+            if unit_id:
+                unit_indexes[unit_id] = len(intents)
+            intents.append(intent)
+
+    raw_actions = value.get("episode_actions")
+    actions: list[dict[str, object]] = []
+    for raw in raw_actions if isinstance(raw_actions, list) else []:
+        if not isinstance(raw, dict):
+            continue
+        action = {
+            key: copy.deepcopy(raw[key])
+            for key in ("action", "episode_id", "episode_ref", "title")
+            if raw.get(key) not in (None, "", [], {})
+        }
+        indexes = [
+            unit_indexes[str(unit_id)]
+            for unit_id in raw.get("unit_ids") or []
+            if str(unit_id) in unit_indexes
+        ]
+        if indexes:
+            action["intent_indexes"] = indexes
+        if action:
+            actions.append(action)
+
+    projected: dict[str, object] = {}
+    if intents:
+        projected["intents"] = intents
+    if actions:
+        projected["episode_actions"] = actions
+    uncertainty = value.get("uncertainty")
+    if uncertainty:
+        projected["uncertainty"] = copy.deepcopy(uncertainty)
+    return projected
+
+
+def _planner_final(value: object) -> dict[str, object]:
+    if not isinstance(value, dict):
+        return {}
+    projected: dict[str, object] = {}
+    if value.get("external_effect"):
+        projected["external_effect"] = True
+    if value.get("failure"):
+        projected["failure"] = copy.deepcopy(value["failure"])
+    reply_wait = value.get("reply_wait")
+    if isinstance(reply_wait, dict) and reply_wait.get("wait"):
+        projected["reply_wait"] = copy.deepcopy(reply_wait)
+    if value.get("mood_change") is not None:
+        projected["mood_change"] = copy.deepcopy(value["mood_change"])
+    mutations = value.get("mutations")
+    if isinstance(mutations, dict):
+        nonempty = {
+            key: copy.deepcopy(item)
+            for key, item in mutations.items()
+            if item not in (None, "", [], {})
+        }
+        if nonempty:
+            projected["mutations"] = nonempty
+    return projected
+
+
 def project_recent_turns_for_planner(
     document: dict[str, object],
 ) -> dict[str, object]:
@@ -672,16 +757,34 @@ def project_recent_turns_for_planner(
     for raw_turn in turns if isinstance(turns, list) else []:
         if not isinstance(raw_turn, dict):
             continue
-        turn = {
-            key: copy.deepcopy(value)
-            for key, value in raw_turn.items()
-            if key != "timeline"
+        turn: dict[str, object] = {
+            "turn_id": str(raw_turn.get("turn_id") or ""),
         }
-        final = turn.get("final")
-        if isinstance(final, dict):
-            final.pop("llm", None)
-            final.pop("state", None)
-            final.pop("channel", None)
+        if raw_turn.get("kind") not in (None, "", "owner"):
+            turn["kind"] = copy.deepcopy(raw_turn["kind"])
+        if raw_turn.get("state") not in (None, "", "completed"):
+            turn["state"] = copy.deepcopy(raw_turn["state"])
+        if raw_turn.get("channel"):
+            turn["channel"] = copy.deepcopy(raw_turn["channel"])
+        raw_timeline = raw_turn.get("timeline")
+        at = raw_turn.get("started_at") or raw_turn.get("completed_at")
+        if isinstance(raw_timeline, list):
+            at = next(
+                (
+                    item.get("timestamp")
+                    for item in raw_timeline
+                    if isinstance(item, dict) and item.get("timestamp")
+                ),
+                at,
+            )
+        if at:
+            turn["at"] = copy.deepcopy(at)
+        interpretation = _planner_interpretation(raw_turn.get("interpretation"))
+        if interpretation:
+            turn["interpretation"] = interpretation
+        final = _planner_final(raw_turn.get("final"))
+        if final:
+            turn["final"] = final
 
         call_ids: dict[str, str] = {}
 
@@ -694,7 +797,6 @@ def project_recent_turns_for_planner(
             return call_ids[raw]
 
         timeline: list[dict[str, object]] = []
-        raw_timeline = raw_turn.get("timeline")
         for raw_item in raw_timeline if isinstance(raw_timeline, list) else []:
             if not isinstance(raw_item, dict):
                 continue
@@ -726,7 +828,14 @@ def project_recent_turns_for_planner(
                 )
                 continue
             if item_type in {"owner_message", "assistant_message", "event"}:
-                timeline.append(copy.deepcopy(raw_item))
+                message: dict[str, object] = {
+                    "type": item_type,
+                    "text": _planner_message_text(raw_item.get("text")),
+                }
+                delivery = str(raw_item.get("delivery") or "delivered")
+                if delivery != "delivered":
+                    message["delivery"] = delivery
+                timeline.append(message)
                 continue
             timeline.append(copy.deepcopy(raw_item))
         turn["timeline"] = timeline

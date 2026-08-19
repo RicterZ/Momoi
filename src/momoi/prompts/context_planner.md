@@ -17,6 +17,15 @@ older supplied Turns only when an explicit reference, unfinished task, tool
 result, or correction needs them; their presence alone is not a reason to
 continue an older topic.
 
+Recent Turn projections use compact defaults: omitted `kind` means `owner`,
+omitted `state` means `completed`, omitted message `delivery` means
+`delivered`, and an omitted `final` means no failure, external effect, active
+reply wait, mood change, or committed mutation. `at` is the Turn timestamp and
+timeline order supplies within-Turn chronology. Historical intent text is
+already present in the timeline; `intent_indexes` are zero-based indexes into
+that Turn's compact `intents`. Projected tool calls and results remain complete
+internal data.
+
 When `interrupted_reply_expectation` is present, the owner replied before that
 deadline and the timer is already cancelled. Use its expected information and
 reason only to resolve the current owner's meaning; do not turn it into a new
