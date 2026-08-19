@@ -1240,6 +1240,14 @@ a.tag:hover {
 }
 .reflection-card .secondary { margin: 12px 0 0; }
 .reflection-card .stamp-meta { margin-top: 12px; }
+.memory-section .stamp-meta {
+  flex-wrap: nowrap;
+  min-width: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.memory-section .stamp-meta::-webkit-scrollbar { display: none; }
 .reflection-card, .goal-card {
   padding: 24px 26px;
 }
@@ -1553,6 +1561,13 @@ a.tag:hover {
   .emotion-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .memory-list,
   .memory-section .card-list { grid-template-columns: 1fr; }
+  .memory-section .stamp-meta-item { gap: 5px; }
+  .memory-section .stamp-meta-item + .stamp-meta-item {
+    margin-left: 10px;
+    padding-left: 10px;
+  }
+  .memory-section .stamp-meta-label { letter-spacing: .06em; }
+  .memory-section .stamp-meta-value { font-size: 12px; }
   .reminder-card { grid-template-columns: 1fr auto; }
   .reminder-time {
     grid-column: 1 / -1;

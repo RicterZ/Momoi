@@ -115,13 +115,18 @@ async function login(secret) {
   return token;
 }
 
-function formatDate(value, dateOnly = false) {
-  if (value === null || value === undefined || value === "") return "—";
+function parseDate(value) {
+  if (value === null || value === undefined || value === "") return null;
   const date =
     typeof value === "number"
       ? new Date(value * 1000)
       : new Date(String(value).replace(" ", "T"));
-  if (Number.isNaN(date.valueOf())) return String(value);
+  return Number.isNaN(date.valueOf()) ? null : date;
+}
+
+function formatDate(value, dateOnly = false) {
+  const date = parseDate(value);
+  if (!date) return value === null || value === undefined || value === "" ? "—" : String(value);
   return new Intl.DateTimeFormat("zh-CN", {
     year: "numeric",
     month: "short",
@@ -129,6 +134,19 @@ function formatDate(value, dateOnly = false) {
     ...(dateOnly
       ? {}
       : { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+  }).format(date);
+}
+
+function formatStampDate(value) {
+  const date = parseDate(value);
+  if (!date) return value === null || value === undefined || value === "" ? "—" : String(value);
+  const sameYear = date.getFullYear() === new Date().getFullYear();
+  return new Intl.DateTimeFormat("zh-CN", {
+    ...(sameYear ? {} : { year: "numeric" }),
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   }).format(date);
 }
 
@@ -1238,13 +1256,13 @@ function Memories({ refreshKey, token, onMutated }) {
                           items={[
                             {
                               label: "更新于",
-                              value: formatDate(item.updated_at),
+                              value: formatStampDate(item.updated_at),
                             },
                             ...(item.expires_at
                               ? [
                                   {
                                     label: "有效至",
-                                    value: formatDate(item.expires_at),
+                                    value: formatStampDate(item.expires_at),
                                   },
                                 ]
                               : []),
