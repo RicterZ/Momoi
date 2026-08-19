@@ -765,19 +765,11 @@ function UsageChart({ rows, totals, balance, days = 30 }) {
           {daily.map((row, index) => (
             <g key={row.date}>
               {costPoints[index].cost > 0 && (
-                <rect
+                <circle
                   className="usage-dot pink"
-                  x={Math.round(
-                    costPoints[index].x -
-                      (hover === index ? (compact ? 4 : 3) : compact ? 3 : 2),
-                  )}
-                  y={Math.round(
-                    costPoints[index].y -
-                      (hover === index ? (compact ? 4 : 3) : compact ? 3 : 2),
-                  )}
-                  width={hover === index ? (compact ? 8 : 6) : compact ? 6 : 4}
-                  height={hover === index ? (compact ? 8 : 6) : compact ? 6 : 4}
-                  shapeRendering="crispEdges"
+                  cx={costPoints[index].x}
+                  cy={costPoints[index].y}
+                  r={hover === index ? (compact ? 7 : 5.5) : compact ? 5.2 : 3.6}
                 />
               )}
               <rect

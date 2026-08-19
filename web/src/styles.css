@@ -934,11 +934,11 @@ main.is-record .error {
   width: 10px;
   height: 10px;
   border: 2px solid var(--ink);
-  border-radius: 0;
+  border-radius: 999px;
 }
 .usage-legend-item.pink::before { background: var(--pink); }
 .usage-legend-item.blue::before { background: var(--blue); }
-.usage-legend-item.bar::before { border-radius: 0; }
+.usage-legend-item.bar::before { border-radius: 2px; }
 .usage-req-bar {
   fill: rgba(67, 184, 245, .42);
   stroke: var(--ink);
