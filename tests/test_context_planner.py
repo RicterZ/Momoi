@@ -123,16 +123,6 @@ def tool_plan_response(plan: dict[str, object]) -> ProviderResponse:
     )
 
 
-def legacy_response_plan() -> dict[str, object]:
-    plan = response_plan()
-    plan["version"] = 1
-    plan["episode_bindings"] = plan.pop("episode_actions")
-    for binding in plan["episode_bindings"]:
-        binding.pop("action")
-        binding["relation"] = "primary"
-    return plan
-
-
 class ContextPlannerTest(unittest.TestCase):
     def test_heartbeat_plan_parser_and_degraded_fallback(self) -> None:
         schema = HEARTBEAT_PLAN_TOOL_SPEC["input_schema"]
@@ -444,67 +434,11 @@ class ContextPlannerTest(unittest.TestCase):
         with self.assertRaisesRegex(ContextPlanError, "duplicate_binding_unit"):
             parse_context_plan(duplicate, ["event-1"], [], "turn-1", 1)
 
-    def test_v1_parser_merges_duplicate_episode_bindings_safely(self) -> None:
-        plan = legacy_response_plan()
-        plan["episode_bindings"][1].update(
-            {
-                "episode_ref": "new:social",
-                "title": "微博浏览",
-                "relation": "related",
-                "topics": ["邮件"],
-                "entities": ["Sakana"],
-                "open_loops": ["等待邮件"],
-                "salience": 0.8,
-            }
-        )
-        plan["episode_links"] = []
-
-        with self.assertLogs("momoi.runtime.context_planner", level="INFO") as logs:
-            parsed = parse_context_plan(
-                json.dumps(plan), ["event-1"], [], "turn-1", 1
-            )
-
-        self.assertEqual(len(parsed["episode_bindings"]), 1)
-        binding = parsed["episode_bindings"][0]
-        self.assertEqual(binding["unit_ids"], ["social", "mail"])
-        self.assertEqual(binding["relation"], "primary")
-        self.assertEqual(binding["topics"], ["微博", "邮件"])
-        self.assertEqual(binding["entities"], ["Sakana"])
-        self.assertEqual(binding["open_loops"], ["等待邮件"])
-        self.assertEqual(binding["salience"], 0.8)
-        self.assertTrue(
-            any(
-                getattr(record, "momoi_event", "") == "context_plan_normalized"
-                for record in logs.records
-            )
-        )
-
-        conflicting = legacy_response_plan()
-        conflicting["episode_bindings"][1]["episode_ref"] = "new:social"
-        conflicting["episode_links"] = []
-        with self.assertRaisesRegex(ContextPlanError, "conflicting_episode_title"):
-            parse_context_plan(
-                json.dumps(conflicting), ["event-1"], [], "turn-1", 1
-            )
-
-        over_limit = legacy_response_plan()
-        over_limit["episode_bindings"][0]["topics"] = [
-            f"topic-{index}" for index in range(7)
-        ]
-        over_limit["episode_bindings"][1].update(
-            {
-                "episode_ref": "new:social",
-                "title": "微博浏览",
-                "topics": [f"other-{index}" for index in range(7)],
-            }
-        )
-        over_limit["episode_links"] = []
-        with self.assertRaisesRegex(
-            ContextPlanError, "merged_episode_topics_limit"
-        ):
-            parse_context_plan(
-                json.dumps(over_limit), ["event-1"], [], "turn-1", 1
-            )
+    def test_parser_rejects_version_one_plans(self) -> None:
+        plan = response_plan()
+        plan["version"] = 1
+        with self.assertRaisesRegex(ContextPlanError, "unsupported_version"):
+            parse_context_plan(plan, ["event-1"], [], "turn-1", 1)
 
     def test_casual_units_can_skip_recall_without_parser_semantics(self) -> None:
         plan = response_plan()
@@ -524,7 +458,7 @@ class ContextPlannerTest(unittest.TestCase):
                 open_loops=["饭后再处理"],
             )
             plan = {
-                "version": 1,
+                "version": 2,
                 "intent_units": [
                     {
                         "id": "u1",
@@ -533,14 +467,12 @@ class ContextPlannerTest(unittest.TestCase):
                         "intent": "share current activity",
                         "speech_act": "casual_share",
                         "references": ["它 -> 刚聊过的键盘"],
-                        "recall_queries": [],
                     }
                 ],
-                "episode_bindings": [
+                "episode_actions": [
                     {
-                        "episode_id": "hhkb",
-                        "is_new": False,
-                        "relation": "primary",
+                        "action": "continue",
+                        "episode_ref": "hhkb",
                         "unit_ids": ["u1"],
                         "topics": [],
                         "entities": [],
@@ -685,7 +617,7 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                     rendered = json.dumps(messages, ensure_ascii=False)
                     self.assertIn("第二条", rendered)
                     plan = {
-                        "version": 1,
+                        "version": 2,
                         "intent_units": [
                             {
                                 "id": "u1",
@@ -694,14 +626,13 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "intent": "combined owner update",
                                 "speech_act": "casual_share",
                                 "references": [],
-                                "recall_queries": [],
                             }
                         ],
-                        "episode_bindings": [
+                        "episode_actions": [
                             {
+                                "action": "new",
                                 "episode_ref": "new:combined",
                                 "title": "合并消息",
-                                "relation": "primary",
                                 "unit_ids": ["u1"],
                                 "topics": [],
                                 "entities": [],
@@ -710,6 +641,22 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                             }
                         ],
                         "episode_links": [],
+                        "owner_handoff": {
+                            "context": {
+                                "status": "sufficient",
+                                "needs": [],
+                                "reason": "当前上下文足够",
+                            },
+                            "mcp": {
+                                "servers": [],
+                                "reason": "不需要外部服务",
+                            },
+                            "execution": {
+                                "mode": "respond",
+                                "outline": ["处理合并后的主人消息"],
+                                "reason": "当前输入已足够回应",
+                            },
+                        },
                         "uncertainty": [],
                     }
                     return tool_plan_response(plan)
@@ -796,22 +743,21 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                         {item["id"] for item in payload["candidate_episodes"]},
                     )
                     plan = {
-                        "version": 1,
+                        "version": 2,
                         "intent_units": [
                             {
                                 "id": "u1",
                                 "event_ids": ["semantic-event"],
                                 "text": "我把喝水用的东西搁哪儿啦",
                                 "intent": "find stored drinking container",
+                                "speech_act": "question",
                                 "references": ["喝水用的东西"],
-                                "recall_queries": ["保温杯 阁楼 收纳位置"],
                             }
                         ],
-                        "episode_bindings": [
+                        "episode_actions": [
                             {
+                                "action": "continue",
                                 "episode_ref": "old-cup",
-                                "title": "蓝色保温杯收纳",
-                                "relation": "primary",
                                 "unit_ids": ["u1"],
                                 "topics": ["保温杯", "阁楼收纳"],
                                 "entities": [],
@@ -820,6 +766,28 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                             }
                         ],
                         "episode_links": [],
+                        "owner_handoff": {
+                            "context": {
+                                "status": "lookup_required",
+                                "needs": [
+                                    {
+                                        "tool": "conversation_search",
+                                        "query": "保温杯 阁楼 收纳位置",
+                                        "evidence": "unresolved_reference",
+                                    }
+                                ],
+                                "reason": "需要查历史收纳位置",
+                            },
+                            "mcp": {
+                                "servers": [],
+                                "reason": "不需要外部服务",
+                            },
+                            "execution": {
+                                "mode": "respond",
+                                "outline": ["查找收纳位置", "根据证据回答"],
+                                "reason": "主人在问旧物品位置",
+                            },
+                        },
                         "uncertainty": [],
                     }
                     return tool_plan_response(plan)
@@ -838,7 +806,7 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
             with self.assertLogs("momoi.runtime.turns", level="DEBUG") as logs:
                 planned = await daemon._plan_owner_context([event], turn_id)
 
-            self.assertEqual(planned["episode_bindings"][0]["episode_id"], "old-cup")
+            self.assertEqual(planned["episode_actions"][0]["episode_id"], "old-cup")
             received = next(
                 record
                 for record in logs.records
@@ -848,7 +816,7 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                 "find stored drinking container",
                 received.momoi_fields["intent_units"],
             )
-            self.assertIn("old-cup", received.momoi_fields["episode_bindings"])
+            self.assertIn("old-cup", received.momoi_fields["episode_actions"])
             daemon.store.close()
 
     async def test_planner_runs_without_tools_before_main_and_commits_episodes(

@@ -63,7 +63,6 @@ _EVENT_GROUPS = {
     "context_plan_complete": "PLAN",
     "context_plan_invalid": "PLAN",
     "context_plan_degraded": "PLAN",
-    "context_plan_normalized": "PLAN",
     "context_recall": "RECALL",
     "heartbeat_plan_complete": "PLAN",
     "heartbeat_plan_invalid": "PLAN",

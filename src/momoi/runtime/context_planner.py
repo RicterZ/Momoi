@@ -1,13 +1,8 @@
 import json
-import logging
 import re
 import uuid
 
 from ..contracts import ContextPlan
-from ..logging_context import log_event
-
-
-logger = logging.getLogger(__name__)
 
 
 class ContextPlanError(ValueError):
@@ -582,18 +577,6 @@ def _parse_context_block(
     }
 
 
-def _merge_unique(
-    target: list[str],
-    incoming: list[str],
-    *,
-    maximum: int,
-    error: str,
-) -> None:
-    target.extend(item for item in incoming if item not in target)
-    if len(target) > maximum:
-        raise ContextPlanError(error)
-
-
 def parse_context_plan(
     text: str | dict[str, object],
     event_ids: list[str],
@@ -611,23 +594,17 @@ def parse_context_plan(
             raise ContextPlanError("invalid_json") from error
     if not isinstance(value, dict):
         raise ContextPlanError("invalid_top_level")
-    version = value.get("version")
-    expected = {
+    if value.get("version") != 2:
+        raise ContextPlanError("unsupported_version")
+    if set(value) != {
         "version",
         "intent_units",
-        "episode_actions" if version == 2 else "episode_bindings",
+        "episode_actions",
         "episode_links",
+        "owner_handoff",
         "uncertainty",
-    }
-    allowed_shapes = (
-        ({*expected, "owner_handoff"},)
-        if version == 2
-        else (expected, {*expected, "owner_handoff"})
-    )
-    if set(value) not in allowed_shapes:
+    }:
         raise ContextPlanError("invalid_top_level")
-    if version not in {1, 2}:
-        raise ContextPlanError("unsupported_version")
 
     raw_units = value["intent_units"]
     if not isinstance(raw_units, list) or not 1 <= len(raw_units) <= 12:
@@ -636,22 +613,16 @@ def parse_context_plan(
     covered_events: set[str] = set()
     unit_ids: set[str] = set()
     units: list[dict[str, object]] = []
+    required_unit_keys = {
+        "id",
+        "event_ids",
+        "text",
+        "intent",
+        "speech_act",
+        "references",
+    }
     for raw in raw_units:
-        legacy_keys = {
-            "id",
-            "event_ids",
-            "text",
-            "intent",
-            "references",
-        }
-        allowed_unit_keys = {*legacy_keys, "speech_act"}
-        if version == 1:
-            allowed_unit_keys.add("recall_queries")
-        if (
-            not isinstance(raw, dict)
-            or not legacy_keys <= set(raw)
-            or set(raw) - allowed_unit_keys
-        ):
+        if not isinstance(raw, dict) or set(raw) != required_unit_keys:
             raise ContextPlanError("invalid_intent_unit")
         unit_id = _text(raw["id"], "unit_id", 40)
         if not re.fullmatch(r"[A-Za-z0-9_-]+", unit_id) or unit_id in unit_ids:
@@ -667,7 +638,7 @@ def parse_context_plan(
             raise ContextPlanError("unknown_event_id")
         unit_ids.add(unit_id)
         covered_events.update(source_ids)
-        speech_act = raw.get("speech_act", "unknown")
+        speech_act = raw["speech_act"]
         if not isinstance(speech_act, str) or speech_act not in SPEECH_ACTS:
             raise ContextPlanError("invalid_speech_act")
         units.append(
@@ -689,53 +660,47 @@ def parse_context_plan(
         raise ContextPlanError("uncovered_event_ids")
 
     candidate_ids = {str(item["id"]) for item in candidates}
-    if version == 2:
-        raw_actions = value["episode_actions"]
-        if not isinstance(raw_actions, list) or not 1 <= len(raw_actions) <= 12:
-            raise ContextPlanError("invalid_episode_actions")
-        raw_bindings = []
-        for raw in raw_actions:
-            if not isinstance(raw, dict):
-                raise ContextPlanError("invalid_episode_action")
-            action = raw.get("action")
-            if action == "none":
-                if set(raw) != {"action", "unit_ids"}:
-                    raise ContextPlanError("invalid_episode_action")
-                raw_bindings.append(
-                    {
-                        "action": "none",
-                        "unit_ids": raw["unit_ids"],
-                    }
-                )
-                continue
-            required = {
-                "action",
-                "episode_ref",
-                "unit_ids",
-                "topics",
-                "entities",
-                "open_loops",
-                "salience",
-            }
-            if action == "new":
-                required.add("title")
-            if set(raw) != required or action not in {"continue", "new"}:
+    raw_actions = value["episode_actions"]
+    if not isinstance(raw_actions, list) or not 1 <= len(raw_actions) <= 12:
+        raise ContextPlanError("invalid_episode_actions")
+    raw_bindings = []
+    for raw in raw_actions:
+        if not isinstance(raw, dict):
+            raise ContextPlanError("invalid_episode_action")
+        action = raw.get("action")
+        if action == "none":
+            if set(raw) != {"action", "unit_ids"}:
                 raise ContextPlanError("invalid_episode_action")
             raw_bindings.append(
                 {
-                    **raw,
-                    "title": raw.get("title", ""),
-                    "relation": "primary",
+                    "action": "none",
+                    "unit_ids": raw["unit_ids"],
                 }
             )
-    else:
-        raw_bindings = value["episode_bindings"]
-    if not isinstance(raw_bindings, list) or not 1 <= len(raw_bindings) <= 12:
-        raise ContextPlanError("invalid_episode_bindings")
+            continue
+        required = {
+            "action",
+            "episode_ref",
+            "unit_ids",
+            "topics",
+            "entities",
+            "open_loops",
+            "salience",
+        }
+        if action == "new":
+            required.add("title")
+        if set(raw) != required or action not in {"continue", "new"}:
+            raise ContextPlanError("invalid_episode_action")
+        raw_bindings.append(
+            {
+                **raw,
+                "title": raw.get("title", ""),
+                "relation": "primary",
+            }
+        )
     bound_units: set[str] = set()
     bindings: list[dict[str, object]] = []
     bindings_by_ref: dict[str, dict[str, object]] = {}
-    merged_duplicates = 0
     for raw in raw_bindings:
         if raw.get("action") == "none":
             binding_units = _strings(
@@ -753,7 +718,7 @@ def parse_context_plan(
             bindings.append({"action": "none", "unit_ids": binding_units})
             continue
         if not isinstance(raw, dict) or set(raw) != {
-            *(["action"] if version == 2 else []),
+            "action",
             "episode_ref",
             "title",
             "relation",
@@ -765,10 +730,7 @@ def parse_context_plan(
         }:
             raise ContextPlanError("invalid_episode_binding")
         episode_ref = _text(raw["episode_ref"], "episode_ref", 200)
-        action = str(
-            raw.get("action")
-            or ("new" if episode_ref.startswith("new:") else "continue")
-        )
+        action = str(raw["action"])
         is_new = action == "new"
         if is_new:
             if not re.fullmatch(r"new:[a-z0-9][a-z0-9_-]{0,39}", episode_ref):
@@ -784,7 +746,7 @@ def parse_context_plan(
         )
         if not set(binding_units) <= unit_ids:
             raise ContextPlanError("unknown_binding_unit")
-        if version == 2 and bound_units & set(binding_units):
+        if bound_units & set(binding_units):
             raise ContextPlanError("duplicate_binding_unit")
         relation = raw["relation"]
         if not isinstance(relation, str) or relation not in {"primary", "related"}:
@@ -798,7 +760,7 @@ def parse_context_plan(
             raise ContextPlanError("invalid_episode_salience")
         title = (
             _text(raw["title"], "episode_title", 200)
-            if is_new or version == 1
+            if is_new
             else str(
                 next(
                     (
@@ -831,66 +793,25 @@ def parse_context_plan(
         entities = _strings(
             raw["entities"], "episode_entities", maximum=20, max_length=200
         )
-        existing = bindings_by_ref.get(episode_ref)
-        if existing is None:
-            binding = {
-                "action": action,
-                "episode_id": actual_id,
-                "is_new": is_new,
-                "title": title,
-                "relation": relation,
-                "unit_ids": binding_units,
-                "topics": topics,
-                "entities": entities,
-                "open_loops": open_loops,
-                "salience": float(salience),
-                "_ref": episode_ref,
-            }
-            bindings.append(binding)
-            bindings_by_ref[episode_ref] = binding
-            continue
-
-        if version == 2:
+        if episode_ref in bindings_by_ref:
             raise ContextPlanError("duplicate_episode_ref")
-        merged_duplicates += 1
-        if existing["title"] != title:
-            raise ContextPlanError("conflicting_episode_title")
-        existing["relation"] = (
-            "primary"
-            if "primary" in {str(existing["relation"]), relation}
-            else "related"
-        )
-        existing["salience"] = max(float(existing["salience"]), float(salience))
-        _merge_unique(
-            existing["unit_ids"],  # type: ignore[arg-type]
-            binding_units,
-            maximum=len(unit_ids),
-            error="merged_episode_unit_ids_limit",
-        )
-        _merge_unique(
-            existing["topics"],  # type: ignore[arg-type]
-            topics,
-            maximum=12,
-            error="merged_episode_topics_limit",
-        )
-        _merge_unique(
-            existing["entities"],  # type: ignore[arg-type]
-            entities,
-            maximum=20,
-            error="merged_episode_entities_limit",
-        )
-        _merge_unique(
-            existing["open_loops"],  # type: ignore[arg-type]
-            open_loops,
-            maximum=8,
-            error="merged_episode_open_loops_limit",
-        )
+        binding = {
+            "action": action,
+            "episode_id": actual_id,
+            "is_new": is_new,
+            "title": title,
+            "relation": relation,
+            "unit_ids": binding_units,
+            "topics": topics,
+            "entities": entities,
+            "open_loops": open_loops,
+            "salience": float(salience),
+            "_ref": episode_ref,
+        }
+        bindings.append(binding)
+        bindings_by_ref[episode_ref] = binding
     if bound_units != unit_ids:
         raise ContextPlanError("unbound_intent_units")
-    if version == 1 and not any(
-        item.get("relation") == "primary" for item in bindings
-    ):
-        raise ContextPlanError("missing_primary_episode")
 
     ref_to_id = {episode_id: episode_id for episode_id in candidate_ids}
     ref_to_id.update(
@@ -934,59 +855,51 @@ def parse_context_plan(
                 "kind": link[2],
             }
         )
-    if merged_duplicates:
-        log_event(
-            logger,
-            logging.INFO,
-            "context_plan_normalized",
-            stage="context_plan",
-            turn_id=turn_id,
-            revision=revision,
-            reason="duplicate_episode_ref",
-            duplicates=merged_duplicates,
-        )
     for binding in bindings:
         binding.pop("_ref", None)
-    raw_handoff = value.get("owner_handoff")
-    owner_handoff: dict[str, object] | None = None
-    if raw_handoff is not None:
-        if not isinstance(raw_handoff, dict) or set(raw_handoff) != {
-            "context",
-            "mcp",
-            "execution",
-        }:
-            raise ContextPlanError("invalid_owner_handoff")
-        context = _parse_context_block(
-            raw_handoff["context"],
-            tools={
-                "memory_search",
-                "conversation_search",
-                "conversation_read",
-                "thinking_search",
-                "thinking_read",
-            },
-            evidence={
-                "exact_wording",
-                "chronology",
-                "unresolved_reference",
-                "correction_evidence",
-                "past_reasoning",
-            },
-            error="invalid_context_handoff",
-            need_error="invalid_context_need",
-            thinking_requires_past_reasoning=True,
-        )
-        raw_execution = raw_handoff["execution"]
-        if not isinstance(raw_execution, dict) or set(raw_execution) != {
-            "mode",
-            "outline",
-            "reason",
-        }:
-            raise ContextPlanError("invalid_execution_handoff")
-        mode = raw_execution["mode"]
-        if mode not in {"respond", "clarify", "work"}:
-            raise ContextPlanError("invalid_execution_handoff")
-        owner_handoff = {
+    raw_handoff = value["owner_handoff"]
+    if not isinstance(raw_handoff, dict) or set(raw_handoff) != {
+        "context",
+        "mcp",
+        "execution",
+    }:
+        raise ContextPlanError("invalid_owner_handoff")
+    context = _parse_context_block(
+        raw_handoff["context"],
+        tools={
+            "memory_search",
+            "conversation_search",
+            "conversation_read",
+            "thinking_search",
+            "thinking_read",
+        },
+        evidence={
+            "exact_wording",
+            "chronology",
+            "unresolved_reference",
+            "correction_evidence",
+            "past_reasoning",
+        },
+        error="invalid_context_handoff",
+        need_error="invalid_context_need",
+        thinking_requires_past_reasoning=True,
+    )
+    raw_execution = raw_handoff["execution"]
+    if not isinstance(raw_execution, dict) or set(raw_execution) != {
+        "mode",
+        "outline",
+        "reason",
+    }:
+        raise ContextPlanError("invalid_execution_handoff")
+    mode = raw_execution["mode"]
+    if mode not in {"respond", "clarify", "work"}:
+        raise ContextPlanError("invalid_execution_handoff")
+    return {
+        "version": 2,
+        "intent_units": units,
+        "episode_actions": bindings,
+        "episode_links": links,
+        "owner_handoff": {
             "context": context,
             "mcp": _parse_mcp_route(raw_handoff["mcp"], available_mcp_servers),
             "execution": {
@@ -1004,17 +917,7 @@ def parse_context_plan(
                     300,
                 ),
             },
-        }
-    return {
-        "version": version,
-        "intent_units": units,
-        **(
-            {"episode_actions": bindings}
-            if version == 2
-            else {"episode_bindings": bindings}
-        ),
-        "episode_links": links,
-        **({"owner_handoff": owner_handoff} if owner_handoff is not None else {}),
+        },
         "uncertainty": _strings(
             value["uncertainty"],
             "uncertainty",

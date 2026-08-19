@@ -253,8 +253,8 @@ class ContextService:
                     tool_call_id=response.tool_calls[0].id,
                     version=raw_plan.get("version"),
                     intent_units=safe_preview(raw_plan.get("intent_units"), 900),
-                    episode_bindings=safe_preview(
-                        raw_plan.get("episode_actions", raw_plan.get("episode_bindings")),
+                    episode_actions=safe_preview(
+                        raw_plan.get("episode_actions"),
                         900,
                     ),
                     raw_plan=compact_log_value(raw_plan, string_limit=300),
@@ -328,7 +328,7 @@ class ContextService:
                 return self._stored_context_plan(saved)
             saved = self.store.save_context_plan(turn_id, revision, event_ids, plan)
             units = plan.get("intent_units")
-            bindings = plan.get("episode_actions", plan.get("episode_bindings"))
+            bindings = plan.get("episode_actions")
             log_event(
                 logger,
                 logging.INFO,
