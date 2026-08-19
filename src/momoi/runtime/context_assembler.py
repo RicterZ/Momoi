@@ -3,8 +3,6 @@ import json
 import logging
 import re
 import time
-from collections.abc import Callable
-from typing import Any
 
 from ..config import AppConfig
 from ..context_time import context_timestamp
@@ -15,55 +13,6 @@ from .budget import SECTION_BUDGET_ALLOCATOR
 
 _LEGACY_OWNER_HEADER = "# Current owner messages\n"
 logger = logging.getLogger(__name__)
-
-
-def _query_alternatives(query: str) -> list[str]:
-    alternatives: list[str] = []
-    seen: set[str] = set()
-    for part in re.split(r"[|｜\n]", str(query)):
-        normalized = " ".join(part.strip().split())
-        folded = normalized.casefold()
-        if not normalized or folded in seen:
-            continue
-        seen.add(folded)
-        alternatives.append(normalized[:500])
-    return alternatives[:12]
-
-
-def _search_or(
-    query: str,
-    search: Callable[[str, int], list[dict[str, object]]],
-    identity: Callable[[dict[str, object]], object],
-    max_results: int,
-) -> list[dict[str, object]]:
-    alternatives = _query_alternatives(query)
-    if not alternatives:
-        return []
-    if len(alternatives) == 1:
-        return search(alternatives[0], max_results)
-
-    ranked: dict[
-        object, tuple[dict[str, object], int, float, int]
-    ] = {}
-    for alternative in alternatives:
-        for rank, row in enumerate(search(alternative, max_results)):
-            key = identity(row)
-            existing = ranked.get(key)
-            if existing is None:
-                ranked[key] = (row, 1, 1.0 / (rank + 1), len(ranked))
-            else:
-                existing_row, hits, score, first = existing
-                _merge_matches(existing_row, row)
-                ranked[key] = (
-                    existing_row,
-                    hits + 1,
-                    score + 1.0 / (rank + 1),
-                    first,
-                )
-
-    rows = list(ranked.values())
-    rows.sort(key=lambda item: (-item[1], item[3], -item[2]))
-    return [item[0] for item in rows[:max_results]]
 
 
 def _historical_content(value: object) -> str:
@@ -84,62 +33,11 @@ def _merge_matches(target: dict[str, object], source: dict[str, object]) -> None
             seen.add(item.get("id"))
 
 
-def _selected_by_unit(
-    units: list[dict[str, Any]],
-    search: Callable[[str, int], list[dict[str, object]]],
-    identity: Callable[[dict[str, object]], object],
-    render: Callable[[dict[str, object]], str],
-    snapshot: Callable[[dict[str, object]], dict[str, object]],
-    max_results: int,
-    token_budget: int,
-    *,
-    expand_or: bool = True,
-) -> list[dict[str, object]]:
-    if max_results <= 0 or token_budget <= 0:
-        return []
-    candidates: list[tuple[str, list[dict[str, object]]]] = []
-    for unit in units:
-        seen: dict[object, dict[str, object]] = {}
-        rows: list[dict[str, object]] = []
-        for query in unit["recall_queries"]:
-            found = (
-                _search_or(str(query), search, identity, max_results)
-                if expand_or
-                else search(str(query), max_results)
-            )
-            for row in found:
-                key = identity(row)
-                if key in seen:
-                    _merge_matches(seen[key], row)
-                else:
-                    seen[key] = row
-                    rows.append(row)
-        candidates.append((str(unit["id"]), rows))
-
-    return SECTION_BUDGET_ALLOCATOR.select(
-        candidates,
-        identity,
-        render,
-        snapshot,
-        _merge_matches,
-        max_results,
-        token_budget,
-    )
-
-
 def build_plan_retrieval(
     store: Store,
     plan: dict[str, object],
     config: AppConfig,
 ) -> dict[str, object]:
-    units = plan.get("intent_units")
-    actions = plan.get("episode_actions", plan.get("episode_bindings"))
-    if not isinstance(units, list) or not isinstance(actions, list):
-        raise RuntimeError("context plan has invalid retrieval inputs")
-
-    confirmed: list[dict[str, object]] = []
-    reflection: list[dict[str, object]] = []
-    recalled_episodes: list[dict[str, object]] = []
     recent_episodes = (
         store.list_recent_episodes(
             time.time() - config.recent_episode_hours * 3600
@@ -147,49 +45,17 @@ def build_plan_retrieval(
         if config.recent_episode_hours > 0 and config.summary_tokens > 0
         else []
     )
-    episodes_by_id: dict[str, dict[str, object]] = {
-        str(item["episode_id"]): item for item in recalled_episodes
-    }
-    for episode in recent_episodes:
-        episode_id = str(episode["id"])
-        existing = episodes_by_id.get(episode_id)
-        if existing is not None:
-            existing["relation"] = "recent_recalled"
-            existing["last_activity_at"] = max(
-                float(existing.get("last_activity_at") or 0),
-                float(episode.get("last_activity_at") or 0),
-            )
-            continue
-        episodes_by_id[episode_id] = {
-            "episode_id": episode_id,
+    episodes = [
+        {
+            "episode_id": str(episode["id"]),
             "relation": "recent",
             "is_new": False,
             "matches": [],
             "unit_ids": [],
-            "keyword_match_count": 0,
             "last_activity_at": float(episode.get("last_activity_at") or 0),
         }
-    def episode_priority(item: dict[str, object]) -> int:
-        keyword_count = int(item.get("keyword_match_count") or 0)
-        recent = item["relation"] in {"recent", "recent_recalled"}
-        if recent and keyword_count > 1:
-            return 4
-        if keyword_count > 1:
-            return 3
-        if keyword_count > 0:
-            return 2
-        return 1 if recent else 0
-
-    ordered_episodes = sorted(
-        episodes_by_id.values(),
-        key=lambda item: (
-            episode_priority(item),
-            int(item.get("keyword_match_count") or 0),
-            float(item.get("last_activity_at") or 0),
-            str(item["episode_id"]),
-        ),
-        reverse=True,
-    )
+        for episode in recent_episodes
+    ]
     goals = [
         {
             name: row.get(name)
@@ -221,24 +87,21 @@ def build_plan_retrieval(
             config.policies.context.max_visible_reminders
         )
     ]
-    conflicts: list[dict[str, object]] = []
     retrieval = {
         "version": 2,
-        # Baseline context is deterministic. Any additional historical lookup is
-        # handed to the executing Turn through its Planner handoff.
-        "episodes": ordered_episodes,
-        "confirmed_memories": confirmed,
+        "episodes": episodes,
+        "confirmed_memories": [],
         "owner_preferences": store.always_memory_context(),
         "recent_memories": store.recent_memory_context(
             max(100, config.memory_tokens // 8)
         ),
-        "reflection_memories": reflection,
+        "reflection_memories": [],
         "core_reflection_memories": store.core_reflection_memory_context(
             min(900, max(200, config.memory_tokens // 6))
         ),
         "goals": goals,
         "reminders": reminders,
-        "memory_conflicts": conflicts,
+        "memory_conflicts": [],
         "uncertainty": plan.get("uncertainty", []),
     }
     log_event(
@@ -246,19 +109,12 @@ def build_plan_retrieval(
         logging.INFO,
         "context_recall",
         stage="context_recall",
-        queries=[],
-        episodes=[],
-        memories=[],
-        reflections=[],
         goals=[{"id": item["id"]} for item in goals],
         reminders=[{"id": item["id"]} for item in reminders],
         counts={
-            "episodes": len(recalled_episodes),
-            "memories": len(confirmed),
-            "reflections": len(reflection),
+            "episodes": len(episodes),
             "goals": len(goals),
             "reminders": len(reminders),
-            "conflicts": len(conflicts),
         },
     )
     log_event(
@@ -1026,9 +882,8 @@ def recall_episode_context(
     query = query.strip()
     if not query:
         return ""
-    episodes = _selected_by_unit(
-        [{"id": "query", "recall_queries": [query]}],
-        store.search_episodes,
+    episodes = SECTION_BUDGET_ALLOCATOR.select(
+        [("query", store.search_episodes(query, max_results))],
         lambda row: row["id"],
         lambda row: truncate_tokens(
             _episode_search_text(row),
@@ -1040,8 +895,8 @@ def recall_episode_context(
             "is_new": False,
             "matches": row.get("matches", []),
         },
+        _merge_matches,
         max_results,
         summary_token_budget,
-        expand_or=False,
     )
     return _episode_context(store, episodes, summary_token_budget, raw_token_budget)

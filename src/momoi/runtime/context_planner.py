@@ -504,6 +504,84 @@ def _text(value: object, name: str, max_length: int) -> str:
     return value.strip()
 
 
+def _parse_mcp_route(
+    raw: object,
+    available_mcp_servers: set[str] | None,
+) -> dict[str, object]:
+    if not isinstance(raw, dict) or set(raw) != {"servers", "reason"}:
+        raise ContextPlanError("invalid_mcp_route")
+    servers = _strings(
+        raw["servers"],
+        "mcp_servers",
+        maximum=32,
+        max_length=100,
+    )
+    if len(set(servers)) != len(servers):
+        raise ContextPlanError("duplicate_mcp_server")
+    if (
+        available_mcp_servers is not None
+        and not set(servers) <= available_mcp_servers
+    ):
+        raise ContextPlanError("unknown_mcp_server")
+    return {
+        "servers": servers,
+        "reason": _text(raw["reason"], "mcp_reason", 300),
+    }
+
+
+def _parse_context_block(
+    raw: object,
+    *,
+    tools: set[str],
+    evidence: set[str],
+    error: str,
+    need_error: str,
+    thinking_requires_past_reasoning: bool = False,
+) -> dict[str, object]:
+    if not isinstance(raw, dict) or set(raw) != {"status", "needs", "reason"}:
+        raise ContextPlanError(error)
+    status = raw["status"]
+    raw_needs = raw["needs"]
+    if (
+        status not in {"sufficient", "lookup_required"}
+        or not isinstance(raw_needs, list)
+        or len(raw_needs) > 2
+        or (status == "sufficient" and raw_needs)
+        or (status == "lookup_required" and not raw_needs)
+    ):
+        raise ContextPlanError(error)
+    needs: list[dict[str, str]] = []
+    for raw_need in raw_needs:
+        if not isinstance(raw_need, dict) or set(raw_need) != {
+            "tool",
+            "query",
+            "evidence",
+        }:
+            raise ContextPlanError(need_error)
+        tool = raw_need["tool"]
+        need_evidence = raw_need["evidence"]
+        if tool not in tools or need_evidence not in evidence:
+            raise ContextPlanError(need_error)
+        if (
+            thinking_requires_past_reasoning
+            and str(tool).startswith("thinking_")
+            and need_evidence != "past_reasoning"
+        ):
+            raise ContextPlanError("invalid_thinking_context_need")
+        needs.append(
+            {
+                "tool": str(tool),
+                "query": _text(raw_need["query"], "context_need_query", 300),
+                "evidence": str(need_evidence),
+            }
+        )
+    return {
+        "status": status,
+        "needs": needs,
+        "reason": _text(raw["reason"], "context_reason", 300),
+    }
+
+
 def _merge_unique(
     target: list[str],
     incoming: list[str],
@@ -878,81 +956,26 @@ def parse_context_plan(
             "execution",
         }:
             raise ContextPlanError("invalid_owner_handoff")
-        raw_context = raw_handoff["context"]
-        if not isinstance(raw_context, dict) or set(raw_context) != {
-            "status",
-            "needs",
-            "reason",
-        }:
-            raise ContextPlanError("invalid_context_handoff")
-        status = raw_context["status"]
-        raw_needs = raw_context["needs"]
-        if (
-            status not in {"sufficient", "lookup_required"}
-            or not isinstance(raw_needs, list)
-            or len(raw_needs) > 2
-            or (status == "sufficient" and raw_needs)
-            or (status == "lookup_required" and not raw_needs)
-        ):
-            raise ContextPlanError("invalid_context_handoff")
-        needs: list[dict[str, str]] = []
-        for raw_need in raw_needs:
-            if not isinstance(raw_need, dict) or set(raw_need) != {
-                "tool",
-                "query",
-                "evidence",
-            }:
-                raise ContextPlanError("invalid_context_need")
-            tool = raw_need["tool"]
-            evidence = raw_need["evidence"]
-            if tool not in {
+        context = _parse_context_block(
+            raw_handoff["context"],
+            tools={
                 "memory_search",
                 "conversation_search",
                 "conversation_read",
                 "thinking_search",
                 "thinking_read",
-            } or evidence not in {
+            },
+            evidence={
                 "exact_wording",
                 "chronology",
                 "unresolved_reference",
                 "correction_evidence",
                 "past_reasoning",
-            }:
-                raise ContextPlanError("invalid_context_need")
-            if str(tool).startswith("thinking_") and evidence != "past_reasoning":
-                raise ContextPlanError("invalid_thinking_context_need")
-            needs.append(
-                {
-                    "tool": str(tool),
-                    "query": _text(raw_need["query"], "context_need_query", 300),
-                    "evidence": str(evidence),
-                }
-            )
-
-        raw_mcp_route = raw_handoff["mcp"]
-        if not isinstance(raw_mcp_route, dict) or set(raw_mcp_route) != {
-            "servers",
-            "reason",
-        }:
-            raise ContextPlanError("invalid_mcp_route")
-        servers = _strings(
-            raw_mcp_route["servers"],
-            "mcp_servers",
-            maximum=32,
-            max_length=100,
+            },
+            error="invalid_context_handoff",
+            need_error="invalid_context_need",
+            thinking_requires_past_reasoning=True,
         )
-        if len(set(servers)) != len(servers):
-            raise ContextPlanError("duplicate_mcp_server")
-        if (
-            available_mcp_servers is not None
-            and not set(servers) <= available_mcp_servers
-        ):
-            raise ContextPlanError("unknown_mcp_server")
-        mcp_route: dict[str, object] = {
-            "servers": servers,
-            "reason": _text(raw_mcp_route["reason"], "mcp_reason", 300),
-        }
-
         raw_execution = raw_handoff["execution"]
         if not isinstance(raw_execution, dict) or set(raw_execution) != {
             "mode",
@@ -963,23 +986,18 @@ def parse_context_plan(
         mode = raw_execution["mode"]
         if mode not in {"respond", "clarify", "work"}:
             raise ContextPlanError("invalid_execution_handoff")
-        outline = _strings(
-            raw_execution["outline"],
-            "execution_outline",
-            minimum=1,
-            maximum=8,
-            max_length=300,
-        )
         owner_handoff = {
-            "context": {
-                "status": status,
-                "needs": needs,
-                "reason": _text(raw_context["reason"], "context_reason", 300),
-            },
-            "mcp": mcp_route,
+            "context": context,
+            "mcp": _parse_mcp_route(raw_handoff["mcp"], available_mcp_servers),
             "execution": {
                 "mode": str(mode),
-                "outline": outline,
+                "outline": _strings(
+                    raw_execution["outline"],
+                    "execution_outline",
+                    minimum=1,
+                    maximum=8,
+                    max_length=300,
+                ),
                 "reason": _text(
                     raw_execution["reason"],
                     "execution_reason",
@@ -1089,82 +1107,24 @@ def parse_heartbeat_plan(
         "execution",
     }:
         raise ContextPlanError("invalid_heartbeat_handoff")
-
-    raw_context = raw_handoff["context"]
-    if not isinstance(raw_context, dict) or set(raw_context) != {
-        "status",
-        "needs",
-        "reason",
-    }:
-        raise ContextPlanError("invalid_heartbeat_context")
-    status = raw_context["status"]
-    raw_needs = raw_context["needs"]
-    if (
-        status not in {"sufficient", "lookup_required"}
-        or not isinstance(raw_needs, list)
-        or len(raw_needs) > 2
-        or (status == "sufficient" and raw_needs)
-        or (status == "lookup_required" and not raw_needs)
-    ):
-        raise ContextPlanError("invalid_heartbeat_context")
-    needs: list[dict[str, str]] = []
-    for raw_need in raw_needs:
-        if not isinstance(raw_need, dict) or set(raw_need) != {
-            "tool",
-            "query",
-            "evidence",
-        }:
-            raise ContextPlanError("invalid_heartbeat_context_need")
-        tool = raw_need["tool"]
-        evidence = raw_need["evidence"]
-        if tool not in {
+    context = _parse_context_block(
+        raw_handoff["context"],
+        tools={
             "memory_search",
             "conversation_search",
             "conversation_read",
-        } or evidence not in {
+        },
+        evidence={
             "exact_wording",
             "chronology",
             "unresolved_reference",
             "correction_evidence",
             "relevant_history",
-        }:
-            raise ContextPlanError("invalid_heartbeat_context_need")
-        needs.append(
-            {
-                "tool": str(tool),
-                "query": _text(
-                    raw_need["query"],
-                    "heartbeat_context_need_query",
-                    300,
-                ),
-                "evidence": str(evidence),
-            }
-        )
-
-    raw_mcp_route = raw_handoff["mcp"]
-    if not isinstance(raw_mcp_route, dict) or set(raw_mcp_route) != {
-        "servers",
-        "reason",
-    }:
-        raise ContextPlanError("invalid_mcp_route")
-    servers = _strings(
-        raw_mcp_route["servers"],
-        "mcp_servers",
-        maximum=32,
-        max_length=100,
+        },
+        error="invalid_heartbeat_context",
+        need_error="invalid_heartbeat_context_need",
     )
-    if len(set(servers)) != len(servers):
-        raise ContextPlanError("duplicate_mcp_server")
-    if (
-        available_mcp_servers is not None
-        and not set(servers) <= available_mcp_servers
-    ):
-        raise ContextPlanError("unknown_mcp_server")
-    mcp_route = {
-        "servers": servers,
-        "reason": _text(raw_mcp_route["reason"], "mcp_reason", 300),
-    }
-
+    mcp_route = _parse_mcp_route(raw_handoff["mcp"], available_mcp_servers)
     raw_execution = raw_handoff["execution"]
     if not isinstance(raw_execution, dict) or set(raw_execution) != {
         "mode",
@@ -1173,17 +1133,21 @@ def parse_heartbeat_plan(
     }:
         raise ContextPlanError("invalid_heartbeat_execution")
     mode = raw_execution["mode"]
-    if mode not in {"rest", "work"}:
-        raise ContextPlanError("invalid_heartbeat_execution")
     outline = _strings(
         raw_execution["outline"],
         "heartbeat_execution_outline",
         maximum=4,
         max_length=300,
     )
-    if (
+    servers = mcp_route["servers"]
+    if mode not in {"rest", "work"} or (
         mode == "rest"
-        and (outline or status != "sufficient" or needs or servers)
+        and (
+            outline
+            or context["status"] != "sufficient"
+            or context["needs"]
+            or servers
+        )
     ) or (mode == "work" and not outline):
         raise ContextPlanError("invalid_heartbeat_execution")
 
@@ -1194,15 +1158,7 @@ def parse_heartbeat_plan(
             "reason": _text(activity["reason"], "heartbeat_reason", 300),
         },
         "heartbeat_handoff": {
-            "context": {
-                "status": status,
-                "needs": needs,
-                "reason": _text(
-                    raw_context["reason"],
-                    "heartbeat_context_reason",
-                    300,
-                ),
-            },
+            "context": context,
             "mcp": mcp_route,
             "execution": {
                 "mode": str(mode),

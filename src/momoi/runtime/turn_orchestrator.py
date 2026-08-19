@@ -1056,16 +1056,7 @@ class TurnOrchestrator:
             reminders=reminders,
         )
         planned_activity = plan["activity"]
-        baseline_plan = {
-            "intent_units": [],
-            "episode_actions": [],
-            "uncertainty": plan["uncertainty"],
-        }
-        retrieval = build_plan_retrieval(
-            self.store,
-            baseline_plan,
-            self.config,
-        )
+        retrieval = build_plan_retrieval(self.store, plan, self.config)
         recalled = assemble_main_context(
             self.store,
             retrieval,

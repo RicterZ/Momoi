@@ -343,7 +343,7 @@ class ContextService:
                 plan_units=_plan_log_units(plan),
                 episode_actions=_plan_log_episodes(plan),
                 uncertainty=plan.get("uncertainty", []),
-                owner_handoff=plan.get("owner_handoff", "degraded"),
+                owner_handoff=plan.get("owner_handoff"),
                 duration_ms=int((time.monotonic() - call_started) * 1000),
             )
             return self._stored_context_plan(saved)

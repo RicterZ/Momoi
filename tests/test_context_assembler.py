@@ -9,7 +9,6 @@ from momoi.config import AppConfig, LLMConfig
 from momoi.models import AgentReply, IncomingMessage, MemoryCandidate, TurnDraft
 from momoi.runtime.context_assembler import (
     _planner_final,
-    _search_or,
     assemble_main_context,
     assemble_planner_recent_turns,
     assemble_recent_turns,
@@ -644,7 +643,6 @@ class ContextAssemblerTest(unittest.TestCase):
                 store.link_turn_to_episode(episode_id, turn_id)
 
             empty_plan = plan("")
-            empty_plan["intent_units"][0]["recall_queries"] = []
             retrieval = build_plan_retrieval(
                 store,
                 empty_plan,
@@ -801,38 +799,9 @@ class ContextAssemblerTest(unittest.TestCase):
                     "recent-multi",
                 ],
             )
-            self.assertEqual(
-                [item["keyword_match_count"] for item in retrieval["episodes"]],
-                [0, 0, 0],
-            )
             store.close()
 
-    def test_planner_or_query_is_executed_as_separate_terms(self) -> None:
-        calls: list[str] = []
-        rows = {
-            "房间": [{"id": "shared"}, {"id": "room-only"}],
-            "屋子": [{"id": "shared"}, {"id": "house-only"}],
-            "碎片": [{"id": "fragment-only"}],
-        }
-
-        def search(query: str, _: int) -> list[dict[str, object]]:
-            calls.append(query)
-            return rows[query]
-
-        results = _search_or(
-            "房间 | 屋子 | 碎片 | 房间",
-            search,
-            lambda row: row["id"],
-            4,
-        )
-
-        self.assertEqual(calls, ["房间", "屋子", "碎片"])
-        self.assertEqual(
-            [row["id"] for row in results],
-            ["shared", "room-only", "house-only", "fragment-only"],
-        )
-
-    def test_expanded_query_reaches_episode_outside_recent_directory(self) -> None:
+    def test_recent_episode_window_is_independent_of_directory_cap(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
             store.create_episode("旧暗号", episode_id="old-secret")
@@ -1325,7 +1294,6 @@ class ContextAssemblerTest(unittest.TestCase):
                     "text": "微博",
                     "intent": "social",
                     "references": [],
-                    "recall_queries": ["微博"],
                 }
             )
             split_plan["intent_units"].extend(
@@ -1336,7 +1304,6 @@ class ContextAssemblerTest(unittest.TestCase):
                         "text": "天气",
                         "intent": "weather",
                         "references": [],
-                        "recall_queries": ["天气"],
                     },
                     {
                         "id": "music",
@@ -1344,7 +1311,6 @@ class ContextAssemblerTest(unittest.TestCase):
                         "text": "音乐",
                         "intent": "music",
                         "references": [],
-                        "recall_queries": ["音乐"],
                     },
                 ]
             )
