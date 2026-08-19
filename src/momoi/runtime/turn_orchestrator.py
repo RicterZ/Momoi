@@ -1115,6 +1115,14 @@ class TurnOrchestrator:
                 json.dumps(recent_topics, ensure_ascii=False),
             ),
             (
+                "recent_heartbeat_activities",
+                json.dumps(
+                    self.store.recent_heartbeat_activities(),
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ),
+            ),
+            (
                 "recent_conversation",
                 recent_conversation,
             ),

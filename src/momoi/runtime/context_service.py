@@ -414,6 +414,9 @@ class ContextService:
                             "activity": state.get("activity"),
                             "result": state.get("activity_result"),
                         },
+                        "recent_heartbeat_activities": (
+                            self.store.recent_heartbeat_activities()
+                        ),
                         "conversation_state": conversation,
                         "recent_topics": recent_topics,
                         "recent_conversation": recent_conversation,

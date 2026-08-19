@@ -54,7 +54,11 @@ from momoi.runtime.context_planner import degraded_context_plan
 from momoi.runtime.daemon import _message_gap_bounds
 from momoi.runtime.turn_support import REPLY_WAIT_SYSTEM_PROMPT
 from momoi.storage import estimate_tokens
-from tests.support import context_plan_response, with_context_planner
+from tests.support import (
+    context_plan_response,
+    heartbeat_plan_response,
+    with_context_planner,
+)
 
 
 class DaemonTest(unittest.TestCase):
@@ -1943,6 +1947,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             or "<heartbeat_plan>" not in request
                             or "<runtime_state>" not in request
                             or "<recent_topic_reference>" not in request
+                            or "<recent_heartbeat_activities>" not in request
                             or "<recent_conversation>" not in request
                             or "最近的聊天话题" not in request
                             or "天气 Goal 已触发并成功送达" not in request
@@ -2083,6 +2088,115 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(goal["authority"], "agent")
             self.assertEqual(goal["title"], "继续整理关卡点子")
             self.assertEqual(provider.calls, 5)
+            daemon.store.close()
+
+    async def test_heartbeat_injects_recent_activities(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            config = AppConfig(
+                llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
+                channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                system_prompt="test",
+                recent_raw_tokens=1000,
+                recent_turns=2,
+                memory_results=2,
+                memory_tokens=1000,
+                database=Path(directory) / "momoi.sqlite3",
+                log_level="INFO",
+                heartbeat=HeartbeatConfig(
+                    enabled=True,
+                    initial_delay_seconds=60,
+                    min_interval_seconds=60,
+                    max_interval_seconds=600,
+                ),
+            )
+            daemon = MomoiDaemon(config)
+            now = time.time()
+            for index, activity in enumerate(["刷微博", "整理笔记"], start=1):
+                turn_id = f"seed-{index}"
+                with patch("momoi.storage.store.time.time", return_value=now + index):
+                    daemon.store.begin_turn(
+                        turn_id, "autonomous", [f"heartbeat:{index}"]
+                    )
+                    daemon.store.commit_heartbeat(
+                        turn_id,
+                        owner_event_revision=0,
+                        notification_config=config.notifications,
+                        activity=activity,
+                        result="ok",
+                        next_heartbeat_at=now + 60,
+                        mood_update=None,
+                        messages=[],
+                        reason="seed",
+                    )
+
+            class Provider:
+                calls = 0
+                planner_payload: dict[str, object] | None = None
+                turn_request = ""
+
+                async def complete(
+                    self,
+                    system: object,
+                    messages: list[dict[str, object]],
+                    tools: list[dict[str, object]],
+                    **_: object,
+                ) -> ProviderResponse:
+                    self.calls += 1
+                    if system == HEARTBEAT_PLANNER_SYSTEM_PROMPT:
+                        self.planner_payload = json.loads(str(messages[0]["content"]))
+                        return heartbeat_plan_response(messages)
+                    self.turn_request = json.dumps(messages, ensure_ascii=False)
+                    call = ToolCall(
+                        "heartbeat-done",
+                        "respond",
+                        {
+                            "expects_reply": False,
+                            "reply_expectation": "",
+                            "mood": {"decision": "unchanged"},
+                            "heartbeat": {
+                                "activity": "休息",
+                                "result": "",
+                                "next_check_minutes": 2,
+                                "reason": "test",
+                            },
+                        },
+                    )
+                    return ProviderResponse(
+                        [
+                            {
+                                "type": "tool_use",
+                                "id": call.id,
+                                "name": call.name,
+                                "input": call.arguments,
+                            }
+                        ],
+                        [call],
+                    )
+
+            provider = Provider()
+            daemon.provider = provider  # type: ignore[assignment]
+            daemon.store._db.execute(
+                "UPDATE self_state SET next_heartbeat_at=? WHERE id=1",
+                (time.time() - 1,),
+            )
+            daemon.store._db.commit()
+            self.assertIsNotNone(
+                daemon.store.claim_due_heartbeat(
+                    config.heartbeat, config.notifications
+                )
+            )
+            await daemon._complete_heartbeat_turn(asyncio.Event())
+            payload = provider.planner_payload
+            self.assertIsNotNone(payload)
+            assert payload is not None
+            activities = payload["recent_heartbeat_activities"]
+            self.assertEqual(
+                [item["text"] for item in activities],
+                ["刷微博", "整理笔记"],
+            )
+            self.assertIn("<recent_heartbeat_activities>", provider.turn_request)
+            self.assertIn("刷微博", provider.turn_request)
+            self.assertIn("整理笔记", provider.turn_request)
             daemon.store.close()
 
     async def test_heartbeat_handoff_lookup_is_executed_by_turn(self) -> None:
@@ -2253,6 +2367,9 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         not in json.dumps(messages, ensure_ascii=False)
                     ):
                         raise AssertionError((system, messages, tools))
+                    payload = json.loads(str(messages[0]["content"]))
+                    if "recent_heartbeat_activities" not in payload:
+                        raise AssertionError(payload)
 
             provider = Provider()
             daemon.provider = provider  # type: ignore[assignment]

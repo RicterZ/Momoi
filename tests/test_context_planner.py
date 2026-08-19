@@ -135,6 +135,7 @@ class ContextPlannerTest(unittest.TestCase):
             schema["properties"]["activity"]["properties"],
         )
         self.assertNotIn("recall_queries", HEARTBEAT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn("recent_heartbeat_activities", HEARTBEAT_PLANNER_SYSTEM_PROMPT)
         plan = parse_heartbeat_plan(
             {
                 "version": 2,

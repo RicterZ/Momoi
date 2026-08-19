@@ -61,7 +61,11 @@ BASELINE_MOOD_STATE = "calm"
 BASELINE_MOOD_INTENSITY = 0.35
 BASELINE_MOOD_CAUSE = "resting baseline"
 DEFAULT_ACTIVITY = "spending time freely"
+RECENT_HEARTBEAT_LIMIT = 6
 EPISODE_CONSOLIDATION_LOOKBACK_SECONDS = 30 * 24 * 60 * 60
+_HEARTBEAT_RECORD_ACTIVITY = re.compile(
+    r"^Activity: (.*)$", re.MULTILINE
+)
 REFLECTION_MEMORY_KINDS = {
     "owner_profile",
     "owner_preference",
@@ -136,6 +140,11 @@ def _owner_message_created_at(
         if event.occurred_at or event.received_at
     ]
     return min(times) if times else now
+
+
+def _heartbeat_record_activity(content: str) -> str:
+    match = _HEARTBEAT_RECORD_ACTIVITY.search(content)
+    return match.group(1).strip()[:300] if match else ""
 
 
 class Store(MemoryStore, DeliveryStore):
@@ -4158,6 +4167,28 @@ class Store(MemoryStore, DeliveryStore):
             ensure_ascii=False,
             separators=(",", ":"),
         )
+
+    def recent_heartbeat_activities(self) -> list[dict[str, str]]:
+        rows = self._db.execute(
+            """SELECT content, created_at FROM messages
+               WHERE delivery_state='internal'
+                 AND content LIKE '[AUTONOMOUS HEARTBEAT RECORD;%'
+               ORDER BY created_at DESC, id DESC
+               LIMIT ?""",
+            (RECENT_HEARTBEAT_LIMIT,),
+        ).fetchall()
+        items: list[dict[str, str]] = []
+        for row in reversed(rows):
+            text = _heartbeat_record_activity(str(row["content"] or ""))
+            if not text:
+                continue
+            items.append(
+                {
+                    "at": context_timestamp(row["created_at"]),
+                    "text": text,
+                }
+            )
+        return items[-RECENT_HEARTBEAT_LIMIT:]
 
     def pending_owner_reply(self, now: float | None = None) -> dict[str, object] | None:
         now = time.time() if now is None else now

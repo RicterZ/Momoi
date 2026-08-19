@@ -12,6 +12,9 @@ Rules:
   curiosity, reflection, and productive work are all valid.
 - Do not perform or duplicate an owner-owned Goal, reminder, or already scheduled
   Momoi-owned Goal. Continue the previous activity only when it still fits now.
+- `recent_heartbeat_activities` is a low-priority record of the last few heartbeat
+  activities. Continue one of them only when it still fits now. Do not switch
+  merely for variety, and do not avoid an activity merely because it appears there.
 - Keep `intent` and `reason` concise. This is one decision, not a menu of options.
 
 - Assess whether supplied state, recent conversation, topics, Goals, and
