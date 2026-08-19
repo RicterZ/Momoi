@@ -24,7 +24,6 @@ def context_plan_response(messages: list[dict[str, Any]]) -> ProviderResponse:
             "intent": "test owner intent",
             "speech_act": "request",
             "references": [],
-            "recall_queries": [message["text"] or "non-text owner message"],
         }
         for index, message in enumerate(owner_messages, 1)
     ]
@@ -45,12 +44,24 @@ def context_plan_response(messages: list[dict[str, Any]]) -> ProviderResponse:
             }
         ],
         "episode_links": [],
-        "mcp_route": {
-            "servers": [
-                str(server["id"])
-                for server in payload.get("available_mcp_servers", [])
-            ],
-            "reason": "Load configured test MCP servers.",
+        "owner_handoff": {
+            "context": {
+                "status": "sufficient",
+                "needs": [],
+                "reason": "Test context is sufficient.",
+            },
+            "mcp": {
+                "servers": [
+                    str(server["id"])
+                    for server in payload.get("available_mcp_servers", [])
+                ],
+                "reason": "Load configured test MCP servers.",
+            },
+            "execution": {
+                "mode": "work",
+                "outline": ["Handle the test owner request."],
+                "reason": "Exercise the Owner tool loop.",
+            },
         },
         "uncertainty": [],
     }
@@ -72,18 +83,29 @@ def heartbeat_plan_response(messages: list[dict[str, Any]]) -> ProviderResponse:
     payload = json.loads(str(messages[0]["content"]))
     previous = payload["previous_activity"]
     plan = {
-        "version": 1,
+        "version": 2,
         "activity": {
             "intent": str(previous.get("activity") or "spend time freely"),
             "reason": "Continue the current activity for this test.",
-            "recall_queries": [],
         },
-        "mcp_route": {
-            "servers": [
-                str(server["id"])
-                for server in payload.get("available_mcp_servers", [])
-            ],
-            "reason": "Load configured test MCP servers.",
+        "heartbeat_handoff": {
+            "context": {
+                "status": "sufficient",
+                "needs": [],
+                "reason": "Test context is sufficient.",
+            },
+            "mcp": {
+                "servers": [
+                    str(server["id"])
+                    for server in payload.get("available_mcp_servers", [])
+                ],
+                "reason": "Load configured test MCP servers.",
+            },
+            "execution": {
+                "mode": "work",
+                "outline": ["Continue the selected test activity."],
+                "reason": "Exercise the Heartbeat Turn.",
+            },
         },
         "uncertainty": [],
     }

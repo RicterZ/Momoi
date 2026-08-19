@@ -110,7 +110,8 @@ class ToolExecutionService:
             )
         ]
         groups = self._self_directed_mcp_server_groups()
-        route = plan.get("mcp_route")
+        handoff = plan.get("heartbeat_handoff")
+        route = handoff.get("mcp") if isinstance(handoff, dict) else None
         selected = route.get("servers") if isinstance(route, dict) else []
         selected_servers = selected if isinstance(selected, list) else []
         mcp_specs = [
@@ -131,7 +132,8 @@ class ToolExecutionService:
         self, plan: dict[str, object], channel_name: str | None = None
     ) -> list[dict[str, Any]]:
         groups = self._mcp_server_groups()
-        route = plan.get("mcp_route")
+        handoff = plan.get("owner_handoff")
+        route = handoff.get("mcp") if isinstance(handoff, dict) else None
         raw_selected = route.get("servers") if isinstance(route, dict) else []
         selected = (
             [str(group) for group in raw_selected if str(group) in groups]

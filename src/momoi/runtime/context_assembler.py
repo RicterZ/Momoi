@@ -9,13 +9,11 @@ from typing import Any
 from ..config import AppConfig
 from ..context_time import context_timestamp
 from ..logging_context import log_event, safe_preview
-from ..search import search_alternatives
 from ..storage import Store, estimate_tokens, truncate_tokens
 from .budget import SECTION_BUDGET_ALLOCATOR
 
 
 _LEGACY_OWNER_HEADER = "# Current owner messages\n"
-_DEFAULT_EPISODE_LOOKBACK_SECONDS = 30 * 24 * 60 * 60
 logger = logging.getLogger(__name__)
 
 
@@ -130,92 +128,18 @@ def _selected_by_unit(
 
 
 def build_plan_retrieval(
-    store: Store, plan: dict[str, object], config: AppConfig
+    store: Store,
+    plan: dict[str, object],
+    config: AppConfig,
 ) -> dict[str, object]:
     units = plan.get("intent_units")
     actions = plan.get("episode_actions", plan.get("episode_bindings"))
     if not isinstance(units, list) or not isinstance(actions, list):
         raise RuntimeError("context plan has invalid retrieval inputs")
 
-    confirmed = _selected_by_unit(
-        units,
-        lambda query, limit: store.search_memories(
-            query, limit, activation="recall"
-        ),
-        lambda row: row["id"],
-        lambda row: f"[{row['kind']}:{row['key']}] {row['content']}",
-        lambda row: {
-            "id": row["id"],
-            "kind": row["kind"],
-            "key": row["key"],
-            "content": row["content"],
-        },
-        config.memory_results,
-        config.memory_tokens,
-    )
-    reflection_limit = (
-        max(1, config.memory_results // 2) if config.memory_results else 0
-    )
-    reflection = _selected_by_unit(
-        units,
-        lambda query, limit: store.search_reflection_memories(query, limit),
-        lambda row: row["id"],
-        lambda row: f"[{row['kind']}:{row['key']}] {row['content']}",
-        lambda row: {
-            "id": row["id"],
-            "kind": row["kind"],
-            "key": row["key"],
-            "content": row["content"],
-            "confidence": row["confidence"],
-        },
-        reflection_limit,
-        config.memory_tokens // 2,
-    )
-    episode_results = config.summary_results
-    keyword_query = " | ".join(
-        str(query)
-        for unit in units
-        if isinstance(unit, dict)
-        for query in unit.get("recall_queries", [])
-        if str(query).strip()
-    )
-    recalled_episodes = []
-    if episode_results > 0 and config.summary_tokens > 0 and keyword_query:
-        for row in store.search_episodes(
-            keyword_query,
-            episode_results,
-            after=time.time() - _DEFAULT_EPISODE_LOOKBACK_SECONDS,
-        ):
-            recalled_episodes.append(
-                {
-                    "episode_id": row["id"],
-                    "relation": "recalled",
-                    "is_new": False,
-                    "matches": row.get("matches", []),
-                    "keyword_match_count": int(
-                        row.get("keyword_match_count") or 0
-                    ),
-                    "last_activity_at": float(
-                        row.get("last_activity_at") or 0
-                    ),
-                    "unit_ids": [
-                        str(unit["id"])
-                        for unit in units
-                        if isinstance(unit, dict)
-                        and any(
-                            alternative
-                            in {
-                                keyword
-                                for query in unit.get("recall_queries", [])
-                                for keyword in search_alternatives(str(query))
-                            }
-                            for alternative in row.get(
-                                "matched_keywords", []
-                            )
-                        )
-                    ],
-                }
-            )
+    confirmed: list[dict[str, object]] = []
+    reflection: list[dict[str, object]] = []
+    recalled_episodes: list[dict[str, object]] = []
     recent_episodes = (
         store.list_recent_episodes(
             time.time() - config.recent_episode_hours * 3600
@@ -266,16 +190,8 @@ def build_plan_retrieval(
         ),
         reverse=True,
     )
-    agenda_budget = config.memory_tokens // 2
-    goals = _selected_by_unit(
-        units,
-        store.search_goals,
-        lambda row: row["id"],
-        lambda row: " ".join(
-            str(row.get(name) or "")
-            for name in ("title", "next_action", "waiting_for", "latest_result")
-        ),
-        lambda row: {
+    goals = [
+        {
             name: row.get(name)
             for name in (
                 "id",
@@ -291,47 +207,25 @@ def build_plan_retrieval(
                 "retry_timestamp",
                 "schedule",
             )
-        },
-        config.memory_results,
-        agenda_budget,
-    )
-    reminders = _selected_by_unit(
-        units,
-        store.search_reminders,
-        lambda row: row["id"],
-        lambda row: str(row["text"]),
-        lambda row: {
+        }
+        for row in store.list_goals()[
+            : config.policies.context.max_visible_goals
+        ]
+    ]
+    reminders = [
+        {
             name: row.get(name)
             for name in ("id", "text", "fire_at", "fire_timestamp", "schedule")
-        },
-        config.memory_results,
-        agenda_budget,
-    )
-    conflicts = _selected_by_unit(
-        units,
-        store.search_memory_conflicts,
-        lambda row: row["id"],
-        lambda row: (
-            f"{row['kind']} {row['key']} {row['existing_content']} "
-            f"{row['candidate_content']}"
-        ),
-        lambda row: {
-            name: row[name]
-            for name in (
-                "id",
-                "kind",
-                "key",
-                "existing_content",
-                "candidate_content",
-            )
-        },
-        config.memory_results,
-        config.memory_tokens // 2,
-    )
+        }
+        for row in store.list_reminders(
+            config.policies.context.max_visible_reminders
+        )
+    ]
+    conflicts: list[dict[str, object]] = []
     retrieval = {
         "version": 2,
-        # Recent Episodes are included by time window; explicit recall queries add
-        # up to the configured keyword result limit before the two sets are merged.
+        # Baseline context is deterministic. Any additional historical lookup is
+        # handed to the executing Turn through its Planner handoff.
         "episodes": ordered_episodes,
         "confirmed_memories": confirmed,
         "owner_preferences": store.always_memory_context(),
@@ -352,45 +246,12 @@ def build_plan_retrieval(
         logging.INFO,
         "context_recall",
         stage="context_recall",
-        queries=[
-            {
-                "unit": str(unit.get("id") or ""),
-                "patterns": [
-                    str(query) for query in unit.get("recall_queries", [])
-                ],
-            }
-            for unit in units
-            if isinstance(unit, dict) and unit.get("recall_queries")
-        ],
-        episodes=[
-            {
-                "id": item["episode_id"],
-                "units": item["unit_ids"],
-            }
-            for item in recalled_episodes
-        ],
-        memories=[
-            {
-                "key": item["key"],
-                "units": item["unit_ids"],
-            }
-            for item in confirmed
-        ],
-        reflections=[
-            {
-                "key": item["key"],
-                "units": item["unit_ids"],
-            }
-            for item in reflection
-        ],
-        goals=[
-            {"id": item["id"], "units": item["unit_ids"]}
-            for item in goals
-        ],
-        reminders=[
-            {"id": item["id"], "units": item["unit_ids"]}
-            for item in reminders
-        ],
+        queries=[],
+        episodes=[],
+        memories=[],
+        reflections=[],
+        goals=[{"id": item["id"]} for item in goals],
+        reminders=[{"id": item["id"]} for item in reminders],
         counts={
             "episodes": len(recalled_episodes),
             "memories": len(confirmed),
@@ -736,6 +597,8 @@ def _planner_final(value: object) -> dict[str, object]:
         projected["reply_wait"] = copy.deepcopy(reply_wait)
     if value.get("mood_change") is not None:
         projected["mood_change"] = copy.deepcopy(value["mood_change"])
+    if value.get("plan_adjustment"):
+        projected["plan_adjustment"] = copy.deepcopy(value["plan_adjustment"])
     mutations = value.get("mutations")
     if isinstance(mutations, dict):
         nonempty = {

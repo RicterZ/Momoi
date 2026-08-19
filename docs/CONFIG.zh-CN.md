@@ -264,9 +264,11 @@ momoi --workspace ~/.momoi run
 
 `recent_episode_hours` 会加入配置窗口内全部活跃的 Episode，与关键词召回相互独立；`summary_results` 默认将关键词召回限制为最多 12 个 Episode。两组结果按 Episode 去重后排序：近期且命中关键词的优先，其次是其他关键词命中，最后是仅近期活跃的 Episode；在关键词组内，命中的关键词 alternative 越多越靠前。`summary_tokens` 由合并后的 Episode 摘要共同使用。
 
-Owner主模型使用同一套紧凑Recent投影。稳定的Owner Preferences、Core Reflection和近期记忆位于当前Owner消息之前，以便复用前缀；动态当前消息保持在末尾。内部Memory、Conversation、Thinking、Agenda和Builtin工具全部常驻。Context Planner只选择当前需要的外部MCP Server，并必须给出路由理由；主模型始终通过`tool_enable`获得紧凑的Server/Tool目录，可在Turn中随时加载漏选Server。Heartbeat Planner和执行循环使用同一套Server级路由，并继续受Autonomy Pattern限制。Planner降级时不预载MCP，但保留`tool_enable`，无需恢复全部外部Schema也不会失能。
+Owner主模型使用同一套紧凑Recent投影。稳定的Owner Preferences、Core Reflection和近期记忆位于当前Owner消息之前，以便复用前缀；动态当前消息保持在末尾。内部Memory、Conversation、Thinking、Agenda和Builtin工具全部常驻。Context Planner只选择当前需要的外部MCP Server，并必须给出路由理由；主模型始终通过`tool_enable`获得紧凑的Server/Tool目录，可在Turn中随时加载漏选Server。Heartbeat Planner现在采用相同的Handoff模式：选择一个活动，指出最多两个需要Heartbeat Turn执行的Memory/Conversation查询，路由外部MCP Server，并提交有界执行大纲。Heartbeat查询不再由框架自动执行；真正的`rest`计划不带查询、MCP Server或执行步骤。自主工具继续受Autonomy Pattern限制。Planner降级时不预载MCP，但保留`tool_enable`，无需恢复全部外部Schema也不会失能。
 
-将某个召回层的结果数量或 token 预算设为 `0` 可关闭该层自动召回。对应工具已启用时，显式记忆和对话搜索工具仍然可用。
+Owner Context Planner不再提交关键词让框架自动搜索Memory/Episode。它输出结构化`owner_handoff`：判断现有上下文是否充分、列出最多两个需要Owner主模型执行的Memory/Conversation/Thinking查询、选择MCP Server，并给出执行模式和大纲。框架仍提供Recent Episodes、近期/核心记忆和当前Goals/Reminders作为确定性基线；精确历史补查由始终常驻的内部工具在Owner Turn中完成。主模型可修正Planner方向，并仅在实际推翻Handoff时通过`plan_adjustment`把修正写回后续Recent Turns。
+
+将某个基线上下文层的结果数量或 token 预算设为 `0` 可关闭该层注入。显式记忆和对话搜索工具仍然常驻可用。
 
 ## 存储
 

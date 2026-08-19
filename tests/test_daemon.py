@@ -170,7 +170,8 @@ class DaemonTest(unittest.TestCase):
                 rendered.index("<heartbeat_plan>"),
                 rendered.index("# Workspace heartbeat guidance"),
             )
-            self.assertIn("harness has already used its recall queries", rendered)
+            self.assertIn("advisory `heartbeat_handoff`", rendered)
+            self.assertIn("A `rest` plan is complete", rendered)
             heartbeat.unlink()
             self.assertNotIn(
                 "# Workspace heartbeat guidance", daemon._heartbeat_system_prompt()
@@ -1419,9 +1420,11 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 [{"role": "user", "content": "读文件"}],
                 daemon._owner_tool_specs(
                     {
-                        "mcp_route": {
-                            "servers": [],
-                            "reason": "Planner omitted demo",
+                        "owner_handoff": {
+                            "mcp": {
+                                "servers": [],
+                                "reason": "Planner omitted demo",
+                            }
                         }
                     },
                     "napcat",
@@ -2082,7 +2085,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(provider.calls, 5)
             daemon.store.close()
 
-    async def test_heartbeat_planner_recall_is_loaded_before_execution(self) -> None:
+    async def test_heartbeat_handoff_lookup_is_executed_by_turn(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
                 llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
@@ -2149,32 +2152,66 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "heartbeat-plan",
                             "submit_heartbeat_plan",
                             {
-                                "version": 1,
+                                "version": 2,
                                 "activity": {
                                     "intent": "浏览微博关注流",
                                     "reason": "看看最近感兴趣的动态",
-                                    "recall_queries": [
-                                        "微博登录过期 | 刷微博遇到错误"
-                                    ],
+                                },
+                                "heartbeat_handoff": {
+                                    "context": {
+                                        "status": "lookup_required",
+                                        "needs": [
+                                            {
+                                                "tool": "memory_search",
+                                                "query": "微博登录过期 | 刷微博遇到错误",
+                                                "evidence": "relevant_history",
+                                            }
+                                        ],
+                                        "reason": "浏览前需要已知错误规则",
+                                    },
+                                    "mcp": {
+                                        "servers": [],
+                                        "reason": "测试只需内部工具",
+                                    },
+                                    "execution": {
+                                        "mode": "work",
+                                        "outline": [
+                                            "查询已知微博规则",
+                                            "根据结果决定浏览方式",
+                                        ],
+                                        "reason": "需要执行一次有依据的活动",
+                                    },
                                 },
                                 "uncertainty": [],
                             },
                         )
-                    else:
+                    elif self.calls == 2:
                         request = json.dumps(messages, ensure_ascii=False)
                         names = {str(tool["name"]) for tool in tools}
                         if (
                             system == HEARTBEAT_PLANNER_SYSTEM_PROMPT
                             or "<heartbeat_plan>" not in request
                             or "浏览微博关注流" not in request
-                            or "shared.weibo.login_expired_notify" not in request
-                            or "微博登录过期时主动提醒" not in request
+                            or "微博登录过期 | 刷微博遇到错误" not in request
+                            or "shared.weibo.login_expired_notify" in request
                             or "memory_search" not in names
                             or "memory_remember" not in names
                             or "goal_update" not in names
                             or "reminder_create" not in names
                         ):
                             raise AssertionError((system, request, names))
+                        call = ToolCall(
+                            "heartbeat-memory",
+                            "memory_search",
+                            {"query": "微博登录过期 | 刷微博遇到错误"},
+                        )
+                    else:
+                        request = json.dumps(messages, ensure_ascii=False)
+                        if (
+                            "shared.weibo.login_expired_notify" not in request
+                            or "微博登录过期时主动提醒" not in request
+                        ):
+                            raise AssertionError((system, request))
                         call = ToolCall(
                             "heartbeat-done",
                             "respond",
@@ -2230,7 +2267,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 )
             )
             await daemon._complete_heartbeat_turn(asyncio.Event())
-            self.assertEqual(provider.calls, 2)
+            self.assertEqual(provider.calls, 3)
             self.assertEqual(
                 daemon.store.self_state()["activity"], "浏览微博关注流"
             )

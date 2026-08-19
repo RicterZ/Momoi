@@ -177,9 +177,11 @@ class ProgressAnnounceTest(unittest.TestCase):
             spec["name"]: spec
             for spec in daemon._owner_tool_specs(
                 {
-                    "mcp_route": {
-                        "servers": ["brave-search"],
-                        "reason": "test external search",
+                    "owner_handoff": {
+                        "mcp": {
+                            "servers": ["brave-search"],
+                            "reason": "test external search",
+                        }
                     }
                 }
             )

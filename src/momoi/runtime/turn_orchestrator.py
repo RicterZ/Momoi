@@ -1043,6 +1043,7 @@ class TurnOrchestrator:
             recent_topics.append(topic)
             topic_tokens += size
         goals = self.store.active_goals_context(authority="agent")
+        reminders = self.store.active_reminders_context()
         conversation = self.store.heartbeat_conversation_snapshot()
         plan = await self._plan_heartbeat_context(
             turn_id,
@@ -1052,19 +1053,19 @@ class TurnOrchestrator:
             recent_topics=recent_topics,
             recent_conversation=recent_conversation,
             goals=goals,
+            reminders=reminders,
         )
         planned_activity = plan["activity"]
-        recall_plan = {
-            "intent_units": [
-                {
-                    "id": "heartbeat",
-                    "recall_queries": planned_activity["recall_queries"],
-                }
-            ],
+        baseline_plan = {
+            "intent_units": [],
             "episode_actions": [],
             "uncertainty": plan["uncertainty"],
         }
-        retrieval = build_plan_retrieval(self.store, recall_plan, self.config)
+        retrieval = build_plan_retrieval(
+            self.store,
+            baseline_plan,
+            self.config,
+        )
         recalled = assemble_main_context(
             self.store,
             retrieval,
@@ -1109,7 +1110,7 @@ class TurnOrchestrator:
                     {
                         "intent": planned_activity["intent"],
                         "reason": planned_activity["reason"],
-                        "mcp_route": plan.get("mcp_route", {}),
+                        "heartbeat_handoff": plan["heartbeat_handoff"],
                         "uncertainty": plan["uncertainty"],
                     },
                     ensure_ascii=False,
@@ -1117,7 +1118,7 @@ class TurnOrchestrator:
                 ),
             ),
             ("active_goals", goals),
-            ("pending_reminders", self.store.active_reminders_context()),
+            ("pending_reminders", reminders),
             (
                 "recent_topic_reference",
                 json.dumps(recent_topics, ensure_ascii=False),

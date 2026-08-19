@@ -103,17 +103,27 @@ def conversation_guidance(plan: dict[str, object]) -> str:
     intent_units = [
         {
             "owner_text": unit["text"],
+            "intent": unit.get("intent", ""),
             "speech_act": unit.get("speech_act", "unknown"),
             **({"references": unit["references"]} if unit.get("references") else {}),
         }
         for unit in plan.get("intent_units", [])
-        if isinstance(unit, dict) and (unit.get("speech_act") or unit.get("references"))
+        if isinstance(unit, dict)
     ]
     uncertainty = plan.get("uncertainty", [])
-    if not intent_units and not uncertainty:
+    owner_handoff = plan.get("owner_handoff")
+    if not intent_units and not uncertainty and not owner_handoff:
         return ""
     return json.dumps(
-        {"owner_intent_units": intent_units, "uncertainty": uncertainty},
+        {
+            "owner_intent_units": intent_units,
+            **(
+                {"owner_handoff": owner_handoff}
+                if isinstance(owner_handoff, dict)
+                else {}
+            ),
+            "uncertainty": uncertainty,
+        },
         ensure_ascii=False,
         separators=(",", ":"),
     )
@@ -127,7 +137,6 @@ def plan_log_units(plan: dict[str, object]) -> list[dict[str, object]]:
             "text": unit.get("text"),
             "intent": unit.get("intent"),
             "references": unit.get("references", []),
-            "queries": unit.get("recall_queries", []),
         }
         for unit in plan.get("intent_units", [])
         if isinstance(unit, dict)

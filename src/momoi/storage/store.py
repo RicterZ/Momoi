@@ -6143,6 +6143,11 @@ class Store(MemoryStore, DeliveryStore):
                 {
                     "channel": target_channel,
                     "reply_wait": reply.reply_wait,
+                    **(
+                        {"plan_adjustment": reply.plan_adjustment}
+                        if reply.plan_adjustment
+                        else {}
+                    ),
                     "mood_change": reply.mood_update,
                     "mutations": {
                         "memories": [

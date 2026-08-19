@@ -179,6 +179,25 @@ REPLY_WAIT_DECISION_SCHEMA: dict[str, Any] = {
     ]
 }
 
+PLAN_ADJUSTMENT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "reason": {"type": "string", "minLength": 1, "maxLength": 300},
+        "corrected_direction": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+        },
+        "resolved_context_needs": {
+            "type": "array",
+            "maxItems": 4,
+            "items": {"type": "string", "minLength": 1, "maxLength": 100},
+        },
+    },
+    "required": ["reason", "corrected_direction", "resolved_context_needs"],
+    "additionalProperties": False,
+}
+
 RESPOND_TOOL_SPEC: dict[str, Any] = {
     "name": "respond",
     "description": (
@@ -190,6 +209,7 @@ RESPOND_TOOL_SPEC: dict[str, Any] = {
         "type": "object",
         "properties": {
             "reply_wait": REPLY_WAIT_DECISION_SCHEMA,
+            "plan_adjustment": PLAN_ADJUSTMENT_SCHEMA,
             "mood": MOOD_DECISION_SCHEMA,
         },
         "required": [

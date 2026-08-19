@@ -343,7 +343,7 @@ class ContextService:
                 plan_units=_plan_log_units(plan),
                 episode_actions=_plan_log_episodes(plan),
                 uncertainty=plan.get("uncertainty", []),
-                mcp_route=plan.get("mcp_route", {"servers": [], "reason": "degraded"}),
+                owner_handoff=plan.get("owner_handoff", "degraded"),
                 duration_ms=int((time.monotonic() - call_started) * 1000),
             )
             return self._stored_context_plan(saved)
@@ -394,6 +394,7 @@ class ContextService:
         recent_topics: list[dict[str, object]],
         recent_conversation: str,
         goals: str,
+        reminders: str,
     ) -> dict[str, object]:
         mcp_server_catalog = self._heartbeat_mcp_server_catalog()
         available_mcp_servers = {
@@ -417,6 +418,7 @@ class ContextService:
                         "recent_topics": recent_topics,
                         "recent_conversation": recent_conversation,
                         "active_goals": goals,
+                        "pending_reminders": reminders,
                         "workspace_heartbeat_guidance": (
                             self._workspace_heartbeat_guidance()
                         ),
@@ -511,8 +513,7 @@ class ContextService:
                 call_id=call_id,
                 round=attempt + 1,
                 intent=plan["activity"]["intent"],
-                queries=len(plan["activity"]["recall_queries"]),
-                mcp_route=plan.get("mcp_route", {}),
+                heartbeat_handoff=plan["heartbeat_handoff"],
                 duration_ms=int((time.monotonic() - started) * 1000),
             )
             return plan

@@ -57,19 +57,6 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                             "maxItems": 8,
                             "items": {"type": "string"},
                         },
-                        "recall_queries": {
-                            "type": "array",
-                            "maxItems": 2,
-                            "items": {
-                                "type": "string",
-                                "maxLength": 500,
-                                "description": (
-                                    "Planner-generated pipe-separated OR search "
-                                    "terms: identifiers and useful alternative "
-                                    "wording likely to occur in stored evidence."
-                                ),
-                            },
-                        },
                     },
                     "required": [
                         "id",
@@ -78,7 +65,6 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                         "intent",
                         "speech_act",
                         "references",
-                        "recall_queries",
                     ],
                     "additionalProperties": False,
                 },
@@ -228,30 +214,111 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                     "additionalProperties": False,
                 },
             },
-            "mcp_route": {
+            "owner_handoff": {
                 "type": "object",
                 "properties": {
-                    "servers": {
-                        "type": "array",
-                        "maxItems": 32,
-                        "items": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 100,
+                    "context": {
+                        "type": "object",
+                        "properties": {
+                            "status": {
+                                "type": "string",
+                                "enum": ["sufficient", "lookup_required"],
+                            },
+                            "needs": {
+                                "type": "array",
+                                "maxItems": 2,
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "tool": {
+                                            "type": "string",
+                                            "enum": [
+                                                "memory_search",
+                                                "conversation_search",
+                                                "conversation_read",
+                                                "thinking_search",
+                                                "thinking_read",
+                                            ],
+                                        },
+                                        "query": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 300,
+                                        },
+                                        "evidence": {
+                                            "type": "string",
+                                            "enum": [
+                                                "exact_wording",
+                                                "chronology",
+                                                "unresolved_reference",
+                                                "correction_evidence",
+                                                "past_reasoning",
+                                            ],
+                                        },
+                                    },
+                                    "required": ["tool", "query", "evidence"],
+                                    "additionalProperties": False,
+                                },
+                            },
+                            "reason": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 300,
+                            },
                         },
+                        "required": ["status", "needs", "reason"],
+                        "additionalProperties": False,
                     },
-                    "reason": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 300,
+                    "mcp": {
+                        "type": "object",
+                        "properties": {
+                            "servers": {
+                                "type": "array",
+                                "maxItems": 32,
+                                "items": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 100,
+                                },
+                            },
+                            "reason": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 300,
+                            },
+                        },
+                        "required": ["servers", "reason"],
+                        "additionalProperties": False,
+                    },
+                    "execution": {
+                        "type": "object",
+                        "properties": {
+                            "mode": {
+                                "type": "string",
+                                "enum": ["respond", "clarify", "work"],
+                            },
+                            "outline": {
+                                "type": "array",
+                                "minItems": 1,
+                                "maxItems": 8,
+                                "items": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 300,
+                                },
+                            },
+                            "reason": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 300,
+                            },
+                        },
+                        "required": ["mode", "outline", "reason"],
+                        "additionalProperties": False,
                     },
                 },
-                "required": ["servers", "reason"],
+                "required": ["context", "mcp", "execution"],
                 "additionalProperties": False,
-                "description": (
-                    "External MCP servers needed now and a concise routing reason. "
-                    "Internal tools are always available."
-                ),
             },
             "uncertainty": {
                 "type": "array",
@@ -264,7 +331,7 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
             "intent_units",
             "episode_actions",
             "episode_links",
-            "mcp_route",
+            "owner_handoff",
             "uncertainty",
         ],
         "additionalProperties": False,
@@ -274,53 +341,122 @@ HEARTBEAT_PLAN_TOOL_NAME = "submit_heartbeat_plan"
 HEARTBEAT_PLAN_TOOL_SPEC: dict[str, object] = {
     "name": HEARTBEAT_PLAN_TOOL_NAME,
     "description": (
-        "Submit the selected heartbeat activity and its initial recall queries."
+        "Submit the selected heartbeat activity and advisory execution handoff."
     ),
     "input_schema": {
         "type": "object",
         "properties": {
-            "version": {"type": "integer", "enum": [1]},
+            "version": {"type": "integer", "enum": [2]},
             "activity": {
                 "type": "object",
                 "properties": {
                     "intent": {"type": "string", "maxLength": 300},
                     "reason": {"type": "string", "maxLength": 300},
-                    "recall_queries": {
-                        "type": "array",
-                        "maxItems": 2,
-                        "items": {
-                            "type": "string",
-                            "maxLength": 500,
-                            "description": (
-                                "Planner-generated pipe-separated OR search terms: "
-                                "identifiers and useful alternative wording likely "
-                                "to occur in stored evidence."
-                            ),
-                        },
-                    },
                 },
-                "required": ["intent", "reason", "recall_queries"],
+                "required": ["intent", "reason"],
                 "additionalProperties": False,
             },
-            "mcp_route": {
+            "heartbeat_handoff": {
                 "type": "object",
                 "properties": {
-                    "servers": {
-                        "type": "array",
-                        "maxItems": 32,
-                        "items": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 100,
+                    "context": {
+                        "type": "object",
+                        "properties": {
+                            "status": {
+                                "type": "string",
+                                "enum": ["sufficient", "lookup_required"],
+                            },
+                            "needs": {
+                                "type": "array",
+                                "maxItems": 2,
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "tool": {
+                                            "type": "string",
+                                            "enum": [
+                                                "memory_search",
+                                                "conversation_search",
+                                                "conversation_read",
+                                            ],
+                                        },
+                                        "query": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 300,
+                                        },
+                                        "evidence": {
+                                            "type": "string",
+                                            "enum": [
+                                                "exact_wording",
+                                                "chronology",
+                                                "unresolved_reference",
+                                                "correction_evidence",
+                                                "relevant_history",
+                                            ],
+                                        },
+                                    },
+                                    "required": ["tool", "query", "evidence"],
+                                    "additionalProperties": False,
+                                },
+                            },
+                            "reason": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 300,
+                            },
                         },
+                        "required": ["status", "needs", "reason"],
+                        "additionalProperties": False,
                     },
-                    "reason": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 300,
+                    "mcp": {
+                        "type": "object",
+                        "properties": {
+                            "servers": {
+                                "type": "array",
+                                "maxItems": 32,
+                                "items": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 100,
+                                },
+                            },
+                            "reason": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 300,
+                            },
+                        },
+                        "required": ["servers", "reason"],
+                        "additionalProperties": False,
+                    },
+                    "execution": {
+                        "type": "object",
+                        "properties": {
+                            "mode": {
+                                "type": "string",
+                                "enum": ["rest", "work"],
+                            },
+                            "outline": {
+                                "type": "array",
+                                "maxItems": 4,
+                                "items": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 300,
+                                },
+                            },
+                            "reason": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 300,
+                            },
+                        },
+                        "required": ["mode", "outline", "reason"],
+                        "additionalProperties": False,
                     },
                 },
-                "required": ["servers", "reason"],
+                "required": ["context", "mcp", "execution"],
                 "additionalProperties": False,
             },
             "uncertainty": {
@@ -329,7 +465,12 @@ HEARTBEAT_PLAN_TOOL_SPEC: dict[str, object] = {
                 "items": {"type": "string", "maxLength": 500},
             },
         },
-        "required": ["version", "activity", "mcp_route", "uncertainty"],
+        "required": [
+            "version",
+            "activity",
+            "heartbeat_handoff",
+            "uncertainty",
+        ],
         "additionalProperties": False,
     },
 }
@@ -400,7 +541,12 @@ def parse_context_plan(
         "episode_links",
         "uncertainty",
     }
-    if set(value) not in (expected, {*expected, "mcp_route"}):
+    allowed_shapes = (
+        ({*expected, "owner_handoff"},)
+        if version == 2
+        else (expected, {*expected, "owner_handoff"})
+    )
+    if set(value) not in allowed_shapes:
         raise ContextPlanError("invalid_top_level")
     if version not in {1, 2}:
         raise ContextPlanError("unsupported_version")
@@ -419,11 +565,14 @@ def parse_context_plan(
             "text",
             "intent",
             "references",
-            "recall_queries",
         }
-        if not isinstance(raw, dict) or set(raw) not in (
-            legacy_keys,
-            {*legacy_keys, "speech_act"},
+        allowed_unit_keys = {*legacy_keys, "speech_act"}
+        if version == 1:
+            allowed_unit_keys.add("recall_queries")
+        if (
+            not isinstance(raw, dict)
+            or not legacy_keys <= set(raw)
+            or set(raw) - allowed_unit_keys
         ):
             raise ContextPlanError("invalid_intent_unit")
         unit_id = _text(raw["id"], "unit_id", 40)
@@ -454,13 +603,6 @@ def parse_context_plan(
                     raw["references"],
                     "unit_references",
                     maximum=8,
-                    max_length=500,
-                ),
-                "recall_queries": _strings(
-                    raw["recall_queries"],
-                    "unit_recall_queries",
-                    minimum=0,
-                    maximum=2,
                     max_length=500,
                 ),
             }
@@ -727,9 +869,67 @@ def parse_context_plan(
         )
     for binding in bindings:
         binding.pop("_ref", None)
-    raw_mcp_route = value.get("mcp_route")
-    mcp_route: dict[str, object] | None = None
-    if raw_mcp_route is not None:
+    raw_handoff = value.get("owner_handoff")
+    owner_handoff: dict[str, object] | None = None
+    if raw_handoff is not None:
+        if not isinstance(raw_handoff, dict) or set(raw_handoff) != {
+            "context",
+            "mcp",
+            "execution",
+        }:
+            raise ContextPlanError("invalid_owner_handoff")
+        raw_context = raw_handoff["context"]
+        if not isinstance(raw_context, dict) or set(raw_context) != {
+            "status",
+            "needs",
+            "reason",
+        }:
+            raise ContextPlanError("invalid_context_handoff")
+        status = raw_context["status"]
+        raw_needs = raw_context["needs"]
+        if (
+            status not in {"sufficient", "lookup_required"}
+            or not isinstance(raw_needs, list)
+            or len(raw_needs) > 2
+            or (status == "sufficient" and raw_needs)
+            or (status == "lookup_required" and not raw_needs)
+        ):
+            raise ContextPlanError("invalid_context_handoff")
+        needs: list[dict[str, str]] = []
+        for raw_need in raw_needs:
+            if not isinstance(raw_need, dict) or set(raw_need) != {
+                "tool",
+                "query",
+                "evidence",
+            }:
+                raise ContextPlanError("invalid_context_need")
+            tool = raw_need["tool"]
+            evidence = raw_need["evidence"]
+            if tool not in {
+                "memory_search",
+                "conversation_search",
+                "conversation_read",
+                "thinking_search",
+                "thinking_read",
+            } or evidence not in {
+                "exact_wording",
+                "chronology",
+                "unresolved_reference",
+                "correction_evidence",
+                "past_reasoning",
+            }:
+                raise ContextPlanError("invalid_context_need")
+            if str(tool).startswith("thinking_") and evidence != "past_reasoning":
+                raise ContextPlanError("invalid_thinking_context_need")
+            needs.append(
+                {
+                    "tool": str(tool),
+                    "query": _text(raw_need["query"], "context_need_query", 300),
+                    "evidence": str(evidence),
+                }
+            )
+
+        raw_mcp_route = raw_handoff["mcp"]
         if not isinstance(raw_mcp_route, dict) or set(raw_mcp_route) != {
             "servers",
             "reason",
@@ -748,9 +948,44 @@ def parse_context_plan(
             and not set(servers) <= available_mcp_servers
         ):
             raise ContextPlanError("unknown_mcp_server")
-        mcp_route = {
+        mcp_route: dict[str, object] = {
             "servers": servers,
             "reason": _text(raw_mcp_route["reason"], "mcp_reason", 300),
+        }
+
+        raw_execution = raw_handoff["execution"]
+        if not isinstance(raw_execution, dict) or set(raw_execution) != {
+            "mode",
+            "outline",
+            "reason",
+        }:
+            raise ContextPlanError("invalid_execution_handoff")
+        mode = raw_execution["mode"]
+        if mode not in {"respond", "clarify", "work"}:
+            raise ContextPlanError("invalid_execution_handoff")
+        outline = _strings(
+            raw_execution["outline"],
+            "execution_outline",
+            minimum=1,
+            maximum=8,
+            max_length=300,
+        )
+        owner_handoff = {
+            "context": {
+                "status": status,
+                "needs": needs,
+                "reason": _text(raw_context["reason"], "context_reason", 300),
+            },
+            "mcp": mcp_route,
+            "execution": {
+                "mode": str(mode),
+                "outline": outline,
+                "reason": _text(
+                    raw_execution["reason"],
+                    "execution_reason",
+                    300,
+                ),
+            },
         }
     return {
         "version": version,
@@ -761,7 +996,7 @@ def parse_context_plan(
             else {"episode_bindings": bindings}
         ),
         "episode_links": links,
-        **({"mcp_route": mcp_route} if mcp_route is not None else {}),
+        **({"owner_handoff": owner_handoff} if owner_handoff is not None else {}),
         "uncertainty": _strings(
             value["uncertainty"],
             "uncertainty",
@@ -808,7 +1043,6 @@ def degraded_context_plan(
                 "intent": "degraded_message_segment",
                 "speech_act": "unknown",
                 "references": [],
-                "recall_queries": [],
             }
         )
     return {
@@ -837,57 +1071,149 @@ def parse_heartbeat_plan(
             raise ContextPlanError("invalid_json") from error
     if (
         not isinstance(value, dict)
-        or set(value) not in (
-            {"version", "activity", "uncertainty"},
-            {"version", "activity", "mcp_route", "uncertainty"},
-        )
-        or value.get("version") != 1
+        or set(value)
+        != {"version", "activity", "heartbeat_handoff", "uncertainty"}
+        or value.get("version") != 2
     ):
         raise ContextPlanError("invalid_heartbeat_plan")
     activity = value.get("activity")
     if (
         not isinstance(activity, dict)
-        or set(activity) != {"intent", "reason", "recall_queries"}
+        or set(activity) != {"intent", "reason"}
     ):
         raise ContextPlanError("invalid_heartbeat_activity")
-    raw_mcp_route = value.get("mcp_route")
-    mcp_route: dict[str, object] | None = None
-    if raw_mcp_route is not None:
-        if not isinstance(raw_mcp_route, dict) or set(raw_mcp_route) != {
-            "servers",
-            "reason",
+    raw_handoff = value.get("heartbeat_handoff")
+    if not isinstance(raw_handoff, dict) or set(raw_handoff) != {
+        "context",
+        "mcp",
+        "execution",
+    }:
+        raise ContextPlanError("invalid_heartbeat_handoff")
+
+    raw_context = raw_handoff["context"]
+    if not isinstance(raw_context, dict) or set(raw_context) != {
+        "status",
+        "needs",
+        "reason",
+    }:
+        raise ContextPlanError("invalid_heartbeat_context")
+    status = raw_context["status"]
+    raw_needs = raw_context["needs"]
+    if (
+        status not in {"sufficient", "lookup_required"}
+        or not isinstance(raw_needs, list)
+        or len(raw_needs) > 2
+        or (status == "sufficient" and raw_needs)
+        or (status == "lookup_required" and not raw_needs)
+    ):
+        raise ContextPlanError("invalid_heartbeat_context")
+    needs: list[dict[str, str]] = []
+    for raw_need in raw_needs:
+        if not isinstance(raw_need, dict) or set(raw_need) != {
+            "tool",
+            "query",
+            "evidence",
         }:
-            raise ContextPlanError("invalid_mcp_route")
-        servers = _strings(
-            raw_mcp_route["servers"],
-            "mcp_servers",
-            maximum=32,
-            max_length=100,
+            raise ContextPlanError("invalid_heartbeat_context_need")
+        tool = raw_need["tool"]
+        evidence = raw_need["evidence"]
+        if tool not in {
+            "memory_search",
+            "conversation_search",
+            "conversation_read",
+        } or evidence not in {
+            "exact_wording",
+            "chronology",
+            "unresolved_reference",
+            "correction_evidence",
+            "relevant_history",
+        }:
+            raise ContextPlanError("invalid_heartbeat_context_need")
+        needs.append(
+            {
+                "tool": str(tool),
+                "query": _text(
+                    raw_need["query"],
+                    "heartbeat_context_need_query",
+                    300,
+                ),
+                "evidence": str(evidence),
+            }
         )
-        if len(set(servers)) != len(servers):
-            raise ContextPlanError("duplicate_mcp_server")
-        if (
-            available_mcp_servers is not None
-            and not set(servers) <= available_mcp_servers
-        ):
-            raise ContextPlanError("unknown_mcp_server")
-        mcp_route = {
-            "servers": servers,
-            "reason": _text(raw_mcp_route["reason"], "mcp_reason", 300),
-        }
+
+    raw_mcp_route = raw_handoff["mcp"]
+    if not isinstance(raw_mcp_route, dict) or set(raw_mcp_route) != {
+        "servers",
+        "reason",
+    }:
+        raise ContextPlanError("invalid_mcp_route")
+    servers = _strings(
+        raw_mcp_route["servers"],
+        "mcp_servers",
+        maximum=32,
+        max_length=100,
+    )
+    if len(set(servers)) != len(servers):
+        raise ContextPlanError("duplicate_mcp_server")
+    if (
+        available_mcp_servers is not None
+        and not set(servers) <= available_mcp_servers
+    ):
+        raise ContextPlanError("unknown_mcp_server")
+    mcp_route = {
+        "servers": servers,
+        "reason": _text(raw_mcp_route["reason"], "mcp_reason", 300),
+    }
+
+    raw_execution = raw_handoff["execution"]
+    if not isinstance(raw_execution, dict) or set(raw_execution) != {
+        "mode",
+        "outline",
+        "reason",
+    }:
+        raise ContextPlanError("invalid_heartbeat_execution")
+    mode = raw_execution["mode"]
+    if mode not in {"rest", "work"}:
+        raise ContextPlanError("invalid_heartbeat_execution")
+    outline = _strings(
+        raw_execution["outline"],
+        "heartbeat_execution_outline",
+        maximum=4,
+        max_length=300,
+    )
+    if (
+        mode == "rest"
+        and (outline or status != "sufficient" or needs or servers)
+    ) or (mode == "work" and not outline):
+        raise ContextPlanError("invalid_heartbeat_execution")
+
     return {
-        "version": 1,
+        "version": 2,
         "activity": {
             "intent": _text(activity["intent"], "heartbeat_intent", 300),
             "reason": _text(activity["reason"], "heartbeat_reason", 300),
-            "recall_queries": _strings(
-                activity["recall_queries"],
-                "heartbeat_recall_queries",
-                maximum=2,
-                max_length=500,
-            ),
         },
-        **({"mcp_route": mcp_route} if mcp_route is not None else {}),
+        "heartbeat_handoff": {
+            "context": {
+                "status": status,
+                "needs": needs,
+                "reason": _text(
+                    raw_context["reason"],
+                    "heartbeat_context_reason",
+                    300,
+                ),
+            },
+            "mcp": mcp_route,
+            "execution": {
+                "mode": str(mode),
+                "outline": outline,
+                "reason": _text(
+                    raw_execution["reason"],
+                    "heartbeat_execution_reason",
+                    300,
+                ),
+            },
+        },
         "uncertainty": _strings(
             value["uncertainty"],
             "heartbeat_uncertainty",
@@ -899,18 +1225,35 @@ def parse_heartbeat_plan(
 
 def degraded_heartbeat_plan(activity: str, reason: str) -> dict[str, object]:
     return {
-        "version": 1,
+        "version": 2,
         "activity": {
             "intent": activity.strip() or "spend time freely",
             "reason": f"Heartbeat planner failed ({reason}); continue current activity.",
-            "recall_queries": [],
         },
-        "mcp_route": {
-            "servers": [],
-            "reason": (
-                f"Heartbeat planner failed ({reason}); no external MCP server "
-                "is preloaded."
-            ),
+        "heartbeat_handoff": {
+            "context": {
+                "status": "sufficient",
+                "needs": [],
+                "reason": (
+                    f"Heartbeat planner failed ({reason}); no historical lookup "
+                    "is assumed."
+                ),
+            },
+            "mcp": {
+                "servers": [],
+                "reason": (
+                    f"Heartbeat planner failed ({reason}); no external MCP server "
+                    "is preloaded."
+                ),
+            },
+            "execution": {
+                "mode": "rest",
+                "outline": [],
+                "reason": (
+                    f"Heartbeat planner failed ({reason}); preserve the current "
+                    "state without manufacturing work."
+                ),
+            },
         },
         "uncertainty": [f"Heartbeat planner protocol failed: {reason}"],
     }

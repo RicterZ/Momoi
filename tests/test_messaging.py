@@ -480,6 +480,22 @@ class MessagingTest(unittest.TestCase):
         self.assertEqual(scheduled.reply_expectation, "主人晚上的安排")
         self.assertEqual(scheduled.reply_wait_delay_minutes, 7)
         self.assertIn("一起玩", scheduled.reply_wait_reason)
+        adjusted, error = MomoiDaemon._parse_response(
+            {
+                "reply_wait": {"wait": False},
+                "plan_adjustment": {
+                    "reason": "工具结果推翻了旧引用",
+                    "corrected_direction": "改为处理当前Goal",
+                    "resolved_context_needs": ["conversation_search"],
+                },
+                "mood": {"decision": "unchanged"},
+            }
+        )
+        self.assertIsNone(error)
+        self.assertEqual(
+            adjusted.plan_adjustment["corrected_direction"],
+            "改为处理当前Goal",
+        )
         invalid_schedule, error = MomoiDaemon._parse_response(
             {
                 "reply_wait": {

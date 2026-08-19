@@ -8,6 +8,7 @@ from momoi.channel.napcat import NapCatConfig
 from momoi.config import AppConfig, LLMConfig
 from momoi.models import AgentReply, IncomingMessage, MemoryCandidate, TurnDraft
 from momoi.runtime.context_assembler import (
+    _planner_final,
     _search_or,
     assemble_main_context,
     assemble_planner_recent_turns,
@@ -73,6 +74,17 @@ def plan(query: str, episode_id: str = "episode-mail") -> dict[str, object]:
 
 
 class ContextAssemblerTest(unittest.TestCase):
+    def test_planner_projection_preserves_owner_plan_adjustment(self) -> None:
+        adjustment = {
+            "reason": "工具证据推翻旧引用",
+            "corrected_direction": "改为处理当前任务",
+            "resolved_context_needs": ["conversation_search"],
+        }
+        self.assertEqual(
+            _planner_final({"plan_adjustment": adjustment}),
+            {"plan_adjustment": adjustment},
+        )
+
     def test_planner_recent_turns_use_six_plus_six_cache_blocks(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
@@ -661,7 +673,7 @@ class ContextAssemblerTest(unittest.TestCase):
             self.assertEqual(disabled["episodes"], [])
             store.close()
 
-    def test_recent_and_keyword_episode_is_injected_once(self) -> None:
+    def test_recent_episode_is_injected_without_keyword_search(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
             now = time.time()
@@ -694,12 +706,12 @@ class ContextAssemblerTest(unittest.TestCase):
                 retrieval["episodes"][0]["episode_id"], "episode-mail"
             )
             self.assertEqual(
-                retrieval["episodes"][0]["relation"], "recent_recalled"
+                retrieval["episodes"][0]["relation"], "recent"
             )
-            self.assertEqual(retrieval["episodes"][0]["unit_ids"], ["mail"])
+            self.assertEqual(retrieval["episodes"][0]["unit_ids"], [])
             store.close()
 
-    def test_keyword_recall_is_capped_at_twelve_before_recent_merge(self) -> None:
+    def test_old_keyword_episodes_are_not_automatically_recalled(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
             now = time.time()
@@ -736,17 +748,10 @@ class ContextAssemblerTest(unittest.TestCase):
                 ),
             )
 
-            self.assertEqual(len(retrieval["episodes"]), 12)
-            self.assertNotIn(
-                "keyword-12",
-                {item["episode_id"] for item in retrieval["episodes"]},
-            )
-            self.assertTrue(
-                all(item["relation"] == "recalled" for item in retrieval["episodes"])
-            )
+            self.assertEqual(retrieval["episodes"], [])
             store.close()
 
-    def test_episode_merge_order_prefers_recent_multi_then_keyword_hits_then_recent(
+    def test_episode_baseline_contains_recent_episodes_only(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -791,16 +796,14 @@ class ContextAssemblerTest(unittest.TestCase):
             self.assertEqual(
                 [item["episode_id"] for item in retrieval["episodes"]],
                 [
-                    "recent-multi",
-                    "old-multi",
-                    "recent-single",
-                    "old-single",
                     "recent-only",
+                    "recent-single",
+                    "recent-multi",
                 ],
             )
             self.assertEqual(
                 [item["keyword_match_count"] for item in retrieval["episodes"]],
-                [2, 2, 1, 1, 0],
+                [0, 0, 0],
             )
             store.close()
 
@@ -1269,24 +1272,22 @@ class ContextAssemblerTest(unittest.TestCase):
             )
             assembled = assemble_main_context(store, retrieval, 2000, 2000)
 
+            self.assertEqual(retrieval["confirmed_memories"], [])
             self.assertEqual(
-                [item["key"] for item in retrieval["confirmed_memories"]],
-                ["project.mail.waiting"],
+                [item["id"] for item in retrieval["goals"]],
+                ["goal-mail", "goal-social"],
             )
-            self.assertEqual([item["id"] for item in retrieval["goals"]], ["goal-mail"])
             self.assertEqual(
                 [item["id"] for item in retrieval["reminders"]],
-                ["reminder-mail"],
+                ["reminder-mail", "reminder-social"],
             )
             rendered = "\n".join(assembled.values())
-            self.assertNotIn("项目邮件还没到", rendered)
             self.assertNotIn("较早的项目邮件仍在等待", rendered)
-            self.assertIn("项目邮件关系到当前合作", rendered)
-            self.assertIn("项目邮件已经到达", rendered)
+            self.assertNotIn("项目邮件关系到当前合作", rendered)
+            self.assertNotIn("项目邮件已经到达", rendered)
             self.assertIn("goal-mail", rendered)
-            self.assertNotIn("微博上有只猫", rendered)
-            self.assertNotIn("goal-social", rendered)
-            self.assertNotIn("reminder-social", rendered)
+            self.assertIn("goal-social", rendered)
+            self.assertIn("reminder-social", rendered)
             autonomous = recall_episode_context(store, "项目邮件", 3, 2000, 2000)
             self.assertNotIn("较早的项目邮件仍在等待", autonomous)
             self.assertIn("summary_quality: empty", autonomous)
@@ -1298,7 +1299,7 @@ class ContextAssemblerTest(unittest.TestCase):
             )
             store.close()
 
-    def test_memory_budget_round_robins_across_intent_units(self) -> None:
+    def test_context_plan_no_longer_executes_memory_keywords(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
             now = time.time()
@@ -1354,10 +1355,5 @@ class ContextAssemblerTest(unittest.TestCase):
             retrieval = build_plan_retrieval(
                 store, split_plan, config(directory, memory_results=2)
             )
-            memories = retrieval["confirmed_memories"]
-            self.assertEqual(len(memories), 4)
-            self.assertEqual(
-                {unit for item in memories for unit in item["unit_ids"]},
-                {"mail", "social", "weather", "music"},
-            )
+            self.assertEqual(retrieval["confirmed_memories"], [])
             store.close()

@@ -13,13 +13,18 @@ from momoi.runtime.context_assembler import build_plan_retrieval
 from momoi.runtime.context_planner import (
     CONTEXT_PLAN_TOOL_NAME,
     CONTEXT_PLAN_TOOL_SPEC,
+    HEARTBEAT_PLAN_TOOL_SPEC,
     ContextPlanError,
     degraded_heartbeat_plan,
     degraded_context_plan,
     parse_heartbeat_plan,
     parse_context_plan,
 )
-from momoi.runtime.turns import CONTEXT_PLANNER_SYSTEM_PROMPT
+from momoi.runtime.turns import (
+    CONTEXT_PLANNER_SYSTEM_PROMPT,
+    HEARTBEAT_PLANNER_SYSTEM_PROMPT,
+)
+from momoi.runtime.turn_support import conversation_guidance
 
 
 def app_config(directory: str) -> AppConfig:
@@ -47,7 +52,6 @@ def response_plan() -> dict[str, object]:
                 "intent": "browse social feed",
                 "speech_act": "casual_share",
                 "references": [],
-                "recall_queries": [],
             },
             {
                 "id": "mail",
@@ -56,7 +60,6 @@ def response_plan() -> dict[str, object]:
                 "intent": "check mail",
                 "speech_act": "request",
                 "references": ["之前等的邮件"],
-                "recall_queries": ["pending expected email thread"],
             },
         ],
         "episode_actions": [
@@ -88,6 +91,19 @@ def response_plan() -> dict[str, object]:
                 "kind": "references",
             }
         ],
+        "owner_handoff": {
+            "context": {
+                "status": "sufficient",
+                "needs": [],
+                "reason": "当前上下文足够",
+            },
+            "mcp": {"servers": [], "reason": "不需要外部服务"},
+            "execution": {
+                "mode": "work",
+                "outline": ["处理主人当前请求"],
+                "reason": "按当前意图执行",
+            },
+        },
         "uncertainty": [],
     }
 
@@ -119,37 +135,79 @@ def legacy_response_plan() -> dict[str, object]:
 
 class ContextPlannerTest(unittest.TestCase):
     def test_heartbeat_plan_parser_and_degraded_fallback(self) -> None:
+        schema = HEARTBEAT_PLAN_TOOL_SPEC["input_schema"]
+        self.assertEqual(
+            schema["required"],
+            ["version", "activity", "heartbeat_handoff", "uncertainty"],
+        )
+        self.assertNotIn(
+            "recall_queries",
+            schema["properties"]["activity"]["properties"],
+        )
+        self.assertNotIn("recall_queries", HEARTBEAT_PLANNER_SYSTEM_PROMPT)
         plan = parse_heartbeat_plan(
             {
-                "version": 1,
+                "version": 2,
                 "activity": {
                     "intent": "浏览微博关注流",
                     "reason": "看看最近感兴趣的动态",
-                    "recall_queries": ["微博登录错误报告规则"],
                 },
-                "mcp_route": {
-                    "servers": ["weibo"],
-                    "reason": "计划浏览微博关注流",
+                "heartbeat_handoff": {
+                    "context": {
+                        "status": "lookup_required",
+                        "needs": [
+                            {
+                                "tool": "memory_search",
+                                "query": "微博登录错误报告规则",
+                                "evidence": "relevant_history",
+                            }
+                        ],
+                        "reason": "执行活动需要已知规则",
+                    },
+                    "mcp": {
+                        "servers": ["weibo"],
+                        "reason": "计划浏览微博关注流",
+                    },
+                    "execution": {
+                        "mode": "work",
+                        "outline": ["查询已知规则", "浏览关注流", "核对结果"],
+                        "reason": "需要实际执行浏览活动",
+                    },
                 },
                 "uncertainty": [],
             },
             {"weibo", "gog"},
         )
-        self.assertEqual(plan["activity"]["recall_queries"], ["微博登录错误报告规则"])
-        self.assertEqual(plan["mcp_route"]["servers"], ["weibo"])
-        with self.assertRaisesRegex(ContextPlanError, "invalid_heartbeat_activity"):
+        self.assertEqual(
+            plan["heartbeat_handoff"]["context"]["needs"][0]["query"],
+            "微博登录错误报告规则",
+        )
+        self.assertEqual(
+            plan["heartbeat_handoff"]["mcp"]["servers"], ["weibo"]
+        )
+        with self.assertRaisesRegex(ContextPlanError, "invalid_heartbeat_plan"):
             parse_heartbeat_plan(
                 {"version": 1, "activity": {}, "uncertainty": []}
             )
         degraded = degraded_heartbeat_plan("", "invalid_json")
-        self.assertEqual(degraded["activity"]["recall_queries"], [])
         self.assertEqual(degraded["activity"]["intent"], "spend time freely")
-        self.assertEqual(degraded["mcp_route"]["servers"], [])
+        self.assertEqual(
+            degraded["heartbeat_handoff"]["execution"]["mode"], "rest"
+        )
+        self.assertEqual(
+            degraded["heartbeat_handoff"]["mcp"]["servers"], []
+        )
+        invalid_rest = json.loads(json.dumps(degraded, ensure_ascii=False))
+        invalid_rest["heartbeat_handoff"]["execution"]["outline"] = ["偷偷工作"]
+        with self.assertRaisesRegex(
+            ContextPlanError, "invalid_heartbeat_execution"
+        ):
+            parse_heartbeat_plan(invalid_rest)
 
     def test_context_plan_shape_lives_in_tool_schema(self) -> None:
         self.assertIn(CONTEXT_PLAN_TOOL_NAME, CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertNotIn('"intent_units"', CONTEXT_PLANNER_SYSTEM_PROMPT)
-        self.assertIn("structured return", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn("return shape", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertNotIn("converse, call tools", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertNotIn("1-12", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertNotIn("0-6", CONTEXT_PLANNER_SYSTEM_PROMPT)
@@ -162,7 +220,7 @@ class ContextPlannerTest(unittest.TestCase):
                 "intent_units",
                 "episode_actions",
                 "episode_links",
-                "mcp_route",
+                "owner_handoff",
                 "uncertainty",
             ],
         )
@@ -174,9 +232,21 @@ class ContextPlannerTest(unittest.TestCase):
 
     def test_context_plan_selects_only_available_mcp_servers(self) -> None:
         plan = response_plan()
-        plan["mcp_route"] = {
-            "servers": ["gog"],
-            "reason": "主人明确要求检查邮件",
+        plan["owner_handoff"] = {
+            "context": {
+                "status": "sufficient",
+                "needs": [],
+                "reason": "当前上下文足够",
+            },
+            "mcp": {
+                "servers": ["gog"],
+                "reason": "主人明确要求检查邮件",
+            },
+            "execution": {
+                "mode": "work",
+                "outline": ["搜索邮件", "核对结果", "回复老师"],
+                "reason": "需要完成邮件检查",
+            },
         }
         parsed = parse_context_plan(
             plan,
@@ -186,10 +256,12 @@ class ContextPlannerTest(unittest.TestCase):
             1,
             {"homeassistant", "gog"},
         )
-        self.assertEqual(parsed["mcp_route"]["servers"], ["gog"])
-        self.assertIn("邮件", parsed["mcp_route"]["reason"])
+        self.assertEqual(
+            parsed["owner_handoff"]["mcp"]["servers"], ["gog"]
+        )
+        self.assertIn("邮件", parsed["owner_handoff"]["mcp"]["reason"])
 
-        plan["mcp_route"]["servers"] = ["missing"]
+        plan["owner_handoff"]["mcp"]["servers"] = ["missing"]
         with self.assertRaisesRegex(ContextPlanError, "unknown_mcp_server"):
             parse_context_plan(
                 plan,
@@ -200,6 +272,36 @@ class ContextPlannerTest(unittest.TestCase):
                 {"homeassistant", "gog"},
             )
 
+        plan["owner_handoff"]["mcp"]["servers"] = []
+        plan["owner_handoff"]["context"] = {
+            "status": "lookup_required",
+            "needs": [
+                {
+                    "tool": "conversation_search",
+                    "query": "老师之前对晚餐的原话",
+                    "evidence": "exact_wording",
+                }
+            ],
+            "reason": "摘要不足以证明精确原话",
+        }
+        parsed = parse_context_plan(
+            plan,
+            ["event-1"],
+            [],
+            "turn-1",
+            1,
+            {"gog"},
+        )
+        self.assertEqual(
+            parsed["owner_handoff"]["context"]["needs"][0]["tool"],
+            "conversation_search",
+        )
+        guidance = json.loads(conversation_guidance(parsed))
+        self.assertEqual(
+            guidance["owner_handoff"]["context"]["status"],
+            "lookup_required",
+        )
+
     def test_standalone_media_guidance_limits_semantic_inference(self) -> None:
         self.assertIn("low-information social cue", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertIn("Do not invent an agenda", CONTEXT_PLANNER_SYSTEM_PROMPT)
@@ -207,52 +309,42 @@ class ContextPlannerTest(unittest.TestCase):
     def test_planner_guidance_preserves_capability_while_discouraging_noise(
         self,
     ) -> None:
-        self.assertIn(
-            "Default to one intent unit per semantic goal",
-            CONTEXT_PLANNER_SYSTEM_PROMPT,
-        )
-        self.assertIn(
-            "Recent Turns are the first source of continuity",
-            CONTEXT_PLANNER_SYSTEM_PROMPT,
-        )
+        self.assertIn("## Planning process", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn("Assess whether supplied Recent Turns", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertIn("active_recent_turn_ids", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertIn(
             "interrupted_reply_expectation", CONTEXT_PLANNER_SYSTEM_PROMPT
         )
         self.assertIn(
-            "their presence alone is not a reason to",
+            "older Turns are used only for",
             CONTEXT_PLANNER_SYSTEM_PROMPT,
         )
-        self.assertIn("omitted `kind` means `owner`", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn("omitted `kind` means owner", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertIn(
             "omitted message `delivery` means", CONTEXT_PLANNER_SYSTEM_PROMPT
         )
         self.assertIn("intent_indexes", CONTEXT_PLANNER_SYSTEM_PROMPT)
-        self.assertIn("structured `truncated` preview", CONTEXT_PLANNER_SYSTEM_PROMPT)
-        self.assertIn("compact final state", CONTEXT_PLANNER_SYSTEM_PROMPT)
-        self.assertIn("tool calls, results", CONTEXT_PLANNER_SYSTEM_PROMPT)
-        self.assertIn(
-            "correction may invalidate an older persisted fact",
-            CONTEXT_PLANNER_SYSTEM_PROMPT,
-        )
-        self.assertIn("queued`, `failed`, and", CONTEXT_PLANNER_SYSTEM_PROMPT)
-        self.assertIn("causal completeness", CONTEXT_PLANNER_SYSTEM_PROMPT)
-        self.assertIn(
-            "only for genuinely independent evidence needs",
-            CONTEXT_PLANNER_SYSTEM_PROMPT,
-        )
-        self.assertIn("`|`-separated OR expression", CONTEXT_PLANNER_SYSTEM_PROMPT)
-        self.assertIn("people, events, places, preferences", CONTEXT_PLANNER_SYSTEM_PROMPT)
-        self.assertIn("any other topic", CONTEXT_PLANNER_SYSTEM_PROMPT)
-        self.assertIn("Do not include file paths", CONTEXT_PLANNER_SYSTEM_PROMPT)
-        self.assertIn(
-            "could change the reply, recall target, or Episode action",
-            CONTEXT_PLANNER_SYSTEM_PROMPT,
-        )
+        self.assertIn("`truncated` background result", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn("State-changing tools use compact", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn("context.needs", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn("conversation_search", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn("thinking_search", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn("advisory evidence/action outline", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertNotIn("recall_queries", CONTEXT_PLANNER_SYSTEM_PROMPT)
         schema = CONTEXT_PLAN_TOOL_SPEC["input_schema"]  # type: ignore[assignment]
         unit = schema["properties"]["intent_units"]["items"]  # type: ignore[index]
-        self.assertEqual(unit["properties"]["recall_queries"]["maxItems"], 2)
+        self.assertNotIn("recall_queries", unit["properties"])
         self.assertEqual(schema["properties"]["uncertainty"]["maxItems"], 4)  # type: ignore[index]
+        legacy_keyword_plan = response_plan()
+        legacy_keyword_plan["intent_units"][0]["recall_queries"] = ["旧关键词"]
+        with self.assertRaisesRegex(ContextPlanError, "invalid_intent_unit"):
+            parse_context_plan(
+                legacy_keyword_plan,
+                ["event-1"],
+                [],
+                "turn-1",
+                1,
+            )
 
     def test_parser_requires_event_coverage_and_normalizes_episode_refs(self) -> None:
         plan = response_plan()
@@ -418,7 +510,7 @@ class ContextPlannerTest(unittest.TestCase):
         plan = response_plan()
         plan["episode_actions"][0]["open_loops"] = ["饭后再弄"]
         parsed = parse_context_plan(json.dumps(plan), ["event-1"], [], "turn-1", 1)
-        self.assertEqual(parsed["intent_units"][0]["recall_queries"], [])
+        self.assertNotIn("recall_queries", parsed["intent_units"][0])
         self.assertEqual(parsed["episode_actions"][0]["open_loops"], ["饭后再弄"])
 
     def test_bound_episode_does_not_inject_history_or_remove_tools(
@@ -494,7 +586,19 @@ class ContextPlannerTest(unittest.TestCase):
             )
             routed = {
                 **plan,
-                "mcp_route": {"servers": [], "reason": "不需要外部服务"},
+                "owner_handoff": {
+                    "context": {
+                        "status": "sufficient",
+                        "needs": [],
+                        "reason": "上下文足够",
+                    },
+                    "mcp": {"servers": [], "reason": "不需要外部服务"},
+                    "execution": {
+                        "mode": "respond",
+                        "outline": ["回复老师"],
+                        "reason": "普通回应",
+                    },
+                },
             }
             self.assertEqual(
                 [spec["name"] for spec in daemon._owner_tool_specs(routed)],
@@ -874,7 +978,7 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                     self.assertIn("<recent_turns>", text)
                     self.assertIn('"speech_act":"casual_share"', text)
                     self.assertNotIn("<context_plan>", text)
-                    self.assertNotIn("browse social feed", text)
+                    self.assertIn("browse social feed", text)
                     self.assertNotIn("episode_bindings", text)
                     self.assertNotIn('"salience"', text)
                     self.assertIn("RECENT CONTEXT 2", text)
@@ -960,7 +1064,7 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                         )
                     else:
                         text = str(content)
-                    self.assertNotIn("degraded_message_segment", text)
+                    self.assertIn("degraded_message_segment", text)
                     self.assertIn("<context_resolution>", text)
                     self.assertIn("without automatic historical recall", text)
                     call = ToolCall(
