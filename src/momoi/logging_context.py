@@ -128,12 +128,6 @@ _EVENT_GROUPS = {
     "reflection_queued": "AGENDA",
     "reminder_fired": "AGENDA",
     "prompt_reload_failed": "SERVICE",
-    "recall_index_compaction_complete": "STORAGE",
-    "recall_index_compaction_failure": "STORAGE",
-    "recall_index_compaction_start": "STORAGE",
-    "recall_index_migration_complete": "STORAGE",
-    "recall_index_migration_failure": "STORAGE",
-    "recall_index_migration_start": "STORAGE",
 }
 def new_trace_id() -> str:
     return uuid.uuid4().hex[:16]

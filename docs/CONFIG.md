@@ -193,7 +193,7 @@ Momoi can run multiple Channel plugins at once. They share one conversation, mem
 }
 ```
 
-`primary` must name an entry in `enabled`. A disconnected channel keeps its own messages queued without blocking the others, and Momoi never silently reroutes a message across platforms. The legacy single `channel.plugin/settings` form remains supported as one primary channel.
+`primary` must name an entry in `enabled`. A disconnected channel keeps its own messages queued without blocking the others, and Momoi never silently reroutes a message across platforms.
 
 `napcat` names this third-party adapter. A future official QQ AI Bot adapter will use a distinct `qq` plugin name.
 
@@ -480,8 +480,6 @@ A heartbeat may use explicitly allowed read-only tools, search memory, create fi
 Send `/heartbeat` in the private owner chat to trigger one evaluation immediately, even when automatic heartbeat scheduling is disabled. A command received while another heartbeat is queued or running is deduplicated.
 
 When `respond` creates a reply wait, Momoi chooses one deadline from 1–10 minutes, the information expected from the owner, and the private reason a follow-up is warranted. The clock starts only after the last visible message is delivered. The source Turn still completes transactionally, but its Episode consolidation and annealing remain deferred while the expectation is active. An owner message before the deadline atomically cancels the timer and supplies the expectation and reason to that Owner Turn as context. If the deadline expires first, the runtime triggers exactly one mandatory follow-up; it does not ask the model whether to remain silent or check again. The follow-up message is appended to the source Turn's conversation timeline, while its separate execution record is used only for retry, usage, and audit and does not advance Recent Turn counting. Reply attention has its own clock and never replaces the ordinary `next_heartbeat_at` rhythm.
-
-This mechanism does not decode the legacy plain-text `outbox.reply_expectation` format. Drain the outbox before upgrading from the older two-check reply-wait implementation.
 
 Owner Turns exclusively answer owner input. A heartbeat is deferred while owner events, an Owner Turn, or its outgoing reply are in flight. It records the owner-event revision it read and discards visible heartbeat output if the conversation changes before commit; internal heartbeat activity is still retained.
 

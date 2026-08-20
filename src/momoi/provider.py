@@ -262,14 +262,7 @@ def _record_response(
     return duration_ms, metrics
 
 
-def _anthropic_should_retry(error: Exception) -> bool:
-    return getattr(error, "_http_status", 0) >= 500 or isinstance(
-        error,
-        (ProviderResponseError, aiohttp.ClientError, asyncio.TimeoutError),
-    )
-
-
-def _openai_should_retry(error: Exception) -> bool:
+def _should_retry(error: Exception) -> bool:
     return getattr(error, "_http_status", 0) >= 500 or isinstance(
         error,
         (ProviderResponseError, aiohttp.ClientError, asyncio.TimeoutError),
@@ -637,7 +630,7 @@ class AnthropicProvider:
                 "thinking_effort": thinking_effort or None,
             },
             operation=request,
-            should_retry=_anthropic_should_retry,
+            should_retry=_should_retry,
         )
 
 
@@ -927,5 +920,5 @@ class OpenAIProvider:
                 "thinking_effort": thinking_effort or None,
             },
             operation=request,
-            should_retry=_openai_should_retry,
+            should_retry=_should_retry,
         )

@@ -72,7 +72,9 @@ class DaemonTest(unittest.TestCase):
         daemon.config = SimpleNamespace(
             system_prompt="{{SOUL}}\n{{CAPABILITY_POLICIES}}",
             soul_prompt="Test soul",
+            soul_prompt_path=None,
         )
+        daemon._loaded_workspace_prompts = {}
         daemon.mcp = SimpleNamespace(tool_specs=[])
         daemon.store = SimpleNamespace(emotion_context=lambda token_budget=4000: "")
 
@@ -131,7 +133,9 @@ class DaemonTest(unittest.TestCase):
         daemon.config = SimpleNamespace(
             system_prompt="You are Momoi.",
             soul_prompt="Soul",
+            soul_prompt_path=None,
         )
+        daemon._loaded_workspace_prompts = {}
         daemon.mcp = SimpleNamespace(tool_specs=[])
         daemon.store = SimpleNamespace(
             emotion_context=lambda token_budget=4000: "- slug=hello meaning=hi"
@@ -160,6 +164,7 @@ class DaemonTest(unittest.TestCase):
                 heartbeat_prompt="Old heartbeat",
                 heartbeat_prompt_path=heartbeat,
             )
+            daemon._loaded_workspace_prompts = {}
             daemon.mcp = SimpleNamespace(tool_specs=[])
             daemon.store = SimpleNamespace(emotion_context=lambda token_budget=4000: "")
 
@@ -218,7 +223,9 @@ class DaemonTest(unittest.TestCase):
         daemon.config = SimpleNamespace(
             system_prompt="{{STYLE_CARD}}",
             soul_prompt="Test soul",
+            soul_prompt_path=None,
         )
+        daemon._loaded_workspace_prompts = {}
         daemon.mcp = SimpleNamespace(tool_specs=[])
         daemon.store = SimpleNamespace(emotion_context=lambda token_budget=4000: "")
 

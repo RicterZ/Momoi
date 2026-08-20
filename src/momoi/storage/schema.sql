@@ -1,7 +1,3 @@
-CREATE TABLE IF NOT EXISTS schema_metadata (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL
-);
 CREATE TABLE IF NOT EXISTS events (
     id TEXT PRIMARY KEY,
     message_id TEXT NOT NULL,
@@ -24,6 +20,10 @@ CREATE TABLE IF NOT EXISTS messages (
         delivery_state IN ('internal', 'queued', 'delivered', 'uncertain', 'failed')
     )
 );
+CREATE INDEX IF NOT EXISTS messages_delivery
+    ON messages(delivery_state, outbox_id);
+CREATE UNIQUE INDEX IF NOT EXISTS messages_outbox
+    ON messages(outbox_id) WHERE outbox_id IS NOT NULL;
 CREATE TABLE IF NOT EXISTS outbox (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     turn_id TEXT NOT NULL,
@@ -87,6 +87,8 @@ CREATE TABLE IF NOT EXISTS memories (
 );
 CREATE INDEX IF NOT EXISTS memories_active
     ON memories(kind, key) WHERE superseded_by IS NULL;
+CREATE INDEX IF NOT EXISTS memories_activation
+    ON memories(activation, updated_at DESC) WHERE superseded_by IS NULL;
 CREATE TABLE IF NOT EXISTS memory_tombstones (
     kind TEXT NOT NULL,
     key TEXT NOT NULL,
@@ -285,6 +287,10 @@ CREATE TABLE IF NOT EXISTS episode_message_recall_terms (
     FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE,
     FOREIGN KEY (term_id) REFERENCES recall_terms(id) ON DELETE CASCADE
 ) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS episode_recall_terms_lookup
+    ON episode_recall_terms(term_id, episode_key);
+CREATE INDEX IF NOT EXISTS episode_message_recall_terms_lookup
+    ON episode_message_recall_terms(term_id, episode_key, message_id);
 CREATE TABLE IF NOT EXISTS episode_turns (
     episode_id TEXT NOT NULL,
     turn_id TEXT NOT NULL,

@@ -26,13 +26,6 @@ logger = logging.getLogger(__name__)
 
 
 class PromptRenderer:
-    def _workspace_prompt_state(self) -> dict[str, str]:
-        state = getattr(self, "_loaded_workspace_prompts", None)
-        if state is None:
-            state = {}
-            self._loaded_workspace_prompts = state
-        return state
-
     def _log_workspace_prompt(
         self,
         name: str,
@@ -42,10 +35,9 @@ class PromptRenderer:
         optional: bool,
     ) -> None:
         fingerprint = f"{path}\0{text}"
-        state = self._workspace_prompt_state()
-        if state.get(name) == fingerprint:
+        if self._loaded_workspace_prompts.get(name) == fingerprint:
             return
-        state[name] = fingerprint
+        self._loaded_workspace_prompts[name] = fingerprint
         fields = {
             "name": name,
             "path": str(path) if path is not None else "",
@@ -69,15 +61,15 @@ class PromptRenderer:
         )
 
     def _workspace_soul(self) -> str:
-        path = getattr(self.config, "soul_prompt_path", None)
-        fallback = str(getattr(self.config, "soul_prompt", "") or "")
+        path = self.config.soul_prompt_path
+        fallback = self.config.soul_prompt
         text = _live_prompt(path, fallback) if path is not None else fallback
         self._log_workspace_prompt("soul", path, text, optional=False)
         return text
 
     def _system(self) -> list[dict[str, Any]]:
         system_prompt = self.config.system_prompt
-        soul_path = getattr(self.config, "soul_prompt_path", None)
+        soul_path = self.config.soul_prompt_path
         if soul_path is not None:
             system_prompt = _live_prompt(SYSTEM_PROMPT_PATH, system_prompt)
         soul_prompt = self._workspace_soul()
@@ -133,11 +125,11 @@ class PromptRenderer:
         ]
 
     def _workspace_heartbeat_guidance(self, *, log: bool = True) -> str:
-        path = getattr(self.config, "heartbeat_prompt_path", None)
+        path = self.config.heartbeat_prompt_path
         text = (
             _live_prompt(path, "", optional=True)
             if path is not None
-            else str(getattr(self.config, "heartbeat_prompt", "") or "")
+            else self.config.heartbeat_prompt
         )
         if log:
             self._log_workspace_prompt("heartbeat", path, text, optional=True)

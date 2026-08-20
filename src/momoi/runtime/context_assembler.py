@@ -11,14 +11,7 @@ from ..storage import Store, estimate_tokens, truncate_tokens
 from .budget import SECTION_BUDGET_ALLOCATOR
 
 
-_LEGACY_OWNER_HEADER = "# Current owner messages\n"
 logger = logging.getLogger(__name__)
-
-
-def _historical_content(value: object) -> str:
-    """Remove the legacy owner wrapper before showing persisted history."""
-    text = str(value or "")
-    return text.removeprefix(_LEGACY_OWNER_HEADER)
 
 
 def _merge_matches(target: dict[str, object], source: dict[str, object]) -> None:
@@ -445,7 +438,7 @@ def assemble_recent_conversation(
         f"[{_message_role(message)} "
         f"timestamp={message.get('timestamp') or context_timestamp(message['created_at'])} "
         f"turn={message['turn_id']}] "
-        f"{_historical_content(message['content'])}"
+        f"{str(message['content'] or '')}"
         for message in recent_messages
     )
     return recent, {int(message["id"]) for message in recent_messages}
@@ -459,8 +452,8 @@ def assemble_compact_recent_conversation(
 ) -> str:
     """Render the latest shared Turns as compact continuity evidence.
 
-    Unlike the legacy message-by-message projection, this groups messages by
-    Turn and keeps one timestamp plus role-labelled lines. It is intentionally
+    This groups messages by Turn and keeps one timestamp plus role-labelled
+    lines. It is intentionally
     bounded because it is shared by Planner and Heartbeat inputs.
     """
     if turn_limit <= 0:
@@ -486,7 +479,7 @@ def assemble_compact_recent_conversation(
             role = "event"
         elif role not in {"user", "assistant"}:
             role = "message"
-        content = _historical_content(message.get("content"))
+        content = str(message.get("content") or "")
         lines.append(f"  {role}: {truncate_tokens(' '.join(content.split()), 220)}")
     if lines:
         blocks.append("\n".join(lines))
@@ -783,7 +776,7 @@ def _owner_history_line(item: dict[str, object], call_names: dict[str, str]) -> 
         }[item_type]
         delivery = str(item.get("delivery") or "")
         suffix = f" [{delivery}]" if delivery not in {"", "delivered"} else ""
-        return f"{role}{suffix}: {_historical_content(item.get('text'))}"
+        return f"{role}{suffix}: {str(item.get('text') or '')}"
     if item_type == "tool_call":
         call = _short_identifier(item.get("tool_call_id") or item.get("call"), prefix="c-")
         name = str(item.get("name") or "tool")
@@ -1398,7 +1391,7 @@ def render_planner_recent_turns(
                     "assistant_message": "momoi",
                     "event": "event",
                 }[item_type]
-                lines.append(f"  {role}: {_historical_content(item.get('text'))}")
+                lines.append(f"  {role}: {str(item.get('text') or '')}")
             elif item_type == "tool_call":
                 args = _owner_history_argument(
                     str(item.get("name") or "tool"), item.get("arguments")

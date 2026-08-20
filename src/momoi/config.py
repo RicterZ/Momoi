@@ -222,14 +222,6 @@ def _apply_env_overrides(raw: dict[str, Any]) -> None:
                 napcat["url"] = value
             if value := _env("MOMOI_OWNER_QQ"):
                 napcat["owner_qq"] = value
-    else:
-        channel = raw.get("channel")
-        settings = channel.get("settings") if isinstance(channel, dict) else None
-        if isinstance(settings, dict):
-            if value := _env("MOMOI_NAPCAT_URL"):
-                settings["url"] = value
-            if value := _env("MOMOI_OWNER_QQ"):
-                settings["owner_qq"] = value
 
     notifications = raw.setdefault("notifications", {})
     if isinstance(notifications, dict) and (value := _env("MOMOI_TIMEZONE")):
@@ -305,42 +297,27 @@ def load_config(path: str | Path) -> AppConfig:
             "llm.thinking.stages values must be low, high, or max"
         )
 
-    if "channel" in raw and "channels" in raw:
-        raise ConfigError("configure either channel or channels, not both")
     try:
-        if "channels" in raw:
-            channel_section = _mapping(raw.get("channels"), "channels")
-            primary_name = str(channel_section.get("primary") or "")
-            enabled = _mapping(channel_section.get("enabled"), "channels.enabled")
-            if not enabled:
-                raise ConfigError("channels.enabled must not be empty")
-            if primary_name not in enabled:
-                raise ConfigError("channels.primary must name an enabled channel")
-            channel_configs = tuple(
-                load_channel_config(
-                    str(name),
-                    _mapping(settings, f"channels.enabled.{name}"),
-                    config_path.parent,
-                )
-                for name, settings in enabled.items()
+        channel_section = _mapping(raw.get("channels"), "channels")
+        primary_name = str(channel_section.get("primary") or "")
+        enabled = _mapping(channel_section.get("enabled"), "channels.enabled")
+        if not enabled:
+            raise ConfigError("channels.enabled must not be empty")
+        if primary_name not in enabled:
+            raise ConfigError("channels.primary must name an enabled channel")
+        channel_configs = tuple(
+            load_channel_config(
+                str(name),
+                _mapping(settings, f"channels.enabled.{name}"),
+                config_path.parent,
             )
-            channel_config = next(
-                item
-                for item in channel_configs
-                if getattr(item, "plugin", "") == primary_name
-            )
-        else:
-            channel_section = _mapping(raw.get("channel"), "channel")
-            channel_name = str(channel_section.get("plugin") or "")
-            if not channel_name:
-                raise ConfigError("channel.plugin is required")
-            channel_settings = _mapping(
-                channel_section.get("settings"), "channel.settings"
-            )
-            channel_config = load_channel_config(
-                channel_name, channel_settings, config_path.parent
-            )
-            channel_configs = (channel_config,)
+            for name, settings in enabled.items()
+        )
+        channel_config = next(
+            item
+            for item in channel_configs
+            if getattr(item, "plugin", "") == primary_name
+        )
     except (TypeError, ValueError) as error:
         raise ConfigError(str(error)) from None
 

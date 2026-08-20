@@ -61,6 +61,7 @@ class MomoiDaemon(TurnRunner):
         asr_provider: ASRProvider | None = None,
     ) -> None:
         self.config = config
+        self._loaded_workspace_prompts: dict[str, str] = {}
         self.daemon_policy = config.policies.daemon
         self._artifact_root().mkdir(parents=True, exist_ok=True)
         self.store = Store(
@@ -122,8 +123,11 @@ class MomoiDaemon(TurnRunner):
         self.channels = {item.name: item for item in created}
         if len(self.channels) != len(created):
             raise ValueError("channel plugin names must be unique")
-        primary_name = str(getattr(config.channel, "plugin", ""))
-        self.channel = self.channels.get(primary_name) or created[0]
+        if channel is not None:
+            self.channel = channel
+        else:
+            primary_name = str(getattr(config.channel, "plugin", ""))
+            self.channel = self.channels[primary_name]
         dump_dir = config.workspace / "llm-dumps" if config.workspace else None
         self.provider = (
             OpenAIProvider(config.llm, dump_dir)

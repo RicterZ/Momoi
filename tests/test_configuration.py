@@ -29,6 +29,15 @@ from momoi.models import (
 from momoi.storage import Store
 
 
+def _napcat_channels() -> dict[str, object]:
+    return {
+        "primary": "napcat",
+        "enabled": {
+            "napcat": {"url": "ws://localhost", "owner_qq": "123"},
+        },
+    }
+
+
 class ConfigurationTest(unittest.TestCase):
     def test_loads_stage_specific_thinking_effort(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -49,10 +58,7 @@ class ConfigurationTest(unittest.TestCase):
                         },
                     },
                 },
-                "channel": {
-                    "plugin": "napcat",
-                    "settings": {"url": "ws://localhost", "owner_qq": "123"},
-                },
+                "channels": _napcat_channels(),
                 "context": {},
                 "storage": {"database": "momoi.sqlite3"},
                 "logging": {},
@@ -94,10 +100,7 @@ class ConfigurationTest(unittest.TestCase):
                     "api_key": "key",
                     "model": "model",
                 },
-                "channel": {
-                    "plugin": "napcat",
-                    "settings": {"url": "ws://localhost", "owner_qq": "123"},
-                },
+                "channels": _napcat_channels(),
                 "context": {},
                 "storage": {"database": "momoi.sqlite3"},
                 "logging": {},
@@ -181,12 +184,6 @@ class ConfigurationTest(unittest.TestCase):
             with self.assertRaisesRegex(ConfigError, "must name an enabled channel"):
                 load_config(path)
 
-            value["channels"]["primary"] = "napcat"  # type: ignore[index]
-            value["channel"] = {"plugin": "weixin", "settings": {}}
-            path.write_text(json.dumps(value))
-            with self.assertRaisesRegex(ConfigError, "either channel or channels"):
-                load_config(path)
-
     def test_recent_episode_hours_is_configurable_and_nonnegative(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -199,13 +196,7 @@ class ConfigurationTest(unittest.TestCase):
                     "api_key": "key",
                     "model": "model",
                 },
-                "channel": {
-                    "plugin": "napcat",
-                    "settings": {
-                        "url": "ws://localhost",
-                        "owner_qq": "123",
-                    },
-                },
+                "channels": _napcat_channels(),
                 "context": {"recent_episode_hours": 2.5},
                 "storage": {"database": "momoi.sqlite3"},
                 "logging": {},
@@ -238,7 +229,7 @@ class ConfigurationTest(unittest.TestCase):
             ):
                 load_config(path)
 
-    def test_loads_channel_plugin_configuration(self) -> None:
+    def test_loads_primary_channel_configuration(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "prompts").mkdir()
@@ -253,13 +244,7 @@ class ConfigurationTest(unittest.TestCase):
                             "api_key": "key",
                             "model": "model",
                         },
-                        "channel": {
-                            "plugin": "napcat",
-                            "settings": {
-                                "url": "ws://localhost",
-                                "owner_qq": "123",
-                            },
-                        },
+                        "channels": _napcat_channels(),
                         "context": {},
                         "autonomy": {
                             "allowed_tools": [
@@ -295,9 +280,9 @@ class ConfigurationTest(unittest.TestCase):
             self.assertEqual(load_config(path).heartbeat_prompt, "")
 
             legacy = json.loads(path.read_text())
-            legacy["napcat"] = legacy.pop("channel")["settings"]
+            legacy["napcat"] = legacy.pop("channels")["enabled"]["napcat"]
             path.write_text(json.dumps(legacy))
-            with self.assertRaisesRegex(ConfigError, "channel must be a table/object"):
+            with self.assertRaisesRegex(ConfigError, "channels must be a table/object"):
                 load_config(path)
 
     def test_loads_dashboard_token(self) -> None:
@@ -314,13 +299,7 @@ class ConfigurationTest(unittest.TestCase):
                             "api_key": "key",
                             "model": "model",
                         },
-                        "channel": {
-                            "plugin": "napcat",
-                            "settings": {
-                                "url": "ws://localhost",
-                                "owner_qq": "123",
-                            },
-                        },
+                        "channels": _napcat_channels(),
                         "dashboard": {"token": "dash-secret"},
                         "context": {},
                         "storage": {"database": "momoi.sqlite3"},
@@ -348,13 +327,7 @@ class ConfigurationTest(unittest.TestCase):
                             "api_key": "key",
                             "model": "model",
                         },
-                        "channel": {
-                            "plugin": "napcat",
-                            "settings": {
-                                "url": "ws://localhost",
-                                "owner_qq": "123",
-                            },
-                        },
+                        "channels": _napcat_channels(),
                         "usage": {
                             "provider": "momoi.extensions.deepseek.DeepSeekPlugin",
                             "api_key": "sk-usage",
@@ -472,13 +445,7 @@ class ConfigurationTest(unittest.TestCase):
                             "api_key": "key",
                             "model": "model",
                         },
-                        "channel": {
-                            "plugin": "napcat",
-                            "settings": {
-                                "url": "ws://localhost",
-                                "owner_qq": "123",
-                            },
-                        },
+                        "channels": _napcat_channels(),
                         "context": {},
                         "storage": {"database": "momoi.sqlite3"},
                         "logging": {},
@@ -500,10 +467,7 @@ class ConfigurationTest(unittest.TestCase):
             path = root / "config.json"
             config = {
                 "llm": {"base_url": "https://example.com", "api_key": "key", "model": "model"},
-                "channel": {
-                    "plugin": "napcat",
-                    "settings": {"url": "ws://localhost", "owner_qq": "123"},
-                },
+                "channels": _napcat_channels(),
                 "context": {},
                 "storage": {"database": "momoi.sqlite3"},
                 "logging": {},
@@ -524,7 +488,7 @@ class ConfigurationTest(unittest.TestCase):
             source.write_bytes(b"fake-image-content")
             database = root / "data" / "momoi.sqlite3"
             database.parent.mkdir()
-            fake_config = SimpleNamespace(database=database)
+            fake_config = SimpleNamespace(database=database, thinking=None)
 
             def run(command: str, slug: str | None = None) -> list[object]:
                 arguments = SimpleNamespace(
@@ -605,6 +569,7 @@ class ConfigurationTest(unittest.TestCase):
             database = root / "momoi.sqlite3"
             config = SimpleNamespace(
                 database=database,
+                thinking=None,
                 notifications=NotificationConfig(timezone="Asia/Shanghai"),
             )
 

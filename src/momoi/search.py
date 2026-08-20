@@ -44,27 +44,12 @@ class StringSearchBackend:
         )
 
 
-class IndexableSearchDocument(Protocol):
-    """Stable identity contract for cacheable or externally indexed documents."""
-
-    @property
-    def search_id(self) -> str: ...
-
-    @property
-    def search_revision(self) -> str: ...
-
-
-DocumentT = TypeVar("DocumentT", bound=IndexableSearchDocument)
+DocumentT = TypeVar("DocumentT")
 HitT = TypeVar("HitT")
 
 
 class RankedSearchBackend(Protocol[DocumentT, HitT]):
-    """Rank documents for one intact query alternative.
-
-    The baseline implementation may scan the supplied documents. A future
-    indexed backend may use ``search_id`` and ``search_revision`` to synchronize
-    or cache its own representation without changing callers.
-    """
+    """Rank documents for one intact query alternative."""
 
     def search_one(
         self,

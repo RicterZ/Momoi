@@ -188,81 +188,77 @@ class TurnRunner(
         candidate: dict[str, object] | None = None,
         max_seconds: float | None = None,
     ) -> bool:
-        for anneal_round in range(1, 2):
-            candidate = candidate or self.store.claim_episode_annealing_candidate(
-                self.config.recent_turns, self.config.recent_raw_tokens
+        candidate = candidate or self.store.claim_episode_annealing_candidate(
+            self.config.recent_turns, self.config.recent_raw_tokens
+        )
+        if candidate is None:
+            return False
+        episode = candidate["episode"]
+        episode_id = str(episode["id"])
+        user_prompt = render_episode_annealing_request(
+            episode, candidate["messages"]
+        )
+        request = [{"role": "user", "content": user_prompt}]
+        try:
+            call_id = new_trace_id()
+            with log_context(
+                stage="episode_anneal",
+                turn_id=turn_id,
+                call_id=call_id,
+                episode_id=episode_id,
+            ):
+                completion = self.provider.complete(
+                    EPISODE_SUMMARY_SYSTEM_PROMPT, request, []
+                )
+                response = (
+                    await asyncio.wait_for(completion, timeout=max_seconds)
+                    if max_seconds is not None
+                    else await completion
+                )
+            summary = response_text(response.content)
+            summary = re.sub(
+                r"<think>.*?</think>", "", summary, flags=re.DOTALL
+            ).strip()
+            if not summary:
+                raise RuntimeError("episode summary provider returned no text")
+            result = parse_episode_summary_result(summary)
+            working_summary = self.store.finish_episode_annealing(
+                episode_id,
+                int(candidate["through_ordinal"]),
+                result["claims"],  # type: ignore[arg-type]
+                narrative_summary=str(result["narrative_summary"]),
+                emotional_context=result["emotional_context"],  # type: ignore[arg-type]
+                outcomes=result["outcomes"],  # type: ignore[arg-type]
             )
-            if candidate is None:
-                return False
-            episode = candidate["episode"]
-            episode_id = str(episode["id"])
-            user_prompt = render_episode_annealing_request(
-                episode, candidate["messages"]
+            metrics = response.usage or {}
+            self.store.record_turn_usage(
+                turn_id,
+                int(
+                    metrics.get(
+                        "input",
+                        estimate_tokens(
+                            EPISODE_SUMMARY_SYSTEM_PROMPT
+                            + user_prompt
+                        ),
+                    )
+                ),
+                int(metrics.get("output", estimate_tokens(summary))),
             )
-            request = [{"role": "user", "content": user_prompt}]
-            try:
-                call_id = new_trace_id()
-                with log_context(
-                    stage="episode_anneal",
-                    turn_id=turn_id,
-                    call_id=call_id,
-                    round=anneal_round,
-                    episode_id=episode_id,
-                ):
-                    completion = self.provider.complete(
-                        EPISODE_SUMMARY_SYSTEM_PROMPT, request, []
-                    )
-                    response = (
-                        await asyncio.wait_for(completion, timeout=max_seconds)
-                        if max_seconds is not None
-                        else await completion
-                    )
-                summary = response_text(response.content)
-                summary = re.sub(
-                    r"<think>.*?</think>", "", summary, flags=re.DOTALL
-                ).strip()
-                if not summary:
-                    raise RuntimeError("episode summary provider returned no text")
-                result = parse_episode_summary_result(summary)
-                working_summary = self.store.finish_episode_annealing(
-                    episode_id,
-                    int(candidate["through_ordinal"]),
-                    result["claims"],  # type: ignore[arg-type]
-                    narrative_summary=str(result["narrative_summary"]),
-                    emotional_context=result["emotional_context"],  # type: ignore[arg-type]
-                    outcomes=result["outcomes"],  # type: ignore[arg-type]
-                )
-                metrics = response.usage or {}
-                self.store.record_turn_usage(
-                    turn_id,
-                    int(
-                        metrics.get(
-                            "input",
-                            estimate_tokens(
-                                EPISODE_SUMMARY_SYSTEM_PROMPT
-                                + user_prompt
-                            ),
-                        )
-                    ),
-                    int(metrics.get("output", estimate_tokens(summary))),
-                )
-                log_event(
-                    logger,
-                    logging.DEBUG,
-                    "episode_anneal_complete",
-                    stage="episode_anneal",
-                    turn_id=turn_id,
-                    call_id=call_id,
-                    round=anneal_round,
-                    episode_id=episode_id,
-                    through_ordinal=candidate["through_ordinal"],
-                    summary_tokens=estimate_tokens(working_summary),
-                )
-                return True
-            except asyncio.CancelledError:
-                self.store.release_episode_annealing(episode_id, failed=False)
-                raise
-            except Exception:
-                self.store.release_episode_annealing(episode_id)
-                raise
-        return False
+            log_event(
+                logger,
+                logging.DEBUG,
+                "episode_anneal_complete",
+                stage="episode_anneal",
+                turn_id=turn_id,
+                call_id=call_id,
+                episode_id=episode_id,
+                through_ordinal=candidate["through_ordinal"],
+                summary_tokens=estimate_tokens(working_summary),
+            )
+            return True
+        except asyncio.CancelledError:
+            self.store.release_episode_annealing(episode_id, failed=False)
+            raise
+        except Exception:
+            self.store.release_episode_annealing(episode_id)
+            raise

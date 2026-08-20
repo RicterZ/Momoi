@@ -86,7 +86,7 @@ def emotion(args: argparse.Namespace) -> None:
     store = Store(
         config.database,
         args.workspace,
-        thinking=getattr(config, "thinking", None),
+        thinking=config.thinking,
     )
     try:
         if args.emotion_command == "add":
@@ -124,7 +124,7 @@ def goal(args: argparse.Namespace) -> None:
     store = Store(
         config.database,
         args.workspace,
-        thinking=getattr(config, "thinking", None),
+        thinking=config.thinking,
     )
     try:
         if args.goal_command == "list":

@@ -1,11 +1,9 @@
 import unittest
-from dataclasses import replace
 
 from momoi.storage.episode_search import (
     EpisodeQueryService,
     EpisodeSearchDocument,
     EpisodeSearchHit,
-    EpisodeSearchMessage,
 )
 
 
@@ -34,46 +32,6 @@ class RecordingBackend:
 
 
 class EpisodeSearchTest(unittest.TestCase):
-    def test_document_identity_and_revision_are_stable_and_content_sensitive(
-        self,
-    ) -> None:
-        message = EpisodeSearchMessage(
-            1,
-            "turn",
-            1,
-            "user",
-            "蓝色保温杯",
-            100,
-            "delivered",
-            "1970-01-01T00:01:40+00:00",
-            "蓝色保温杯",
-        )
-        document = EpisodeSearchDocument(
-            "episode",
-            ("保温杯",),
-            100,
-            0.5,
-            (message,),
-        )
-        same = EpisodeSearchDocument(
-            "episode",
-            ("保温杯",),
-            100,
-            0.5,
-            (message,),
-        )
-        changed = EpisodeSearchDocument(
-            "episode",
-            ("保温杯",),
-            100,
-            0.5,
-            (replace(message, searchable_text="红色保温杯"),),
-        )
-
-        self.assertEqual(document.search_id, "episode")
-        self.assertEqual(document.search_revision, same.search_revision)
-        self.assertNotEqual(document.search_revision, changed.search_revision)
-
     def test_query_service_calls_backend_once_per_complete_alternative(self) -> None:
         backend = RecordingBackend()
         service = EpisodeQueryService(backend)

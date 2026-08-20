@@ -188,13 +188,6 @@ def parse_episode_summary_result(text: str) -> dict[str, object]:
         raise RuntimeError("episode summary provider returned invalid JSON") from error
     if not isinstance(value, dict) or not isinstance(value.get("claims"), list):
         raise RuntimeError("episode summary provider returned invalid claims")
-    if value.get("version") == 1 and set(value) == {"version", "claims"}:
-        return {
-            "claims": value["claims"],
-            "narrative_summary": "",
-            "emotional_context": {},
-            "outcomes": [],
-        }
     if value.get("version") != 2 or set(value) != {
         "version",
         "claims",
@@ -203,14 +196,8 @@ def parse_episode_summary_result(text: str) -> dict[str, object]:
         "outcomes",
     }:
         raise RuntimeError("episode summary provider returned invalid result")
-    outcomes = value["outcomes"]
-    if isinstance(outcomes, list):
-        value["outcomes"] = [
-            item["outcome"]
-            if isinstance(item, dict)
-            and set(item) == {"outcome"}
-            and isinstance(item["outcome"], str)
-            else item
-            for item in outcomes
-        ]
+    if not isinstance(value["outcomes"], list) or not all(
+        isinstance(item, str) for item in value["outcomes"]
+    ):
+        raise RuntimeError("episode summary provider returned invalid outcomes")
     return value

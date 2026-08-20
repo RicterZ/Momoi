@@ -357,7 +357,13 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                             {
                                 "type": "text",
                                 "text": json.dumps(
-                                    {"version": 1, "claims": claims},
+                                    {
+                                        "version": 2,
+                                        "claims": claims,
+                                        "narrative_summary": "",
+                                        "emotional_context": {},
+                                        "outcomes": [],
+                                    },
                                     ensure_ascii=False,
                                 ),
                             }
@@ -517,7 +523,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                         str(messages[0]["content"]), "new_messages", "Message"
                     )[0]
                     response = {
-                        "version": 1,
+                        "version": 2,
                         "claims": [
                             {
                                 "message_id": message["message_id"],
@@ -526,6 +532,9 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                                 "quote": "主人答应了原文里不存在的事情",
                             }
                         ],
+                        "narrative_summary": "",
+                        "emotional_context": {},
+                        "outcomes": [],
                     }
                     return ProviderResponse(
                         [
@@ -606,21 +615,22 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(episode["outcomes"], ["完成一次阶段讨论"])
             daemon.store.close()
 
-    def test_v2_summary_normalizes_common_outcome_object_shape(self) -> None:
-        result = parse_episode_summary_result(
-            json.dumps(
-                {
-                    "version": 2,
-                    "claims": [],
-                    "narrative_summary": "",
-                    "emotional_context": {},
-                    "outcomes": [{"outcome": "老师已下班，当天工作结束"}],
-                },
-                ensure_ascii=False,
+    def test_summary_parser_rejects_obsolete_or_malformed_shapes(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "invalid result"):
+            parse_episode_summary_result('{"version":1,"claims":[]}')
+        with self.assertRaisesRegex(RuntimeError, "invalid outcomes"):
+            parse_episode_summary_result(
+                json.dumps(
+                    {
+                        "version": 2,
+                        "claims": [],
+                        "narrative_summary": "",
+                        "emotional_context": {},
+                        "outcomes": [{"outcome": "老师已下班，当天工作结束"}],
+                    },
+                    ensure_ascii=False,
+                )
             )
-        )
-
-        self.assertEqual(result["outcomes"], ["老师已下班，当天工作结束"])
 
     async def test_third_failure_abandons_episode_and_other_lines_continue(
         self,

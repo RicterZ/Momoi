@@ -329,6 +329,28 @@ class ToolExecutionService:
         )
         return visible
 
+    async def _append_owner_updates(
+        self,
+        updates: list[IncomingMessage],
+        current_events: list[IncomingMessage],
+        turn_id: str,
+        authority: str,
+        tools: list[dict[str, Any]],
+        messages: list[dict[str, Any]],
+        delivery_channel: Channel,
+    ) -> tuple[list[dict[str, Any]], str]:
+        context_plan, recalled = await self._prepare_owner_context(
+            current_events, turn_id
+        )
+        if authority == "owner":
+            tools = self._owner_tool_specs(context_plan, delivery_channel.name)
+        messages.append(
+            self._owner_update_message(
+                updates, delivery_channel, context_plan, recalled
+            )
+        )
+        return tools, updates[-1].event_id
+
     async def _run_tool_loop(
         self,
         system: list[dict[str, Any]],
@@ -390,17 +412,15 @@ class ToolExecutionService:
             if updates:
                 visible_since_owner_update = False
                 owner_work_acknowledged = False
-                context_plan, recalled = await self._prepare_owner_context(
-                    current_events, turn_id
+                tools, source_event_id = await self._append_owner_updates(
+                    updates,
+                    current_events,
+                    turn_id,
+                    authority,
+                    tools,
+                    messages,
+                    delivery_channel,
                 )
-                if authority == "owner":
-                    tools = self._owner_tool_specs(context_plan, delivery_channel.name)
-                messages.append(
-                    self._owner_update_message(
-                        updates, delivery_channel, context_plan, recalled
-                    )
-                )
-                source_event_id = updates[-1].event_id
                 force_response = False
                 force_autonomous_finish = False
                 failed_tool_rounds = 0
@@ -474,19 +494,15 @@ class ToolExecutionService:
                 )
                 visible_since_owner_update = False
                 owner_work_acknowledged = False
-                context_plan, recalled = await self._prepare_owner_context(
-                    current_events, turn_id
+                tools, source_event_id = await self._append_owner_updates(
+                    updates,
+                    current_events,
+                    turn_id,
+                    authority,
+                    tools,
+                    messages,
+                    delivery_channel,
                 )
-                if authority == "owner":
-                    tools = self._owner_tool_specs(
-                        context_plan, delivery_channel.name
-                    )
-                messages.append(
-                    self._owner_update_message(
-                        updates, delivery_channel, context_plan, recalled
-                    )
-                )
-                source_event_id = updates[-1].event_id
                 force_response = False
                 force_autonomous_finish = False
                 failed_tool_rounds = 0
@@ -542,17 +558,15 @@ class ToolExecutionService:
                             ],
                         }
                     )
-                context_plan, recalled = await self._prepare_owner_context(
-                    current_events, turn_id
+                tools, source_event_id = await self._append_owner_updates(
+                    updates,
+                    current_events,
+                    turn_id,
+                    authority,
+                    tools,
+                    messages,
+                    delivery_channel,
                 )
-                if authority == "owner":
-                    tools = self._owner_tool_specs(context_plan, delivery_channel.name)
-                messages.append(
-                    self._owner_update_message(
-                        updates, delivery_channel, context_plan, recalled
-                    )
-                )
-                source_event_id = updates[-1].event_id
                 force_response = False
                 force_autonomous_finish = False
                 failed_tool_rounds = 0
@@ -900,13 +914,18 @@ class ToolExecutionService:
                         result = {"ok": False, "error": "missing_tool_call_id"}
                     elif progress is None:
                         result = {"ok": False, "error": error}
-                    elif (
-                        (heartbeat_turn or reply_wait_turn)
-                        and heartbeat_owner_event_revision is not None
-                    ):
-                        contact_error = self._heartbeat_contact_error(
-                            heartbeat_owner_event_revision,
-                            heartbeat_notification_key,
+                    else:
+                        check_contact = (
+                            (heartbeat_turn or reply_wait_turn)
+                            and heartbeat_owner_event_revision is not None
+                        )
+                        contact_error = (
+                            self._heartbeat_contact_error(
+                                heartbeat_owner_event_revision,
+                                heartbeat_notification_key,
+                            )
+                            if check_contact
+                            else None
                         )
                         if contact_error is not None:
                             result = {"ok": False, "error": contact_error}
@@ -924,6 +943,8 @@ class ToolExecutionService:
                                     turn_id, call.id, progress, target.name
                                 )
                                 visible_since_owner_update = True
+                                if not check_contact:
+                                    owner_work_acknowledged = True
                                 self.outbox_changed.set()
                                 result = {
                                     "ok": True,
@@ -931,25 +952,6 @@ class ToolExecutionService:
                                     "channel": target.name,
                                     "messages": len(progress),
                                 }
-                    else:
-                        target = self.channels.get(
-                            str(call.arguments.get("channel") or delivery_channel.name)
-                        )
-                        if target is None:
-                            result = {"ok": False, "error": "invalid_channel"}
-                        else:
-                            self.store.queue_progress(
-                                turn_id, call.id, progress, target.name
-                            )
-                            visible_since_owner_update = True
-                            owner_work_acknowledged = True
-                            self.outbox_changed.set()
-                            result = {
-                                "ok": True,
-                                "state": "queued",
-                                "channel": target.name,
-                                "messages": len(progress),
-                            }
                 elif call.name == "tool_enable":
                     requested = call.arguments.get("groups")
                     if (
@@ -1169,17 +1171,15 @@ class ToolExecutionService:
             messages.append({"role": "user", "content": results})
             if updates:
                 visible_since_owner_update = False
-                context_plan, recalled = await self._prepare_owner_context(
-                    current_events, turn_id
+                tools, source_event_id = await self._append_owner_updates(
+                    updates,
+                    current_events,
+                    turn_id,
+                    authority,
+                    tools,
+                    messages,
+                    delivery_channel,
                 )
-                if authority == "owner":
-                    tools = self._owner_tool_specs(context_plan, delivery_channel.name)
-                messages.append(
-                    self._owner_update_message(
-                        updates, delivery_channel, context_plan, recalled
-                    )
-                )
-                source_event_id = updates[-1].event_id
                 force_response = False
                 failed_tool_rounds = 0
                 continue

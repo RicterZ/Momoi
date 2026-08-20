@@ -1,5 +1,3 @@
-import hashlib
-import json
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -26,36 +24,6 @@ class EpisodeSearchDocument:
     last_activity_at: float
     salience: float
     messages: tuple[EpisodeSearchMessage, ...]
-
-    @property
-    def search_id(self) -> str:
-        return self.episode_id
-
-    @property
-    def search_revision(self) -> str:
-        payload = {
-            "metadata": self.metadata,
-            "last_activity_at": self.last_activity_at,
-            "salience": self.salience,
-            "messages": [
-                {
-                    "id": message.id,
-                    "turn_id": message.turn_id,
-                    "ordinal": message.ordinal,
-                    "role": message.role,
-                    "delivery_state": message.delivery_state,
-                    "searchable_text": message.searchable_text,
-                }
-                for message in self.messages
-            ],
-        }
-        serialized = json.dumps(
-            payload,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-        return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
 @dataclass(frozen=True)
