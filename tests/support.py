@@ -101,12 +101,11 @@ def context_plan_response(messages: list[dict[str, Any]]) -> ProviderResponse:
 
 
 def heartbeat_plan_response(messages: list[dict[str, Any]]) -> ProviderResponse:
-    payload = json.loads(str(messages[0]["content"]))
-    previous = payload["previous_activity"]
+    payload = planner_sections(str(messages[0]["content"]))
     plan = {
         "version": 2,
         "activity": {
-            "intent": str(previous.get("activity") or "spend time freely"),
+            "intent": "spend time freely",
             "reason": "Continue the current activity for this test.",
         },
         "heartbeat_handoff": {
@@ -116,10 +115,9 @@ def heartbeat_plan_response(messages: list[dict[str, Any]]) -> ProviderResponse:
                 "reason": "Test context is sufficient.",
             },
             "mcp": {
-                "servers": [
-                    str(server["id"])
-                    for server in payload.get("available_mcp_servers", [])
-                ],
+                "servers": re.findall(
+                    r"(?m)^- id=([^\s]+)", payload.get("available_mcp_servers", "")
+                ),
                 "reason": "Load configured test MCP servers.",
             },
             "execution": {

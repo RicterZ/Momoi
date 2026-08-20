@@ -12,6 +12,7 @@ from .context_assembler import (
     assemble_main_context,
     assemble_planner_recent_turns,
     build_plan_retrieval,
+    assemble_compact_recent_conversation,
     render_planner_recent_turns,
 )
 from .context_candidates import (
@@ -133,10 +134,153 @@ def _planner_value(value: str) -> str:
     return value if value.strip() else "(none)"
 
 
+def _heartbeat_topic_lines(items: list[dict[str, object]]) -> str:
+    lines: list[str] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        fields: list[str] = []
+        for key, limit in (("title", 120), ("updated_timestamp", 32)):
+            value = item.get(key)
+            if value not in (None, "", [], {}):
+                fields.append(f"{key.removesuffix('_timestamp')}={str(value)[:limit]}")
+        summary = str(item.get("summary") or "").strip()
+        if summary:
+            fields.append(f"summary={summary[:240]}")
+        for key in ("topics", "entities", "open_loops"):
+            values = item.get(key) or []
+            if values:
+                fields.append(f"{key}=" + ",".join(str(value) for value in values[:8]))
+        if fields:
+            lines.append("- " + " ".join(fields))
+    return "\n".join(lines)
+
+
+def _heartbeat_activity_lines(items: list[dict[str, str]]) -> str:
+    rendered = "\n".join(
+        f"- at={item.get('at') or '?'} activity={str(item.get('text') or '').strip()}"
+        for item in items
+        if isinstance(item, dict) and str(item.get("text") or "").strip()
+    )
+    return rendered or "(none)"
+
+
+def _heartbeat_self_state_lines(value: str) -> str:
+    try:
+        state = json.loads(value)
+    except (TypeError, ValueError):
+        return value
+    if not isinstance(state, dict):
+        return str(value)
+    lines: list[str] = []
+    mood = state.get("mood")
+    if isinstance(mood, dict):
+        fields = [
+            f"state={mood.get('state') or 'unknown'}",
+            f"intensity={mood.get('intensity') or 0}",
+        ]
+        for key in ("cause", "age_minutes", "updated_at"):
+            if mood.get(key) not in (None, "", [], {}):
+                fields.append(f"{key}={mood[key]}")
+        lines.append("mood: " + " ".join(fields))
+    activity = state.get("activity")
+    if isinstance(activity, dict):
+        fields = []
+        for key in ("text", "result", "since"):
+            value = str(activity.get(key) or "none").replace("\n", " ")
+            fields.append(f"{key}={value}")
+        lines.append("activity: " + " ".join(fields))
+    if state.get("last_heartbeat_at"):
+        lines.append(f"last heartbeat: {state['last_heartbeat_at']}")
+    return "\n".join(lines) or "(none)"
+
+
+def _heartbeat_conversation_state_lines(state: dict[str, object]) -> str:
+    fields = [
+        f"owner event revision={state.get('owner_event_revision') or 0}",
+        f"owner busy={bool(state.get('owner_busy') or state.get('owner_turn_or_delivery_active'))}",
+    ]
+    for key in ("blocked_by", "owner_contact_allowed_now", "owner_contact_eligible_at"):
+        if state.get(key) not in (None, "", [], {}):
+            fields.append(f"{key}={state[key]}")
+    return "\n".join(fields)
+
+
+def _heartbeat_plan_lines(plan: dict[str, object]) -> str:
+    activity = plan.get("activity") if isinstance(plan, dict) else {}
+    handoff = plan.get("heartbeat_handoff") if isinstance(plan, dict) else {}
+    context = handoff.get("context") if isinstance(handoff, dict) else {}
+    mcp = handoff.get("mcp") if isinstance(handoff, dict) else {}
+    execution = handoff.get("execution") if isinstance(handoff, dict) else {}
+    lines = [
+        f"activity: {str(activity.get('intent') or '').strip()}",
+        f"reason: {str(activity.get('reason') or '').strip()}",
+        f"context status: {context.get('status') or 'sufficient'}",
+        f"context reason: {context.get('reason') or ''}",
+    ]
+    for need in context.get("needs") or []:
+        if isinstance(need, dict):
+            fields = [
+                f"{key}={str(need.get(key) or '').replace(chr(10), ' ')}"
+                for key in ("tool", "query", "evidence")
+                if need.get(key) not in (None, "", [], {})
+            ]
+            lines.append("context need: " + " ".join(fields))
+    servers = mcp.get("servers") if isinstance(mcp, dict) else []
+    lines.append("mcp servers: " + (", ".join(str(item) for item in servers) if servers else "none"))
+    lines.append(f"mcp reason: {mcp.get('reason') if isinstance(mcp, dict) else ''}")
+    lines.append(f"execution mode: {execution.get('mode') if isinstance(execution, dict) else 'work'}")
+    for index, step in enumerate(execution.get("outline") or [], start=1):
+        lines.append(f"step {index}: {step}")
+    if isinstance(execution, dict) and execution.get("reason"):
+        lines.append(f"execution reason: {execution['reason']}")
+    for item in plan.get("uncertainty") or []:
+        lines.append(f"uncertainty: {item}")
+    return "\n".join(lines)
+
+
+def render_heartbeat_planner_request(
+    *,
+    mcp_servers: list[dict[str, object]],
+    workspace_guidance: str,
+    owner_preferences: str,
+    recent_memories: str,
+    active_goals: str,
+    pending_reminders: str,
+    recent_topics: list[dict[str, object]],
+    recent_conversation: str,
+    recent_heartbeat_activities: list[dict[str, str]],
+    previous_activity: dict[str, object],
+    current_self_state: str,
+    conversation_state: dict[str, object],
+    current_time: str,
+) -> str:
+    previous_lines = "\n".join(
+        f"{key}: {str(previous_activity.get(key) or '(none)').strip()}"
+        for key in ("activity", "result")
+    )
+    return _sections(
+        ("available_mcp_servers", _planner_value(_planner_mcp_lines(mcp_servers))),
+        ("workspace_heartbeat_guidance", _planner_value(workspace_guidance)),
+        ("owner_preferences", _planner_value(owner_preferences)),
+        ("recent_memories", _planner_value(recent_memories)),
+        ("active_goals", _planner_value(active_goals)),
+        ("pending_reminders", _planner_value(pending_reminders)),
+        ("recent_topics", _planner_value(_heartbeat_topic_lines(recent_topics))),
+        ("recent_conversation", _planner_value(recent_conversation)),
+        ("recent_heartbeat_activities", _planner_value(_heartbeat_activity_lines(recent_heartbeat_activities))),
+        ("previous_activity", _planner_value(previous_lines)),
+        ("current_self_state", _planner_value(_heartbeat_self_state_lines(current_self_state))),
+        ("conversation_state", _planner_value(_heartbeat_conversation_state_lines(conversation_state))),
+        ("current_time", _planner_value(current_time)),
+    )
+
+
 def render_context_planner_request(
     *,
     mcp_servers: list[dict[str, object]],
     recent_turns: dict[str, object],
+    recent_conversation: str,
     active_recent_turn_ids: list[str],
     candidate_goals: list[dict[str, object]],
     candidate_reminders: list[dict[str, object]],
@@ -156,6 +300,7 @@ def render_context_planner_request(
                 render_planner_recent_turns(recent_turns, active_recent_turn_ids)
             ),
         ),
+        ("recent_conversation", _planner_value(recent_conversation)),
         (
             "candidate_goals",
             _planner_value(_planner_state_lines(candidate_goals)),
@@ -219,6 +364,12 @@ class ContextService:
                 ),
                 min(event.received_at for event in events),
             )
+        )
+        recent_conversation = assemble_compact_recent_conversation(
+            self.store,
+            4,
+            min(1600, max(400, self.config.recent_raw_tokens // 3)),
+            min(event.received_at for event in events),
         )
         candidates = collect_episode_candidates(
             self.store,
@@ -311,6 +462,7 @@ class ContextService:
                 "content": render_context_planner_request(
                     mcp_servers=mcp_server_catalog,
                     recent_turns=planner_recent_turns,
+                    recent_conversation=recent_conversation,
                     active_recent_turn_ids=active_recent_turn_ids,
                     candidate_goals=candidate_goals,
                     candidate_reminders=candidate_reminders,
@@ -538,42 +690,33 @@ class ContextService:
         recent_conversation: str,
         goals: str,
         reminders: str,
+        owner_preferences: str,
+        recent_memories: str,
     ) -> dict[str, object]:
         mcp_server_catalog = self._heartbeat_mcp_server_catalog()
         available_mcp_servers = {
             str(server["id"]) for server in mcp_server_catalog
         }
-        # Prefix-cache order: stable catalog/goals first, clock last. DeepSeek
-        # caches from byte 0 of this JSON, so per-heartbeat activity and time
-        # must not precede recent_conversation.
         request = [
             {
                 "role": "user",
-                "content": json.dumps(
-                    {
-                        "available_mcp_servers": mcp_server_catalog,
-                        "workspace_heartbeat_guidance": (
-                            self._workspace_heartbeat_guidance()
-                        ),
-                        "active_goals": goals,
-                        "pending_reminders": reminders,
-                        "recent_topics": recent_topics,
-                        "recent_conversation": recent_conversation,
-                        "recent_heartbeat_activities": (
-                            self.store.recent_heartbeat_activities()
-                        ),
-                        "previous_activity": {
-                            "activity": state.get("activity"),
-                            "result": state.get("activity_result"),
-                        },
-                        "current_self_state": self_context,
-                        "conversation_state": conversation,
-                        "current_time": datetime.now().astimezone().isoformat(
-                            timespec="seconds"
-                        ),
+                "content": render_heartbeat_planner_request(
+                    mcp_servers=mcp_server_catalog,
+                    workspace_guidance=self._workspace_heartbeat_guidance(),
+                    owner_preferences=owner_preferences,
+                    recent_memories=recent_memories,
+                    active_goals=goals,
+                    pending_reminders=reminders,
+                    recent_topics=recent_topics,
+                    recent_conversation=recent_conversation,
+                    recent_heartbeat_activities=self.store.recent_heartbeat_activities(),
+                    previous_activity={
+                        "activity": state.get("activity"),
+                        "result": state.get("activity_result"),
                     },
-                    ensure_ascii=False,
-                    separators=(",", ":"),
+                    current_self_state=self_context,
+                    conversation_state=conversation,
+                    current_time=datetime.now().astimezone().isoformat(timespec="seconds"),
                 ),
             }
         ]

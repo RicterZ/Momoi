@@ -19,9 +19,17 @@ from ..storage import estimate_tokens, truncate_tokens
 from ..text_replacement import cyber_keyword_pre_hook
 from .context_assembler import (
     assemble_main_context,
+    assemble_compact_recent_conversation,
     assemble_recent_conversation,
     build_plan_retrieval,
     recall_episode_context,
+)
+from .context_service import (
+    _heartbeat_activity_lines,
+    _heartbeat_conversation_state_lines,
+    _heartbeat_plan_lines,
+    _heartbeat_self_state_lines,
+    _heartbeat_topic_lines,
 )
 from .protocol import (
     AUTONOMOUS_FINISH_SPEC,
@@ -203,6 +211,7 @@ class TurnOrchestrator:
                     ("active_goals", recalled["goals"]),
                     ("pending_reminders", recalled["reminders"]),
                     ("recent_turns", recalled["recent_turns"]),
+                    ("recent_conversation", recalled["recent_conversation"]),
                     ("episode_directory", recalled["episodes"]),
                     ("query_recall", recalled["query_recall"]),
                     ("pending_memory_conflicts", conflicts),
@@ -257,8 +266,10 @@ class TurnOrchestrator:
         recent_memories = self.store.recent_memory_context(
             max(100, self.config.memory_tokens // 8)
         )
-        recent_conversation, _ = assemble_recent_conversation(
-            self.store, self.config.recent_turns, self.config.recent_raw_tokens
+        recent_conversation = assemble_compact_recent_conversation(
+            self.store,
+            4,
+            min(1600, max(400, self.config.recent_raw_tokens // 3)),
         )
         conversation = self.store.heartbeat_conversation_snapshot()
         self_state = self.store.self_state_context()
@@ -819,6 +830,7 @@ class TurnOrchestrator:
             ("active_goals", recalled["goals"]),
             ("pending_reminders", recalled["reminders"]),
             ("recent_turns", recalled["recent_turns"]),
+            ("recent_conversation", recalled["recent_conversation"]),
             ("episode_directory", recalled["episodes"]),
             ("query_recall", recalled["query_recall"]),
             ("pending_memory_conflicts", memory_conflicts),
@@ -1046,6 +1058,10 @@ class TurnOrchestrator:
             topic_tokens += size
         goals = self.store.active_goals_context(authority="agent")
         reminders = self.store.active_reminders_context()
+        owner_preferences = self.store.always_memory_context()
+        recent_memories = self.store.recent_memory_context(
+            max(100, self.config.memory_tokens // 8)
+        )
         conversation = self.store.heartbeat_conversation_snapshot()
         plan = await self._plan_heartbeat_context(
             turn_id,
@@ -1056,6 +1072,8 @@ class TurnOrchestrator:
             recent_conversation=recent_conversation,
             goals=goals,
             reminders=reminders,
+            owner_preferences=owner_preferences,
+            recent_memories=recent_memories,
         )
         planned_activity = plan["activity"]
         retrieval = build_plan_retrieval(self.store, plan, self.config)
@@ -1082,47 +1100,33 @@ class TurnOrchestrator:
                 "runtime_state",
                 (
                     f"Current local time: {datetime.now().astimezone().isoformat(timespec='seconds')}\n"
-                    f"Current self state: {self_context}"
+                    f"{_heartbeat_self_state_lines(self_context)}"
                 ),
             ),
             (
                 "conversation_state",
-                json.dumps(
+                _heartbeat_conversation_state_lines(
                     {
                         "owner_event_revision": owner_event_revision,
                         "owner_turn_or_delivery_active": False,
                         "owner_contact_allowed_now": contact_window["allowed"],
                         "owner_contact_eligible_at": contact_window["eligible_at"],
-                    },
-                    separators=(",", ":"),
+                    }
                 ),
             ),
             (
                 "heartbeat_plan",
-                json.dumps(
-                    {
-                        "intent": planned_activity["intent"],
-                        "reason": planned_activity["reason"],
-                        "heartbeat_handoff": plan["heartbeat_handoff"],
-                        "uncertainty": plan["uncertainty"],
-                    },
-                    ensure_ascii=False,
-                    separators=(",", ":"),
-                ),
+                _heartbeat_plan_lines(plan),
             ),
             ("active_goals", goals),
             ("pending_reminders", reminders),
             (
                 "recent_topic_reference",
-                json.dumps(recent_topics, ensure_ascii=False),
+                _heartbeat_topic_lines(recent_topics),
             ),
             (
                 "recent_heartbeat_activities",
-                json.dumps(
-                    self.store.recent_heartbeat_activities(),
-                    ensure_ascii=False,
-                    separators=(",", ":"),
-                ),
+                _heartbeat_activity_lines(self.store.recent_heartbeat_activities()),
             ),
             (
                 "recent_conversation",

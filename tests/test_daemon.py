@@ -57,6 +57,7 @@ from momoi.storage import estimate_tokens
 from tests.support import (
     context_plan_response,
     heartbeat_plan_response,
+    planner_sections,
     with_context_planner,
 )
 
@@ -2270,7 +2271,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 ) -> ProviderResponse:
                     self.calls += 1
                     if system == HEARTBEAT_PLANNER_SYSTEM_PROMPT:
-                        self.planner_payload = json.loads(str(messages[0]["content"]))
+                        self.planner_payload = planner_sections(str(messages[0]["content"]))
                         return heartbeat_plan_response(messages)
                     self.turn_request = json.dumps(messages, ensure_ascii=False)
                     call = ToolCall(
@@ -2317,10 +2318,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertIsNotNone(payload)
             assert payload is not None
             activities = payload["recent_heartbeat_activities"]
-            self.assertEqual(
-                [item["text"] for item in activities],
-                ["刷微博", "整理笔记"],
-            )
+            self.assertIn("activity=刷微博", activities)
+            self.assertIn("activity=整理笔记", activities)
             self.assertIn("<recent_heartbeat_activities>", provider.turn_request)
             self.assertIn("刷微博", provider.turn_request)
             self.assertIn("整理笔记", provider.turn_request)
@@ -2494,7 +2493,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         not in json.dumps(messages, ensure_ascii=False)
                     ):
                         raise AssertionError((system, messages, tools))
-                    payload = json.loads(str(messages[0]["content"]))
+                    payload = planner_sections(str(messages[0]["content"]))
                     if "recent_heartbeat_activities" not in payload:
                         raise AssertionError(payload)
 

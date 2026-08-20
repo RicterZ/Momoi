@@ -21,6 +21,7 @@ from momoi.runtime.context_planner import (
     parse_heartbeat_plan,
     parse_context_plan,
 )
+from momoi.runtime.context_service import render_heartbeat_planner_request
 from momoi.runtime.turns import (
     CONTEXT_PLANNER_SYSTEM_PROMPT,
     HEARTBEAT_PLANNER_SYSTEM_PROMPT,
@@ -126,6 +127,28 @@ def tool_plan_response(plan: dict[str, object]) -> ProviderResponse:
 
 
 class ContextPlannerTest(unittest.TestCase):
+    def test_heartbeat_planner_request_is_tagged_text_with_fixed_memory(self) -> None:
+        rendered = render_heartbeat_planner_request(
+            mcp_servers=[{"id": "weibo", "description": "Browse Weibo"}],
+            workspace_guidance="Choose one activity.",
+            owner_preferences="- no duplicate wording",
+            recent_memories="- shared game night",
+            active_goals="- id=g1 status=active title=goal",
+            pending_reminders="(none)",
+            recent_topics=[{"title": "Game", "topics": ["BA"]}],
+            recent_conversation="owner: hello",
+            recent_heartbeat_activities=[{"at": "now", "text": "rest"}],
+            previous_activity={"activity": "rest", "result": "quiet"},
+            current_self_state='{"mood":{"state":"calm"}}',
+            conversation_state={"owner_event_revision": 1},
+            current_time="2026-08-20T20:00:00+08:00",
+        )
+        self.assertTrue(rendered.startswith("<available_mcp_servers>"))
+        self.assertIn("<owner_preferences>\n- no duplicate wording", rendered)
+        self.assertIn("<recent_memories>\n- shared game night", rendered)
+        self.assertIn("<recent_topics>\n- title=Game topics=BA", rendered)
+        self.assertNotIn('"available_mcp_servers"', rendered)
+
     def test_mcp_catalog_uses_server_capability_descriptions(self) -> None:
         daemon = object.__new__(MomoiDaemon)
         daemon.mcp = SimpleNamespace(
@@ -938,6 +961,7 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                             [
                                 "available_mcp_servers",
                                 "recent_turns",
+                                "recent_conversation",
                                 "candidate_goals",
                                 "candidate_reminders",
                                 "candidate_episodes",

@@ -457,6 +457,49 @@ def assemble_recent_conversation(
     return recent, {int(message["id"]) for message in recent_messages}
 
 
+def assemble_compact_recent_conversation(
+    store: Store,
+    turn_limit: int = 2,
+    token_budget: int = 1600,
+    before_timestamp: float | None = None,
+) -> str:
+    """Render the latest shared Turns as compact continuity evidence.
+
+    Unlike the legacy message-by-message projection, this groups messages by
+    Turn and keeps one timestamp plus role-labelled lines. It is intentionally
+    bounded because it is shared by Planner and Heartbeat inputs.
+    """
+    if turn_limit <= 0:
+        return "(none)"
+    messages = store.recent_conversation_messages(
+        turn_limit, max(1, token_budget), before_timestamp
+    )
+    if not messages:
+        return "(none)"
+    blocks: list[str] = []
+    current_id = ""
+    lines: list[str] = []
+    for message in messages:
+        turn_id = str(message.get("turn_id") or "")
+        if turn_id != current_id:
+            if lines:
+                blocks.append("\n".join(lines))
+            current_id = turn_id
+            timestamp = message.get("timestamp") or context_timestamp(message["created_at"])
+            lines = [f"Turn {timestamp}"]
+        role = str(message.get("role") or "message").lower()
+        if role == "event":
+            role = "event"
+        elif role not in {"user", "assistant"}:
+            role = "message"
+        content = _historical_content(message.get("content"))
+        lines.append(f"  {role}: {truncate_tokens(' '.join(content.split()), 220)}")
+    if lines:
+        blocks.append("\n".join(lines))
+    rendered = "\n\n".join(blocks)
+    return truncate_tokens(rendered, max(1, token_budget)) if rendered else "(none)"
+
+
 def _compact_turn_record(
     record: dict[str, object], token_budget: int
 ) -> dict[str, object]:
@@ -1355,6 +1398,12 @@ def assemble_main_context(
     compact_recent_turns = project_recent_turns_for_owner(
         recent_turn_records, raw_token_budget
     )
+    compact_recent_conversation = assemble_compact_recent_conversation(
+        store,
+        min(4, recent_turns),
+        min(1600, max(400, raw_token_budget // 3)),
+        recent_before_timestamp,
+    )
     recent_memories = str(retrieval.get("recent_memories") or "").strip()
     recalled_reflections = _memory_lines(retrieval.get("reflection_memories"))
     if recalled_reflections:
@@ -1369,6 +1418,7 @@ def assemble_main_context(
         )
     return {
         "recent_turns": compact_recent_turns,
+        "recent_conversation": compact_recent_conversation,
         "episodes": _episode_context(
             store,
             retrieval.get("episodes"),
