@@ -61,6 +61,69 @@ class DeepSeekPluginTest(unittest.TestCase):
         self.assertEqual(plugin.token_rates("deepseek-v4-flash", peak), (0.10, 3.0, 9.0))
         self.assertEqual(plugin.token_rates("deepseek-v4-flash", offpeak), (0.05, 1.5, 4.5))
 
+    def test_parse_usage_reads_deepseek_billing_fields(self) -> None:
+        plugin = _plugin()
+        self.assertEqual(
+            plugin.parse_usage(
+                {
+                    "usage": {
+                        "input_tokens": 50,
+                        "output_tokens": 20,
+                        "prompt_cache_hit_tokens": 800,
+                        "prompt_cache_miss_tokens": 200,
+                        "completion_tokens_details": {"reasoning_tokens": 80},
+                    }
+                }
+            ),
+            {
+                "input": 1000,
+                "uncached": 200,
+                "cache_read": 800,
+                "cache_write": 0,
+                "output": 100,
+                "total": 1100,
+                "cache_hit_rate": 80.0,
+                "cache_reported": True,
+            },
+        )
+        masked = plugin.parse_usage(
+            {
+                "usage": {
+                    "prompt_tokens": 1000,
+                    "completion_tokens": 50,
+                    "prompt_cache_hit_tokens": 800,
+                    "prompt_tokens_details": {"cached_tokens": 0},
+                }
+            }
+        )
+        self.assertEqual(masked["cache_read"], 800)
+        self.assertEqual(masked["uncached"], 200)
+        self.assertEqual(
+            plugin.parse_usage(
+                {
+                    "usage": {
+                        "prompt_tokens": 1000,
+                        "output_tokens": 50,
+                        "prompt_cache_hit_tokens": 800,
+                        "prompt_cache_miss_tokens": 200,
+                    }
+                }
+            )["output"],
+            50,
+        )
+        self.assertEqual(
+            plugin.parse_usage(
+                {
+                    "usage": {
+                        "prompt_tokens": 58,
+                        "completion_tokens": 92,
+                        "completion_tokens_details": {"reasoning_tokens": 85},
+                    }
+                }
+            )["output"],
+            92,
+        )
+
     def test_summarize_usage_uses_plugin_rates(self) -> None:
         now = datetime(2026, 8, 15, 20, 0, tzinfo=SHANGHAI).timestamp()
         earlier = now - 86400

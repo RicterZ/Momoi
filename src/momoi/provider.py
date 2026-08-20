@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 import aiohttp
 
 from .config import LLMConfig
+from .extensions.base import parse_protocol_usage
 from .logging_context import TRACE, current_log_context, log_event, safe_preview
 from .models import ProviderResponse, ToolCall
 from .storage.thinking import persist_thinking_failure
@@ -92,63 +93,18 @@ def _openai_url(base_url: str) -> str:
 
 
 def usage_metrics(data: dict[str, Any]) -> dict[str, float | int | bool] | None:
-    usage = data.get("usage")
-    if not isinstance(usage, dict):
-        return None
-
-    def count(name: str) -> int:
-        value = usage.get(name, 0)
-        return value if isinstance(value, int) and value >= 0 else 0
-
-    if "prompt_tokens" in usage:
-        input_total = count("prompt_tokens")
-        details = usage.get("prompt_tokens_details")
-        details = details if isinstance(details, dict) else {}
-        cached = details.get("cached_tokens", usage.get("prompt_cache_hit_tokens", 0))
-        cache_read = cached if isinstance(cached, int) and cached >= 0 else 0
-        written = details.get("cache_write_tokens", 0)
-        cache_write = written if isinstance(written, int) and written >= 0 else 0
-        output = count("completion_tokens")
-        return {
-            "input": input_total,
-            "uncached": max(0, input_total - cache_read - cache_write),
-            "cache_read": cache_read,
-            "cache_write": cache_write,
-            "output": output,
-            "total": input_total + output,
-            "cache_hit_rate": cache_read / input_total * 100 if input_total else 0.0,
-            "cache_reported": (
-                "cached_tokens" in details
-                or "prompt_cache_hit_tokens" in usage
-                or "cache_write_tokens" in details
-            ),
-        }
-
-    uncached = count("input_tokens")
-    cache_read = count("cache_read_input_tokens")
-    cache_write = count("cache_creation_input_tokens")
-    cache_reported = any(
-        name in usage
-        for name in ("cache_read_input_tokens", "cache_creation_input_tokens")
-    )
-    output = count("output_tokens")
-    input_total = uncached + cache_read + cache_write
-    return {
-        "input": input_total,
-        "uncached": uncached,
-        "cache_read": cache_read,
-        "cache_write": cache_write,
-        "output": output,
-        "total": input_total + output,
-        "cache_hit_rate": cache_read / input_total * 100 if input_total else 0.0,
-        "cache_reported": cache_reported,
-    }
+    return parse_protocol_usage(data)
 
 
 def _log_usage(
-    data: dict[str, Any], *, protocol: str, duration_ms: int
+    data: dict[str, Any],
+    *,
+    protocol: str,
+    duration_ms: int,
+    parse_usage: Callable[[dict[str, Any]], dict[str, float | int | bool] | None]
+    | None = None,
 ) -> dict[str, float | int | bool] | None:
-    metrics = usage_metrics(data)
+    metrics = (parse_usage or usage_metrics)(data)
     if not metrics:
         log_event(
             logger,
@@ -254,10 +210,14 @@ def _record_response(
     dump_path: Path | None,
     usage_sink: Callable[..., None] | None,
     model: str,
+    parse_usage: Callable[[dict[str, Any]], dict[str, float | int | bool] | None]
+    | None = None,
 ) -> tuple[int, dict[str, float | int | bool] | None]:
     _dump_response(dump_path, data)
     duration_ms = int((monotonic() - attempt_started) * 1000)
-    metrics = _log_usage(data, protocol=protocol, duration_ms=duration_ms)
+    metrics = _log_usage(
+        data, protocol=protocol, duration_ms=duration_ms, parse_usage=parse_usage
+    )
     _persist_usage(usage_sink, metrics, model=model)
     return duration_ms, metrics
 
@@ -487,6 +447,9 @@ class AnthropicProvider:
         self.config = config
         self.dump_dir = dump_dir
         self.usage_sink: Callable[..., None] | None = None
+        self.usage_parser: (
+            Callable[[dict[str, Any]], dict[str, float | int | bool] | None] | None
+        ) = None
         self.thinking_sink: Callable[..., None] | None = None
         self._session: aiohttp.ClientSession | None = None
 
@@ -554,6 +517,7 @@ class AnthropicProvider:
                     dump_path=dump_path,
                     usage_sink=self.usage_sink,
                     model=self.config.model,
+                    parse_usage=self.usage_parser,
                 )
                 content = [
                     block
@@ -711,6 +675,9 @@ class OpenAIProvider:
         self.config = config
         self.dump_dir = dump_dir
         self.usage_sink: Callable[..., None] | None = None
+        self.usage_parser: (
+            Callable[[dict[str, Any]], dict[str, float | int | bool] | None] | None
+        ) = None
         self.thinking_sink: Callable[..., None] | None = None
         self._session: aiohttp.ClientSession | None = None
 
@@ -791,6 +758,7 @@ class OpenAIProvider:
                     dump_path=dump_path,
                     usage_sink=self.usage_sink,
                     model=self.config.model,
+                    parse_usage=self.usage_parser,
                 )
                 choices = data.get("choices")
                 if not isinstance(choices, list) or not choices:

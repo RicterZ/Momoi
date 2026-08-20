@@ -307,13 +307,26 @@ class ProvidersToolsTest(unittest.TestCase):
                 {
                     "usage": {
                         "prompt_tokens": 1000,
-                        "completion_tokens": 50,
-                        "prompt_cache_hit_tokens": 800,
+                        "output_tokens": 50,
+                        "prompt_tokens_details": {"cached_tokens": 800},
                     }
                 }
-            )["cache_hit_rate"],
-            80.0,
+            )["output"],
+            50,
         )
+        ignored_deepseek_fields = usage_metrics(
+            {
+                "usage": {
+                    "input_tokens": 50,
+                    "output_tokens": 20,
+                    "prompt_cache_hit_tokens": 800,
+                    "prompt_cache_miss_tokens": 200,
+                }
+            }
+        )
+        self.assertEqual(ignored_deepseek_fields["cache_read"], 0)
+        self.assertEqual(ignored_deepseek_fields["uncached"], 50)
+        self.assertEqual(ignored_deepseek_fields["output"], 20)
 
 
 class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):

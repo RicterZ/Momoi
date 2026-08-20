@@ -1,9 +1,16 @@
 from datetime import datetime
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import aiohttp
 
-from .base import UsagePlugin
+from .base import (
+    UsagePlugin,
+    billed_usage,
+    parse_protocol_usage,
+    usage_int,
+    usage_mapping,
+)
 
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
@@ -50,6 +57,16 @@ class DeepSeekPlugin(UsagePlugin):
         peak = 9 * 60 <= minutes < 12 * 60 or 14 * 60 <= minutes < 18 * 60
         return table["peak"] if peak else table["offpeak"]
 
+    def parse_usage(
+        self, data: dict[str, Any]
+    ) -> dict[str, float | int | bool] | None:
+        usage = data.get("usage")
+        if not isinstance(usage, dict):
+            return None
+        if "prompt_cache_hit_tokens" in usage or "prompt_cache_miss_tokens" in usage:
+            return _parse_deepseek_usage(usage)
+        return parse_protocol_usage(data)
+
     async def balance(self) -> dict[str, object]:
         if not self.api_key:
             return {
@@ -93,3 +110,49 @@ class DeepSeekPlugin(UsagePlugin):
                 "is_available": False,
                 "total_balance": "0",
             }
+
+
+def _parse_deepseek_usage(usage: dict[str, Any]) -> dict[str, float | int | bool]:
+    prompt_details = usage_mapping(usage.get("prompt_tokens_details"))
+    completion_details = usage_mapping(usage.get("completion_tokens_details"))
+    cache_read = usage_int(usage.get("prompt_cache_hit_tokens"))
+    if cache_read == 0:
+        cache_read = usage_int(prompt_details.get("cached_tokens"))
+    if cache_read == 0:
+        cache_read = usage_int(usage.get("cache_read_input_tokens"))
+
+    miss = usage_int(usage.get("prompt_cache_miss_tokens"))
+    prompt = usage_int(usage.get("prompt_tokens"))
+    if miss:
+        uncached = miss
+        cache_write = 0
+    elif prompt:
+        cache_write = usage_int(prompt_details.get("cache_write_tokens"))
+        uncached = max(0, prompt - cache_read - cache_write)
+    else:
+        cache_write = usage_int(usage.get("cache_creation_input_tokens"))
+        uncached = usage_int(usage.get("input_tokens"))
+    input_tokens = uncached + cache_read + cache_write
+    if prompt > input_tokens:
+        input_tokens = prompt
+
+    output = max(
+        usage_int(usage.get("completion_tokens")),
+        usage_int(usage.get("output_tokens")),
+    )
+    reasoning = usage_int(completion_details.get("reasoning_tokens"))
+    total = usage_int(usage.get("total_tokens"))
+    if reasoning:
+        if total and total == input_tokens + output + reasoning:
+            output += reasoning
+        elif "completion_tokens" not in usage and output < reasoning:
+            output += reasoning
+
+    return billed_usage(
+        input_tokens=input_tokens,
+        uncached=uncached,
+        cache_read=cache_read,
+        cache_write=cache_write,
+        output=output,
+        cache_reported=True,
+    )

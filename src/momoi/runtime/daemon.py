@@ -141,6 +141,8 @@ class MomoiDaemon(TurnRunner):
         )
         self.provider.usage_sink = self.store.record_llm_call
         self.provider.thinking_sink = self.store.record_thinking_call
+        if usage_plugin is not None:
+            self.provider.usage_parser = usage_plugin.parse_usage
         self.mcp = MCPManager(config.mcp_config)
         self.incoming: asyncio.Queue[IncomingMessage] = asyncio.Queue()
         self._deferred_incoming: deque[IncomingMessage] = deque()

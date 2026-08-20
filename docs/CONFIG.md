@@ -571,7 +571,7 @@ Restart `momoi run` after changing `usage`. The class must be importable from Mo
 
 ### Writing a plugin
 
-Subclass `momoi.extensions.UsagePlugin`. Implement `token_rates`. Override `balance` if the dashboard should show account funds. The default `estimate_cost` multiplies those rates by token counts; override it only when pricing is not linear.
+Subclass `momoi.extensions.UsagePlugin`. Implement `token_rates`. Override `balance` if the dashboard should show account funds. The default `parse_usage` understands OpenAI and Anthropic usage objects; override it when the provider bills from different fields, such as DeepSeek's `prompt_cache_hit_tokens`. The default `estimate_cost` multiplies those rates by token counts; override it only when pricing is not linear.
 
 ```python
 from momoi.extensions import UsagePlugin

@@ -571,7 +571,7 @@ Owner Turn 独占对主人输入的回复权。存在未处理的主人消息、
 
 ### 编写插件
 
-继承 `momoi.extensions.UsagePlugin`，实现 `token_rates`。如果看板要显示账户余额，再实现 `balance`。默认的 `estimate_cost` 用这些单价乘 token 数；只有计价不是线性时才需要覆盖它。
+继承 `momoi.extensions.UsagePlugin`，实现 `token_rates`。如果看板要显示账户余额，再实现 `balance`。默认的 `parse_usage` 只认 OpenAI / Anthropic 的 usage 字段；如果提供商用另一套计费字段（例如 DeepSeek 的 `prompt_cache_hit_tokens`），覆盖 `parse_usage`。默认的 `estimate_cost` 用这些单价乘 token 数；只有计价不是线性时才需要覆盖它。
 
 ```python
 from momoi.extensions import UsagePlugin
