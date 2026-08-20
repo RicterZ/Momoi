@@ -158,16 +158,19 @@ class ContextService:
             for reminder in reminders_by_id.values()
         ]
         interrupted_reply = self.store.cooled_reply_expectation_context()
+        # Prefix-cache order: stable/append-only fields first. DeepSeek/OpenAI
+        # cache from byte 0 of the user JSON, so query-specific goals/episodes
+        # and the current owner message must not precede recent_turns.
         request: list[dict[str, Any]] = [
             {
                 "role": "user",
                 "content": json.dumps(
                     {
-                        "candidate_goals": candidate_goals,
-                        "candidate_reminders": candidate_reminders,
                         "available_mcp_servers": mcp_server_catalog,
                         "recent_turns": planner_recent_turns,
                         "active_recent_turn_ids": active_recent_turn_ids,
+                        "candidate_goals": candidate_goals,
+                        "candidate_reminders": candidate_reminders,
                         "candidate_episodes": candidate_context,
                         "interrupted_reply_expectation": (
                             json.loads(interrupted_reply)
@@ -406,24 +409,24 @@ class ContextService:
                 "content": json.dumps(
                     {
                         "available_mcp_servers": mcp_server_catalog,
-                        "current_time": datetime.now().astimezone().isoformat(
-                            timespec="seconds"
+                        "workspace_heartbeat_guidance": (
+                            self._workspace_heartbeat_guidance()
                         ),
-                        "current_self_state": self_context,
-                        "previous_activity": {
-                            "activity": state.get("activity"),
-                            "result": state.get("activity_result"),
-                        },
+                        "active_goals": goals,
+                        "pending_reminders": reminders,
+                        "recent_conversation": recent_conversation,
+                        "recent_topics": recent_topics,
                         "recent_heartbeat_activities": (
                             self.store.recent_heartbeat_activities()
                         ),
                         "conversation_state": conversation,
-                        "recent_topics": recent_topics,
-                        "recent_conversation": recent_conversation,
-                        "active_goals": goals,
-                        "pending_reminders": reminders,
-                        "workspace_heartbeat_guidance": (
-                            self._workspace_heartbeat_guidance()
+                        "previous_activity": {
+                            "activity": state.get("activity"),
+                            "result": state.get("activity_result"),
+                        },
+                        "current_self_state": self_context,
+                        "current_time": datetime.now().astimezone().isoformat(
+                            timespec="seconds"
                         ),
                     },
                     ensure_ascii=False,

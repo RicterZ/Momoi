@@ -891,11 +891,11 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual(
                             list(payload),
                             [
-                                "candidate_goals",
-                                "candidate_reminders",
                                 "available_mcp_servers",
                                 "recent_turns",
                                 "active_recent_turn_ids",
+                                "candidate_goals",
+                                "candidate_reminders",
                                 "candidate_episodes",
                                 "interrupted_reply_expectation",
                                 "owner_messages",
