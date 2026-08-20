@@ -214,6 +214,8 @@ def build_plan_retrieval(
         "version": 2,
         "episodes": episodes,
         "confirmed_memories": confirmed_memories[:8],
+        # Retained in the internal retrieval record for compatibility and
+        # auditing; prompt stages may choose not to inject this duplicate.
         "owner_preferences": store.always_memory_context(),
         "recent_memories": store.recent_memory_context(
             max(100, config.memory_tokens // 8)
@@ -391,6 +393,7 @@ def _episode_context(
     summary_token_budget: int,
     _raw_token_budget: int = 0,
     _exclude_message_ids: set[int] | None = None,
+    skip_empty_webhook: bool = False,
 ) -> str:
     if not isinstance(episodes, list):
         return ""
@@ -407,6 +410,12 @@ def _episode_context(
     for selected in existing:
         episode = store.episode(str(selected["episode_id"]))
         if episode is None:
+            continue
+        if (
+            skip_empty_webhook
+            and str(episode.get("title") or "").startswith("Webhook event-message")
+            and not _episode_summary(episode)[0]
+        ):
             continue
         lines = [
             _episode_header(episode, selected),
@@ -498,6 +507,56 @@ def assemble_compact_recent_conversation(
         blocks.append("\n".join(lines))
     rendered = "\n\n".join(blocks)
     return truncate_tokens(rendered, max(1, token_budget)) if rendered else "(none)"
+
+
+def assemble_recent_webhook_activity(
+    store: Store,
+    turn_limit: int = 4,
+    token_budget: int = 700,
+) -> str:
+    """Render a tiny ledger of completed webhook work for continuity.
+
+    Keep tool names and outcome summaries, never raw tool payloads. This lets a
+    later webhook avoid repeating an already completed notification without
+    carrying the full prior tool transcript.
+    """
+    rows: list[str] = []
+    for record in reversed(store.recent_turn_records(max(1, turn_limit * 3))):
+        turn_id = str(record.get("turn_id") or "")
+        if not turn_id.startswith("webhook:"):
+            continue
+        timeline = record.get("timeline")
+        if not isinstance(timeline, list):
+            continue
+        calls: list[str] = []
+        result_text = ""
+        notified = False
+        at = str(record.get("completed_at") or record.get("started_at") or "")
+        for item in timeline:
+            if not isinstance(item, dict):
+                continue
+            kind = str(item.get("type") or "")
+            if kind == "tool_call":
+                name = str(item.get("name") or "tool")
+                calls.append(name)
+            elif kind == "tool_result":
+                if str(item.get("name") or "") == "send_message":
+                    notified = bool(item.get("ok", True))
+                summary = item.get("summary") or item.get("result") or item.get("error")
+                if summary and not result_text:
+                    result_text = truncate_tokens(str(summary), 100)
+        if not calls and not result_text:
+            continue
+        rows.append(
+            f"{at} tool={', '.join(dict.fromkeys(calls)) or 'none'} "
+            f"notification={'sent' if notified else 'not-sent'} "
+            f"result={result_text or 'no summary'}"
+        )
+        if len(rows) >= turn_limit:
+            break
+    if not rows:
+        return "(none)"
+    return truncate_tokens("\n".join(reversed(rows)), token_budget)
 
 
 def _compact_turn_record(
@@ -1450,6 +1509,8 @@ def recall_episode_context(
     max_results: int,
     summary_token_budget: int,
     raw_token_budget: int,
+    *,
+    skip_empty_webhook: bool = False,
 ) -> str:
     query = query.strip()
     if not query:
@@ -1471,4 +1532,10 @@ def recall_episode_context(
         max_results,
         summary_token_budget,
     )
-    return _episode_context(store, episodes, summary_token_budget, raw_token_budget)
+    return _episode_context(
+        store,
+        episodes,
+        summary_token_budget,
+        raw_token_budget,
+        skip_empty_webhook=skip_empty_webhook,
+    )

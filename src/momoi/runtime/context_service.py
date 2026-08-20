@@ -197,12 +197,12 @@ def _heartbeat_self_state_lines(value: str) -> str:
 
 def _heartbeat_conversation_state_lines(state: dict[str, object]) -> str:
     fields = [
-        f"owner event revision={state.get('owner_event_revision') or 0}",
-        f"owner busy={bool(state.get('owner_busy') or state.get('owner_turn_or_delivery_active'))}",
+        f"owner event revision: {state.get('owner_event_revision') or 0}",
+        f"owner busy: {bool(state.get('owner_busy') or state.get('owner_turn_or_delivery_active'))}",
     ]
     for key in ("blocked_by", "owner_contact_allowed_now", "owner_contact_eligible_at"):
         if state.get(key) not in (None, "", [], {}):
-            fields.append(f"{key}={state[key]}")
+            fields.append(f"{key}: {state[key]}")
     return "\n".join(fields)
 
 
@@ -239,11 +239,29 @@ def _heartbeat_plan_lines(plan: dict[str, object]) -> str:
     return "\n".join(lines)
 
 
+def _pending_owner_reply_lines(value: dict[str, object]) -> str:
+    """Render reply-wait state without carrying a JSON metadata envelope."""
+    labels = (
+        ("source turn", ("source_turn", "pending_reply_turn_id")),
+        ("expected information", ("expected_information", "pending_reply_expectation")),
+        ("reason", ("reason", "pending_reply_last_reason")),
+        ("waiting since", ("waiting_since", "pending_reply_since")),
+        ("waiting_minutes", ("waiting_minutes",)),
+        ("delay_minutes", ("delay_minutes", "pending_reply_delay_minutes")),
+        ("deadline", ("deadline",)),
+        ("channel", ("channel", "pending_reply_channel")),
+        ("next check", ("next_check_at", "pending_reply_next_check_at")),
+    )
+    return "\n".join(
+        f"{label}: {next((value.get(key) for key in keys if value.get(key) not in (None, '')), 'none')}"
+        for label, keys in labels
+    )
+
+
 def render_heartbeat_planner_request(
     *,
     mcp_servers: list[dict[str, object]],
     workspace_guidance: str,
-    owner_preferences: str,
     recent_memories: str,
     active_goals: str,
     pending_reminders: str,
@@ -262,7 +280,6 @@ def render_heartbeat_planner_request(
     return _sections(
         ("available_mcp_servers", _planner_value(_planner_mcp_lines(mcp_servers))),
         ("workspace_heartbeat_guidance", _planner_value(workspace_guidance)),
-        ("owner_preferences", _planner_value(owner_preferences)),
         ("recent_memories", _planner_value(recent_memories)),
         ("active_goals", _planner_value(active_goals)),
         ("pending_reminders", _planner_value(pending_reminders)),
@@ -690,7 +707,6 @@ class ContextService:
         recent_conversation: str,
         goals: str,
         reminders: str,
-        owner_preferences: str,
         recent_memories: str,
     ) -> dict[str, object]:
         mcp_server_catalog = self._heartbeat_mcp_server_catalog()
@@ -703,7 +719,6 @@ class ContextService:
                 "content": render_heartbeat_planner_request(
                     mcp_servers=mcp_server_catalog,
                     workspace_guidance=self._workspace_heartbeat_guidance(),
-                    owner_preferences=owner_preferences,
                     recent_memories=recent_memories,
                     active_goals=goals,
                     pending_reminders=reminders,

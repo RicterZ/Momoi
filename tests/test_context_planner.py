@@ -131,7 +131,6 @@ class ContextPlannerTest(unittest.TestCase):
         rendered = render_heartbeat_planner_request(
             mcp_servers=[{"id": "weibo", "description": "Browse Weibo"}],
             workspace_guidance="Choose one activity.",
-            owner_preferences="- no duplicate wording",
             recent_memories="- shared game night",
             active_goals="- id=g1 status=active title=goal",
             pending_reminders="(none)",
@@ -144,7 +143,7 @@ class ContextPlannerTest(unittest.TestCase):
             current_time="2026-08-20T20:00:00+08:00",
         )
         self.assertTrue(rendered.startswith("<available_mcp_servers>"))
-        self.assertIn("<owner_preferences>\n- no duplicate wording", rendered)
+        self.assertNotIn("<owner_preferences>", rendered)
         self.assertIn("<recent_memories>\n- shared game night", rendered)
         self.assertIn("<recent_topics>\n- title=Game topics=BA", rendered)
         self.assertNotIn('"available_mcp_servers"', rendered)

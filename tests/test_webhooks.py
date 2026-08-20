@@ -362,6 +362,7 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn("<current_webhook_task>", context_text)
             self.assertIn("<runtime_state>", context_text)
             self.assertIn("<recent_conversation>", context_text)
+            self.assertIn("<webhook_activity>", context_text)
             self.assertIn("<conversation_state>", context_text)
             self.assertLess(
                 context_text.index("<recent_conversation>"),
@@ -375,6 +376,8 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                 context_text.index("<runtime_state>"),
                 context_text.index("<current_webhook_task>"),
             )
+            self.assertNotIn("<owner_preferences>", context_text)
+            self.assertIn("owner event revision:", context_text)
             self.assertRegex(context_text, r"Turn \d{4}-\d{2}-\d{2}T")
             self.assertIn("以后回家时帮我留意快递", context_text)
             self.assertIn("好，回家时我会留意", context_text)

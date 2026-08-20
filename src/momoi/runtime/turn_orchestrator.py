@@ -20,6 +20,7 @@ from ..text_replacement import cyber_keyword_pre_hook
 from .context_assembler import (
     assemble_main_context,
     assemble_compact_recent_conversation,
+    assemble_recent_webhook_activity,
     assemble_recent_conversation,
     build_plan_retrieval,
     recall_episode_context,
@@ -30,6 +31,7 @@ from .context_service import (
     _heartbeat_plan_lines,
     _heartbeat_self_state_lines,
     _heartbeat_topic_lines,
+    _pending_owner_reply_lines,
 )
 from .protocol import (
     AUTONOMOUS_FINISH_SPEC,
@@ -203,7 +205,6 @@ class TurnOrchestrator:
             {
                 "type": "text",
                 "text": _pack_user_context(
-                    ("owner_preferences", recalled["owner_preferences"]),
                     ("core_reflection_memory", recalled["core_reflection_memories"]),
                     ("recent_memories", recalled["recent_memories"]),
                     ("confirmed_owner_memory", recalled["confirmed_memories"]),
@@ -253,6 +254,7 @@ class TurnOrchestrator:
             self.config.summary_results,
             self.config.summary_tokens,
             self.config.recent_raw_tokens,
+            skip_empty_webhook=True,
         )
         memories = self.store.memory_context(
             prompt, self.config.memory_results, self.config.memory_tokens
@@ -262,7 +264,6 @@ class TurnOrchestrator:
             max(1, self.config.memory_results // 2),
             max(1000, self.config.memory_tokens // 2),
         )
-        owner_preferences = self.store.always_memory_context()
         recent_memories = self.store.recent_memory_context(
             max(100, self.config.memory_tokens // 8)
         )
@@ -290,16 +291,15 @@ class TurnOrchestrator:
                     "statement from the owner.]"
                 ),
             ),
-            ("runtime_state", f"{runtime_state}\nCurrent self state: {self_state}"),
+            ("runtime_state", f"{runtime_state}\n{_heartbeat_self_state_lines(self_state)}"),
             (
                 "conversation_state",
-                json.dumps(
+                _heartbeat_conversation_state_lines(
                     {
                         "owner_event_revision": conversation["owner_event_revision"],
                         "owner_turn_or_delivery_active": conversation["owner_busy"],
                         "blocked_by": conversation["blocked_by"],
-                    },
-                    separators=(",", ":"),
+                    }
                 ),
             ),
             (
@@ -307,10 +307,10 @@ class TurnOrchestrator:
                 recent_conversation,
             ),
             ("episode_directory", episodes),
-            ("owner_preferences", owner_preferences),
             ("recent_memories", recent_memories),
             ("confirmed_owner_memory", memories),
             ("reflection_memory", learned),
+            ("webhook_activity", assemble_recent_webhook_activity(self.store)),
         )
         system = [
             *self._system(),
@@ -803,7 +803,7 @@ class TurnOrchestrator:
         runtime_state = (
             f"Current local time: {runtime}\n"
             f"Channel: {channel.name}. {channel.prompt_context}\n"
-            f"Current self state: {self_state}"
+            f"{_heartbeat_self_state_lines(self_state)}"
         )
         directives: list[str] = []
         if any(message.text.strip() == "/stop" for message in batch):
@@ -822,7 +822,6 @@ class TurnOrchestrator:
                 "a replacement."
             )
         current_text = _pack_user_context(
-            ("owner_preferences", recalled["owner_preferences"]),
             ("core_reflection_memory", recalled["core_reflection_memories"]),
             ("recent_memories", recalled["recent_memories"]),
             ("confirmed_owner_memory", recalled["confirmed_memories"]),
@@ -935,24 +934,23 @@ class TurnOrchestrator:
             apply_cooldown=False,
         )
         current_input = _pack_user_context(
-            ("pending_owner_reply", json.dumps(pending, ensure_ascii=False)),
+            ("pending_owner_reply", _pending_owner_reply_lines(pending)),
             (
                 "runtime_state",
                 (
                     f"Current local time: {datetime.now().astimezone().isoformat(timespec='seconds')}\n"
-                    f"Current self state: {self.store.self_state_context()}"
+                    f"{_heartbeat_self_state_lines(self.store.self_state_context())}"
                 ),
             ),
             (
                 "conversation_state",
-                json.dumps(
+                _heartbeat_conversation_state_lines(
                     {
                         "owner_event_revision": owner_event_revision,
                         "owner_turn_or_delivery_active": False,
                         "owner_contact_allowed_now": contact_window["allowed"],
                         "owner_contact_eligible_at": contact_window["eligible_at"],
-                    },
-                    separators=(",", ":"),
+                    }
                 ),
             ),
         )
@@ -1027,8 +1025,10 @@ class TurnOrchestrator:
         contact_window = self.store.heartbeat_contact_window(
             notification_key, self.config.notifications
         )
-        recent_conversation, _ = assemble_recent_conversation(
-            self.store, self.config.recent_turns, self.config.recent_raw_tokens
+        recent_conversation = assemble_compact_recent_conversation(
+            self.store,
+            4,
+            min(1600, max(400, self.config.recent_raw_tokens // 3)),
         )
         recent_topics: list[dict[str, object]] = []
         topic_tokens = 0
@@ -1058,7 +1058,6 @@ class TurnOrchestrator:
             topic_tokens += size
         goals = self.store.active_goals_context(authority="agent")
         reminders = self.store.active_reminders_context()
-        owner_preferences = self.store.always_memory_context()
         recent_memories = self.store.recent_memory_context(
             max(100, self.config.memory_tokens // 8)
         )
@@ -1072,7 +1071,6 @@ class TurnOrchestrator:
             recent_conversation=recent_conversation,
             goals=goals,
             reminders=reminders,
-            owner_preferences=owner_preferences,
             recent_memories=recent_memories,
         )
         planned_activity = plan["activity"]
@@ -1133,7 +1131,6 @@ class TurnOrchestrator:
                 recent_conversation,
             ),
             ("episode_directory", recalled["episodes"]),
-            ("owner_preferences", recalled["owner_preferences"]),
             ("recent_memories", recalled["recent_memories"]),
             ("confirmed_owner_memory", recalled["confirmed_memories"]),
             ("reflection_memory", recalled["reflection_memories"]),
@@ -1297,7 +1294,10 @@ class TurnOrchestrator:
         )
         current_input = _pack_user_context(
             ("daily_reflection_record", reflection_record),
-            ("runtime_state", self.store.self_state_context()),
+            (
+                "runtime_state",
+                _heartbeat_self_state_lines(self.store.self_state_context()),
+            ),
             ("episode_directory", episodes),
             ("always_memory_inventory", self.store.always_memory_inventory_context()),
             ("open_conversations", self.store.open_conversation_inventory_context()),
@@ -1463,7 +1463,6 @@ class TurnOrchestrator:
             max(1, self.config.memory_results // 2),
             max(1000, self.config.memory_tokens // 2),
         )
-        owner_preferences = self.store.always_memory_context()
         recent_memories = self.store.recent_memory_context(
             max(100, self.config.memory_tokens // 8)
         )
@@ -1484,11 +1483,11 @@ class TurnOrchestrator:
             f"Title: {goal['title']}\n"
             f"Success criteria: {goal['success_criteria']}\n"
             f"Status: {goal['status']}\n"
-            f"Plan: {json.dumps(goal['plan'], ensure_ascii=False)}\n"
+            f"Plan: {goal['plan'] or 'none'}\n"
             f"Next action: {goal['next_action']}\n"
             f"Waiting for: {goal['waiting_for'] or 'none'}\n"
             f"Latest result: {goal['latest_result'] or 'none'}\n"
-            f"Recurring schedule: {json.dumps(goal['schedule'], ensure_ascii=False) if goal['schedule'] else 'none'}\n"
+            f"Recurring schedule: {goal['schedule'] or 'none'}\n"
             f"Scheduled review time: {review_at}\n"
             "Continue only this due goal. Before finishing, update, finish, or cancel it. "
             "Use goal_update to keep it open with current state, goal_finish when its "
@@ -1515,18 +1514,16 @@ class TurnOrchestrator:
             ("runtime_state", self_state),
             (
                 "conversation_state",
-                json.dumps(
+                _heartbeat_conversation_state_lines(
                     {
                         "owner_event_revision": conversation["owner_event_revision"],
                         "owner_turn_or_delivery_active": conversation["owner_busy"],
                         "blocked_by": conversation["blocked_by"],
-                    },
-                    separators=(",", ":"),
+                    }
                 ),
             ),
             ("recent_conversation", recent_conversation),
             ("episode_directory", episodes),
-            ("owner_preferences", owner_preferences),
             ("recent_memories", recent_memories),
             ("confirmed_owner_memory", memories),
             ("reflection_memory", learned),

@@ -95,6 +95,7 @@ USER_CONTEXT_SECTION_ORDER = (
     "recent_memory_inventory",
     "recent_turns",
     "recent_conversation",
+    "webhook_activity",
     "episode_directory",
     "query_recall",
     "core_reflection_memory",
