@@ -4,8 +4,8 @@ from momoi.runtime.context_candidates import (
     DEFAULT_EPISODE_CANDIDATE_POLICY,
     EpisodeCandidatePolicy,
     collect_episode_candidates,
-    full_candidate_context,
     rank_episode_candidates,
+    render_candidate_context,
 )
 
 
@@ -52,8 +52,8 @@ class ContextCandidatesTest(unittest.TestCase):
         self.assertEqual(len(ids), len(set(ids)))
         self.assertIn("shared", ids)
 
-    def test_full_context_preserves_existing_shape_and_truncates_summary(self) -> None:
-        result = full_candidate_context(
+    def test_rendered_context_is_compact_and_human_readable(self) -> None:
+        result = render_candidate_context(
             [
                 {
                     "id": "episode",
@@ -69,11 +69,12 @@ class ContextCandidatesTest(unittest.TestCase):
                 }
             ]
         )
-        self.assertEqual(len(result[0]["summary"]), 400)
-        self.assertEqual(result[0]["id"], "episode")
-        self.assertNotIn("last_activity_timestamp", result[0])
-        self.assertNotIn("updated_timestamp", result[0])
-        self.assertEqual(result[0]["open_loops"], ["loop"])
+        self.assertIn("id=episode", result)
+        self.assertIn("status=open", result)
+        self.assertIn("summary=" + "x" * 240, result)
+        self.assertIn("topics=topic", result)
+        self.assertIn("open_loops=loop", result)
+        self.assertNotIn("last_activity_timestamp", result)
 
     def test_recent_context_beats_broad_title_match(self) -> None:
         ranked = rank_episode_candidates(

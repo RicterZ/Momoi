@@ -53,16 +53,6 @@ class MemoryForgetCandidate:
 
 
 @dataclass(frozen=True)
-class MemoryConflictCandidate:
-    kind: str
-    key: str
-    content: str
-    evidence: str
-    importance: float = 0.5
-    activation: str = "recall"
-
-
-@dataclass(frozen=True)
 class AgentReply:
     messages: list[str | dict[str, Any]]
     mood_update: dict[str, Any] | None = None
@@ -122,7 +112,6 @@ class ProviderResponse:
 @dataclass
 class TurnDraft:
     memories: list[MemoryCandidate] = field(default_factory=list)
-    memory_conflicts: list[MemoryConflictCandidate] = field(default_factory=list)
     forgotten_memories: list[MemoryForgetCandidate] = field(default_factory=list)
     goals: dict[str, GoalMutation] = field(default_factory=dict)
     reminders: dict[str, ReminderMutation] = field(default_factory=dict)

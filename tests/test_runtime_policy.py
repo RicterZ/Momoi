@@ -11,13 +11,9 @@ from momoi.policies import (
     RuntimePolicies,
 )
 from momoi.runtime.daemon import _message_gap_bounds
-from momoi.runtime.turns import MAX_CONSECUTIVE_TOOL_FAILURES
+from momoi.runtime.turn_support import MAX_CONSECUTIVE_TOOL_FAILURES
 from momoi.storage import Store
-from momoi.storage.memory import (
-    RECENT_MEMORY_MAX_TTL_HOURS,
-    RECENT_MEMORY_MIN_TTL_HOURS,
-    memory_expires_at,
-)
+from momoi.storage.memory import memory_expires_at
 
 
 class RuntimePolicyDefaultsTests(unittest.TestCase):
@@ -34,9 +30,7 @@ class RuntimePolicyDefaultsTests(unittest.TestCase):
         self.assertEqual(_message_gap_bounds("中等长度" * 8), (5.0, 6.0))
         self.assertEqual(_message_gap_bounds("长消息" * 30), (6.0, 7.0))
 
-    def test_memory_ttl_constants_remain_compatible(self):
-        self.assertEqual(RECENT_MEMORY_MIN_TTL_HOURS, 1.0)
-        self.assertEqual(RECENT_MEMORY_MAX_TTL_HOURS, 168.0)
+    def test_default_memory_ttl_policy_is_applied(self):
         now = 100.0
         self.assertEqual(memory_expires_at("recent", 0, now), now + 3600)
         self.assertEqual(memory_expires_at("recent", 999, now), now + 168 * 3600)

@@ -7,8 +7,8 @@ from momoi.runtime.budget import (
     TextSizer,
     ToolResultFitter,
 )
-from momoi.runtime.turns import _truncate_tool_result_json
-from momoi.storage.memory import estimate_tokens, excerpt_tokens, truncate_tokens
+from momoi.runtime.turn_support import truncate_tool_result_json
+from momoi.storage.memory import estimate_tokens, truncate_tokens
 
 
 class BudgetCompatibilityTests(unittest.TestCase):
@@ -25,11 +25,8 @@ class BudgetCompatibilityTests(unittest.TestCase):
         self.assertEqual(truncate_tokens("你好", 2), "你好")
         self.assertEqual(fitter.truncate("abcde", 1), truncate_tokens("abcde", 1))
         self.assertEqual(
-            excerpt_tokens("前文 关键字 后文" * 20, {"关键字"}, 5), "… 关键字"
-        )
-        self.assertEqual(
             fitter.excerpt("前文 关键字 后文" * 20, {"关键字"}, 5),
-            excerpt_tokens("前文 关键字 后文" * 20, {"关键字"}, 5),
+            "… 关键字",
         )
 
     def test_tool_result_truncation_preserves_envelope(self):
@@ -42,7 +39,7 @@ class BudgetCompatibilityTests(unittest.TestCase):
                 "result": {"content": "x" * 5000},
             }
         )
-        rendered = _truncate_tool_result_json(value, 1000)
+        rendered = truncate_tool_result_json(value, 1000)
         parsed = json.loads(rendered)
         self.assertEqual(
             {key: parsed[key] for key in ("ok", "error", "message", "provenance")},

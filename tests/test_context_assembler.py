@@ -57,8 +57,9 @@ def plan(query: str, episode_id: str = "episode-mail") -> dict[str, object]:
                 "recall_queries": [query],
             }
         ],
-        "episode_bindings": [
+        "episode_actions": [
             {
+                "action": "continue",
                 "episode_id": episode_id,
                 "is_new": False,
                 "title": "项目邮件",
@@ -1157,8 +1158,9 @@ class ContextAssemblerTest(unittest.TestCase):
                         "recall_queries": ["微博 看猫"],
                     },
                 ],
-                "episode_bindings": [
+                "episode_actions": [
                     {
+                        "action": "continue",
                         "episode_id": "mail",
                         "is_new": False,
                         "title": "邮件事项",
@@ -1170,6 +1172,7 @@ class ContextAssemblerTest(unittest.TestCase):
                         "salience": 0.5,
                     },
                     {
+                        "action": "continue",
                         "episode_id": "social",
                         "is_new": False,
                         "title": "微博事项",
@@ -1244,7 +1247,7 @@ class ContextAssemblerTest(unittest.TestCase):
                         "recall_queries": ["好，就这么做"],
                     }
                 ],
-                "episode_bindings": [],
+                "episode_actions": [],
                 "episode_links": [],
                 "uncertainty": ["planner failed"],
             }
@@ -1404,18 +1407,6 @@ class ContextAssemblerTest(unittest.TestCase):
                     ),
                 ],
             )
-            memory_id = store._db.execute(
-                "SELECT id FROM memories WHERE key='project.mail.waiting'"
-            ).fetchone()[0]
-            store._db.execute(
-                """INSERT INTO memory_conflicts
-                   (kind, key, existing_memory_id, candidate_content,
-                    source_event_id, evidence_quote, importance, status,
-                    created_at, updated_at)
-                   VALUES ('episodic', 'project.mail.waiting', ?, '项目邮件已经到达',
-                           'correction', '邮件已经到了', 0.8, 'open', ?, ?)""",
-                (memory_id, now, now),
-            )
             store._db.execute(
                 """INSERT INTO reflections
                    (id, local_date, state, scheduled_at, created_at, completed_at)
@@ -1504,7 +1495,6 @@ class ContextAssemblerTest(unittest.TestCase):
             rendered = "\n".join(assembled.values())
             self.assertNotIn("较早的项目邮件仍在等待", rendered)
             self.assertIn("项目邮件关系到当前合作", rendered)
-            self.assertNotIn("项目邮件已经到达", rendered)
             self.assertIn("goal-mail", rendered)
             self.assertIn("goal-social", rendered)
             self.assertIn("reminder-social", rendered)
@@ -1565,7 +1555,7 @@ class ContextAssemblerTest(unittest.TestCase):
                     },
                 ]
             )
-            split_plan["episode_bindings"][0]["unit_ids"].extend(
+            split_plan["episode_actions"][0]["unit_ids"].extend(
                 ["social", "weather", "music"]
             )
 

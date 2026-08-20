@@ -7,7 +7,6 @@ from ..search import search_expression
 from ..models import (
     IncomingMessage,
     MemoryCandidate,
-    MemoryConflictCandidate,
     MemoryForgetCandidate,
 )
 
@@ -24,8 +23,6 @@ MEMORY_ACTIVATIONS = {"always", "recent", "recall"}
 ALWAYS_MEMORY_KINDS = {"profile", "preference", "relationship"}
 RECENT_MEMORY_WINDOW_SECONDS = 7 * 24 * 60 * 60
 _DEFAULT_MEMORY_POLICY = MemoryPolicy()
-RECENT_MEMORY_MIN_TTL_HOURS = _DEFAULT_MEMORY_POLICY.recent_min_ttl_hours
-RECENT_MEMORY_MAX_TTL_HOURS = _DEFAULT_MEMORY_POLICY.recent_max_ttl_hours
 ALWAYS_MEMORY_TOKEN_BUDGET = 1200
 
 
@@ -62,12 +59,6 @@ def truncate_tokens(text: str, token_budget: int) -> str:
     from ..runtime.budget import MEMORY_TEXT_FITTER
 
     return MEMORY_TEXT_FITTER.truncate(text, token_budget)
-
-
-def excerpt_tokens(text: str, terms: set[str], token_budget: int) -> str:
-    from ..runtime.budget import MEMORY_TEXT_FITTER
-
-    return MEMORY_TEXT_FITTER.excerpt(text, terms, token_budget)
 
 
 def token_chunk(text: str, offset: int, token_budget: int) -> tuple[str, int | None]:
@@ -117,10 +108,6 @@ class MemoryStore:
         placeholders = ",".join("?" for _ in ids)
         self._db.execute(
             f"DELETE FROM memory_evidence WHERE memory_id IN ({placeholders})",
-            ids,
-        )
-        self._db.execute(
-            f"DELETE FROM memory_conflicts WHERE existing_memory_id IN ({placeholders})",
             ids,
         )
         self._db.execute(
@@ -191,9 +178,6 @@ class MemoryStore:
             (now,),
         ).fetchall()
         return [dict(row) for row in rows]
-
-    def always_memory_count(self) -> int:
-        return len(self.always_memory_inventory())
 
     def always_memory_inventory_context(self) -> str:
         rows = self.always_memory_inventory()
@@ -295,9 +279,6 @@ class MemoryStore:
                     now,
                 ),
             )
-            self._resolve_memory_conflicts(
-                str(memory["kind"]), str(memory["key"]), "forgotten", now
-            )
 
     def apply_recent_memory_actions(
         self,
@@ -339,7 +320,6 @@ class MemoryStore:
                          created_at=excluded.created_at""",
                     (row["kind"], row["key"], source_id, str(item["reason"]), now),
                 )
-                self._resolve_memory_conflicts(row["kind"], row["key"], "forgotten", now)
 
     def recent_memory_context(self, token_budget: int) -> str:
         self.purge_expired_memories()
@@ -443,59 +423,6 @@ class MemoryStore:
             ranked.append((score, row))
         ranked.sort(key=lambda item: item[0], reverse=True)
         return [dict(row) for _, row in ranked[:max_results]]
-
-    def search_memory_conflicts(
-        self, query: str, max_results: int
-    ) -> list[dict[str, object]]:
-        if max_results <= 0:
-            return []
-        ranked: list[tuple[float, sqlite3.Row]] = []
-        for row in self._db.execute(
-            """SELECT c.id, c.kind, c.key, c.activation, c.candidate_content,
-                      m.content AS existing_content
-               FROM memory_conflicts AS c
-               JOIN memories AS m ON m.id=c.existing_memory_id
-               WHERE c.status='open' ORDER BY c.updated_at DESC"""
-        ).fetchall():
-            match = search_expression(
-                query,
-                (
-                    str(row["kind"]),
-                    str(row["key"]),
-                    str(row["candidate_content"]),
-                    str(row["existing_content"]),
-                ),
-                self._search_backend,
-            )
-            if match is None:
-                continue
-            ranked.append((match.score, row))
-        ranked.sort(key=lambda item: item[0], reverse=True)
-        return [dict(row) for _, row in ranked[:max_results]]
-
-    def memory_conflicts_context(self, token_budget: int = 4000) -> str:
-        if token_budget <= 0:
-            return ""
-        rows = self._db.execute(
-            """SELECT c.id, c.kind, c.key, c.activation, c.candidate_content,
-                      m.content AS existing_content
-               FROM memory_conflicts AS c
-               JOIN memories AS m ON m.id=c.existing_memory_id
-               WHERE c.status='open' ORDER BY c.updated_at LIMIT 10"""
-        ).fetchall()
-        lines: list[str] = []
-        tokens = 0
-        for row in rows:
-            line = (
-                f"- conflict_id={row['id']} [{row['kind']}:{row['key']}] "
-                f"current={row['existing_content']} candidate={row['candidate_content']}"
-            )
-            line_tokens = estimate_tokens(line)
-            if lines and tokens + line_tokens > token_budget:
-                break
-            lines.append(line)
-            tokens += line_tokens
-        return "\n".join(lines)
 
     def search_memories(
         self,
@@ -627,10 +554,6 @@ class MemoryStore:
             self._add_memory_evidence(
                 int(old["id"]), source_event_id, memory.evidence, now
             )
-            if memory.replace_confirmed:
-                self._resolve_memory_conflicts(
-                    memory.kind, memory.key, "confirmed_existing", now
-                )
             return
         cursor = self._db.execute(
             """INSERT INTO memories
@@ -658,73 +581,6 @@ class MemoryStore:
         self._add_memory_evidence(
             int(cursor.lastrowid), source_event_id, memory.evidence, now
         )
-        if memory.replace_confirmed:
-            self._resolve_memory_conflicts(
-                memory.kind, memory.key, "confirmed_replacement", now
-            )
-
-    def _propose_memory_conflict(
-        self,
-        conflict: MemoryConflictCandidate,
-        events: list[IncomingMessage],
-        now: float,
-    ) -> None:
-        source_event = next(
-            (event for event in events if conflict.evidence in event.text), None
-        )
-        existing = self.active_memory(conflict.kind, conflict.key)
-        if source_event is None or existing is None:
-            return
-        if existing["content"] == conflict.content:
-            self._remember(
-                MemoryCandidate(
-                    conflict.kind,
-                    conflict.key,
-                    conflict.content,
-                    conflict.evidence,
-                    conflict.importance,
-                    False,
-                    conflict.activation,
-                ),
-                events,
-                now,
-            )
-            return
-        self._db.execute(
-            """UPDATE memory_conflicts SET status='resolved',
-               resolution='superseded_candidate', updated_at=?
-               WHERE kind=? AND key=? AND status='open'""",
-            (now, conflict.kind, conflict.key),
-        )
-        self._db.execute(
-            """INSERT INTO memory_conflicts
-               (kind, key, activation, existing_memory_id, candidate_content,
-                source_event_id, evidence_quote, importance, status, created_at,
-                updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)""",
-            (
-                conflict.kind,
-                conflict.key,
-                conflict.activation,
-                existing["id"],
-                conflict.content,
-                source_event.event_id,
-                conflict.evidence,
-                conflict.importance,
-                now,
-                now,
-            ),
-        )
-
-    def _resolve_memory_conflicts(
-        self, kind: str, key: str, resolution: str, now: float
-    ) -> None:
-        self._db.execute(
-            """UPDATE memory_conflicts SET status='resolved', resolution=?, updated_at=?
-               WHERE kind=? AND key=? AND status='open'""",
-            (resolution, now, kind, key),
-        )
-
     def _add_memory_evidence(
         self,
         memory_id: int,
@@ -760,4 +616,3 @@ class MemoryStore:
                  created_at=excluded.created_at""",
             (memory.kind, memory.key, source_event.event_id, memory.evidence, now),
         )
-        self._resolve_memory_conflicts(memory.kind, memory.key, "forgotten", now)

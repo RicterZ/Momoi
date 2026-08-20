@@ -199,27 +199,6 @@ def collect_episode_candidates(
     )
 
 
-def full_candidate_context(
-    candidates: list[dict[str, object]],
-) -> list[dict[str, object]]:
-    return [
-        {
-            "id": candidate["id"],
-            "status": candidate["status"],
-            "title": candidate["title"],
-            "summary": str(
-                candidate.get("narrative_summary")
-                or candidate.get("working_summary")
-                or ""
-            )[:400],
-            "topics": candidate["topics"],
-            "entities": candidate["entities"],
-            "open_loops": candidate["open_loops"],
-        }
-        for candidate in candidates
-    ]
-
-
 def render_candidate_context(candidates: list[dict[str, object]]) -> str:
     """Render planner candidates as compact evidence cards."""
     blocks: list[str] = []

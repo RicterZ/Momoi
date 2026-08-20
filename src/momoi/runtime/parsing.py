@@ -12,6 +12,14 @@ from ..models import AgentReply
 from ..storage import REFLECTION_MEMORY_KINDS
 
 
+def response_text(content: list[dict[str, Any]]) -> str:
+    return "\n".join(
+        str(block.get("text") or "")
+        for block in content
+        if block.get("type") == "text"
+    ).strip()
+
+
 def parse_messages(
     arguments: dict[str, Any], *, allow_empty: bool = False
 ) -> tuple[list[ChannelMessage] | None, str | None]:

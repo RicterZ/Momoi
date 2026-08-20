@@ -23,13 +23,11 @@ from momoi.config import (
 )
 from momoi.runtime import (
     AUTONOMOUS_FINISH_SPEC,
-    HEARTBEAT_QUEUE_ITEM,
     RESPOND_TOOL_SPEC,
     SEND_MESSAGE_TOOL_SPEC,
     heartbeat_respond_tool_spec,
     MomoiDaemon,
 )
-from momoi.runtime.daemon import REFLECTION_QUEUE_PREFIX
 from momoi.runtime.jobs import AutonomousJob
 from momoi.runtime.protocol import CHANNEL_MESSAGE_SCHEMA, MOOD_UPDATE_SCHEMA
 from momoi.models import (
@@ -44,13 +42,14 @@ from momoi.models import (
 from momoi.provider import (
     ProviderError,
 )
-from momoi.runtime.turns import (
-    CONTEXT_PLAN_TOOL_NAME,
+from momoi.runtime.context_planner import CONTEXT_PLAN_TOOL_NAME
+from momoi.runtime.turn_support import (
     CONTEXT_PLANNER_SYSTEM_PROMPT,
     HEARTBEAT_PLANNER_SYSTEM_PROMPT,
     STYLE_CARD_SYSTEM_PROMPT,
 )
 from momoi.runtime.context_planner import degraded_context_plan
+from momoi.runtime.parsing import parse_mood_decision, parse_mood_update
 from momoi.runtime.daemon import _message_gap_bounds
 from momoi.runtime.turn_support import REPLY_WAIT_SYSTEM_PROMPT
 from momoi.storage import estimate_tokens
@@ -315,7 +314,7 @@ class DaemonTest(unittest.TestCase):
         self.assertIn("Set `reply_wait.wait` to false", REPLY_WAIT_SYSTEM_PROMPT)
 
     def test_mood_update_parser_accepts_open_state_labels(self) -> None:
-        mood, error = MomoiDaemon._parse_mood_update(
+        mood, error = parse_mood_update(
             {
                 "state": "angry",
                 "intensity": 0.8,
@@ -324,7 +323,7 @@ class DaemonTest(unittest.TestCase):
         )
         self.assertEqual(mood["state"], "angry")
         self.assertIsNone(error)
-        mood, error = MomoiDaemon._parse_mood_update(
+        mood, error = parse_mood_update(
             {
                 "state": "very angry!",
                 "intensity": 0.8,
@@ -338,10 +337,10 @@ class DaemonTest(unittest.TestCase):
         self.assertEqual(state_schema["pattern"], "^[a-z][a-z0-9_-]{0,31}$")
 
     def test_mood_decision_is_explicit_in_terminal_tools(self) -> None:
-        mood, error = MomoiDaemon._parse_mood_decision({"decision": "unchanged"})
+        mood, error = parse_mood_decision({"decision": "unchanged"})
         self.assertIsNone(mood)
         self.assertIsNone(error)
-        mood, error = MomoiDaemon._parse_mood_decision(
+        mood, error = parse_mood_decision(
             {
                 "decision": "updated",
                 "state": "excited",
@@ -352,11 +351,11 @@ class DaemonTest(unittest.TestCase):
         self.assertEqual(mood["state"], "excited")
         self.assertIsNone(error)
         self.assertEqual(
-            MomoiDaemon._parse_mood_decision(None),
+            parse_mood_decision(None),
             (None, "invalid_mood_decision"),
         )
         self.assertEqual(
-            MomoiDaemon._parse_mood_decision('{"decision": "unchanged"}'),
+            parse_mood_decision('{"decision": "unchanged"}'),
             (None, "invalid_mood_decision"),
         )
         self.assertIn("mood", RESPOND_TOOL_SPEC["input_schema"]["required"])
@@ -1946,8 +1945,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     log_level="INFO",
                 )
             )
-            daemon.autonomous.put_nowait(HEARTBEAT_QUEUE_ITEM)
-            daemon.autonomous.put_nowait("goal-1")
+            daemon.autonomous.put_nowait(AutonomousJob.heartbeat())
+            daemon.autonomous.put_nowait(AutonomousJob.goal("goal-1"))
             self.assertEqual(
                 await daemon._next_work(), ("goal", AutonomousJob.goal("goal-1"))
             )
@@ -3306,7 +3305,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
 
             provider = Provider()
             daemon.provider = with_context_planner(provider)  # type: ignore[assignment]
-            daemon.autonomous.put_nowait(goal_id)
+            daemon.autonomous.put_nowait(AutonomousJob.goal(goal_id))
             worker = asyncio.create_task(daemon._agent_worker(asyncio.Event()))
             try:
                 await asyncio.wait_for(started.wait(), timeout=1)

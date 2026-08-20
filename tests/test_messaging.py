@@ -37,6 +37,7 @@ from momoi.models import (
     ToolCall,
 )
 from momoi.reply_wait import decode_reply_wait, encode_reply_wait
+from momoi.runtime.parsing import parse_messages, parse_response
 from momoi.storage import Store
 from tests.support import with_context_planner
 
@@ -454,7 +455,7 @@ class MessagingTest(unittest.TestCase):
                 "delay_minutes": 6,
             },
         )
-        reply, error = MomoiDaemon._parse_response(
+        reply, error = parse_response(
             {
                 "reply_wait": {"wait": False},
                 "mood": {"decision": "unchanged"},
@@ -464,7 +465,7 @@ class MessagingTest(unittest.TestCase):
         self.assertEqual(reply.messages, [])
         self.assertFalse(reply.expects_reply)
         self.assertFalse(reply.should_schedule_reply_wait)
-        scheduled, error = MomoiDaemon._parse_response(
+        scheduled, error = parse_response(
             {
                 "reply_wait": {
                     "wait": True,
@@ -480,7 +481,7 @@ class MessagingTest(unittest.TestCase):
         self.assertEqual(scheduled.reply_expectation, "主人晚上的安排")
         self.assertEqual(scheduled.reply_wait_delay_minutes, 7)
         self.assertIn("一起玩", scheduled.reply_wait_reason)
-        adjusted, error = MomoiDaemon._parse_response(
+        adjusted, error = parse_response(
             {
                 "reply_wait": {"wait": False},
                 "plan_adjustment": {
@@ -496,7 +497,7 @@ class MessagingTest(unittest.TestCase):
             adjusted.plan_adjustment["corrected_direction"],
             "改为处理当前Goal",
         )
-        invalid_schedule, error = MomoiDaemon._parse_response(
+        invalid_schedule, error = parse_response(
             {
                 "reply_wait": {
                     "wait": True,
@@ -509,7 +510,7 @@ class MessagingTest(unittest.TestCase):
         )
         self.assertIsNone(invalid_schedule)
         self.assertEqual(error, "invalid_reply_wait_decision")
-        legacy, error = MomoiDaemon._parse_response(
+        legacy, error = parse_response(
             {
                 "messages": ["旧协议消息"],
                 "expects_reply": False,
@@ -519,7 +520,7 @@ class MessagingTest(unittest.TestCase):
         )
         self.assertIsNone(legacy)
         self.assertEqual(error, "messages_not_allowed_in_respond")
-        heartbeat, error = MomoiDaemon._parse_response(
+        heartbeat, error = parse_response(
             {
                 "reply_wait": {"wait": False},
                 "mood": {"decision": "unchanged"},
@@ -534,7 +535,7 @@ class MessagingTest(unittest.TestCase):
         )
         self.assertIsNone(error)
         self.assertEqual(heartbeat.heartbeat["activity"], "整理关卡灵感")
-        invalid_heartbeat, error = MomoiDaemon._parse_response(
+        invalid_heartbeat, error = parse_response(
             {
                 "reply_wait": {"wait": False},
                 "mood": {"decision": "unchanged"},
@@ -543,24 +544,24 @@ class MessagingTest(unittest.TestCase):
         )
         self.assertIsNone(invalid_heartbeat)
         self.assertEqual(error, "invalid_heartbeat_state")
-        invalid_blank_lines, error = MomoiDaemon._parse_messages(
+        invalid_blank_lines, error = parse_messages(
             {"messages": ["第一条。\n\n第二条。"]}
         )
         self.assertIsNone(invalid_blank_lines)
         self.assertEqual(error, "blank_lines_must_be_separate_messages")
-        single_line_break, error = MomoiDaemon._parse_messages(
+        single_line_break, error = parse_messages(
             {"messages": ["第一行。\n第二行。"]}
         )
         self.assertIsNone(error)
         self.assertEqual(single_line_break, ["第一行。\n第二行。"])
-        invalid, error = MomoiDaemon._parse_response(
+        invalid, error = parse_response(
             {
                 "mood": {"decision": "unchanged"},
             }
         )
         self.assertIsNone(invalid)
         self.assertEqual(error, "invalid_reply_wait_decision")
-        rich, error = MomoiDaemon._parse_messages(
+        rich, error = parse_messages(
             {
                 "messages": [
                     {
@@ -574,7 +575,7 @@ class MessagingTest(unittest.TestCase):
         )
         self.assertIsNone(error)
         self.assertEqual(rich[0]["action"], "message")
-        invalid_rich, error = MomoiDaemon._parse_messages(
+        invalid_rich, error = parse_messages(
             {
                 "messages": [
                     {
@@ -587,7 +588,7 @@ class MessagingTest(unittest.TestCase):
         )
         self.assertIsNone(invalid_rich)
         self.assertEqual(error, "blank_lines_must_be_separate_messages")
-        mixed, error = MomoiDaemon._parse_messages(
+        mixed, error = parse_messages(
             {
                 "messages": [
                     {
@@ -615,7 +616,7 @@ class MessagingTest(unittest.TestCase):
             mixed[1]["segments"],
             [{"type": "file", "data": {"file": "/tmp/concept.md"}}],
         )
-        captioned_image, error = MomoiDaemon._parse_messages(
+        captioned_image, error = parse_messages(
             {
                 "messages": [
                     {
@@ -630,7 +631,7 @@ class MessagingTest(unittest.TestCase):
         self.assertIsNone(error)
         self.assertEqual(len(captioned_image), 1)
         self.assertEqual(len(captioned_image[0]["segments"]), 2)
-        file_then_text, error = MomoiDaemon._parse_messages(
+        file_then_text, error = parse_messages(
             {
                 "messages": [
                     {

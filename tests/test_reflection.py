@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 from momoi.channel.napcat import NapCatConfig
 from momoi.config import AppConfig, LLMConfig, NotificationConfig, ReflectionConfig
 from momoi.runtime import REFLECTION_FINISH_SPEC, MomoiDaemon
+from momoi.runtime.parsing import parse_reflection_finish
 from momoi.models import ProviderResponse, ToolCall
 
 
@@ -161,7 +162,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
             daemon.store.close()
 
     async def test_owner_learning_requires_owner_evidence(self) -> None:
-        result, error = MomoiDaemon._parse_reflection_finish(
+        result, error = parse_reflection_finish(
             {
                 "summary": "测试",
                 "memories": [
@@ -189,7 +190,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
             "evidence": "直接说结论就好",
             "confidence": 0.7,
         }
-        result, error = MomoiDaemon._parse_reflection_finish(
+        result, error = parse_reflection_finish(
             {"summary": "测试", "memories": [memory]},
             "[MOMOI]\n直接说结论就好",
             "",
@@ -202,7 +203,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
             **memory,
             "key": "interaction.no_unsolicited_lists",
         }
-        result, error = MomoiDaemon._parse_reflection_finish(
+        result, error = parse_reflection_finish(
             {"summary": "测试", "memories": [memory, second]},
             "[OWNER]\n直接说结论就好",
             "直接说结论就好",
@@ -211,7 +212,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(result)
         self.assertEqual(error, "too_many_interaction_practices")
 
-        result, error = MomoiDaemon._parse_reflection_finish(
+        result, error = parse_reflection_finish(
             {"summary": "测试", "memories": [memory]},
             "[OWNER]\n直接说结论就好",
             "直接说结论就好",
@@ -223,7 +224,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
 
     def test_always_memory_actions_are_validated(self) -> None:
         base = {"summary": "测试", "memories": []}
-        result, error = MomoiDaemon._parse_reflection_finish(
+        result, error = parse_reflection_finish(
             {
                 **base,
                 "always_memory_actions": [
@@ -242,7 +243,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(error)
         self.assertEqual(result["always_memory_actions"][0]["action"], "demote_recent")
 
-        _, error = MomoiDaemon._parse_reflection_finish(
+        _, error = parse_reflection_finish(
             {
                 **base,
                 "always_memory_actions": [
@@ -260,7 +261,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(error, "unknown_always_memory")
 
-        result, error = MomoiDaemon._parse_reflection_finish(
+        result, error = parse_reflection_finish(
             {
                 **base,
                 "always_memory_actions": [
@@ -284,7 +285,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
             "日常聊天不要用句号，会显得冷淡。",
         )
 
-        _, error = MomoiDaemon._parse_reflection_finish(
+        _, error = parse_reflection_finish(
             {
                 **base,
                 "always_memory_actions": [
@@ -303,7 +304,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(error, "invalid_always_memory_action")
 
-        _, error = MomoiDaemon._parse_reflection_finish(
+        _, error = parse_reflection_finish(
             {
                 **base,
                 "always_memory_actions": [
@@ -323,7 +324,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(error, "invalid_always_memory_merge")
 
-        _, error = MomoiDaemon._parse_reflection_finish(
+        _, error = parse_reflection_finish(
             {
                 **base,
                 "always_memory_actions": [
@@ -350,7 +351,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
 
     def test_conversation_actions_are_validated(self) -> None:
         base = {"summary": "测试", "memories": []}
-        result, error = MomoiDaemon._parse_reflection_finish(
+        result, error = parse_reflection_finish(
             {
                 **base,
                 "conversation_actions": [
@@ -370,7 +371,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(error)
         self.assertEqual(result["conversation_actions"][0]["action"], "close")
 
-        _, error = MomoiDaemon._parse_reflection_finish(
+        _, error = parse_reflection_finish(
             {
                 **base,
                 "conversation_actions": [
@@ -389,7 +390,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(error, "unknown_open_conversation")
 
-        _, error = MomoiDaemon._parse_reflection_finish(
+        _, error = parse_reflection_finish(
             {
                 **base,
                 "conversation_actions": [

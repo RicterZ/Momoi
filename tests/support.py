@@ -1,4 +1,3 @@
-import json
 import re
 from html import unescape
 from typing import Any
@@ -8,7 +7,7 @@ from momoi.runtime.context_planner import (
     CONTEXT_PLAN_TOOL_NAME,
     HEARTBEAT_PLAN_TOOL_NAME,
 )
-from momoi.runtime.turns import (
+from momoi.runtime.turn_support import (
     CONTEXT_PLANNER_SYSTEM_PROMPT,
     HEARTBEAT_PLANNER_SYSTEM_PROMPT,
 )

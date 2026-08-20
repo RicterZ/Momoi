@@ -6,9 +6,6 @@ from typing import Literal
 
 JobKind = Literal["goal", "reflection", "heartbeat"]
 
-HEARTBEAT_QUEUE_ITEM = "__momoi_heartbeat__"
-REFLECTION_QUEUE_PREFIX = "__momoi_reflection__:"
-
 
 @dataclass(frozen=True)
 class AutonomousJob:
@@ -32,20 +29,3 @@ class AutonomousJob:
     @classmethod
     def heartbeat(cls) -> "AutonomousJob":
         return cls("heartbeat")
-
-    @classmethod
-    def from_legacy(cls, value: str | AutonomousJob) -> AutonomousJob:
-        if isinstance(value, cls):
-            return value
-        if value == HEARTBEAT_QUEUE_ITEM:
-            return cls.heartbeat()
-        if value.startswith(REFLECTION_QUEUE_PREFIX):
-            return cls.reflection(value.removeprefix(REFLECTION_QUEUE_PREFIX))
-        return cls.goal(value)
-
-    def legacy_value(self) -> str:
-        if self.kind == "heartbeat":
-            return HEARTBEAT_QUEUE_ITEM
-        if self.kind == "reflection":
-            return REFLECTION_QUEUE_PREFIX + self.id
-        return self.id

@@ -4,11 +4,7 @@ from pathlib import Path
 
 from momoi.channel.napcat import NapCatConfig
 from momoi.config import AppConfig, LLMConfig
-from momoi.runtime.daemon import (
-    HEARTBEAT_QUEUE_ITEM,
-    REFLECTION_QUEUE_PREFIX,
-    MomoiDaemon,
-)
+from momoi.runtime.daemon import MomoiDaemon
 from momoi.runtime.jobs import AutonomousJob
 
 
@@ -32,9 +28,9 @@ class AutonomousQueueTests(unittest.IsolatedAsyncioTestCase):
                     log_level="INFO",
                 )
             )
-            daemon.autonomous.put_nowait(HEARTBEAT_QUEUE_ITEM)
-            daemon.autonomous.put_nowait(REFLECTION_QUEUE_PREFIX + "2030-01-01")
-            daemon.autonomous.put_nowait("goal-1")
+            daemon.autonomous.put_nowait(AutonomousJob.heartbeat())
+            daemon.autonomous.put_nowait(AutonomousJob.reflection("2030-01-01"))
+            daemon.autonomous.put_nowait(AutonomousJob.goal("goal-1"))
             self.assertEqual(
                 await daemon._next_work(),
                 ("goal", AutonomousJob.reflection("2030-01-01")),
@@ -46,21 +42,6 @@ class AutonomousQueueTests(unittest.IsolatedAsyncioTestCase):
                 await daemon._next_work(), ("goal", AutonomousJob.heartbeat())
             )
             daemon.store.close()
-
-    def test_legacy_strings_and_reserved_goal_ids_are_unambiguous(self):
-        self.assertEqual(
-            AutonomousJob.from_legacy(HEARTBEAT_QUEUE_ITEM),
-            AutonomousJob.heartbeat(),
-        )
-        self.assertEqual(
-            AutonomousJob.from_legacy(REFLECTION_QUEUE_PREFIX + "2030-01-01"),
-            AutonomousJob.reflection("2030-01-01"),
-        )
-        self.assertEqual(
-            AutonomousJob.goal(HEARTBEAT_QUEUE_ITEM).kind,
-            "goal",
-        )
-
 
 if __name__ == "__main__":
     unittest.main()

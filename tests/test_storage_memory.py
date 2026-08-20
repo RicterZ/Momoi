@@ -1121,8 +1121,11 @@ class StorageMemoryTest(unittest.TestCase):
                             "recall_queries": [event.text],
                         }
                     ],
-                    "episode_bindings": [
+                    "episode_actions": [
                         {
+                            "action": (
+                                "new" if store.episode(episode_id) is None else "continue"
+                            ),
                             "episode_id": episode_id,
                             "is_new": store.episode(episode_id) is None,
                             "title": f"主题 {episode_id}",
@@ -1306,12 +1309,10 @@ class StorageMemoryTest(unittest.TestCase):
                 )
             store._db.rollback()
             store.link_episodes("episode-social", "episode-mail", "references")
-            self.assertTrue(store.supersede_context_plan("turn-1", 2))
-            self.assertIsNone(store.context_plan("turn-1"))
             store.close()
 
             reopened = Store(path)
-            self.assertEqual(reopened.context_plan("turn-1", 2)["state"], "superseded")
+            self.assertEqual(reopened.context_plan("turn-1", 2)["state"], "planned")
             self.assertEqual(
                 [item["ordinal"] for item in reopened.episode_turns("episode-mail")],
                 [1, 2],
@@ -3371,7 +3372,7 @@ class StorageMemoryTest(unittest.TestCase):
             )
             store.close()
 
-    def test_uncertain_memory_conflict_waits_for_owner_confirmation(self) -> None:
+    def test_memory_overwrite_waits_for_owner_confirmation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
             tools = MemoryTools(store)
@@ -3426,7 +3427,6 @@ class StorageMemoryTest(unittest.TestCase):
                 store.active_memory("preference", "home.light.color")["content"],
                 "主人喜欢暖色灯",
             )
-            self.assertIn("candidate=主人喜欢冷色灯", store.memory_conflicts_context())
 
             confirmed = IncomingMessage(
                 "qq:1:confirmed", "confirmed", "对，改成冷色灯", 3, 3
@@ -3456,7 +3456,6 @@ class StorageMemoryTest(unittest.TestCase):
                 store.active_memory("preference", "home.light.color")["content"],
                 "主人喜欢冷色灯",
             )
-            self.assertEqual(store.memory_conflicts_context(), "")
             store.close()
 
     def test_repeated_identical_memory_updates_evidence_without_duplication(
@@ -3565,7 +3564,6 @@ class StorageMemoryTest(unittest.TestCase):
             store.commit_turn(
                 [uncertain], uncertain.text, AgentReply(["需要你确认"]), conflict_draft
             )
-            self.assertTrue(store.memory_conflicts_context())
 
             forgotten = IncomingMessage(
                 "qq:1:forget", "forget", "忘掉灯光颜色偏好", 2, 2
@@ -3606,7 +3604,6 @@ class StorageMemoryTest(unittest.TestCase):
                 [forgotten], forgotten.text, AgentReply(["已经忘掉了"]), forget_draft
             )
             self.assertEqual(store.search_memories("冷色", 6), [])
-            self.assertEqual(store.memory_conflicts_context(), "")
             self.assertEqual(
                 store._db.execute("SELECT COUNT(*) FROM memories").fetchone()[0], 1
             )

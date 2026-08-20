@@ -23,6 +23,7 @@ from .progress_announce import (
     should_announce,
     should_deliver_announce,
 )
+from .parsing import parse_messages, parse_response, response_text
 from .protocol import (
     AUTONOMOUS_FINISH_SPEC,
     RESPOND_TOOL_SPEC,
@@ -628,7 +629,7 @@ class ToolExecutionService:
                 and len(response.tool_calls) == 1
                 and response.tool_calls[0].name == "respond"
             ):
-                plain_text = self._context_plan_response_text(response.content)
+                plain_text = response_text(response.content)
                 log_event(
                     logger,
                     TRACE,
@@ -640,7 +641,7 @@ class ToolExecutionService:
                     channel=delivery_channel.name,
                     arguments=safe_preview(response.tool_calls[0].arguments, 1000),
                 )
-                reply, error = self._parse_response(
+                reply, error = parse_response(
                     response.tool_calls[0].arguments,
                     require_heartbeat=heartbeat_turn,
                 )
@@ -888,7 +889,7 @@ class ToolExecutionService:
                         "error": "autonomous_finish_must_be_the_only_terminal_tool",
                     }
                 elif call.name == "send_message":
-                    progress, error = self._parse_messages(call.arguments)
+                    progress, error = parse_messages(call.arguments)
                     if progress is not None:
                         error = self._validate_emotion_messages(progress)
                         if error is not None:

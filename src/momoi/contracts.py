@@ -17,8 +17,7 @@ class EpisodeBinding(TypedDict):
 class ContextPlan(TypedDict):
     version: int
     intent_units: list[dict[str, object]]
-    episode_actions: NotRequired[list[EpisodeBinding]]
-    episode_bindings: NotRequired[list[EpisodeBinding]]
+    episode_actions: list[EpisodeBinding]
     episode_links: list[dict[str, object]]
     owner_handoff: NotRequired[dict[str, object]]
     uncertainty: list[str]

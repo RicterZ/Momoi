@@ -9,7 +9,6 @@ from .logging_context import log_event
 from .models import (
     IncomingMessage,
     MemoryCandidate,
-    MemoryConflictCandidate,
     MemoryForgetCandidate,
     ToolCall,
     TurnDraft,
@@ -751,15 +750,6 @@ class MemoryTools:
 
         existing = self.store.active_memory(kind, key)
         if existing and existing["content"] != content and not replace_confirmed:
-            candidate = MemoryConflictCandidate(
-                kind, key, content, evidence, importance, activation
-            )
-            draft.memory_conflicts = [
-                conflict
-                for conflict in draft.memory_conflicts
-                if (conflict.kind, conflict.key) != (kind, key)
-            ]
-            draft.memory_conflicts.append(candidate)
             draft.memories = [
                 memory
                 for memory in draft.memories
@@ -792,11 +782,6 @@ class MemoryTools:
             if (memory.kind, memory.key) != (kind, key)
         ]
         draft.memories.append(candidate)
-        draft.memory_conflicts = [
-            conflict
-            for conflict in draft.memory_conflicts
-            if (conflict.kind, conflict.key) != (kind, key)
-        ]
         draft.forgotten_memories = [
             forgotten
             for forgotten in draft.forgotten_memories
@@ -841,11 +826,6 @@ class MemoryTools:
             memory
             for memory in draft.memories
             if (memory.kind, memory.key) != (kind, key)
-        ]
-        draft.memory_conflicts = [
-            conflict
-            for conflict in draft.memory_conflicts
-            if (conflict.kind, conflict.key) != (kind, key)
         ]
         draft.forgotten_memories = [
             forgotten

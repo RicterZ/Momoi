@@ -3,45 +3,25 @@ import json
 import logging
 import re
 import uuid
-from typing import Any
-
 from ..logging_context import log_context, log_event, new_trace_id
 from ..storage import estimate_tokens
-from .context_planner import CONTEXT_PLAN_TOOL_NAME
-from .parsing import (
-    parse_messages,
-    parse_mood_decision,
-    parse_mood_update,
-    parse_reflection_finish,
-    parse_reply_wait_decision,
-    parse_response,
-)
 from .turn_support import (
-    CONTEXT_PLANNER_SYSTEM_PROMPT,
     EPISODE_CONSOLIDATION_SYSTEM_PROMPT,
     EPISODE_SUMMARY_SYSTEM_PROMPT,
-    HEARTBEAT_PLANNER_SYSTEM_PROMPT,
-    MAX_CONSECUTIVE_TOOL_FAILURES,
-    STYLE_CARD_SYSTEM_PROMPT,
-    ExternalToolTurnError,
-    OwnerMessagesChanged,
-    TurnBudgetExceeded,
-    sections as _sections,
-    pack_user_context as _pack_user_context,
-    truncate_tool_result_json as _truncate_tool_result_json,
 )
 from .context_service import ContextService
 from .episode_prompt_renderer import (
+    parse_episode_summary_result,
     render_episode_annealing_request,
     render_episode_consolidation_request,
 )
+from .parsing import response_text
 from .prompt_renderer import PromptRenderer
 from .tool_execution import ToolExecutionService
 from .turn_committer import TurnCommitter
 from .turn_orchestrator import TurnOrchestrator
 
 logger = logging.getLogger(__name__)
-# Compatibility audit anchors: reason=last_error, raw_plan=raw_plan.
 
 
 class TurnRunner(
@@ -51,59 +31,6 @@ class TurnRunner(
     PromptRenderer,
     TurnCommitter,
 ):
-    _parse_messages = staticmethod(parse_messages)
-    _parse_response = staticmethod(parse_response)
-    _parse_mood_decision = staticmethod(parse_mood_decision)
-    _parse_mood_update = staticmethod(parse_mood_update)
-    _parse_reply_wait_decision = staticmethod(parse_reply_wait_decision)
-    _parse_reflection_finish = staticmethod(parse_reflection_finish)
-
-    @staticmethod
-    def _context_plan_response_text(content: list[dict[str, Any]]) -> str:
-        return "\n".join(
-            str(block.get("text") or "")
-            for block in content
-            if block.get("type") == "text"
-        ).strip()
-
-    @staticmethod
-    def _episode_summary_result(text: str) -> dict[str, object]:
-        try:
-            value = json.loads(text)
-        except (json.JSONDecodeError, TypeError) as error:
-            raise RuntimeError(
-                "episode summary provider returned invalid JSON"
-            ) from error
-        if not isinstance(value, dict) or not isinstance(value.get("claims"), list):
-            raise RuntimeError("episode summary provider returned invalid claims")
-        if value.get("version") == 1 and set(value) == {"version", "claims"}:
-            return {
-                "claims": value["claims"],
-                "narrative_summary": "",
-                "emotional_context": {},
-                "outcomes": [],
-            }
-        if value.get("version") != 2 or set(value) != {
-            "version",
-            "claims",
-            "narrative_summary",
-            "emotional_context",
-            "outcomes",
-        }:
-            raise RuntimeError("episode summary provider returned invalid result")
-        outcomes = value["outcomes"]
-        if isinstance(outcomes, list):
-            value["outcomes"] = [
-                item["outcome"]
-                if isinstance(item, dict)
-                and set(item) == {"outcome"}
-                and isinstance(item["outcome"], str)
-                else item
-                for item in outcomes
-            ]
-        return value
-
-
     @staticmethod
     def _turn_id(*parts: object) -> str:
         seed = json.dumps(parts, ensure_ascii=False, separators=(",", ":"), default=str)
@@ -190,7 +117,7 @@ class TurnRunner(
             text = re.sub(
                 r"<think>.*?</think>",
                 "",
-                self._context_plan_response_text(response.content),
+                response_text(response.content),
                 flags=re.DOTALL,
             ).strip()
             value = json.loads(text)
@@ -290,13 +217,13 @@ class TurnRunner(
                         if max_seconds is not None
                         else await completion
                     )
-                summary = self._context_plan_response_text(response.content)
+                summary = response_text(response.content)
                 summary = re.sub(
                     r"<think>.*?</think>", "", summary, flags=re.DOTALL
                 ).strip()
                 if not summary:
                     raise RuntimeError("episode summary provider returned no text")
-                result = self._episode_summary_result(summary)
+                result = parse_episode_summary_result(summary)
                 working_summary = self.store.finish_episode_annealing(
                     episode_id,
                     int(candidate["through_ordinal"]),

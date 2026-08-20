@@ -13,10 +13,11 @@ from momoi.models import AgentReply, IncomingMessage, ProviderResponse
 from momoi.runtime import MomoiDaemon
 from momoi.runtime.context_assembler import assemble_main_context
 from momoi.runtime.episode_prompt_renderer import (
+    parse_episode_summary_result,
     render_episode_annealing_request,
     render_episode_consolidation_request,
 )
-from momoi.runtime.turns import (
+from momoi.runtime.turn_support import (
     EPISODE_CONSOLIDATION_SYSTEM_PROMPT,
     EPISODE_SUMMARY_SYSTEM_PROMPT,
 )
@@ -606,7 +607,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
             daemon.store.close()
 
     def test_v2_summary_normalizes_common_outcome_object_shape(self) -> None:
-        result = MomoiDaemon._episode_summary_result(
+        result = parse_episode_summary_result(
             json.dumps(
                 {
                     "version": 2,

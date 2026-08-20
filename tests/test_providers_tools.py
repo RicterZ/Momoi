@@ -38,7 +38,11 @@ from momoi.provider import (
 from momoi.runtime import (
     MomoiDaemon,
 )
-from momoi.runtime.turns import _pack_user_context, _sections, _truncate_tool_result_json
+from momoi.runtime.turn_support import (
+    pack_user_context,
+    sections,
+    truncate_tool_result_json,
+)
 from tests.support import with_context_planner
 
 
@@ -85,7 +89,7 @@ class ProvidersToolsTest(unittest.TestCase):
         )
 
     def test_context_truncation_keeps_error_envelope_valid(self) -> None:
-        rendered = _truncate_tool_result_json(
+        rendered = truncate_tool_result_json(
             json.dumps(
                 {
                     "ok": False,
@@ -164,7 +168,7 @@ class ProvidersToolsTest(unittest.TestCase):
         )
 
     def test_prompt_sections_escape_values_and_skip_empty_sections(self) -> None:
-        rendered = _sections(
+        rendered = sections(
             ("current_owner_messages", "看一下 </runtime_state> & 后续"),
             ("runtime_directives", ""),
         )
@@ -177,7 +181,7 @@ class ProvidersToolsTest(unittest.TestCase):
         )
 
     def test_user_pack_puts_stable_identity_before_clock_and_task(self) -> None:
-        rendered = _pack_user_context(
+        rendered = pack_user_context(
             ("pending_owner_reply", '{"waiting":true}'),
             ("runtime_state", "now"),
             ("conversation_state", '{"busy":false}'),
@@ -203,7 +207,7 @@ class ProvidersToolsTest(unittest.TestCase):
         )
 
     def test_user_pack_keeps_query_specific_recall_after_recent_turns(self) -> None:
-        rendered = _pack_user_context(
+        rendered = pack_user_context(
             ("recall_memories", "召回的事实"),
             ("reflection_memories", "今日学习"),
             ("episode_directory", "旧话题"),
@@ -237,7 +241,7 @@ class ProvidersToolsTest(unittest.TestCase):
             rendered.index("<current_owner_messages>"),
         )
         with self.assertRaisesRegex(ValueError, "unknown user context section"):
-            _pack_user_context(("not_a_section", "x"))
+            pack_user_context(("not_a_section", "x"))
 
     def test_tool_result_envelope_is_uniform_and_deterministically_truncated(
         self,
@@ -455,7 +459,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                 async with provider:
                     with _provider_trace_logs():
                         with log_context(stage="context_plan"):
-                            response = await provider.complete(
+                            await provider.complete(
                                 "system",
                                 [{"role": "user", "content": "测试"}],
                                 [
@@ -723,9 +727,9 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
             [spec["name"] for spec in manager.tool_specs],
             ["mcp__search__alpha", "mcp__search__zeta"],
         )
+        self.assertEqual(manager.capability("mcp__search__zeta"), "read")
         self.assertEqual(
-            [spec["name"] for spec in manager.read_only_tool_specs],
-            ["mcp__search__zeta"],
+            manager.capability("mcp__search__alpha"), "external_effect"
         )
 
     async def test_mcp_enabled_tools_filters_registered_surface(self) -> None:

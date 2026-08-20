@@ -34,6 +34,7 @@ from .context_service import (
     _pending_owner_reply_lines,
     _reply_wait_message_lines,
 )
+from .parsing import parse_reflection_finish
 from .protocol import (
     AUTONOMOUS_FINISH_SPEC,
     CURL_TOOL_SPEC,
@@ -196,12 +197,6 @@ class TurnOrchestrator:
         context_plan: dict[str, object],
         recalled: dict[str, str],
     ) -> dict[str, Any]:
-        conflicts = recalled["memory_conflicts"]
-        if conflicts:
-            conflicts += (
-                "\nKeep the current value unless the owner explicitly confirms "
-                "a replacement."
-            )
         content: list[dict[str, Any]] = [
             {
                 "type": "text",
@@ -216,7 +211,6 @@ class TurnOrchestrator:
                     ("recent_conversation", recalled["recent_conversation"]),
                     ("episode_directory", recalled["episodes"]),
                     ("query_recall", recalled["query_recall"]),
-                    ("pending_memory_conflicts", conflicts),
                     (
                         "interrupted_reply_expectation",
                         self.store.cooled_reply_expectation_context(),
@@ -818,12 +812,6 @@ class TurnOrchestrator:
             )
         if reconciliation_control:
             directives.append(reconciliation_control)
-        memory_conflicts = recalled["memory_conflicts"]
-        if memory_conflicts:
-            memory_conflicts += (
-                "\nKeep the current value unless the owner explicitly confirms "
-                "a replacement."
-            )
         current_text = _pack_user_context(
             ("long_term_memories", recalled["long_term_memories"]),
             ("recent_memories", recalled["recent_memories"]),
@@ -835,7 +823,6 @@ class TurnOrchestrator:
             ("recent_conversation", recalled["recent_conversation"]),
             ("episode_directory", recalled["episodes"]),
             ("query_recall", recalled["query_recall"]),
-            ("pending_memory_conflicts", memory_conflicts),
             ("open_reconciliations", reconciliations),
             (
                 "interrupted_reply_expectation",
@@ -1093,7 +1080,6 @@ class TurnOrchestrator:
             long_term_memories=long_term_memories,
             recent_memories=recent_memories,
         )
-        planned_activity = plan["activity"]
         retrieval = build_plan_retrieval(self.store, plan, self.config)
         recalled = assemble_main_context(
             self.store,
@@ -1411,7 +1397,7 @@ class TurnOrchestrator:
                 len(response.tool_calls) == 1
                 and response.tool_calls[0].name == "reflection_finish"
             ):
-                decision, error = self._parse_reflection_finish(
+                decision, error = parse_reflection_finish(
                     response.tool_calls[0].arguments,
                     record,
                     owner_source,

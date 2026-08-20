@@ -222,7 +222,6 @@ def build_plan_retrieval(
         "reflection_memories": reflection_memories[:8],
         "goals": goals,
         "reminders": reminders,
-        "memory_conflicts": [],
         "uncertainty": plan.get("uncertainty", []),
         "query_recall": "\n".join(recall_index),
     }
@@ -335,17 +334,6 @@ def _reminder_lines(items: object) -> str:
             fields.append(f"text={truncate_tokens(str(item['text']), 120)}")
         lines.append("- " + " ".join(fields))
     return "\n".join(lines)
-
-
-def _conflict_lines(items: object) -> str:
-    if not isinstance(items, list):
-        return ""
-    return "\n".join(
-        f"- conflict_id={item['id']} "
-        f"[{item['kind']}:{item['key']}] current={item['existing_content']} "
-        f"candidate={item['candidate_content']}"
-        for item in items
-    )
 
 
 def _message_role(message: dict[str, object]) -> str:
@@ -1308,11 +1296,6 @@ def assemble_planner_recent_turns(
     phase = total % append_turns
     turn_limit = base_turns if phase == 0 else base_turns + phase
     raw_turns = store.recent_turn_records(turn_limit, before_timestamp)
-    active_turn_ids = {
-        str(turn.get("turn_id") or "")
-        for turn in raw_turns[-active_turns:]
-        if str(turn.get("turn_id") or "")
-    }
     projected = project_recent_turns_for_planner(
         {"version": 1, "turns": raw_turns},
         compact_tool_results=True,
@@ -1480,7 +1463,6 @@ def assemble_main_context(
         ),
         "goals": _goal_lines(retrieval.get("goals")),
         "reminders": _reminder_lines(retrieval.get("reminders")),
-        "memory_conflicts": _conflict_lines(retrieval.get("memory_conflicts")),
     }
 
 

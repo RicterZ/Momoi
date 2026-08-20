@@ -100,7 +100,6 @@ USER_CONTEXT_SECTION_ORDER = (
     "query_recall",
     "recall_memories",
     "reflection_memories",
-    "pending_memory_conflicts",
     "open_reconciliations",
     "open_conversations",
     "recent_topic_reference",
@@ -233,7 +232,7 @@ def plan_log_units(plan: dict[str, object]) -> list[dict[str, object]]:
 
 
 def plan_log_episodes(plan: dict[str, object]) -> list[dict[str, object]]:
-    actions = plan.get("episode_actions", plan.get("episode_bindings", []))
+    actions = plan.get("episode_actions", [])
     return [
         {
             "action": action.get("action"),

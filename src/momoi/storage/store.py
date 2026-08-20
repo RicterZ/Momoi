@@ -33,7 +33,6 @@ from ..search import (
     SearchBackend,
     StringSearchBackend,
     search_alternatives,
-    search_expression,
 )
 from .delivery import DeliveryStore
 from .episode_search import (
@@ -433,17 +432,6 @@ class Store(MemoryStore, DeliveryStore):
                ON memories(activation, updated_at DESC)
                WHERE superseded_by IS NULL"""
         )
-        conflict_columns = {
-            str(row["name"])
-            for row in self._db.execute(
-                "PRAGMA table_info(memory_conflicts)"
-            ).fetchall()
-        }
-        if "activation" not in conflict_columns:
-            self._db.execute(
-                """ALTER TABLE memory_conflicts ADD COLUMN activation TEXT NOT NULL
-                   DEFAULT 'recall'"""
-            )
         goal_columns = {
             str(row["name"])
             for row in self._db.execute("PRAGMA table_info(goals)").fetchall()
@@ -992,14 +980,6 @@ class Store(MemoryStore, DeliveryStore):
             duration_ms=int((time.monotonic() - started) * 1000),
         )
 
-    def _table_exists(self, name: str) -> bool:
-        return (
-            self._db.execute(
-                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
-            ).fetchone()
-            is not None
-        )
-
     def _recover_outbox(self) -> None:
         recovered = self._db.execute(
             "SELECT id FROM outbox WHERE state='sending'"
@@ -1020,13 +1000,6 @@ class Store(MemoryStore, DeliveryStore):
             ).fetchone()["state"]
             self._sync_outbox_message(outbox_id, str(state))
         self._db.commit()
-
-    def assign_legacy_outbox_channel(self, primary_channel: str) -> None:
-        with self._db:
-            self._db.execute(
-                "UPDATE outbox SET target_channel=? WHERE target_channel=''",
-                (primary_channel,),
-            )
 
     def _recover_webhooks(self) -> None:
         now = time.time()
@@ -1750,15 +1723,6 @@ class Store(MemoryStore, DeliveryStore):
             raise RuntimeError("context retrieval was not saved")
         return saved
 
-    def supersede_context_plan(self, turn_id: str, revision: int) -> bool:
-        with self._db:
-            cursor = self._db.execute(
-                """UPDATE context_plans SET state='superseded', updated_at=?
-                   WHERE turn_id=? AND revision=? AND state<>'superseded'""",
-                (time.time(), turn_id, revision),
-            )
-        return cursor.rowcount == 1
-
     @staticmethod
     def _episode_dict(row: sqlite3.Row) -> dict[str, object]:
         episode = dict(row)
@@ -2372,9 +2336,7 @@ class Store(MemoryStore, DeliveryStore):
                                 )
                                 if key in action
                             }
-                            for action in plan.get(
-                                "episode_actions", plan.get("episode_bindings", [])
-                            )
+                            for action in plan.get("episode_actions", [])
                             if isinstance(action, dict)
                         ],
                         "uncertainty": [
@@ -3932,16 +3894,13 @@ class Store(MemoryStore, DeliveryStore):
     @staticmethod
     def _episode_actions(plan: dict[str, object]) -> list[dict[str, object]]:
         actions = plan.get("episode_actions")
-        if isinstance(actions, list):
-            return [
+        return (
+            [
                 item
                 for item in actions
                 if isinstance(item, dict) and item.get("action") != "none"
             ]
-        bindings = plan.get("episode_bindings")
-        return (
-            [item for item in bindings if isinstance(item, dict)]
-            if isinstance(bindings, list)
+            if isinstance(actions, list)
             else []
         )
 
@@ -4693,10 +4652,6 @@ class Store(MemoryStore, DeliveryStore):
                 self._apply_reminder_mutations(draft, now)
                 for memory in draft.memories if draft else []:
                     self._remember(memory, memory_events or [], now)
-                for conflict in draft.memory_conflicts if draft else []:
-                    self._propose_memory_conflict(
-                        conflict, memory_events or [], now
-                    )
                 for forgotten in draft.forgotten_memories if draft else []:
                     self._forget_memory(forgotten, memory_events or [], now)
                 activity_since = (
@@ -5453,9 +5408,6 @@ class Store(MemoryStore, DeliveryStore):
                     now,
                 ),
             )
-            self._resolve_memory_conflicts(
-                str(row["kind"]), str(row["key"]), "forgotten", now
-            )
         return True
 
     def goal(self, goal_id: str) -> dict[str, object] | None:
@@ -5557,33 +5509,6 @@ class Store(MemoryStore, DeliveryStore):
             )
         return self.goal(goal_id)
 
-    def search_goals(self, query: str, max_results: int) -> list[dict[str, object]]:
-        if max_results <= 0:
-            return []
-        ranked: list[tuple[float, dict[str, object]]] = []
-        for goal in self.list_goals():
-            match = search_expression(
-                query,
-                tuple(
-                    str(goal.get(name) or "")
-                    for name in (
-                        "id",
-                        "title",
-                        "success_criteria",
-                        "next_action",
-                        "waiting_for",
-                        "blocked_reason",
-                        "latest_result",
-                    )
-                ),
-                self._search_backend,
-            )
-            if match is None:
-                continue
-            ranked.append((match.score, goal))
-        ranked.sort(key=lambda item: item[0], reverse=True)
-        return [goal for _, goal in ranked[:max_results]]
-
     def commit_goal_draft(self, draft: TurnDraft) -> None:
         with self._db:
             self._apply_goal_mutations(draft, time.time())
@@ -5648,22 +5573,6 @@ class Store(MemoryStore, DeliveryStore):
                 (now, reminder_id),
             )
         return self.reminder(reminder_id) if cursor.rowcount else None
-
-    def search_reminders(self, query: str, max_results: int) -> list[dict[str, object]]:
-        if max_results <= 0:
-            return []
-        ranked: list[tuple[float, dict[str, object]]] = []
-        for reminder in self.list_reminders():
-            match = search_expression(
-                query,
-                (str(reminder["id"]), str(reminder["text"])),
-                self._search_backend,
-            )
-            if match is None:
-                continue
-            ranked.append((match.score, reminder))
-        ranked.sort(key=lambda item: item[0], reverse=True)
-        return [reminder for _, reminder in ranked[:max_results]]
 
     def add_emotion(
         self, slug: str, path: str | Path, description: str
@@ -6320,8 +6229,6 @@ class Store(MemoryStore, DeliveryStore):
             self._apply_mood_update(reply.mood_update, now)
             for memory in draft.memories if draft else []:
                 self._remember(memory, events, now)
-            for conflict in draft.memory_conflicts if draft else []:
-                self._propose_memory_conflict(conflict, events, now)
             for forgotten in draft.forgotten_memories if draft else []:
                 self._forget_memory(forgotten, events, now)
             self._apply_goal_mutations(draft, now)
@@ -6348,12 +6255,6 @@ class Store(MemoryStore, DeliveryStore):
                             vars(memory)
                             for memory in (
                                 draft.forgotten_memories if draft else []
-                            )
-                        ],
-                        "memory_conflicts": [
-                            vars(conflict)
-                            for conflict in (
-                                draft.memory_conflicts if draft else []
                             )
                         ],
                         "goals": list(draft.goals.values()) if draft else [],

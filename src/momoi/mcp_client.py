@@ -494,14 +494,6 @@ class MCPManager:
     def capability(self, name: str) -> str:
         return self._capabilities.get(name, "external_effect")
 
-    @property
-    def read_only_tool_specs(self) -> list[dict[str, Any]]:
-        return [
-            spec
-            for spec in self.tool_specs
-            if self._capabilities.get(str(spec["name"])) == "read"
-        ]
-
     async def call(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         target = self._tools.get(name)
         if target is None:

@@ -103,25 +103,6 @@ CREATE TABLE IF NOT EXISTS memory_evidence (
     created_at REAL NOT NULL,
     UNIQUE(memory_id, source_event_id, quote)
 );
-CREATE TABLE IF NOT EXISTS memory_conflicts (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    kind TEXT NOT NULL,
-    key TEXT NOT NULL,
-    activation TEXT NOT NULL DEFAULT 'recall' CHECK (
-        activation IN ('always', 'recent', 'recall')
-    ),
-    existing_memory_id INTEGER NOT NULL,
-    candidate_content TEXT NOT NULL,
-    source_event_id TEXT NOT NULL,
-    evidence_quote TEXT NOT NULL,
-    importance REAL NOT NULL DEFAULT 0.5,
-    status TEXT NOT NULL CHECK (status IN ('open', 'resolved')),
-    resolution TEXT NOT NULL DEFAULT '',
-    created_at REAL NOT NULL,
-    updated_at REAL NOT NULL
-);
-CREATE UNIQUE INDEX IF NOT EXISTS memory_conflicts_open
-    ON memory_conflicts(kind, key) WHERE status='open';
 CREATE TABLE IF NOT EXISTS goals (
     id TEXT PRIMARY KEY,
     title TEXT NOT NULL,

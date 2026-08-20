@@ -28,21 +28,12 @@ from ..models import AgentReply, IncomingMessage, OwnerInputStatus
 from ..provider import AnthropicProvider, OpenAIProvider
 from ..storage import Store
 from ..webhooks import WebhookService
-from .jobs import (
-    HEARTBEAT_QUEUE_ITEM,
-    REFLECTION_QUEUE_PREFIX,
-    AutonomousJob,
-)
+from .jobs import AutonomousJob
 from .turns import TurnRunner
 
 logger = logging.getLogger(__name__)
 AGENDA_POLL_SECONDS = 5
 _DEFAULT_DAEMON_POLICY = DaemonPolicy()
-# Kept as compatibility constants for imports and existing tests.
-MESSAGE_GAP_MIN_SECONDS = _DEFAULT_DAEMON_POLICY.message_gap_min_seconds
-MESSAGE_GAP_MAX_SECONDS = _DEFAULT_DAEMON_POLICY.message_gap_max_seconds
-MESSAGE_GAP_MIN_CHARS = _DEFAULT_DAEMON_POLICY.message_gap_min_chars
-MESSAGE_GAP_SATURATION_CHARS = _DEFAULT_DAEMON_POLICY.message_gap_saturation_chars
 
 
 def _message_gap_bounds(
@@ -153,7 +144,7 @@ class MomoiDaemon(TurnRunner):
         self.webhook_requests: asyncio.Queue[
             tuple[str, str, asyncio.Future[AgentReply]]
         ] = asyncio.Queue()
-        self.autonomous: asyncio.Queue[str | AutonomousJob] = asyncio.Queue()
+        self.autonomous: asyncio.Queue[AutonomousJob] = asyncio.Queue()
         self.episode_annealing_requested = asyncio.Event()
         self.outbox_changed = asyncio.Event()
         self.agenda_changed = asyncio.Event()
@@ -176,7 +167,6 @@ class MomoiDaemon(TurnRunner):
         )
 
     async def run(self, stop: asyncio.Event) -> None:
-        self.store.assign_legacy_outbox_channel(self.channel.name)
         if self.config.episode_annealing.enabled:
             self.episode_annealing_requested.set()
         for event in self.store.pending_events():
@@ -381,7 +371,8 @@ class MomoiDaemon(TurnRunner):
                         self._webhook_turn_active = False
                     continue
                 if kind == "goal":
-                    job = AutonomousJob.from_legacy(item)
+                    job = item
+                    assert isinstance(job, AutonomousJob)
                     self._stop_requested = False
                     if job.kind == "heartbeat":
                         target_channel = self._manual_heartbeat_channel
@@ -568,13 +559,10 @@ class MomoiDaemon(TurnRunner):
     def _next_autonomous(self) -> AutonomousJob:
         return self._prioritize_autonomous(self.autonomous.get_nowait())
 
-    def _prioritize_autonomous(
-        self, item: str | AutonomousJob
-    ) -> AutonomousJob:
-        current = AutonomousJob.from_legacy(item)
+    def _prioritize_autonomous(self, current: AutonomousJob) -> AutonomousJob:
         if self.autonomous.empty():
             return current
-        next_job = AutonomousJob.from_legacy(self.autonomous.get_nowait())
+        next_job = self.autonomous.get_nowait()
         if next_job.priority < current.priority:
             self.autonomous.put_nowait(current)
             return next_job

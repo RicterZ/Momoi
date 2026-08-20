@@ -23,7 +23,7 @@ from momoi.runtime.context_planner import (
     parse_context_plan,
 )
 from momoi.runtime.context_service import render_heartbeat_planner_request
-from momoi.runtime.turns import (
+from momoi.runtime.turn_support import (
     CONTEXT_PLANNER_SYSTEM_PROMPT,
     HEARTBEAT_PLANNER_SYSTEM_PROMPT,
 )
@@ -781,16 +781,6 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             daemon.store.close()
 
-    def test_invalid_plan_log_keeps_reason_and_raw_arguments(self) -> None:
-        # Runtime logging is exercised asynchronously elsewhere; keep the
-        # formatter contract explicit so shadow runs remain diagnosable.
-        self.assertIn("reason=last_error", Path(
-            __file__
-        ).parents[1].joinpath("src/momoi/runtime/turns.py").read_text())
-        self.assertIn("raw_plan=raw_plan", Path(
-            __file__
-        ).parents[1].joinpath("src/momoi/runtime/turns.py").read_text())
-
     async def test_closed_episode_directory_allows_semantic_planner_binding(
         self,
     ) -> None:
@@ -1042,7 +1032,6 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                     self.assertFalse(resolution.lstrip().startswith("{"))
                     self.assertNotIn("<context_plan>", text)
                     self.assertIn("browse social feed", text)
-                    self.assertNotIn("episode_bindings", text)
                     self.assertNotIn('"salience"', text)
                     self.assertIn("RECENT CONTEXT 2", text)
                     self.assertNotIn("GLOBAL RAW MUST NOT LEAK", text)
