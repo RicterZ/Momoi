@@ -87,7 +87,7 @@ def sections(*items: tuple[str, str]) -> str:
 # first, followed by the fixed agenda state. Query-specific recall and
 # conversation evidence come after that stable semantic prefix.
 USER_CONTEXT_SECTION_ORDER = (
-    "owner_preferences",
+    "long_term_memories",
     "recent_memories",
     "active_goals",
     "pending_reminders",
@@ -98,9 +98,8 @@ USER_CONTEXT_SECTION_ORDER = (
     "webhook_activity",
     "episode_directory",
     "query_recall",
-    "core_reflection_memory",
-    "confirmed_owner_memory",
-    "reflection_memory",
+    "recall_memories",
+    "reflection_memories",
     "pending_memory_conflicts",
     "open_reconciliations",
     "open_conversations",
@@ -113,6 +112,8 @@ USER_CONTEXT_SECTION_ORDER = (
     "conversation_state",
     "runtime_state",
     "pending_owner_reply",
+    "source_messages",
+    "last_sent_messages",
     "due_goal",
     "reflection_scope",
     "mood_timeline",

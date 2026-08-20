@@ -105,18 +105,16 @@ def build_plan_retrieval(
         if len(recall_queries) >= 6:
             break
 
-    confirmed_memories: list[dict[str, object]] = []
+    recall_memories: list[dict[str, object]] = []
     reflection_memories: list[dict[str, object]] = []
-    core_reflection_memories: list[dict[str, object]] = []
     recalled_episode_rows: dict[str, dict[str, object]] = {}
     recall_hits: list[str] = []
     recall_misses: list[str] = []
     for query, unit_id in recall_queries:
         memory_limit = min(3, max(1, config.memory_results))
-        memory_rows = [
-            *store.search_memories(query, memory_limit, activation="always"),
-            *store.search_memories(query, memory_limit, activation="recall"),
-        ]
+        memory_rows = store.search_memories(
+            query, memory_limit, activation="recall"
+        )
         reflection_rows = store.search_reflection_memories(
             query,
             min(3, max(1, config.memory_results)),
@@ -128,7 +126,7 @@ def build_plan_retrieval(
         for row in memory_rows:
             key = (str(row.get("kind") or ""), str(row.get("key") or ""))
             existing = next(
-                (item for item in confirmed_memories if (str(item.get("kind") or ""), str(item.get("key") or "")) == key),
+                (item for item in recall_memories if (str(item.get("kind") or ""), str(item.get("key") or "")) == key),
                 None,
             )
             if existing is not None:
@@ -144,18 +142,12 @@ def build_plan_retrieval(
                 "content": truncate_tokens(str(row.get("content") or ""), 160),
                 "unit_ids": [unit_id] if unit_id else [],
             }
-            confirmed_memories.append(item)
+            recall_memories.append(item)
             query_hit = True
         for row in reflection_rows:
             key = (str(row.get("kind") or ""), str(row.get("key") or ""))
-            target = (
-                core_reflection_memories
-                if str(row.get("kind") or "")
-                in {"owner_profile", "self_insight", "relationship", "practice"}
-                else reflection_memories
-            )
             existing = next(
-                (item for item in target if (str(item.get("kind") or ""), str(item.get("key") or "")) == key),
+                (item for item in reflection_memories if (str(item.get("kind") or ""), str(item.get("key") or "")) == key),
                 None,
             )
             if existing is not None:
@@ -165,7 +157,7 @@ def build_plan_retrieval(
                     units.add(unit_id)
                 existing["unit_ids"] = sorted(units)
                 continue
-            target.append(
+            reflection_memories.append(
                 {
                     "kind": truncate_tokens(str(row.get("kind") or ""), 24),
                     "key": truncate_tokens(str(row.get("key") or ""), 64),
@@ -211,17 +203,14 @@ def build_plan_retrieval(
         if recall_misses:
             recall_index.append("misses=" + " | ".join(recall_misses))
     retrieval = {
-        "version": 2,
+        "version": 3,
         "episodes": episodes,
-        "confirmed_memories": confirmed_memories[:8],
-        # Retained in the internal retrieval record for compatibility and
-        # auditing; prompt stages may choose not to inject this duplicate.
-        "owner_preferences": store.always_memory_context(),
+        "long_term_memories": store.always_memory_context(),
         "recent_memories": store.recent_memory_context(
             max(100, config.memory_tokens // 8)
         ),
+        "recall_memories": recall_memories[:8],
         "reflection_memories": reflection_memories[:8],
-        "core_reflection_memories": core_reflection_memories[:4],
         "goals": goals,
         "reminders": reminders,
         "memory_conflicts": [],
@@ -240,9 +229,8 @@ def build_plan_retrieval(
             "goals": len(goals),
             "reminders": len(reminders),
             "recall_queries": len(recall_queries),
-            "recall_memory_hits": len(confirmed_memories),
+            "recall_memory_hits": len(recall_memories),
             "recall_reflection_hits": len(reflection_memories),
-            "recall_core_reflection_hits": len(core_reflection_memories),
             "recall_episode_hits": len(recalled_episode_rows),
         },
     )
@@ -1463,18 +1451,6 @@ def assemble_main_context(
         min(1600, max(400, raw_token_budget // 3)),
         recent_before_timestamp,
     )
-    recent_memories = str(retrieval.get("recent_memories") or "").strip()
-    recalled_reflections = _memory_lines(retrieval.get("reflection_memories"))
-    if recalled_reflections:
-        reflection_block = (
-            "Recalled reflections (fallible; lower authority than owner memory):\n"
-            + recalled_reflections
-        )
-        recent_memories = (
-            f"{recent_memories}\n\n{reflection_block}".strip()
-            if recent_memories
-            else reflection_block
-        )
     return {
         "recent_turns": compact_recent_turns,
         "recent_conversation": compact_recent_conversation,
@@ -1483,18 +1459,14 @@ def assemble_main_context(
             retrieval.get("episodes"),
             summary_token_budget,
         ),
-        "confirmed_memories": _memory_lines(retrieval.get("confirmed_memories")),
-        "owner_preferences": str(retrieval.get("owner_preferences") or ""),
-        "recent_memories": recent_memories,
+        "long_term_memories": str(retrieval.get("long_term_memories") or ""),
+        "recent_memories": str(retrieval.get("recent_memories") or ""),
+        "recall_memories": _memory_lines(retrieval.get("recall_memories")),
         "query_recall": str(retrieval.get("query_recall") or ""),
-        # Query-recalled reflections are merged into recent_memories so the
-        # Owner Turn has one bounded memory section rather than two competing
-        # payloads. Keep the retrieval list in the stored record for auditing.
-        "reflection_memories": "",
-        "core_reflection_memories": (
-            "Recalled core reflections (top-k; fallible):\n"
-            + _memory_lines(retrieval.get("core_reflection_memories"))
-            if retrieval.get("core_reflection_memories")
+        "reflection_memories": (
+            "Recalled daily reflections (top-k; fallible and lower authority):\n"
+            + _memory_lines(retrieval.get("reflection_memories"))
+            if retrieval.get("reflection_memories")
             else ""
         ),
         "goals": _goal_lines(retrieval.get("goals")),

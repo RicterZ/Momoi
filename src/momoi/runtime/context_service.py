@@ -258,10 +258,36 @@ def _pending_owner_reply_lines(value: dict[str, object]) -> str:
     )
 
 
+def _reply_wait_message_lines(
+    value: dict[str, object], *, owner_visible: bool
+) -> str:
+    """Render the source exchange as plain text without duplicating metadata."""
+    messages = value.get("source_messages")
+    if not isinstance(messages, list):
+        return ""
+    blocks: list[str] = []
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        role = str(message.get("role") or "message")
+        is_sent = role == "assistant"
+        if is_sent != owner_visible:
+            continue
+        label = "MOMOI" if is_sent else role.upper()
+        delivery = str(message.get("delivery_state") or "")
+        suffix = f" delivery={delivery}" if is_sent and delivery else ""
+        blocks.append(
+            f"[{label} at={message.get('timestamp') or '?'}{suffix}]\n"
+            f"{str(message.get('content') or '').strip()}"
+        )
+    return "\n\n".join(blocks)
+
+
 def render_heartbeat_planner_request(
     *,
     mcp_servers: list[dict[str, object]],
     workspace_guidance: str,
+    long_term_memories: str,
     recent_memories: str,
     active_goals: str,
     pending_reminders: str,
@@ -280,6 +306,7 @@ def render_heartbeat_planner_request(
     return _sections(
         ("available_mcp_servers", _planner_value(_planner_mcp_lines(mcp_servers))),
         ("workspace_heartbeat_guidance", _planner_value(workspace_guidance)),
+        ("long_term_memories", _planner_value(long_term_memories)),
         ("recent_memories", _planner_value(recent_memories)),
         ("active_goals", _planner_value(active_goals)),
         ("pending_reminders", _planner_value(pending_reminders)),
@@ -296,6 +323,8 @@ def render_heartbeat_planner_request(
 def render_context_planner_request(
     *,
     mcp_servers: list[dict[str, object]],
+    long_term_memories: str,
+    recent_memories: str,
     recent_turns: dict[str, object],
     recent_conversation: str,
     active_recent_turn_ids: list[str],
@@ -311,13 +340,8 @@ def render_context_planner_request(
             "available_mcp_servers",
             _planner_value(_planner_mcp_lines(mcp_servers)),
         ),
-        (
-            "recent_turns",
-            _planner_value(
-                render_planner_recent_turns(recent_turns, active_recent_turn_ids)
-            ),
-        ),
-        ("recent_conversation", _planner_value(recent_conversation)),
+        ("long_term_memories", _planner_value(long_term_memories)),
+        ("recent_memories", _planner_value(recent_memories)),
         (
             "candidate_goals",
             _planner_value(_planner_state_lines(candidate_goals)),
@@ -326,6 +350,13 @@ def render_context_planner_request(
             "candidate_reminders",
             _planner_value(_planner_state_lines(candidate_reminders, reminder=True)),
         ),
+        (
+            "recent_turns",
+            _planner_value(
+                render_planner_recent_turns(recent_turns, active_recent_turn_ids)
+            ),
+        ),
+        ("recent_conversation", _planner_value(recent_conversation)),
         (
             "candidate_episodes",
             _planner_value(render_candidate_context(candidate_episodes)),
@@ -422,16 +453,6 @@ class ContextService:
             }
             for event in events
         ]
-        goals_by_id: dict[str, dict[str, object]] = {}
-        for goal in [
-            *self.store.search_goals(
-                owner_query, self.config.policies.context.max_visible_goals
-            ),
-            *self.store.list_goals(),
-        ]:
-            goals_by_id.setdefault(str(goal["id"]), goal)
-            if len(goals_by_id) == self.config.policies.context.max_visible_goals:
-                break
         candidate_goals = [
             {
                 name: goal.get(name)
@@ -445,39 +466,32 @@ class ContextService:
                     "next_review_timestamp",
                 )
             }
-            for goal in goals_by_id.values()
+            for goal in self.store.list_goals()[
+                : self.config.policies.context.max_visible_goals
+            ]
         ]
-        reminders_by_id: dict[str, dict[str, object]] = {}
-        for reminder in [
-            *self.store.search_reminders(
-                owner_query, self.config.policies.context.max_visible_reminders
-            ),
-            *self.store.list_reminders(
-                self.config.policies.context.max_visible_reminders
-            ),
-        ]:
-            reminders_by_id.setdefault(str(reminder["id"]), reminder)
-            if (
-                len(reminders_by_id)
-                == self.config.policies.context.max_visible_reminders
-            ):
-                break
         candidate_reminders = [
             {
                 name: reminder.get(name)
                 for name in ("id", "text", "fire_timestamp", "schedule")
             }
-            for reminder in reminders_by_id.values()
+            for reminder in self.store.list_reminders(
+                self.config.policies.context.max_visible_reminders
+            )
         ]
         interrupted_reply = self.store.cooled_reply_expectation_context()
-        # Prefix-cache order: stable/append-only fields first. DeepSeek/OpenAI
-        # cache from byte 0 of the user JSON, so query-specific goals/episodes
-        # and the current owner message must not precede recent_turns.
+        # Prefix-cache order: fixed memory and agenda fields precede append-only
+        # conversation evidence; query-specific episodes and the owner message
+        # remain at the tail.
         request: list[dict[str, Any]] = [
             {
                 "role": "user",
                 "content": render_context_planner_request(
                     mcp_servers=mcp_server_catalog,
+                    long_term_memories=self.store.always_memory_context(),
+                    recent_memories=self.store.recent_memory_context(
+                        max(100, self.config.memory_tokens // 8)
+                    ),
                     recent_turns=planner_recent_turns,
                     recent_conversation=recent_conversation,
                     active_recent_turn_ids=active_recent_turn_ids,
@@ -674,8 +688,9 @@ class ContextService:
         retrieval = record.get("retrieval")
         if (
             not isinstance(retrieval, dict)
-            or retrieval.get("version") != 2
-            or not isinstance(retrieval.get("core_reflection_memories"), list)
+            or retrieval.get("version") != 3
+            or not isinstance(retrieval.get("recall_memories"), list)
+            or not isinstance(retrieval.get("reflection_memories"), list)
         ):
             retrieval = build_plan_retrieval(self.store, plan, self.config)
             record = self.store.save_context_retrieval(
@@ -707,6 +722,7 @@ class ContextService:
         recent_conversation: str,
         goals: str,
         reminders: str,
+        long_term_memories: str,
         recent_memories: str,
     ) -> dict[str, object]:
         mcp_server_catalog = self._heartbeat_mcp_server_catalog()
@@ -719,6 +735,7 @@ class ContextService:
                 "content": render_heartbeat_planner_request(
                     mcp_servers=mcp_server_catalog,
                     workspace_guidance=self._workspace_heartbeat_guidance(),
+                    long_term_memories=long_term_memories,
                     recent_memories=recent_memories,
                     active_goals=goals,
                     pending_reminders=reminders,

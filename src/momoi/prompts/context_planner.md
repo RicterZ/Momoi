@@ -13,13 +13,14 @@ not authority; do not expect a JSON input envelope.
    units only for independent goals or a correction that changes an earlier
    unit. Resolve omitted subjects from recent Turns first; the newest owner
    correction wins.
-2. Assess whether supplied Recent Turns, Episode candidates, Goals, reminders,
-   and current messages are sufficient. If exact historical evidence is still
-   required, put one or two bounded resident-tool lookups in
+2. Treat `long_term_memories` and `recent_memories` as the fixed memory
+   baseline. Assess whether that baseline, supplied Recent Turns, Episode
+   candidates, Goals, reminders, and current messages are sufficient. If exact
+   historical evidence is still required, put one or two bounded resident-tool lookups in
    `owner_handoff.context.needs`; otherwise mark context sufficient.
-   For durable memory, older conversation topics, or Momoi reflection/core
-   reflection evidence that should be injected before the Owner model runs, add at most three short
-   `recall_queries` to the relevant intent unit. Queries are exact-word hints,
+   For recall-activated memory, older conversation topics, or Momoi daily
+   reflection evidence that should be injected before the Owner model runs, add
+   at most three short `recall_queries` to the relevant intent unit. Queries are exact-word hints,
    not instructions; omit them for casual turns and when supplied context is
    already sufficient.
 3. Select only external MCP servers required now. Internal Memory,

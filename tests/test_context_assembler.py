@@ -82,14 +82,69 @@ class ContextAssemblerTest(unittest.TestCase):
             ("pending_reminders", "reminders"),
             ("recent_memories", "recent"),
             ("active_goals", "goals"),
-            ("owner_preferences", "preferences"),
+            ("long_term_memories", "long term"),
+            ("recall_memories", "recalled"),
             ("query_recall", "recall"),
         )
-        self.assertLess(rendered.index("<owner_preferences>"), rendered.index("<recent_memories>"))
+        self.assertLess(rendered.index("<long_term_memories>"), rendered.index("<recent_memories>"))
         self.assertLess(rendered.index("<recent_memories>"), rendered.index("<active_goals>"))
         self.assertLess(rendered.index("<active_goals>"), rendered.index("<pending_reminders>"))
         self.assertLess(rendered.index("<pending_reminders>"), rendered.index("<recent_turns>"))
         self.assertLess(rendered.index("<recent_turns>"), rendered.index("<query_recall>"))
+        self.assertLess(rendered.index("<query_recall>"), rendered.index("<recall_memories>"))
+
+    def test_retrieval_keeps_fixed_and_dynamic_memory_layers_distinct(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            now = time.time()
+            with store._db:
+                store._db.executemany(
+                    """INSERT INTO memories
+                       (kind, key, content, activation, authority, source_event_id,
+                        evidence_quote, importance, created_at, updated_at)
+                       VALUES ('profile', ?, ?, ?, 'owner', 'source', 'evidence',
+                               0.8, ?, ?)""",
+                    [
+                        ("fixed.cup", "长期记得蓝色杯子", "always", now, now),
+                        ("recalled.cup", "召回蓝色杯子的旧位置", "recall", now, now),
+                    ],
+                )
+                store._db.execute(
+                    """INSERT INTO reflections
+                       (id, local_date, state, scheduled_at, created_at, completed_at)
+                       VALUES ('reflection:layers', '2030-01-01', 'completed', ?, ?, ?)""",
+                    (now, now, now),
+                )
+                store._db.executemany(
+                    """INSERT INTO reflection_memories
+                       (kind, key, content, evidence, confidence,
+                        source_reflection_id, created_at, updated_at)
+                       VALUES (?, ?, ?, 'evidence', 0.8,
+                               'reflection:layers', ?, ?)""",
+                    [
+                        ("owner_profile", "cup.core", "复盘认为蓝色杯子很重要", now, now),
+                        ("shared_experience", "cup.day", "那天一起找过蓝色杯子", now, now),
+                        ("owner_profile", "cat.unrelated", "复盘认为主人喜欢猫", now, now),
+                    ],
+                )
+
+            retrieval = build_plan_retrieval(
+                store, plan("蓝色杯子"), config(directory)
+            )
+
+            self.assertIn("长期记得蓝色杯子", retrieval["long_term_memories"])
+            recalled = "\n".join(
+                str(item["content"]) for item in retrieval["recall_memories"]
+            )
+            self.assertIn("召回蓝色杯子的旧位置", recalled)
+            self.assertNotIn("长期记得蓝色杯子", recalled)
+            reflections = "\n".join(
+                str(item["content"]) for item in retrieval["reflection_memories"]
+            )
+            self.assertIn("复盘认为蓝色杯子很重要", reflections)
+            self.assertIn("那天一起找过蓝色杯子", reflections)
+            self.assertNotIn("复盘认为主人喜欢猫", reflections)
+            store.close()
 
     def test_owner_history_keeps_action_ledger_for_memory_and_external_tools(self) -> None:
         rendered = project_recent_turns_for_owner(
@@ -1185,7 +1240,7 @@ class ContextAssemblerTest(unittest.TestCase):
             )
 
             self.assertIn("蓝绿发布", assembled["recent_turns"])
-            self.assertIn("Sakana", assembled["owner_preferences"])
+            self.assertIn("Sakana", assembled["long_term_memories"])
             store.close()
 
     def test_raw_detail_requires_explicit_conversation_read(
@@ -1422,7 +1477,7 @@ class ContextAssemblerTest(unittest.TestCase):
             )
             assembled = assemble_main_context(store, retrieval, 2000, 2000)
 
-            self.assertTrue(retrieval["confirmed_memories"])
+            self.assertTrue(retrieval["recall_memories"])
             self.assertEqual(
                 [item["id"] for item in retrieval["goals"]],
                 ["goal-mail", "goal-social"],
@@ -1502,5 +1557,5 @@ class ContextAssemblerTest(unittest.TestCase):
             retrieval = build_plan_retrieval(
                 store, split_plan, config(directory, memory_results=2)
             )
-            self.assertTrue(retrieval["confirmed_memories"])
+            self.assertTrue(retrieval["recall_memories"])
             store.close()

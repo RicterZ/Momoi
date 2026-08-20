@@ -32,6 +32,7 @@ from .context_service import (
     _heartbeat_self_state_lines,
     _heartbeat_topic_lines,
     _pending_owner_reply_lines,
+    _reply_wait_message_lines,
 )
 from .protocol import (
     AUTONOMOUS_FINISH_SPEC,
@@ -205,10 +206,10 @@ class TurnOrchestrator:
             {
                 "type": "text",
                 "text": _pack_user_context(
-                    ("core_reflection_memory", recalled["core_reflection_memories"]),
+                    ("long_term_memories", recalled["long_term_memories"]),
                     ("recent_memories", recalled["recent_memories"]),
-                    ("confirmed_owner_memory", recalled["confirmed_memories"]),
-                    ("reflection_memory", recalled["reflection_memories"]),
+                    ("recall_memories", recalled["recall_memories"]),
+                    ("reflection_memories", recalled["reflection_memories"]),
                     ("active_goals", recalled["goals"]),
                     ("pending_reminders", recalled["reminders"]),
                     ("recent_turns", recalled["recent_turns"]),
@@ -267,6 +268,7 @@ class TurnOrchestrator:
         recent_memories = self.store.recent_memory_context(
             max(100, self.config.memory_tokens // 8)
         )
+        long_term_memories = self.store.always_memory_context()
         recent_conversation = assemble_compact_recent_conversation(
             self.store,
             4,
@@ -307,9 +309,10 @@ class TurnOrchestrator:
                 recent_conversation,
             ),
             ("episode_directory", episodes),
+            ("long_term_memories", long_term_memories),
             ("recent_memories", recent_memories),
-            ("confirmed_owner_memory", memories),
-            ("reflection_memory", learned),
+            ("recall_memories", memories),
+            ("reflection_memories", learned),
             ("webhook_activity", assemble_recent_webhook_activity(self.store)),
         )
         system = [
@@ -822,10 +825,10 @@ class TurnOrchestrator:
                 "a replacement."
             )
         current_text = _pack_user_context(
-            ("core_reflection_memory", recalled["core_reflection_memories"]),
+            ("long_term_memories", recalled["long_term_memories"]),
             ("recent_memories", recalled["recent_memories"]),
-            ("confirmed_owner_memory", recalled["confirmed_memories"]),
-            ("reflection_memory", recalled["reflection_memories"]),
+            ("recall_memories", recalled["recall_memories"]),
+            ("reflection_memories", recalled["reflection_memories"]),
             ("active_goals", recalled["goals"]),
             ("pending_reminders", recalled["reminders"]),
             ("recent_turns", recalled["recent_turns"]),
@@ -934,7 +937,22 @@ class TurnOrchestrator:
             apply_cooldown=False,
         )
         current_input = _pack_user_context(
+            ("long_term_memories", self.store.always_memory_context()),
+            (
+                "recent_memories",
+                self.store.recent_memory_context(
+                    max(100, self.config.memory_tokens // 8)
+                ),
+            ),
             ("pending_owner_reply", _pending_owner_reply_lines(pending)),
+            (
+                "source_messages",
+                _reply_wait_message_lines(pending, owner_visible=False),
+            ),
+            (
+                "last_sent_messages",
+                _reply_wait_message_lines(pending, owner_visible=True),
+            ),
             (
                 "runtime_state",
                 (
@@ -1061,6 +1079,7 @@ class TurnOrchestrator:
         recent_memories = self.store.recent_memory_context(
             max(100, self.config.memory_tokens // 8)
         )
+        long_term_memories = self.store.always_memory_context()
         conversation = self.store.heartbeat_conversation_snapshot()
         plan = await self._plan_heartbeat_context(
             turn_id,
@@ -1071,6 +1090,7 @@ class TurnOrchestrator:
             recent_conversation=recent_conversation,
             goals=goals,
             reminders=reminders,
+            long_term_memories=long_term_memories,
             recent_memories=recent_memories,
         )
         planned_activity = plan["activity"]
@@ -1131,10 +1151,10 @@ class TurnOrchestrator:
                 recent_conversation,
             ),
             ("episode_directory", recalled["episodes"]),
+            ("long_term_memories", recalled["long_term_memories"]),
             ("recent_memories", recalled["recent_memories"]),
-            ("confirmed_owner_memory", recalled["confirmed_memories"]),
-            ("reflection_memory", recalled["reflection_memories"]),
-            ("core_reflection_memory", recalled["core_reflection_memories"]),
+            ("recall_memories", recalled["recall_memories"]),
+            ("reflection_memories", recalled["reflection_memories"]),
         )
         system = [
             *self._system(),
@@ -1312,8 +1332,8 @@ class TurnOrchestrator:
             ("open_conversations", self.store.open_conversation_inventory_context()),
             ("recent_memories", recent_memories),
             ("recent_memory_inventory", recent_memory_inventory),
-            ("confirmed_owner_memory", confirmed_memory),
-            ("reflection_memory", learned),
+            ("recall_memories", confirmed_memory),
+            ("reflection_memories", learned),
             ("reflection_scope", reflection_scope),
             ("mood_timeline", str(source.get("mood_timeline") or "(none)")),
             ("topic_timeline", str(source.get("topic_timeline") or "(none)")),
@@ -1479,6 +1499,7 @@ class TurnOrchestrator:
         recent_memories = self.store.recent_memory_context(
             max(100, self.config.memory_tokens // 8)
         )
+        long_term_memories = self.store.always_memory_context()
         recent_conversation, _ = assemble_recent_conversation(
             self.store, self.config.recent_turns, self.config.recent_raw_tokens
         )
@@ -1537,9 +1558,10 @@ class TurnOrchestrator:
             ),
             ("recent_conversation", recent_conversation),
             ("episode_directory", episodes),
+            ("long_term_memories", long_term_memories),
             ("recent_memories", recent_memories),
-            ("confirmed_owner_memory", memories),
-            ("reflection_memory", learned),
+            ("recall_memories", memories),
+            ("reflection_memories", learned),
         )
         messages: list[dict[str, Any]] = [
             {

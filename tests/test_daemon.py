@@ -310,7 +310,8 @@ class DaemonTest(unittest.TestCase):
         self.assertIn("follow-up must be sent now", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertIn("reconsider contact", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertIn("Send exactly one", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("`expected_information` and `reason`", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("<source_messages>", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("<last_sent_messages>", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertIn("Set `reply_wait.wait` to false", REPLY_WAIT_SYSTEM_PROMPT)
 
     def test_mood_update_parser_accepts_open_state_labels(self) -> None:
@@ -1122,6 +1123,18 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                    pending_reply_next_check_at=1060
                    WHERE id=1"""
             )
+            now = time.time()
+            daemon.store._db.executemany(
+                """INSERT INTO memories
+                   (kind, key, content, activation, authority, source_event_id,
+                    evidence_quote, importance, created_at, updated_at)
+                   VALUES ('profile', ?, ?, ?, 'owner', 'source', 'evidence',
+                           0.8, ?, ?)""",
+                [
+                    ("style", "老师喜欢自然聊天", "always", now, now),
+                    ("current.topic", "刚才在聊小说", "recent", now, now),
+                ],
+            )
             daemon.store.begin_turn(
                 "reply-followup-turn", "autonomous", ["reply-followup:1060"]
             )
@@ -1143,7 +1156,9 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             request = json.dumps(run.await_args.args[:2], ensure_ascii=False)
             self.assertIn("<pending_owner_reply>", request)
             self.assertIn("waiting_minutes", request)
-            self.assertIn("expected_information", request)
+            self.assertIn("expected information", request)
+            self.assertIn("<long_term_memories>", request)
+            self.assertIn("<recent_memories>", request)
             self.assertIn("因为还想听老师回答", request)
             self.assertNotIn("<recent_conversation>", request)
             self.assertNotIn("<autonomous_heartbeat>", request)
@@ -1178,7 +1193,20 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             pending = {
                 "source_turn": "question",
-                "source_messages": [],
+                "source_messages": [
+                    {
+                        "role": "user",
+                        "content": "晚上一起选个游戏吧",
+                        "delivery_state": "delivered",
+                        "timestamp": "2026-08-17T12:00:00+08:00",
+                    },
+                    {
+                        "role": "assistant",
+                        "content": "那老师想玩解谜还是动作呀",
+                        "delivery_state": "delivered",
+                        "timestamp": "2026-08-17T12:00:01+08:00",
+                    },
+                ],
                 "expected_information": "主人对问题的回答",
                 "reason": "这个问题需要老师决定",
                 "waiting_since": "2026-08-17T12:00:00+08:00",
@@ -1213,6 +1241,10 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             request = json.dumps(run.await_args.args[:2], ensure_ascii=False)
             self.assertIn("这个问题需要老师决定", request)
+            self.assertIn("<source_messages>", request)
+            self.assertIn("晚上一起选个游戏吧", request)
+            self.assertIn("<last_sent_messages>", request)
+            self.assertIn("那老师想玩解谜还是动作呀", request)
             self.assertNotIn("continue_waiting", request)
             self.assertNotIn("later_check", request)
             daemon.store.close()
@@ -3599,9 +3631,9 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             current_text.index("<runtime_state>"),
             current_text.index("<current_owner_messages>"),
         )
-        if "<owner_preferences>" in current_text:
+        if "<long_term_memories>" in current_text:
             self.assertLess(
-                current_text.index("<owner_preferences>"),
+                current_text.index("<long_term_memories>"),
                 current_text.index("<runtime_state>"),
             )
         self.assertIn("</current_owner_messages>", current_text)

@@ -181,12 +181,12 @@ class ProvidersToolsTest(unittest.TestCase):
             ("pending_owner_reply", '{"waiting":true}'),
             ("runtime_state", "now"),
             ("conversation_state", '{"busy":false}'),
-            ("owner_preferences", "喜欢短回复"),
+            ("long_term_memories", "喜欢短回复"),
             ("recent_conversation", "user: hi"),
         )
         self.assertNotIn("<emotion_catalog>", rendered)
         self.assertLess(
-            rendered.index("<owner_preferences>"),
+            rendered.index("<long_term_memories>"),
             rendered.index("<recent_conversation>"),
         )
         self.assertLess(
@@ -204,16 +204,16 @@ class ProvidersToolsTest(unittest.TestCase):
 
     def test_user_pack_keeps_query_specific_recall_after_recent_turns(self) -> None:
         rendered = _pack_user_context(
-            ("confirmed_owner_memory", "召回的事实"),
-            ("reflection_memory", "今日学习"),
+            ("recall_memories", "召回的事实"),
+            ("reflection_memories", "今日学习"),
             ("episode_directory", "旧话题"),
             ("recent_turns", '{"version":1,"turns":[]}'),
-            ("owner_preferences", "喜欢短回复"),
+            ("long_term_memories", "喜欢短回复"),
             ("active_goals", "喝水"),
             ("current_owner_messages", "在吗"),
         )
         self.assertLess(
-            rendered.index("<owner_preferences>"),
+            rendered.index("<long_term_memories>"),
             rendered.index("<active_goals>"),
         )
         self.assertLess(
@@ -226,11 +226,11 @@ class ProvidersToolsTest(unittest.TestCase):
         )
         self.assertLess(
             rendered.index("<recent_turns>"),
-            rendered.index("<confirmed_owner_memory>"),
+            rendered.index("<recall_memories>"),
         )
         self.assertLess(
             rendered.index("<recent_turns>"),
-            rendered.index("<reflection_memory>"),
+            rendered.index("<reflection_memories>"),
         )
         self.assertLess(
             rendered.index("<recent_turns>"),

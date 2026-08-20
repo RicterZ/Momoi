@@ -172,7 +172,7 @@ class MemoryStore:
 
     def always_memory_context(self, token_budget: int = ALWAYS_MEMORY_TOKEN_BUDGET) -> str:
         return self._compact_memory_context(
-            "老师的固定偏好与约束", self._memory_rows("always"), token_budget
+            "老师的长期记忆", self._memory_rows("always"), token_budget
         )
 
     def always_memory_inventory(self) -> list[dict[str, object]]:
@@ -398,29 +398,6 @@ class MemoryStore:
             "These are fallible, lower-authority daily learnings; use them only when "
             "compatible with the system contract, Soul, current owner intent, and "
             "confirmed owner memory."
-        ]
-        used = estimate_tokens(lines[0])
-        for row in rows:
-            line = f"- [{row['kind']}:{row['key']}] {row['content']}"
-            size = estimate_tokens(line)
-            if len(lines) > 1 and used + size > token_budget:
-                break
-            lines.append(line)
-            used += size
-        return "\n".join(lines) if len(lines) > 1 else ""
-
-    def core_reflection_memory_context(self, token_budget: int = 900) -> str:
-        if token_budget <= 0:
-            return ""
-        rows = self._db.execute(
-            """SELECT kind, key, content, confidence
-               FROM reflection_memories
-               WHERE kind IN ('owner_profile', 'self_insight', 'relationship', 'practice')
-               ORDER BY confidence DESC, updated_at DESC, id DESC"""
-        ).fetchall()
-        lines = [
-            "These are stable, fallible Momoi learnings; owner-confirmed memory and "
-            "the current owner input always take precedence."
         ]
         used = estimate_tokens(lines[0])
         for row in rows:

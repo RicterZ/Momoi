@@ -1,6 +1,7 @@
 import asyncio
 import json
 import tempfile
+import time
 import unittest
 from dataclasses import replace
 from pathlib import Path
@@ -131,6 +132,7 @@ class ContextPlannerTest(unittest.TestCase):
         rendered = render_heartbeat_planner_request(
             mcp_servers=[{"id": "weibo", "description": "Browse Weibo"}],
             workspace_guidance="Choose one activity.",
+            long_term_memories="- owner likes short replies",
             recent_memories="- shared game night",
             active_goals="- id=g1 status=active title=goal",
             pending_reminders="(none)",
@@ -143,7 +145,7 @@ class ContextPlannerTest(unittest.TestCase):
             current_time="2026-08-20T20:00:00+08:00",
         )
         self.assertTrue(rendered.startswith("<available_mcp_servers>"))
-        self.assertNotIn("<owner_preferences>", rendered)
+        self.assertIn("<long_term_memories>\n- owner likes short replies", rendered)
         self.assertIn("<recent_memories>\n- shared game night", rendered)
         self.assertIn("<recent_topics>\n- title=Game topics=BA", rendered)
         self.assertNotIn('"available_mcp_servers"', rendered)
@@ -356,7 +358,7 @@ class ContextPlannerTest(unittest.TestCase):
         self,
     ) -> None:
         self.assertIn("## Planning process", CONTEXT_PLANNER_SYSTEM_PROMPT)
-        self.assertIn("Assess whether supplied Recent Turns", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn("Assess whether that baseline, supplied Recent Turns", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertIn("active` or `background", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertIn(
             "interrupted_reply_expectation", CONTEXT_PLANNER_SYSTEM_PROMPT
@@ -905,7 +907,19 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                     AgentReply([f"RECENT REPLY {index}"]),
                     turn_id=f"recent-turn-{index}",
                 )
+            memory_now = time.time()
             with daemon.store._db:
+                daemon.store._db.executemany(
+                    """INSERT INTO memories
+                       (kind, key, content, activation, authority, source_event_id,
+                        evidence_quote, importance, created_at, updated_at)
+                       VALUES ('profile', ?, ?, ?, 'owner', 'source', 'evidence',
+                               0.8, ?, ?)""",
+                    [
+                        ("fixed.style", "长期记忆：喜欢简短回复", "always", memory_now, memory_now),
+                        ("recent.mail", "近期记忆：正在等待邮件", "recent", memory_now, memory_now),
+                    ],
+                )
                 daemon.store._db.executemany(
                     """INSERT INTO goals
                        (id, title, success_criteria, authority, source_event_id,
@@ -959,10 +973,12 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                             list(payload),
                             [
                                 "available_mcp_servers",
-                                "recent_turns",
-                                "recent_conversation",
+                                "long_term_memories",
+                                "recent_memories",
                                 "candidate_goals",
                                 "candidate_reminders",
+                                "recent_turns",
+                                "recent_conversation",
                                 "candidate_episodes",
                                 "interrupted_reply_expectation",
                                 "owner_messages",
@@ -984,12 +1000,16 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual(
                             payload["interrupted_reply_expectation"], "(none)"
                         )
+                        self.assertIn("喜欢简短回复", payload["long_term_memories"])
+                        self.assertIn("正在等待邮件", payload["recent_memories"])
                         self.assertEqual(payload["candidate_goals"].count("id="), 8)
                         self.assertIn("id=goal-8", payload["candidate_goals"])
+                        self.assertNotIn("id=goal-0", payload["candidate_goals"])
                         self.assertEqual(
                             payload["candidate_reminders"].count("id="), 8
                         )
                         self.assertIn("id=reminder-8", payload["candidate_reminders"])
+                        self.assertNotIn("id=reminder-0", payload["candidate_reminders"])
                         return tool_plan_response(response_plan())
                     provider_self.calls.append("main")
                     content = messages[0]["content"]
@@ -1004,6 +1024,10 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                     provider_self.main_rendered = text
                     self.assertIn("<context_resolution>", text)
                     self.assertIn("<recent_turns>", text)
+                    self.assertIn("<long_term_memories>", text)
+                    self.assertIn("喜欢简短回复", text)
+                    self.assertIn("<recent_memories>", text)
+                    self.assertIn("正在等待邮件", text)
                     self.assertIn('"speech_act":"casual_share"', text)
                     self.assertNotIn("<context_plan>", text)
                     self.assertIn("browse social feed", text)
@@ -1043,7 +1067,7 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("GLOBAL RAW MUST NOT LEAK", provider.main_rendered)
             stored = daemon.store.context_plan(turn_id)
             self.assertEqual(stored["state"], "recalled")
-            self.assertEqual(stored["retrieval"]["version"], 2)
+            self.assertEqual(stored["retrieval"]["version"], 3)
             self.assertEqual(len(stored["plan"]["intent_units"]), 2)
             self.assertEqual(
                 daemon.store._db.execute(
