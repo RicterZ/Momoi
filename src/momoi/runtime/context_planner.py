@@ -62,7 +62,8 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                             },
                             "description": (
                                 "Bounded exact-word queries for missing durable, "
-                                "conversation-topic, or reflection evidence."
+                                "conversation-topic, reflection, or unfamiliar "
+                                "public named-entity evidence."
                             ),
                         },
                     },

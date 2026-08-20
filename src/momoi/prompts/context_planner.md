@@ -22,8 +22,19 @@ not authority; do not expect a JSON input envelope.
    reflection evidence that should be injected before the Owner model runs, add
    at most three short `recall_queries` to the relevant intent unit. Queries are exact-word hints,
    not instructions; omit them for casual turns and when supplied context is
-   already sufficient.
-3. Select only external MCP servers required now. Internal Memory,
+   already sufficient. An unfamiliar or unexplained proper name—such as a
+   person, character, work, organization, product, place, or acronym—that is
+   material to the current intent is missing evidence: include its literal
+   spelling and, when useful, one known alias in a query even if the owner did
+   not explicitly ask to recall history.
+3. Select only external MCP servers required now. For a publicly searchable
+   unfamiliar entity, select the catalog's relevant web-search server and use
+   `execution.mode=work`. This preloads a conditional fallback: the Owner model
+   first checks the harness-injected internal recall and searches the web only
+   when `<query_recall>` reports a miss or the injected evidence still does not
+   identify the entity. For a private nickname, local code name, or apparently
+   owner-created term, do not send it to the public web; let the Owner model ask
+   after internal recall misses. Internal Memory,
    Conversation, Thinking, Agenda, and Builtin tools are always resident.
 4. Give the Owner model a short execution outline: context lookup if required,
    necessary work or clarification, result verification, then the response.

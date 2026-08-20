@@ -394,9 +394,17 @@ class ContextPlannerTest(unittest.TestCase):
         self.assertIn("thinking_search", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertIn("advisory evidence/action outline", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertIn("recall_queries", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn("unfamiliar or unexplained proper name", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn("publicly searchable", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn("<query_recall>` reports a miss", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn("private nickname", CONTEXT_PLANNER_SYSTEM_PROMPT)
         schema = CONTEXT_PLAN_TOOL_SPEC["input_schema"]  # type: ignore[assignment]
         unit = schema["properties"]["intent_units"]["items"]  # type: ignore[index]
         self.assertIn("recall_queries", unit["properties"])
+        self.assertIn(
+            "unfamiliar public named-entity",
+            unit["properties"]["recall_queries"]["description"],
+        )
         self.assertEqual(schema["properties"]["uncertainty"]["maxItems"], 4)  # type: ignore[index]
         legacy_keyword_plan = response_plan()
         legacy_keyword_plan["intent_units"][0]["recall_queries"] = ["旧关键词"]

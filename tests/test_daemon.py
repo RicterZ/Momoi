@@ -292,6 +292,11 @@ class DaemonTest(unittest.TestCase):
         self.assertIn("remain upset, sulk, complain, show temper", system)
         self.assertIn("want comfort", system)
         self.assertIn("does not need to neutralize", system)
+        self.assertIn("<query_recall>`, `<long_term_memories>", system)
+        self.assertIn("deterministic internal fan-out", system)
+        self.assertIn("recall-then-public-web fallback", system)
+        self.assertIn("apparently private nickname", system)
+        self.assertIn("A same-name or weakly related hit", system)
         self.assertNotIn("Reply closure — CRITICAL", system)
 
     def test_reply_wait_prompt_explains_the_current_state_machine(self) -> None:
