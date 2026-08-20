@@ -82,6 +82,58 @@ def sections(*items: tuple[str, str]) -> str:
     )
 
 
+# Prefix-cache order for DeepSeek/OpenAI (byte 0 of the user text).
+# `recent_turns` is the volatility cliff: Planner keeps a 6+6 append window so
+# the base turns stay a stable prefix. Nothing query-specific or this-turn
+# may precede it, or that sliding prefix never matches.
+USER_CONTEXT_SECTION_ORDER = (
+    "owner_preferences",
+    "core_reflection_memory",
+    "always_memory_inventory",
+    "recent_memories",
+    "recent_memory_inventory",
+    "active_goals",
+    "pending_reminders",
+    "pending_memory_conflicts",
+    "open_reconciliations",
+    "open_conversations",
+    "recent_turns",
+    "recent_conversation",
+    "episode_directory",
+    "recent_topic_reference",
+    "recent_heartbeat_activities",
+    "confirmed_owner_memory",
+    "reflection_memory",
+    "interrupted_reply_expectation",
+    "heartbeat_plan",
+    "context_resolution",
+    "runtime_directives",
+    "conversation_state",
+    "runtime_state",
+    "pending_owner_reply",
+    "due_goal",
+    "current_webhook_task",
+    "daily_reflection_record",
+    "autonomous_heartbeat",
+    "current_owner_messages",
+)
+
+
+def pack_user_context(*items: tuple[str, str]) -> str:
+    """Render user context sections in prefix-cache order, skipping empties."""
+    unknown = [name for name, _ in items if name not in USER_CONTEXT_SECTION_ORDER]
+    if unknown:
+        raise ValueError(f"unknown user context section: {unknown[0]}")
+    by_name = {name: value for name, value in items}
+    return sections(
+        *(
+            (name, by_name[name])
+            for name in USER_CONTEXT_SECTION_ORDER
+            if name in by_name
+        )
+    )
+
+
 def tool_result_block(call_id: str, result: dict[str, Any]) -> dict[str, Any]:
     return {
         "type": "tool_result",

@@ -8,6 +8,7 @@ from momoi.channel.napcat import NapCatConfig
 from momoi.config import AppConfig, LLMConfig
 from momoi.models import AgentReply, IncomingMessage, MemoryCandidate, TurnDraft
 from momoi.runtime.context_assembler import (
+    _episode_header,
     _planner_final,
     assemble_main_context,
     assemble_planner_recent_turns,
@@ -476,7 +477,7 @@ class ContextAssemblerTest(unittest.TestCase):
         )
         turn = projected["turns"][0]
         self.assertEqual(turn["at"], "2026-08-19T07:34:03+08:00")
-        self.assertEqual(turn["channel"], "napcat")
+        self.assertNotIn("channel", turn)
         self.assertNotIn("final", turn)
         self.assertNotIn("interpretation", turn)
         self.assertEqual(
@@ -494,6 +495,25 @@ class ContextAssemblerTest(unittest.TestCase):
         self.assertEqual(turn["timeline"][2]["result"], {"value": 1})
         self.assertNotIn("visibility", turn["timeline"][2])
         self.assertNotIn("timestamp", turn["timeline"][2])
+
+    def test_episode_header_omits_directory_defaults(self) -> None:
+        episode = {
+            "id": "ep-1",
+            "status": "open",
+            "created_timestamp": "2026-08-16T12:00:55+08:00",
+            "updated_timestamp": "2026-08-20T15:04:55+08:00",
+        }
+        self.assertEqual(
+            _episode_header(episode, {"relation": "recent", "unit_ids": []}),
+            "[episode id=ep-1]",
+        )
+        self.assertEqual(
+            _episode_header(
+                {**episode, "status": "closed"},
+                {"relation": "recalled", "unit_ids": ["unit-1"]},
+            ),
+            "[episode id=ep-1 units=unit-1 relation=recalled status=closed]",
+        )
 
     def test_planner_projection_compacts_historical_tool_results_uniformly(
         self,

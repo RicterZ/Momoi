@@ -403,6 +403,9 @@ class ContextService:
         available_mcp_servers = {
             str(server["id"]) for server in mcp_server_catalog
         }
+        # Prefix-cache order: stable catalog/goals first, clock last. DeepSeek
+        # caches from byte 0 of this JSON, so per-heartbeat activity and time
+        # must not precede recent_conversation.
         request = [
             {
                 "role": "user",
@@ -414,17 +417,17 @@ class ContextService:
                         ),
                         "active_goals": goals,
                         "pending_reminders": reminders,
-                        "recent_conversation": recent_conversation,
                         "recent_topics": recent_topics,
+                        "recent_conversation": recent_conversation,
                         "recent_heartbeat_activities": (
                             self.store.recent_heartbeat_activities()
                         ),
-                        "conversation_state": conversation,
                         "previous_activity": {
                             "activity": state.get("activity"),
                             "result": state.get("activity_result"),
                         },
                         "current_self_state": self_context,
+                        "conversation_state": conversation,
                         "current_time": datetime.now().astimezone().isoformat(
                             timespec="seconds"
                         ),

@@ -218,6 +218,20 @@ def _episode_summary(episode: dict[str, object]) -> tuple[str, str]:
     return "", "empty"
 
 
+def _episode_header(episode: dict[str, object], selected: dict[str, object]) -> str:
+    parts = [f"id={episode['id']}"]
+    units = _supports(selected)
+    if units:
+        parts.append(f"units={units}")
+    relation = str(selected.get("relation") or "")
+    if relation and relation != "recent":
+        parts.append(f"relation={relation}")
+    status = str(episode.get("status") or "")
+    if status and status != "open":
+        parts.append(f"status={status}")
+    return f"[episode {' '.join(parts)}]"
+
+
 def _episode_context(
     store: Store,
     episodes: object,
@@ -242,10 +256,7 @@ def _episode_context(
         if episode is None:
             continue
         lines = [
-            f"[episode id={episode['id']} units={_supports(selected)} "
-            f"relation={selected['relation']} status={episode['status']} "
-            f"created={episode.get('created_timestamp') or 'unknown'} "
-            f"updated={episode.get('updated_timestamp') or 'unknown'}]",
+            _episode_header(episode, selected),
             f"title: {episode['title']}",
         ]
         summary, quality = _episode_summary(episode)
@@ -654,8 +665,6 @@ def project_recent_turns_for_planner(
             turn["kind"] = copy.deepcopy(raw_turn["kind"])
         if raw_turn.get("state") not in (None, "", "completed"):
             turn["state"] = copy.deepcopy(raw_turn["state"])
-        if raw_turn.get("channel"):
-            turn["channel"] = copy.deepcopy(raw_turn["channel"])
         raw_timeline = raw_turn.get("timeline")
         at = raw_turn.get("started_at") or raw_turn.get("completed_at")
         if isinstance(raw_timeline, list):

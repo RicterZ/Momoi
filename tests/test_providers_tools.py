@@ -38,7 +38,7 @@ from momoi.provider import (
 from momoi.runtime import (
     MomoiDaemon,
 )
-from momoi.runtime.turns import _sections, _truncate_tool_result_json
+from momoi.runtime.turns import _pack_user_context, _sections, _truncate_tool_result_json
 from tests.support import with_context_planner
 
 
@@ -176,18 +176,68 @@ class ProvidersToolsTest(unittest.TestCase):
             "</current_owner_messages>",
         )
 
-    def test_user_pack_keeps_runtime_before_bulk_conversation_evidence(self) -> None:
-        rendered = _sections(
+    def test_user_pack_puts_stable_identity_before_clock_and_task(self) -> None:
+        rendered = _pack_user_context(
             ("pending_owner_reply", '{"waiting":true}'),
             ("runtime_state", "now"),
             ("conversation_state", '{"busy":false}'),
+            ("owner_preferences", "喜欢短回复"),
             ("recent_conversation", "user: hi"),
         )
         self.assertNotIn("<emotion_catalog>", rendered)
         self.assertLess(
-            rendered.index("<runtime_state>"),
+            rendered.index("<owner_preferences>"),
             rendered.index("<recent_conversation>"),
         )
+        self.assertLess(
+            rendered.index("<recent_conversation>"),
+            rendered.index("<conversation_state>"),
+        )
+        self.assertLess(
+            rendered.index("<conversation_state>"),
+            rendered.index("<runtime_state>"),
+        )
+        self.assertLess(
+            rendered.index("<runtime_state>"),
+            rendered.index("<pending_owner_reply>"),
+        )
+
+    def test_user_pack_keeps_query_specific_recall_after_recent_turns(self) -> None:
+        rendered = _pack_user_context(
+            ("confirmed_owner_memory", "召回的事实"),
+            ("reflection_memory", "今日学习"),
+            ("episode_directory", "旧话题"),
+            ("recent_turns", '{"version":1,"turns":[]}'),
+            ("owner_preferences", "喜欢短回复"),
+            ("active_goals", "喝水"),
+            ("current_owner_messages", "在吗"),
+        )
+        self.assertLess(
+            rendered.index("<owner_preferences>"),
+            rendered.index("<active_goals>"),
+        )
+        self.assertLess(
+            rendered.index("<active_goals>"),
+            rendered.index("<recent_turns>"),
+        )
+        self.assertLess(
+            rendered.index("<recent_turns>"),
+            rendered.index("<episode_directory>"),
+        )
+        self.assertLess(
+            rendered.index("<recent_turns>"),
+            rendered.index("<confirmed_owner_memory>"),
+        )
+        self.assertLess(
+            rendered.index("<recent_turns>"),
+            rendered.index("<reflection_memory>"),
+        )
+        self.assertLess(
+            rendered.index("<recent_turns>"),
+            rendered.index("<current_owner_messages>"),
+        )
+        with self.assertRaisesRegex(ValueError, "unknown user context section"):
+            _pack_user_context(("not_a_section", "x"))
 
     def test_tool_result_envelope_is_uniform_and_deterministically_truncated(
         self,

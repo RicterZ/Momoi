@@ -27,6 +27,7 @@ from .turn_support import (
     OwnerMessagesChanged,
     TurnBudgetExceeded,
     sections as _sections,
+    pack_user_context as _pack_user_context,
     truncate_tool_result_json as _truncate_tool_result_json,
 )
 from .context_service import ContextService

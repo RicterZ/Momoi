@@ -3600,6 +3600,11 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             current_text.index("<runtime_state>"),
             current_text.index("<current_owner_messages>"),
         )
+        if "<owner_preferences>" in current_text:
+            self.assertLess(
+                current_text.index("<owner_preferences>"),
+                current_text.index("<runtime_state>"),
+            )
         self.assertIn("</current_owner_messages>", current_text)
         self.assertIn("</runtime_state>", current_text)
         self.assertNotIn(
