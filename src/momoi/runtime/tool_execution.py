@@ -644,7 +644,7 @@ class ToolExecutionService:
                     response.tool_calls[0].arguments,
                     require_heartbeat=heartbeat_turn,
                 )
-                if reply is not None and plain_text:
+                if plain_text:
                     reply = None
                     error = "plain_text_with_respond"
                 if reply is not None and heartbeat_turn and reply.heartbeat:

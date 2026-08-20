@@ -353,6 +353,10 @@ class DaemonTest(unittest.TestCase):
             MomoiDaemon._parse_mood_decision(None),
             (None, "invalid_mood_decision"),
         )
+        self.assertEqual(
+            MomoiDaemon._parse_mood_decision('{"decision": "unchanged"}'),
+            (None, "invalid_mood_decision"),
+        )
         self.assertIn("mood", RESPOND_TOOL_SPEC["input_schema"]["required"])
         self.assertIn("reply_wait", RESPOND_TOOL_SPEC["input_schema"]["required"])
         self.assertNotIn("continuity", RESPOND_TOOL_SPEC["input_schema"]["properties"])
@@ -2686,6 +2690,157 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     (turn_id,),
                 ).fetchone()["text"],
                 "午饭要好好吃呀",
+            )
+            daemon.store.close()
+
+    async def test_plain_text_with_invalid_mood_is_retried_through_send_message(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(
+                AppConfig(
+                    llm=LLMConfig(
+                        "http://127.0.0.1", "test", "test", 100, 0, 1, 0
+                    ),
+                    channel=NapCatConfig(
+                        "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
+                    ),
+                    system_prompt="test",
+                    recent_raw_tokens=1000,
+                    recent_turns=2,
+                    memory_results=2,
+                    memory_tokens=1000,
+                    database=Path(directory) / "momoi.sqlite3",
+                    log_level="INFO",
+                )
+            )
+
+            class Provider:
+                def __init__(self) -> None:
+                    self.calls = 0
+                    self.corrections: list[str] = []
+
+                async def complete(
+                    self,
+                    _system: object,
+                    messages: list[dict[str, object]],
+                    tools: list[dict[str, object]],
+                    **_: object,
+                ) -> ProviderResponse:
+                    self.calls += 1
+                    if self.calls == 1:
+                        call = ToolCall(
+                            "bad-respond",
+                            "respond",
+                            {
+                                "reply_wait": {"wait": False},
+                                "mood": "unchanged",
+                            },
+                        )
+                        return ProviderResponse(
+                            [
+                                {
+                                    "type": "text",
+                                    "text": "哼，游戏宅也会做功课的好吗",
+                                },
+                                {
+                                    "type": "tool_use",
+                                    "id": call.id,
+                                    "name": call.name,
+                                    "input": call.arguments,
+                                },
+                            ],
+                            [call],
+                        )
+                    last = messages[-1]
+                    content = last.get("content")
+                    if isinstance(content, list):
+                        self.corrections.extend(
+                            str(block.get("text") or "")
+                            for block in content
+                            if isinstance(block, dict)
+                        )
+                    if [tool["name"] for tool in tools] != [
+                        "send_message",
+                        "respond",
+                    ]:
+                        raise AssertionError(tools)
+                    if self.calls == 2:
+                        call = ToolCall(
+                            "send",
+                            "send_message",
+                            {"messages": ["哼，游戏宅也会做功课的好吗"]},
+                        )
+                    else:
+                        call = ToolCall(
+                            "finish",
+                            "respond",
+                            {
+                                "reply_wait": {"wait": False},
+                                "mood": {"decision": "unchanged"},
+                            },
+                        )
+                    return ProviderResponse(
+                        [
+                            {
+                                "type": "tool_use",
+                                "id": call.id,
+                                "name": call.name,
+                                "input": call.arguments,
+                            }
+                        ],
+                        [call],
+                    )
+
+            provider = Provider()
+            event = IncomingMessage(
+                "owner-homework", "owner-homework", "不是天天打游戏么", 1, 1
+            )
+            daemon.store.add_event(event)
+            turn_id = daemon._turn_id(event.event_id)
+            plan = degraded_context_plan(
+                [
+                    {
+                        "event_id": event.event_id,
+                        "channel": event.channel,
+                        "text": event.text,
+                    }
+                ],
+                "test",
+            )
+            daemon.store.begin_turn(turn_id, "owner", [event.event_id])
+            daemon.store.save_context_plan(
+                turn_id, 1, [event.event_id], plan
+            )
+            daemon.provider = provider  # type: ignore[assignment]
+            reply = await daemon._run_tool_loop(
+                daemon._system(),
+                [{"role": "user", "content": event.text}],
+                daemon._owner_tool_specs(plan),
+                [event],
+                TurnDraft(),
+                authority="owner",
+                source_event_id=event.event_id,
+                allow_notify=False,
+                turn_id=turn_id,
+                require_response=True,
+                accept_owner_updates=False,
+                dynamic_tool_policies=True,
+                delivery_channel=daemon.channel,
+            )
+
+            self.assertEqual(provider.calls, 3)
+            self.assertTrue(
+                any("send_message first" in text for text in provider.corrections)
+            )
+            self.assertEqual(reply.messages, [])
+            self.assertEqual(
+                daemon.store._db.execute(
+                    """SELECT text FROM turn_progress
+                       WHERE turn_id=? ORDER BY created_at""",
+                    (turn_id,),
+                ).fetchone()["text"],
+                "哼，游戏宅也会做功课的好吗",
             )
             daemon.store.close()
 
