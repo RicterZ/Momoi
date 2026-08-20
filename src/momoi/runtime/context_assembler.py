@@ -531,15 +531,57 @@ def _owner_history_argument(name: str, arguments: object) -> str:
         keep = ("url", "path", "query")
     else:
         keep = ("query", "keyword", "limit", "path", "url", "id")
-    selected = {
-        key: arguments[key]
+    selected = [
+        (key, arguments[key])
         for key in keep
         if arguments.get(key) not in (None, "", [], {})
-    }
+    ]
     if not selected:
         return ""
-    rendered = json.dumps(selected, ensure_ascii=False, separators=(",", ":"))
+    parts: list[str] = []
+    for key, value in selected:
+        if isinstance(value, list):
+            text = " | ".join(str(item) for item in value)
+        elif isinstance(value, dict):
+            text = " ".join(
+                f"{nested_key}:{nested_value}"
+                for nested_key, nested_value in value.items()
+                if nested_value not in (None, "", [], {})
+            )
+        else:
+            text = str(value)
+        parts.append(f"{key}={' '.join(text.split())}")
+    rendered = " ".join(parts)
     return truncate_tokens(rendered, _OWNER_HISTORY_ARGUMENT_TOKENS)
+
+
+def _owner_history_text(value: str, limit: int) -> str:
+    """Collapse structured tool text into readable facts instead of JSON blobs."""
+    text = value.strip()
+    if text[:1] in {"{", "["}:
+        structured_text = (
+            text.replace("\\r\\n", "\n")
+            .replace("\\n", "\n")
+            .replace("\\t", "\t")
+        )
+        try:
+            parsed = json.loads(structured_text)
+        except (TypeError, ValueError):
+            parsed = None
+        if isinstance(parsed, dict):
+            parts: list[str] = []
+            for key, item in parsed.items():
+                if isinstance(item, list):
+                    parts.append(f"{key}={len(item)} items")
+                elif isinstance(item, dict):
+                    parts.append(f"{key}={len(item)} fields")
+                elif item not in (None, "", [], {}):
+                    parts.append(f"{key}={item}")
+            if parts:
+                return truncate_tokens("; ".join(parts), limit)
+        elif isinstance(parsed, list):
+            return f"{len(parsed)} items"
+    return truncate_tokens(" ".join(text.split()), limit)
 
 
 def _owner_history_result(name: str, value: object, ok: object = True) -> str:
@@ -576,7 +618,7 @@ def _owner_history_result(name: str, value: object, ok: object = True) -> str:
             if item not in (None, "", [], {}) and f"{key}={item}" not in parts:
                 parts.append(f"{key}={truncate_tokens(str(item), 64)}")
     elif isinstance(nested_result, str) and nested_result.strip():
-        parts.append(f"summary={truncate_tokens(' '.join(nested_result.split()), 80)}")
+        parts.append(f"summary={_owner_history_text(nested_result, 80)}")
     elif isinstance(nested_result, list):
         parts.append(f"items_count={len(nested_result)}")
     results = value.get("results")
@@ -605,7 +647,7 @@ def _owner_history_result(name: str, value: object, ok: object = True) -> str:
             continue
         item = value.get(key)
         if isinstance(item, str) and item.strip():
-            parts.append(f"{key}={truncate_tokens(' '.join(item.split()), 80)}")
+            parts.append(f"{key}={_owner_history_text(item, 80)}")
             break
     return truncate_tokens(" ".join(parts) or "ok", _OWNER_HISTORY_RESULT_TOKENS)
 
@@ -633,14 +675,14 @@ def _owner_history_summary(name: str, value: object, ok: object = True) -> str:
         for key in ("summary", "message", "content", "body", "result"):
             item = value.get(key)
             if isinstance(item, str) and item.strip():
-                return truncate_tokens(" ".join(item.split()), 48)
+                return _owner_history_text(item, 48)
         nested = value.get("data")
         if isinstance(nested, dict):
             return _owner_history_summary(name, nested, ok)
         if isinstance(nested, list):
             return f"{name} returned {len(nested)} items"
     if isinstance(value, str) and value.strip():
-        return truncate_tokens(" ".join(value.split()), 48)
+        return _owner_history_text(value, 48)
     return f"{name} completed"
 
 
@@ -1232,6 +1274,70 @@ def assemble_planner_recent_turns(
         if str(turn.get("turn_id") or "")
     ]
     return document, active_ids
+
+
+def render_planner_recent_turns(
+    document: dict[str, object],
+    active_turn_ids: list[str] | None = None,
+) -> str:
+    """Render planner history as readable evidence instead of nested JSON."""
+    active = {str(value) for value in active_turn_ids or []}
+    turns = document.get("turns")
+    if not isinstance(turns, list):
+        return ""
+    blocks: list[str] = []
+    for index, turn in enumerate(turns, start=1):
+        if not isinstance(turn, dict):
+            continue
+        turn_id = str(turn.get("turn_id") or "")
+        marker = " active" if turn_id in active else " background"
+        header = f"T-{index}{marker}"
+        if turn.get("at"):
+            header += f" {str(turn['at'])[:16]}"
+        if turn.get("kind"):
+            header += f" [{turn['kind']}]"
+        lines = [header]
+        interpretation = turn.get("interpretation")
+        if isinstance(interpretation, dict):
+            intents = interpretation.get("intents")
+            if isinstance(intents, list):
+                for intent in intents[:3]:
+                    if isinstance(intent, dict) and intent.get("intent"):
+                        lines.append(
+                            "  intent: " + truncate_tokens(str(intent["intent"]), 120)
+                        )
+        for item in turn.get("timeline") or []:
+            if not isinstance(item, dict):
+                continue
+            item_type = str(item.get("type") or "")
+            if item_type in {"owner_message", "assistant_message", "event"}:
+                role = {
+                    "owner_message": "owner",
+                    "assistant_message": "momoi",
+                    "event": "event",
+                }[item_type]
+                lines.append(f"  {role}: {_historical_content(item.get('text'))}")
+            elif item_type == "tool_call":
+                args = _owner_history_argument(
+                    str(item.get("name") or "tool"), item.get("arguments")
+                )
+                lines.append(
+                    f"  call {item.get('call') or 'c'} {item.get('name') or 'tool'}"
+                    + (f" {args}" if args else "")
+                )
+            elif item_type == "tool_result":
+                name = str(item.get("name") or "tool")
+                value = item.get("result")
+                lines.append(
+                    f"  result {item.get('call') or 'c'} {name}: "
+                    f"summary={_owner_history_summary(name, value, not bool(item.get('error')))}; "
+                    f"{_owner_history_result(name, value, not bool(item.get('error')))}"
+                )
+        final = turn.get("final")
+        if isinstance(final, dict) and final.get("failure"):
+            lines.append(f"  final: failure={truncate_tokens(str(final['failure']), 96)}")
+        blocks.append("\n".join(lines))
+    return "\n\n".join(blocks)
 
 
 def assemble_main_context(

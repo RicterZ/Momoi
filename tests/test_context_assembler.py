@@ -18,6 +18,7 @@ from momoi.runtime.context_assembler import (
     project_recent_turns_for_owner,
     recall_episode_context,
 )
+from momoi.runtime.turn_support import pack_user_context
 from momoi.storage import Store, estimate_tokens
 
 
@@ -75,6 +76,21 @@ def plan(query: str, episode_id: str = "episode-mail") -> dict[str, object]:
 
 
 class ContextAssemblerTest(unittest.TestCase):
+    def test_owner_context_puts_fixed_memory_and_agenda_state_first(self) -> None:
+        rendered = pack_user_context(
+            ("recent_turns", "history"),
+            ("pending_reminders", "reminders"),
+            ("recent_memories", "recent"),
+            ("active_goals", "goals"),
+            ("owner_preferences", "preferences"),
+            ("query_recall", "recall"),
+        )
+        self.assertLess(rendered.index("<owner_preferences>"), rendered.index("<recent_memories>"))
+        self.assertLess(rendered.index("<recent_memories>"), rendered.index("<active_goals>"))
+        self.assertLess(rendered.index("<active_goals>"), rendered.index("<pending_reminders>"))
+        self.assertLess(rendered.index("<pending_reminders>"), rendered.index("<recent_turns>"))
+        self.assertLess(rendered.index("<recent_turns>"), rendered.index("<query_recall>"))
+
     def test_owner_history_keeps_action_ledger_for_memory_and_external_tools(self) -> None:
         rendered = project_recent_turns_for_owner(
             {

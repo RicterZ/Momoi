@@ -26,6 +26,7 @@ from momoi.runtime.turns import (
     HEARTBEAT_PLANNER_SYSTEM_PROMPT,
 )
 from momoi.runtime.turn_support import conversation_guidance
+from tests.support import planner_sections
 
 
 def app_config(directory: str) -> AppConfig:
@@ -334,7 +335,7 @@ class ContextPlannerTest(unittest.TestCase):
     ) -> None:
         self.assertIn("## Planning process", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertIn("Assess whether supplied Recent Turns", CONTEXT_PLANNER_SYSTEM_PROMPT)
-        self.assertIn("active_recent_turn_ids", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn("active` or `background", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertIn(
             "interrupted_reply_expectation", CONTEXT_PLANNER_SYSTEM_PROMPT
         )
@@ -785,11 +786,8 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                     **_: object,
                 ) -> ProviderResponse:
                     self.assertEqual(system, CONTEXT_PLANNER_SYSTEM_PROMPT)
-                    payload = json.loads(str(messages[0]["content"]))
-                    self.assertIn(
-                        "old-cup",
-                        {item["id"] for item in payload["candidate_episodes"]},
-                    )
+                    payload = planner_sections(str(messages[0]["content"]))
+                    self.assertIn("id=old-cup", payload["candidate_episodes"])
                     plan = {
                         "version": 2,
                         "intent_units": [
@@ -934,13 +932,12 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                     if system == CONTEXT_PLANNER_SYSTEM_PROMPT:
                         provider_self.calls.append("planner")
                         self.assertEqual(tools, [CONTEXT_PLAN_TOOL_SPEC])
-                        payload = json.loads(str(messages[0]["content"]))
+                        payload = planner_sections(str(messages[0]["content"]))
                         self.assertEqual(
                             list(payload),
                             [
                                 "available_mcp_servers",
                                 "recent_turns",
-                                "active_recent_turn_ids",
                                 "candidate_goals",
                                 "candidate_reminders",
                                 "candidate_episodes",
@@ -948,36 +945,28 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "owner_messages",
                             ],
                         )
-                        self.assertEqual(
-                            payload["owner_messages"][0]["text"],
+                        self.assertIn(
                             "刷微博，也看下之前等的邮件",
+                            payload["owner_messages"],
                         )
                         self.assertRegex(
-                            payload["owner_messages"][0]["timestamp"],
-                            r"^\d{4}-\d{2}-\d{2}T",
+                            payload["owner_messages"],
+                            r"at=\d{4}-\d{2}-\d{2}T",
                         )
-                        recent = json.dumps(
-                            payload["recent_turns"], ensure_ascii=False
-                        )
+                        recent = str(payload["recent_turns"])
                         provider_self.planner_recent = recent
                         self.assertIn("RECENT CONTEXT 1", recent)
                         self.assertIn("RECENT CONTEXT 2", recent)
                         self.assertIn("GLOBAL RAW MUST NOT LEAK", recent)
                         self.assertEqual(
-                            payload["active_recent_turn_ids"],
-                            ["recent-turn-1", "recent-turn-2"],
+                            payload["interrupted_reply_expectation"], "(none)"
                         )
-                        self.assertIsNone(
-                            payload["interrupted_reply_expectation"]
-                        )
-                        self.assertEqual(len(payload["candidate_goals"]), 8)
+                        self.assertEqual(payload["candidate_goals"].count("id="), 8)
+                        self.assertIn("id=goal-8", payload["candidate_goals"])
                         self.assertEqual(
-                            payload["candidate_goals"][0]["id"], "goal-8"
+                            payload["candidate_reminders"].count("id="), 8
                         )
-                        self.assertEqual(len(payload["candidate_reminders"]), 8)
-                        self.assertEqual(
-                            payload["candidate_reminders"][0]["id"], "reminder-8"
-                        )
+                        self.assertIn("id=reminder-8", payload["candidate_reminders"])
                         return tool_plan_response(response_plan())
                     provider_self.calls.append("main")
                     content = messages[0]["content"]

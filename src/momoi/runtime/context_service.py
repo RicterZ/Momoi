@@ -12,8 +12,14 @@ from .context_assembler import (
     assemble_main_context,
     assemble_planner_recent_turns,
     build_plan_retrieval,
+    render_planner_recent_turns,
 )
-from .context_candidates import DEFAULT_EPISODE_CANDIDATE_POLICY, EpisodeCandidatePolicy, collect_episode_candidates, full_candidate_context
+from .context_candidates import (
+    DEFAULT_EPISODE_CANDIDATE_POLICY,
+    EpisodeCandidatePolicy,
+    collect_episode_candidates,
+    render_candidate_context,
+)
 from .context_planner import (
     CONTEXT_PLAN_TOOL_NAME,
     CONTEXT_PLAN_TOOL_SPEC,
@@ -29,12 +35,151 @@ from .turn_support import (
     CONTEXT_PLANNER_SYSTEM_PROMPT,
     HEARTBEAT_PLANNER_SYSTEM_PROMPT,
     OwnerMessagesChanged,
+    sections as _sections,
     plan_log_episodes as _plan_log_episodes,
     plan_log_units as _plan_log_units,
     tool_error_block as _tool_error_block,
 )
 
 logger = logging.getLogger("momoi.runtime.turns")
+
+
+def _planner_state_lines(items: list[dict[str, object]], *, reminder: bool = False) -> str:
+    lines: list[str] = []
+    for item in items:
+        if not isinstance(item, dict) or not item.get("id"):
+            continue
+        if reminder:
+            fields = [f"id={item['id']}"]
+            if item.get("text"):
+                fields.append(f"text={str(item['text'])[:160]}")
+            if item.get("fire_timestamp"):
+                fields.append(f"at={item['fire_timestamp']}")
+        else:
+            fields = [
+                f"id={item['id']}",
+                f"status={item.get('status') or 'unknown'}",
+                f"title={str(item.get('title') or '')[:100]}",
+            ]
+            for key, label, limit in (
+                ("next_action", "next", 120),
+                ("waiting_for", "waiting", 100),
+                ("latest_result", "last", 160),
+            ):
+                if item.get(key) not in (None, "", [], {}):
+                    fields.append(f"{label}={str(item[key])[:limit]}")
+        lines.append("- " + " ".join(fields))
+    return "\n".join(lines)
+
+
+def _planner_mcp_lines(items: list[dict[str, object]]) -> str:
+    return "\n".join(
+        f"- id={item.get('id')} description={str(item.get('description') or '')[:240]}"
+        for item in items
+        if isinstance(item, dict) and item.get("id")
+    )
+
+
+def _planner_owner_lines(items: list[dict[str, object]]) -> str:
+    blocks: list[str] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        blocks.append(
+            f"[event id={item.get('event_id')} channel={item.get('channel')} "
+            f"at={item.get('timestamp')}]\n{item.get('text') or ''}"
+        )
+    return "\n\n".join(blocks)
+
+
+def _planner_interrupted_reply_lines(value: str) -> str:
+    if not value:
+        return ""
+    try:
+        item = json.loads(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if not isinstance(item, dict):
+        return str(value)
+    lines = [f"state: {item.get('state') or 'unknown'}"]
+    for key, label in (
+        ("expected_information", "expected"),
+        ("reason", "reason"),
+        ("source_turn", "source turn"),
+        ("waiting_since", "waiting since"),
+        ("interrupted_at", "interrupted at"),
+        ("deadline", "deadline"),
+        ("delay_minutes", "delay minutes"),
+        ("elapsed_minutes", "elapsed minutes"),
+    ):
+        if item.get(key) not in (None, "", [], {}):
+            lines.append(f"{label}: {item[key]}")
+    messages = item.get("source_messages")
+    if isinstance(messages, list) and messages:
+        lines.append("source messages:")
+        for message in messages:
+            if not isinstance(message, dict):
+                continue
+            lines.append(
+                f"- {message.get('role') or 'message'} at={message.get('timestamp') or '?'} "
+                f"delivery={message.get('delivery_state') or 'unknown'}"
+            )
+            if message.get("content"):
+                lines.append(f"  {message['content']}")
+    return "\n".join(lines)
+
+
+def _planner_value(value: str) -> str:
+    return value if value.strip() else "(none)"
+
+
+def render_context_planner_request(
+    *,
+    mcp_servers: list[dict[str, object]],
+    recent_turns: dict[str, object],
+    active_recent_turn_ids: list[str],
+    candidate_goals: list[dict[str, object]],
+    candidate_reminders: list[dict[str, object]],
+    candidate_episodes: list[dict[str, object]],
+    interrupted_reply_expectation: str,
+    owner_messages: list[dict[str, object]],
+) -> str:
+    """Serialize the exact human-readable user prompt sent to Context Planner."""
+    return _sections(
+        (
+            "available_mcp_servers",
+            _planner_value(_planner_mcp_lines(mcp_servers)),
+        ),
+        (
+            "recent_turns",
+            _planner_value(
+                render_planner_recent_turns(recent_turns, active_recent_turn_ids)
+            ),
+        ),
+        (
+            "candidate_goals",
+            _planner_value(_planner_state_lines(candidate_goals)),
+        ),
+        (
+            "candidate_reminders",
+            _planner_value(_planner_state_lines(candidate_reminders, reminder=True)),
+        ),
+        (
+            "candidate_episodes",
+            _planner_value(render_candidate_context(candidate_episodes)),
+        ),
+        (
+            "interrupted_reply_expectation",
+            _planner_value(
+                _planner_interrupted_reply_lines(interrupted_reply_expectation)
+            ),
+        ),
+        (
+            "owner_messages",
+            _planner_value(_planner_owner_lines(owner_messages)),
+        ),
+    )
+
 
 class ContextService:
     @staticmethod
@@ -100,7 +245,6 @@ class ContextService:
                 for candidate in candidates
             ],
         )
-        candidate_context = full_candidate_context(candidates)
         owner_messages = [
             {
                 "event_id": event.event_id,
@@ -164,23 +308,15 @@ class ContextService:
         request: list[dict[str, Any]] = [
             {
                 "role": "user",
-                "content": json.dumps(
-                    {
-                        "available_mcp_servers": mcp_server_catalog,
-                        "recent_turns": planner_recent_turns,
-                        "active_recent_turn_ids": active_recent_turn_ids,
-                        "candidate_goals": candidate_goals,
-                        "candidate_reminders": candidate_reminders,
-                        "candidate_episodes": candidate_context,
-                        "interrupted_reply_expectation": (
-                            json.loads(interrupted_reply)
-                            if interrupted_reply
-                            else None
-                        ),
-                        "owner_messages": owner_messages,
-                    },
-                    ensure_ascii=False,
-                    separators=(",", ":"),
+                "content": render_context_planner_request(
+                    mcp_servers=mcp_server_catalog,
+                    recent_turns=planner_recent_turns,
+                    active_recent_turn_ids=active_recent_turn_ids,
+                    candidate_goals=candidate_goals,
+                    candidate_reminders=candidate_reminders,
+                    candidate_episodes=candidates,
+                    interrupted_reply_expectation=interrupted_reply,
+                    owner_messages=owner_messages,
                 ),
             }
         ]

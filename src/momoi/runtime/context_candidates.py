@@ -218,3 +218,29 @@ def full_candidate_context(
         }
         for candidate in candidates
     ]
+
+
+def render_candidate_context(candidates: list[dict[str, object]]) -> str:
+    """Render planner candidates as compact evidence cards."""
+    blocks: list[str] = []
+    for candidate in candidates:
+        fields = [
+            f"id={candidate['id']}",
+            f"status={candidate['status']}",
+            f"title={str(candidate['title'])[:120]}",
+        ]
+        summary = str(
+            candidate.get("narrative_summary")
+            or candidate.get("working_summary")
+            or ""
+        ).strip()
+        if summary:
+            fields.append(f"summary={summary[:240]}")
+        topics = candidate.get("topics") or []
+        if topics:
+            fields.append("topics=" + ",".join(str(item) for item in topics[:8]))
+        loops = candidate.get("open_loops") or []
+        if loops:
+            fields.append("open_loops=" + ",".join(str(item) for item in loops[:4]))
+        blocks.append("- " + " ".join(fields))
+    return "\n".join(blocks)

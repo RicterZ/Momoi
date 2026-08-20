@@ -1,4 +1,6 @@
 import json
+import re
+from html import unescape
 from typing import Any
 
 from momoi.models import ProviderResponse, ToolCall
@@ -12,10 +14,32 @@ from momoi.runtime.turns import (
 )
 
 
+def planner_sections(text: str) -> dict[str, str]:
+    return {
+        match.group(1): unescape(match.group(2))
+        for match in re.finditer(r"<([a-z_]+)>\n(.*?)\n</\1>", text, re.DOTALL)
+    }
+
+
 def context_plan_response(messages: list[dict[str, Any]]) -> ProviderResponse:
-    payload = json.loads(str(messages[0]["content"]))
-    owner_messages = payload["owner_messages"]
-    candidates = payload["candidate_episodes"]
+    payload = planner_sections(str(messages[0]["content"]))
+    owner_messages = [
+        {
+            "event_id": match.group(1),
+            "text": match.group(2),
+        }
+        for match in re.finditer(
+            r"\[event id=([^\s]+)[^]]*\]\n(.*?)(?=\n\n\[event |\Z)",
+            payload["owner_messages"],
+            re.DOTALL,
+        )
+    ]
+    candidate_ids = re.findall(
+        r"(?m)^- id=([^\s]+)", payload.get("candidate_episodes", "")
+    )
+    mcp_server_ids = re.findall(
+        r"(?m)^- id=([^\s]+)", payload.get("available_mcp_servers", "")
+    )
     units = [
         {
             "id": f"u{index}",
@@ -27,20 +51,20 @@ def context_plan_response(messages: list[dict[str, Any]]) -> ProviderResponse:
         }
         for index, message in enumerate(owner_messages, 1)
     ]
-    episode_ref = candidates[0]["id"] if candidates else "new:test-thread"
+    episode_ref = candidate_ids[0] if candidate_ids else "new:test-thread"
     plan = {
         "version": 2,
         "intent_units": units,
         "episode_actions": [
             {
-                "action": "continue" if candidates else "new",
+                "action": "continue" if candidate_ids else "new",
                 "episode_ref": episode_ref,
                 "unit_ids": [unit["id"] for unit in units],
                 "topics": ["test"],
                 "entities": [],
                 "open_loops": [],
                 "salience": 0.5,
-                **({"title": "Test conversation"} if not candidates else {}),
+                **({"title": "Test conversation"} if not candidate_ids else {}),
             }
         ],
         "episode_links": [],
@@ -51,10 +75,7 @@ def context_plan_response(messages: list[dict[str, Any]]) -> ProviderResponse:
                 "reason": "Test context is sufficient.",
             },
             "mcp": {
-                "servers": [
-                    str(server["id"])
-                    for server in payload.get("available_mcp_servers", [])
-                ],
+                "servers": mcp_server_ids,
                 "reason": "Load configured test MCP servers.",
             },
             "execution": {

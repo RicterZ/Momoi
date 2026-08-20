@@ -82,25 +82,24 @@ def sections(*items: tuple[str, str]) -> str:
     )
 
 
-# Prefix-cache order for DeepSeek/OpenAI (byte 0 of the user text).
-# `recent_turns` is the volatility cliff: Planner keeps a 6+6 append window so
-# the base turns stay a stable prefix. Query-specific and highly dynamic memory
-# sections follow the episode/history base; putting recent memories before that
-# boundary would invalidate the cache for every new Owner query.
+# Prefix-cache order for DeepSeek/OpenAI (byte 0 of the user text). Durable
+# owner memory and the bounded recent-memory baseline are always available
+# first, followed by the fixed agenda state. Query-specific recall and
+# conversation evidence come after that stable semantic prefix.
 USER_CONTEXT_SECTION_ORDER = (
     "owner_preferences",
-    "core_reflection_memory",
-    "always_memory_inventory",
+    "recent_memories",
     "active_goals",
     "pending_reminders",
+    "core_reflection_memory",
+    "always_memory_inventory",
+    "recent_memory_inventory",
+    "confirmed_owner_memory",
+    "reflection_memory",
     "recent_turns",
     "recent_conversation",
     "episode_directory",
     "query_recall",
-    "recent_memories",
-    "recent_memory_inventory",
-    "confirmed_owner_memory",
-    "reflection_memory",
     "pending_memory_conflicts",
     "open_reconciliations",
     "open_conversations",
