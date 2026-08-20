@@ -7,7 +7,6 @@ import aiohttp
 from .base import (
     UsagePlugin,
     billed_usage,
-    parse_protocol_usage,
     usage_int,
     usage_mapping,
 )
@@ -63,9 +62,7 @@ class DeepSeekPlugin(UsagePlugin):
         usage = data.get("usage")
         if not isinstance(usage, dict):
             return None
-        if "prompt_cache_hit_tokens" in usage or "prompt_cache_miss_tokens" in usage:
-            return _parse_deepseek_usage(usage)
-        return parse_protocol_usage(data)
+        return _parse_deepseek_usage(usage)
 
     async def balance(self) -> dict[str, object]:
         if not self.api_key:
@@ -142,11 +139,10 @@ def _parse_deepseek_usage(usage: dict[str, Any]) -> dict[str, float | int | bool
     )
     reasoning = usage_int(completion_details.get("reasoning_tokens"))
     total = usage_int(usage.get("total_tokens"))
-    if reasoning:
-        if total and total == input_tokens + output + reasoning:
-            output += reasoning
-        elif "completion_tokens" not in usage and output < reasoning:
-            output += reasoning
+    if total > input_tokens:
+        output = max(output, total - input_tokens)
+    elif "completion_tokens" not in usage and reasoning:
+        output += reasoning
 
     return billed_usage(
         input_tokens=input_tokens,
@@ -154,5 +150,15 @@ def _parse_deepseek_usage(usage: dict[str, Any]) -> dict[str, float | int | bool
         cache_read=cache_read,
         cache_write=cache_write,
         output=output,
-        cache_reported=True,
+        cache_reported=any(
+            key in usage
+            for key in (
+                "prompt_cache_hit_tokens",
+                "prompt_cache_miss_tokens",
+                "cache_read_input_tokens",
+                "cache_creation_input_tokens",
+            )
+        )
+        or "cached_tokens" in prompt_details
+        or "cache_write_tokens" in prompt_details,
     )

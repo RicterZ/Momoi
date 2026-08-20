@@ -138,13 +138,14 @@ def _persist_usage(
     metrics: dict[str, float | int | bool] | None,
     *,
     model: str,
+    created_at: float | None = None,
 ) -> None:
     if sink is None or metrics is None:
         return
     context = current_log_context()
     try:
         sink(
-            created_at=time(),
+            created_at=time() if created_at is None else created_at,
             turn_id=str(context.get("turn_id") or ""),
             stage=str(context.get("stage") or ""),
             model=model,
@@ -218,13 +219,14 @@ def _record_response(
     model: str,
     parse_usage: Callable[[dict[str, Any]], dict[str, float | int | bool] | None]
     | None = None,
+    created_at: float | None = None,
 ) -> tuple[int, dict[str, float | int | bool] | None]:
     _dump_response(dump_path, data)
     duration_ms = int((monotonic() - attempt_started) * 1000)
     metrics = _log_usage(
         data, protocol=protocol, duration_ms=duration_ms, parse_usage=parse_usage
     )
-    _persist_usage(usage_sink, metrics, model=model)
+    _persist_usage(usage_sink, metrics, model=model, created_at=created_at)
     return duration_ms, metrics
 
 
@@ -503,6 +505,7 @@ class AnthropicProvider:
             "content-type": "application/json",
         }
         async def request(attempt_started: float) -> ProviderResponse:
+            billed_at = time()
             async with self._session.post(
                 _api_url(self.config.base_url, "/messages"),
                 json=payload,
@@ -528,6 +531,7 @@ class AnthropicProvider:
                     usage_sink=self.usage_sink,
                     model=self.config.model,
                     parse_usage=self.usage_parser,
+                    created_at=billed_at,
                 )
                 content = [
                     block
@@ -755,6 +759,7 @@ class OpenAIProvider:
             "content-type": "application/json",
         }
         async def request(attempt_started: float) -> ProviderResponse:
+            billed_at = time()
             async with self._session.post(
                 _openai_url(self.config.base_url),
                 json=payload,
@@ -784,6 +789,7 @@ class OpenAIProvider:
                     usage_sink=self.usage_sink,
                     model=self.config.model,
                     parse_usage=self.usage_parser,
+                    created_at=billed_at,
                 )
                 choices = data.get("choices")
                 if not isinstance(choices, list) or not choices:

@@ -60,6 +60,16 @@ class DeepSeekPluginTest(unittest.TestCase):
         offpeak = datetime(2026, 8, 17, 21, 0, tzinfo=SHANGHAI).timestamp()
         self.assertEqual(plugin.token_rates("deepseek-v4-flash", peak), (0.10, 3.0, 9.0))
         self.assertEqual(plugin.token_rates("deepseek-v4-flash", offpeak), (0.05, 1.5, 4.5))
+        noon = datetime(2026, 8, 20, 12, 0, tzinfo=SHANGHAI).timestamp()
+        before_noon = datetime(2026, 8, 20, 11, 59, tzinfo=SHANGHAI).timestamp()
+        lunch = datetime(2026, 8, 20, 12, 42, tzinfo=SHANGHAI).timestamp()
+        afternoon = datetime(2026, 8, 20, 14, 0, tzinfo=SHANGHAI).timestamp()
+        evening = datetime(2026, 8, 20, 18, 0, tzinfo=SHANGHAI).timestamp()
+        self.assertEqual(plugin.token_rates("deepseek-v4-flash", before_noon), (0.10, 3.0, 9.0))
+        self.assertEqual(plugin.token_rates("deepseek-v4-flash", noon), (0.05, 1.5, 4.5))
+        self.assertEqual(plugin.token_rates("deepseek-v4-flash", lunch), (0.05, 1.5, 4.5))
+        self.assertEqual(plugin.token_rates("deepseek-v4-flash", afternoon), (0.10, 3.0, 9.0))
+        self.assertEqual(plugin.token_rates("deepseek-v4-flash", evening), (0.05, 1.5, 4.5))
 
     def test_parse_usage_reads_deepseek_billing_fields(self) -> None:
         plugin = _plugin()
@@ -122,6 +132,48 @@ class DeepSeekPluginTest(unittest.TestCase):
                 }
             )["output"],
             92,
+        )
+        self.assertEqual(
+            plugin.parse_usage(
+                {
+                    "usage": {
+                        "prompt_tokens": 1000,
+                        "output_tokens": 200,
+                        "prompt_cache_hit_tokens": 800,
+                        "prompt_cache_miss_tokens": 200,
+                        "completion_tokens_details": {"reasoning_tokens": 80},
+                    }
+                }
+            )["output"],
+            280,
+        )
+        self.assertEqual(
+            plugin.parse_usage(
+                {
+                    "usage": {
+                        "prompt_tokens": 1000,
+                        "output_tokens": 200,
+                        "total_tokens": 1280,
+                        "prompt_cache_hit_tokens": 800,
+                        "prompt_cache_miss_tokens": 200,
+                        "completion_tokens_details": {"reasoning_tokens": 80},
+                    }
+                }
+            )["output"],
+            280,
+        )
+        self.assertEqual(
+            plugin.parse_usage(
+                {
+                    "usage": {
+                        "input_tokens": 200,
+                        "output_tokens": 50,
+                        "cache_read_input_tokens": 800,
+                        "completion_tokens_details": {"reasoning_tokens": 40},
+                    }
+                }
+            )["output"],
+            90,
         )
 
     def test_summarize_usage_uses_plugin_rates(self) -> None:
