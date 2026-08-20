@@ -16,6 +16,7 @@ from momoi.channel.napcat import NapCatConfig
 from momoi.config import (
     AppConfig,
     LLMConfig,
+    ThinkingConfig,
 )
 from momoi.mcp_client import MCPManager
 from momoi.models import (
@@ -23,7 +24,7 @@ from momoi.models import (
     ProviderResponse,
     ToolCall,
 )
-from momoi.logging_context import TRACE
+from momoi.logging_context import TRACE, log_context
 from momoi.provider import (
     AnthropicProvider,
     OpenAIProvider,
@@ -77,6 +78,10 @@ class ProvidersToolsTest(unittest.TestCase):
                     "role": "assistant",
                     "content": [
                         {
+                            "type": "reasoning",
+                            "text": "先核对计划结果",
+                        },
+                        {
                             "type": "tool_use",
                             "id": "plan-1",
                             "name": "submit_context_plan",
@@ -101,6 +106,10 @@ class ProvidersToolsTest(unittest.TestCase):
         self.assertEqual(
             [message["role"] for message in messages],
             ["system", "assistant", "tool", "user"],
+        )
+        self.assertEqual(
+            messages[1]["reasoning_content"],
+            "先核对计划结果",
         )
 
     def test_compacts_structured_response_text_for_single_line_logs(self) -> None:
@@ -354,18 +363,28 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                     timeout_seconds=1,
                     max_retries=0,
                     api_format="openai",
+                    thinking=ThinkingConfig(
+                        effort="high",
+                        stages={"context_plan": "low"},
+                    ),
                 ),
                 dump_dir,
             )
             try:
                 async with provider:
                     with _provider_trace_logs():
-                        await provider.complete(
-                            "system",
-                            [{"role": "user", "content": "测试"}],
-                            [{"name": "respond", "input_schema": {"type": "object"}}],
-                            require_tool=True,
-                        )
+                        with log_context(stage="context_plan"):
+                            response = await provider.complete(
+                                "system",
+                                [{"role": "user", "content": "测试"}],
+                                [
+                                    {
+                                        "name": "respond",
+                                        "input_schema": {"type": "object"},
+                                    }
+                                ],
+                                require_tool=True,
+                            )
             finally:
                 await server.close()
             dumps = list(dump_dir.glob("*.json"))
@@ -375,6 +394,12 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(dumped["payload"], requests[0])
             self.assertEqual(dumped["payload"]["messages"][0]["role"], "system")
             self.assertIn("tools", dumped["payload"])
+            self.assertEqual(dumped["payload"]["reasoning_effort"], "low")
+            self.assertEqual(
+                dumped["payload"]["thinking"],
+                {"type": "enabled"},
+            )
+            self.assertNotIn("temperature", dumped["payload"])
             self.assertEqual(
                 dumped["response"],
                 {"choices": [{"message": {"role": "assistant", "content": "ok"}}]},
@@ -426,7 +451,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
             try:
                 async with provider:
                     with _provider_trace_logs():
-                        await provider.complete(
+                        response = await provider.complete(
                             "system",
                             [{"role": "user", "content": "测试"}],
                             [{"name": "respond", "input_schema": {"type": "object"}}],
@@ -442,6 +467,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                 dumped["response"]["choices"][0]["message"]["reasoning_content"],
                 "先核对记忆再改 activation",
             )
+            self.assertEqual(response.reasoning, "先核对记忆再改 activation")
 
     async def test_openai_provider_skips_dump_without_trace(self) -> None:
         async def completion(_: web.Request) -> web.Response:
@@ -509,28 +535,33 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                 temperature=0,
                 timeout_seconds=1,
                 max_retries=1,
+                thinking=ThinkingConfig(
+                    effort="high",
+                    stages={"heartbeat_plan": "low"},
+                ),
             )
         )
         try:
             async with provider:
-                response = await provider.complete(
-                    "system",
-                    [
-                        {
-                            "role": "user",
-                            "content": [
-                                {"type": "text", "text": "看图，测试入口"},
-                                {
-                                    "type": "image",
-                                    "source": {
-                                        "type": "url",
-                                        "url": "https://img.example/a.jpg",
+                with log_context(stage="heartbeat_plan"):
+                    response = await provider.complete(
+                        "system",
+                        [
+                            {
+                                "role": "user",
+                                "content": [
+                                    {"type": "text", "text": "看图，测试入口"},
+                                    {
+                                        "type": "image",
+                                        "source": {
+                                            "type": "url",
+                                            "url": "https://img.example/a.jpg",
+                                        },
                                     },
-                                },
-                            ],
-                        }
-                    ],
-                )
+                                ],
+                            }
+                        ],
+                    )
                 self.assertEqual(response.content[0]["text"], "ok")
                 with self.assertRaisesRegex(ProviderError, "invalid request"):
                     await provider.complete(
@@ -539,6 +570,11 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
         finally:
             await server.close()
         self.assertEqual(attempts, 3)
+        self.assertEqual(
+            requests[0]["output_config"],
+            {"effort": "low"},
+        )
+        self.assertNotIn("temperature", requests[0])
         self.assertEqual(
             requests[0]["messages"][0]["content"][0]["text"],  # type: ignore[index]
             "看图，测试入口",
@@ -954,6 +990,8 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                         self_test.assertIn(
                             "invalid_tool_arguments_json", rendered
                         )
+                        self_test.assertIn("reasoning", rendered)
+                        self_test.assertIn("先纠正参数", rendered)
                         call = ToolCall(
                             "corrected-message",
                             "send_message",
@@ -979,6 +1017,11 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                             }
                         ],
                         [call],
+                        reasoning=(
+                            "先纠正参数"
+                            if self.calls == 1
+                            else ""
+                        ),
                     )
 
             self_test = self

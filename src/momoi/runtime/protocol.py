@@ -12,17 +12,15 @@ SEGMENT_SCHEMA: dict[str, Any] = {
             "type": "string",
             "minLength": 1,
             "description": (
-                "Channel-neutral segment type such as text, image, file, video, "
-                "audio, reply, link, location, mention, or another type supported "
-                "by the active channel."
+                "Channel-neutral type such as text, image, file, video, audio, "
+                "reply, link, location, or mention."
             ),
         },
         "data": {
             "type": "object",
             "description": (
-                "Channel segment data. Text uses text; reply uses id; media uses file "
-                "with a local path, HTTP(S) URL, or base64 resource. Other fields "
-                "depend on the active channel."
+                "Segment data: text uses text, reply uses id, and media uses file "
+                "with a local path, HTTP(S) URL, or base64 resource."
             ),
         },
     },
@@ -35,11 +33,8 @@ CHANNEL_MESSAGE_SCHEMA: dict[str, Any] = {
             "type": "string",
             "minLength": 1,
             "description": (
-                "One owner-visible private-chat bubble. It may be a complete "
-                "sentence, a fragment, an interjection, a partial thought, or a "
-                "non-propositional emotional expression. Do not expand it merely "
-                "to make it informative or grammatically complete. A single line "
-                "break is allowed, but blank lines must be separate array items."
+                "One non-empty private-chat bubble. A single line break is allowed; "
+                "blank lines belong in separate array items."
             ),
         },
         {
@@ -263,15 +258,10 @@ def heartbeat_respond_tool_spec() -> dict[str, Any]:
 SEND_MESSAGE_TOOL_SPEC: dict[str, Any] = {
     "name": "send_message",
     "description": (
-        "Emit non-empty owner-visible chat bubbles without ending the Turn. Bubble "
-        "boundaries express timing, impulse, and conversational rhythm rather than "
-        "semantic jobs. In ordinary "
-        "social chat or after a meaningful tool result, a non-propositional "
-        "expression may be its own bubble; do not merge it with explanation "
-        "or add information merely to make it look complete. Result beats may land "
-        "while work continues. Text may share a message with images; file, video, "
-        "audio, and record must be their own items, and mixed input is split. After "
-        "the result, call respond to close the Turn."
+        "Send one or more non-empty owner-visible private-chat bubbles without "
+        "ending the Turn. Text may accompany images; file, video, audio, and record "
+        "items must stand alone. Call respond after all visible beats and work are "
+        "complete."
     ),
     "input_schema": {
         "type": "object",
@@ -291,16 +281,14 @@ SEND_MESSAGE_TOOL_SPEC: dict[str, Any] = {
 def tool_enable_spec(group_tools: dict[str, list[str]]) -> dict[str, Any]:
     group_ids = list(group_tools)
     catalog = "; ".join(
-        f"{group}: {', '.join(names[:8])}"
+        f"{group}: {', '.join(names[:5])}"
         for group, names in group_tools.items()
     )
     return {
         "name": "tool_enable",
         "description": (
-            "Enable one or more currently unloaded external MCP servers when the "
-            "current work requires a capability omitted by planning. After this "
-            "succeeds, call the newly available native MCP tool. "
-            f"Available servers and tools: {catalog}"
+            "Load omitted external MCP servers when required, then call the newly "
+            f"available native tool. Server examples: {catalog}"
         ),
         "input_schema": {
             "type": "object",
@@ -335,8 +323,7 @@ def send_message_tool_spec(
                     "enum": channel_names,
                     "default": primary_channel,
                     "description": (
-                        "Delivery channel. Omit it to use the configured primary "
-                        f"channel ({primary_channel})."
+                        f"Delivery channel; omit for primary ({primary_channel})."
                     ),
                 },
             },

@@ -65,7 +65,15 @@ This makes the workspace relocatable. Absolute paths are also accepted where a p
     "temperature": 0.6,
     "timeout_seconds": 300,
     "max_retries": 3,
-    "tool_choice": true
+    "tool_choice": true,
+    "thinking": {
+      "effort": "high",
+      "stages": {
+        "heartbeat_plan": "low",
+        "episode_anneal": "low",
+        "reply_followup": "low"
+      }
+    }
   }
 }
 ```
@@ -81,8 +89,27 @@ This makes the workspace relocatable. Absolute paths are also accepted where a p
 | `timeout_seconds` | No | `300` | Positive request timeout |
 | `max_retries` | No | `3` | Retries for transient connection and server errors; OpenAI-compatible endpoints also retry unusable successful responses |
 | `tool_choice` | No | `true` | Require tool use in OpenAI-compatible requests; set to `false` for models such as Thinking mode that reject `tool_choice` |
+| `thinking.effort` | No | Provider default | Default reasoning effort: `low`, `high`, or `max` |
+| `thinking.stages` | No | `{}` | Per-stage effort overrides keyed by runtime stage |
 
 For Anthropic-compatible providers, Momoi calls `/v1/messages`. For OpenAI-compatible providers, a host-only URL receives `/v1/chat/completions`; a URL that already contains a gateway path receives `/chat/completions` below that path.
+
+When thinking is configured, OpenAI-format requests send `thinking.type=enabled`
+and `reasoning_effort`; Anthropic-format requests send `output_config.effort`.
+Momoi also returns OpenAI `reasoning_content` on later requests in the same tool
+loop, as required by DeepSeek. Omit `thinking` for the provider's default.
+DeepSeek maps `medium` to `high`, so Momoi accepts only `low`, `high`, and `max`.
+Its thinking mode ignores `temperature`.
+
+The example profile keeps nuanced Owner, Context Planner, tool-work, memory, and
+consolidation stages at `high`. `heartbeat_plan` is a bounded routing decision,
+`reply_followup` is a bounded contact decision, and `episode_anneal` is an
+extractive, citation-verified evidence-selection pass; these use `low`.
+`episode_consolidate` remains `high` because it decides how archived Turns are
+merged. Known stage names include `context_plan`, `owner`, `heartbeat_plan`,
+`heartbeat`, `reply_followup`, `goal`, `webhook`, `reflection`,
+`episode_anneal`, and `episode_consolidate`; unknown stages use
+`thinking.effort`.
 
 `config.json` does not expand `${VAR}` placeholders. Keep it private and restrict its file permissions if it contains credentials. Docker and one-command runs can override the fields below with `MOMOI_*` environment variables; those values win over the file for that process.
 

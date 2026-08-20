@@ -116,6 +116,7 @@ class ProviderResponse:
     content: list[dict[str, Any]]
     tool_calls: list[ToolCall]
     usage: dict[str, float | int | bool] | None = None
+    reasoning: str = ""
 
 
 @dataclass

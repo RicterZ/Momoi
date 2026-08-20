@@ -631,6 +631,14 @@ class ToolExecutionService:
             # independent assistant-history copy so the next model round still
             # knows exactly what the owner already heard.
             assistant_history_content = copy.deepcopy(response.content)
+            if response.reasoning and response.tool_calls:
+                assistant_history_content.insert(
+                    0,
+                    {
+                        "type": "reasoning",
+                        "text": response.reasoning,
+                    },
+                )
             messages.append(
                 {"role": "assistant", "content": assistant_history_content}
             )

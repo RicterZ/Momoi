@@ -17,6 +17,7 @@ from momoi.config import (
     ConfigError,
     DashboardConfig,
     NotificationConfig,
+    ThinkingConfig,
     UsageConfig,
     load_config,
 )
@@ -29,6 +30,58 @@ from momoi.storage import Store
 
 
 class ConfigurationTest(unittest.TestCase):
+    def test_loads_stage_specific_thinking_effort(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "prompts").mkdir()
+            (root / "prompts" / "SOUL.md").write_text("Test soul")
+            path = root / "config.json"
+            value = {
+                "llm": {
+                    "base_url": "https://example.com",
+                    "api_key": "key",
+                    "model": "model",
+                    "thinking": {
+                        "effort": "high",
+                        "stages": {
+                            "heartbeat_plan": "low",
+                            "reply_followup": "low",
+                        },
+                    },
+                },
+                "channel": {
+                    "plugin": "napcat",
+                    "settings": {"url": "ws://localhost", "owner_qq": "123"},
+                },
+                "context": {},
+                "storage": {"database": "momoi.sqlite3"},
+                "logging": {},
+            }
+            path.write_text(json.dumps(value))
+
+            config = load_config(path)
+
+            self.assertEqual(
+                config.llm.thinking,
+                ThinkingConfig(
+                    effort="high",
+                    stages={
+                        "heartbeat_plan": "low",
+                        "reply_followup": "low",
+                    },
+                ),
+            )
+            self.assertEqual(config.llm.thinking.for_stage("owner"), "high")
+            self.assertEqual(
+                config.llm.thinking.for_stage("heartbeat_plan"),
+                "low",
+            )
+
+            value["llm"]["thinking"]["effort"] = "medium"  # type: ignore[index]
+            path.write_text(json.dumps(value))
+            with self.assertRaisesRegex(ConfigError, "must be low, high, or max"):
+                load_config(path)
+
     def test_loads_and_validates_asr_configuration(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

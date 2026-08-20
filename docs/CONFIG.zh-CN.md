@@ -65,7 +65,15 @@ MCP 是添加由模型控制能力的常规方式。工作流用于事件驱动�
     "temperature": 0.6,
     "timeout_seconds": 300,
     "max_retries": 3,
-    "tool_choice": true
+    "tool_choice": true,
+    "thinking": {
+      "effort": "high",
+      "stages": {
+        "heartbeat_plan": "low",
+        "episode_anneal": "low",
+        "reply_followup": "low"
+      }
+    }
   }
 }
 ```
@@ -81,8 +89,25 @@ MCP 是添加由模型控制能力的常规方式。工作流用于事件驱动�
 | `timeout_seconds` | 否 | `300` | 必须为正数的请求超时时间 |
 | `max_retries` | 否 | `3` | 短暂连接和服务端错误的重试次数；OpenAI 兼容端点还会重试成功但不可用的响应 |
 | `tool_choice` | 否 | `true` | OpenAI 兼容请求要求模型调用工具；Thinking mode 等不支持 `tool_choice` 的模型需设为 `false` |
+| `thinking.effort` | 否 | Provider 默认值 | 默认思考强度：`low`、`high` 或 `max` |
+| `thinking.stages` | 否 | `{}` | 按运行阶段覆盖思考强度 |
 
 对于 Anthropic 兼容 provider，Momoi 请求 `/v1/messages`。对于 OpenAI 兼容 provider，只含 host 的 URL 会请求 `/v1/chat/completions`；已经包含网关路径的 URL 则在该路径下请求 `/chat/completions`。
+
+配置 Thinking 后，OpenAI 格式请求发送 `thinking.type=enabled` 和
+`reasoning_effort`，Anthropic 格式请求发送 `output_config.effort`。同一工具
+循环的后续请求还会回传 OpenAI `reasoning_content`，满足 DeepSeek 的工具调用
+协议。省略 `thinking` 时沿用 Provider 默认值。DeepSeek 会把 `medium` 映射为
+`high`，因此 Momoi 只接受 `low`、`high` 和 `max`；其思考模式会忽略
+`temperature`。
+
+示例配置让需要细致理解、工具执行、记忆和归并的 Owner、Context Planner 等
+阶段保持 `high`。`heartbeat_plan` 是有界路由决策，`reply_followup` 是有界联系
+决策，`episode_anneal` 则是带逐条引用校验的抽取式证据选择，因此使用 `low`。
+负责决定如何合并归档 Turn 的 `episode_consolidate` 仍使用 `high`。已知阶段名
+包括 `context_plan`、`owner`、`heartbeat_plan`、`heartbeat`、
+`reply_followup`、`goal`、`webhook`、`reflection`、`episode_anneal` 和
+`episode_consolidate`；未知阶段使用 `thinking.effort`。
 
 `config.json` 不会展开 `${VAR}` 占位符。如果其中包含凭据，请妥善保管并限制文件权限。Docker 和一键启动可以用下面的 `MOMOI_*` 环境变量覆盖对应字段；进程里环境变量优先于文件。
 

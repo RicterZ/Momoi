@@ -1,3 +1,4 @@
+import json
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -17,6 +18,8 @@ from momoi.runtime.progress_announce import (
     should_deliver_announce,
     take_announce_message,
 )
+from momoi.runtime.protocol import send_message_tool_spec, tool_enable_spec
+from momoi.storage import estimate_tokens
 
 
 class ProgressAnnounceTest(unittest.TestCase):
@@ -46,23 +49,54 @@ class ProgressAnnounceTest(unittest.TestCase):
             "description"
         ]
         self.assertIn(ANNOUNCE_MARKER, description)
-        self.assertIn("Soul's voice", description)
         self.assertIn("first external-work batch", description)
         self.assertIn("first such tool must include", description)
-        self.assertIn("Later tool rounds may omit it", description)
-        self.assertIn("not the tool's caption", description)
-        self.assertIn("never narrate a retry", description)
-        self.assertIn("promise an unverified outcome", description)
-        self.assertIn("If this Turn has no tool result", description)
-        self.assertIn("owner-visible result beat", description)
-        self.assertIn("Soul-shaped", description)
-        self.assertIn("new discovery or progress", description)
-        self.assertIn("task need not be complete", description)
-        self.assertIn("Omit it when no natural beat belongs", description)
-        self.assertIn("keep provisional findings provisional", description)
-        self.assertIn("never reopen the original request", description)
-        self.assertIn("colon-ended label", description)
+        self.assertIn("later rounds may omit it", description)
+        self.assertIn("evidence-backed", description)
+        self.assertIn("tool caption", description)
+        self.assertIn("retry narration", description)
+        self.assertIn("request recap", description)
+        self.assertIn("promise of success", description)
+        self.assertLess(len(description), 700)
         self.assertNotIn(ANNOUNCE_FIELD, curl["input_schema"]["properties"])
+
+    def test_send_message_schema_stays_compact_without_losing_constraints(
+        self,
+    ) -> None:
+        spec = send_message_tool_spec(["napcat", "weixin"], "napcat")
+        rendered = json.dumps(
+            spec, ensure_ascii=False, separators=(",", ":")
+        )
+        self.assertIn("owner-visible", spec["description"])
+        self.assertIn("file, video, audio, and record", spec["description"])
+        self.assertEqual(
+            spec["input_schema"]["properties"]["channel"]["enum"],
+            ["napcat", "weixin"],
+        )
+        self.assertIn(
+            "primary (napcat)",
+            spec["input_schema"]["properties"]["channel"]["description"],
+        )
+        self.assertLess(estimate_tokens(rendered), 550)
+
+    def test_tool_enable_catalog_keeps_only_bounded_examples(self) -> None:
+        spec = tool_enable_spec(
+            {
+                "demo": [f"tool_{index}" for index in range(6)],
+                "other": ["lookup"],
+            }
+        )
+        description = spec["description"]
+        self.assertIn(
+            "demo: tool_0, tool_1, tool_2, tool_3, tool_4",
+            description,
+        )
+        self.assertNotIn("tool_5", description)
+        self.assertIn("other: lookup", description)
+        self.assertEqual(
+            spec["input_schema"]["properties"]["servers"]["items"]["enum"],
+            ["demo", "other"],
+        )
 
     def test_initial_announce_error_explains_conditional_requirement(self) -> None:
         message = initial_announce_error_message(ANNOUNCE_FIELD)

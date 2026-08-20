@@ -16,6 +16,15 @@ class ConfigError(ValueError):
 
 
 @dataclass(frozen=True)
+class ThinkingConfig:
+    effort: str = ""
+    stages: dict[str, str] | None = None
+
+    def for_stage(self, stage: str) -> str:
+        return str((self.stages or {}).get(stage) or self.effort)
+
+
+@dataclass(frozen=True)
 class LLMConfig:
     base_url: str
     api_key: str
@@ -26,6 +35,7 @@ class LLMConfig:
     max_retries: int
     api_format: str = "anthropic"
     tool_choice: bool = True
+    thinking: ThinkingConfig = ThinkingConfig()
 
 
 @dataclass(frozen=True)
@@ -272,6 +282,28 @@ def load_config(path: str | Path) -> AppConfig:
     if api_format not in {"anthropic", "openai"}:
         raise ConfigError("llm.api_format must be anthropic or openai")
     tool_choice = _boolean(llm_raw.get("tool_choice", True), "llm.tool_choice")
+    thinking_raw = _mapping(llm_raw.get("thinking") or {}, "llm.thinking")
+    thinking_effort = str(thinking_raw.get("effort") or "").lower()
+    allowed_thinking_efforts = {"", "low", "high", "max"}
+    if thinking_effort not in allowed_thinking_efforts:
+        raise ConfigError("llm.thinking.effort must be low, high, or max")
+    raw_thinking_stages = _mapping(
+        thinking_raw.get("stages", {}),
+        "llm.thinking.stages",
+    )
+    thinking_stages = {
+        str(stage).strip(): str(effort).lower()
+        for stage, effort in raw_thinking_stages.items()
+    }
+    if any(not stage for stage in thinking_stages):
+        raise ConfigError("llm.thinking.stages keys must not be empty")
+    if any(
+        effort not in allowed_thinking_efforts - {""}
+        for effort in thinking_stages.values()
+    ):
+        raise ConfigError(
+            "llm.thinking.stages values must be low, high, or max"
+        )
 
     if "channel" in raw and "channels" in raw:
         raise ConfigError("configure either channel or channels, not both")
@@ -455,6 +487,10 @@ def load_config(path: str | Path) -> AppConfig:
             max_retries=max(0, int(llm_raw.get("max_retries", 3))),
             api_format=api_format,
             tool_choice=tool_choice,
+            thinking=ThinkingConfig(
+                effort=thinking_effort,
+                stages=thinking_stages,
+            ),
         ),
         channel=channel_config,
         system_prompt=system_prompt,

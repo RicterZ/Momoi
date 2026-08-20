@@ -365,28 +365,11 @@ class DaemonTest(unittest.TestCase):
         )
         self.assertIn("non-empty", SEND_MESSAGE_TOOL_SPEC["description"])
         self.assertIn("owner-visible", SEND_MESSAGE_TOOL_SPEC["description"])
-        self.assertIn(
-            "non-propositional expression may be its own bubble",
-            SEND_MESSAGE_TOOL_SPEC["description"],
-        )
         self.assertIn("chat bubbles", SEND_MESSAGE_TOOL_SPEC["description"])
-        self.assertIn(
-            "timing, impulse, and conversational rhythm",
-            SEND_MESSAGE_TOOL_SPEC["description"],
-        )
-        self.assertIn(
-            "do not merge it with explanation",
-            SEND_MESSAGE_TOOL_SPEC["description"],
-        )
-        self.assertIn("after a meaningful tool result", SEND_MESSAGE_TOOL_SPEC["description"])
-        self.assertIn("Result beats may land while work continues", SEND_MESSAGE_TOOL_SPEC["description"])
+        self.assertIn("must stand alone", SEND_MESSAGE_TOOL_SPEC["description"])
         bubble_description = CHANNEL_MESSAGE_SCHEMA["oneOf"][0]["description"]
         self.assertIn("private-chat bubble", bubble_description)
-        self.assertIn("fragment", bubble_description)
-        self.assertIn("interjection", bubble_description)
-        self.assertIn("partial thought", bubble_description)
-        self.assertIn("grammatically complete", bubble_description)
-        self.assertNotIn("complete owner-visible message item", bubble_description)
+        self.assertIn("blank lines", bubble_description)
         wait_shapes = RESPOND_TOOL_SPEC["input_schema"]["properties"]["reply_wait"][
             "oneOf"
         ]

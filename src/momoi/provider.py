@@ -202,6 +202,12 @@ def _anthropic_reasoning(content: list[dict[str, Any]]) -> str:
     return "\n".join(part for part in parts if part.strip())
 
 
+def _thinking_effort(config: LLMConfig) -> str:
+    return config.thinking.for_stage(
+        str(current_log_context().get("stage") or "")
+    )
+
+
 def _record_response(
     data: dict[str, Any],
     *,
@@ -479,6 +485,10 @@ class AnthropicProvider:
             "max_tokens": self.config.max_tokens,
             "temperature": self.config.temperature,
         }
+        thinking_effort = _thinking_effort(self.config)
+        if thinking_effort:
+            payload.pop("temperature", None)
+            payload["output_config"] = {"effort": thinking_effort}
         if tools:
             payload["tools"] = tools
             if require_tool:
@@ -587,6 +597,7 @@ class AnthropicProvider:
                 "messages": len(messages),
                 "tools": len(tools or []),
                 "require_tool": require_tool,
+                "thinking_effort": thinking_effort or None,
             },
             operation=request,
             should_retry=_anthropic_should_retry,
@@ -622,6 +633,13 @@ def _openai_messages(
             continue
         text = _text(content)
         if role == "assistant":
+            reasoning = "\n".join(
+                str(block.get("text") or "")
+                for block in content
+                if isinstance(block, dict)
+                and block.get("type") == "reasoning"
+                and str(block.get("text") or "").strip()
+            )
             tool_calls = [
                 {
                     "id": str(block.get("id") or ""),
@@ -635,6 +653,8 @@ def _openai_messages(
                 if isinstance(block, dict) and block.get("type") == "tool_use"
             ]
             item: dict[str, Any] = {"role": "assistant", "content": text or None}
+            if reasoning:
+                item["reasoning_content"] = reasoning
             if tool_calls:
                 item["tool_calls"] = tool_calls
             wire.append(item)
@@ -707,6 +727,11 @@ class OpenAIProvider:
             "max_tokens": self.config.max_tokens,
             "temperature": self.config.temperature,
         }
+        thinking_effort = _thinking_effort(self.config)
+        if thinking_effort:
+            payload.pop("temperature", None)
+            payload["thinking"] = {"type": "enabled"}
+            payload["reasoning_effort"] = thinking_effort
         if tools:
             payload["tools"] = [
                 {
@@ -811,9 +836,10 @@ class OpenAIProvider:
                             "input": call.arguments,
                         }
                     )
+                reasoning = _openai_reasoning(message)
                 _persist_thinking(
                     self.thinking_sink,
-                    reasoning=_openai_reasoning(message),
+                    reasoning=reasoning,
                     tools=[call.name for call in tool_calls],
                     model=self.config.model,
                 )
@@ -828,7 +854,12 @@ class OpenAIProvider:
                         tool_names=",".join(call.name for call in tool_calls),
                         duration_ms=duration_ms,
                     )
-                    return ProviderResponse(content, tool_calls, metrics)
+                    return ProviderResponse(
+                        content,
+                        tool_calls,
+                        metrics,
+                        reasoning=reasoning,
+                    )
                 if not content:
                     raise ProviderResponseError(
                         "OpenAI-compatible endpoint returned no text content"
@@ -842,7 +873,7 @@ class OpenAIProvider:
                     text=_compact_response_text(text),
                     duration_ms=duration_ms,
                 )
-                return ProviderResponse(content, [], metrics)
+                return ProviderResponse(content, [], metrics, reasoning=reasoning)
 
         return await _retry_request(
             protocol="openai",
@@ -853,6 +884,7 @@ class OpenAIProvider:
                 "tools": len(tools or []),
                 "require_tool": require_tool,
                 "tool_choice": payload.get("tool_choice"),
+                "thinking_effort": thinking_effort or None,
             },
             operation=request,
             should_retry=_openai_should_retry,

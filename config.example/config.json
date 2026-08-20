@@ -8,7 +8,15 @@
     "temperature": 0.6,
     "timeout_seconds": 300,
     "max_retries": 3,
-    "tool_choice": true
+    "tool_choice": true,
+    "thinking": {
+      "effort": "high",
+      "stages": {
+        "heartbeat_plan": "low",
+        "episode_anneal": "low",
+        "reply_followup": "low"
+      }
+    }
   },
   "asr": {
     "enabled": false,

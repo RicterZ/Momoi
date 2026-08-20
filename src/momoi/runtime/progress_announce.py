@@ -51,21 +51,12 @@ def decorate_tool_spec(spec: dict[str, Any]) -> dict[str, Any]:
         "minLength": 1,
         "maxLength": 300,
         "description": (
-            "Optional spoken bridge the owner will hear in the Soul's voice. "
-            "On the first external-work batch after a new owner request, the "
-            "first such tool must include this field unless send_message already "
-            "acknowledged the work. Later tool rounds may omit it to run silently. "
-            "This is a standalone reply to the owner, not the tool's caption; "
-            "never narrate a retry or promise an unverified outcome. If this Turn "
-            "has no tool result yet, accept and go without recapping the request. "
-            "After a tool result, this optional line is an owner-visible result "
-            "beat before the next tool runs. It may directly express a Soul-shaped "
-            "reaction, the most relevant new discovery or progress, a real failure, "
-            "or a changed route; the task need not be complete. Omit it when no "
-            "natural beat belongs here. Continue from what the result actually "
-            "showed, keep provisional findings provisional, and never reopen the "
-            "original request or narrate the next tool. "
-            f"A finished spoken sentence, not a colon-ended label. "
+            "Optional natural owner-visible sentence before this tool. On the first "
+            "external-work batch after a new owner request, the first such tool must "
+            "include it unless send_message already acknowledged the work; later "
+            "rounds may omit it. Use only an evidence-backed reaction, result, "
+            "progress, failure, or route change—not a tool caption, retry narration, "
+            "request recap, or promise of success. "
             f"{ANNOUNCE_MARKER} Do not also send_message for the same action."
         ),
     }
