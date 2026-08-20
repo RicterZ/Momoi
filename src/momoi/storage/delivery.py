@@ -159,7 +159,7 @@ class DeliveryStore:
     @staticmethod
     def _heartbeat_day_episode(when: float) -> tuple[str, str]:
         day = datetime.fromtimestamp(when).astimezone().date().isoformat()
-        return f"heartbeat:day:{day}", f"Momoi Heartbeat {day}"
+        return f"heartbeat:day:{day}", f"Heartbeat {day}"
 
     def _heartbeat_turn_time(self, turn_id: str, fallback: float) -> float:
         row = self._db.execute(
@@ -216,6 +216,36 @@ class DeliveryStore:
                    )""",
                 (episode_id, episode_id),
             )
+        self._db.execute(
+            "INSERT OR REPLACE INTO schema_metadata(key, value) VALUES (?, '1')",
+            (migration,),
+        )
+
+    def _migrate_heartbeat_episode_titles(self) -> None:
+        migration = "heartbeat_episode_titles_v2"
+        if self._db.execute(
+            "SELECT 1 FROM schema_metadata WHERE key=?", (migration,)
+        ).fetchone():
+            return
+        rows = self._db.execute(
+            """SELECT e.id, e.title FROM conversation_episodes AS e
+               WHERE e.title LIKE 'Momoi Heartbeat %'
+                 AND EXISTS (
+                     SELECT 1 FROM episode_turns AS et
+                     JOIN messages AS m ON m.turn_id=et.turn_id
+                     WHERE et.episode_id=e.id
+                       AND m.delivery_state='internal'
+                       AND m.content LIKE '[AUTONOMOUS HEARTBEAT RECORD;%'
+                 )"""
+        ).fetchall()
+        for row in rows:
+            episode_id = str(row["id"])
+            title = str(row["title"]).removeprefix("Momoi ")
+            self._db.execute(
+                "UPDATE conversation_episodes SET title=? WHERE id=?",
+                (title, episode_id),
+            )
+            self._reindex_episode_terms(episode_id)
         self._db.execute(
             "INSERT OR REPLACE INTO schema_metadata(key, value) VALUES (?, '1')",
             (migration,),

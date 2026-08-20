@@ -43,7 +43,7 @@ class HeartbeatEpisodeTests(unittest.TestCase):
             self.assertNotEqual(first, next_day)
             self.assertEqual(
                 store.episode(first)["title"],
-                f"Momoi Heartbeat {datetime.fromtimestamp(day_one).astimezone().date()}",
+                f"Heartbeat {datetime.fromtimestamp(day_one).astimezone().date()}",
             )
             store.close()
 
@@ -106,7 +106,30 @@ class HeartbeatEpisodeTests(unittest.TestCase):
             ).fetchone()["episode_id"]
             self.assertEqual(
                 reopened.episode(str(episode_id))["title"],
-                f"Momoi Heartbeat {datetime.fromtimestamp(now).astimezone().date()}",
+                f"Heartbeat {datetime.fromtimestamp(now).astimezone().date()}",
+            )
+            reopened.close()
+
+    def test_existing_heartbeat_episode_title_is_shortened_on_reopen(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "momoi.sqlite3"
+            store = Store(path)
+            now = datetime(2026, 8, 20, 10).astimezone().timestamp()
+            episode_id = self._commit(store, "heartbeat-old-title", now)
+            with store._db:
+                store._db.execute(
+                    "UPDATE conversation_episodes SET title=? WHERE id=?",
+                    ("Momoi Heartbeat 2026-08-20", episode_id),
+                )
+                store._db.execute(
+                    "DELETE FROM schema_metadata WHERE key='heartbeat_episode_titles_v2'"
+                )
+            store.close()
+
+            reopened = Store(path)
+            self.assertEqual(
+                reopened.episode(episode_id)["title"],
+                "Heartbeat 2026-08-20",
             )
             reopened.close()
 

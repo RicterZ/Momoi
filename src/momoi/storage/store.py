@@ -698,6 +698,7 @@ class Store(MemoryStore, DeliveryStore):
         )
         self._backfill_episode_recall_terms()
         self._migrate_heartbeat_day_episodes()
+        self._migrate_heartbeat_episode_titles()
         self._db.execute("UPDATE goals SET review_claimed_at=NULL")
         self._db.execute("UPDATE reminders SET claimed_at=NULL WHERE status='pending'")
         self._db.execute(

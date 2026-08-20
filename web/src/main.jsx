@@ -35,6 +35,8 @@ const thinkingStageLabels = {
   heartbeat: "心跳",
   heartbeat_plan: "心跳规划",
   reflection: "复盘",
+  episode_anneal: "对话记忆整理",
+  reply_followup: "等待回复后的跟进",
 };
 
 function thinkingStageLabel(stage) {
@@ -1926,6 +1928,8 @@ function thinkingStageCode(stage) {
       heartbeat: "BEAT",
       heartbeat_plan: "HPLAN",
       reflection: "NOTE",
+      episode_anneal: "MEM",
+      reply_followup: "FOLLOW",
     }[String(stage || "").trim()] || "MOMOI"
   );
 }
