@@ -12,7 +12,6 @@
     "thinking": {
       "effort": "high",
       "stages": {
-        "heartbeat_plan": "low",
         "episode_anneal": "low",
         "reply_followup": "low"
       }

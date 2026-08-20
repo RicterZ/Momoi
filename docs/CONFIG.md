@@ -69,7 +69,6 @@ This makes the workspace relocatable. Absolute paths are also accepted where a p
     "thinking": {
       "effort": "high",
       "stages": {
-        "heartbeat_plan": "low",
         "episode_anneal": "low",
         "reply_followup": "low"
       }
@@ -101,8 +100,8 @@ loop, as required by DeepSeek. Omit `thinking` for the provider's default.
 DeepSeek maps `medium` to `high`, so Momoi accepts only `low`, `high`, and `max`.
 Its thinking mode ignores `temperature`.
 
-The example profile keeps nuanced Owner, Context Planner, tool-work, memory, and
-consolidation stages at `high`. `heartbeat_plan` is a bounded routing decision,
+The example profile keeps nuanced Owner, Context Planner, Heartbeat planning and
+creation, tool-work, memory, and consolidation stages at `high`.
 `reply_followup` is a bounded contact decision, and `episode_anneal` is an
 extractive, citation-verified evidence-selection pass; these use `low`.
 `episode_consolidate` remains `high` because it decides how archived Turns are

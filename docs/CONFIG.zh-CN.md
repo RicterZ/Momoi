@@ -69,7 +69,6 @@ MCP 是添加由模型控制能力的常规方式。工作流用于事件驱动�
     "thinking": {
       "effort": "high",
       "stages": {
-        "heartbeat_plan": "low",
         "episode_anneal": "low",
         "reply_followup": "low"
       }
@@ -101,11 +100,11 @@ MCP 是添加由模型控制能力的常规方式。工作流用于事件驱动�
 `high`，因此 Momoi 只接受 `low`、`high` 和 `max`；其思考模式会忽略
 `temperature`。
 
-示例配置让需要细致理解、工具执行、记忆和归并的 Owner、Context Planner 等
-阶段保持 `high`。`heartbeat_plan` 是有界路由决策，`reply_followup` 是有界联系
-决策，`episode_anneal` 则是带逐条引用校验的抽取式证据选择，因此使用 `low`。
-负责决定如何合并归档 Turn 的 `episode_consolidate` 仍使用 `high`。已知阶段名
-包括 `context_plan`、`owner`、`heartbeat_plan`、`heartbeat`、
+示例配置让需要细致理解、工具执行、记忆和归并的 Owner、Context Planner、
+Heartbeat 规划与创作等阶段保持 `high`。`reply_followup` 是有界联系决策，
+`episode_anneal` 则是带逐条引用校验的抽取式证据选择，因此使用 `low`。负责决定
+如何合并归档 Turn 的 `episode_consolidate` 仍使用 `high`。已知阶段名包括
+`context_plan`、`owner`、`heartbeat_plan`、`heartbeat`、
 `reply_followup`、`goal`、`webhook`、`reflection`、`episode_anneal` 和
 `episode_consolidate`；未知阶段使用 `thinking.effort`。
 
