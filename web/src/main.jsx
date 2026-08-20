@@ -555,6 +555,7 @@ function OverviewBody({ data }) {
         <UsageChart
           rows={usage.daily}
           totals={usage.totals}
+          today={usage.today}
           balance={data.balance}
           days={narrow ? 7 : 30}
         />
@@ -632,11 +633,12 @@ function linePath(points) {
     .join(" ");
 }
 
-function UsageChart({ rows, totals, balance, days = 30 }) {
+function UsageChart({ rows, totals, today, balance, days = 30 }) {
   const [hover, setHover] = useState(null);
   const compact = days <= 7;
   const daily = (rows || []).slice(-days);
   const shown = compact ? summarizeDaily(daily) : totals;
+  const todayStats = today || daily.at(-1) || {};
   const width = compact ? 390 : 720;
   const height = compact ? 220 : 176;
   const pad = compact
@@ -684,14 +686,14 @@ function UsageChart({ rows, totals, balance, days = 30 }) {
           <span>请求</span>
           <strong>{shown?.requests ?? 0}</strong>
         </div>
-          <div>
-            <span>缓存命中</span>
-            <strong>{formatRate(shown?.cache_hit_rate)}</strong>
-            <PixelMeter value={(Number(shown?.cache_hit_rate) || 0) / 100} />
-          </div>
         <div>
-          <span>估算金额</span>
-          <strong>{formatYuan(shown?.estimated_cost)}</strong>
+          <span>今日缓存命中</span>
+          <strong>{formatRate(todayStats.cache_hit_rate)}</strong>
+          <PixelMeter value={(Number(todayStats.cache_hit_rate) || 0) / 100} />
+        </div>
+        <div>
+          <span>今日估算金额</span>
+          <strong>{formatYuan(todayStats.estimated_cost)}</strong>
         </div>
       </div>
       <div className="usage-chart-frame">
