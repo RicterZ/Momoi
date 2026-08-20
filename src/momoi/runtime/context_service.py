@@ -367,7 +367,11 @@ class ContextService:
         if record is None:
             raise RuntimeError("active context plan was not saved")
         retrieval = record.get("retrieval")
-        if not isinstance(retrieval, dict) or retrieval.get("version") != 2:
+        if (
+            not isinstance(retrieval, dict)
+            or retrieval.get("version") != 2
+            or not isinstance(retrieval.get("core_reflection_memories"), list)
+        ):
             retrieval = build_plan_retrieval(self.store, plan, self.config)
             record = self.store.save_context_retrieval(
                 turn_id,

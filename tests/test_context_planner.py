@@ -361,21 +361,21 @@ class ContextPlannerTest(unittest.TestCase):
         self.assertIn("conversation_search", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertIn("thinking_search", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertIn("advisory evidence/action outline", CONTEXT_PLANNER_SYSTEM_PROMPT)
-        self.assertNotIn("recall_queries", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn("recall_queries", CONTEXT_PLANNER_SYSTEM_PROMPT)
         schema = CONTEXT_PLAN_TOOL_SPEC["input_schema"]  # type: ignore[assignment]
         unit = schema["properties"]["intent_units"]["items"]  # type: ignore[index]
-        self.assertNotIn("recall_queries", unit["properties"])
+        self.assertIn("recall_queries", unit["properties"])
         self.assertEqual(schema["properties"]["uncertainty"]["maxItems"], 4)  # type: ignore[index]
         legacy_keyword_plan = response_plan()
         legacy_keyword_plan["intent_units"][0]["recall_queries"] = ["旧关键词"]
-        with self.assertRaisesRegex(ContextPlanError, "invalid_intent_unit"):
-            parse_context_plan(
-                legacy_keyword_plan,
-                ["event-1"],
-                [],
-                "turn-1",
-                1,
-            )
+        parsed = parse_context_plan(
+            legacy_keyword_plan,
+            ["event-1"],
+            [],
+            "turn-1",
+            1,
+        )
+        self.assertEqual(parsed["intent_units"][0]["recall_queries"], ["旧关键词"])
 
     def test_parser_requires_event_coverage_and_normalizes_episode_refs(self) -> None:
         plan = response_plan()

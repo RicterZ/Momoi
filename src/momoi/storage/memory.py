@@ -433,7 +433,12 @@ class MemoryStore:
         return "\n".join(lines) if len(lines) > 1 else ""
 
     def search_reflection_memories(
-        self, query: str, max_results: int, *, include_core: bool = False
+        self,
+        query: str,
+        max_results: int,
+        *,
+        include_core: bool = False,
+        core_match_only: bool = False,
     ) -> list[dict[str, object]]:
         if max_results <= 0:
             return []
@@ -449,6 +454,8 @@ class MemoryStore:
                 self._search_backend,
             )
             core = include_core and row["kind"] in core_kinds
+            if core and core_match_only and match is None:
+                core = False
             if not core and match is None:
                 continue
             score = (

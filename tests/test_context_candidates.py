@@ -13,7 +13,7 @@ class ContextCandidatesTest(unittest.TestCase):
     def test_default_policy_uses_evaluated_limits(self) -> None:
         self.assertEqual(
             DEFAULT_EPISODE_CANDIDATE_POLICY,
-            EpisodeCandidatePolicy(32, 12, 64, 18),
+            EpisodeCandidatePolicy(32, 12, 64, 8),
         )
 
     def test_collects_in_priority_order_and_deduplicates(self) -> None:
@@ -71,7 +71,7 @@ class ContextCandidatesTest(unittest.TestCase):
         )
         self.assertEqual(len(result[0]["summary"]), 400)
         self.assertEqual(result[0]["id"], "episode")
-        self.assertEqual(result[0]["last_activity_timestamp"], "activity")
+        self.assertNotIn("last_activity_timestamp", result[0])
         self.assertNotIn("updated_timestamp", result[0])
         self.assertEqual(result[0]["open_loops"], ["loop"])
 

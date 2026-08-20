@@ -87,22 +87,144 @@ def build_plan_retrieval(
             config.policies.context.max_visible_reminders
         )
     ]
+    # The planner emits bounded recall queries only when the supplied context
+    # cannot establish the referenced fact.  Keep this harness deterministic:
+    # deduplicate query text, cap fan-out, and merge each hit by stable id.
+    recall_queries: list[tuple[str, str]] = []
+    for unit in plan.get("intent_units") or []:
+        if not isinstance(unit, dict):
+            continue
+        unit_id = str(unit.get("id") or "")
+        for raw_query in unit.get("recall_queries") or []:
+            query = " ".join(str(raw_query).split())[:120]
+            if not query or any(existing[0] == query for existing in recall_queries):
+                continue
+            recall_queries.append((query, unit_id))
+            if len(recall_queries) >= 6:
+                break
+        if len(recall_queries) >= 6:
+            break
+
+    confirmed_memories: list[dict[str, object]] = []
+    reflection_memories: list[dict[str, object]] = []
+    core_reflection_memories: list[dict[str, object]] = []
+    recalled_episode_rows: dict[str, dict[str, object]] = {}
+    recall_hits: list[str] = []
+    recall_misses: list[str] = []
+    for query, unit_id in recall_queries:
+        memory_limit = min(3, max(1, config.memory_results))
+        memory_rows = [
+            *store.search_memories(query, memory_limit, activation="always"),
+            *store.search_memories(query, memory_limit, activation="recall"),
+        ]
+        reflection_rows = store.search_reflection_memories(
+            query,
+            min(3, max(1, config.memory_results)),
+            include_core=True,
+            core_match_only=True,
+        )
+        episode_rows = store.search_episodes(query, min(3, max(1, config.summary_results)))
+        query_hit = False
+        for row in memory_rows:
+            key = (str(row.get("kind") or ""), str(row.get("key") or ""))
+            existing = next(
+                (item for item in confirmed_memories if (str(item.get("kind") or ""), str(item.get("key") or "")) == key),
+                None,
+            )
+            if existing is not None:
+                query_hit = True
+                units = set(existing.get("unit_ids") or [])
+                if unit_id:
+                    units.add(unit_id)
+                existing["unit_ids"] = sorted(units)
+                continue
+            item = {
+                "kind": truncate_tokens(str(row.get("kind") or ""), 24),
+                "key": truncate_tokens(str(row.get("key") or ""), 64),
+                "content": truncate_tokens(str(row.get("content") or ""), 160),
+                "unit_ids": [unit_id] if unit_id else [],
+            }
+            confirmed_memories.append(item)
+            query_hit = True
+        for row in reflection_rows:
+            key = (str(row.get("kind") or ""), str(row.get("key") or ""))
+            target = (
+                core_reflection_memories
+                if str(row.get("kind") or "")
+                in {"owner_profile", "self_insight", "relationship", "practice"}
+                else reflection_memories
+            )
+            existing = next(
+                (item for item in target if (str(item.get("kind") or ""), str(item.get("key") or "")) == key),
+                None,
+            )
+            if existing is not None:
+                query_hit = True
+                units = set(existing.get("unit_ids") or [])
+                if unit_id:
+                    units.add(unit_id)
+                existing["unit_ids"] = sorted(units)
+                continue
+            target.append(
+                {
+                    "kind": truncate_tokens(str(row.get("kind") or ""), 24),
+                    "key": truncate_tokens(str(row.get("key") or ""), 64),
+                    "content": truncate_tokens(str(row.get("content") or ""), 160),
+                    "unit_ids": [unit_id] if unit_id else [],
+                }
+            )
+            query_hit = True
+        for row in episode_rows:
+            episode_id = str(row.get("id") or "")
+            if not episode_id:
+                continue
+            selected = recalled_episode_rows.setdefault(
+                episode_id,
+                {
+                    "episode_id": episode_id,
+                    "relation": "recalled",
+                    "is_new": False,
+                    "matches": [],
+                    "unit_ids": [],
+                    "last_activity_at": float(row.get("last_activity_at") or 0),
+                },
+            )
+            if unit_id and unit_id not in selected["unit_ids"]:
+                selected["unit_ids"].append(unit_id)
+            for match in row.get("matches") or []:
+                if match not in selected["matches"]:
+                    selected["matches"].append(match)
+            query_hit = True
+        (recall_hits if query_hit else recall_misses).append(query)
+
+    # Query-specific episodes supplement the time-window directory, without
+    # duplicating an episode already selected by recency.
+    existing_episode_ids = {str(item.get("episode_id")) for item in episodes}
+    for episode_id, selected in list(recalled_episode_rows.items())[:8]:
+        if episode_id not in existing_episode_ids:
+            episodes.append(selected)
+    recall_index: list[str] = []
+    if recall_queries:
+        recall_index.append("queries=" + " | ".join(query for query, _ in recall_queries))
+        if recall_hits:
+            recall_index.append("hits=" + ",".join(recall_hits))
+        if recall_misses:
+            recall_index.append("misses=" + " | ".join(recall_misses))
     retrieval = {
         "version": 2,
         "episodes": episodes,
-        "confirmed_memories": [],
+        "confirmed_memories": confirmed_memories[:8],
         "owner_preferences": store.always_memory_context(),
         "recent_memories": store.recent_memory_context(
             max(100, config.memory_tokens // 8)
         ),
-        "reflection_memories": [],
-        "core_reflection_memories": store.core_reflection_memory_context(
-            min(900, max(200, config.memory_tokens // 6))
-        ),
+        "reflection_memories": reflection_memories[:8],
+        "core_reflection_memories": core_reflection_memories[:4],
         "goals": goals,
         "reminders": reminders,
         "memory_conflicts": [],
         "uncertainty": plan.get("uncertainty", []),
+        "query_recall": "\n".join(recall_index),
     }
     log_event(
         logger,
@@ -115,6 +237,11 @@ def build_plan_retrieval(
             "episodes": len(episodes),
             "goals": len(goals),
             "reminders": len(reminders),
+            "recall_queries": len(recall_queries),
+            "recall_memory_hits": len(confirmed_memories),
+            "recall_reflection_hits": len(reflection_memories),
+            "recall_core_reflection_hits": len(core_reflection_memories),
+            "recall_episode_hits": len(recalled_episode_rows),
         },
     )
     log_event(
@@ -135,8 +262,12 @@ def _memory_lines(items: object) -> str:
     if not isinstance(items, list):
         return ""
     return "\n".join(
-        f"- [units={_supports(item)}] [{item['kind']}:{item['key']}] {item['content']}"
+        f"- [{item['kind']}:{item['key']}] {item['content']}"
         for item in items
+        if isinstance(item, dict)
+        and item.get("kind") not in (None, "")
+        and item.get("key") not in (None, "")
+        and item.get("content") not in (None, "")
     )
 
 
@@ -158,15 +289,26 @@ def _episode_search_text(episode: dict[str, object]) -> str:
 def _goal_lines(items: object) -> str:
     if not isinstance(items, list):
         return ""
-    return "\n".join(
-        f"- [units={_supports(item)}] id={item['id']} status={item['status']} "
-        f"title={item['title']} next_action={item.get('next_action') or 'none'} "
-        f"waiting_for={item.get('waiting_for') or 'none'} "
-        f"latest_result={item.get('latest_result') or 'none'} "
-        f"next_review_at={item.get('next_review_timestamp') or 'none'} "
-        f"retry_at={item.get('retry_timestamp') or 'none'}"
-        for item in items
-    )
+    lines: list[str] = []
+    for item in items:
+        if not isinstance(item, dict) or not item.get("id"):
+            continue
+        fields = [
+            f"id={item['id']}",
+            f"status={item.get('status') or 'unknown'}",
+            f"title={truncate_tokens(str(item.get('title') or ''), 80)}",
+        ]
+        for key, label, limit in (
+            ("next_action", "next", 100),
+            ("waiting_for", "waiting", 80),
+            ("latest_result", "last", 100),
+            ("blocked_reason", "blocked", 80),
+        ):
+            value = item.get(key)
+            if value not in (None, "", [], {}):
+                fields.append(f"{label}={truncate_tokens(str(value), limit)}")
+        lines.append("- " + " ".join(fields))
+    return "\n".join(lines)
 
 
 def _reminder_lines(items: object) -> str:
@@ -174,14 +316,25 @@ def _reminder_lines(items: object) -> str:
         return ""
     lines = []
     for item in items:
+        if not isinstance(item, dict) or not item.get("id"):
+            continue
         when = item.get("fire_timestamp")
         if not when and item.get("fire_at") is not None:
             when = context_timestamp(item["fire_at"])
-        lines.append(
-            f"- [units={_supports(item)}] id={item['id']} fire_at={when or 'none'} "
-            f"schedule={json.dumps(item.get('schedule'), ensure_ascii=False)} "
-            f"text={item['text']}"
-        )
+        fields = [f"id={item['id']}"]
+        if when:
+            fields.append(f"at={when}")
+        if item.get("schedule") not in (None, "", [], {}):
+            fields.append(
+                "schedule="
+                + truncate_tokens(
+                    json.dumps(item["schedule"], ensure_ascii=False, separators=(",", ":")),
+                    80,
+                )
+            )
+        if item.get("text"):
+            fields.append(f"text={truncate_tokens(str(item['text']), 120)}")
+        lines.append("- " + " ".join(fields))
     return "\n".join(lines)
 
 
@@ -189,7 +342,7 @@ def _conflict_lines(items: object) -> str:
     if not isinstance(items, list):
         return ""
     return "\n".join(
-        f"- [units={_supports(item)}] conflict_id={item['id']} "
+        f"- conflict_id={item['id']} "
         f"[{item['kind']}:{item['key']}] current={item['existing_content']} "
         f"candidate={item['candidate_content']}"
         for item in items
@@ -344,6 +497,245 @@ def _compact_turn_record(
                     "truncated": True,
                 }
     return compact
+
+
+_OWNER_HISTORY_RESULT_TOKENS = 96
+_OWNER_HISTORY_ARGUMENT_TOKENS = 64
+
+
+def _short_identifier(value: object, *, prefix: str = "") -> str:
+    text = str(value or "")
+    if not text:
+        return ""
+    return f"{prefix}{text[-8:]}"
+
+
+def _owner_history_argument(name: str, arguments: object) -> str:
+    if not isinstance(arguments, dict):
+        return ""
+    keep: tuple[str, ...]
+    if name in {"memory_search", "conversation_search", "thinking_search"}:
+        keep = ("query", "limit")
+    elif name in {"conversation_read", "thinking_read"}:
+        keep = ("episode_id", "message_id", "content_offset", "before_ordinal")
+    elif name in {"goal_create", "goal_update", "goal_finish", "goal_cancel"}:
+        keep = ("goal_id", "title", "status", "next_action")
+    elif name in {"reminder_create", "reminder_cancel"}:
+        keep = ("reminder_id", "text", "fire_at")
+    elif name in {"send_message", "owner_notify"}:
+        messages = arguments.get("messages")
+        if isinstance(messages, list):
+            return f"messages={len(messages)}"
+        return ""
+    elif name in {"curl", "read_file", "list_dir", "write_file", "apply_patch"}:
+        keep = ("url", "path", "query")
+    else:
+        keep = ("query", "keyword", "limit", "path", "url", "id")
+    selected = {
+        key: arguments[key]
+        for key in keep
+        if arguments.get(key) not in (None, "", [], {})
+    }
+    if not selected:
+        return ""
+    rendered = json.dumps(selected, ensure_ascii=False, separators=(",", ":"))
+    return truncate_tokens(rendered, _OWNER_HISTORY_ARGUMENT_TOKENS)
+
+
+def _owner_history_result(name: str, value: object, ok: object = True) -> str:
+    if not ok:
+        if isinstance(value, dict):
+            error = value.get("error") or value.get("message") or "failed"
+        else:
+            error = value or "failed"
+        return f"error={truncate_tokens(str(error), 80)}"
+    if not isinstance(value, dict):
+        return truncate_tokens(str(value or ""), _OWNER_HISTORY_RESULT_TOKENS)
+    if value.get("error"):
+        return f"error={truncate_tokens(str(value['error']), 80)}"
+    parts: list[str] = []
+    if value.get("truncated"):
+        parts.append("truncated=true")
+        original_chars = value.get("original_chars")
+        if original_chars:
+            parts.append(f"original_chars={original_chars}")
+    for key in ("state", "status", "count", "next_cursor"):
+        item = value.get(key)
+        if item not in (None, "", [], {}):
+            parts.append(f"{key}={item}")
+    nested = value.get("goal") or value.get("reminder") or value.get("memory")
+    if isinstance(nested, dict):
+        for key in ("id", "title", "key", "kind", "activation", "status", "next_action"):
+            item = nested.get(key)
+            if item not in (None, "", [], {}):
+                parts.append(f"{key}={truncate_tokens(str(item), 64)}")
+    nested_result = value.get("result") or value.get("data")
+    if isinstance(nested_result, dict):
+        for key in ("state", "status", "count", "title", "id"):
+            item = nested_result.get(key)
+            if item not in (None, "", [], {}) and f"{key}={item}" not in parts:
+                parts.append(f"{key}={truncate_tokens(str(item), 64)}")
+    elif isinstance(nested_result, str) and nested_result.strip():
+        parts.append(f"summary={truncate_tokens(' '.join(nested_result.split()), 80)}")
+    elif isinstance(nested_result, list):
+        parts.append(f"items_count={len(nested_result)}")
+    results = value.get("results")
+    if not isinstance(results, list):
+        for candidate_key in ("items", "posts", "entries", "articles", "messages"):
+            candidate = value.get(candidate_key)
+            if isinstance(candidate, list):
+                results = candidate
+                parts.append(f"{candidate_key}_count={len(candidate)}")
+                break
+    if isinstance(results, list) and results:
+        labels: list[str] = []
+        for item in results[:3]:
+            if not isinstance(item, dict):
+                continue
+            label = item.get("title") or item.get("key") or item.get("id")
+            summary = item.get("summary") or item.get("content")
+            if label:
+                labels.append(str(label))
+            elif summary:
+                labels.append(truncate_tokens(str(summary), 48))
+        if labels:
+            parts.append("hits=" + " | ".join(labels))
+    for key in ("message", "body", "content"):
+        if value.get("truncated") and key in {"body", "content"}:
+            continue
+        item = value.get(key)
+        if isinstance(item, str) and item.strip():
+            parts.append(f"{key}={truncate_tokens(' '.join(item.split()), 80)}")
+            break
+    return truncate_tokens(" ".join(parts) or "ok", _OWNER_HISTORY_RESULT_TOKENS)
+
+
+def _owner_history_summary(name: str, value: object, ok: object = True) -> str:
+    """Return one semantic sentence for cross-turn tool continuity."""
+    if not ok:
+        return f"{name} failed"
+    if isinstance(value, dict):
+        if value.get("truncated"):
+            original_chars = value.get("original_chars")
+            suffix = f" ({original_chars} chars)" if original_chars else ""
+            return f"{name} returned truncated result{suffix}"
+        memory = value.get("memory")
+        if isinstance(memory, dict):
+            key = memory.get("key") or "unknown"
+            state = str(value.get("state") or "saved")
+            verb = "staged" if state == "staged" else "updated"
+            return f"{verb} memory {key}"
+        if value.get("forgotten") or str(value.get("state") or "") == "forgotten":
+            return f"forgot memory {value.get('key') or value.get('id') or 'item'}"
+        for key, label in (("count", "returned"), ("items_count", "returned")):
+            if value.get(key) is not None:
+                return f"{name} {label} {value[key]} items"
+        for key in ("summary", "message", "content", "body", "result"):
+            item = value.get(key)
+            if isinstance(item, str) and item.strip():
+                return truncate_tokens(" ".join(item.split()), 48)
+        nested = value.get("data")
+        if isinstance(nested, dict):
+            return _owner_history_summary(name, nested, ok)
+        if isinstance(nested, list):
+            return f"{name} returned {len(nested)} items"
+    if isinstance(value, str) and value.strip():
+        return truncate_tokens(" ".join(value.split()), 48)
+    return f"{name} completed"
+
+
+def _owner_history_line(item: dict[str, object], call_names: dict[str, str]) -> str:
+    item_type = str(item.get("type") or "")
+    if item_type in {"owner_message", "event", "assistant_message"}:
+        role = {
+            "owner_message": "owner",
+            "assistant_message": "momoi",
+            "event": "event",
+        }[item_type]
+        delivery = str(item.get("delivery") or "")
+        suffix = f" [{delivery}]" if delivery not in {"", "delivered"} else ""
+        return f"{role}{suffix}: {_historical_content(item.get('text'))}"
+    if item_type == "tool_call":
+        call = _short_identifier(item.get("tool_call_id") or item.get("call"), prefix="c-")
+        name = str(item.get("name") or "tool")
+        call_names[str(item.get("tool_call_id") or item.get("call") or "")] = name
+        args = _owner_history_argument(name, item.get("arguments"))
+        return f"call {call} {name}{' ' + args if args else ''}"
+    if item_type == "tool_result":
+        raw_call = str(item.get("tool_call_id") or item.get("call") or "")
+        call = _short_identifier(raw_call, prefix="c-")
+        name = call_names.get(raw_call) or str(item.get("name") or "tool")
+        value = item.get("result")
+        details = _owner_history_result(name, value, item.get("ok", True))
+        summary = _owner_history_summary(name, value, item.get("ok", True))
+        return f"result {call} {name}: summary={summary}; {details}"
+    return ""
+
+
+def project_recent_turns_for_owner(
+    document: dict[str, object],
+    token_budget: int,
+) -> str:
+    """Render recent history as a causal, owner-facing text projection.
+
+    Planner history remains structured JSON because it needs machine-readable
+    intent and tool references. Owner Turns need evidence and continuity, not a
+    replay of the runtime journal, so tool payloads are reduced to one line.
+    """
+    turns = document.get("turns")
+    if not isinstance(turns, list) or token_budget <= 0:
+        return ""
+    blocks: list[str] = []
+    for index, raw_turn in enumerate(turns[-6:], start=1):
+        if not isinstance(raw_turn, dict):
+            continue
+        at = raw_turn.get("started_at") or raw_turn.get("completed_at") or raw_turn.get("at")
+        kind = str(raw_turn.get("kind") or "owner")
+        header = f"T-{index}"
+        if at:
+            header += f" {str(at)[:16]}"
+        if kind != "owner":
+            header += f" [{kind}]"
+        lines = [header]
+        call_names: dict[str, str] = {}
+        for item in raw_turn.get("timeline") or []:
+            if not isinstance(item, dict):
+                continue
+            line = _owner_history_line(item, call_names)
+            if line:
+                lines.append(f"  {line}")
+        final = raw_turn.get("final")
+        if isinstance(final, dict):
+            if final.get("failure"):
+                lines.append(f"  final: failure={truncate_tokens(str(final['failure']), 96)}")
+            mutations = final.get("mutations")
+            if isinstance(mutations, dict):
+                changed = [key for key, value in mutations.items() if value not in (None, "", [], {})]
+                if changed:
+                    lines.append("  final: changed=" + ",".join(changed))
+            if final.get("external_effect"):
+                lines.append("  final: external_effect=true")
+            mutations = final.get("mutations")
+            if isinstance(mutations, dict):
+                for mutation_name in ("memories", "forgotten_memories", "goals", "reminders"):
+                    entries = mutations.get(mutation_name)
+                    if not isinstance(entries, list) or not entries:
+                        continue
+                    labels: list[str] = []
+                    for entry in entries[:4]:
+                        if not isinstance(entry, dict):
+                            continue
+                        if mutation_name in {"memories", "forgotten_memories"}:
+                            label = f"{entry.get('kind', '')}:{entry.get('key', '')}"
+                        else:
+                            label = str(entry.get("id") or entry.get("goal_id") or "")
+                        if label.strip(":"):
+                            labels.append(truncate_tokens(label, 64))
+                    if labels:
+                        lines.append(f"  final: {mutation_name}=" + ",".join(labels))
+        blocks.append("\n".join(lines))
+    rendered = "\n\n".join(blocks)
+    return truncate_tokens(rendered, token_budget)
 
 
 def assemble_recent_turns(
@@ -854,16 +1246,20 @@ def assemble_main_context(
         store,
         recent_turns, raw_token_budget, recent_before_timestamp
     )
-    compact_recent_turns = json.dumps(
-        project_recent_turns_for_planner(recent_turn_records),
-        ensure_ascii=False,
-        separators=(",", ":"),
-        default=str,
+    compact_recent_turns = project_recent_turns_for_owner(
+        recent_turn_records, raw_token_budget
     )
-    reflection = _memory_lines(retrieval.get("reflection_memories"))
-    if reflection:
-        reflection = (
-            "These are fallible, lower-authority daily learnings.\n" + reflection
+    recent_memories = str(retrieval.get("recent_memories") or "").strip()
+    recalled_reflections = _memory_lines(retrieval.get("reflection_memories"))
+    if recalled_reflections:
+        reflection_block = (
+            "Recalled reflections (fallible; lower authority than owner memory):\n"
+            + recalled_reflections
+        )
+        recent_memories = (
+            f"{recent_memories}\n\n{reflection_block}".strip()
+            if recent_memories
+            else reflection_block
         )
     return {
         "recent_turns": compact_recent_turns,
@@ -874,10 +1270,17 @@ def assemble_main_context(
         ),
         "confirmed_memories": _memory_lines(retrieval.get("confirmed_memories")),
         "owner_preferences": str(retrieval.get("owner_preferences") or ""),
-        "recent_memories": str(retrieval.get("recent_memories") or ""),
-        "reflection_memories": reflection,
-        "core_reflection_memories": str(
-            retrieval.get("core_reflection_memories") or ""
+        "recent_memories": recent_memories,
+        "query_recall": str(retrieval.get("query_recall") or ""),
+        # Query-recalled reflections are merged into recent_memories so the
+        # Owner Turn has one bounded memory section rather than two competing
+        # payloads. Keep the retrieval list in the stored record for auditing.
+        "reflection_memories": "",
+        "core_reflection_memories": (
+            "Recalled core reflections (top-k; fallible):\n"
+            + _memory_lines(retrieval.get("core_reflection_memories"))
+            if retrieval.get("core_reflection_memories")
+            else ""
         ),
         "goals": _goal_lines(retrieval.get("goals")),
         "reminders": _reminder_lines(retrieval.get("reminders")),

@@ -18,7 +18,7 @@ DEFAULT_EPISODE_CANDIDATE_POLICY = EpisodeCandidatePolicy(
     search_limit=32,
     active_limit=12,
     directory_limit=64,
-    total_limit=18,
+    total_limit=8,
 )
 _DEFAULT_EPISODE_LOOKBACK_SECONDS = 30 * 24 * 60 * 60
 _FEATURE_WEIGHTS = {
@@ -207,8 +207,6 @@ def full_candidate_context(
             "id": candidate["id"],
             "status": candidate["status"],
             "title": candidate["title"],
-            "created_timestamp": candidate.get("created_timestamp"),
-            "last_activity_timestamp": candidate.get("last_activity_timestamp"),
             "summary": str(
                 candidate.get("narrative_summary")
                 or candidate.get("working_summary")
@@ -217,8 +215,6 @@ def full_candidate_context(
             "topics": candidate["topics"],
             "entities": candidate["entities"],
             "open_loops": candidate["open_loops"],
-            "match_score": candidate.get("match_score", 0.0),
-            "match_signals": candidate.get("match_signals", []),
         }
         for candidate in candidates
     ]

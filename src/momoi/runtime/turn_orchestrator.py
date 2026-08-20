@@ -204,6 +204,7 @@ class TurnOrchestrator:
                     ("pending_reminders", recalled["reminders"]),
                     ("recent_turns", recalled["recent_turns"]),
                     ("episode_directory", recalled["episodes"]),
+                    ("query_recall", recalled["query_recall"]),
                     ("pending_memory_conflicts", conflicts),
                     (
                         "interrupted_reply_expectation",
@@ -819,6 +820,7 @@ class TurnOrchestrator:
             ("pending_reminders", recalled["reminders"]),
             ("recent_turns", recalled["recent_turns"]),
             ("episode_directory", recalled["episodes"]),
+            ("query_recall", recalled["query_recall"]),
             ("pending_memory_conflicts", memory_conflicts),
             ("open_reconciliations", reconciliations),
             (

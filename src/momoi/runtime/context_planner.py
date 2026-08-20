@@ -52,15 +52,28 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                             "maxItems": 8,
                             "items": {"type": "string"},
                         },
+                        "recall_queries": {
+                            "type": "array",
+                            "maxItems": 3,
+                            "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 120,
+                            },
+                            "description": (
+                                "Bounded exact-word queries for missing durable, "
+                                "conversation-topic, or reflection evidence."
+                            ),
+                        },
                     },
                     "required": [
                         "id",
                         "event_ids",
                         "text",
                         "intent",
-                        "speech_act",
-                        "references",
-                    ],
+                    "speech_act",
+                    "references",
+                ],
                     "additionalProperties": False,
                 },
             },
@@ -622,7 +635,10 @@ def parse_context_plan(
         "references",
     }
     for raw in raw_units:
-        if not isinstance(raw, dict) or set(raw) != required_unit_keys:
+        if not isinstance(raw, dict) or not set(raw) <= {
+            *required_unit_keys,
+            "recall_queries",
+        } or not required_unit_keys <= set(raw):
             raise ContextPlanError("invalid_intent_unit")
         unit_id = _text(raw["id"], "unit_id", 40)
         if not re.fullmatch(r"[A-Za-z0-9_-]+", unit_id) or unit_id in unit_ids:
@@ -641,8 +657,7 @@ def parse_context_plan(
         speech_act = raw["speech_act"]
         if not isinstance(speech_act, str) or speech_act not in SPEECH_ACTS:
             raise ContextPlanError("invalid_speech_act")
-        units.append(
-            {
+        unit = {
                 "id": unit_id,
                 "event_ids": source_ids,
                 "text": _text(raw["text"], "unit_text", 2000),
@@ -655,7 +670,14 @@ def parse_context_plan(
                     max_length=500,
                 ),
             }
-        )
+        if "recall_queries" in raw:
+            unit["recall_queries"] = _strings(
+                raw["recall_queries"],
+                "unit_recall_queries",
+                maximum=3,
+                max_length=120,
+            )
+        units.append(unit)
     if covered_events != expected_events:
         raise ContextPlanError("uncovered_event_ids")
 

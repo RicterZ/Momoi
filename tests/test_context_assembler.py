@@ -15,6 +15,7 @@ from momoi.runtime.context_assembler import (
     assemble_recent_turns,
     build_plan_retrieval,
     project_recent_turns_for_planner,
+    project_recent_turns_for_owner,
     recall_episode_context,
 )
 from momoi.storage import Store, estimate_tokens
@@ -74,6 +75,47 @@ def plan(query: str, episode_id: str = "episode-mail") -> dict[str, object]:
 
 
 class ContextAssemblerTest(unittest.TestCase):
+    def test_owner_history_keeps_action_ledger_for_memory_and_external_tools(self) -> None:
+        rendered = project_recent_turns_for_owner(
+            {
+                "turns": [
+                    {
+                        "started_at": "2026-08-20T10:00:00+08:00",
+                        "timeline": [
+                            {
+                                "type": "tool_call",
+                                "tool_call_id": "call-12345678",
+                                "name": "memory_remember",
+                                "arguments": {"kind": "shared", "key": "games", "content": "共同游玩"},
+                            },
+                            {
+                                "type": "tool_result",
+                                "tool_call_id": "call-12345678",
+                                "result": {"state": "staged", "memory": {"kind": "shared", "key": "games", "activation": "recall"}},
+                            },
+                            {
+                                "type": "tool_call",
+                                "tool_call_id": "call-87654321",
+                                "name": "mcp__social__feed",
+                                "arguments": {"query": "游戏"},
+                            },
+                            {
+                                "type": "tool_result",
+                                "tool_call_id": "call-87654321",
+                                "result": {"result": "feed fetched: 3 relevant posts"},
+                            },
+                        ],
+                        "final": {"mutations": {"memories": [{"kind": "shared", "key": "games"}]}},
+                    }
+                ]
+            },
+            500,
+        )
+        self.assertIn("memory_remember", rendered)
+        self.assertIn("shared:games", rendered)
+        self.assertIn("feed fetched", rendered)
+        self.assertIn("final: memories=shared:games", rendered)
+
     def test_planner_projection_preserves_owner_plan_adjustment(self) -> None:
         adjustment = {
             "reason": "工具证据推翻旧引用",
@@ -873,7 +915,8 @@ class ContextAssemblerTest(unittest.TestCase):
                 ),
             )
 
-            self.assertEqual(retrieval["episodes"], [])
+            self.assertTrue(retrieval["episodes"])
+            self.assertEqual(retrieval["episodes"][0]["relation"], "recalled")
             store.close()
 
     def test_episode_baseline_contains_recent_episodes_only(
@@ -918,14 +961,9 @@ class ContextAssemblerTest(unittest.TestCase):
                 ),
             )
 
-            self.assertEqual(
-                [item["episode_id"] for item in retrieval["episodes"]],
-                [
-                    "recent-only",
-                    "recent-single",
-                    "recent-multi",
-                ],
-            )
+            episode_ids = [item["episode_id"] for item in retrieval["episodes"]]
+            self.assertEqual(episode_ids[:3], ["recent-only", "recent-single", "recent-multi"])
+            self.assertIn("old-multi", episode_ids)
             store.close()
 
     def test_recent_episode_window_is_independent_of_directory_cap(self) -> None:
@@ -1368,7 +1406,7 @@ class ContextAssemblerTest(unittest.TestCase):
             )
             assembled = assemble_main_context(store, retrieval, 2000, 2000)
 
-            self.assertEqual(retrieval["confirmed_memories"], [])
+            self.assertTrue(retrieval["confirmed_memories"])
             self.assertEqual(
                 [item["id"] for item in retrieval["goals"]],
                 ["goal-mail", "goal-social"],
@@ -1379,7 +1417,7 @@ class ContextAssemblerTest(unittest.TestCase):
             )
             rendered = "\n".join(assembled.values())
             self.assertNotIn("较早的项目邮件仍在等待", rendered)
-            self.assertNotIn("项目邮件关系到当前合作", rendered)
+            self.assertIn("项目邮件关系到当前合作", rendered)
             self.assertNotIn("项目邮件已经到达", rendered)
             self.assertIn("goal-mail", rendered)
             self.assertIn("goal-social", rendered)
@@ -1448,5 +1486,5 @@ class ContextAssemblerTest(unittest.TestCase):
             retrieval = build_plan_retrieval(
                 store, split_plan, config(directory, memory_results=2)
             )
-            self.assertEqual(retrieval["confirmed_memories"], [])
+            self.assertTrue(retrieval["confirmed_memories"])
             store.close()
