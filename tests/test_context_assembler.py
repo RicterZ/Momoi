@@ -98,6 +98,37 @@ class ContextAssemblerTest(unittest.TestCase):
                 )
                 store.add_event(event)
                 store.begin_turn(f"turn-{index}", "owner", [event.event_id])
+                if index == 1:
+                    store.append_turn_journal(
+                        f"turn-{index}",
+                        "tool_call",
+                        {
+                            "tool_call_id": "gmail",
+                            "name": "mcp__gog__gmail_search",
+                            "arguments": {"query": "newer_than:1d"},
+                        },
+                    )
+                    store.append_turn_journal(
+                        f"turn-{index}",
+                        "tool_result",
+                        {
+                            "tool_call_id": "gmail",
+                            "name": "mcp__gog__gmail_search",
+                            "ok": True,
+                            "error": None,
+                            "result": {
+                                "ok": True,
+                                "result": {
+                                    "content": [
+                                        {
+                                            "type": "text",
+                                            "text": "邮件结果" * 2000,
+                                        }
+                                    ]
+                                },
+                            },
+                        },
+                    )
                 store.commit_turn(
                     [event],
                     event.text,
@@ -120,6 +151,12 @@ class ContextAssemblerTest(unittest.TestCase):
                 [f"turn-{index}" for index in range(1, 7)],
             )
             self.assertEqual(active, [f"turn-{index}" for index in range(1, 7)])
+            first_result = next(
+                item
+                for item in six["turns"][0]["timeline"]
+                if item["type"] == "tool_result"
+            )
+            self.assertTrue(first_result["result"]["result"]["truncated"])
 
             add(7)
             seven, active = assemble_planner_recent_turns(
@@ -146,6 +183,11 @@ class ContextAssemblerTest(unittest.TestCase):
             )
             self.assertEqual(len(eleven["turns"]), 11)
             self.assertEqual(active, [f"turn-{index}" for index in range(6, 12)])
+            self.assertTrue(
+                json.dumps(
+                    eleven, ensure_ascii=False, separators=(",", ":")
+                ).startswith(six_prefix)
+            )
 
             add(12)
             twelve, active = assemble_planner_recent_turns(
@@ -453,7 +495,9 @@ class ContextAssemblerTest(unittest.TestCase):
         self.assertNotIn("visibility", turn["timeline"][2])
         self.assertNotIn("timestamp", turn["timeline"][2])
 
-    def test_planner_projection_compacts_only_background_tool_results(self) -> None:
+    def test_planner_projection_compacts_historical_tool_results_uniformly(
+        self,
+    ) -> None:
         large_content = "结果内容" * 1200
         entries = [f"file-{index}.txt" for index in range(100)]
         document = {
@@ -583,30 +627,93 @@ class ContextAssemblerTest(unittest.TestCase):
                 },
             ],
         }
+        full = project_recent_turns_for_planner(document)
         projected = project_recent_turns_for_planner(
             document,
-            active_turn_ids={"active"},
+            compact_tool_results=True,
         )
-        background = projected["turns"][0]["timeline"]
-        background_results = [
-            item for item in background if item["type"] == "tool_result"
+        compact_results = [
+            item
+            for item in projected["turns"][0]["timeline"]
+            if item["type"] == "tool_result"
         ]
         self.assertTrue(
-            background_results[0]["result"]["content"]["truncated"]
+            compact_results[0]["result"]["content"]["truncated"]
         )
         self.assertEqual(
-            background_results[1]["result"]["entries"]["original_items"],
+            compact_results[1]["result"]["entries"]["original_items"],
             100,
         )
-        compact_goal = background_results[2]["result"]["goal"]
+        compact_goal = compact_results[2]["result"]["goal"]
         self.assertEqual(compact_goal["id"], "goal-1")
         self.assertEqual(compact_goal["waiting_for"], "老师回复")
         self.assertNotIn("success_criteria", compact_goal)
         self.assertNotIn("plan", compact_goal)
-        self.assertEqual(background_results[3]["error"], "timeout")
+        self.assertEqual(compact_results[3]["error"], "timeout")
 
         active_result = projected["turns"][1]["timeline"][1]["result"]
-        self.assertEqual(active_result["content"], large_content)
+        self.assertTrue(active_result["content"]["truncated"])
+        full_active_result = full["turns"][1]["timeline"][1]["result"]
+        self.assertEqual(full_active_result["content"], large_content)
+
+    def test_planner_projection_caps_unknown_large_result_shapes(self) -> None:
+        document = {
+            "version": 1,
+            "turns": [
+                {
+                    "turn_id": "turn-1",
+                    "timeline": [
+                        {
+                            "type": "tool_call",
+                            "tool_call_id": "large",
+                            "name": "future_tool",
+                            "arguments": {},
+                        },
+                        {
+                            "type": "tool_result",
+                            "tool_call_id": "large",
+                            "name": "future_tool",
+                            "ok": True,
+                            "result": {
+                                "payload": {
+                                    "unknown_shape": "大结果" * 2000,
+                                }
+                            },
+                        },
+                        {
+                            "type": "tool_call",
+                            "tool_call_id": "small",
+                            "name": "future_tool",
+                            "arguments": {},
+                        },
+                        {
+                            "type": "tool_result",
+                            "tool_call_id": "small",
+                            "name": "future_tool",
+                            "ok": True,
+                            "result": {"value": 1},
+                        },
+                    ],
+                }
+            ],
+        }
+
+        projected = project_recent_turns_for_planner(
+            document,
+            compact_tool_results=True,
+        )
+        results = [
+            item["result"]
+            for item in projected["turns"][0]["timeline"]
+            if item["type"] == "tool_result"
+        ]
+
+        self.assertTrue(results[0]["truncated"])
+        self.assertGreater(results[0]["original_tokens"], 768)
+        self.assertEqual(results[0]["shown_tokens"], 512)
+        self.assertIn("head", results[0])
+        self.assertIn("tail", results[0])
+        self.assertEqual(results[1], {"value": 1})
 
     def test_recent_episode_window_is_injected_without_keyword_recall(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

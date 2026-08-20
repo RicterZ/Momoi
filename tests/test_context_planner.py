@@ -315,7 +315,11 @@ class ContextPlannerTest(unittest.TestCase):
             "omitted message `delivery` means", CONTEXT_PLANNER_SYSTEM_PROMPT
         )
         self.assertIn("intent_indexes", CONTEXT_PLANNER_SYSTEM_PROMPT)
-        self.assertIn("`truncated` background result", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn("`truncated` result", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn(
+            "regardless of active focus",
+            CONTEXT_PLANNER_SYSTEM_PROMPT,
+        )
         self.assertIn("State-changing tools use compact", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertIn("context.needs", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertIn("conversation_search", CONTEXT_PLANNER_SYSTEM_PROMPT)

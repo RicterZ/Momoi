@@ -577,7 +577,7 @@ def _planner_tool_result(
     name: str,
     value: object,
     *,
-    background: bool,
+    compact: bool,
 ) -> object:
     if not isinstance(value, dict):
         return copy.deepcopy(value)
@@ -589,7 +589,7 @@ def _planner_tool_result(
         result.pop("error", None)
     if result.get("truncated") is False:
         result.pop("truncated", None)
-    if not background:
+    if not compact:
         return result
 
     content = result.get("content")
@@ -625,15 +625,23 @@ def _planner_tool_result(
                 ),
                 512,
             )
+    rendered = json.dumps(
+        result,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        default=str,
+    )
+    if estimate_tokens(rendered) > 768:
+        return _planner_clip_text(rendered, 512)
     return result
 
 
 def project_recent_turns_for_planner(
     document: dict[str, object],
     *,
-    active_turn_ids: set[str] | None = None,
+    compact_tool_results: bool = False,
 ) -> dict[str, object]:
-    """Keep planner-relevant history while preserving complete tool semantics."""
+    """Keep planner-relevant history with a deterministic tool-result policy."""
     projected_turns: list[dict[str, object]] = []
     turns = document.get("turns")
     for raw_turn in turns if isinstance(turns, list) else []:
@@ -667,10 +675,6 @@ def project_recent_turns_for_planner(
         final = _planner_final(raw_turn.get("final"))
         if final:
             turn["final"] = final
-        background = (
-            active_turn_ids is not None
-            and str(raw_turn.get("turn_id") or "") not in active_turn_ids
-        )
 
         call_ids: dict[str, str] = {}
         call_names: dict[str, str] = {}
@@ -720,7 +724,7 @@ def project_recent_turns_for_planner(
                 projected_result = _planner_tool_result(
                     name,
                     raw_item.get("result"),
-                    background=background,
+                    compact=compact_tool_results,
                 )
                 if projected_result not in (None, "", [], {}):
                     result_item["result"] = projected_result
@@ -769,7 +773,7 @@ def assemble_planner_recent_turns(
     }
     projected = project_recent_turns_for_planner(
         {"version": 1, "turns": raw_turns},
-        active_turn_ids=active_turn_ids,
+        compact_tool_results=True,
     )
     projected_turns = projected["turns"]
     if not isinstance(projected_turns, list):
@@ -811,7 +815,7 @@ def assemble_planner_recent_turns(
             )
             compact_document = project_recent_turns_for_planner(
                 {"version": 1, "turns": [compact]},
-                active_turn_ids=active_turn_ids,
+                compact_tool_results=True,
             )
             compact_turns = compact_document.get("turns")
             if isinstance(compact_turns, list) and compact_turns:

@@ -63,8 +63,10 @@ Turn's compact intents.
 
 Tool results inherit their name from the matching short call id. Omitted success
 fields mean success; failures keep `error`. State-changing tools use compact
-final states. A structured `truncated` background result is partial evidence
-with explicit original size/count, not evidence that omitted content was absent.
+final states. Historical tool results use the same stable size-bounded
+projection regardless of active focus. A structured `truncated` result is
+partial evidence with explicit original size/count, not evidence that omitted
+content was absent.
 When a recent Final contains `plan_adjustment`, treat that verified Owner-model
 correction as stronger evidence than the older interpretation it corrected.
 
