@@ -360,7 +360,19 @@ REFLECTION_FINISH_SPEC: dict[str, Any] = {
     "input_schema": {
         "type": "object",
         "properties": {
-            "summary": {"type": "string", "minLength": 1, "maxLength": 6000},
+            "summary": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 6000,
+                "description": (
+                    "A grounded, thoughtful Chinese diary of the day, not a timeline. "
+                    "Use the mood, topic, and mutation timelines together with the "
+                    "day record. Select meaningful moments, connect causes and consequences, and "
+                    "write Momoi's own feelings, opinions, changed understanding, and "
+                    "unresolved questions in coherent, elegant prose. Do not invent "
+                    "facts or expose hidden chain-of-thought."
+                ),
+            },
             "always_memory_actions": {
                 "type": "array",
                 "maxItems": 8,

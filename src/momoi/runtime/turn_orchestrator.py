@@ -1253,11 +1253,14 @@ class TurnOrchestrator:
             self.config.notifications.timezone,
             max(
                 1000,
-                min(self.config.recent_raw_tokens, self.config.max_input_tokens // 2),
+                min(
+                    self.config.max_input_tokens // 2,
+                    max(12000, self.config.recent_raw_tokens * 2),
+                ),
             ),
         )
         raw_record = str(source["text"] or "").strip()
-        query = raw_record[-12000:]
+        query = raw_record[-20000:]
         record = cyber_keyword_pre_hook(raw_record)
         owner_source = cyber_keyword_pre_hook(str(source["owner_text"]))
         knowledge_source = cyber_keyword_pre_hook(str(source["knowledge_text"]))
@@ -1292,6 +1295,12 @@ class TurnOrchestrator:
             f"Recorded entries: {source['entries']}\n\n"
             f"{record or '[No conversation, tool, or runtime activity was recorded.]'}"
         )
+        reflection_scope = (
+            f"date: {local_date}\n"
+            f"timezone: {self.config.notifications.timezone}\n"
+            f"recorded entries: {source['entries']}\n"
+            "purpose: review the whole day, understand what changed, and extract durable meaning"
+        )
         current_input = _pack_user_context(
             ("daily_reflection_record", reflection_record),
             (
@@ -1305,6 +1314,10 @@ class TurnOrchestrator:
             ("recent_memory_inventory", recent_memory_inventory),
             ("confirmed_owner_memory", confirmed_memory),
             ("reflection_memory", learned),
+            ("reflection_scope", reflection_scope),
+            ("mood_timeline", str(source.get("mood_timeline") or "(none)")),
+            ("topic_timeline", str(source.get("topic_timeline") or "(none)")),
+            ("mutation_timeline", str(source.get("mutation_timeline") or "(none)")),
         )
         current_input = cyber_keyword_pre_hook(current_input)
         system = [

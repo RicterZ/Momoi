@@ -147,6 +147,63 @@ def _heartbeat_record_activity(content: str) -> str:
     return match.group(1).strip()[:300] if match else ""
 
 
+def _reflection_json(value: object, fallback: object) -> object:
+    try:
+        parsed = json.loads(str(value))
+    except (TypeError, json.JSONDecodeError):
+        return fallback
+    return parsed
+
+
+def _reflection_compact_value(value: object, limit: int = 240) -> str:
+    if isinstance(value, (dict, list)):
+        value = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    return " ".join(str(value or "").split())[:limit]
+
+
+def _reflection_select_entries(
+    entries: list[tuple[float, str, str, bool, bool]], token_budget: int
+) -> list[tuple[float, str, str, bool, bool]]:
+    """Keep a day-wide shape instead of selecting only the latest records."""
+    if not entries or token_budget <= 0:
+        return []
+    ordered = sorted(entries)
+    total = sum(estimate_tokens(f"[{label}]\n{content}") for _, label, content, _, _ in ordered)
+    if total <= token_budget:
+        return ordered
+    selected: list[tuple[float, str, str, bool, bool]] = []
+    selected_ids: set[int] = set()
+    used = 0
+
+    def add(index: int) -> None:
+        nonlocal used
+        if index in selected_ids:
+            return
+        entry = ordered[index]
+        size = estimate_tokens(f"[{entry[1]}]\n{entry[2]}")
+        if used + size > token_budget:
+            return
+        selected_ids.add(index)
+        selected.append(entry)
+        used += size
+
+    head = max(1, len(ordered) // 5)
+    tail = max(1, len(ordered) // 2)
+    for index in range(head):
+        add(index)
+    for index in range(max(0, len(ordered) - tail), len(ordered)):
+        add(index)
+    for index, entry in enumerate(ordered):
+        if entry[1] in {"OWNER", "EVENT", "RUNTIME FAILURE"} or entry[1].startswith("TOOL "):
+            add(index)
+    if not selected:
+        entry = ordered[-1]
+        selected = [
+            (*entry[:2], truncate_tokens(entry[2], max(1, token_budget - 4)), *entry[3:])
+        ]
+    return sorted(selected)
+
+
 def _dashboard_unix(value: object) -> float | None:
     if value is None:
         return None
@@ -5009,19 +5066,7 @@ class Store(MemoryStore, DeliveryStore):
                     False,
                 )
             )
-        selected: list[tuple[float, str, str, bool, bool]] = []
-        used = 0
-        for entry in sorted(entries, reverse=True):
-            line = f"[{entry[1]}]\n{entry[2]}"
-            size = estimate_tokens(line)
-            if selected and used + size > token_budget:
-                break
-            if not selected and size > token_budget:
-                entry = (*entry[:2], entry[2][:token_budget], *entry[3:])
-                size = estimate_tokens(f"[{entry[1]}]\n{entry[2]}")
-            selected.append(entry)
-            used += size
-        selected.reverse()
+        selected = _reflection_select_entries(entries, token_budget)
         text = "\n\n".join(
             f"[{context_timestamp(occurred_at)} {label}]\n{content}"
             for occurred_at, label, content, _, _ in selected
@@ -5030,11 +5075,94 @@ class Store(MemoryStore, DeliveryStore):
         knowledge_text = "\n".join(
             content for _, _, content, _, knowledge in selected if knowledge
         )
+
+        mood_entries: list[str] = []
+        mutation_entries: list[str] = []
+        for row in self._db.execute(
+            """SELECT j.created_at, j.item_type, j.payload_json
+               FROM turn_journal AS j JOIN turns AS t ON t.id=j.turn_id
+               WHERE j.created_at>=? AND j.created_at<?
+                 AND j.item_type IN ('final','tool_call','tool_result')
+               ORDER BY j.created_at, j.sequence""",
+            (start.timestamp(), end.timestamp()),
+        ).fetchall():
+            payload = _reflection_json(row["payload_json"], {})
+            if not isinstance(payload, dict):
+                continue
+            stamp = context_timestamp(row["created_at"])
+            if row["item_type"] == "final":
+                mood = payload.get("mood_change")
+                if isinstance(mood, dict) and mood.get("state"):
+                    mood_entries.append(
+                        f"{stamp} state={mood.get('state')} "
+                        f"intensity={mood.get('intensity', 'unknown')} "
+                        f"cause={_reflection_compact_value(mood.get('cause'), 180)}"
+                    )
+                mutations = payload.get("mutations")
+                if isinstance(mutations, dict):
+                    for key, value in mutations.items():
+                        if value in (None, [], {}, ""):
+                            continue
+                        if isinstance(value, list):
+                            details = "; ".join(
+                                _reflection_compact_value(item, 180) for item in value[:4]
+                            )
+                        else:
+                            details = _reflection_compact_value(value, 300)
+                        mutation_entries.append(f"{stamp} {key}: {details}")
+
+        topic_entries: list[str] = []
+        episode_rows = self._db.execute(
+            """SELECT title, status, working_summary, narrative_summary,
+                      emotional_context_json, outcomes_json, topics_json,
+                      open_loops_json, created_at, updated_at
+               FROM conversation_episodes
+               WHERE (created_at>=? AND created_at<?)
+                  OR (updated_at>=? AND updated_at<?)
+               ORDER BY updated_at""",
+            (
+                start.timestamp(),
+                end.timestamp(),
+                start.timestamp(),
+                end.timestamp(),
+            ),
+        ).fetchall()
+        for row in episode_rows:
+            summary = str(row["narrative_summary"] or row["working_summary"] or "").strip()
+            topics = _reflection_json(row["topics_json"], [])
+            loops = _reflection_json(row["open_loops_json"], [])
+            emotional = _reflection_json(row["emotional_context_json"], {})
+            outcomes = _reflection_json(row["outcomes_json"], [])
+            parts = [
+                f"{context_timestamp(row['updated_at'])} {row['status']} {row['title']}",
+            ]
+            if summary:
+                parts.append(f"summary={_reflection_compact_value(summary, 320)}")
+            if topics:
+                parts.append(f"topics={_reflection_compact_value(topics, 180)}")
+            if emotional:
+                parts.append(f"emotional_context={_reflection_compact_value(emotional, 180)}")
+            if outcomes:
+                parts.append(f"outcomes={_reflection_compact_value(outcomes, 180)}")
+            if loops:
+                parts.append(f"open_loops={_reflection_compact_value(loops, 180)}")
+            topic_entries.append("; ".join(parts))
+            if len(topic_entries) >= 16:
+                break
         return {
             "text": text,
             "owner_text": owner_text,
             "knowledge_text": knowledge_text,
             "entries": len(selected),
+            "mood_timeline": truncate_tokens(
+                "\n".join(mood_entries), 1200
+            ) or "(no recorded mood changes)",
+            "topic_timeline": truncate_tokens(
+                "\n".join(topic_entries), 2600
+            ) or "(no topic episode changed)",
+            "mutation_timeline": truncate_tokens(
+                "\n".join(mutation_entries), 2600
+            ) or "(no recorded state mutations)",
             "start_at": start.timestamp(),
             "end_at": end.timestamp(),
         }
