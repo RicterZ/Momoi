@@ -82,6 +82,16 @@ def load_mcp_servers(path: Path | None) -> dict[str, dict[str, Any]]:
         for name, config in servers.items()
         if isinstance(config, dict) and not config.get("disabled", False)
     }
+    for name, config in loaded.items():
+        description = config.get("description")
+        if description is not None and (
+            not isinstance(description, str)
+            or not description.strip()
+            or len(description.strip()) > 500
+        ):
+            raise ValueError(
+                f"MCP server {name} description must be 1 to 500 characters"
+            )
     log_event(
         logger,
         logging.INFO,
@@ -373,10 +383,38 @@ class MCPManager:
                 cursor = page.nextCursor
                 if not cursor:
                     break
+            configured_tools = config.get(
+                "enabled_tools",
+                config.get("enabledTools", ["*"]),
+            )
+            if not isinstance(configured_tools, list) or not all(
+                isinstance(item, str) and item
+                for item in configured_tools
+            ):
+                raise ValueError(
+                    f"MCP server {name} enabled_tools must be an array of names"
+                )
+            enabled_tools = set(configured_tools)
+            allow_all_tools = "*" in enabled_tools
+            matched_enabled_tools: set[str] = set()
+            available_raw_names = sorted(str(tool.name) for tool in tools)
+            available_wire_names = sorted(
+                self._wire_name(name, str(tool.name)) for tool in tools
+            )
             discovered: dict[str, tuple[str, dict[str, Any]]] = {}
             discovered_capabilities: dict[str, str] = {}
-            for tool in tools:
+            for tool in sorted(tools, key=lambda item: str(item.name)):
                 wire_name = self._wire_name(name, tool.name)
+                if (
+                    not allow_all_tools
+                    and tool.name not in enabled_tools
+                    and wire_name not in enabled_tools
+                ):
+                    continue
+                if tool.name in enabled_tools:
+                    matched_enabled_tools.add(tool.name)
+                if wire_name in enabled_tools:
+                    matched_enabled_tools.add(wire_name)
                 existing = self._tools.get(wire_name)
                 if wire_name in discovered or (existing and existing[0] != name):
                     raise ValueError(f"duplicate MCP tool name: {wire_name}")
@@ -399,6 +437,18 @@ class MCPManager:
                     if values.get("readOnlyHint") or tool.name in read_only_tools
                     else "external_effect"
                 )
+            if enabled_tools and not allow_all_tools:
+                unmatched = sorted(enabled_tools - matched_enabled_tools)
+                if unmatched:
+                    log_event(
+                        logger,
+                        logging.WARNING,
+                        "mcp_enabled_tools_unmatched",
+                        server=name,
+                        unmatched=unmatched,
+                        available_raw_names=available_raw_names,
+                        available_wire_names=available_wire_names,
+                    )
             old_names = {
                 wire_name
                 for wire_name, target in self._tools.items()
@@ -414,6 +464,7 @@ class MCPManager:
                 self._tools[wire_name] = (name, tool_name)
                 self._capabilities[wire_name] = discovered_capabilities[wire_name]
                 self.tool_specs.append(spec)
+            self.tool_specs.sort(key=lambda item: str(item.get("name") or ""))
             old_stack = self._stacks.get(name)
             self._sessions[name] = session
             self._stacks[name] = stack
@@ -424,7 +475,8 @@ class MCPManager:
                 logging.INFO,
                 "mcp_connected",
                 server=name,
-                tools=len(tools),
+                tools=len(discovered),
+                discovered_tools=len(tools),
             )
         except BaseException:
             await self._close_stack(name, stack, "failed_connect")

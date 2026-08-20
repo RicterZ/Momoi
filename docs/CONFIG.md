@@ -290,11 +290,11 @@ Set `max_input_tokens` below the provider's real context window. These are conte
 
 `recent_episode_hours` adds every Episode active in the configured window, independent of keyword recall. `summary_results` limits keyword-recalled Episodes to 12 by default. The two sets are deduplicated, then ordered with recent keyword matches first, other keyword matches next, and recent-only Episodes last. More matched keyword alternatives rank ahead within the keyword groups. `summary_tokens` is shared by the merged Episode summaries.
 
-The Owner model uses the same compact Recent projection. Stable Owner Preferences, Core Reflection, and recent memory precede the current Owner message so their prefix can be reused; the dynamic current message remains last. Internal Memory, Conversation, Thinking, Agenda, and Builtin tools remain resident. The Context Planner selects only the external MCP servers needed now, with a required routing reason; the main model always receives a compact server/tool catalog through `tool_enable` and can load any omitted server during the Turn. Heartbeat planning uses the same handoff pattern: select one activity, identify at most two resident Memory/Conversation lookups, route external MCP servers, and provide a bounded execution outline for the Heartbeat Turn. Heartbeat lookups are no longer executed automatically by the framework. A genuine `rest` plan carries no lookup, MCP server, or outline. Autonomous tools remain limited by autonomy patterns. A degraded plan preloads no MCP server but retains `tool_enable`, so capability remains available without restoring every external schema.
+The Owner model uses the same compact Recent projection. Stable Owner Preferences, Core Reflection, and recent memory precede the current Owner message so their prefix can be reused; the dynamic current message remains last. A `work` handoff keeps the complete internal tool surface. `respond` and `clarify` use a lean surface containing `send_message`, `tool_enable`, `respond`, any exact History tool pinned by `context.needs`, and Planner-selected MCP servers. `tool_enable.groups` can load omitted History, Memory-write, Agenda, Workspace, or MCP groups; they become callable on the next model step and do not stay loaded across Owner Turns. The Context Planner selects only the external MCP servers needed now, with a required routing reason. Heartbeat planning uses the same handoff pattern: select one activity, identify at most two Memory/Conversation lookups, route external MCP servers, and provide a bounded execution outline for the Heartbeat Turn. Heartbeat lookups are no longer executed automatically by the framework. A genuine `rest` plan carries no lookup, MCP server, or outline. Autonomous tools remain limited by autonomy patterns. A degraded plan preloads no MCP server but retains `tool_enable`, so capability remains available without restoring every external schema.
 
-The Owner Context Planner no longer submits keywords for framework-executed Memory/Episode search. It returns a structured `owner_handoff`: whether supplied context is sufficient, at most two Memory/Conversation/Thinking lookups for the Owner model, selected MCP servers, and an execution mode/outline. The framework still supplies Recent Episodes, recent/core memory, and current Goals/Reminders as a deterministic baseline; exact historical lookup happens inside the Owner Turn through resident internal tools. The main model may correct the handoff and records `plan_adjustment` only when current intent or verified evidence materially overturns it.
+The Owner Context Planner no longer submits keywords for framework-executed Memory/Episode search. It returns a structured `owner_handoff`: whether supplied context is sufficient, at most two Memory/Conversation/Thinking lookups for the Owner model, selected MCP servers, and an execution mode/outline. The framework still supplies Recent Episodes, recent/core memory, and current Goals/Reminders as a deterministic baseline; exact required historical tools are pinned into the Owner Turn. The main model may correct the handoff, load an omitted group, and record `plan_adjustment` only when current intent or verified evidence materially overturns the plan.
 
-Set a baseline context result count or token budget to `0` to disable that injected layer. Explicit memory and conversation search tools remain resident.
+Set a baseline context result count or token budget to `0` to disable that injected layer. Explicit memory and conversation search remain available through Planner pinning or `tool_enable`.
 
 ## Storage
 
@@ -339,6 +339,8 @@ Built-in file tools resolve relative paths from the workspace. Absolute paths re
     "local-tools": {
       "command": "your-mcp-server",
       "args": ["--option", "value"],
+      "description": "Search and read records from the local service.",
+      "enabled_tools": ["search", "read"],
       "cwd": "/optional/working/directory",
       "env": {
         "SERVICE_TOKEN": "${SERVICE_TOKEN}"
@@ -357,6 +359,7 @@ Use the built-in read-only `gog` MCP server directly:
   "mcpServers": {
     "gog": {
       "command": "/opt/homebrew/bin/gog",
+      "description": "Search and read Gmail; list Google Calendar events.",
       "args": [
         "--account", "you@gmail.com",
         "--readonly",
@@ -378,6 +381,7 @@ Run `gog --account you@gmail.com mcp --allow-tool gmail,calendar --list-tools` t
   "mcpServers": {
     "remote-tools": {
       "url": "https://mcp.example.com/mcp",
+      "description": "Read and update records in the remote service.",
       "headers": {
         "Authorization": "Bearer ${MCP_TOKEN}"
       }
@@ -389,6 +393,17 @@ Run `gog --account you@gmail.com mcp --allow-tool gmail,calendar --list-tools` t
 MCP environment values, remote URLs, and headers support `${VARIABLE}` expansion from Momoi's process environment. The variable must exist when Momoi starts. Add `"disabled": true` to keep a server definition without connecting it.
 
 Each connected server is isolated by name. Its tools appear to the model with a `mcp__<server>__<tool>` prefix. Connection failures are logged without preventing other configured servers from starting.
+
+Give every server a concise `description` of the capability it provides.
+Context Planner and `tool_enable` receive only the server id and this
+description before selection; tool names, argument schemas, and full tool
+descriptions are sent only after the server is selected or loaded. Descriptions
+must contain 1 to 500 characters.
+
+Use `enabled_tools` to restrict which discovered MCP tools are registered.
+Omit it or use `["*"]` for all tools, use `[]` for none, or list raw server
+tool names (such as `search`) or complete wire names (such as
+`mcp__local-tools__search`). Unknown entries produce a startup warning.
 
 Some MCP servers omit the standard `readOnlyHint`. Add `readOnlyTools` with the server's original tool names when a tool is known to be read-only. This declaration does not expose the tool by itself; self-directed work must also allow its prefixed name through `autonomy.allowed_tools`.
 

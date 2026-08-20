@@ -1379,7 +1379,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         call = ToolCall(
                             "enable-demo",
                             "tool_enable",
-                            {"servers": ["demo"]},
+                            {"groups": ["demo"]},
                         )
                     elif provider_self.calls == 2:
                         self.assertIn("mcp__demo__read", names)
@@ -1425,6 +1425,146 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 require_response=True,
                 delivery_channel=daemon.channel,
             )
+            self.assertIsInstance(reply, AgentReply)
+            self.assertEqual(provider.calls, 3)
+            daemon.store.close()
+
+    async def test_lean_owner_loads_internal_group_on_next_step(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "note.txt").write_text("workspace group loaded")
+            daemon = MomoiDaemon(
+                AppConfig(
+                    llm=LLMConfig(
+                        "http://127.0.0.1",
+                        "test",
+                        "test",
+                        100,
+                        0,
+                        1,
+                        0,
+                    ),
+                    channel=NapCatConfig(
+                        "ws://127.0.0.1",
+                        "20000",
+                        1,
+                        60,
+                        30,
+                        30,
+                        20,
+                    ),
+                    system_prompt="test",
+                    recent_raw_tokens=1000,
+                    recent_turns=2,
+                    memory_results=2,
+                    memory_tokens=1000,
+                    database=root / "momoi.sqlite3",
+                    log_level="INFO",
+                    workspace=root,
+                )
+            )
+            event = IncomingMessage(
+                "owner-enable-workspace",
+                "owner-enable-workspace",
+                "读文件",
+                1,
+                1,
+            )
+            daemon.store.add_event(event)
+            turn_id = daemon._turn_id(event.event_id)
+            daemon.store.begin_turn(turn_id, "owner", [event.event_id])
+
+            class Provider:
+                calls = 0
+
+                async def complete(
+                    provider_self,
+                    _system: object,
+                    messages: list[dict[str, object]],
+                    tools: list[dict[str, object]],
+                    **_: object,
+                ) -> ProviderResponse:
+                    provider_self.calls += 1
+                    names = [str(tool["name"]) for tool in tools]
+                    if provider_self.calls == 1:
+                        self.assertEqual(
+                            names,
+                            ["send_message", "tool_enable", "respond"],
+                        )
+                        enable = ToolCall(
+                            "enable-workspace",
+                            "tool_enable",
+                            {"groups": ["internal:workspace"]},
+                        )
+                        premature = ToolCall(
+                            "premature-read",
+                            "read_file",
+                            {"path": "note.txt"},
+                        )
+                        return ProviderResponse(
+                            [],
+                            [enable, premature],
+                        )
+                    elif provider_self.calls == 2:
+                        self.assertIn("read_file", names)
+                        self.assertIn(
+                            "tool_not_allowed",
+                            json.dumps(messages, ensure_ascii=False),
+                        )
+                        call = ToolCall(
+                            "read-note",
+                            "read_file",
+                            {"path": "note.txt"},
+                        )
+                    else:
+                        self.assertIn(
+                            "workspace group loaded",
+                            json.dumps(messages, ensure_ascii=False),
+                        )
+                        call = ToolCall(
+                            "finish-workspace",
+                            "respond",
+                            {
+                                "reply_wait": {"wait": False},
+                                "mood": {"decision": "unchanged"},
+                            },
+                        )
+                    return ProviderResponse([], [call])
+
+            provider = Provider()
+            daemon.provider = provider  # type: ignore[assignment]
+            plan = {
+                "owner_handoff": {
+                    "context": {
+                        "status": "sufficient",
+                        "needs": [],
+                        "reason": "上下文足够",
+                    },
+                    "mcp": {
+                        "servers": [],
+                        "reason": "不需要外部服务",
+                    },
+                    "execution": {
+                        "mode": "respond",
+                        "outline": ["回复"],
+                        "reason": "普通回应",
+                    },
+                }
+            }
+            reply = await daemon._run_tool_loop(
+                daemon._system(),
+                [{"role": "user", "content": "读文件"}],
+                daemon._owner_tool_specs(plan, "napcat"),
+                [event],
+                TurnDraft(),
+                authority="owner",
+                source_event_id=event.event_id,
+                allow_notify=False,
+                turn_id=turn_id,
+                require_response=True,
+                delivery_channel=daemon.channel,
+            )
+
             self.assertIsInstance(reply, AgentReply)
             self.assertEqual(provider.calls, 3)
             daemon.store.close()

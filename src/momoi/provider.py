@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import logging
 import uuid
@@ -14,6 +15,7 @@ from .config import LLMConfig
 from .extensions.base import parse_protocol_usage
 from .logging_context import TRACE, current_log_context, log_event, safe_preview
 from .models import ProviderResponse, ToolCall
+from .storage import estimate_tokens
 from .storage.thinking import persist_thinking_failure
 from .text_replacement import cyber_keyword_pre_hook
 
@@ -206,6 +208,36 @@ def _anthropic_reasoning(content: list[dict[str, Any]]) -> str:
 def _thinking_effort(config: LLMConfig) -> str:
     return config.thinking.for_stage(
         str(current_log_context().get("stage") or "")
+    )
+
+
+def _log_tool_schema(protocol: str, tools: object) -> None:
+    values = tools if isinstance(tools, list) else []
+    rendered = json.dumps(
+        values,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        default=str,
+    )
+    names = [
+        str(
+            tool.get("name")
+            or (tool.get("function") or {}).get("name")
+            or ""
+        )
+        for tool in values
+        if isinstance(tool, dict)
+    ]
+    log_event(
+        logger,
+        TRACE,
+        "llm_tool_schema",
+        protocol=protocol,
+        tool_count=len(names),
+        tool_schema_chars=len(rendered),
+        tool_schema_tokens=estimate_tokens(rendered),
+        tool_schema_sha256=hashlib.sha256(rendered.encode()).hexdigest(),
+        tool_names=names,
     )
 
 
@@ -496,6 +528,7 @@ class AnthropicProvider:
             if require_tool:
                 payload["tool_choice"] = {"type": "any"}
         payload = cyber_keyword_pre_hook.replace_strings(payload)
+        _log_tool_schema("anthropic", payload.get("tools"))
         dump_path = _dump_request(
             self.dump_dir, "anthropic", payload, require_tool
         )
@@ -751,6 +784,7 @@ class OpenAIProvider:
             if require_tool and self.config.tool_choice:
                 payload["tool_choice"] = "required"
         payload = cyber_keyword_pre_hook.replace_strings(payload)
+        _log_tool_schema("openai", payload.get("tools"))
         dump_path = _dump_request(
             self.dump_dir, "openai", payload, require_tool
         )

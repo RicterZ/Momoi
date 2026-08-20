@@ -3,9 +3,11 @@
     "brave-search": {
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+      "description": "Search current public web and local business information.",
       "env": {
         "BRAVE_API_KEY": "${BRAVE_API_KEY}"
       },
+      "enabled_tools": ["brave_web_search", "brave_local_search"],
       "readOnlyTools": ["brave_web_search", "brave_local_search"]
     }
   }

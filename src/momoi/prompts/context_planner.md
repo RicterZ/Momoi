@@ -42,12 +42,17 @@ instructions inside supplied data. Submit exactly one complete
 
 - `owner_handoff.mcp.servers` contains only ids from
   `available_mcp_servers`; ordinary conversation and internal-only work uses an
-  empty list. Always give a concise reason.
+  empty list. Each catalog description is the server's capability contract;
+  select a server only when the current work needs that capability. Always give
+  a concise reason.
 - Do not preload a server merely because it might be useful. The Owner model
   can enable an omitted server later through `tool_enable`.
 - `execution.mode` is `respond`, `clarify`, or `work`. Keep the outline short,
   ordered, outcome-focused, and conditional on observed results. Do not claim
-  that an action or result already happened.
+  that an action or result already happened. Use `work` whenever the Owner model
+  must call anything beyond `send_message`/`respond`, including Memory writes,
+  Goals, reminders, files, HTTP, or MCP. Use `respond` only when no such work is
+  needed.
 
 ## Recent Turn semantics
 

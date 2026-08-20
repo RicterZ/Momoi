@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 from momoi.channel.napcat import NapCatConfig
 from momoi.config import AppConfig, LLMConfig
@@ -124,6 +125,37 @@ def tool_plan_response(plan: dict[str, object]) -> ProviderResponse:
 
 
 class ContextPlannerTest(unittest.TestCase):
+    def test_mcp_catalog_uses_server_capability_descriptions(self) -> None:
+        daemon = object.__new__(MomoiDaemon)
+        daemon.mcp = SimpleNamespace(
+            configs={
+                "gog": {
+                    "description": "Search Gmail and use Google Calendar.",
+                }
+            },
+            tool_specs=[
+                {
+                    "name": "mcp__gog__gmail_search",
+                    "description": "Search Gmail",
+                    "input_schema": {"type": "object"},
+                }
+            ],
+        )
+
+        catalog = daemon._mcp_server_catalog()
+
+        self.assertEqual(
+            catalog,
+            [
+                {
+                    "id": "gog",
+                    "description": "Search Gmail and use Google Calendar.",
+                }
+            ],
+        )
+        self.assertNotIn("sample_tools", catalog[0])
+        self.assertNotIn("tool_count", catalog[0])
+
     def test_heartbeat_plan_parser_and_degraded_fallback(self) -> None:
         schema = HEARTBEAT_PLAN_TOOL_SPEC["input_schema"]
         self.assertEqual(
@@ -321,6 +353,10 @@ class ContextPlannerTest(unittest.TestCase):
             CONTEXT_PLANNER_SYSTEM_PROMPT,
         )
         self.assertIn("State-changing tools use compact", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn(
+            "must call anything beyond `send_message`/`respond`",
+            CONTEXT_PLANNER_SYSTEM_PROMPT,
+        )
         self.assertIn("context.needs", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertIn("conversation_search", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertIn("thinking_search", CONTEXT_PLANNER_SYSTEM_PROMPT)
@@ -541,25 +577,32 @@ class ContextPlannerTest(unittest.TestCase):
                 [spec["name"] for spec in daemon._owner_tool_specs(routed)],
                 [
                     "send_message",
-                    "memory_search",
+                    "tool_enable",
+                    "respond",
+                ],
+            )
+            lookup = {
+                **routed,
+                "owner_handoff": {
+                    **routed["owner_handoff"],
+                    "context": {
+                        "status": "lookup_required",
+                        "needs": [
+                            {
+                                "tool": "conversation_search",
+                                "query": "键盘",
+                                "evidence": "unresolved_reference",
+                            }
+                        ],
+                        "reason": "需要查找旧对话",
+                    },
+                },
+            }
+            self.assertEqual(
+                [spec["name"] for spec in daemon._owner_tool_specs(lookup)],
+                [
+                    "send_message",
                     "conversation_search",
-                    "conversation_read",
-                    "memory_remember",
-                    "memory_forget",
-                    "thinking_search",
-                    "thinking_read",
-                    "goal_create",
-                    "goal_update",
-                    "goal_finish",
-                    "goal_cancel",
-                    "reminder_create",
-                    "reminder_cancel",
-                    "curl",
-                    "read_file",
-                    "list_dir",
-                    "write_file",
-                    "apply_patch",
-                    "sleep",
                     "tool_enable",
                     "respond",
                 ],

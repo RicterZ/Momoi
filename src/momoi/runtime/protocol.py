@@ -278,22 +278,27 @@ SEND_MESSAGE_TOOL_SPEC: dict[str, Any] = {
 }
 
 
-def tool_enable_spec(group_tools: dict[str, list[str]]) -> dict[str, Any]:
-    group_ids = list(group_tools)
+def tool_enable_spec(group_descriptions: dict[str, str]) -> dict[str, Any]:
+    ordered_groups = {
+        group: str(description).strip()
+        for group, description in sorted(group_descriptions.items())
+    }
+    group_ids = list(ordered_groups)
     catalog = "; ".join(
-        f"{group}: {', '.join(names[:5])}"
-        for group, names in group_tools.items()
+        f"{group}: {description}"
+        for group, description in ordered_groups.items()
     )
     return {
         "name": "tool_enable",
         "description": (
-            "Load omitted external MCP servers when required, then call the newly "
-            f"available native tool. Server examples: {catalog}"
+            "Load omitted internal or MCP tool groups when required. Loaded tools "
+            "become callable on the next model step. "
+            f"Group examples: {catalog}"
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "servers": {
+                "groups": {
                     "type": "array",
                     "minItems": 1,
                     "maxItems": max(1, len(group_ids)),
@@ -303,7 +308,7 @@ def tool_enable_spec(group_tools: dict[str, list[str]]) -> dict[str, Any]:
                     },
                 }
             },
-            "required": ["servers"],
+            "required": ["groups"],
             "additionalProperties": False,
         },
     }

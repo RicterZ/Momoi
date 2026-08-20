@@ -288,11 +288,11 @@ momoi --workspace ~/.momoi run
 
 `recent_episode_hours` 会加入配置窗口内全部活跃的 Episode，与关键词召回相互独立；`summary_results` 默认将关键词召回限制为最多 12 个 Episode。两组结果按 Episode 去重后排序：近期且命中关键词的优先，其次是其他关键词命中，最后是仅近期活跃的 Episode；在关键词组内，命中的关键词 alternative 越多越靠前。`summary_tokens` 由合并后的 Episode 摘要共同使用。
 
-Owner主模型使用同一套紧凑Recent投影。稳定的Owner Preferences、Core Reflection和近期记忆位于当前Owner消息之前，以便复用前缀；动态当前消息保持在末尾。内部Memory、Conversation、Thinking、Agenda和Builtin工具全部常驻。Context Planner只选择当前需要的外部MCP Server，并必须给出路由理由；主模型始终通过`tool_enable`获得紧凑的Server/Tool目录，可在Turn中随时加载漏选Server。Heartbeat Planner现在采用相同的Handoff模式：选择一个活动，指出最多两个需要Heartbeat Turn执行的Memory/Conversation查询，路由外部MCP Server，并提交有界执行大纲。Heartbeat查询不再由框架自动执行；真正的`rest`计划不带查询、MCP Server或执行步骤。自主工具继续受Autonomy Pattern限制。Planner降级时不预载MCP，但保留`tool_enable`，无需恢复全部外部Schema也不会失能。
+Owner主模型使用同一套紧凑Recent投影。稳定的Owner Preferences、Core Reflection和近期记忆位于当前Owner消息之前，以便复用前缀；动态当前消息保持在末尾。`work` Handoff保留完整内部工具面；`respond`和`clarify`使用Lean工具面，只包含`send_message`、`tool_enable`、`respond`、由`context.needs`精确Pin的History工具，以及Planner选中的MCP Server。`tool_enable.groups`可加载漏选的History、Memory写入、Agenda、Workspace或MCP组；新工具从下一次模型请求起可调用，且不会跨Owner Turn常驻。Context Planner只选择当前需要的外部MCP Server，并必须给出路由理由。Heartbeat Planner采用相同的Handoff模式：选择一个活动，指出最多两个Memory/Conversation查询，路由外部MCP Server，并提交有界执行大纲。Heartbeat查询不再由框架自动执行；真正的`rest`计划不带查询、MCP Server或执行步骤。自主工具继续受Autonomy Pattern限制。Planner降级时不预载MCP，但保留`tool_enable`，无需恢复全部外部Schema也不会失能。
 
-Owner Context Planner不再提交关键词让框架自动搜索Memory/Episode。它输出结构化`owner_handoff`：判断现有上下文是否充分、列出最多两个需要Owner主模型执行的Memory/Conversation/Thinking查询、选择MCP Server，并给出执行模式和大纲。框架仍提供Recent Episodes、近期/核心记忆和当前Goals/Reminders作为确定性基线；精确历史补查由始终常驻的内部工具在Owner Turn中完成。主模型可修正Planner方向，并仅在实际推翻Handoff时通过`plan_adjustment`把修正写回后续Recent Turns。
+Owner Context Planner不再提交关键词让框架自动搜索Memory/Episode。它输出结构化`owner_handoff`：判断现有上下文是否充分、列出最多两个需要Owner主模型执行的Memory/Conversation/Thinking查询、选择MCP Server，并给出执行模式和大纲。框架仍提供Recent Episodes、近期/核心记忆和当前Goals/Reminders作为确定性基线；明确需要的历史工具会被精确Pin到Owner Turn。主模型可修正Planner方向、加载漏选工具组，并仅在实际推翻Handoff时通过`plan_adjustment`把修正写回后续Recent Turns。
 
-将某个基线上下文层的结果数量或 token 预算设为 `0` 可关闭该层注入。显式记忆和对话搜索工具仍然常驻可用。
+将某个基线上下文层的结果数量或 token 预算设为 `0` 可关闭该层注入。显式记忆和对话搜索仍可通过Planner Pin或`tool_enable`使用。
 
 ## 存储
 
@@ -337,6 +337,8 @@ Owner Context Planner不再提交关键词让框架自动搜索Memory/Episode。
     "local-tools": {
       "command": "your-mcp-server",
       "args": ["--option", "value"],
+      "description": "搜索并读取本地服务中的记录。",
+      "enabled_tools": ["search", "read"],
       "cwd": "/optional/working/directory",
       "env": {
         "SERVICE_TOKEN": "${SERVICE_TOKEN}"
@@ -355,6 +357,7 @@ Owner Context Planner不再提交关键词让框架自动搜索Memory/Episode。
   "mcpServers": {
     "gog": {
       "command": "/opt/homebrew/bin/gog",
+      "description": "搜索和读取 Gmail，并列出 Google Calendar 日程。",
       "args": [
         "--account", "you@gmail.com",
         "--readonly",
@@ -376,6 +379,7 @@ Owner Context Planner不再提交关键词让框架自动搜索Memory/Episode。
   "mcpServers": {
     "remote-tools": {
       "url": "https://mcp.example.com/mcp",
+      "description": "读取和更新远程服务中的记录。",
       "headers": {
         "Authorization": "Bearer ${MCP_TOKEN}"
       }
@@ -387,6 +391,14 @@ Owner Context Planner不再提交关键词让框架自动搜索Memory/Episode。
 MCP 环境值、远程 URL 和 header 支持从 Momoi 进程环境展开 `${VARIABLE}`。Momoi 启动时对应变量必须存在。添加 `"disabled": true` 可保留服务器定义而不建立连接。
 
 每个已连接服务器都会按名称隔离。它的工具以 `mcp__<server>__<tool>` 前缀呈现给模型。单个服务器连接失败会记录到日志，不会阻止其他已配置服务器启动。
+
+应为每个服务器填写简短的`description`能力说明。在Server被选择前，Context
+Planner和`tool_enable`只接收Server ID及该描述；只有选中或加载后，工具名称、
+参数Schema和完整工具描述才会发送给模型。描述长度必须为1到500个字符。
+
+使用`enabled_tools`限制实际注册的MCP工具。省略或设为`["*"]`表示全部，
+`[]`表示一个也不注册；也可以填写服务器原始工具名（如`search`）或完整Wire
+名称（如`mcp__local-tools__search`）。无法匹配的名称会在启动时记录Warning。
 
 部分 MCP 服务器没有提供标准的 `readOnlyHint`。如果某个工具确定只读，可以在对应服务器配置中用 `readOnlyTools` 填写服务器原始工具名。这个声明本身不会把工具开放给自主工作；还必须把带前缀的工具名加入 `autonomy.allowed_tools`。
 

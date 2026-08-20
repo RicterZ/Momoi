@@ -79,22 +79,18 @@ class ProgressAnnounceTest(unittest.TestCase):
         )
         self.assertLess(estimate_tokens(rendered), 550)
 
-    def test_tool_enable_catalog_keeps_only_bounded_examples(self) -> None:
+    def test_tool_enable_catalog_uses_group_descriptions(self) -> None:
         spec = tool_enable_spec(
             {
-                "demo": [f"tool_{index}" for index in range(6)],
-                "other": ["lookup"],
+                "demo": "Operate demo records.",
+                "other": "Look up external records.",
             }
         )
         description = spec["description"]
-        self.assertIn(
-            "demo: tool_0, tool_1, tool_2, tool_3, tool_4",
-            description,
-        )
-        self.assertNotIn("tool_5", description)
-        self.assertIn("other: lookup", description)
+        self.assertIn("demo: Operate demo records.", description)
+        self.assertIn("other: Look up external records.", description)
         self.assertEqual(
-            spec["input_schema"]["properties"]["servers"]["items"]["enum"],
+            spec["input_schema"]["properties"]["groups"]["items"]["enum"],
             ["demo", "other"],
         )
 

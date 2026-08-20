@@ -675,10 +675,24 @@ class ConfigurationTest(unittest.TestCase):
                 json.dumps(
                     {
                         "mcpServers": {
-                            "search": {"command": "search-server"},
+                            "search": {
+                                "command": "search-server",
+                                "description": "Search public sources.",
+                            },
                             "off": {"command": "off-server", "disabled": True},
                         }
                     }
                 )
             )
-            self.assertEqual(list(load_mcp_servers(path)), ["search"])
+            loaded = load_mcp_servers(path)
+            self.assertEqual(list(loaded), ["search"])
+            self.assertEqual(
+                loaded["search"]["description"],
+                "Search public sources.",
+            )
+
+            value = json.loads(path.read_text())
+            value["mcpServers"]["search"]["description"] = ""
+            path.write_text(json.dumps(value))
+            with self.assertRaisesRegex(ValueError, "description must be"):
+                load_mcp_servers(path)

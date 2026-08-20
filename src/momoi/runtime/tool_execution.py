@@ -42,6 +42,35 @@ from .turn_support import (
 
 logger = logging.getLogger("momoi.runtime.turns")
 MAX_TOOL_RESULT_TRUNCATION_ATTEMPTS = 16
+OWNER_HISTORY_TOOLS = frozenset(
+    {
+        "memory_search",
+        "conversation_search",
+        "conversation_read",
+        "thinking_search",
+        "thinking_read",
+    }
+)
+OWNER_MEMORY_WRITE_TOOLS = frozenset(
+    {
+        "memory_remember",
+        "memory_forget",
+    }
+)
+OWNER_INTERNAL_GROUP_DESCRIPTIONS = {
+    "internal:history": (
+        "Search and read durable memory, archived conversations, and prior reasoning."
+    ),
+    "internal:memory_write": (
+        "Remember or forget owner-confirmed durable information."
+    ),
+    "internal:agenda": (
+        "Create, update, finish, or cancel Goals and reminders."
+    ),
+    "internal:workspace": (
+        "Use HTTP and workspace file, patch, directory, and short-wait tools."
+    ),
+}
 
 
 class ToolExecutionService:
@@ -52,28 +81,140 @@ class ToolExecutionService:
 
     def _mcp_server_groups(self) -> dict[str, list[dict[str, Any]]]:
         groups: dict[str, list[dict[str, Any]]] = {}
-        for spec in self._announced_tool_specs(self.mcp.tool_specs, mcp=True):
+        for spec in self._announced_tool_specs(
+            sorted(
+                self.mcp.tool_specs,
+                key=lambda item: str(item.get("name") or ""),
+            ),
+            mcp=True,
+        ):
             group = self._mcp_tool_group(str(spec.get("name") or ""))
             groups.setdefault(group, []).append(spec)
-        return groups
+        return dict(sorted(groups.items()))
 
     def _mcp_server_catalog(self) -> list[dict[str, object]]:
         return [
             {
                 "id": group,
-                "tool_count": len(specs),
-                "sample_tools": [
-                    str(spec.get("name") or "").split("__")[-1]
-                    for spec in specs[:12]
-                ],
+                "description": self._mcp_group_description(group),
             }
-            for group, specs in self._mcp_server_groups().items()
+            for group in self._mcp_server_groups()
         ]
+
+    def _mcp_group_description(self, group: str) -> str:
+        configs = getattr(self.mcp, "configs", {})
+        config = configs.get(group) if isinstance(configs, dict) else None
+        description = (
+            str(config.get("description") or "").strip()
+            if isinstance(config, dict)
+            else ""
+        )
+        return description or f"External MCP capabilities provided by {group}."
+
+    def _owner_internal_tool_surface(
+        self,
+    ) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]]]:
+        memory = copy.deepcopy(MEMORY_TOOL_SPECS)
+        agenda = self._announced_tool_specs(AGENDA_TOOL_SPECS, mcp=False)
+        workspace = self._announced_tool_specs(BUILTIN_TOOL_SPECS, mcp=False)
+        all_specs = [*memory, *agenda, *workspace]
+        groups = {
+            "internal:history": [
+                spec
+                for spec in memory
+                if str(spec.get("name") or "") in OWNER_HISTORY_TOOLS
+            ],
+            "internal:memory_write": [
+                spec
+                for spec in memory
+                if str(spec.get("name") or "") in OWNER_MEMORY_WRITE_TOOLS
+            ],
+            "internal:agenda": agenda,
+            "internal:workspace": workspace,
+        }
+        return all_specs, groups
+
+    @staticmethod
+    def _owner_required_internal_tools(plan: dict[str, object]) -> set[str]:
+        handoff = plan.get("owner_handoff")
+        context = handoff.get("context") if isinstance(handoff, dict) else None
+        needs = context.get("needs") if isinstance(context, dict) else None
+        if not isinstance(needs, list):
+            return set()
+        return {
+            str(need.get("tool") or "")
+            for need in needs
+            if isinstance(need, dict) and str(need.get("tool") or "")
+        }
+
+    @staticmethod
+    def _owner_execution_mode(plan: dict[str, object]) -> str:
+        handoff = plan.get("owner_handoff")
+        execution = (
+            handoff.get("execution") if isinstance(handoff, dict) else None
+        )
+        return (
+            str(execution.get("mode") or "work")
+            if isinstance(execution, dict)
+            else "work"
+        )
+
+    def _owner_enable_tool_groups(
+        self,
+    ) -> dict[str, list[dict[str, Any]]]:
+        _, internal = self._owner_internal_tool_surface()
+        return {
+            **internal,
+            **self._mcp_server_groups(),
+        }
+
+    @staticmethod
+    def _tool_schema_tokens(specs: list[dict[str, Any]]) -> int:
+        return estimate_tokens(
+            json.dumps(
+                specs,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                default=str,
+            )
+        )
+
+    def _log_owner_tool_projection(
+        self,
+        *,
+        profile: str,
+        visible: list[dict[str, Any]],
+        full: list[dict[str, Any]],
+    ) -> None:
+        visible_tokens = self._tool_schema_tokens(visible)
+        full_tokens = self._tool_schema_tokens(full)
+        log_event(
+            logger,
+            TRACE,
+            "tool_availability_projected",
+            stage="owner",
+            profile=profile,
+            visible_tool_count=len(visible),
+            full_tool_count=len(full),
+            hidden_tool_count=max(0, len(full) - len(visible)),
+            visible_tool_schema_tokens=visible_tokens,
+            full_tool_schema_tokens=full_tokens,
+            estimated_tool_schema_tokens_saved=max(
+                0,
+                full_tokens - visible_tokens,
+            ),
+            visible_tool_names=[
+                str(spec.get("name") or "") for spec in visible
+            ],
+        )
 
     def _self_directed_mcp_server_groups(self) -> dict[str, list[dict[str, Any]]]:
         patterns = self.config.autonomy.allowed_tools
         groups: dict[str, list[dict[str, Any]]] = {}
-        for spec in self.mcp.tool_specs:
+        for spec in sorted(
+            self.mcp.tool_specs,
+            key=lambda item: str(item.get("name") or ""),
+        ):
             if not any(
                 fnmatch.fnmatchcase(str(spec["name"]), pattern)
                 for pattern in patterns
@@ -81,19 +222,15 @@ class ToolExecutionService:
                 continue
             server = self._mcp_tool_group(str(spec.get("name") or ""))
             groups.setdefault(server, []).append(spec)
-        return groups
+        return dict(sorted(groups.items()))
 
     def _heartbeat_mcp_server_catalog(self) -> list[dict[str, object]]:
         return [
             {
                 "id": server,
-                "tool_count": len(specs),
-                "sample_tools": [
-                    str(spec.get("name") or "").split("__")[-1]
-                    for spec in specs[:12]
-                ],
+                "description": self._mcp_group_description(server),
             }
-            for server, specs in self._self_directed_mcp_server_groups().items()
+            for server in self._self_directed_mcp_server_groups()
         ]
 
     def _heartbeat_external_tool_specs(
@@ -119,48 +256,77 @@ class ToolExecutionService:
             for server in selected_servers
             for spec in groups.get(str(server), [])
         ]
-        group_tools = {
-            server: [
-                str(spec.get("name") or "").split("__")[-1]
-                for spec in specs
-            ]
-            for server, specs in groups.items()
+        group_catalog = {
+            server: self._mcp_group_description(server)
+            for server in groups
         }
-        return [*internal, *mcp_specs, tool_enable_spec(group_tools)]
+        return [*internal, *mcp_specs, tool_enable_spec(group_catalog)]
 
     def _owner_tool_specs(
         self, plan: dict[str, object], channel_name: str | None = None
     ) -> list[dict[str, Any]]:
-        groups = self._mcp_server_groups()
+        mcp_groups = self._mcp_server_groups()
         handoff = plan.get("owner_handoff")
         route = handoff.get("mcp") if isinstance(handoff, dict) else None
         raw_selected = route.get("servers") if isinstance(route, dict) else []
         selected = (
-            [str(group) for group in raw_selected if str(group) in groups]
+            [
+                str(group)
+                for group in raw_selected
+                if str(group) in mcp_groups
+            ]
             if isinstance(raw_selected, list)
             else []
         )
         optional = [
             spec
             for group in selected
-            for spec in groups.get(group, [])
+            for spec in mcp_groups.get(group, [])
         ]
-        group_tools = {
-            group: [
-                str(spec.get("name") or "").split("__")[-1]
-                for spec in specs
+        all_internal, _ = self._owner_internal_tool_surface()
+        mode = self._owner_execution_mode(plan)
+        profile = "full" if mode == "work" else "lean"
+        required_names = self._owner_required_internal_tools(plan)
+        active_internal = (
+            all_internal
+            if profile == "full"
+            else [
+                spec
+                for spec in all_internal
+                if str(spec.get("name") or "") in required_names
             ]
-            for group, specs in groups.items()
+        )
+        group_catalog = {
+            **OWNER_INTERNAL_GROUP_DESCRIPTIONS,
+            **{
+                group: self._mcp_group_description(group)
+                for group in mcp_groups
+            },
         }
-        return [
+        visible = [
             self._send_message_tool_spec(channel_name),
-            *copy.deepcopy(MEMORY_TOOL_SPECS),
-            *self._announced_tool_specs(AGENDA_TOOL_SPECS, mcp=False),
-            *self._announced_tool_specs(BUILTIN_TOOL_SPECS, mcp=False),
+            *active_internal,
             *optional,
-            tool_enable_spec(group_tools),
+            tool_enable_spec(group_catalog),
             RESPOND_TOOL_SPEC,
         ]
+        full = [
+            self._send_message_tool_spec(channel_name),
+            *all_internal,
+            *[
+                spec
+                for specs in mcp_groups.values()
+                for spec in specs
+            ],
+            tool_enable_spec(group_catalog),
+            RESPOND_TOOL_SPEC,
+        ]
+        self._log_owner_tool_projection(
+            profile=profile,
+            visible=visible,
+            full=full,
+        )
+        return visible
 
     async def _run_tool_loop(
         self,
@@ -195,7 +361,7 @@ class ToolExecutionService:
         owner_work_acknowledged = False
         llm_round = 0
         enable_tool_groups = (
-            self._mcp_server_groups()
+            self._owner_enable_tool_groups()
             if authority == "owner"
             else (
                 self._self_directed_mcp_server_groups()
@@ -784,7 +950,7 @@ class ToolExecutionService:
                                 "messages": len(progress),
                             }
                 elif call.name == "tool_enable":
-                    requested = call.arguments.get("servers")
+                    requested = call.arguments.get("groups")
                     if (
                         not isinstance(requested, list)
                         or not requested
@@ -796,7 +962,7 @@ class ToolExecutionService:
                     ):
                         result = {
                             "ok": False,
-                            "error": "invalid_mcp_servers",
+                            "error": "invalid_tool_groups",
                         }
                     else:
                         existing = {
@@ -814,7 +980,7 @@ class ToolExecutionService:
                         result = {
                             "ok": True,
                             "state": "enabled",
-                            "servers": list(dict.fromkeys(requested)),
+                            "groups": list(dict.fromkeys(requested)),
                             "tools": enabled_tools,
                         }
                 elif self.mcp.has_tool(call.name) or self.builtin_tools.has_tool(

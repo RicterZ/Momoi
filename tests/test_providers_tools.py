@@ -30,6 +30,7 @@ from momoi.provider import (
     OpenAIProvider,
     ProviderError,
     _compact_response_text,
+    _log_tool_schema,
     _openai_messages,
     _redact_dump_media,
     usage_metrics,
@@ -53,6 +54,36 @@ def _provider_trace_logs():
 
 
 class ProvidersToolsTest(unittest.TestCase):
+    def test_tool_schema_diagnostic_hashes_actual_wire_shape(self) -> None:
+        tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "demo",
+                    "description": "Demo tool",
+                    "parameters": {"type": "object"},
+                },
+            }
+        ]
+        with (
+            _provider_trace_logs(),
+            self.assertLogs("momoi.provider", level=TRACE) as logs,
+        ):
+            _log_tool_schema("openai", tools)
+
+        record = next(
+            item
+            for item in logs.records
+            if getattr(item, "momoi_event", "") == "llm_tool_schema"
+        )
+        self.assertEqual(record.momoi_fields["tool_count"], 1)
+        self.assertEqual(record.momoi_fields["tool_names"], ["demo"])
+        self.assertGreater(record.momoi_fields["tool_schema_tokens"], 0)
+        self.assertRegex(
+            record.momoi_fields["tool_schema_sha256"],
+            r"^[0-9a-f]{64}$",
+        )
+
     def test_context_truncation_keeps_error_envelope_valid(self) -> None:
         rendered = _truncate_tool_result_json(
             json.dumps(
@@ -615,7 +646,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
 
             async def list_tools(self, cursor: str | None) -> SimpleNamespace:
                 cursors.append(cursor)
-                name = "first" if cursor is None else "second"
+                name = "zeta" if cursor is None else "alpha"
                 return SimpleNamespace(
                     tools=[
                         SimpleNamespace(
@@ -629,7 +660,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
 
         manager = MCPManager(None)
         manager.configs = {
-            "search": {"command": "fake", "readOnlyTools": ["first"]}
+            "search": {"command": "fake", "readOnlyTools": ["zeta"]}
         }
         with (
             patch("momoi.mcp_client.stdio_client", return_value=Transport()),
@@ -640,12 +671,67 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(cursors, [None, "page-2"])
         self.assertEqual(
             [spec["name"] for spec in manager.tool_specs],
-            ["mcp__search__first", "mcp__search__second"],
+            ["mcp__search__alpha", "mcp__search__zeta"],
         )
         self.assertEqual(
             [spec["name"] for spec in manager.read_only_tool_specs],
-            ["mcp__search__first"],
+            ["mcp__search__zeta"],
         )
+
+    async def test_mcp_enabled_tools_filters_registered_surface(self) -> None:
+        class Transport:
+            async def __aenter__(self) -> tuple[object, object]:
+                return object(), object()
+
+            async def __aexit__(self, *_: object) -> None:
+                return None
+
+        class Session:
+            def __init__(self, *_: object, **__: object) -> None:
+                pass
+
+            async def __aenter__(self) -> "Session":
+                return self
+
+            async def __aexit__(self, *_: object) -> None:
+                return None
+
+            async def initialize(self) -> None:
+                return None
+
+            async def list_tools(self, _: str | None) -> SimpleNamespace:
+                return SimpleNamespace(
+                    tools=[
+                        SimpleNamespace(
+                            name=name,
+                            description=f"{name} tool",
+                            inputSchema={"type": "object"},
+                        )
+                        for name in ("first", "second", "third")
+                    ],
+                    nextCursor=None,
+                )
+
+        for enabled, expected in (
+            (["second"], ["mcp__search__second"]),
+            (["mcp__search__first"], ["mcp__search__first"]),
+            ([], []),
+        ):
+            manager = MCPManager(None)
+            config = {
+                "command": "fake",
+                "enabled_tools": enabled,
+            }
+            with (
+                patch("momoi.mcp_client.stdio_client", return_value=Transport()),
+                patch("momoi.mcp_client.ClientSession", Session),
+            ):
+                await manager._connect("search", config)
+                await manager.__aexit__()
+            self.assertEqual(
+                [spec["name"] for spec in manager.tool_specs],
+                expected,
+            )
 
     async def test_mcp_recreates_invalid_session_without_stopping_other_servers(
         self,
