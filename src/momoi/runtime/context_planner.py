@@ -360,6 +360,15 @@ HEARTBEAT_PLAN_TOOL_SPEC: dict[str, object] = {
                 "properties": {
                     "intent": {"type": "string", "maxLength": 300},
                     "reason": {"type": "string", "maxLength": 300},
+                    "recall_queries": {
+                        "type": "array",
+                        "maxItems": 3,
+                        "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120,
+                        },
+                    },
                 },
                 "required": ["intent", "reason"],
                 "additionalProperties": False,
@@ -1022,7 +1031,8 @@ def parse_heartbeat_plan(
     activity = value.get("activity")
     if (
         not isinstance(activity, dict)
-        or set(activity) != {"intent", "reason"}
+        or not {"intent", "reason"} <= set(activity)
+        or not set(activity) <= {"intent", "reason", "recall_queries"}
     ):
         raise ContextPlanError("invalid_heartbeat_activity")
     raw_handoff = value.get("heartbeat_handoff")
@@ -1076,12 +1086,20 @@ def parse_heartbeat_plan(
     ) or (mode == "work" and not outline):
         raise ContextPlanError("invalid_heartbeat_execution")
 
+    parsed_activity = {
+        "intent": _text(activity["intent"], "heartbeat_intent", 300),
+        "reason": _text(activity["reason"], "heartbeat_reason", 300),
+    }
+    if "recall_queries" in activity:
+        parsed_activity["recall_queries"] = _strings(
+            activity["recall_queries"],
+            "heartbeat_recall_queries",
+            maximum=3,
+            max_length=120,
+        )
     return {
         "version": 2,
-        "activity": {
-            "intent": _text(activity["intent"], "heartbeat_intent", 300),
-            "reason": _text(activity["reason"], "heartbeat_reason", 300),
-        },
+        "activity": parsed_activity,
         "heartbeat_handoff": {
             "context": context,
             "mcp": mcp_route,

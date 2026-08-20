@@ -1151,6 +1151,7 @@ class TurnOrchestrator:
                 recent_conversation,
             ),
             ("episode_directory", recalled["episodes"]),
+            ("query_recall", recalled["query_recall"]),
             ("long_term_memories", recalled["long_term_memories"]),
             ("recent_memories", recalled["recent_memories"]),
             ("recall_memories", recalled["recall_memories"]),

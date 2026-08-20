@@ -91,7 +91,16 @@ def build_plan_retrieval(
     # cannot establish the referenced fact.  Keep this harness deterministic:
     # deduplicate query text, cap fan-out, and merge each hit by stable id.
     recall_queries: list[tuple[str, str]] = []
-    for unit in plan.get("intent_units") or []:
+    recall_units = list(plan.get("intent_units") or [])
+    activity = plan.get("activity")
+    if isinstance(activity, dict) and activity.get("recall_queries"):
+        recall_units.append(
+            {
+                "id": "heartbeat_activity",
+                "recall_queries": activity["recall_queries"],
+            }
+        )
+    for unit in recall_units:
         if not isinstance(unit, dict):
             continue
         unit_id = str(unit.get("id") or "")

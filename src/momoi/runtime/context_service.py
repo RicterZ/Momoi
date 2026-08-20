@@ -218,6 +218,8 @@ def _heartbeat_plan_lines(plan: dict[str, object]) -> str:
         f"context status: {context.get('status') or 'sufficient'}",
         f"context reason: {context.get('reason') or ''}",
     ]
+    for query in activity.get("recall_queries") or []:
+        lines.append(f"recall query: {str(query).replace(chr(10), ' ')}")
     for need in context.get("needs") or []:
         if isinstance(need, dict):
             fields = [

@@ -31,6 +31,10 @@ from .turn_support import (
     truncate_tool_result_json as _truncate_tool_result_json,
 )
 from .context_service import ContextService
+from .episode_prompt_renderer import (
+    render_episode_annealing_request,
+    render_episode_consolidation_request,
+)
 from .prompt_renderer import PromptRenderer
 from .tool_execution import ToolExecutionService
 from .turn_committer import TurnCommitter
@@ -168,14 +172,8 @@ class TurnRunner(
         )
         if state in {"completed", "cancelled"}:
             return False
-        request = [
-            {
-                "role": "user",
-                "content": json.dumps(
-                    candidate, ensure_ascii=False, separators=(",", ":")
-                ),
-            }
-        ]
+        user_prompt = render_episode_consolidation_request(candidate)
+        request = [{"role": "user", "content": user_prompt}]
         try:
             call_id = new_trace_id()
             with log_context(
@@ -230,7 +228,7 @@ class TurnRunner(
                         "input",
                         estimate_tokens(
                             EPISODE_CONSOLIDATION_SYSTEM_PROMPT
-                            + json.dumps(candidate, ensure_ascii=False)
+                            + user_prompt
                         ),
                     )
                 ),
@@ -271,33 +269,10 @@ class TurnRunner(
                 return False
             episode = candidate["episode"]
             episode_id = str(episode["id"])
-            payload = {
-                "episode": {
-                    "id": episode_id,
-                    "title": episode["title"],
-                    "previous_verified_claims": episode["working_summary_claims"],
-                },
-                "new_messages": [
-                    {
-                        "message_id": message["id"],
-                        "turn_id": message["turn_id"],
-                        "ordinal": message["ordinal"],
-                        "role": message["role"],
-                        "delivery_state": message["delivery_state"],
-                        "timestamp": message["timestamp"],
-                        "content": message["content"],
-                    }
-                    for message in candidate["messages"]
-                ],
-            }
-            request = [
-                {
-                    "role": "user",
-                    "content": json.dumps(
-                        payload, ensure_ascii=False, separators=(",", ":")
-                    ),
-                }
-            ]
+            user_prompt = render_episode_annealing_request(
+                episode, candidate["messages"]
+            )
+            request = [{"role": "user", "content": user_prompt}]
             try:
                 call_id = new_trace_id()
                 with log_context(
@@ -338,7 +313,7 @@ class TurnRunner(
                             "input",
                             estimate_tokens(
                                 EPISODE_SUMMARY_SYSTEM_PROMPT
-                                + json.dumps(payload, ensure_ascii=False)
+                                + user_prompt
                             ),
                         )
                     ),

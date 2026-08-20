@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 import tempfile
 import unittest
 from dataclasses import replace
@@ -11,11 +12,64 @@ from momoi.logging_context import current_log_context
 from momoi.models import AgentReply, IncomingMessage, ProviderResponse
 from momoi.runtime import MomoiDaemon
 from momoi.runtime.context_assembler import assemble_main_context
+from momoi.runtime.episode_prompt_renderer import (
+    render_episode_annealing_request,
+    render_episode_consolidation_request,
+)
 from momoi.runtime.turns import (
     EPISODE_CONSOLIDATION_SYSTEM_PROMPT,
     EPISODE_SUMMARY_SYSTEM_PROMPT,
 )
 from momoi.storage import estimate_tokens
+
+
+def prompt_section(prompt: str, name: str) -> str:
+    match = re.search(rf"<{name}>\n(.*?)\n</{name}>", prompt, re.DOTALL)
+    if match is None:
+        raise AssertionError(f"missing prompt section: {name}")
+    return match.group(1)
+
+
+def annealing_items(prompt: str, section: str, label: str) -> list[dict[str, object]]:
+    text = prompt_section(prompt, section)
+    if text == "none":
+        return []
+    blocks = re.split(rf"\n\n(?={label} \d+ \[)", text)
+    items: list[dict[str, object]] = []
+    for block in blocks:
+        item: dict[str, object] = {}
+        for key in ("message_id", "turn_id", "ordinal"):
+            match = re.search(rf"(?:\[| \| ){key}=([^|\]]+)", block)
+            if match is None:
+                raise AssertionError(f"missing {key} in {label}")
+            item[key] = (
+                int(match.group(1))
+                if key in {"message_id", "ordinal"}
+                else match.group(1).strip()
+            )
+        exact_label = "QUOTE" if label == "Claim" else "CONTENT"
+        content = re.search(
+            rf"<exact_{exact_label.lower()}>\n(.*?)\n"
+            rf"</exact_{exact_label.lower()}>",
+            block,
+            re.DOTALL,
+        )
+        if content is None:
+            raise AssertionError(f"missing exact content in {label}")
+        item["quote" if label == "Claim" else "content"] = content.group(1)
+        items.append(item)
+    return items
+
+
+def latest_pending_turn_id(prompt: str) -> str:
+    ids = re.findall(
+        r"^  turn id: (.+)$",
+        prompt_section(prompt, "pending_turns"),
+        re.MULTILINE,
+    )
+    if not ids:
+        raise AssertionError("missing pending Turn")
+    return ids[-1]
 
 
 def config(directory: str) -> AppConfig:
@@ -52,6 +106,94 @@ def add_turn(daemon: MomoiDaemon, ordinal: int) -> None:
 
 
 class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
+    def test_consolidation_prompt_is_human_readable_and_drops_storage_metadata(
+        self,
+    ) -> None:
+        prompt = render_episode_consolidation_request(
+            {
+                "turns": [
+                    {
+                        "turn_id": "turn-1",
+                        "timestamp": "updated-at-is-redundant",
+                        "messages": [
+                            {
+                                "id": 91,
+                                "turn_id": "turn-1",
+                                "role": "user",
+                                "content": "今天把项目做完了",
+                                "created_at": 123.0,
+                                "delivery_state": "received",
+                                "timestamp": "2026-08-20T12:00:00+08:00",
+                            }
+                        ],
+                    }
+                ],
+                "context_turns": [],
+                "candidate_episodes": [
+                    {
+                        "id": "episode-project",
+                        "title": "完成项目",
+                        "status": "closing",
+                        "narrative_summary": "老师完成了项目。",
+                        "topics": ["项目"],
+                        "entities": [],
+                        "open_loops": [],
+                    }
+                ],
+            }
+        )
+
+        self.assertTrue(prompt.startswith("<pending_turns>\nTurn 1"))
+        self.assertIn("[OWNER timestamp=2026-08-20T12:00:00+08:00]", prompt)
+        self.assertIn("今天把项目做完了", prompt)
+        self.assertIn("<candidate_episodes>\nEpisode 1", prompt)
+        self.assertNotIn("created_at", prompt)
+        self.assertNotIn("updated-at-is-redundant", prompt)
+        self.assertNotIn("message id:", prompt)
+        self.assertFalse(prompt.startswith("{"))
+
+    def test_annealing_prompt_preserves_exact_quoteable_text(self) -> None:
+        raw = '第一行 <tag attr="x"> & \\n\n第二行：不要改空白'
+        prompt = render_episode_annealing_request(
+            {
+                "id": "episode-1",
+                "title": "一次讨论",
+                "working_summary_claims": [
+                    {
+                        "message_id": 7,
+                        "turn_id": "turn-old",
+                        "ordinal": 1,
+                        "role": "user",
+                        "delivery_state": "received",
+                        "quote": "原有结论 <保持原样>",
+                    }
+                ],
+            },
+            [
+                {
+                    "id": 8,
+                    "turn_id": "turn-new",
+                    "ordinal": 2,
+                    "role": "assistant",
+                    "delivery_state": "internal",
+                    "timestamp": "2026-08-20T13:00:00+08:00",
+                    "content": raw,
+                }
+            ],
+        )
+
+        self.assertIn("<previous_verified_claims>\nClaim 1", prompt)
+        self.assertIn("source=MOMOI delivery=internal", prompt)
+        self.assertIn(
+            "<exact_content>\n"
+            + raw
+            + "\n</exact_content>",
+            prompt,
+        )
+        self.assertNotIn("&lt;", prompt)
+        self.assertNotIn("\\u", prompt)
+        self.assertFalse(prompt.startswith("{"))
+
     async def test_maintenance_timeout_uses_episode_retry_backoff(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             app_config = config(directory)
@@ -178,7 +320,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                 add_turn(daemon, ordinal)
 
             class Provider:
-                payloads: list[dict[str, object]] = []
+                prompts: list[str] = []
 
                 async def complete(
                     provider_self,
@@ -189,16 +331,18 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                 ) -> ProviderResponse:
                     self.assertEqual(system, EPISODE_SUMMARY_SYSTEM_PROMPT)
                     self.assertEqual(tools, [])
-                    payload = json.loads(str(messages[0]["content"]))
-                    provider_self.payloads.append(payload)
+                    prompt = str(messages[0]["content"])
+                    provider_self.prompts.append(prompt)
                     claims = [
                         {
                             name: claim[name]
                             for name in ("message_id", "turn_id", "ordinal", "quote")
                         }
-                        for claim in payload["episode"]["previous_verified_claims"]
+                        for claim in annealing_items(
+                            prompt, "previous_verified_claims", "Claim"
+                        )
                     ]
-                    message = payload["new_messages"][0]
+                    message = annealing_items(prompt, "new_messages", "Message")[0]
                     claims.append(
                         {
                             "message_id": message["message_id"],
@@ -250,7 +394,9 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 {
                     item["ordinal"]
-                    for item in provider.payloads[0]["new_messages"]
+                    for item in annealing_items(
+                        provider.prompts[0], "new_messages", "Message"
+                    )
                 },
                 {1, 2, 3},
             )
@@ -283,9 +429,9 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                 '- [source OWNER turn=turn-4 ordinal=4] "第4轮"',
             )
             self.assertEqual(
-                provider.payloads[1]["episode"]["previous_verified_claims"][0][
-                    "quote"
-                ],
+                annealing_items(
+                    provider.prompts[1], "previous_verified_claims", "Claim"
+                )[0]["quote"],
                 "第1轮",
             )
             self.assertEqual(
@@ -366,8 +512,9 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                     _tools: list[dict[str, object]],
                     **_: object,
                 ) -> ProviderResponse:
-                    payload = json.loads(str(messages[0]["content"]))
-                    message = payload["new_messages"][0]
+                    message = annealing_items(
+                        str(messages[0]["content"]), "new_messages", "Message"
+                    )[0]
                     response = {
                         "version": 1,
                         "claims": [
@@ -414,8 +561,9 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                     _tools: list[dict[str, object]],
                     **_: object,
                 ) -> ProviderResponse:
-                    payload = json.loads(str(messages[0]["content"]))
-                    message = payload["new_messages"][0]
+                    message = annealing_items(
+                        str(messages[0]["content"]), "new_messages", "Message"
+                    )[0]
                     return ProviderResponse(
                         [
                             {
@@ -549,8 +697,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                     provider_self.systems.append(system)
                     provider_self.contexts.append(current_log_context())
                     if system == EPISODE_CONSOLIDATION_SYSTEM_PROMPT:
-                        payload = json.loads(str(messages[0]["content"]))
-                        latest = payload["turns"][-1]["turn_id"]
+                        latest = latest_pending_turn_id(str(messages[0]["content"]))
                         return ProviderResponse(
                             [
                                 {
@@ -572,8 +719,9 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                             ],
                             [],
                         )
-                    payload = json.loads(str(messages[0]["content"]))
-                    message = payload["new_messages"][0]
+                    message = annealing_items(
+                        str(messages[0]["content"]), "new_messages", "Message"
+                    )[0]
                     return ProviderResponse(
                         [
                             {

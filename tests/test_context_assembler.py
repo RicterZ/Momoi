@@ -144,6 +144,21 @@ class ContextAssemblerTest(unittest.TestCase):
             self.assertIn("复盘认为蓝色杯子很重要", reflections)
             self.assertIn("那天一起找过蓝色杯子", reflections)
             self.assertNotIn("复盘认为主人喜欢猫", reflections)
+
+            heartbeat_retrieval = build_plan_retrieval(
+                store,
+                {
+                    "activity": {
+                        "intent": "整理蓝色杯子的共同回忆",
+                        "reason": "想回顾这件事",
+                        "recall_queries": ["蓝色杯子"],
+                    }
+                },
+                config(directory),
+            )
+            self.assertTrue(heartbeat_retrieval["recall_memories"])
+            self.assertTrue(heartbeat_retrieval["reflection_memories"])
+            self.assertIn("queries=蓝色杯子", heartbeat_retrieval["query_recall"])
             store.close()
 
     def test_owner_history_keeps_action_ledger_for_memory_and_external_tools(self) -> None:

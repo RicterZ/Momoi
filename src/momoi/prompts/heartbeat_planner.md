@@ -21,6 +21,10 @@ Rules:
   activities. Continue one of them only when it still fits now. Do not switch
   merely for variety, and do not avoid an activity merely because it appears there.
 - Keep `intent` and `reason` concise. This is one decision, not a menu of options.
+- When recall-activated memory, an older Episode, or a daily reflection is
+  relevant to the selected activity but absent from the fixed inputs, add at
+  most three short `activity.recall_queries`. The framework resolves these
+  before the Heartbeat Turn. Omit them when supplied context is sufficient.
 
 - Assess whether supplied state, recent conversation, topics, Goals, and
   reminders are enough to execute the activity. If an exact

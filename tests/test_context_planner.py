@@ -187,11 +187,11 @@ class ContextPlannerTest(unittest.TestCase):
             schema["required"],
             ["version", "activity", "heartbeat_handoff", "uncertainty"],
         )
-        self.assertNotIn(
+        self.assertIn(
             "recall_queries",
             schema["properties"]["activity"]["properties"],
         )
-        self.assertNotIn("recall_queries", HEARTBEAT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn("recall_queries", HEARTBEAT_PLANNER_SYSTEM_PROMPT)
         self.assertIn("recent_heartbeat_activities", HEARTBEAT_PLANNER_SYSTEM_PROMPT)
         plan = parse_heartbeat_plan(
             {
@@ -199,6 +199,7 @@ class ContextPlannerTest(unittest.TestCase):
                 "activity": {
                     "intent": "浏览微博关注流",
                     "reason": "看看最近感兴趣的动态",
+                    "recall_queries": ["微博 登录规则", "最近关注的游戏"],
                 },
                 "heartbeat_handoff": {
                     "context": {
@@ -232,6 +233,10 @@ class ContextPlannerTest(unittest.TestCase):
         )
         self.assertEqual(
             plan["heartbeat_handoff"]["mcp"]["servers"], ["weibo"]
+        )
+        self.assertEqual(
+            plan["activity"]["recall_queries"],
+            ["微博 登录规则", "最近关注的游戏"],
         )
         with self.assertRaisesRegex(ContextPlanError, "invalid_heartbeat_plan"):
             parse_heartbeat_plan(
@@ -344,11 +349,13 @@ class ContextPlannerTest(unittest.TestCase):
             parsed["owner_handoff"]["context"]["needs"][0]["tool"],
             "conversation_search",
         )
-        guidance = json.loads(conversation_guidance(parsed))
-        self.assertEqual(
-            guidance["owner_handoff"]["context"]["status"],
-            "lookup_required",
-        )
+        guidance = conversation_guidance(parsed)
+        self.assertFalse(guidance.lstrip().startswith("{"))
+        self.assertIn("Owner intent 1", guidance)
+        self.assertIn("speech act: casual_share", guidance)
+        self.assertIn("Context handoff", guidance)
+        self.assertIn("status: lookup_required", guidance)
+        self.assertIn("tool=conversation_search", guidance)
 
     def test_standalone_media_guidance_limits_semantic_inference(self) -> None:
         self.assertIn("low-information social cue", CONTEXT_PLANNER_SYSTEM_PROMPT)
@@ -1028,7 +1035,11 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                     self.assertIn("喜欢简短回复", text)
                     self.assertIn("<recent_memories>", text)
                     self.assertIn("正在等待邮件", text)
-                    self.assertIn('"speech_act":"casual_share"', text)
+                    self.assertIn("speech act: casual_share", text)
+                    resolution = text.split("<context_resolution>\n", 1)[1].split(
+                        "\n</context_resolution>", 1
+                    )[0]
+                    self.assertFalse(resolution.lstrip().startswith("{"))
                     self.assertNotIn("<context_plan>", text)
                     self.assertIn("browse social feed", text)
                     self.assertNotIn("episode_bindings", text)

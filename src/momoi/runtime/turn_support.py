@@ -160,32 +160,62 @@ def truncate_tool_result_json(value: str, limit: int) -> str:
 
 def conversation_guidance(plan: dict[str, object]) -> str:
     intent_units = [
-        {
-            "owner_text": unit["text"],
-            "intent": unit.get("intent", ""),
-            "speech_act": unit.get("speech_act", "unknown"),
-            **({"references": unit["references"]} if unit.get("references") else {}),
-        }
-        for unit in plan.get("intent_units", [])
-        if isinstance(unit, dict)
+        unit for unit in plan.get("intent_units", []) if isinstance(unit, dict)
     ]
     uncertainty = plan.get("uncertainty", [])
     owner_handoff = plan.get("owner_handoff")
     if not intent_units and not uncertainty and not owner_handoff:
         return ""
-    return json.dumps(
-        {
-            "owner_intent_units": intent_units,
-            **(
-                {"owner_handoff": owner_handoff}
-                if isinstance(owner_handoff, dict)
-                else {}
-            ),
-            "uncertainty": uncertainty,
-        },
-        ensure_ascii=False,
-        separators=(",", ":"),
-    )
+    lines: list[str] = []
+    for index, unit in enumerate(intent_units, start=1):
+        lines.append(f"Owner intent {index}")
+        lines.append(f"  owner text: {' '.join(str(unit.get('text') or '').split())}")
+        lines.append(f"  intent: {' '.join(str(unit.get('intent') or '').split())}")
+        lines.append(f"  speech act: {unit.get('speech_act') or 'unknown'}")
+        for reference in unit.get("references") or []:
+            lines.append(f"  reference: {' '.join(str(reference).split())}")
+
+    if isinstance(owner_handoff, dict):
+        context = owner_handoff.get("context")
+        if isinstance(context, dict):
+            lines.append("Context handoff")
+            lines.append(f"  status: {context.get('status') or 'sufficient'}")
+            lines.append(
+                f"  reason: {' '.join(str(context.get('reason') or '').split())}"
+            )
+            for need in context.get("needs") or []:
+                if not isinstance(need, dict):
+                    continue
+                fields = " ".join(
+                    f"{key}={' '.join(str(need.get(key) or '').split())}"
+                    for key in ("tool", "query", "evidence")
+                    if need.get(key) not in (None, "", [], {})
+                )
+                lines.append(f"  need: {fields}")
+
+        mcp = owner_handoff.get("mcp")
+        if isinstance(mcp, dict):
+            servers = mcp.get("servers") or []
+            lines.append("MCP handoff")
+            lines.append(
+                "  servers: "
+                + (", ".join(str(server) for server in servers) if servers else "none")
+            )
+            lines.append(f"  reason: {' '.join(str(mcp.get('reason') or '').split())}")
+
+        execution = owner_handoff.get("execution")
+        if isinstance(execution, dict):
+            lines.append("Execution handoff")
+            lines.append(f"  mode: {execution.get('mode') or 'respond'}")
+            for index, step in enumerate(execution.get("outline") or [], start=1):
+                lines.append(f"  step {index}: {' '.join(str(step).split())}")
+            lines.append(
+                f"  reason: {' '.join(str(execution.get('reason') or '').split())}"
+            )
+
+    for item in uncertainty or []:
+        lines.append(f"Uncertainty: {' '.join(str(item).split())}")
+    return "\n".join(lines)
 
 
 def plan_log_units(plan: dict[str, object]) -> list[dict[str, object]]:
