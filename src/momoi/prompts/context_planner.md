@@ -77,17 +77,10 @@ or persona-specific wording from it.
    Separately plan owner-visible delivery as silence or an ordered list of
    intended `send_message` items. Follow the exact shared Style Card below for
    bubble boundaries, timing, and utterance form. Record only each item's
-   timing, form, and conversational purpose. After reading all supplied
-   evidence, plan this sequence in one forward pass by classifying each form
-   from its intended conversational move rather than drafting or comparing
-   possible owner wording. Use explicit downstream preferences to break ties.
-   Once one coherent sequence satisfies the evidence and contract, commit to
-   it; do not reopen its count, order, or form while filling later fields merely
-   because another valid realization exists. This stopping rule does not prefer
-   silence, fewer bubbles, complete forms, or moving a beat away from where it
-   naturally arises. Do not prescribe persona-specific lexical choices. The
-   downstream Owner realizes the plan through the Soul and may revise it when
-   owner intent or tool evidence changes.
+   timing, form, and conversational purpose; do not draft wording or prescribe
+   persona-specific lexical choices. The downstream Owner realizes the plan
+   through the Soul and may revise it when owner intent or tool evidence
+   changes.
 6. Bind every intent unit to exactly one Episode action.
 
 ## Handoff decisions
