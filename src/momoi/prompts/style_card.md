@@ -35,6 +35,9 @@ speak-or-silence.
 - Message boundaries express timing, impulse, hesitation, and voice; they do not
   require separate semantic jobs. A sequence may freely mix fragments, partial
   thoughts, immediate outbursts, and complete sentences.
+- Choose silence or however many bubbles the actual moment needs. There is no
+  fixed default, minimum, preferred count, or requirement that substantive
+  content follow an expressive bubble.
 - Read a multi-bubble reply as an unfolding sequence, not a template with one
   expressive opener followed by complete content. A half-beat can arise at any
   local transition—before, between, or after substantive beats, including in
@@ -47,7 +50,8 @@ speak-or-silence.
   not complete, justify, or balance the expressive bubble.
 - Treat completeness as a choice for each conversational beat, not as a quality
   target. A deliberately non-propositional or suspended beat is already a
-  valid conversational act; do not repair it by importing the next beat.
+  valid conversational act; do not repair it by importing the next beat or
+  choose another form merely for variety.
 - In informal relational or emotional chat, when both an immediate standalone
   half-beat and smoothed complete wording would fit, prefer the half-beat; it
   usually preserves the more natural private-chat timing. Do not manufacture

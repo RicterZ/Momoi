@@ -24,10 +24,10 @@ or persona-specific wording from it.
    unit. Resolve omitted subjects from supplied evidence when possible.
 2. Evaluate the fixed memory baseline, Recent Turns, Episode candidates,
    Goals, reminders, and current events. Put a targeted lookup in
-   `owner_handoff.context.needs` only when material historical evidence may
+   `handoff.context_needs` only when material historical evidence may
    still be missing after the runtime's automatic recall. Otherwise mark the
    context sufficient.
-3. Give every unit one explicit `recall` decision based on its informational
+3. Give every unit one explicit `recall_mode` decision based on its informational
    dependencies, not its social tone or `speech_act`. Use `search` whenever
    unsupplied history could materially change the response or work; provide one
    to three ranked queries, highest-value first. A newly introduced or
@@ -51,7 +51,7 @@ or persona-specific wording from it.
    name plus only genuine aliases of that same entity. Do not add its work,
    category, location, associates, or other broader topic as OR alternatives;
    a hit on surrounding context does not establish that the entity was recalled.
-   Use `skip` with `fully_grounded_social` only for a self-contained social beat
+   Use `recall_mode=skip` only for a self-contained social beat
    whose meaning, referents, and premises needed for the reply are all directly
    and completely established by the supplied current/recent context. It is not
    enough that the owner supplied a broad category or impression of a new entity.
@@ -72,42 +72,13 @@ or persona-specific wording from it.
    lists downstream resident capabilities; you do not call them.
 5. Give a short execution outline containing only applicable evidence checks,
    actions, verification, and clarification; leave it empty when none apply.
-   Separately plan owner-visible delivery at bubble granularity. Each delivery
-   beat corresponds to one intended `send_message` item and records when it
-   belongs and what conversational function it serves.
-   Bubble boundaries follow conversational impulse, timing, hesitation, and
-   rhythm rather than sentence completeness or separate semantic jobs. When
-   the moment naturally contains an immediate expressive, fragmentary,
-   partial, or non-propositional beat, preserve it as its own bubble even when
-   it adds no new information. Decide independently whether a substantive
-   bubble follows; do not merge the expressive beat into later content or add
-   content merely to justify it.
-   Choose silence or one or more bubbles from the actual moment, with no fixed
-   default, minimum, or preferred count. For work, place progress, discovery,
-   failure, question, and result bubbles where they become owner-relevant.
-   Plan the bubbles as an unfolding timeline, not as an expressive opener plus
-   complete remainder. At every local transition—before, between, or after
-   substantive beats, and after later thoughts or tool results—decide whether
-   the next impulse is a half-beat or a complete move. Keep a half-beat in the
-   position where it arises; do not systematically put half-beat forms first or
-   make later bubbles complete merely because something has already been said.
-   Choose each form by the whole intended bubble, using the exact definitions
-   in the shared Style Card: `non_propositional` contains only affect,
-   attention, address, hesitation, or another vocal gesture; `fragmentary`
-   starts but suspends a thought; and `complete` finishes a thought or speech
-   move even when it opens expressively. The first two are half-beat forms. An
-   expressive opening does not turn completed content into a half-beat. Do not
-   choose forms merely for variety. In informal relational or emotional
-   moments, when a genuine immediate half-beat and smoothed complete wording
-   would both fit, prefer preserving the half-beat; otherwise choose the form
-   the moment calls for.
-   State each bubble's timing, chosen form, and conversational purpose, but
-   never draft its wording or prescribe persona-specific lexical choices. A
-   `non_propositional` purpose may identify the feeling and its trigger for the
-   Owner, but must not require the bubble to verbalize a cause, evaluation, or
-   conclusion; put any such content in a separate beat. The downstream Owner
-   realizes the beat through the Soul and may revise the advisory delivery plan
-   when owner intent or tool evidence changes.
+   Separately plan owner-visible delivery as silence or an ordered list of
+   intended `send_message` items. Follow the exact shared Style Card below for
+   bubble boundaries, timing, and utterance form. Record only each item's
+   timing, form, and conversational purpose; do not draft wording or prescribe
+   persona-specific lexical choices. The downstream Owner realizes the plan
+   through the Soul and may revise it when owner intent or tool evidence
+   changes.
 6. Bind every intent unit to exactly one Episode action.
 
 ## Handoff field mapping
@@ -125,7 +96,7 @@ or persona-specific wording from it.
 
 ### MCP and execution
 
-- `owner_handoff.mcp.servers` contains only ids from
+- `handoff.mcp_servers` contains only ids from
   `<available_mcp_servers>` and only servers needed by the current work. Keep it
   empty for ordinary conversation that has no unresolved factual dependency and
   for resident-tool-only work. A material unfamiliar public entity is not made

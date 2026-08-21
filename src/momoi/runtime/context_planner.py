@@ -60,7 +60,7 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
     "input_schema": {
         "type": "object",
         "properties": {
-            "version": {"type": "integer", "enum": [2]},
+            "version": {"type": "integer", "enum": [3]},
             "intent_units": {
                 "type": "array",
                 "minItems": 1,
@@ -85,66 +85,28 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                             "maxItems": 8,
                             "items": {"type": "string"},
                         },
-                        "recall": {
+                        "recall_mode": {
+                            "type": "string",
+                            "enum": ["search", "skip"],
                             "description": (
-                                "Required recall decision. Search with one to three "
-                                "ranked exact-word OR expressions whenever unsupplied "
-                                "history could materially change the response or work. "
-                                "Search for a newly introduced or uncertain named person, "
-                                "character, work, place, product, or term even in social "
-                                "chat when the owner reacts to it or the reply would "
-                                "acknowledge, evaluate, or speculate about it. Skip only "
-                                "for a self-contained social beat whose "
-                                "meaning and every material referent are directly and "
-                                "completely grounded by supplied context."
+                                "Search when unsupplied history could materially "
+                                "change the response or work. Skip only for a "
+                                "fully grounded social beat."
                             ),
-                            "oneOf": [
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "mode": {
-                                            "type": "string",
-                                            "enum": ["search"],
-                                        },
-                                        "queries": {
-                                            "type": "array",
-                                            "minItems": 1,
-                                            "maxItems": 3,
-                                            "items": {
-                                                "type": "string",
-                                                "minLength": 1,
-                                                "maxLength": 120,
-                                            },
-                                            "description": (
-                                                "Ranked exact-word OR expressions. Use "
-                                                "`|` without surrounding spaces between "
-                                                "literal names or genuine aliases of the "
-                                                "same target inside one expression. For a "
-                                                "new entity, the first expression must not "
-                                                "use its work, category, associates, or "
-                                                "broader topic as OR alternatives."
-                                            ),
-                                        },
-                                    },
-                                    "required": ["mode", "queries"],
-                                    "additionalProperties": False,
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "mode": {
-                                            "type": "string",
-                                            "enum": ["skip"],
-                                        },
-                                        "reason": {
-                                            "type": "string",
-                                            "enum": ["fully_grounded_social"],
-                                        },
-                                    },
-                                    "required": ["mode", "reason"],
-                                    "additionalProperties": False,
-                                },
-                            ],
+                        },
+                        "recall_queries": {
+                            "type": "array",
+                            "maxItems": 3,
+                            "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 120,
+                            },
+                            "description": (
+                                "Ranked exact-word OR expressions for search; "
+                                "empty for skip. Join genuine aliases with `|` "
+                                "without surrounding spaces."
+                            ),
                         },
                     },
                     "required": [
@@ -154,7 +116,8 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                         "intent",
                         "speech_act",
                         "references",
-                        "recall",
+                        "recall_mode",
+                        "recall_queries",
                     ],
                     "additionalProperties": False,
                 },
@@ -164,121 +127,42 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                 "minItems": 1,
                 "maxItems": 12,
                 "items": {
-                    "oneOf": [
-                        {
-                            "type": "object",
-                            "properties": {
-                                "action": {"type": "string", "enum": ["none"]},
-                                "unit_ids": {
-                                    "type": "array",
-                                    "minItems": 1,
-                                    "items": {"type": "string"},
-                                },
-                            },
-                            "required": ["action", "unit_ids"],
-                            "additionalProperties": False,
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": ["none", "continue", "new"],
                         },
-                        {
-                            "type": "object",
-                            "properties": {
-                                "action": {
-                                    "type": "string",
-                                    "enum": ["continue"],
-                                },
-                                "episode_ref": {
-                                    "type": "string",
-                                    "description": (
-                                        "An existing candidate Episode id."
-                                    ),
-                                },
-                                "unit_ids": {
-                                    "type": "array",
-                                    "minItems": 1,
-                                    "items": {"type": "string"},
-                                },
-                                "topics": {
-                                    "type": "array",
-                                    "maxItems": 12,
-                                    "items": {"type": "string"},
-                                },
-                                "entities": {
-                                    "type": "array",
-                                    "maxItems": 20,
-                                    "items": {"type": "string"},
-                                },
-                                "open_loops": {
-                                    "type": "array",
-                                    "maxItems": 8,
-                                    "items": {"type": "string"},
-                                },
-                                "salience": {
-                                    "type": "number",
-                                    "minimum": 0,
-                                    "maximum": 1,
-                                },
-                            },
-                            "required": [
-                                "action",
-                                "episode_ref",
-                                "unit_ids",
-                                "topics",
-                                "entities",
-                                "open_loops",
-                                "salience",
-                            ],
-                            "additionalProperties": False,
+                        "episode_ref": {"type": "string"},
+                        "title": {"type": "string"},
+                        "unit_ids": {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": {"type": "string"},
                         },
-                        {
-                            "type": "object",
-                            "properties": {
-                                "action": {"type": "string", "enum": ["new"]},
-                                "episode_ref": {
-                                    "type": "string",
-                                    "description": (
-                                        "A new:<key> reference using a lowercase "
-                                        "ASCII slug."
-                                    ),
-                                },
-                                "title": {"type": "string"},
-                                "unit_ids": {
-                                    "type": "array",
-                                    "minItems": 1,
-                                    "items": {"type": "string"},
-                                },
-                                "topics": {
-                                    "type": "array",
-                                    "maxItems": 12,
-                                    "items": {"type": "string"},
-                                },
-                                "entities": {
-                                    "type": "array",
-                                    "maxItems": 20,
-                                    "items": {"type": "string"},
-                                },
-                                "open_loops": {
-                                    "type": "array",
-                                    "maxItems": 8,
-                                    "items": {"type": "string"},
-                                },
-                                "salience": {
-                                    "type": "number",
-                                    "minimum": 0,
-                                    "maximum": 1,
-                                },
-                            },
-                            "required": [
-                                "action",
-                                "episode_ref",
-                                "title",
-                                "unit_ids",
-                                "topics",
-                                "entities",
-                                "open_loops",
-                                "salience",
-                            ],
-                            "additionalProperties": False,
+                        "topics": {
+                            "type": "array",
+                            "maxItems": 12,
+                            "items": {"type": "string"},
                         },
-                    ]
+                        "entities": {
+                            "type": "array",
+                            "maxItems": 20,
+                            "items": {"type": "string"},
+                        },
+                        "open_loops": {
+                            "type": "array",
+                            "maxItems": 8,
+                            "items": {"type": "string"},
+                        },
+                        "salience": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1,
+                        },
+                    },
+                    "required": ["action", "unit_ids"],
+                    "additionalProperties": False,
                 },
             },
             "episode_links": {
@@ -287,20 +171,8 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                 "items": {
                     "type": "object",
                     "properties": {
-                        "from_episode_ref": {
-                            "type": "string",
-                            "description": (
-                                "An episode_ref bound by this Turn. The link "
-                                "describes this source relative to the target."
-                            ),
-                        },
-                        "to_episode_ref": {
-                            "type": "string",
-                            "description": (
-                                "A different bound episode_ref or an existing "
-                                "candidate Episode id."
-                            ),
-                        },
+                        "from_episode_ref": {"type": "string"},
+                        "to_episode_ref": {"type": "string"},
                         "kind": {
                             "type": "string",
                             "enum": ["continues", "references", "supersedes"],
@@ -310,204 +182,141 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                     "additionalProperties": False,
                 },
             },
-            "owner_handoff": {
+            "handoff": {
                 "type": "object",
+                "description": (
+                    "Flat advisory handoff. Internal runtime code normalizes it "
+                    "for the downstream Owner."
+                ),
                 "properties": {
-                    "context": {
-                        "type": "object",
-                        "properties": {
-                            "status": {
-                                "type": "string",
-                                "enum": ["sufficient", "lookup_required"],
-                            },
-                            "needs": {
-                                "type": "array",
-                                "maxItems": 2,
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "tool": {
-                                            "type": "string",
-                                            "enum": [
-                                                "memory_search",
-                                                "conversation_search",
-                                                "conversation_read",
-                                                "thinking_search",
-                                                "thinking_read",
-                                            ],
-                                        },
-                                        "query": {
-                                            "type": "string",
-                                            "minLength": 1,
-                                            "maxLength": 300,
-                                        },
-                                        "evidence": {
-                                            "type": "string",
-                                            "enum": [
-                                                "exact_wording",
-                                                "chronology",
-                                                "unresolved_reference",
-                                                "correction_evidence",
-                                                "relevant_history",
-                                                "past_reasoning",
-                                            ],
-                                        },
-                                    },
-                                    "required": ["tool", "query", "evidence"],
-                                    "additionalProperties": False,
-                                },
-                            },
-                            "reason": {
-                                "type": "string",
-                                "minLength": 1,
-                                "maxLength": 300,
-                            },
-                        },
-                        "required": ["status", "needs", "reason"],
-                        "additionalProperties": False,
+                    "context_status": {
+                        "type": "string",
+                        "enum": ["sufficient", "lookup_required"],
                     },
-                    "mcp": {
-                        "type": "object",
-                        "properties": {
-                            "servers": {
-                                "type": "array",
-                                "maxItems": 32,
-                                "items": {
+                    "context_needs": {
+                        "type": "array",
+                        "maxItems": 2,
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "tool": {
+                                    "type": "string",
+                                    "enum": [
+                                        "memory_search",
+                                        "conversation_search",
+                                        "conversation_read",
+                                        "thinking_search",
+                                        "thinking_read",
+                                    ],
+                                },
+                                "query": {
                                     "type": "string",
                                     "minLength": 1,
-                                    "maxLength": 100,
+                                    "maxLength": 300,
+                                },
+                                "evidence": {
+                                    "type": "string",
+                                    "enum": [
+                                        "exact_wording",
+                                        "chronology",
+                                        "unresolved_reference",
+                                        "correction_evidence",
+                                        "relevant_history",
+                                        "past_reasoning",
+                                    ],
                                 },
                             },
-                            "reason": {
-                                "type": "string",
-                                "minLength": 1,
-                                "maxLength": 300,
-                            },
+                            "required": ["tool", "query", "evidence"],
+                            "additionalProperties": False,
                         },
-                        "required": ["servers", "reason"],
-                        "additionalProperties": False,
                     },
-                    "execution": {
-                        "type": "object",
-                        "properties": {
-                            "mode": {
-                                "type": "string",
-                                "enum": ["respond", "clarify", "work"],
-                            },
-                            "outline": {
-                                "type": "array",
-                                "maxItems": 8,
-                                "description": (
-                                    "Ordered evidence checks, actions, verification, "
-                                    "and clarification. Owner-visible bubbles belong "
-                                    "in delivery, not this outline."
-                                ),
-                                "items": {
+                    "context_reason": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 300,
+                    },
+                    "mcp_servers": {
+                        "type": "array",
+                        "maxItems": 32,
+                        "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 100,
+                        },
+                    },
+                    "mcp_reason": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 300,
+                    },
+                    "execution_mode": {
+                        "type": "string",
+                        "enum": ["respond", "clarify", "work"],
+                    },
+                    "execution_outline": {
+                        "type": "array",
+                        "maxItems": 8,
+                        "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 300,
+                        },
+                    },
+                    "execution_reason": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 300,
+                    },
+                    "delivery_mode": {
+                        "type": "string",
+                        "enum": ["silent", "bubbles"],
+                    },
+                    "delivery_bubbles": {
+                        "type": "array",
+                        "maxItems": 12,
+                        "description": (
+                            "Ordered intended send_message items; empty when "
+                            "delivery_mode is silent."
+                        ),
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "timing": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 160,
+                                },
+                                "form": {
+                                    "type": "string",
+                                    "enum": [
+                                        "non_propositional",
+                                        "fragmentary",
+                                        "complete",
+                                    ],
+                                },
+                                "purpose": {
                                     "type": "string",
                                     "minLength": 1,
                                     "maxLength": 300,
                                 },
                             },
-                            "delivery": {
-                                "description": (
-                                    "Explicit owner-visible delivery plan. Each bubble "
-                                    "is one intended send_message item. Plan timing, "
-                                    "utterance form, and conversational purpose without "
-                                    "drafting wording."
-                                ),
-                                "oneOf": [
-                                    {
-                                        "type": "object",
-                                        "properties": {
-                                            "mode": {
-                                                "type": "string",
-                                                "enum": ["silent"],
-                                            },
-                                            "reason": {
-                                                "type": "string",
-                                                "minLength": 1,
-                                                "maxLength": 300,
-                                            },
-                                        },
-                                        "required": ["mode", "reason"],
-                                        "additionalProperties": False,
-                                    },
-                                    {
-                                        "type": "object",
-                                        "properties": {
-                                            "mode": {
-                                                "type": "string",
-                                                "enum": ["bubbles"],
-                                            },
-                                            "bubbles": {
-                                                "type": "array",
-                                                "minItems": 1,
-                                                "maxItems": 12,
-                                                "items": {
-                                                    "type": "object",
-                                                    "properties": {
-                                                        "timing": {
-                                                            "type": "string",
-                                                            "minLength": 1,
-                                                            "maxLength": 160,
-                                                        },
-                                                        "form": {
-                                                            "type": "string",
-                                                            "enum": [
-                                                                "non_propositional",
-                                                                "fragmentary",
-                                                                "complete",
-                                                            ],
-                                                            "description": (
-                                                                "Form of the whole intended "
-                                                                "bubble. non_propositional "
-                                                                "contains only affect, attention, "
-                                                                "address, hesitation, or another "
-                                                                "vocal gesture; fragmentary starts "
-                                                                "but suspends a thought; complete "
-                                                                "finishes a thought or speech move "
-                                                                "even when it opens expressively."
-                                                            ),
-                                                        },
-                                                        "purpose": {
-                                                            "type": "string",
-                                                            "minLength": 1,
-                                                            "maxLength": 300,
-                                                            "description": (
-                                                                "Conversational function, not "
-                                                                "draft wording. For a "
-                                                                "non_propositional beat, it may "
-                                                                "name the affect and trigger but "
-                                                                "must not require verbalizing a "
-                                                                "cause, evaluation, or conclusion."
-                                                            ),
-                                                        },
-                                                    },
-                                                    "required": [
-                                                        "timing",
-                                                        "form",
-                                                        "purpose",
-                                                    ],
-                                                    "additionalProperties": False,
-                                                },
-                                            },
-                                        },
-                                        "required": ["mode", "bubbles"],
-                                        "additionalProperties": False,
-                                    },
-                                ],
-                            },
-                            "reason": {
-                                "type": "string",
-                                "minLength": 1,
-                                "maxLength": 300,
-                            },
+                            "required": ["timing", "form", "purpose"],
+                            "additionalProperties": False,
                         },
-                        "required": ["mode", "outline", "delivery", "reason"],
-                        "additionalProperties": False,
                     },
                 },
-                "required": ["context", "mcp", "execution"],
+                "required": [
+                    "context_status",
+                    "context_needs",
+                    "context_reason",
+                    "mcp_servers",
+                    "mcp_reason",
+                    "execution_mode",
+                    "execution_outline",
+                    "execution_reason",
+                    "delivery_mode",
+                    "delivery_bubbles",
+                ],
                 "additionalProperties": False,
             },
             "uncertainty": {
@@ -515,9 +324,8 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                 "maxItems": 4,
                 "items": {"type": "string"},
                 "description": (
-                    "Material ambiguity remaining after planning. Do not use this "
-                    "field instead of recall: missing recallable identity, background, "
-                    "or prior relationship is incompatible with a skip decision."
+                    "Material ambiguity remaining after planning. Missing "
+                    "recallable identity or background requires search."
                 ),
             },
         },
@@ -526,7 +334,7 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
             "intent_units",
             "episode_actions",
             "episode_links",
-            "owner_handoff",
+            "handoff",
             "uncertainty",
         ],
         "additionalProperties": False,
@@ -708,18 +516,27 @@ def _strings(
 
 
 def _text(value: object, name: str, max_length: int) -> str:
-    if not isinstance(value, str) or not value.strip() or len(value.strip()) > max_length:
+    if (
+        not isinstance(value, str)
+        or not value.strip()
+        or len(value.strip()) > max_length
+    ):
         raise ContextPlanError(f"invalid_{name}")
     return value.strip()
 
 
-def _recall_queries(value: object, name: str) -> list[str]:
+def _recall_queries(
+    value: object,
+    name: str,
+    *,
+    minimum: int = 1,
+) -> list[str]:
     return [
         re.sub(r"\s*\|\s*", "|", query)
         for query in _strings(
             value,
             name,
-            minimum=1,
+            minimum=minimum,
             maximum=3,
             max_length=120,
         )
@@ -777,10 +594,7 @@ def _parse_mcp_route(
     )
     if len(set(servers)) != len(servers):
         raise ContextPlanError("duplicate_mcp_server")
-    if (
-        available_mcp_servers is not None
-        and not set(servers) <= available_mcp_servers
-    ):
+    if available_mcp_servers is not None and not set(servers) <= available_mcp_servers:
         raise ContextPlanError("unknown_mcp_server")
     return {
         "servers": servers,
@@ -858,14 +672,14 @@ def parse_context_plan(
             raise ContextPlanError("invalid_json") from error
     if not isinstance(value, dict):
         raise ContextPlanError("invalid_top_level")
-    if value.get("version") != 2:
+    if value.get("version") != 3:
         raise ContextPlanError("unsupported_version")
     if set(value) != {
         "version",
         "intent_units",
         "episode_actions",
         "episode_links",
-        "owner_handoff",
+        "handoff",
         "uncertainty",
     }:
         raise ContextPlanError("invalid_top_level")
@@ -884,15 +698,11 @@ def parse_context_plan(
         "intent",
         "speech_act",
         "references",
+        "recall_mode",
+        "recall_queries",
     }
     for raw in raw_units:
-        if not isinstance(raw, dict) or not required_unit_keys <= set(raw):
-            raise ContextPlanError("invalid_intent_unit")
-        recall_keys = {"recall", "recall_queries"} & set(raw)
-        if (
-            len(recall_keys) != 1
-            or not set(raw) <= {*required_unit_keys, *recall_keys}
-        ):
+        if not isinstance(raw, dict) or set(raw) != required_unit_keys:
             raise ContextPlanError("invalid_intent_unit")
         unit_id = _text(raw["id"], "unit_id", 40)
         if not re.fullmatch(r"[A-Za-z0-9_-]+", unit_id) or unit_id in unit_ids:
@@ -911,41 +721,25 @@ def parse_context_plan(
         speech_act = raw["speech_act"]
         if not isinstance(speech_act, str) or speech_act not in SPEECH_ACTS:
             raise ContextPlanError("invalid_speech_act")
-        if "recall" in raw:
-            raw_recall = raw["recall"]
-            if not isinstance(raw_recall, dict):
+        recall_mode = raw["recall_mode"]
+        recall_queries = _recall_queries(
+            raw["recall_queries"],
+            "unit_recall_queries",
+            minimum=0,
+        )
+        if recall_mode == "search":
+            if not recall_queries:
                 raise ContextPlanError("invalid_recall_decision")
-            recall_mode = raw_recall.get("mode")
-            if recall_mode == "search":
-                if set(raw_recall) != {"mode", "queries"}:
-                    raise ContextPlanError("invalid_recall_decision")
-                recall_queries = _recall_queries(
-                    raw_recall["queries"],
-                    "unit_recall_queries",
-                )
-                recall = {"mode": "search", "queries": recall_queries}
-            elif recall_mode == "skip":
-                if (
-                    set(raw_recall) != {"mode", "reason"}
-                    or raw_recall.get("reason") not in RECALL_SKIP_REASONS
-                    or speech_act not in RECALL_SKIP_SPEECH_ACTS
-                ):
-                    raise ContextPlanError("invalid_recall_skip")
-                recall_queries = []
-                recall = {
-                    "mode": "skip",
-                    "reason": str(raw_recall["reason"]),
-                }
-            else:
-                raise ContextPlanError("invalid_recall_decision")
-        else:
-            # Accept pre-v2.1 plans from tests and stored integrations while the
-            # tool schema requires all newly generated plans to decide explicitly.
-            recall_queries = _recall_queries(
-                raw["recall_queries"],
-                "unit_recall_queries",
-            )
             recall = {"mode": "search", "queries": recall_queries}
+        elif recall_mode == "skip":
+            if recall_queries or speech_act not in RECALL_SKIP_SPEECH_ACTS:
+                raise ContextPlanError("invalid_recall_skip")
+            recall = {
+                "mode": "skip",
+                "reason": "fully_grounded_social",
+            }
+        else:
+            raise ContextPlanError("invalid_recall_decision")
         unit = {
             "id": unit_id,
             "event_ids": source_ids,
@@ -1093,9 +887,7 @@ def parse_context_plan(
             maximum=8,
             max_length=500,
         )
-        topics = _strings(
-            raw["topics"], "episode_topics", maximum=12, max_length=200
-        )
+        topics = _strings(raw["topics"], "episode_topics", maximum=12, max_length=200)
         entities = _strings(
             raw["entities"], "episode_entities", maximum=20, max_length=200
         )
@@ -1175,15 +967,27 @@ def parse_context_plan(
         raise ContextPlanError("cyclic_episode_link")
     for binding in bindings:
         binding.pop("_ref", None)
-    raw_handoff = value["owner_handoff"]
-    if not isinstance(raw_handoff, dict) or set(raw_handoff) != {
-        "context",
-        "mcp",
-        "execution",
-    }:
+    raw_handoff = value["handoff"]
+    required_handoff_keys = {
+        "context_status",
+        "context_needs",
+        "context_reason",
+        "mcp_servers",
+        "mcp_reason",
+        "execution_mode",
+        "execution_outline",
+        "execution_reason",
+        "delivery_mode",
+        "delivery_bubbles",
+    }
+    if not isinstance(raw_handoff, dict) or set(raw_handoff) != required_handoff_keys:
         raise ContextPlanError("invalid_owner_handoff")
     context = _parse_context_block(
-        raw_handoff["context"],
+        {
+            "status": raw_handoff["context_status"],
+            "needs": raw_handoff["context_needs"],
+            "reason": raw_handoff["context_reason"],
+        },
         tools={
             "memory_search",
             "conversation_search",
@@ -1203,43 +1007,57 @@ def parse_context_plan(
         need_error="invalid_context_need",
         thinking_requires_past_reasoning=True,
     )
-    raw_execution = raw_handoff["execution"]
-    if not isinstance(raw_execution, dict) or set(raw_execution) != {
-        "mode",
-        "outline",
-        "delivery",
-        "reason",
-    }:
-        raise ContextPlanError("invalid_execution_handoff")
-    mode = raw_execution["mode"]
+    mode = raw_handoff["execution_mode"]
     if mode not in {"respond", "clarify", "work"}:
         raise ContextPlanError("invalid_execution_handoff")
     if units and all(unit["recall"]["mode"] == "skip" for unit in units):
         if context["status"] != "sufficient" or mode != "respond":
             raise ContextPlanError("invalid_recall_skip")
+    delivery_mode = raw_handoff["delivery_mode"]
+    delivery_bubbles = raw_handoff["delivery_bubbles"]
+    if delivery_mode == "silent":
+        if delivery_bubbles != []:
+            raise ContextPlanError("invalid_delivery_handoff")
+        raw_delivery: dict[str, object] = {
+            "mode": "silent",
+            "reason": raw_handoff["execution_reason"],
+        }
+    elif delivery_mode == "bubbles":
+        raw_delivery = {
+            "mode": "bubbles",
+            "bubbles": delivery_bubbles,
+        }
+    else:
+        raise ContextPlanError("invalid_delivery_handoff")
     execution: dict[str, object] = {
         "mode": str(mode),
         "outline": _strings(
-            raw_execution["outline"],
+            raw_handoff["execution_outline"],
             "execution_outline",
             maximum=8,
             max_length=300,
         ),
         "reason": _text(
-            raw_execution["reason"],
+            raw_handoff["execution_reason"],
             "execution_reason",
             300,
         ),
-        "delivery": _parse_delivery_plan(raw_execution["delivery"]),
+        "delivery": _parse_delivery_plan(raw_delivery),
     }
     return {
-        "version": 2,
+        "version": 3,
         "intent_units": units,
         "episode_actions": bindings,
         "episode_links": links,
         "owner_handoff": {
             "context": context,
-            "mcp": _parse_mcp_route(raw_handoff["mcp"], available_mcp_servers),
+            "mcp": _parse_mcp_route(
+                {
+                    "servers": raw_handoff["mcp_servers"],
+                    "reason": raw_handoff["mcp_reason"],
+                },
+                available_mcp_servers,
+            ),
             "execution": execution,
         },
         "uncertainty": _strings(
@@ -1292,11 +1110,10 @@ def degraded_context_plan(
             }
         )
     return {
-        "version": 2,
+        "version": 3,
         "intent_units": units,
         "episode_actions": [
-            {"action": "none", "unit_ids": [str(unit["id"])]}
-            for unit in units
+            {"action": "none", "unit_ids": [str(unit["id"])]} for unit in units
         ],
         "episode_links": [],
         "uncertainty": [
@@ -1317,16 +1134,16 @@ def parse_heartbeat_plan(
             raise ContextPlanError("invalid_json") from error
     if (
         not isinstance(value, dict)
-        or set(value)
-        != {"version", "activity", "heartbeat_handoff", "uncertainty"}
+        or set(value) != {"version", "activity", "heartbeat_handoff", "uncertainty"}
         or value.get("version") != 2
     ):
         raise ContextPlanError("invalid_heartbeat_plan")
     activity = value.get("activity")
-    if (
-        not isinstance(activity, dict)
-        or set(activity) != {"intent", "reason", "recall_queries"}
-    ):
+    if not isinstance(activity, dict) or set(activity) != {
+        "intent",
+        "reason",
+        "recall_queries",
+    }:
         raise ContextPlanError("invalid_heartbeat_activity")
     raw_handoff = value.get("heartbeat_handoff")
     if not isinstance(raw_handoff, dict) or set(raw_handoff) != {
@@ -1368,15 +1185,19 @@ def parse_heartbeat_plan(
         max_length=300,
     )
     servers = mcp_route["servers"]
-    if mode not in {"rest", "work"} or (
-        mode == "rest"
-        and (
-            outline
-            or context["status"] != "sufficient"
-            or context["needs"]
-            or servers
+    if (
+        mode not in {"rest", "work"}
+        or (
+            mode == "rest"
+            and (
+                outline
+                or context["status"] != "sufficient"
+                or context["needs"]
+                or servers
+            )
         )
-    ) or (mode == "work" and not outline):
+        or (mode == "work" and not outline)
+    ):
         raise ContextPlanError("invalid_heartbeat_execution")
 
     parsed_activity = {
@@ -1418,9 +1239,7 @@ def degraded_heartbeat_plan(activity: str, reason: str) -> dict[str, object]:
         "activity": {
             "intent": activity.strip() or "spend time freely",
             "reason": f"Heartbeat planner failed ({reason}); continue current activity.",
-            "recall_queries": [
-                (activity.strip() or "current activity")[:120]
-            ],
+            "recall_queries": [(activity.strip() or "current activity")[:120]],
         },
         "heartbeat_handoff": {
             "context": {

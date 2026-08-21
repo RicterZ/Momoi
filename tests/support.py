@@ -47,13 +47,14 @@ def context_plan_response(messages: list[dict[str, Any]]) -> ProviderResponse:
             "intent": "test owner intent",
             "speech_act": "request",
             "references": [],
-            "recall": {"mode": "search", "queries": ["test owner intent"]},
+            "recall_mode": "search",
+            "recall_queries": ["test owner intent"],
         }
         for index, message in enumerate(owner_messages, 1)
     ]
     episode_ref = candidate_ids[0] if candidate_ids else "new:test-thread"
     plan = {
-        "version": 2,
+        "version": 3,
         "intent_units": units,
         "episode_actions": [
             {
@@ -68,31 +69,23 @@ def context_plan_response(messages: list[dict[str, Any]]) -> ProviderResponse:
             }
         ],
         "episode_links": [],
-        "owner_handoff": {
-            "context": {
-                "status": "sufficient",
-                "needs": [],
-                "reason": "Test context is sufficient.",
-            },
-            "mcp": {
-                "servers": mcp_server_ids,
-                "reason": "Load configured test MCP servers.",
-            },
-            "execution": {
-                "mode": "work",
-                "outline": ["Handle the test owner request."],
-                "delivery": {
-                    "mode": "bubbles",
-                    "bubbles": [
-                        {
-                            "timing": "after the requested work",
-                            "form": "complete",
-                            "purpose": "report the verified result",
-                        }
-                    ],
-                },
-                "reason": "Exercise the Owner tool loop.",
-            },
+        "handoff": {
+            "context_status": "sufficient",
+            "context_needs": [],
+            "context_reason": "Test context is sufficient.",
+            "mcp_servers": mcp_server_ids,
+            "mcp_reason": "Load configured test MCP servers.",
+            "execution_mode": "work",
+            "execution_outline": ["Handle the test owner request."],
+            "execution_reason": "Exercise the Owner tool loop.",
+            "delivery_mode": "bubbles",
+            "delivery_bubbles": [
+                {
+                    "timing": "after the requested work",
+                    "form": "complete",
+                    "purpose": "report the verified result",
+                }
+            ],
         },
         "uncertainty": [],
     }
