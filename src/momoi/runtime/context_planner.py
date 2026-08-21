@@ -21,6 +21,31 @@ SPEECH_ACTS = {
     "unknown",
 }
 CONTEXT_PLAN_TOOL_NAME = "submit_context_plan"
+
+
+def _has_directed_cycle(edges: list[tuple[str, str]]) -> bool:
+    graph: dict[str, set[str]] = {}
+    for source, target in edges:
+        graph.setdefault(source, set()).add(target)
+        graph.setdefault(target, set())
+    visiting: set[str] = set()
+    visited: set[str] = set()
+
+    def visit(node: str) -> bool:
+        if node in visiting:
+            return True
+        if node in visited:
+            return False
+        visiting.add(node)
+        if any(visit(target) for target in graph.get(node, ())):
+            return True
+        visiting.remove(node)
+        visited.add(node)
+        return False
+
+    return any(visit(node) for node in graph)
+
+
 CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
     "name": CONTEXT_PLAN_TOOL_NAME,
     "description": "Submit the complete context plan for the current owner input.",
@@ -62,10 +87,11 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                                 "maxLength": 120,
                             },
                             "description": (
-                                "One exact-word OR expression using ` | ` between "
-                                "alternative keywords or aliases. The harness fans "
-                                "each expression out across memory, reflections, "
-                                "Episodes, and matched Turns."
+                                "One to three ranked exact-word OR expressions. Put "
+                                "the highest-value expression first; the runtime fairly "
+                                "fans out a bounded global subset across memory, "
+                                "reflections, Episodes, and matched Turns. Use ` | ` "
+                                "between search anchors or aliases inside one expression."
                             ),
                         },
                     },
@@ -209,12 +235,18 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                 "items": {
                     "type": "object",
                     "properties": {
-                        "from_episode_ref": {"type": "string"},
+                        "from_episode_ref": {
+                            "type": "string",
+                            "description": (
+                                "An episode_ref bound by this Turn. The link "
+                                "describes this source relative to the target."
+                            ),
+                        },
                         "to_episode_ref": {
                             "type": "string",
                             "description": (
-                                "A bound episode_ref or an existing candidate Episode "
-                                "id. Existing link targets need not be bound to this Turn."
+                                "A different bound episode_ref or an existing "
+                                "candidate Episode id."
                             ),
                         },
                         "kind": {
@@ -264,6 +296,7 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                                                 "chronology",
                                                 "unresolved_reference",
                                                 "correction_evidence",
+                                                "relevant_history",
                                                 "past_reasoning",
                                             ],
                                         },
@@ -313,6 +346,12 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                                 "type": "array",
                                 "minItems": 1,
                                 "maxItems": 8,
+                                "description": (
+                                    "Ordered evidence checks, actions, verification, "
+                                    "clarification, and required communication beats. "
+                                    "Do not draft owner-visible wording, prescribe "
+                                    "persona or tone, or choose an exact bubble count."
+                                ),
                                 "items": {
                                     "type": "string",
                                     "minLength": 1,
@@ -867,6 +906,8 @@ def parse_context_plan(
         raise ContextPlanError("invalid_episode_links")
     links: list[dict[str, str]] = []
     seen_links: set[tuple[str, str, str]] = set()
+    seen_link_pairs: dict[tuple[str, str], str] = {}
+    ordering_edges: list[tuple[str, str]] = []
     for raw in raw_links:
         if not isinstance(raw, dict) or set(raw) != {
             "from_episode_ref",
@@ -880,7 +921,8 @@ def parse_context_plan(
         if source_ref not in ref_to_id or target_ref not in ref_to_id:
             raise ContextPlanError("unknown_link_episode")
         if (
-            source_ref == target_ref
+            source_ref not in bindings_by_ref
+            or source_ref == target_ref
             or not isinstance(kind, str)
             or kind not in {"continues", "references", "supersedes"}
         ):
@@ -888,7 +930,14 @@ def parse_context_plan(
         link = (ref_to_id[str(source_ref)], ref_to_id[str(target_ref)], str(kind))
         if link in seen_links:
             raise ContextPlanError("duplicate_episode_link")
+        pair = (link[0], link[1])
+        prior_kind = seen_link_pairs.get(pair)
+        if prior_kind is not None and prior_kind != link[2]:
+            raise ContextPlanError("conflicting_episode_link")
         seen_links.add(link)
+        seen_link_pairs[pair] = link[2]
+        if link[2] in {"continues", "supersedes"}:
+            ordering_edges.append(pair)
         links.append(
             {
                 "from_episode_id": link[0],
@@ -896,6 +945,8 @@ def parse_context_plan(
                 "kind": link[2],
             }
         )
+    if _has_directed_cycle(ordering_edges):
+        raise ContextPlanError("cyclic_episode_link")
     for binding in bindings:
         binding.pop("_ref", None)
     raw_handoff = value["owner_handoff"]
@@ -919,6 +970,7 @@ def parse_context_plan(
             "chronology",
             "unresolved_reference",
             "correction_evidence",
+            "relevant_history",
             "past_reasoning",
         },
         error="invalid_context_handoff",
@@ -1005,7 +1057,7 @@ def degraded_context_plan(
                 "intent": "degraded_message_segment",
                 "speech_act": "unknown",
                 "references": [],
-                "recall_queries": [part[:120]],
+                "recall_queries": [],
             }
         )
     return {

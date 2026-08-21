@@ -126,6 +126,7 @@ REPLY_WAIT_DECISION_SCHEMA: dict[str, Any] = {
     "oneOf": [
         {
             "type": "object",
+            "description": "The beat is complete; no later follow-up from this remainder.",
             "properties": {
                 "wait": {"type": "boolean", "enum": [False]},
             },
@@ -134,6 +135,10 @@ REPLY_WAIT_DECISION_SCHEMA: dict[str, Any] = {
         },
         {
             "type": "object",
+            "description": (
+                "The beat is still open. If it stays quiet, the runtime sends "
+                "exactly one follow-up after delay_minutes."
+            ),
             "properties": {
                 "wait": {"type": "boolean", "enum": [True]},
                 "delay_minutes": {
@@ -150,7 +155,9 @@ REPLY_WAIT_DECISION_SCHEMA: dict[str, Any] = {
                     "minLength": 1,
                     "maxLength": 300,
                     "description": (
-                        "What Momoi expects the owner's reply to communicate."
+                        "What would complete this open beat: a reply, a reaction, "
+                        "information still coming, or the later continuation Momoi "
+                        "intends to make."
                     ),
                 },
                 "reason": {
@@ -158,8 +165,7 @@ REPLY_WAIT_DECISION_SCHEMA: dict[str, Any] = {
                     "minLength": 1,
                     "maxLength": 500,
                     "description": (
-                        "Why a follow-up must be sent if the owner has not replied "
-                        "by the selected deadline. This is private runtime context."
+                        "Private reason this beat should continue if it stays quiet."
                     ),
                 },
             },

@@ -290,7 +290,9 @@ momoi --workspace ~/.momoi run
 
 Owner主模型使用同一套紧凑Recent投影。稳定的Owner Preferences、Core Reflection和近期记忆位于当前Owner消息之前，以便复用前缀；动态当前消息保持在末尾。Owner Turn始终暴露完整内部工具面，以及`send_message`、`tool_enable`和`respond`。Planner选中的MCP Server追加在`tool_enable`之后；`tool_enable.groups`可在下一次模型请求加载额外MCP Server，且只在当前Owner Turn内保留。Context Planner只选择当前需要的外部MCP Server，并必须给出路由理由。Heartbeat Planner采用相同的Handoff模式：选择一个活动，指出最多两个Memory/Conversation查询，路由外部MCP Server，并提交有界执行大纲。Heartbeat查询不再由框架自动执行；真正的`rest`计划不带查询、MCP Server或执行步骤。自主工具继续受Autonomy Pattern限制。Planner降级时不预载MCP，但保留`tool_enable`，无需恢复全部外部Schema也不会失能。
 
-Owner Context Planner不再提交关键词让框架自动搜索Memory/Episode。它输出结构化`owner_handoff`：判断现有上下文是否充分、列出最多两个需要Owner主模型执行的Memory/Conversation/Thinking查询、选择MCP Server，并给出执行模式和大纲。框架仍提供Recent Episodes、近期/核心记忆和当前Goals/Reminders作为确定性基线。主模型可修正Planner方向、加载漏选的MCP Server，并仅在实际推翻Handoff时通过`plan_adjustment`把修正写回后续Recent Turns。
+Owner Context Planner会为每个意图单元提交按优先级排列的召回表达式。框架在全局上限内公平执行这些表达式：先执行每个单元的第一条，再考虑低优先级表达式，并同时搜索recall memory、reflection、Episode和匹配Turn。除此之外，Planner还输出结构化`owner_handoff`：判断已提供及自动召回的上下文是否充分、列出最多两个需要Owner主模型执行的定向Memory/Conversation/Thinking查询、选择MCP Server，并给出执行模式和大纲。框架仍提供Recent Episodes、近期/核心记忆和当前Goals/Reminders作为确定性基线。主模型可修正Planner方向、加载漏选的MCP Server，并仅在实际推翻Handoff时通过`plan_adjustment`把修正写回后续Recent Turns。
+
+Context Planner还会收到打包版本中同一份`system.md`，但它被明确标记为“下游Owner契约”。这样证据、沉默、气泡、进度、失败和Turn收尾规则可以在规划阶段生效，而Planner不会因此变成Owner主模型。规划引用中的`{{SOUL}}`与`{{STYLE_CARD}}`保持未解析；身份和最终可见措辞只在后续Owner调用中应用。Planner大纲只描述动作与必要沟通节点，不起草措辞、不指定人设，也不决定精确气泡数量。
 
 将某个基线上下文层的结果数量或 token 预算设为 `0` 可关闭该层注入。显式记忆和对话搜索作为常驻内部工具可用。
 

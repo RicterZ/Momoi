@@ -280,7 +280,6 @@ class DaemonTest(unittest.TestCase):
             / "system.md"
         ).read_text(encoding="utf-8")
         self.assertIn("immediate non-propositional expression", system)
-        self.assertIn("first-class visible speech", system)
         self.assertIn("own `send_message` item", system)
         self.assertIn("without explanation or new information", system)
         self.assertIn("Decide separately whether", system)
@@ -294,14 +293,13 @@ class DaemonTest(unittest.TestCase):
             system,
         )
         self.assertIn("actually persisted", system)
-        self.assertIn("owner-relevant result beat", system)
-        self.assertIn("A task need not be complete before Momoi speaks", system)
+        self.assertIn("owner-relevant update", system)
+        self.assertIn("A task need not be complete", system)
         self.assertIn("exploratory misses", system)
         self.assertIn("Emotion may be dramatic", system)
-        self.assertIn("momentary outburst or result beat", system)
-        self.assertIn("remain upset, sulk, complain, show temper", system)
-        self.assertIn("want comfort", system)
-        self.assertIn("does not need to neutralize", system)
+        self.assertIn("Soul alone defines identity", system)
+        self.assertNotIn("You are Momoi", system)
+        self.assertNotIn("personal maid/agent", system)
         self.assertNotIn("<query_recall>", system)
         self.assertIn("injected recall memory, Episode, and Turn evidence", system)
         self.assertIn("recall-then-public-web fallback", system)
@@ -317,7 +315,7 @@ class DaemonTest(unittest.TestCase):
             / "prompts"
             / "system.md"
         ).read_text(encoding="utf-8")
-        self.assertIn("choose 1–10 whole minutes", system)
+        self.assertIn("continuation is still expected", system)
         self.assertIn("mandatory follow-up", system)
         self.assertIn("<interrupted_reply_expectation>", system)
         self.assertIn("timer is already cancelled", system)

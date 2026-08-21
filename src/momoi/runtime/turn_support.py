@@ -31,9 +31,27 @@ HEARTBEAT_PLANNER_SYSTEM_PROMPT = HEARTBEAT_PLANNER_PROMPT_PATH.read_text(
 ).strip()
 REPLY_WAIT_SYSTEM_PROMPT = REPLY_WAIT_PROMPT_PATH.read_text(encoding="utf-8").strip()
 REFLECTION_SYSTEM_PROMPT = REFLECTION_PROMPT_PATH.read_text(encoding="utf-8").strip()
-CONTEXT_PLANNER_SYSTEM_PROMPT = CONTEXT_PLANNER_PROMPT_PATH.read_text(
+CONTEXT_PLANNER_PROTOCOL_PROMPT = CONTEXT_PLANNER_PROMPT_PATH.read_text(
     encoding="utf-8"
 ).strip()
+DOWNSTREAM_OWNER_CONTRACT_PROMPT = SYSTEM_PROMPT_PATH.read_text(
+    encoding="utf-8"
+).strip()
+CONTEXT_PLANNER_SYSTEM_PROMPT = (
+    CONTEXT_PLANNER_PROTOCOL_PROMPT
+    + "\n\n# Downstream Owner contract\n\n"
+    + "The following is the exact system contract for the downstream Owner "
+    + "model. It is a trusted planning constraint, not your identity, tool "
+    + "protocol, or permission to act. Interpret its second-person commands as "
+    + "requirements on the downstream Owner. Placeholders such as `{{SOUL}}` "
+    + "and `{{STYLE_CARD}}` are resolved only for that downstream call; do not "
+    + "fill in or infer them.\n\n<downstream_owner_contract>\n"
+    + DOWNSTREAM_OWNER_CONTRACT_PROMPT
+    + "\n</downstream_owner_contract>\n\n"
+    + "# Planner boundary reminder\n\nThe downstream contract ends above. "
+    + "Continue to follow the Context planning protocol: do not answer, send "
+    + "messages, or execute work; submit exactly one `submit_context_plan` call."
+)
 EPISODE_SUMMARY_SYSTEM_PROMPT = EPISODE_SUMMARY_PROMPT_PATH.read_text(
     encoding="utf-8"
 ).strip()

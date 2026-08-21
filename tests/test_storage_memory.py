@@ -32,6 +32,51 @@ from momoi.storage.scheduling import next_schedule_at
 
 
 class StorageMemoryTest(unittest.TestCase):
+    def test_episode_links_reject_conflicts_cycles_and_unknown_endpoints(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            for episode_id in ("episode-a", "episode-b", "episode-c"):
+                store.create_episode(episode_id, episode_id=episode_id)
+
+            store.link_episodes("episode-a", "episode-b", "continues")
+            store.link_episodes("episode-b", "episode-c", "supersedes")
+            with self.assertRaisesRegex(ValueError, "conflicting"):
+                store.link_episodes("episode-a", "episode-b", "references")
+            with self.assertRaisesRegex(ValueError, "cyclic"):
+                store.link_episodes("episode-c", "episode-a", "continues")
+            with self.assertRaisesRegex(ValueError, "unknown"):
+                store.link_episodes("episode-a", "missing", "references")
+            store.close()
+
+    def test_autonomous_episode_traversal_stops_on_legacy_cycle(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            now = time.time()
+            root = store._ensure_autonomous_episode(
+                "legacy-cycle", "initial-turn", "Legacy", now, "initial"
+            )
+            store.create_episode("Cycle peer", episode_id="cycle-peer")
+            with store._db:
+                store._db.executemany(
+                    """INSERT INTO episode_links
+                       (from_episode_id, to_episode_id, kind)
+                       VALUES (?, ?, 'continues')""",
+                    [("cycle-peer", root), (root, "cycle-peer")],
+                )
+
+            selected = store._ensure_autonomous_episode(
+                "legacy-cycle", "later-turn", "Legacy", now + 1, "later"
+            )
+
+            self.assertIn(selected, {root, "cycle-peer"})
+            self.assertEqual(
+                store._db.execute(
+                    "SELECT COUNT(*) FROM episode_turns WHERE turn_id='later-turn'"
+                ).fetchone()[0],
+                1,
+            )
+            store.close()
+
     def test_episode_search_uses_complete_query_phrase_without_lexical_split(
         self,
     ) -> None:

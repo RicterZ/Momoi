@@ -1313,7 +1313,9 @@ class Store(MemoryStore, DeliveryStore):
                VALUES (?, ?, 0.4, ?, ?)""",
             (episode_id, title[:200], now, now),
         )
-        while True:
+        visited_successors: set[str] = set()
+        while episode_id not in visited_successors:
+            visited_successors.add(episode_id)
             successor = self._db.execute(
                 """SELECT l.from_episode_id FROM episode_links AS l
                    JOIN conversation_episodes AS e ON e.id=l.from_episode_id
@@ -1323,7 +1325,18 @@ class Store(MemoryStore, DeliveryStore):
             ).fetchone()
             if successor is None:
                 break
-            episode_id = str(successor["from_episode_id"])
+            successor_id = str(successor["from_episode_id"])
+            if successor_id in visited_successors:
+                log_event(
+                    logger,
+                    logging.ERROR,
+                    "episode_continuation_cycle",
+                    stage="storage",
+                    episode_id=episode_id,
+                    successor_episode_id=successor_id,
+                )
+                break
+            episode_id = successor_id
         current = self._db.execute(
             "SELECT status FROM conversation_episodes WHERE id=?", (episode_id,)
         ).fetchone()
@@ -3152,14 +3165,83 @@ class Store(MemoryStore, DeliveryStore):
     def link_episodes(
         self, from_episode_id: str, to_episode_id: str, kind: str
     ) -> None:
-        if kind not in {"continues", "references", "supersedes"}:
-            raise ValueError("invalid episode link kind")
         with self._db:
-            self._db.execute(
-                """INSERT OR IGNORE INTO episode_links
-                   (from_episode_id, to_episode_id, kind) VALUES (?, ?, ?)""",
-                (from_episode_id, to_episode_id, kind),
+            if not self._insert_episode_link(
+                from_episode_id, to_episode_id, kind, strict=True
+            ):
+                raise ValueError("invalid episode link")
+
+    def _episode_ordering_link_creates_cycle(
+        self, from_episode_id: str, to_episode_id: str
+    ) -> bool:
+        graph: dict[str, set[str]] = {}
+        for row in self._db.execute(
+            """SELECT from_episode_id, to_episode_id FROM episode_links
+               WHERE kind IN ('continues', 'supersedes')"""
+        ).fetchall():
+            graph.setdefault(str(row["from_episode_id"]), set()).add(
+                str(row["to_episode_id"])
             )
+        graph.setdefault(from_episode_id, set()).add(to_episode_id)
+        pending = [to_episode_id]
+        visited: set[str] = set()
+        while pending:
+            node = pending.pop()
+            if node == from_episode_id:
+                return True
+            if node in visited:
+                continue
+            visited.add(node)
+            pending.extend(graph.get(node, ()))
+        return False
+
+    def _insert_episode_link(
+        self,
+        from_episode_id: str,
+        to_episode_id: str,
+        kind: str,
+        *,
+        strict: bool,
+    ) -> bool:
+        if (
+            kind not in {"continues", "references", "supersedes"}
+            or not from_episode_id
+            or not to_episode_id
+            or from_episode_id == to_episode_id
+        ):
+            if strict:
+                raise ValueError("invalid episode link kind or endpoint")
+            return False
+        endpoint_count = self._db.execute(
+            """SELECT COUNT(*) FROM conversation_episodes
+               WHERE id IN (?, ?)""",
+            (from_episode_id, to_episode_id),
+        ).fetchone()[0]
+        if int(endpoint_count) != 2:
+            if strict:
+                raise ValueError("unknown episode link endpoint")
+            return False
+        conflicting = self._db.execute(
+            """SELECT 1 FROM episode_links
+               WHERE from_episode_id=? AND to_episode_id=? AND kind<>? LIMIT 1""",
+            (from_episode_id, to_episode_id, kind),
+        ).fetchone()
+        if conflicting is not None:
+            if strict:
+                raise ValueError("conflicting episode link")
+            return False
+        if kind in {"continues", "supersedes"} and self._episode_ordering_link_creates_cycle(
+            from_episode_id, to_episode_id
+        ):
+            if strict:
+                raise ValueError("cyclic episode link")
+            return False
+        self._db.execute(
+            """INSERT OR IGNORE INTO episode_links
+               (from_episode_id, to_episode_id, kind) VALUES (?, ?, ?)""",
+            (from_episode_id, to_episode_id, kind),
+        )
+        return True
 
     @staticmethod
     def _episode_title(text: str, fallback: str) -> str:
@@ -3437,11 +3519,17 @@ class Store(MemoryStore, DeliveryStore):
             )
             if source == target:
                 continue
-            self._db.execute(
-                """INSERT OR IGNORE INTO episode_links
-                   (from_episode_id, to_episode_id, kind) VALUES (?, ?, ?)""",
-                (source, target, str(link["kind"])),
-            )
+            kind = str(link["kind"])
+            if not self._insert_episode_link(source, target, kind, strict=False):
+                log_event(
+                    logger,
+                    logging.WARNING,
+                    "episode_link_rejected",
+                    stage="storage",
+                    from_episode_id=source,
+                    to_episode_id=target,
+                    kind=kind,
+                )
 
     def open_reconciliation(self, turn_id: str, reason: str) -> None:
         with self._db:

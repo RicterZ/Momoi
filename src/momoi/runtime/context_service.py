@@ -4,8 +4,11 @@ import time
 from datetime import datetime
 from typing import Any
 
+from ..agenda_tools import AGENDA_TOOL_SPECS
+from ..builtin_tools import BUILTIN_TOOL_SPECS
 from ..context_time import context_timestamp
 from ..logging_context import TRACE, compact_log_value, log_context, log_event, new_trace_id, safe_preview
+from ..memory_tools import MEMORY_TOOL_SPECS
 from ..models import IncomingMessage
 from ..storage import estimate_tokens
 from .context_assembler import (
@@ -46,25 +49,10 @@ logger = logging.getLogger("momoi.runtime.turns")
 
 PLANNER_INTERNAL_TOOLS = [
     {
-        "id": "memory_search",
-        "description": "Search confirmed durable owner memory.",
-    },
-    {
-        "id": "memory_remember",
-        "description": "Stage owner-confirmed memory for commit by the Owner Turn.",
-    },
-    {
-        "id": "memory_forget",
-        "description": "Stage removal of owner-confirmed memory.",
-    },
-    {
-        "id": "conversation_search",
-        "description": "Search archived conversation Episodes and matched messages.",
-    },
-    {
-        "id": "conversation_read",
-        "description": "Read exact archived conversation wording after a search hit.",
-    },
+        "id": str(spec["name"]),
+        "description": str(spec.get("description") or ""),
+    }
+    for spec in (*MEMORY_TOOL_SPECS, *AGENDA_TOOL_SPECS, *BUILTIN_TOOL_SPECS)
 ]
 
 
@@ -106,7 +94,8 @@ def _planner_mcp_lines(items: list[dict[str, object]]) -> str:
 
 def _planner_internal_tool_lines(items: list[dict[str, str]]) -> str:
     return "\n".join(
-        f"- id={item['id']} description={item['description']}"
+        f"- id={item['id']} description="
+        f"{' '.join(item['description'].split())[:240]}"
         for item in items
     )
 

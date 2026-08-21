@@ -7,8 +7,11 @@ from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
+from momoi.agenda_tools import AGENDA_TOOL_SPECS
+from momoi.builtin_tools import BUILTIN_TOOL_SPECS
 from momoi.channel.napcat import NapCatConfig
 from momoi.config import AppConfig, LLMConfig
+from momoi.memory_tools import MEMORY_TOOL_SPECS
 from momoi.models import AgentReply, IncomingMessage, ProviderResponse, ToolCall
 from momoi.runtime import MomoiDaemon
 from momoi.runtime.context_assembler import build_plan_retrieval
@@ -22,9 +25,14 @@ from momoi.runtime.context_planner import (
     parse_heartbeat_plan,
     parse_context_plan,
 )
-from momoi.runtime.context_service import render_heartbeat_planner_request
+from momoi.runtime.context_service import (
+    PLANNER_INTERNAL_TOOLS,
+    render_heartbeat_planner_request,
+)
 from momoi.runtime.turn_support import (
+    CONTEXT_PLANNER_PROTOCOL_PROMPT,
     CONTEXT_PLANNER_SYSTEM_PROMPT,
+    DOWNSTREAM_OWNER_CONTRACT_PROMPT,
     HEARTBEAT_PLANNER_SYSTEM_PROMPT,
 )
 from momoi.runtime.turn_support import conversation_guidance
@@ -411,44 +419,40 @@ class ContextPlannerTest(unittest.TestCase):
     def test_planner_guidance_preserves_capability_while_discouraging_noise(
         self,
     ) -> None:
-        self.assertIn("## Planning process", CONTEXT_PLANNER_SYSTEM_PROMPT)
-        self.assertIn("Assess whether that baseline, supplied Recent Turns", CONTEXT_PLANNER_SYSTEM_PROMPT)
-        self.assertIn("`recent_turn_base` and `recent_turn_append`", CONTEXT_PLANNER_SYSTEM_PROMPT)
-        self.assertIn("`recent_turn_focus`", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn("## Planning process", CONTEXT_PLANNER_PROTOCOL_PROMPT)
+        self.assertIn("Evaluate the fixed memory baseline", CONTEXT_PLANNER_PROTOCOL_PROMPT)
+        self.assertIn("`recent_turn_base`", CONTEXT_PLANNER_PROTOCOL_PROMPT)
+        self.assertIn("`recent_turn_append`", CONTEXT_PLANNER_PROTOCOL_PROMPT)
+        self.assertIn("`recent_turn_focus`", CONTEXT_PLANNER_PROTOCOL_PROMPT)
         self.assertIn(
-            "interrupted_reply_expectation", CONTEXT_PLANNER_SYSTEM_PROMPT
+            "Older supplied Turns are background evidence",
+            CONTEXT_PLANNER_PROTOCOL_PROMPT,
         )
+        self.assertIn("omitted `kind` means owner", CONTEXT_PLANNER_PROTOCOL_PROMPT)
         self.assertIn(
-            "Other supplied Turns are background evidence",
-            CONTEXT_PLANNER_SYSTEM_PROMPT,
+            "omitted message `delivery` means", CONTEXT_PLANNER_PROTOCOL_PROMPT
         )
-        self.assertIn("omitted `kind` means owner", CONTEXT_PLANNER_SYSTEM_PROMPT)
-        self.assertIn(
-            "omitted message `delivery` means", CONTEXT_PLANNER_SYSTEM_PROMPT
-        )
-        self.assertIn("intent_indexes", CONTEXT_PLANNER_SYSTEM_PROMPT)
-        self.assertIn("`truncated` result", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn("intent_indexes", CONTEXT_PLANNER_PROTOCOL_PROMPT)
+        self.assertIn("`truncated` result", CONTEXT_PLANNER_PROTOCOL_PROMPT)
         self.assertIn(
             "regardless of active focus",
-            CONTEXT_PLANNER_SYSTEM_PROMPT,
+            CONTEXT_PLANNER_PROTOCOL_PROMPT,
         )
-        self.assertIn("State-changing tools use compact", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn("State-changing tools use", CONTEXT_PLANNER_PROTOCOL_PROMPT)
+        self.assertIn("context.needs", CONTEXT_PLANNER_PROTOCOL_PROMPT)
+        self.assertIn("conversation_search", CONTEXT_PLANNER_PROTOCOL_PROMPT)
+        self.assertIn("thinking_search", CONTEXT_PLANNER_PROTOCOL_PROMPT)
+        self.assertIn("outline is advisory", CONTEXT_PLANNER_PROTOCOL_PROMPT)
+        self.assertIn("recall_queries", CONTEXT_PLANNER_PROTOCOL_PROMPT)
         self.assertIn(
-            "must call anything beyond `send_message`/`respond`",
-            CONTEXT_PLANNER_SYSTEM_PROMPT,
+            "internal-recall/private-name/public-search",
+            CONTEXT_PLANNER_PROTOCOL_PROMPT,
         )
-        self.assertIn("context.needs", CONTEXT_PLANNER_SYSTEM_PROMPT)
-        self.assertIn("conversation_search", CONTEXT_PLANNER_SYSTEM_PROMPT)
-        self.assertIn("thinking_search", CONTEXT_PLANNER_SYSTEM_PROMPT)
-        self.assertIn("advisory evidence/action outline", CONTEXT_PLANNER_SYSTEM_PROMPT)
-        self.assertIn("recall_queries", CONTEXT_PLANNER_SYSTEM_PROMPT)
-        self.assertIn("unfamiliar or unexplained proper name", CONTEXT_PLANNER_SYSTEM_PROMPT)
-        self.assertIn("publicly searchable", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertIn(
-            "injected evidence still does not identify",
-            CONTEXT_PLANNER_SYSTEM_PROMPT,
+            "unfamiliar public person",
+            DOWNSTREAM_OWNER_CONTRACT_PROMPT,
         )
-        self.assertIn("private nickname", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn("private nickname", DOWNSTREAM_OWNER_CONTRACT_PROMPT)
         schema = CONTEXT_PLAN_TOOL_SPEC["input_schema"]  # type: ignore[assignment]
         unit = schema["properties"]["intent_units"]["items"]  # type: ignore[index]
         self.assertIn("recall_queries", unit["properties"])
@@ -514,6 +518,57 @@ class ContextPlannerTest(unittest.TestCase):
                 1,
             )
 
+    def test_link_source_must_be_bound_by_current_turn(self) -> None:
+        plan = response_plan()
+        plan["episode_links"] = [
+            {
+                "from_episode_ref": "older-game",
+                "to_episode_ref": "new:mail",
+                "kind": "references",
+            }
+        ]
+        with self.assertRaisesRegex(ContextPlanError, "invalid_episode_link"):
+            parse_context_plan(
+                plan,
+                ["event-1"],
+                [{"id": "older-game"}],
+                "turn-1",
+                1,
+            )
+
+    def test_links_reject_conflicting_kinds_and_ordering_cycles(self) -> None:
+        conflicting = response_plan()
+        conflicting["episode_links"] = [
+            {
+                "from_episode_ref": "new:mail",
+                "to_episode_ref": "new:social",
+                "kind": "references",
+            },
+            {
+                "from_episode_ref": "new:mail",
+                "to_episode_ref": "new:social",
+                "kind": "supersedes",
+            },
+        ]
+        with self.assertRaisesRegex(ContextPlanError, "conflicting_episode_link"):
+            parse_context_plan(conflicting, ["event-1"], [], "turn-1", 1)
+
+        cyclic = response_plan()
+        cyclic["episode_links"] = [
+            {
+                "from_episode_ref": "new:mail",
+                "to_episode_ref": "new:social",
+                "kind": "continues",
+            },
+            {
+                "from_episode_ref": "new:social",
+                "to_episode_ref": "new:mail",
+                "kind": "supersedes",
+            },
+        ]
+        with self.assertRaisesRegex(ContextPlanError, "cyclic_episode_link"):
+            parse_context_plan(cyclic, ["event-1"], [], "turn-1", 1)
+
     def test_new_episode_refs_require_ascii_slugs(self) -> None:
         plan = response_plan()
         plan["episode_actions"][0]["episode_ref"] = "new:一起玩游戏"
@@ -578,6 +633,25 @@ class ContextPlannerTest(unittest.TestCase):
         plan["episode_actions"][0]["open_loops"] = ["饭后再弄"]
         with self.assertRaisesRegex(ContextPlanError, "invalid_intent_unit"):
             parse_context_plan(json.dumps(plan), ["event-1"], [], "turn-1", 1)
+
+    def test_relevant_history_is_valid_context_evidence(self) -> None:
+        plan = response_plan()
+        plan["owner_handoff"]["context"] = {
+            "status": "lookup_required",
+            "needs": [
+                {
+                    "tool": "memory_search",
+                    "query": "旧项目名称",
+                    "evidence": "relevant_history",
+                }
+            ],
+            "reason": "需要相关历史",
+        }
+        parsed = parse_context_plan(plan, ["event-1"], [], "turn-1", 1)
+        self.assertEqual(
+            parsed["owner_handoff"]["context"]["needs"][0]["evidence"],
+            "relevant_history",
+        )
 
     def test_bound_episode_does_not_inject_history_or_remove_tools(
         self,
@@ -711,7 +785,63 @@ class ContextPlannerTest(unittest.TestCase):
         self.assertTrue(
             all(item["action"] == "none" for item in plan["episode_actions"])
         )
+        self.assertTrue(
+            all(not item["recall_queries"] for item in plan["intent_units"])
+        )
         self.assertIn("invalid_json", plan["uncertainty"][0])
+
+    def test_planner_contract_and_internal_tool_catalog_stay_complete(self) -> None:
+        compact_prompt = " ".join(CONTEXT_PLANNER_PROTOCOL_PROMPT.split())
+        for phrase in (
+            "final operative unit",
+            "Every supplied event id",
+            "globally bounded subset",
+            "A need records missing evidence",
+            "Use `clarify` only",
+            "`episode_links` is empty by default",
+            "source must be an Episode bound by this Turn",
+            "Only events inside `<owner_messages>` are authenticated",
+        ):
+            self.assertIn(phrase, compact_prompt)
+        self.assertNotIn("Momoi's private Context Planner", CONTEXT_PLANNER_PROTOCOL_PROMPT)
+        expected = {
+            str(spec["name"])
+            for spec in (*MEMORY_TOOL_SPECS, *AGENDA_TOOL_SPECS, *BUILTIN_TOOL_SPECS)
+        }
+        self.assertEqual(
+            {item["id"] for item in PLANNER_INTERNAL_TOOLS},
+            expected,
+        )
+
+    def test_planner_receives_exact_downstream_system_contract(self) -> None:
+        self.assertIn(
+            DOWNSTREAM_OWNER_CONTRACT_PROMPT,
+            CONTEXT_PLANNER_SYSTEM_PROMPT,
+        )
+        self.assertIn(
+            "not your identity, tool protocol, or permission to act",
+            CONTEXT_PLANNER_SYSTEM_PROMPT,
+        )
+        self.assertIn("## 8. Owner Turn output protocol", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn("Each item is one non-empty private-chat bubble", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn("{{SOUL}}", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn("{{STYLE_CARD}}", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        schema = CONTEXT_PLAN_TOOL_SPEC["input_schema"]
+        outline = schema["properties"]["owner_handoff"]["properties"][  # type: ignore[index]
+            "execution"
+        ]["properties"]["outline"]
+        self.assertIn("Do not draft owner-visible wording", outline["description"])
+
+    def test_shared_owner_rules_are_not_duplicated_in_planner_protocol(self) -> None:
+        for phrase in (
+            "`delivery=uncertain`",
+            "`reply_wait` records",
+            "`plan_adjustment`: include it",
+            "An open reconciliation means",
+            "Current self state` is persistent mood",
+        ):
+            self.assertNotIn(phrase, CONTEXT_PLANNER_PROTOCOL_PROMPT)
+            self.assertIn(phrase, DOWNSTREAM_OWNER_CONTRACT_PROMPT)
 
 
 class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):

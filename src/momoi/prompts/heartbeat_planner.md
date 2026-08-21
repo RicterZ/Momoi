@@ -24,8 +24,8 @@ Rules:
 - Always include one to three short `activity.recall_queries`. Each array item
   is one OR expression using half-width ` | ` between concrete entities,
   aliases, key numbers, and active shared-topic terms, for example
-  `百花缭乱 | Part1 | 480青辉石`. Never join alternatives with spaces or submit a
-  full sentence. The framework resolves them across recall memory, reflections,
+  `primary-name | known-alias | exact-identifier`. Never join alternatives with
+  spaces or submit a full sentence. The framework resolves them across recall memory, reflections,
   Episodes, and matching Turns before the Heartbeat Turn, even when the fixed
   inputs already look sufficient. Genuine rest still names the smallest exact
   continuity topic for this moment.

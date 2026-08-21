@@ -82,6 +82,36 @@ def plan(query: str, episode_id: str = "episode-mail") -> dict[str, object]:
 
 
 class ContextAssemblerTest(unittest.TestCase):
+    def test_plan_recall_prioritizes_each_units_first_query(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            recall_plan = plan("a1")
+            recall_plan["intent_units"] = [
+                {
+                    "id": unit_id,
+                    "event_ids": ["current"],
+                    "text": unit_id,
+                    "intent": unit_id,
+                    "references": [],
+                    "recall_queries": [f"{unit_id}1", f"{unit_id}2", f"{unit_id}3"],
+                }
+                for unit_id in ("a", "b", "c")
+            ]
+            recall_plan["episode_actions"][0]["unit_ids"] = ["a", "b", "c"]
+
+            retrieval = build_plan_retrieval(
+                store,
+                recall_plan,
+                config(directory, recent_episode_hours=0),
+            )
+
+            self.assertIn(
+                "queries=a1 | b1 | c1 | a2 | b2 | c2",
+                retrieval["query_recall"],
+            )
+            self.assertIn("query_count=6/9", retrieval["query_recall"])
+            store.close()
+
     def test_recall_ranking_prefers_recency_then_keyword_count(self) -> None:
         ranked = _rank_recall_items(
             [

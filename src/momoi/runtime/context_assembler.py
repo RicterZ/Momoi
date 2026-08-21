@@ -16,6 +16,7 @@ RECENT_EPISODE_LIMIT = 6
 RECALLED_EPISODE_LIMIT = 6
 RECALLED_TURN_CONTEXT_TOKENS = 6000
 RECALLED_TURN_LIMIT = 6
+PLAN_RECALL_QUERY_LIMIT = 6
 
 
 def _merge_matches(target: dict[str, object], source: dict[str, object]) -> None:
@@ -95,10 +96,10 @@ def build_plan_retrieval(
             config.policies.context.max_visible_reminders
         )
     ]
-    # The planner emits bounded recall queries only when the supplied context
-    # cannot establish the referenced fact.  Keep this harness deterministic:
-    # deduplicate query text, cap fan-out, and merge each hit by stable id.
-    recall_queries: list[tuple[str, str]] = []
+    # Every planned unit carries one or more recall expressions. Execute them
+    # fairly across units: take each unit's first expression before any unit's
+    # second, deduplicate shared expressions, then enforce the global fan-out.
+    recall_queries: list[tuple[str, list[str]]] = []
     recall_units = list(plan.get("intent_units") or [])
     activity = plan.get("activity")
     if isinstance(activity, dict) and activity.get("recall_queries"):
@@ -108,19 +109,43 @@ def build_plan_retrieval(
                 "recall_queries": activity["recall_queries"],
             }
         )
+    unit_queries: list[tuple[str, list[str]]] = []
     for unit in recall_units:
         if not isinstance(unit, dict):
             continue
         unit_id = str(unit.get("id") or "")
+        queries: list[str] = []
         for raw_query in unit.get("recall_queries") or []:
             query = " ".join(str(raw_query).split())[:120]
-            if not query or any(existing[0] == query for existing in recall_queries):
+            if not query or query in queries:
                 continue
-            recall_queries.append((query, unit_id))
-            if len(recall_queries) >= 6:
-                break
-        if len(recall_queries) >= 6:
-            break
+            queries.append(query)
+        if queries:
+            unit_queries.append((unit_id, queries))
+
+    emitted_queries = {
+        query for _unit_id, queries in unit_queries for query in queries
+    }
+    selected_by_query: dict[str, list[str]] = {}
+    skipped_unit_ids: set[str] = set()
+    max_query_rank = max((len(queries) for _, queries in unit_queries), default=0)
+    for query_rank in range(max_query_rank):
+        for unit_id, queries in unit_queries:
+            if query_rank >= len(queries):
+                continue
+            query = queries[query_rank]
+            selected_units = selected_by_query.get(query)
+            if selected_units is not None:
+                if unit_id and unit_id not in selected_units:
+                    selected_units.append(unit_id)
+                continue
+            if len(recall_queries) >= PLAN_RECALL_QUERY_LIMIT:
+                if unit_id:
+                    skipped_unit_ids.add(unit_id)
+                continue
+            selected_units = [unit_id] if unit_id else []
+            selected_by_query[query] = selected_units
+            recall_queries.append((query, selected_units))
 
     recall_memories: list[dict[str, object]] = []
     reflection_memories: list[dict[str, object]] = []
@@ -131,7 +156,7 @@ def build_plan_retrieval(
     reflection_hit_queries: list[str] = []
     topic_hit_queries: list[str] = []
     turn_hit_queries: list[str] = []
-    for query, unit_id in recall_queries:
+    for query, unit_ids in recall_queries:
         memory_limit = min(3, max(1, config.memory_results))
         memory_rows = store.search_memories(
             query, memory_limit, activation="recall"
@@ -157,15 +182,14 @@ def build_plan_retrieval(
             if existing is not None:
                 query_hit = True
                 units = set(existing.get("unit_ids") or [])
-                if unit_id:
-                    units.add(unit_id)
+                units.update(unit_ids)
                 existing["unit_ids"] = sorted(units)
                 continue
             item = {
                 "kind": truncate_tokens(str(row.get("kind") or ""), 24),
                 "key": truncate_tokens(str(row.get("key") or ""), 64),
                 "content": truncate_tokens(str(row.get("content") or ""), 160),
-                "unit_ids": [unit_id] if unit_id else [],
+                "unit_ids": sorted(unit_ids),
             }
             recall_memories.append(item)
             query_hit = True
@@ -178,8 +202,7 @@ def build_plan_retrieval(
             if existing is not None:
                 query_hit = True
                 units = set(existing.get("unit_ids") or [])
-                if unit_id:
-                    units.add(unit_id)
+                units.update(unit_ids)
                 existing["unit_ids"] = sorted(units)
                 continue
             reflection_memories.append(
@@ -187,7 +210,7 @@ def build_plan_retrieval(
                     "kind": truncate_tokens(str(row.get("kind") or ""), 24),
                     "key": truncate_tokens(str(row.get("key") or ""), 64),
                     "content": truncate_tokens(str(row.get("content") or ""), 160),
-                    "unit_ids": [unit_id] if unit_id else [],
+                    "unit_ids": sorted(unit_ids),
                 }
             )
             query_hit = True
@@ -210,8 +233,12 @@ def build_plan_retrieval(
                     "is_recent": episode_id in recent_episode_ids,
                 },
             )
-            if unit_id and unit_id not in selected["unit_ids"]:
-                selected["unit_ids"].append(unit_id)
+            selected["unit_ids"] = sorted(
+                {
+                    *(str(item) for item in selected.get("unit_ids") or []),
+                    *unit_ids,
+                }
+            )
             for match in row.get("matches") or []:
                 if match not in selected["matches"]:
                     selected["matches"].append(match)
@@ -298,6 +325,11 @@ def build_plan_retrieval(
     recall_index: list[str] = []
     if recall_queries:
         recall_index.append("queries=" + " | ".join(query for query, _ in recall_queries))
+        recall_index.append(
+            f"query_count={len(recall_queries)}/{len(emitted_queries)}"
+        )
+        if skipped_unit_ids:
+            recall_index.append("skipped_units=" + ",".join(sorted(skipped_unit_ids)))
         if recall_hits:
             recall_index.append("hits=" + ",".join(recall_hits))
         if recall_misses:
@@ -345,6 +377,8 @@ def build_plan_retrieval(
             "goals": len(goals),
             "reminders": len(reminders),
             "recall_queries": len(recall_queries),
+            "recall_queries_emitted": len(emitted_queries),
+            "recall_query_units_skipped": len(skipped_unit_ids),
             "recall_memory_hits": len(recall_memories),
             "recall_reflection_hits": len(reflection_memories),
             "recall_episode_hits": len(ranked_recalled_episodes),
