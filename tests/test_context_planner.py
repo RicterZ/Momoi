@@ -291,7 +291,7 @@ class ContextPlannerTest(unittest.TestCase):
         )
         self.assertEqual(
             plan["activity"]["recall_queries"],
-            ["微博 | 登录规则", "最近关注的游戏"],
+            ["微博|登录规则", "最近关注的游戏"],
         )
         with self.assertRaisesRegex(ContextPlanError, "invalid_heartbeat_plan"):
             parse_heartbeat_plan(
@@ -443,7 +443,8 @@ class ContextPlannerTest(unittest.TestCase):
         self.assertIn("conversation_search", CONTEXT_PLANNER_PROTOCOL_PROMPT)
         self.assertIn("thinking_search", CONTEXT_PLANNER_PROTOCOL_PROMPT)
         self.assertIn("outline is advisory", CONTEXT_PLANNER_PROTOCOL_PROMPT)
-        self.assertIn("recall_queries", CONTEXT_PLANNER_PROTOCOL_PROMPT)
+        self.assertIn("explicit `recall` decision", CONTEXT_PLANNER_PROTOCOL_PROMPT)
+        self.assertIn("without surrounding spaces", CONTEXT_PLANNER_PROTOCOL_PROMPT)
         self.assertIn(
             "internal-recall/private-name/public-search",
             CONTEXT_PLANNER_PROTOCOL_PROMPT,
@@ -455,14 +456,20 @@ class ContextPlannerTest(unittest.TestCase):
         self.assertIn("private nickname", DOWNSTREAM_OWNER_CONTRACT_PROMPT)
         schema = CONTEXT_PLAN_TOOL_SPEC["input_schema"]  # type: ignore[assignment]
         unit = schema["properties"]["intent_units"]["items"]  # type: ignore[index]
-        self.assertIn("recall_queries", unit["properties"])
+        self.assertIn("recall", unit["properties"])
+        self.assertIn("recall", unit["required"])
         self.assertIn(
-            "exact-word OR expression",
-            unit["properties"]["recall_queries"]["description"],
+            "Required recall decision",
+            unit["properties"]["recall"]["description"],
         )
+        recall_variants = unit["properties"]["recall"]["oneOf"]
+        self.assertEqual(recall_variants[0]["properties"]["mode"]["enum"], ["search"])
+        self.assertEqual(recall_variants[1]["properties"]["mode"]["enum"], ["skip"])
         self.assertEqual(schema["properties"]["uncertainty"]["maxItems"], 4)  # type: ignore[index]
         legacy_keyword_plan = response_plan()
-        legacy_keyword_plan["intent_units"][0]["recall_queries"] = ["旧关键词"]
+        legacy_keyword_plan["intent_units"][0]["recall_queries"] = [
+            "旧关键词 | 旧别名"
+        ]
         parsed = parse_context_plan(
             legacy_keyword_plan,
             ["event-1"],
@@ -470,7 +477,44 @@ class ContextPlannerTest(unittest.TestCase):
             "turn-1",
             1,
         )
-        self.assertEqual(parsed["intent_units"][0]["recall_queries"], ["旧关键词"])
+        self.assertEqual(
+            parsed["intent_units"][0]["recall_queries"],
+            ["旧关键词|旧别名"],
+        )
+
+    def test_parser_requires_explicit_new_recall_decision_and_limits_skip(self) -> None:
+        plan = response_plan()
+        for unit in plan["intent_units"]:
+            queries = unit.pop("recall_queries")
+            unit["recall"] = {"mode": "search", "queries": queries}
+        parsed = parse_context_plan(plan, ["event-1"], [], "turn-1", 1)
+        self.assertEqual(
+            parsed["intent_units"][0]["recall"],
+            {"mode": "search", "queries": ["微博"]},
+        )
+
+        social = response_plan()
+        social["intent_units"] = [social["intent_units"][0]]
+        social["intent_units"][0].pop("recall_queries")
+        social["intent_units"][0]["recall"] = {
+            "mode": "skip",
+            "reason": "low_information_social",
+        }
+        social["episode_actions"] = [social["episode_actions"][0]]
+        social["episode_links"] = []
+        social["owner_handoff"]["execution"]["mode"] = "respond"
+        parsed = parse_context_plan(social, ["event-1"], [], "turn-1", 1)
+        self.assertEqual(parsed["intent_units"][0]["recall_queries"], [])
+
+        invalid_work = json.loads(json.dumps(social, ensure_ascii=False))
+        invalid_work["owner_handoff"]["execution"]["mode"] = "work"
+        with self.assertRaisesRegex(ContextPlanError, "invalid_recall_skip"):
+            parse_context_plan(invalid_work, ["event-1"], [], "turn-1", 1)
+
+        invalid_request = json.loads(json.dumps(social, ensure_ascii=False))
+        invalid_request["intent_units"][0]["speech_act"] = "request"
+        with self.assertRaisesRegex(ContextPlanError, "invalid_recall_skip"):
+            parse_context_plan(invalid_request, ["event-1"], [], "turn-1", 1)
 
     def test_parser_requires_event_coverage_and_normalizes_episode_refs(self) -> None:
         plan = response_plan()
@@ -627,7 +671,7 @@ class ContextPlannerTest(unittest.TestCase):
         with self.assertRaisesRegex(ContextPlanError, "unsupported_version"):
             parse_context_plan(plan, ["event-1"], [], "turn-1", 1)
 
-    def test_every_unit_requires_recall_queries(self) -> None:
+    def test_every_unit_requires_recall_decision(self) -> None:
         plan = response_plan()
         del plan["intent_units"][0]["recall_queries"]
         plan["episode_actions"][0]["open_loops"] = ["饭后再弄"]

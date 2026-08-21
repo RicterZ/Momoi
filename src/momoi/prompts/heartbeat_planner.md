@@ -22,9 +22,9 @@ Rules:
   merely for variety, and do not avoid an activity merely because it appears there.
 - Keep `intent` and `reason` concise. This is one decision, not a menu of options.
 - Always include one to three short `activity.recall_queries`. Each array item
-  is one OR expression using half-width ` | ` between concrete entities,
-  aliases, key numbers, and active shared-topic terms, for example
-  `primary-name | known-alias | exact-identifier`. Never join alternatives with
+  is one OR expression using half-width `|` without surrounding spaces between
+  concrete entities, aliases, key numbers, and active shared-topic terms, for example
+  `primary-name|known-alias|exact-identifier`. Never join alternatives with
   spaces or submit a full sentence. The framework resolves them across recall memory, reflections,
   Episodes, and matching Turns before the Heartbeat Turn, even when the fixed
   inputs already look sufficient. Genuine rest still names the smallest exact

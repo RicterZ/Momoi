@@ -26,16 +26,22 @@ identity, visible wording, or persona from them.
    `owner_handoff.context.needs` only when material historical evidence may
    still be missing after the runtime's automatic recall. Otherwise mark the
    context sufficient.
-3. Give every unit one to three ranked `recall_queries`, highest-value first.
-   Each item is a short exact-word OR expression using ` | ` between concrete
-   search anchors or aliases, for example
-   `primary-name | known-alias | exact-identifier`. Do not submit a
-   natural-language sentence.
-   The runtime fairly executes a globally bounded subset across recall memory,
-   reflections, Episodes, and matched Turns, taking every unit's first query
-   before lower-ranked queries. For a low-information continuation, use the
-   smallest exact anchors for the exchange it continues. Include the literal
-   spelling of an unresolved proper name material to the intent.
+3. Give every unit one explicit `recall` decision. Use `search` whenever
+   unsupplied history could materially change the response or work; provide one
+   to three ranked queries, highest-value first. Each query is a short
+   exact-word OR expression using `|` without surrounding spaces between
+   concrete search anchors or aliases, for example
+   `primary-name|known-alias|exact-identifier`. Do not submit a natural-language
+   sentence. Include the literal spelling of an unresolved proper name material
+   to the intent.
+   Use `skip` with `low_information_social` only when the unit is a
+   self-contained low-information social beat, the supplied current/recent
+   context fully grounds it, and unavailable history would not change the
+   response. Never use `skip` for a request, question, correction, unresolved
+   reference, unfamiliar name, memory mutation, or work item merely to avoid
+   formulating a query. The runtime fairly executes a globally bounded subset
+   from `search` units across recall memory, reflections, Episodes, and matched
+   Turns, taking every unit's first query before lower-ranked queries.
 4. Select only external MCP servers required now. Apply the downstream
    contract's internal-recall/private-name/public-search rules when routing an
    unfamiliar entity. `<available_internal_tools>` lists downstream resident

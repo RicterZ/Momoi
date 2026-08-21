@@ -20,6 +20,14 @@ SPEECH_ACTS = {
     "closing",
     "unknown",
 }
+RECALL_SKIP_SPEECH_ACTS = {
+    "emotional_share",
+    "casual_share",
+    "banter",
+    "acknowledgment",
+    "closing",
+}
+RECALL_SKIP_REASONS = {"low_information_social"}
 CONTEXT_PLAN_TOOL_NAME = "submit_context_plan"
 
 
@@ -77,22 +85,58 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                             "maxItems": 8,
                             "items": {"type": "string"},
                         },
-                        "recall_queries": {
-                            "type": "array",
-                            "minItems": 1,
-                            "maxItems": 3,
-                            "items": {
-                                "type": "string",
-                                "minLength": 1,
-                                "maxLength": 120,
-                            },
+                        "recall": {
                             "description": (
-                                "One to three ranked exact-word OR expressions. Put "
-                                "the highest-value expression first; the runtime fairly "
-                                "fans out a bounded global subset across memory, "
-                                "reflections, Episodes, and matched Turns. Use ` | ` "
-                                "between search anchors or aliases inside one expression."
+                                "Required recall decision. Search with one to three "
+                                "ranked exact-word OR expressions whenever unsupplied "
+                                "history could materially change the response or work. "
+                                "Skip only for a self-contained low-information social "
+                                "beat already grounded by supplied context."
                             ),
+                            "oneOf": [
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "mode": {
+                                            "type": "string",
+                                            "enum": ["search"],
+                                        },
+                                        "queries": {
+                                            "type": "array",
+                                            "minItems": 1,
+                                            "maxItems": 3,
+                                            "items": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 120,
+                                            },
+                                            "description": (
+                                                "Ranked exact-word OR expressions. Use "
+                                                "`|` without surrounding spaces between "
+                                                "concrete search anchors or aliases inside "
+                                                "one expression."
+                                            ),
+                                        },
+                                    },
+                                    "required": ["mode", "queries"],
+                                    "additionalProperties": False,
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "mode": {
+                                            "type": "string",
+                                            "enum": ["skip"],
+                                        },
+                                        "reason": {
+                                            "type": "string",
+                                            "enum": ["low_information_social"],
+                                        },
+                                    },
+                                    "required": ["mode", "reason"],
+                                    "additionalProperties": False,
+                                },
+                            ],
                         },
                     },
                     "required": [
@@ -102,7 +146,7 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                         "intent",
                         "speech_act",
                         "references",
-                        "recall_queries",
+                        "recall",
                     ],
                     "additionalProperties": False,
                 },
@@ -413,8 +457,8 @@ HEARTBEAT_PLAN_TOOL_SPEC: dict[str, object] = {
                             "maxLength": 120,
                         },
                         "description": (
-                            "One exact-word OR expression using ` | ` between "
-                            "alternative keywords or aliases."
+                            "One exact-word OR expression using `|` without "
+                            "surrounding spaces between alternative keywords or aliases."
                         ),
                     },
                 },
@@ -569,6 +613,19 @@ def _text(value: object, name: str, max_length: int) -> str:
     return value.strip()
 
 
+def _recall_queries(value: object, name: str) -> list[str]:
+    return [
+        re.sub(r"\s*\|\s*", "|", query)
+        for query in _strings(
+            value,
+            name,
+            minimum=1,
+            maximum=3,
+            max_length=120,
+        )
+    ]
+
+
 def _parse_mcp_route(
     raw: object,
     available_mcp_servers: set[str] | None,
@@ -690,13 +747,15 @@ def parse_context_plan(
         "intent",
         "speech_act",
         "references",
-        "recall_queries",
     }
     for raw in raw_units:
-        if not isinstance(raw, dict) or not set(raw) <= {
-            *required_unit_keys,
-            "recall_queries",
-        } or not required_unit_keys <= set(raw):
+        if not isinstance(raw, dict) or not required_unit_keys <= set(raw):
+            raise ContextPlanError("invalid_intent_unit")
+        recall_keys = {"recall", "recall_queries"} & set(raw)
+        if (
+            len(recall_keys) != 1
+            or not set(raw) <= {*required_unit_keys, *recall_keys}
+        ):
             raise ContextPlanError("invalid_intent_unit")
         unit_id = _text(raw["id"], "unit_id", 40)
         if not re.fullmatch(r"[A-Za-z0-9_-]+", unit_id) or unit_id in unit_ids:
@@ -715,26 +774,56 @@ def parse_context_plan(
         speech_act = raw["speech_act"]
         if not isinstance(speech_act, str) or speech_act not in SPEECH_ACTS:
             raise ContextPlanError("invalid_speech_act")
+        if "recall" in raw:
+            raw_recall = raw["recall"]
+            if not isinstance(raw_recall, dict):
+                raise ContextPlanError("invalid_recall_decision")
+            recall_mode = raw_recall.get("mode")
+            if recall_mode == "search":
+                if set(raw_recall) != {"mode", "queries"}:
+                    raise ContextPlanError("invalid_recall_decision")
+                recall_queries = _recall_queries(
+                    raw_recall["queries"],
+                    "unit_recall_queries",
+                )
+                recall = {"mode": "search", "queries": recall_queries}
+            elif recall_mode == "skip":
+                if (
+                    set(raw_recall) != {"mode", "reason"}
+                    or raw_recall.get("reason") not in RECALL_SKIP_REASONS
+                    or speech_act not in RECALL_SKIP_SPEECH_ACTS
+                ):
+                    raise ContextPlanError("invalid_recall_skip")
+                recall_queries = []
+                recall = {
+                    "mode": "skip",
+                    "reason": str(raw_recall["reason"]),
+                }
+            else:
+                raise ContextPlanError("invalid_recall_decision")
+        else:
+            # Accept pre-v2.1 plans from tests and stored integrations while the
+            # tool schema requires all newly generated plans to decide explicitly.
+            recall_queries = _recall_queries(
+                raw["recall_queries"],
+                "unit_recall_queries",
+            )
+            recall = {"mode": "search", "queries": recall_queries}
         unit = {
-                "id": unit_id,
-                "event_ids": source_ids,
-                "text": _text(raw["text"], "unit_text", 2000),
-                "intent": _text(raw["intent"], "unit_intent", 200),
-                "speech_act": speech_act,
-                "references": _strings(
-                    raw["references"],
-                    "unit_references",
-                    maximum=8,
-                    max_length=500,
-                ),
-            }
-        unit["recall_queries"] = _strings(
-            raw["recall_queries"],
-            "unit_recall_queries",
-            minimum=1,
-            maximum=3,
-            max_length=120,
-        )
+            "id": unit_id,
+            "event_ids": source_ids,
+            "text": _text(raw["text"], "unit_text", 2000),
+            "intent": _text(raw["intent"], "unit_intent", 200),
+            "speech_act": speech_act,
+            "references": _strings(
+                raw["references"],
+                "unit_references",
+                maximum=8,
+                max_length=500,
+            ),
+            "recall": recall,
+            "recall_queries": recall_queries,
+        }
         units.append(unit)
     if covered_events != expected_events:
         raise ContextPlanError("uncovered_event_ids")
@@ -987,6 +1076,9 @@ def parse_context_plan(
     mode = raw_execution["mode"]
     if mode not in {"respond", "clarify", "work"}:
         raise ContextPlanError("invalid_execution_handoff")
+    if units and all(unit["recall"]["mode"] == "skip" for unit in units):
+        if context["status"] != "sufficient" or mode != "respond":
+            raise ContextPlanError("invalid_recall_skip")
     return {
         "version": 2,
         "intent_units": units,
@@ -1151,12 +1243,9 @@ def parse_heartbeat_plan(
     parsed_activity = {
         "intent": _text(activity["intent"], "heartbeat_intent", 300),
         "reason": _text(activity["reason"], "heartbeat_reason", 300),
-        "recall_queries": _strings(
+        "recall_queries": _recall_queries(
             activity["recall_queries"],
             "heartbeat_recall_queries",
-            minimum=1,
-            maximum=3,
-            max_length=120,
         ),
     }
     return {

@@ -47,7 +47,7 @@ def context_plan_response(messages: list[dict[str, Any]]) -> ProviderResponse:
             "intent": "test owner intent",
             "speech_act": "request",
             "references": [],
-            "recall_queries": ["test owner intent"],
+            "recall": {"mode": "search", "queries": ["test owner intent"]},
         }
         for index, message in enumerate(owner_messages, 1)
     ]
