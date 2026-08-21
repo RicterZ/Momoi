@@ -514,7 +514,7 @@ class ContextPlannerTest(unittest.TestCase):
             ["旧关键词|旧别名"],
         )
 
-    def test_parser_requires_explicit_new_recall_decision_and_limits_skip(self) -> None:
+    def test_parser_requires_explicit_recall_decision_by_information_need(self) -> None:
         plan = response_plan()
         parsed = parse_context_plan(plan, ["event-1"], [], "turn-1", 1)
         self.assertEqual(
@@ -531,21 +531,46 @@ class ContextPlannerTest(unittest.TestCase):
         social["handoff"]["execution_mode"] = "respond"
         parsed = parse_context_plan(social, ["event-1"], [], "turn-1", 1)
         self.assertEqual(parsed["intent_units"][0]["recall_queries"], [])
+        self.assertEqual(
+            parsed["intent_units"][0]["recall"],
+            {
+                "mode": "skip",
+                "reason": "no_unsupplied_history_dependency",
+            },
+        )
 
         invalid_skip_query = json.loads(json.dumps(social, ensure_ascii=False))
         invalid_skip_query["intent_units"][0]["recall_queries"] = ["不该搜索"]
         with self.assertRaisesRegex(ContextPlanError, "invalid_recall_skip"):
             parse_context_plan(invalid_skip_query, ["event-1"], [], "turn-1", 1)
 
-        invalid_work = json.loads(json.dumps(social, ensure_ascii=False))
-        invalid_work["handoff"]["execution_mode"] = "work"
-        with self.assertRaisesRegex(ContextPlanError, "invalid_recall_skip"):
-            parse_context_plan(invalid_work, ["event-1"], [], "turn-1", 1)
+        for speech_act in ("question", "correction", "request"):
+            with self.subTest(speech_act=speech_act):
+                grounded_work = json.loads(json.dumps(social, ensure_ascii=False))
+                grounded_work["handoff"]["execution_mode"] = "work"
+                grounded_work["intent_units"][0]["speech_act"] = speech_act
+                parsed = parse_context_plan(
+                    grounded_work,
+                    ["event-1"],
+                    [],
+                    "turn-1",
+                    1,
+                )
+                self.assertEqual(
+                    parsed["intent_units"][0]["recall"]["mode"], "skip"
+                )
 
-        invalid_request = json.loads(json.dumps(social, ensure_ascii=False))
-        invalid_request["intent_units"][0]["speech_act"] = "request"
+        missing_context = json.loads(json.dumps(social, ensure_ascii=False))
+        missing_context["handoff"]["context_status"] = "lookup_required"
+        missing_context["handoff"]["context_needs"] = [
+            {
+                "tool": "conversation_search",
+                "query": "旧约定",
+                "evidence": "relevant_history",
+            }
+        ]
         with self.assertRaisesRegex(ContextPlanError, "invalid_recall_skip"):
-            parse_context_plan(invalid_request, ["event-1"], [], "turn-1", 1)
+            parse_context_plan(missing_context, ["event-1"], [], "turn-1", 1)
 
     def test_parser_validates_delivery_plan(self) -> None:
         plan = response_plan()
@@ -723,7 +748,7 @@ class ContextPlannerTest(unittest.TestCase):
         with self.assertRaisesRegex(ContextPlanError, "invalid_new_episode_ref"):
             parse_context_plan(plan, ["event-1"], [], "turn-1", 1)
 
-    def test_v3_allows_none_and_continue_without_changing_existing_title(
+    def test_v3_defaults_optional_episode_metadata_and_keeps_existing_title(
         self,
     ) -> None:
         plan = response_plan()
@@ -732,11 +757,8 @@ class ContextPlannerTest(unittest.TestCase):
             {
                 "action": "continue",
                 "episode_ref": "mail-thread",
+                "title": "模型重复提供的标题会被忽略",
                 "unit_ids": ["mail"],
-                "topics": ["新进展"],
-                "entities": [],
-                "open_loops": [],
-                "salience": 0.6,
             },
         ]
         plan["episode_links"] = []
@@ -752,6 +774,13 @@ class ContextPlannerTest(unittest.TestCase):
         self.assertEqual(parsed["episode_actions"][0]["action"], "none")
         self.assertEqual(parsed["episode_actions"][1]["episode_id"], "mail-thread")
         self.assertEqual(parsed["episode_actions"][1]["title"], "已有邮件话题")
+        self.assertEqual(parsed["episode_actions"][1]["topics"], [])
+        self.assertEqual(parsed["episode_actions"][1]["salience"], 0.0)
+
+        missing_new_title = response_plan()
+        del missing_new_title["episode_actions"][0]["title"]
+        with self.assertRaisesRegex(ContextPlanError, "invalid_episode_action"):
+            parse_context_plan(missing_new_title, ["event-1"], [], "turn-1", 1)
 
     def test_v3_requires_each_unit_exactly_once(self) -> None:
         missing = response_plan()

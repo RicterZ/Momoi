@@ -51,14 +51,16 @@ or persona-specific wording from it.
    name plus only genuine aliases of that same entity. Do not add its work,
    category, location, associates, or other broader topic as OR alternatives;
    a hit on surrounding context does not establish that the entity was recalled.
-   Use `recall_mode=skip` only for a self-contained social beat
-   whose meaning, referents, and premises needed for the reply are all directly
-   and completely established by the supplied current/recent context. It is not
-   enough that the owner supplied a broad category or impression of a new entity.
+   Use `recall_mode=skip` when the supplied current/recent context directly and
+   completely establishes every meaning, referent, and premise needed for the
+   response or work. Decide this independently of `speech_act`: a fully grounded
+   question, correction, request, or social beat may skip. It is not enough that
+   the owner supplied a broad category or impression of a new entity.
    If `uncertainty` would note missing identity, background, prior relationship,
    or other recallable context, `skip` contradicts that uncertainty. Never use
-   `skip` for a request, question, correction, new or unresolved name, memory
-   mutation, or work item merely to avoid formulating a query. The runtime
+   `skip` for a new or unresolved name, missing historical premise, or unresolved
+   reference merely to avoid formulating a query. A memory mutation or work item
+   may skip only when all history it needs is already supplied. The runtime
    fairly executes a globally bounded subset
    from `search` units across recall memory, reflections, Episodes, and matched
    Turns, taking every unit's first query before lower-ranked queries.
@@ -137,6 +139,9 @@ content was absent.
 
 - Candidate scores and signals are hints. Choose `continue` only for the same
   concrete experience; otherwise use `new` or `none`.
+- For an Episode action, `none` needs only `action` and `unit_ids`; `continue`
+  also needs an existing `episode_ref`; `new` also needs a `new:<key>` ref and
+  `title`. Topics, entities, open loops, and salience are optional metadata.
 - Keep `intent` brief and choose `speech_act` by the unit's main function.
   `references` contains only useful omitted-subject or cross-message
   resolutions, preferably `phrase -> referent`.

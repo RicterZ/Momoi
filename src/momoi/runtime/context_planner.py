@@ -20,14 +20,6 @@ SPEECH_ACTS = {
     "closing",
     "unknown",
 }
-RECALL_SKIP_SPEECH_ACTS = {
-    "emotional_share",
-    "casual_share",
-    "banter",
-    "acknowledgment",
-    "closing",
-}
-RECALL_SKIP_REASONS = {"fully_grounded_social"}
 CONTEXT_PLAN_TOOL_NAME = "submit_context_plan"
 
 
@@ -90,8 +82,9 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                             "enum": ["search", "skip"],
                             "description": (
                                 "Search when unsupplied history could materially "
-                                "change the response or work. Skip only for a "
-                                "fully grounded social beat."
+                                "change the response or work. Skip when supplied "
+                                "context completely grounds the unit, regardless "
+                                "of speech act."
                             ),
                         },
                         "recall_queries": {
@@ -128,6 +121,11 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                 "maxItems": 12,
                 "items": {
                     "type": "object",
+                    "description": (
+                        "none needs action and unit_ids. continue also needs "
+                        "episode_ref. new also needs episode_ref and title. "
+                        "Metadata fields are optional and default empty or zero."
+                    ),
                     "properties": {
                         "action": {
                             "type": "string",
@@ -732,11 +730,11 @@ def parse_context_plan(
                 raise ContextPlanError("invalid_recall_decision")
             recall = {"mode": "search", "queries": recall_queries}
         elif recall_mode == "skip":
-            if recall_queries or speech_act not in RECALL_SKIP_SPEECH_ACTS:
+            if recall_queries:
                 raise ContextPlanError("invalid_recall_skip")
             recall = {
                 "mode": "skip",
-                "reason": "fully_grounded_social",
+                "reason": "no_unsupplied_history_dependency",
             }
         else:
             raise ContextPlanError("invalid_recall_decision")
@@ -767,9 +765,21 @@ def parse_context_plan(
     for raw in raw_actions:
         if not isinstance(raw, dict):
             raise ContextPlanError("invalid_episode_action")
+        allowed = {
+            "action",
+            "episode_ref",
+            "title",
+            "unit_ids",
+            "topics",
+            "entities",
+            "open_loops",
+            "salience",
+        }
+        if set(raw) - allowed:
+            raise ContextPlanError("invalid_episode_action")
         action = raw.get("action")
         if action == "none":
-            if set(raw) != {"action", "unit_ids"}:
+            if "unit_ids" not in raw:
                 raise ContextPlanError("invalid_episode_action")
             raw_bindings.append(
                 {
@@ -778,23 +788,23 @@ def parse_context_plan(
                 }
             )
             continue
-        required = {
-            "action",
-            "episode_ref",
-            "unit_ids",
-            "topics",
-            "entities",
-            "open_loops",
-            "salience",
-        }
-        if action == "new":
-            required.add("title")
-        if set(raw) != required or action not in {"continue", "new"}:
+        if (
+            action not in {"continue", "new"}
+            or "episode_ref" not in raw
+            or "unit_ids" not in raw
+            or (action == "new" and "title" not in raw)
+        ):
             raise ContextPlanError("invalid_episode_action")
         raw_bindings.append(
             {
-                **raw,
+                "action": action,
+                "episode_ref": raw["episode_ref"],
+                "unit_ids": raw["unit_ids"],
                 "title": raw.get("title", ""),
+                "topics": raw.get("topics", []),
+                "entities": raw.get("entities", []),
+                "open_loops": raw.get("open_loops", []),
+                "salience": raw.get("salience", 0.0),
                 "relation": "primary",
             }
         )
@@ -1011,7 +1021,7 @@ def parse_context_plan(
     if mode not in {"respond", "clarify", "work"}:
         raise ContextPlanError("invalid_execution_handoff")
     if units and all(unit["recall"]["mode"] == "skip" for unit in units):
-        if context["status"] != "sufficient" or mode != "respond":
+        if context["status"] != "sufficient":
             raise ContextPlanError("invalid_recall_skip")
     delivery_mode = raw_handoff["delivery_mode"]
     delivery_bubbles = raw_handoff["delivery_bubbles"]
