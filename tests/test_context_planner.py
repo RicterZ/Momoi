@@ -336,6 +336,16 @@ class ContextPlannerTest(unittest.TestCase):
             "oneOf",
             schema["properties"]["episode_actions"]["items"],  # type: ignore[index]
         )
+        episode_description = schema["properties"]["episode_actions"]["items"][  # type: ignore[index]
+            "description"
+        ]
+        self.assertIn("continue also needs episode_ref", episode_description)
+        status_description = schema["properties"]["handoff"]["properties"][  # type: ignore[index]
+            "context_status"
+        ]["description"]
+        self.assertIn("sufficient with no context_needs", status_description)
+        self.assertNotIn("none needs only", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertNotIn("sufficient` requires empty", CONTEXT_PLANNER_SYSTEM_PROMPT)
 
     def test_context_plan_selects_only_available_mcp_servers(self) -> None:
         plan = response_plan()

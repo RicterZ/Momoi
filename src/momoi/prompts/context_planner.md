@@ -83,11 +83,10 @@ or persona-specific wording from it.
    changes.
 6. Bind every intent unit to exactly one Episode action.
 
-## Handoff field mapping
+## Handoff decisions
 
 ### Context
 
-- `sufficient` requires empty `needs`; `lookup_required` requires one or two.
 - Use `memory_search` for relevant durable history; `conversation_search` for
   archived shared history; and `conversation_read` when an identified Episode
   still needs exact wording, chronology, or correction evidence.
@@ -139,9 +138,6 @@ content was absent.
 
 - Candidate scores and signals are hints. Choose `continue` only for the same
   concrete experience; otherwise use `new` or `none`.
-- For an Episode action, `none` needs only `action` and `unit_ids`; `continue`
-  also needs an existing `episode_ref`; `new` also needs a `new:<key>` ref and
-  `title`. Topics, entities, open loops, and salience are optional metadata.
 - Keep `intent` brief and choose `speech_act` by the unit's main function.
   `references` contains only useful omitted-subject or cross-message
   resolutions, preferably `phrase -> referent`.

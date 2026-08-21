@@ -190,6 +190,10 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                     "context_status": {
                         "type": "string",
                         "enum": ["sufficient", "lookup_required"],
+                        "description": (
+                            "Use sufficient with no context_needs; use "
+                            "lookup_required with one or two context_needs."
+                        ),
                     },
                     "context_needs": {
                         "type": "array",
