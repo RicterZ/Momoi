@@ -62,15 +62,21 @@ or persona-specific wording from it.
    Choose silence or one or more bubbles from the actual moment, with no fixed
    default, minimum, or preferred count. For work, place progress, discovery,
    failure, question, and result bubbles where they become owner-relevant.
-   For each bubble, choose its utterance form from the actual conversational
-   impulse: `non_propositional` carries affect without a proposition,
-   `fragmentary` deliberately suspends an incomplete thought, and `complete`
-   is a self-standing conversational move. Do not choose forms merely for
-   variety. In informal relational or emotional moments, when a genuine
-   immediate half-beat and smoothed complete wording would both fit, prefer
-   preserving the half-beat; otherwise choose the form the moment calls for.
-   State each bubble's timing, chosen form, and purpose, but never draft its
-   wording or prescribe persona-specific lexical choices. The downstream Owner
+   Choose each form by the whole intended bubble, using the exact definitions
+   in the shared Style Card: `non_propositional` contains only affect,
+   attention, address, hesitation, or another vocal gesture; `fragmentary`
+   starts but suspends a thought; and `complete` finishes a thought or speech
+   move even when it opens expressively. The first two are half-beat forms. An
+   expressive opening does not turn completed content into a half-beat. Do not
+   choose forms merely for variety. In informal relational or emotional
+   moments, when a genuine immediate half-beat and smoothed complete wording
+   would both fit, prefer preserving the half-beat; otherwise choose the form
+   the moment calls for.
+   State each bubble's timing, chosen form, and conversational purpose, but
+   never draft its wording or prescribe persona-specific lexical choices. A
+   `non_propositional` purpose may identify the feeling and its trigger for the
+   Owner, but must not require the bubble to verbalize a cause, evaluation, or
+   conclusion; put any such content in a separate beat. The downstream Owner
    realizes the beat through the Soul and may revise the advisory delivery plan
    when owner intent or tool evidence changes.
 6. Bind every intent unit to exactly one Episode action.

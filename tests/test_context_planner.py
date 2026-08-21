@@ -991,10 +991,11 @@ class ContextPlannerTest(unittest.TestCase):
         self.assertIn("Expressive micro-bubbles", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertIn("prefer", CONTEXT_PLANNER_PROTOCOL_PROMPT)
         self.assertIn("preserving the half-beat", CONTEXT_PLANNER_PROTOCOL_PROMPT)
-        self.assertIn("Do not choose forms merely for", CONTEXT_PLANNER_PROTOCOL_PROMPT)
-        self.assertIn(
-            "do not complete a planned fragment", CONTEXT_PLANNER_SYSTEM_PROMPT
-        )
+        self.assertIn("forms merely for variety", CONTEXT_PLANNER_PROTOCOL_PROMPT)
+        self.assertIn("whole intended bubble", CONTEXT_PLANNER_PROTOCOL_PROMPT)
+        self.assertIn("does not turn completed content", CONTEXT_PLANNER_PROTOCOL_PROMPT)
+        self.assertIn("must not require the bubble", CONTEXT_PLANNER_PROTOCOL_PROMPT)
+        self.assertIn("leave a planned fragment unfinished", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertNotIn("Momoi", STYLE_CARD_SYSTEM_PROMPT)
         schema = CONTEXT_PLAN_TOOL_SPEC["input_schema"]
         execution = schema["properties"]["owner_handoff"]["properties"][  # type: ignore[index]
@@ -1010,6 +1011,12 @@ class ContextPlannerTest(unittest.TestCase):
             bubble["properties"]["form"]["enum"],
             ["non_propositional", "fragmentary", "complete"],
         )
+        form_description = bubble["properties"]["form"]["description"]
+        self.assertIn("whole intended bubble", form_description)
+        self.assertIn("even when it opens expressively", form_description)
+        purpose_description = bubble["properties"]["purpose"]["description"]
+        self.assertIn("Conversational function", purpose_description)
+        self.assertIn("must not require verbalizing", purpose_description)
 
     def test_shared_owner_rules_are_not_duplicated_in_planner_protocol(self) -> None:
         for phrase in (

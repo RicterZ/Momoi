@@ -451,20 +451,28 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                                                                 "complete",
                                                             ],
                                                             "description": (
-                                                                "Chosen form for this "
-                                                                "specific beat. "
-                                                                "non_propositional carries "
-                                                                "affect without a proposition; "
-                                                                "fragmentary deliberately "
-                                                                "suspends an incomplete thought; "
-                                                                "complete is a self-standing "
-                                                                "conversational move."
+                                                                "Form of the whole intended "
+                                                                "bubble. non_propositional "
+                                                                "contains only affect, attention, "
+                                                                "address, hesitation, or another "
+                                                                "vocal gesture; fragmentary starts "
+                                                                "but suspends a thought; complete "
+                                                                "finishes a thought or speech move "
+                                                                "even when it opens expressively."
                                                             ),
                                                         },
                                                         "purpose": {
                                                             "type": "string",
                                                             "minLength": 1,
                                                             "maxLength": 300,
+                                                            "description": (
+                                                                "Conversational function, not "
+                                                                "draft wording. For a "
+                                                                "non_propositional beat, it may "
+                                                                "name the affect and trigger but "
+                                                                "must not require verbalizing a "
+                                                                "cause, evaluation, or conclusion."
+                                                            ),
                                                         },
                                                     },
                                                     "required": [
