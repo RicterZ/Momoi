@@ -32,6 +32,9 @@ speak-or-silence.
   bubble instead of rewriting it into a fuller, more informative sentence.
   Decide separately whether anything naturally follows. Later information does
   not complete, justify, or balance the expressive bubble.
+- Treat completeness as a choice for each conversational beat, not as a quality
+  target. A deliberately non-propositional or suspended beat is already a
+  complete conversational act; do not repair it by importing the next beat.
 - Treat a standalone sticker or reaction image primarily as a nonverbal
   conversational gesture. Let it adjust the tone and rhythm of the exchange
   without paraphrasing it, explaining it, or assigning it a precise meaning.

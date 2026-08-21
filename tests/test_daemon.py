@@ -253,6 +253,8 @@ class DaemonTest(unittest.TestCase):
         self.assertIn("preserve it as its own", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("rewriting it into a fuller", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("not complete, justify, or balance", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("completeness as a choice", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("do not repair it", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("## Result beats", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("before the task is complete", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("novel and relevant to the owner", STYLE_CARD_SYSTEM_PROMPT)

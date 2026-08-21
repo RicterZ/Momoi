@@ -403,8 +403,9 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                             "delivery": {
                                 "description": (
                                     "Explicit owner-visible delivery plan. Each bubble "
-                                    "is one intended send_message item. Plan timing and "
-                                    "conversational purpose without drafting wording."
+                                    "is one intended send_message item. Plan timing, "
+                                    "utterance form, and conversational purpose without "
+                                    "drafting wording."
                                 ),
                                 "oneOf": [
                                     {
@@ -442,6 +443,24 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                                                             "minLength": 1,
                                                             "maxLength": 160,
                                                         },
+                                                        "form": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "non_propositional",
+                                                                "fragmentary",
+                                                                "complete",
+                                                            ],
+                                                            "description": (
+                                                                "Chosen form for this "
+                                                                "specific beat. "
+                                                                "non_propositional carries "
+                                                                "affect without a proposition; "
+                                                                "fragmentary deliberately "
+                                                                "suspends an incomplete thought; "
+                                                                "complete is a self-standing "
+                                                                "conversational move."
+                                                            ),
+                                                        },
                                                         "purpose": {
                                                             "type": "string",
                                                             "minLength": 1,
@@ -450,6 +469,7 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                                                     },
                                                     "required": [
                                                         "timing",
+                                                        "form",
                                                         "purpose",
                                                     ],
                                                     "additionalProperties": False,
@@ -703,11 +723,19 @@ def _parse_delivery_plan(raw: object) -> dict[str, object]:
         raise ContextPlanError("invalid_delivery_handoff")
     bubbles: list[dict[str, str]] = []
     for bubble in raw_bubbles:
-        if not isinstance(bubble, dict) or set(bubble) != {"timing", "purpose"}:
+        if not isinstance(bubble, dict) or set(bubble) != {
+            "timing",
+            "form",
+            "purpose",
+        }:
             raise ContextPlanError("invalid_delivery_bubble")
+        form = bubble["form"]
+        if form not in {"non_propositional", "fragmentary", "complete"}:
+            raise ContextPlanError("invalid_delivery_form")
         bubbles.append(
             {
                 "timing": _text(bubble["timing"], "delivery_timing", 160),
+                "form": str(form),
                 "purpose": _text(bubble["purpose"], "delivery_purpose", 300),
             }
         )

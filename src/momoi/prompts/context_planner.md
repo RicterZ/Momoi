@@ -62,10 +62,15 @@ or persona-specific wording from it.
    Choose silence or one or more bubbles from the actual moment, with no fixed
    default, minimum, or preferred count. For work, place progress, discovery,
    failure, question, and result bubbles where they become owner-relevant.
-   State each bubble's timing and purpose, but never draft its wording or
-   prescribe persona-specific lexical choices. The downstream Owner realizes
-   the beat through the Soul and may revise the advisory delivery plan when
-   owner intent or tool evidence changes.
+   For each bubble, choose its utterance form from the actual conversational
+   impulse: `non_propositional` carries affect without a proposition,
+   `fragmentary` deliberately suspends an incomplete thought, and `complete`
+   is a self-standing conversational move. No form is a default, preferred, or
+   required source of variety. State each bubble's timing, chosen form, and
+   purpose, but never draft its wording or prescribe persona-specific lexical
+   choices. The downstream Owner realizes the beat through the Soul and may
+   revise the advisory delivery plan when owner intent or tool evidence
+   changes.
 6. Bind every intent unit to exactly one Episode action.
 
 ## Handoff field mapping

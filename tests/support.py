@@ -86,6 +86,7 @@ def context_plan_response(messages: list[dict[str, Any]]) -> ProviderResponse:
                     "bubbles": [
                         {
                             "timing": "after the requested work",
+                            "form": "complete",
                             "purpose": "report the verified result",
                         }
                     ],

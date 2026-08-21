@@ -254,9 +254,11 @@ def conversation_guidance(plan: dict[str, object]) -> str:
                     if not isinstance(bubble, dict):
                         continue
                     timing = " ".join(str(bubble.get("timing") or "").split())
+                    form = " ".join(str(bubble.get("form") or "").split())
                     purpose = " ".join(str(bubble.get("purpose") or "").split())
                     lines.append(
-                        f"  bubble {index}: timing={timing} purpose={purpose}"
+                        f"  bubble {index}: timing={timing} form={form} "
+                        f"purpose={purpose}"
                     )
 
     for item in uncertainty or []:

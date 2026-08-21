@@ -121,6 +121,7 @@ def response_plan() -> dict[str, object]:
                     "bubbles": [
                         {
                             "timing": "after the requested work",
+                            "form": "complete",
                             "purpose": "report the verified result",
                         }
                     ],
@@ -368,6 +369,7 @@ class ContextPlannerTest(unittest.TestCase):
                     "bubbles": [
                         {
                             "timing": "after the requested work",
+                            "form": "complete",
                             "purpose": "report the verified result",
                         }
                     ],
@@ -432,7 +434,8 @@ class ContextPlannerTest(unittest.TestCase):
         self.assertIn("tool=conversation_search", guidance)
         self.assertIn("Delivery handoff", guidance)
         self.assertIn(
-            "bubble 1: timing=after the requested work purpose=report the verified result",
+            "bubble 1: timing=after the requested work form=complete "
+            "purpose=report the verified result",
             guidance,
         )
 
@@ -550,6 +553,7 @@ class ContextPlannerTest(unittest.TestCase):
                 "bubbles": [
                     {
                         "timing": "after the requested work",
+                        "form": "complete",
                         "purpose": "report the verified result",
                     }
                 ],
@@ -576,6 +580,7 @@ class ContextPlannerTest(unittest.TestCase):
                 "bubbles": [
                     {
                         "timing": "immediately",
+                        "form": "fragmentary",
                         "purpose": "standalone fragmentary social reaction",
                     }
                 ],
@@ -584,14 +589,43 @@ class ContextPlannerTest(unittest.TestCase):
         }
         parsed = parse_context_plan(social, ["event-1"], [], "turn-1", 1)
         self.assertEqual(parsed["owner_handoff"]["execution"]["outline"], [])
+        self.assertEqual(
+            parsed["owner_handoff"]["execution"]["delivery"]["bubbles"][0][
+                "form"
+            ],
+            "fragmentary",
+        )
 
         invalid = response_plan()
         invalid["owner_handoff"]["execution"]["delivery"] = {
             "mode": "bubbles",
-            "bubbles": [{"timing": "now", "purpose": ""}],
+            "bubbles": [
+                {"timing": "now", "form": "complete", "purpose": ""}
+            ],
         }
         with self.assertRaisesRegex(ContextPlanError, "invalid_delivery_purpose"):
             parse_context_plan(invalid, ["event-1"], [], "turn-1", 1)
+
+        invalid_form = response_plan()
+        invalid_form["owner_handoff"]["execution"]["delivery"] = {
+            "mode": "bubbles",
+            "bubbles": [
+                {
+                    "timing": "now",
+                    "form": "short",
+                    "purpose": "react to the current moment",
+                }
+            ],
+        }
+        with self.assertRaisesRegex(ContextPlanError, "invalid_delivery_form"):
+            parse_context_plan(invalid_form, ["event-1"], [], "turn-1", 1)
+
+        missing_form = response_plan()
+        del missing_form["owner_handoff"]["execution"]["delivery"]["bubbles"][0][
+            "form"
+        ]
+        with self.assertRaisesRegex(ContextPlanError, "invalid_delivery_bubble"):
+            parse_context_plan(missing_form, ["event-1"], [], "turn-1", 1)
 
         missing = response_plan()
         del missing["owner_handoff"]["execution"]["delivery"]
@@ -955,6 +989,10 @@ class ContextPlannerTest(unittest.TestCase):
         self.assertIn("{{SOUL}}", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertNotIn("{{STYLE_CARD}}", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertIn("Expressive micro-bubbles", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn("No form is a default", CONTEXT_PLANNER_PROTOCOL_PROMPT)
+        self.assertIn(
+            "do not complete a planned fragment", CONTEXT_PLANNER_SYSTEM_PROMPT
+        )
         self.assertNotIn("Momoi", STYLE_CARD_SYSTEM_PROMPT)
         schema = CONTEXT_PLAN_TOOL_SPEC["input_schema"]
         execution = schema["properties"]["owner_handoff"]["properties"][  # type: ignore[index]
@@ -965,7 +1003,11 @@ class ContextPlannerTest(unittest.TestCase):
         self.assertIn("one intended send_message item", delivery["description"])
         self.assertNotIn("minItems", execution["properties"]["outline"])
         bubble = delivery["oneOf"][1]["properties"]["bubbles"]["items"]
-        self.assertEqual(set(bubble["required"]), {"timing", "purpose"})
+        self.assertEqual(set(bubble["required"]), {"timing", "form", "purpose"})
+        self.assertEqual(
+            bubble["properties"]["form"]["enum"],
+            ["non_propositional", "fragmentary", "complete"],
+        )
 
     def test_shared_owner_rules_are_not_duplicated_in_planner_protocol(self) -> None:
         for phrase in (
@@ -1060,6 +1102,7 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                                     "bubbles": [
                                         {
                                             "timing": "immediately",
+                                            "form": "complete",
                                             "purpose": "respond to the combined owner update",
                                         }
                                     ],
@@ -1188,6 +1231,7 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                                     "bubbles": [
                                         {
                                             "timing": "after resolving the stored location",
+                                            "form": "complete",
                                             "purpose": "answer with the recalled location",
                                         }
                                     ],
