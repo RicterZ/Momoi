@@ -388,13 +388,11 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                             },
                             "outline": {
                                 "type": "array",
-                                "minItems": 1,
                                 "maxItems": 8,
                                 "description": (
                                     "Ordered evidence checks, actions, verification, "
-                                    "clarification, and required communication beats. "
-                                    "Do not draft owner-visible wording, prescribe "
-                                    "persona or tone, or choose an exact bubble count."
+                                    "and clarification. Owner-visible bubbles belong "
+                                    "in delivery, not this outline."
                                 ),
                                 "items": {
                                     "type": "string",
@@ -402,13 +400,74 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                                     "maxLength": 300,
                                 },
                             },
+                            "delivery": {
+                                "description": (
+                                    "Explicit owner-visible delivery plan. Each bubble "
+                                    "is one intended send_message item. Plan timing and "
+                                    "conversational purpose without drafting wording."
+                                ),
+                                "oneOf": [
+                                    {
+                                        "type": "object",
+                                        "properties": {
+                                            "mode": {
+                                                "type": "string",
+                                                "enum": ["silent"],
+                                            },
+                                            "reason": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 300,
+                                            },
+                                        },
+                                        "required": ["mode", "reason"],
+                                        "additionalProperties": False,
+                                    },
+                                    {
+                                        "type": "object",
+                                        "properties": {
+                                            "mode": {
+                                                "type": "string",
+                                                "enum": ["bubbles"],
+                                            },
+                                            "bubbles": {
+                                                "type": "array",
+                                                "minItems": 1,
+                                                "maxItems": 12,
+                                                "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "timing": {
+                                                            "type": "string",
+                                                            "minLength": 1,
+                                                            "maxLength": 160,
+                                                        },
+                                                        "purpose": {
+                                                            "type": "string",
+                                                            "minLength": 1,
+                                                            "maxLength": 300,
+                                                        },
+                                                    },
+                                                    "required": [
+                                                        "timing",
+                                                        "purpose",
+                                                    ],
+                                                    "additionalProperties": False,
+                                                },
+                                            },
+                                        },
+                                        "required": ["mode", "bubbles"],
+                                        "additionalProperties": False,
+                                    },
+                                ],
+                            },
                             "reason": {
                                 "type": "string",
                                 "minLength": 1,
                                 "maxLength": 300,
                             },
                         },
-                        "required": ["mode", "outline", "reason"],
+                        "required": ["mode", "outline", "delivery", "reason"],
                         "additionalProperties": False,
                     },
                 },
@@ -624,6 +683,35 @@ def _recall_queries(value: object, name: str) -> list[str]:
             max_length=120,
         )
     ]
+
+
+def _parse_delivery_plan(raw: object) -> dict[str, object]:
+    if not isinstance(raw, dict):
+        raise ContextPlanError("invalid_delivery_handoff")
+    mode = raw.get("mode")
+    if mode == "silent":
+        if set(raw) != {"mode", "reason"}:
+            raise ContextPlanError("invalid_delivery_handoff")
+        return {
+            "mode": "silent",
+            "reason": _text(raw["reason"], "delivery_reason", 300),
+        }
+    if mode != "bubbles" or set(raw) != {"mode", "bubbles"}:
+        raise ContextPlanError("invalid_delivery_handoff")
+    raw_bubbles = raw["bubbles"]
+    if not isinstance(raw_bubbles, list) or not 1 <= len(raw_bubbles) <= 12:
+        raise ContextPlanError("invalid_delivery_handoff")
+    bubbles: list[dict[str, str]] = []
+    for bubble in raw_bubbles:
+        if not isinstance(bubble, dict) or set(bubble) != {"timing", "purpose"}:
+            raise ContextPlanError("invalid_delivery_bubble")
+        bubbles.append(
+            {
+                "timing": _text(bubble["timing"], "delivery_timing", 160),
+                "purpose": _text(bubble["purpose"], "delivery_purpose", 300),
+            }
+        )
+    return {"mode": "bubbles", "bubbles": bubbles}
 
 
 def _parse_mcp_route(
@@ -1070,6 +1158,7 @@ def parse_context_plan(
     if not isinstance(raw_execution, dict) or set(raw_execution) != {
         "mode",
         "outline",
+        "delivery",
         "reason",
     }:
         raise ContextPlanError("invalid_execution_handoff")
@@ -1079,6 +1168,21 @@ def parse_context_plan(
     if units and all(unit["recall"]["mode"] == "skip" for unit in units):
         if context["status"] != "sufficient" or mode != "respond":
             raise ContextPlanError("invalid_recall_skip")
+    execution: dict[str, object] = {
+        "mode": str(mode),
+        "outline": _strings(
+            raw_execution["outline"],
+            "execution_outline",
+            maximum=8,
+            max_length=300,
+        ),
+        "reason": _text(
+            raw_execution["reason"],
+            "execution_reason",
+            300,
+        ),
+        "delivery": _parse_delivery_plan(raw_execution["delivery"]),
+    }
     return {
         "version": 2,
         "intent_units": units,
@@ -1087,21 +1191,7 @@ def parse_context_plan(
         "owner_handoff": {
             "context": context,
             "mcp": _parse_mcp_route(raw_handoff["mcp"], available_mcp_servers),
-            "execution": {
-                "mode": str(mode),
-                "outline": _strings(
-                    raw_execution["outline"],
-                    "execution_outline",
-                    minimum=1,
-                    maximum=8,
-                    max_length=300,
-                ),
-                "reason": _text(
-                    raw_execution["reason"],
-                    "execution_reason",
-                    300,
-                ),
-            },
+            "execution": execution,
         },
         "uncertainty": _strings(
             value["uncertainty"],

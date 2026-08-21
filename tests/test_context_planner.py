@@ -34,6 +34,7 @@ from momoi.runtime.turn_support import (
     CONTEXT_PLANNER_SYSTEM_PROMPT,
     DOWNSTREAM_OWNER_CONTRACT_PROMPT,
     HEARTBEAT_PLANNER_SYSTEM_PROMPT,
+    STYLE_CARD_SYSTEM_PROMPT,
 )
 from momoi.runtime.turn_support import conversation_guidance
 from tests.support import planner_sections
@@ -115,6 +116,15 @@ def response_plan() -> dict[str, object]:
             "execution": {
                 "mode": "work",
                 "outline": ["处理主人当前请求"],
+                "delivery": {
+                    "mode": "bubbles",
+                    "bubbles": [
+                        {
+                            "timing": "after the requested work",
+                            "purpose": "report the verified result",
+                        }
+                    ],
+                },
                 "reason": "按当前意图执行",
             },
         },
@@ -353,6 +363,15 @@ class ContextPlannerTest(unittest.TestCase):
             "execution": {
                 "mode": "work",
                 "outline": ["搜索邮件", "核对结果", "回复老师"],
+                "delivery": {
+                    "mode": "bubbles",
+                    "bubbles": [
+                        {
+                            "timing": "after the requested work",
+                            "purpose": "report the verified result",
+                        }
+                    ],
+                },
                 "reason": "需要完成邮件检查",
             },
         }
@@ -411,6 +430,11 @@ class ContextPlannerTest(unittest.TestCase):
         self.assertIn("Context handoff", guidance)
         self.assertIn("status: lookup_required", guidance)
         self.assertIn("tool=conversation_search", guidance)
+        self.assertIn("Delivery handoff", guidance)
+        self.assertIn(
+            "bubble 1: timing=after the requested work purpose=report the verified result",
+            guidance,
+        )
 
     def test_standalone_media_guidance_limits_semantic_inference(self) -> None:
         self.assertIn("low-information social cue", CONTEXT_PLANNER_SYSTEM_PROMPT)
@@ -442,7 +466,7 @@ class ContextPlannerTest(unittest.TestCase):
         self.assertIn("context.needs", CONTEXT_PLANNER_PROTOCOL_PROMPT)
         self.assertIn("conversation_search", CONTEXT_PLANNER_PROTOCOL_PROMPT)
         self.assertIn("thinking_search", CONTEXT_PLANNER_PROTOCOL_PROMPT)
-        self.assertIn("outline is advisory", CONTEXT_PLANNER_PROTOCOL_PROMPT)
+        self.assertIn("advisory delivery plan", CONTEXT_PLANNER_PROTOCOL_PROMPT)
         self.assertIn("explicit `recall` decision", CONTEXT_PLANNER_PROTOCOL_PROMPT)
         self.assertIn("without surrounding spaces", CONTEXT_PLANNER_PROTOCOL_PROMPT)
         self.assertIn(
@@ -515,6 +539,64 @@ class ContextPlannerTest(unittest.TestCase):
         invalid_request["intent_units"][0]["speech_act"] = "request"
         with self.assertRaisesRegex(ContextPlanError, "invalid_recall_skip"):
             parse_context_plan(invalid_request, ["event-1"], [], "turn-1", 1)
+
+    def test_parser_validates_delivery_plan(self) -> None:
+        plan = response_plan()
+        parsed = parse_context_plan(plan, ["event-1"], [], "turn-1", 1)
+        self.assertEqual(
+            parsed["owner_handoff"]["execution"]["delivery"],
+            {
+                "mode": "bubbles",
+                "bubbles": [
+                    {
+                        "timing": "after the requested work",
+                        "purpose": "report the verified result",
+                    }
+                ],
+            },
+        )
+
+        silent = response_plan()
+        silent["owner_handoff"]["execution"]["delivery"] = {
+            "mode": "silent",
+            "reason": "the closing beat needs no further acknowledgment",
+        }
+        parsed = parse_context_plan(silent, ["event-1"], [], "turn-1", 1)
+        self.assertEqual(
+            parsed["owner_handoff"]["execution"]["delivery"]["mode"],
+            "silent",
+        )
+
+        social = response_plan()
+        social["owner_handoff"]["execution"] = {
+            "mode": "respond",
+            "outline": [],
+            "delivery": {
+                "mode": "bubbles",
+                "bubbles": [
+                    {
+                        "timing": "immediately",
+                        "purpose": "standalone fragmentary social reaction",
+                    }
+                ],
+            },
+            "reason": "only visible social delivery is needed",
+        }
+        parsed = parse_context_plan(social, ["event-1"], [], "turn-1", 1)
+        self.assertEqual(parsed["owner_handoff"]["execution"]["outline"], [])
+
+        invalid = response_plan()
+        invalid["owner_handoff"]["execution"]["delivery"] = {
+            "mode": "bubbles",
+            "bubbles": [{"timing": "now", "purpose": ""}],
+        }
+        with self.assertRaisesRegex(ContextPlanError, "invalid_delivery_purpose"):
+            parse_context_plan(invalid, ["event-1"], [], "turn-1", 1)
+
+        missing = response_plan()
+        del missing["owner_handoff"]["execution"]["delivery"]
+        with self.assertRaisesRegex(ContextPlanError, "invalid_execution_handoff"):
+            parse_context_plan(missing, ["event-1"], [], "turn-1", 1)
 
     def test_parser_requires_event_coverage_and_normalizes_episode_refs(self) -> None:
         plan = response_plan()
@@ -857,9 +939,11 @@ class ContextPlannerTest(unittest.TestCase):
             expected,
         )
 
-    def test_planner_receives_exact_downstream_system_contract(self) -> None:
+    def test_planner_receives_rendered_downstream_system_contract(self) -> None:
         self.assertIn(
-            DOWNSTREAM_OWNER_CONTRACT_PROMPT,
+            DOWNSTREAM_OWNER_CONTRACT_PROMPT.replace(
+                "{{STYLE_CARD}}", STYLE_CARD_SYSTEM_PROMPT
+            ),
             CONTEXT_PLANNER_SYSTEM_PROMPT,
         )
         self.assertIn(
@@ -869,12 +953,19 @@ class ContextPlannerTest(unittest.TestCase):
         self.assertIn("## 8. Owner Turn output protocol", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertIn("Each item is one non-empty private-chat bubble", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertIn("{{SOUL}}", CONTEXT_PLANNER_SYSTEM_PROMPT)
-        self.assertIn("{{STYLE_CARD}}", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertNotIn("{{STYLE_CARD}}", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn("Expressive micro-bubbles", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertNotIn("Momoi", STYLE_CARD_SYSTEM_PROMPT)
         schema = CONTEXT_PLAN_TOOL_SPEC["input_schema"]
-        outline = schema["properties"]["owner_handoff"]["properties"][  # type: ignore[index]
+        execution = schema["properties"]["owner_handoff"]["properties"][  # type: ignore[index]
             "execution"
-        ]["properties"]["outline"]
-        self.assertIn("Do not draft owner-visible wording", outline["description"])
+        ]
+        self.assertIn("delivery", execution["required"])
+        delivery = execution["properties"]["delivery"]
+        self.assertIn("one intended send_message item", delivery["description"])
+        self.assertNotIn("minItems", execution["properties"]["outline"])
+        bubble = delivery["oneOf"][1]["properties"]["bubbles"]["items"]
+        self.assertEqual(set(bubble["required"]), {"timing", "purpose"})
 
     def test_shared_owner_rules_are_not_duplicated_in_planner_protocol(self) -> None:
         for phrase in (
@@ -964,6 +1055,15 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "execution": {
                                 "mode": "respond",
                                 "outline": ["处理合并后的主人消息"],
+                                "delivery": {
+                                    "mode": "bubbles",
+                                    "bubbles": [
+                                        {
+                                            "timing": "immediately",
+                                            "purpose": "respond to the combined owner update",
+                                        }
+                                    ],
+                                },
                                 "reason": "当前输入已足够回应",
                             },
                         },
@@ -1083,6 +1183,15 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "execution": {
                                 "mode": "respond",
                                 "outline": ["查找收纳位置", "根据证据回答"],
+                                "delivery": {
+                                    "mode": "bubbles",
+                                    "bubbles": [
+                                        {
+                                            "timing": "after resolving the stored location",
+                                            "purpose": "answer with the recalled location",
+                                        }
+                                    ],
+                                },
                                 "reason": "主人在问旧物品位置",
                             },
                         },

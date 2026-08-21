@@ -292,8 +292,6 @@ Owner主模型使用同一套紧凑Recent投影。稳定的Owner Preferences、C
 
 Owner Context Planner必须为每个意图单元显式决定是否召回。默认提交一到三条按优先级排列的表达式，写成`名称|别名|标识符`，`|`两侧不加空格；只有上下文已经完整覆盖的低信息社交单元可以显式跳过召回，请求、问题、纠正、未解决指代、陌生名称、状态变更和工作项不能使用该捷径。框架在全局上限内公平执行需要召回的表达式：先执行每个单元的第一条，再考虑低优先级表达式，并同时搜索recall memory、reflection、Episode和匹配Turn。除此之外，Planner还输出结构化`owner_handoff`：判断已提供及自动召回的上下文是否充分、列出最多两个需要Owner主模型执行的定向Memory/Conversation/Thinking查询、选择MCP Server，并给出执行模式和大纲。框架仍提供Recent Episodes、近期/核心记忆和当前Goals/Reminders作为确定性基线。主模型可修正Planner方向、加载漏选的MCP Server，并仅在实际推翻Handoff时通过`plan_adjustment`把修正写回后续Recent Turns。
 
-Context Planner还会收到打包版本中同一份`system.md`，但它被明确标记为“下游Owner契约”。这样证据、沉默、气泡、进度、失败和Turn收尾规则可以在规划阶段生效，而Planner不会因此变成Owner主模型。规划引用中的`{{SOUL}}`与`{{STYLE_CARD}}`保持未解析；身份和最终可见措辞只在后续Owner调用中应用。Planner大纲只描述动作与必要沟通节点，不起草措辞、不指定人设，也不决定精确气泡数量。
-
 将某个基线上下文层的结果数量或 token 预算设为 `0` 可关闭该层注入。显式记忆和对话搜索作为常驻内部工具可用。
 
 ## 存储

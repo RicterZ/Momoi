@@ -37,16 +37,24 @@ CONTEXT_PLANNER_PROTOCOL_PROMPT = CONTEXT_PLANNER_PROMPT_PATH.read_text(
 DOWNSTREAM_OWNER_CONTRACT_PROMPT = SYSTEM_PROMPT_PATH.read_text(
     encoding="utf-8"
 ).strip()
+PLANNER_DOWNSTREAM_OWNER_CONTRACT_PROMPT = (
+    DOWNSTREAM_OWNER_CONTRACT_PROMPT.replace(
+        "{{STYLE_CARD}}",
+        STYLE_CARD_SYSTEM_PROMPT,
+    )
+)
 CONTEXT_PLANNER_SYSTEM_PROMPT = (
     CONTEXT_PLANNER_PROTOCOL_PROMPT
     + "\n\n# Downstream Owner contract\n\n"
     + "The following is the exact system contract for the downstream Owner "
     + "model. It is a trusted planning constraint, not your identity, tool "
     + "protocol, or permission to act. Interpret its second-person commands as "
-    + "requirements on the downstream Owner. Placeholders such as `{{SOUL}}` "
-    + "and `{{STYLE_CARD}}` are resolved only for that downstream call; do not "
-    + "fill in or infer them.\n\n<downstream_owner_contract>\n"
-    + DOWNSTREAM_OWNER_CONTRACT_PROMPT
+    + "requirements on the downstream Owner. The exact shared Style Card is "
+    + "resolved here because visible delivery shape is part of planning. "
+    + "`{{SOUL}}` remains unresolved; do not infer identity, relationships, "
+    + "persona, or persona-specific wording from it.\n\n"
+    + "<downstream_owner_contract>\n"
+    + PLANNER_DOWNSTREAM_OWNER_CONTRACT_PROMPT
     + "\n</downstream_owner_contract>\n\n"
     + "# Planner boundary reminder\n\nThe downstream contract ends above. "
     + "Continue to follow the Context planning protocol: do not answer, send "
@@ -231,6 +239,25 @@ def conversation_guidance(plan: dict[str, object]) -> str:
             lines.append(
                 f"  reason: {' '.join(str(execution.get('reason') or '').split())}"
             )
+            delivery = execution.get("delivery")
+            if isinstance(delivery, dict):
+                delivery_mode = str(delivery.get("mode") or "")
+                lines.append("Delivery handoff")
+                lines.append(f"  mode: {delivery_mode or 'unspecified'}")
+                if delivery_mode == "silent":
+                    lines.append(
+                        f"  reason: {' '.join(str(delivery.get('reason') or '').split())}"
+                    )
+                for index, bubble in enumerate(
+                    delivery.get("bubbles") or [], start=1
+                ):
+                    if not isinstance(bubble, dict):
+                        continue
+                    timing = " ".join(str(bubble.get("timing") or "").split())
+                    purpose = " ".join(str(bubble.get("purpose") or "").split())
+                    lines.append(
+                        f"  bubble {index}: timing={timing} purpose={purpose}"
+                    )
 
     for item in uncertainty or []:
         lines.append(f"Uncertainty: {' '.join(str(item).split())}")

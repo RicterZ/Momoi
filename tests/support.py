@@ -81,6 +81,15 @@ def context_plan_response(messages: list[dict[str, Any]]) -> ProviderResponse:
             "execution": {
                 "mode": "work",
                 "outline": ["Handle the test owner request."],
+                "delivery": {
+                    "mode": "bubbles",
+                    "bubbles": [
+                        {
+                            "timing": "after the requested work",
+                            "purpose": "report the verified result",
+                        }
+                    ],
+                },
                 "reason": "Exercise the Owner tool loop.",
             },
         },

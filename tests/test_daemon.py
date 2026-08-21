@@ -258,7 +258,7 @@ class DaemonTest(unittest.TestCase):
         self.assertIn("novel and relevant to the owner", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("stand alone as one chat bubble", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("exploratory misses may stay silent", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("dramatic about Momoi's feeling", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("dramatic about your feeling", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("intermediate findings provisional", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("## Emotional presence", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("not a neutral response surface", STYLE_CARD_SYSTEM_PROMPT)
