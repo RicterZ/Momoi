@@ -989,7 +989,9 @@ class ContextPlannerTest(unittest.TestCase):
         self.assertIn("{{SOUL}}", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertNotIn("{{STYLE_CARD}}", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertIn("Expressive micro-bubbles", CONTEXT_PLANNER_SYSTEM_PROMPT)
-        self.assertIn("No form is a default", CONTEXT_PLANNER_PROTOCOL_PROMPT)
+        self.assertIn("prefer", CONTEXT_PLANNER_PROTOCOL_PROMPT)
+        self.assertIn("preserving the half-beat", CONTEXT_PLANNER_PROTOCOL_PROMPT)
+        self.assertIn("Do not choose forms merely for", CONTEXT_PLANNER_PROTOCOL_PROMPT)
         self.assertIn(
             "do not complete a planned fragment", CONTEXT_PLANNER_SYSTEM_PROMPT
         )

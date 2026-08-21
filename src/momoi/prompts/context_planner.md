@@ -65,12 +65,14 @@ or persona-specific wording from it.
    For each bubble, choose its utterance form from the actual conversational
    impulse: `non_propositional` carries affect without a proposition,
    `fragmentary` deliberately suspends an incomplete thought, and `complete`
-   is a self-standing conversational move. No form is a default, preferred, or
-   required source of variety. State each bubble's timing, chosen form, and
-   purpose, but never draft its wording or prescribe persona-specific lexical
-   choices. The downstream Owner realizes the beat through the Soul and may
-   revise the advisory delivery plan when owner intent or tool evidence
-   changes.
+   is a self-standing conversational move. Do not choose forms merely for
+   variety. In informal relational or emotional moments, when a genuine
+   immediate half-beat and smoothed complete wording would both fit, prefer
+   preserving the half-beat; otherwise choose the form the moment calls for.
+   State each bubble's timing, chosen form, and purpose, but never draft its
+   wording or prescribe persona-specific lexical choices. The downstream Owner
+   realizes the beat through the Soul and may revise the advisory delivery plan
+   when owner intent or tool evidence changes.
 6. Bind every intent unit to exactly one Episode action.
 
 ## Handoff field mapping

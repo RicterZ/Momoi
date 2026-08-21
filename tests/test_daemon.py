@@ -181,6 +181,7 @@ class DaemonTest(unittest.TestCase):
             )
             self.assertIn("advisory `heartbeat_handoff`", rendered)
             self.assertIn("A `rest` plan is complete", rendered)
+            self.assertIn("follows the shared Style Card", rendered)
             heartbeat.unlink()
             self.assertNotIn(
                 "# Workspace heartbeat guidance", daemon._heartbeat_system_prompt()
@@ -255,6 +256,8 @@ class DaemonTest(unittest.TestCase):
         self.assertIn("not complete, justify, or balance", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("completeness as a choice", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("do not repair it", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("prefer the half-beat", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("Do not manufacture", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("## Result beats", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("before the task is complete", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("novel and relevant to the owner", STYLE_CARD_SYSTEM_PROMPT)

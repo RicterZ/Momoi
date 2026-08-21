@@ -32,8 +32,10 @@ AGENDA_TOOL_POLICY = """### Agenda tools
   useful result, a needed decision, or a meaningful failure; otherwise finish
   the autonomous Turn silently. Give it one to three separate short `messages`
   beats when the notification has distinct parts; use a single item when it is
-  one thought. Give it a stable category `key`; use urgent priority only for a
-  decision or failure that should bypass normal quiet rules.
+  one thought. Treat each item as an owner-visible private-chat bubble governed
+  by the shared Style Card and system bubble rules. Give it a stable category
+  `key`; use urgent priority only for a decision or failure that should bypass
+  normal quiet rules.
 """
 
 

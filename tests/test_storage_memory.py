@@ -918,6 +918,8 @@ class StorageMemoryTest(unittest.TestCase):
         )
         self.assertEqual(len({id(schedule) for schedule in schedules}), 3)
         self.assertIn("calls together in one response", AGENDA_TOOL_POLICY)
+        self.assertIn("governed", AGENDA_TOOL_POLICY)
+        self.assertIn("by the shared Style Card", AGENDA_TOOL_POLICY)
         self.assertIn("judgment, not a reflex", MEMORY_TOOL_POLICY)
         self.assertIn(
             "never persist a more specific claim than the exact owner quote entails",
