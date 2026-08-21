@@ -341,7 +341,7 @@ class NapCatChannel:
                             node.get("segments"), list
                         ):
                             await self._materialize_images(node["segments"])
-            if segment.get("type") not in {"image", "mface"}:
+            if not _is_visual_image(segment):
                 continue
             source = data.get("url") or data.get("file")
             if not isinstance(source, str) or not source.startswith(
@@ -693,7 +693,7 @@ def image_blocks(
                     if isinstance(node, dict) and isinstance(node.get("segments"), list):
                         blocks.extend(image_blocks(node["segments"]))
             continue
-        if kind not in {"image", "mface"} or not isinstance(data, dict):
+        if not _is_visual_image(segment):
             continue
         source = data.get("url") or data.get("file")
         if not isinstance(source, str):
@@ -712,6 +712,13 @@ def image_blocks(
                 }
             )
     return blocks
+
+
+def _is_visual_image(segment: dict[str, Any]) -> bool:
+    if segment.get("type") != "image":
+        return False
+    data = segment.get("data")
+    return isinstance(data, dict) and str(data.get("sub_type", "0")) != "1"
 
 
 def _media_display_name(source: str) -> str | None:

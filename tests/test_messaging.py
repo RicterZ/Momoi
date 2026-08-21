@@ -295,6 +295,49 @@ class MessagingTest(unittest.TestCase):
             "[QQ face id=32 description=自定义名称]",
         )
 
+    def test_napcat_stickers_are_described_but_not_sent_as_vision(self) -> None:
+        segments = [
+            {
+                "type": "mface",
+                "data": {
+                    "emoji_id": "market-1",
+                    "summary": "摇头",
+                    "url": "https://img.example/market.gif",
+                },
+            },
+            {
+                "type": "image",
+                "data": {
+                    "sub_type": 1,
+                    "summary": "动画表情",
+                    "url": "https://img.example/sticker.gif",
+                },
+            },
+            {
+                "type": "image",
+                "data": {
+                    "sub_type": 0,
+                    "url": "https://img.example/photo.jpg",
+                },
+            },
+        ]
+
+        self.assertEqual(
+            image_blocks(segments),
+            [
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "url",
+                        "url": "https://img.example/photo.jpg",
+                    },
+                }
+            ],
+        )
+        rendered = render_segments(segments)
+        self.assertIn("[QQ sticker id=market-1 description=摇头]", rendered)
+        self.assertIn("[QQ sticker", rendered)
+
     def test_napcat_resolves_quoted_message_content_and_images(self) -> None:
         async def run() -> None:
             client = NapCatChannel(
