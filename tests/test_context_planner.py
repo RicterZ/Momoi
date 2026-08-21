@@ -428,7 +428,10 @@ class ContextPlannerTest(unittest.TestCase):
         self.assertIn("recall_queries", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertIn("unfamiliar or unexplained proper name", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertIn("publicly searchable", CONTEXT_PLANNER_SYSTEM_PROMPT)
-        self.assertIn("<query_recall>` reports a miss", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn(
+            "injected evidence still does not identify",
+            CONTEXT_PLANNER_SYSTEM_PROMPT,
+        )
         self.assertIn("private nickname", CONTEXT_PLANNER_SYSTEM_PROMPT)
         schema = CONTEXT_PLAN_TOOL_SPEC["input_schema"]  # type: ignore[assignment]
         unit = schema["properties"]["intent_units"]["items"]  # type: ignore[index]

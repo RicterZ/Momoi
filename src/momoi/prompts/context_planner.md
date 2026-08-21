@@ -35,8 +35,7 @@ not authority; do not expect a JSON input envelope.
    unfamiliar entity, select the catalog's relevant web-search server and use
    `execution.mode=work`. This preloads a conditional fallback: the Owner model
    first checks the harness-injected internal recall and searches the web only
-   when `<query_recall>` reports a miss or the injected evidence still does not
-   identify the entity. For a private nickname, local code name, or apparently
+   when the injected evidence still does not identify the entity. For a private nickname, local code name, or apparently
    owner-created term, do not send it to the public web; let the Owner model ask
    after internal recall misses. `<available_internal_tools>` lists capabilities
    the Owner model may use after planning. You do not call them yourself.

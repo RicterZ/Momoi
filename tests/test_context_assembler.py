@@ -196,7 +196,6 @@ class ContextAssemblerTest(unittest.TestCase):
             ("active_goals", "goals"),
             ("long_term_memories", "long term"),
             ("recall_memories", "recalled"),
-            ("query_recall", "recall"),
             ("episode_directory", "episodes"),
             ("recalled_turns", "recalled turns"),
         )
@@ -204,8 +203,7 @@ class ContextAssemblerTest(unittest.TestCase):
         self.assertLess(rendered.index("<recent_memories>"), rendered.index("<active_goals>"))
         self.assertLess(rendered.index("<active_goals>"), rendered.index("<pending_reminders>"))
         self.assertLess(rendered.index("<pending_reminders>"), rendered.index("<recent_turns>"))
-        self.assertLess(rendered.index("<recent_turns>"), rendered.index("<query_recall>"))
-        self.assertLess(rendered.index("<query_recall>"), rendered.index("<recall_memories>"))
+        self.assertLess(rendered.index("<recent_turns>"), rendered.index("<recall_memories>"))
         self.assertLess(rendered.index("<recall_memories>"), rendered.index("<episode_directory>"))
         self.assertLess(rendered.index("<episode_directory>"), rendered.index("<recalled_turns>"))
 

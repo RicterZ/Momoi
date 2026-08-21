@@ -213,7 +213,6 @@ class TurnOrchestrator:
                     ("recent_turns", recalled["recent_turns"]),
                     ("recent_conversation", recalled["recent_conversation"]),
                     ("episode_directory", recalled["episodes"]),
-                    ("query_recall", recalled["query_recall"]),
                     ("recalled_turns", recalled["recalled_turns"]),
                     (
                         "interrupted_reply_expectation",
@@ -843,7 +842,6 @@ class TurnOrchestrator:
             ("recent_turns", recalled["recent_turns"]),
             ("recent_conversation", recalled["recent_conversation"]),
             ("episode_directory", recalled["episodes"]),
-            ("query_recall", recalled["query_recall"]),
             ("recalled_turns", recalled["recalled_turns"]),
             ("open_reconciliations", reconciliations),
             (
@@ -1171,7 +1169,6 @@ class TurnOrchestrator:
             ),
             ("recent_turns", recalled["recent_turns"]),
             ("episode_directory", recalled["episodes"]),
-            ("query_recall", recalled["query_recall"]),
             ("long_term_memories", recalled["long_term_memories"]),
             ("recent_memories", recalled["recent_memories"]),
             ("recall_memories", recalled["recall_memories"]),

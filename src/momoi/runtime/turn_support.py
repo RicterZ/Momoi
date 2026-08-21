@@ -95,7 +95,6 @@ USER_CONTEXT_SECTION_ORDER = (
     "recent_memory_inventory",
     "recent_turns",
     "recent_conversation",
-    "query_recall",
     "recall_memories",
     "reflection_memories",
     "episode_directory",
