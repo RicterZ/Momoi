@@ -126,6 +126,7 @@ USER_CONTEXT_SECTION_ORDER = (
     "recent_turns",
     "recent_conversation",
     "recall_memories",
+    "recall_status",
     "reflection_memories",
     "episode_directory",
     "recalled_turns",

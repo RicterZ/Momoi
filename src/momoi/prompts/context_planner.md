@@ -27,26 +27,49 @@ or persona-specific wording from it.
    `owner_handoff.context.needs` only when material historical evidence may
    still be missing after the runtime's automatic recall. Otherwise mark the
    context sufficient.
-3. Give every unit one explicit `recall` decision. Use `search` whenever
+3. Give every unit one explicit `recall` decision based on its informational
+   dependencies, not its social tone or `speech_act`. Use `search` whenever
    unsupplied history could materially change the response or work; provide one
-   to three ranked queries, highest-value first. Each query is a short
+   to three ranked queries, highest-value first. A newly introduced or
+   uncertain named person, character, work, place, product, or term that matters
+   to the reply always requires `search`, even inside casual sharing or banter.
+   It matters when it is the subject of the owner's impression, prediction, or
+   reaction, or when any planned delivery beat would acknowledge, evaluate, or
+   speculate about it; a factual question is not required.
+   Search is still required when a generic reaction would be possible or a miss
+   seems likely: avoiding unknown details does not establish that prior shared
+   context is irrelevant, and discovering that no history is available is part
+   of the recall result. Model prior knowledge, a presumed downstream persona,
+   plausible inference from the owner's wording, or a resolution written into
+   `references` is not supplied evidence.
+   Each query is a short
    exact-word OR expression using `|` without surrounding spaces between
    concrete search anchors or aliases, for example
    `primary-name|known-alias|exact-identifier`. Do not submit a natural-language
-   sentence. Include the literal spelling of an unresolved proper name material
-   to the intent.
-   Use `skip` with `low_information_social` only when the unit is a
-   self-contained low-information social beat, the supplied current/recent
-   context fully grounds it, and unavailable history would not change the
-   response. Never use `skip` for a request, question, correction, unresolved
-   reference, unfamiliar name, memory mutation, or work item merely to avoid
-   formulating a query. The runtime fairly executes a globally bounded subset
+   sentence. Include the literal spelling of every new or unresolved proper name
+   material to the intent. For a new entity, make its first query the literal
+   name plus only genuine aliases of that same entity. Do not add its work,
+   category, location, associates, or other broader topic as OR alternatives;
+   a hit on surrounding context does not establish that the entity was recalled.
+   Use `skip` with `fully_grounded_social` only for a self-contained social beat
+   whose meaning, referents, and premises needed for the reply are all directly
+   and completely established by the supplied current/recent context. It is not
+   enough that the owner supplied a broad category or impression of a new entity.
+   If `uncertainty` would note missing identity, background, prior relationship,
+   or other recallable context, `skip` contradicts that uncertainty. Never use
+   `skip` for a request, question, correction, new or unresolved name, memory
+   mutation, or work item merely to avoid formulating a query. The runtime
+   fairly executes a globally bounded subset
    from `search` units across recall memory, reflections, Episodes, and matched
    Turns, taking every unit's first query before lower-ranked queries.
 4. Select only external MCP servers required now. Apply the downstream
    contract's internal-recall/private-name/public-search rules when routing an
-   unfamiliar entity. `<available_internal_tools>` lists downstream resident
-   capabilities; you do not call them.
+   unfamiliar entity. For a material unfamiliar public entity not actually
+   identified by supplied evidence, route the relevant public-search server as
+   a fallback: automatic internal recall runs after this plan, and the Owner
+   uses public search only if that recalled evidence still does not identify it.
+   Never publicly route a possibly private name. `<available_internal_tools>`
+   lists downstream resident capabilities; you do not call them.
 5. Give a short execution outline containing only applicable evidence checks,
    actions, verification, and clarification; leave it empty when none apply.
    Separately plan owner-visible delivery at bubble granularity. Each delivery
@@ -62,6 +85,12 @@ or persona-specific wording from it.
    Choose silence or one or more bubbles from the actual moment, with no fixed
    default, minimum, or preferred count. For work, place progress, discovery,
    failure, question, and result bubbles where they become owner-relevant.
+   Plan the bubbles as an unfolding timeline, not as an expressive opener plus
+   complete remainder. At every local transition—before, between, or after
+   substantive beats, and after later thoughts or tool results—decide whether
+   the next impulse is a half-beat or a complete move. Keep a half-beat in the
+   position where it arises; do not systematically put half-beat forms first or
+   make later bubbles complete merely because something has already been said.
    Choose each form by the whole intended bubble, using the exact definitions
    in the shared Style Card: `non_propositional` contains only affect,
    attention, address, hesitation, or another vocal gesture; `fragmentary`
@@ -98,7 +127,10 @@ or persona-specific wording from it.
 
 - `owner_handoff.mcp.servers` contains only ids from
   `<available_mcp_servers>` and only servers needed by the current work. Keep it
-  empty for ordinary conversation and resident-tool-only work. Do not preload a
+  empty for ordinary conversation that has no unresolved factual dependency and
+  for resident-tool-only work. A material unfamiliar public entity is not made
+  exempt by conversational tone: route public search when the supplied evidence
+  does not identify it, with internal recall as the first step. Do not preload a
   server merely because it might become useful; give a concise routing reason.
 - Use `respond` when no tool beyond owner-visible messaging and terminal
   response is needed. Use `clarify` only when missing owner input prevents safe

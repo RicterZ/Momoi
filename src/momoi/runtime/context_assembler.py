@@ -96,9 +96,10 @@ def build_plan_retrieval(
             config.policies.context.max_visible_reminders
         )
     ]
-    # Every planned unit carries one or more recall expressions. Execute them
-    # fairly across units: take each unit's first expression before any unit's
-    # second, deduplicate shared expressions, then enforce the global fan-out.
+    # Every search-mode unit carries one or more recall expressions. Execute
+    # them fairly across units: take each unit's first expression before any
+    # unit's second, deduplicate shared expressions, then enforce the global
+    # fan-out.
     recall_queries: list[tuple[str, list[str]]] = []
     recall_units = list(plan.get("intent_units") or [])
     activity = plan.get("activity")

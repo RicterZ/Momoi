@@ -209,6 +209,7 @@ class ProvidersToolsTest(unittest.TestCase):
     def test_user_pack_keeps_query_specific_recall_after_recent_turns(self) -> None:
         rendered = pack_user_context(
             ("recall_memories", "召回的事实"),
+            ("recall_status", "queries=棕榈\nmisses=棕榈"),
             ("reflection_memories", "今日学习"),
             ("episode_directory", "旧话题"),
             ("recent_turns", '{"version":1,"turns":[]}'),
@@ -231,6 +232,10 @@ class ProvidersToolsTest(unittest.TestCase):
         self.assertLess(
             rendered.index("<recent_turns>"),
             rendered.index("<recall_memories>"),
+        )
+        self.assertLess(
+            rendered.index("<recall_memories>"),
+            rendered.index("<recall_status>"),
         )
         self.assertLess(
             rendered.index("<recent_turns>"),

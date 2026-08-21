@@ -471,6 +471,17 @@ class ContextPlannerTest(unittest.TestCase):
         self.assertIn("thinking_search", CONTEXT_PLANNER_PROTOCOL_PROMPT)
         self.assertIn("advisory delivery plan", CONTEXT_PLANNER_PROTOCOL_PROMPT)
         self.assertIn("explicit `recall` decision", CONTEXT_PLANNER_PROTOCOL_PROMPT)
+        self.assertIn("not its social tone", CONTEXT_PLANNER_PROTOCOL_PROMPT)
+        self.assertIn("even inside casual sharing", CONTEXT_PLANNER_PROTOCOL_PROMPT)
+        self.assertIn("subject of the owner's impression", CONTEXT_PLANNER_PROTOCOL_PROMPT)
+        self.assertIn("a factual question is not required", CONTEXT_PLANNER_PROTOCOL_PROMPT)
+        self.assertIn("a miss\n   seems likely", CONTEXT_PLANNER_PROTOCOL_PROMPT)
+        self.assertIn("presumed downstream persona", CONTEXT_PLANNER_PROTOCOL_PROMPT)
+        self.assertIn("is not supplied evidence", CONTEXT_PLANNER_PROTOCOL_PROMPT)
+        self.assertIn("skip` contradicts that uncertainty", CONTEXT_PLANNER_PROTOCOL_PROMPT)
+        self.assertIn("route the relevant public-search server", CONTEXT_PLANNER_PROTOCOL_PROMPT)
+        self.assertIn("only genuine aliases", CONTEXT_PLANNER_PROTOCOL_PROMPT)
+        self.assertIn("broader topic as OR alternatives", CONTEXT_PLANNER_PROTOCOL_PROMPT)
         self.assertIn("without surrounding spaces", CONTEXT_PLANNER_PROTOCOL_PROMPT)
         self.assertIn(
             "internal-recall/private-name/public-search",
@@ -489,10 +500,34 @@ class ContextPlannerTest(unittest.TestCase):
             "Required recall decision",
             unit["properties"]["recall"]["description"],
         )
+        self.assertIn(
+            "newly introduced or uncertain named",
+            unit["properties"]["recall"]["description"],
+        )
+        self.assertIn(
+            "acknowledge, evaluate, or speculate",
+            unit["properties"]["recall"]["description"],
+        )
         recall_variants = unit["properties"]["recall"]["oneOf"]
         self.assertEqual(recall_variants[0]["properties"]["mode"]["enum"], ["search"])
+        self.assertIn(
+            "genuine aliases of the same target",
+            recall_variants[0]["properties"]["queries"]["description"],
+        )
+        self.assertIn(
+            "broader topic as OR alternatives",
+            recall_variants[0]["properties"]["queries"]["description"],
+        )
         self.assertEqual(recall_variants[1]["properties"]["mode"]["enum"], ["skip"])
+        self.assertEqual(
+            recall_variants[1]["properties"]["reason"]["enum"],
+            ["fully_grounded_social"],
+        )
         self.assertEqual(schema["properties"]["uncertainty"]["maxItems"], 4)  # type: ignore[index]
+        self.assertIn(
+            "Do not use this field instead of recall",
+            schema["properties"]["uncertainty"]["description"],  # type: ignore[index]
+        )
         legacy_keyword_plan = response_plan()
         legacy_keyword_plan["intent_units"][0]["recall_queries"] = [
             "旧关键词 | 旧别名"
@@ -525,13 +560,20 @@ class ContextPlannerTest(unittest.TestCase):
         social["intent_units"][0].pop("recall_queries")
         social["intent_units"][0]["recall"] = {
             "mode": "skip",
-            "reason": "low_information_social",
+            "reason": "fully_grounded_social",
         }
         social["episode_actions"] = [social["episode_actions"][0]]
         social["episode_links"] = []
         social["owner_handoff"]["execution"]["mode"] = "respond"
         parsed = parse_context_plan(social, ["event-1"], [], "turn-1", 1)
         self.assertEqual(parsed["intent_units"][0]["recall_queries"], [])
+
+        obsolete_reason = json.loads(json.dumps(social, ensure_ascii=False))
+        obsolete_reason["intent_units"][0]["recall"]["reason"] = (
+            "low_information_social"
+        )
+        with self.assertRaisesRegex(ContextPlanError, "invalid_recall_skip"):
+            parse_context_plan(obsolete_reason, ["event-1"], [], "turn-1", 1)
 
         invalid_work = json.loads(json.dumps(social, ensure_ascii=False))
         invalid_work["owner_handoff"]["execution"]["mode"] = "work"
@@ -995,6 +1037,9 @@ class ContextPlannerTest(unittest.TestCase):
         self.assertIn("whole intended bubble", CONTEXT_PLANNER_PROTOCOL_PROMPT)
         self.assertIn("does not turn completed content", CONTEXT_PLANNER_PROTOCOL_PROMPT)
         self.assertIn("must not require the bubble", CONTEXT_PLANNER_PROTOCOL_PROMPT)
+        self.assertIn("unfolding timeline", CONTEXT_PLANNER_PROTOCOL_PROMPT)
+        self.assertIn("before, between, or after", CONTEXT_PLANNER_PROTOCOL_PROMPT)
+        self.assertIn("do not systematically put", CONTEXT_PLANNER_PROTOCOL_PROMPT)
         self.assertIn("leave a planned fragment unfinished", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertNotIn("Momoi", STYLE_CARD_SYSTEM_PROMPT)
         schema = CONTEXT_PLAN_TOOL_SPEC["input_schema"]
@@ -1424,6 +1469,8 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                     self.assertIn("<recent_turn_base>", text)
                     self.assertIn("<recent_turn_append>", text)
                     self.assertNotIn("<recent_conversation>", text)
+                    self.assertIn("<recall_status>", text)
+                    self.assertIn("queries=微博 | 等待中的邮件", text)
                     self.assertIn("<long_term_memories>", text)
                     self.assertIn("喜欢简短回复", text)
                     self.assertIn("<recent_memories>", text)

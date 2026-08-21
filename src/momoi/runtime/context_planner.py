@@ -27,7 +27,7 @@ RECALL_SKIP_SPEECH_ACTS = {
     "acknowledgment",
     "closing",
 }
-RECALL_SKIP_REASONS = {"low_information_social"}
+RECALL_SKIP_REASONS = {"fully_grounded_social"}
 CONTEXT_PLAN_TOOL_NAME = "submit_context_plan"
 
 
@@ -90,8 +90,13 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                                 "Required recall decision. Search with one to three "
                                 "ranked exact-word OR expressions whenever unsupplied "
                                 "history could materially change the response or work. "
-                                "Skip only for a self-contained low-information social "
-                                "beat already grounded by supplied context."
+                                "Search for a newly introduced or uncertain named person, "
+                                "character, work, place, product, or term even in social "
+                                "chat when the owner reacts to it or the reply would "
+                                "acknowledge, evaluate, or speculate about it. Skip only "
+                                "for a self-contained social beat whose "
+                                "meaning and every material referent are directly and "
+                                "completely grounded by supplied context."
                             ),
                             "oneOf": [
                                 {
@@ -113,8 +118,11 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                                             "description": (
                                                 "Ranked exact-word OR expressions. Use "
                                                 "`|` without surrounding spaces between "
-                                                "concrete search anchors or aliases inside "
-                                                "one expression."
+                                                "literal names or genuine aliases of the "
+                                                "same target inside one expression. For a "
+                                                "new entity, the first expression must not "
+                                                "use its work, category, associates, or "
+                                                "broader topic as OR alternatives."
                                             ),
                                         },
                                     },
@@ -130,7 +138,7 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                                         },
                                         "reason": {
                                             "type": "string",
-                                            "enum": ["low_information_social"],
+                                            "enum": ["fully_grounded_social"],
                                         },
                                     },
                                     "required": ["mode", "reason"],
@@ -506,6 +514,11 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                 "type": "array",
                 "maxItems": 4,
                 "items": {"type": "string"},
+                "description": (
+                    "Material ambiguity remaining after planning. Do not use this "
+                    "field instead of recall: missing recallable identity, background, "
+                    "or prior relationship is incompatible with a skip decision."
+                ),
             },
         },
         "required": [
