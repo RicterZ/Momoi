@@ -1042,6 +1042,18 @@ class ContextPlannerTest(unittest.TestCase):
         self.assertNotIn("description", bubble["properties"]["form"])
         self.assertNotIn("description", bubble["properties"]["purpose"])
 
+    def test_planner_delivery_has_an_unbiased_convergence_rule(self) -> None:
+        for phrase in (
+            "plan this sequence in one forward pass",
+            "drafting or comparing",
+            "preferences to break ties",
+            "commit to",
+            "do not reopen its count, order, or form",
+            "This stopping rule does not prefer",
+            "bubbles, complete forms",
+        ):
+            self.assertIn(phrase, CONTEXT_PLANNER_PROTOCOL_PROMPT)
+
     def test_shared_owner_rules_are_not_duplicated_in_planner_protocol(self) -> None:
         for phrase in (
             "`delivery=uncertain`",
