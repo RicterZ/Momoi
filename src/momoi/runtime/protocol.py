@@ -291,7 +291,7 @@ def tool_enable_spec(group_descriptions: dict[str, str]) -> dict[str, Any]:
     return {
         "name": "tool_enable",
         "description": (
-            "Load omitted internal or MCP tool groups when required. Loaded tools "
+            "Load omitted MCP tool groups when required. Loaded tools "
             "become callable on the next model step. "
             f"Group examples: {catalog}"
         ),

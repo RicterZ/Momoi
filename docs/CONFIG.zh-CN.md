@@ -284,15 +284,15 @@ momoi --workspace ~/.momoi run
 
 `max_input_tokens` 应低于 provider 真实的上下文窗口。这些数值是构建上下文的预算，不代表每个 provider 都会以相同方式计算 token。
 
-`recent_raw_tokens` 和 `recent_turns` 控制主模型的近期 Turn 分块日志：保留一个稳定 Base，再追加最多 `recent_turns - 1` 个新 Turn；下一轮边界到达时，Append 成为新 Base。低频变化的中断与 reconciliation 状态位于 Base 之前；Base 之后只放动态 Append、召回证据、本轮状态和当前消息。Owner Planner 与主模型不再重复注入已经包含在 Turn 投影中的 `recent_conversation`。Context Planner 使用独立的 Base/Append 大小。`planner_active_recent_turns` 通过独立的 Focus 区标记真正的当前焦点，不再改写 Base 内的 Turn；较旧 Turn 只用于明确引用、未完成工作、工具结果和纠错。Planner 投影保留工具名称和完整参数；成功、内部可见性、Provenance等默认包装不重复，状态变更工具只返回关键最终状态。历史工具结果始终使用同一套确定性的有界投影；大型文件、目录、搜索、MCP 或未知结构结果使用带原始大小/数量和头尾预览的结构化截断。历史消息省略可推导的 trust、已送达状态和逐项时间戳，Turn 级 `at` 提供时间锚点，空 Final 和重复的历史 intent 原文不发送。非默认投递状态、失败、副作用、等待、情绪变化和 mutation 仍会显式保留。`planner_recent_tokens` 未配置时取 `max_input_tokens × 55%` 与 `88000` 中较小者；这是为动态候选、Provider 计数偏差和约 30% 输入空白预留空间。
+`recent_raw_tokens` 和 `recent_turns` 控制主模型的近期 Turn 分块日志：保留一个稳定 Base，再追加最多 `recent_turns - 1` 个新 Turn；下一轮边界到达时，Append 成为新 Base。低频变化的中断与 reconciliation 状态位于 Base 之前；Base 之后只放动态 Append、召回证据、本轮状态和当前消息。Owner Planner 与主模型不再重复注入已经包含在 Turn 投影中的 `recent_conversation`。Heartbeat Planner 与 Heartbeat Turn 使用同一套 Base/Append 日志。Context Planner 使用独立的 Base/Append 大小。`planner_active_recent_turns` 通过独立的 Focus 区标记真正的当前焦点，不再改写 Base 内的 Turn；较旧 Turn 只用于明确引用、未完成工作、工具结果和纠错。Planner 投影保留工具名称和完整参数；成功、内部可见性、Provenance等默认包装不重复，状态变更工具只返回关键最终状态。历史工具结果始终使用同一套确定性的有界投影；大型文件、目录、搜索、MCP 或未知结构结果使用带原始大小/数量和头尾预览的结构化截断。历史消息省略可推导的 trust、已送达状态和逐项时间戳，Turn 级 `at` 提供时间锚点，空 Final 和重复的历史 intent 原文不发送。非默认投递状态、失败、副作用、等待、情绪变化和 mutation 仍会显式保留。`planner_recent_tokens` 未配置时取 `max_input_tokens × 55%` 与 `88000` 中较小者；这是为动态候选、Provider 计数偏差和约 30% 输入空白预留空间。
 
 `recent_episode_hours` 会加入配置窗口内全部活跃的 Episode，与关键词召回相互独立；`summary_results` 默认将关键词召回限制为最多 12 个 Episode。两组结果按 Episode 去重后排序：近期且命中关键词的优先，其次是其他关键词命中，最后是仅近期活跃的 Episode；在关键词组内，命中的关键词 alternative 越多越靠前。`summary_tokens` 由合并后的 Episode 摘要共同使用。
 
-Owner主模型使用同一套紧凑Recent投影。稳定的Owner Preferences、Core Reflection和近期记忆位于当前Owner消息之前，以便复用前缀；动态当前消息保持在末尾。`work` Handoff保留完整内部工具面；`respond`和`clarify`使用Lean工具面，只包含`send_message`、`tool_enable`、`respond`、由`context.needs`精确Pin的History工具，以及Planner选中的MCP Server。`tool_enable.groups`可加载漏选的History、Memory写入、Agenda、Workspace或MCP组；新工具从下一次模型请求起可调用，且不会跨Owner Turn常驻。Context Planner只选择当前需要的外部MCP Server，并必须给出路由理由。Heartbeat Planner采用相同的Handoff模式：选择一个活动，指出最多两个Memory/Conversation查询，路由外部MCP Server，并提交有界执行大纲。Heartbeat查询不再由框架自动执行；真正的`rest`计划不带查询、MCP Server或执行步骤。自主工具继续受Autonomy Pattern限制。Planner降级时不预载MCP，但保留`tool_enable`，无需恢复全部外部Schema也不会失能。
+Owner主模型使用同一套紧凑Recent投影。稳定的Owner Preferences、Core Reflection和近期记忆位于当前Owner消息之前，以便复用前缀；动态当前消息保持在末尾。Owner Turn始终暴露完整内部工具面，以及`send_message`、`tool_enable`和`respond`。Planner选中的MCP Server追加在`tool_enable`之后；`tool_enable.groups`可在下一次模型请求加载额外MCP Server，且只在当前Owner Turn内保留。Context Planner只选择当前需要的外部MCP Server，并必须给出路由理由。Heartbeat Planner采用相同的Handoff模式：选择一个活动，指出最多两个Memory/Conversation查询，路由外部MCP Server，并提交有界执行大纲。Heartbeat查询不再由框架自动执行；真正的`rest`计划不带查询、MCP Server或执行步骤。自主工具继续受Autonomy Pattern限制。Planner降级时不预载MCP，但保留`tool_enable`，无需恢复全部外部Schema也不会失能。
 
-Owner Context Planner不再提交关键词让框架自动搜索Memory/Episode。它输出结构化`owner_handoff`：判断现有上下文是否充分、列出最多两个需要Owner主模型执行的Memory/Conversation/Thinking查询、选择MCP Server，并给出执行模式和大纲。框架仍提供Recent Episodes、近期/核心记忆和当前Goals/Reminders作为确定性基线；明确需要的历史工具会被精确Pin到Owner Turn。主模型可修正Planner方向、加载漏选工具组，并仅在实际推翻Handoff时通过`plan_adjustment`把修正写回后续Recent Turns。
+Owner Context Planner不再提交关键词让框架自动搜索Memory/Episode。它输出结构化`owner_handoff`：判断现有上下文是否充分、列出最多两个需要Owner主模型执行的Memory/Conversation/Thinking查询、选择MCP Server，并给出执行模式和大纲。框架仍提供Recent Episodes、近期/核心记忆和当前Goals/Reminders作为确定性基线。主模型可修正Planner方向、加载漏选的MCP Server，并仅在实际推翻Handoff时通过`plan_adjustment`把修正写回后续Recent Turns。
 
-将某个基线上下文层的结果数量或 token 预算设为 `0` 可关闭该层注入。显式记忆和对话搜索仍可通过Planner Pin或`tool_enable`使用。
+将某个基线上下文层的结果数量或 token 预算设为 `0` 可关闭该层注入。显式记忆和对话搜索作为常驻内部工具可用。
 
 ## 存储
 

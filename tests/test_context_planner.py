@@ -142,8 +142,19 @@ class ContextPlannerTest(unittest.TestCase):
             active_goals="- id=g1 status=active title=goal",
             pending_reminders="(none)",
             recent_topics=[{"title": "Game", "topics": ["BA"]}],
-            recent_turns="T-1\n  owner: hello",
-            recent_conversation="owner: hello",
+            recent_turns={
+                "turns": [
+                    {
+                        "turn_id": "t1",
+                        "at": "2026-08-20T20:00:00+08:00",
+                        "timeline": [
+                            {"type": "owner_message", "text": "hello"}
+                        ],
+                    }
+                ]
+            },
+            recent_turn_base_count=1,
+            active_recent_turn_ids=["t1"],
             recent_heartbeat_activities=[{"at": "now", "text": "rest"}],
             previous_activity={"activity": "rest", "result": "quiet"},
             current_self_state='{"mood":{"state":"calm"}}',
@@ -155,7 +166,8 @@ class ContextPlannerTest(unittest.TestCase):
         self.assertIn("<long_term_memories>\n- owner likes short replies", rendered)
         self.assertIn("<recent_memories>\n- shared game night", rendered)
         self.assertIn("<recent_topics>\n- title=Game topics=BA", rendered)
-        self.assertIn("<recent_turns>\nT-1", rendered)
+        self.assertIn("<recent_turn_base>\nT-1", rendered)
+        self.assertIn("<recent_turn_focus>\nT-1", rendered)
         self.assertLess(
             rendered.index("<available_internal_tools>"),
             rendered.index("<available_mcp_servers>"),
@@ -166,16 +178,17 @@ class ContextPlannerTest(unittest.TestCase):
         )
         self.assertLess(
             rendered.index("<pending_reminders>"),
-            rendered.index("<recent_turns>"),
+            rendered.index("<recent_turn_base>"),
         )
         self.assertLess(
-            rendered.index("<recent_turns>"),
-            rendered.index("<recent_conversation>"),
+            rendered.index("<recent_turn_base>"),
+            rendered.index("<recent_turn_append>"),
         )
         self.assertLess(
-            rendered.index("<recent_conversation>"),
+            rendered.index("<recent_turn_focus>"),
             rendered.index("<current_time>"),
         )
+        self.assertNotIn("<recent_conversation>", rendered)
         self.assertNotIn('"available_mcp_servers"', rendered)
 
     def test_mcp_catalog_uses_server_capability_descriptions(self) -> None:
@@ -225,6 +238,8 @@ class ContextPlannerTest(unittest.TestCase):
         )
         self.assertIn("recall_queries", HEARTBEAT_PLANNER_SYSTEM_PROMPT)
         self.assertIn("recent_heartbeat_activities", HEARTBEAT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn("recent_turn_base", HEARTBEAT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn("recent_turn_focus", HEARTBEAT_PLANNER_SYSTEM_PROMPT)
         plan = parse_heartbeat_plan(
             {
                 "version": 2,
@@ -608,8 +623,11 @@ class ContextPlannerTest(unittest.TestCase):
                 [item["episode_id"] for item in recalled["episodes"]],
                 ["hhkb"],
             )
+            resident = [
+                spec["name"] for spec in daemon._owner_tool_specs(plan)
+            ]
             self.assertEqual(
-                [spec["name"] for spec in daemon._owner_tool_specs(plan)],
+                resident,
                 [
                     "send_message",
                     "memory_search",
@@ -653,11 +671,7 @@ class ContextPlannerTest(unittest.TestCase):
             }
             self.assertEqual(
                 [spec["name"] for spec in daemon._owner_tool_specs(routed)],
-                [
-                    "send_message",
-                    "tool_enable",
-                    "respond",
-                ],
+                resident,
             )
             lookup = {
                 **routed,
@@ -678,12 +692,7 @@ class ContextPlannerTest(unittest.TestCase):
             }
             self.assertEqual(
                 [spec["name"] for spec in daemon._owner_tool_specs(lookup)],
-                [
-                    "send_message",
-                    "conversation_search",
-                    "tool_enable",
-                    "respond",
-                ],
+                resident,
             )
             daemon.store.close()
 

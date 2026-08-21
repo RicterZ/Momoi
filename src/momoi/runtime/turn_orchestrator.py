@@ -1050,20 +1050,6 @@ class TurnOrchestrator:
         contact_window = self.store.heartbeat_contact_window(
             notification_key, self.config.notifications
         )
-        recent_conversation = assemble_compact_recent_conversation(
-            self.store,
-            4,
-            min(1600, max(400, self.config.recent_raw_tokens // 3)),
-        )
-        heartbeat_turn_records, _ = assemble_recent_turns(
-            self.store,
-            self.config.recent_turns,
-            None,
-        )
-        recent_turns = project_recent_turns_for_owner(
-            heartbeat_turn_records,
-            None,
-        )
         recent_topics: list[dict[str, object]] = []
         topic_tokens = 0
         for episode in self.store.list_episode_candidates(
@@ -1103,8 +1089,6 @@ class TurnOrchestrator:
             self_context=self_context,
             conversation=conversation,
             recent_topics=recent_topics,
-            recent_turns=recent_turns,
-            recent_conversation=recent_conversation,
             goals=goals,
             reminders=reminders,
             long_term_memories=long_term_memories,
@@ -1163,11 +1147,8 @@ class TurnOrchestrator:
                 "recent_heartbeat_activities",
                 _heartbeat_activity_lines(self.store.recent_heartbeat_activities()),
             ),
-            (
-                "recent_conversation",
-                recent_conversation,
-            ),
-            ("recent_turns", recalled["recent_turns"]),
+            ("recent_turn_base", recalled["recent_turn_base"]),
+            ("recent_turn_append", recalled["recent_turn_append"]),
             ("episode_directory", recalled["episodes"]),
             ("long_term_memories", recalled["long_term_memories"]),
             ("recent_memories", recalled["recent_memories"]),

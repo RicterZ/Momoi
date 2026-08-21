@@ -1083,8 +1083,8 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                 [event], asyncio.Event(), daemon._turn_id(event.event_id)
             )
             self.assertGreater(len(fake.calls[0]), 1)
-            self.assertEqual(fake.calls[1], ["send_message", "respond"])
-            self.assertEqual(fake.calls[2], ["send_message", "respond"])
+            self.assertEqual(fake.calls[1], fake.calls[0])
+            self.assertEqual(fake.calls[2], fake.calls[0])
             self.assertEqual(daemon.store.due_outbox()[0].text, "已纠正")
             daemon.store.close()
 

@@ -1480,7 +1480,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(provider.calls, 3)
             daemon.store.close()
 
-    async def test_lean_owner_loads_internal_group_on_next_step(self) -> None:
+    async def test_owner_respond_mode_keeps_internal_tools(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "note.txt").write_text("workspace group loaded")
@@ -1538,30 +1538,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     provider_self.calls += 1
                     names = [str(tool["name"]) for tool in tools]
                     if provider_self.calls == 1:
-                        self.assertEqual(
-                            names,
-                            ["send_message", "tool_enable", "respond"],
-                        )
-                        enable = ToolCall(
-                            "enable-workspace",
-                            "tool_enable",
-                            {"groups": ["internal:workspace"]},
-                        )
-                        premature = ToolCall(
-                            "premature-read",
-                            "read_file",
-                            {"path": "note.txt"},
-                        )
-                        return ProviderResponse(
-                            [],
-                            [enable, premature],
-                        )
-                    elif provider_self.calls == 2:
                         self.assertIn("read_file", names)
-                        self.assertIn(
-                            "tool_not_allowed",
-                            json.dumps(messages, ensure_ascii=False),
-                        )
+                        self.assertIn("tool_enable", names)
                         call = ToolCall(
                             "read-note",
                             "read_file",
@@ -1617,7 +1595,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
 
             self.assertIsInstance(reply, AgentReply)
-            self.assertEqual(provider.calls, 3)
+            self.assertEqual(provider.calls, 2)
             daemon.store.close()
 
     async def test_heartbeat_defers_while_owner_reply_is_in_flight(self) -> None:
@@ -1903,7 +1881,10 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
 
                 @staticmethod
                 def assert_terminal_tools(tools: list[dict[str, object]]) -> None:
-                    if [tool["name"] for tool in tools] != ["send_message", "respond"]:
+                    names = [tool["name"] for tool in tools]
+                    if "send_message" not in names or "respond" not in names:
+                        raise AssertionError(tools)
+                    if "goal_create" not in names:
                         raise AssertionError(tools)
 
             provider = Provider()
@@ -2122,7 +2103,10 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             or "<runtime_state>" not in request
                             or "<recent_topic_reference>" not in request
                             or "<recent_heartbeat_activities>" not in request
-                            or "<recent_conversation>" not in request
+                            or (
+                                "<recent_turn_base>" not in request
+                                and "<recent_turn_append>" not in request
+                            )
                             or "最近的聊天话题" not in request
                             or "天气 Goal 已触发并成功送达" not in request
                             or "<pending_owner_reply>" in request
@@ -2532,7 +2516,14 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     ):
                         raise AssertionError((system, messages, tools))
                     payload = planner_sections(str(messages[0]["content"]))
-                    if "recent_heartbeat_activities" not in payload:
+                    if (
+                        "recent_heartbeat_activities" not in payload
+                        or (
+                            "recent_turn_base" not in payload
+                            and "recent_turn_append" not in payload
+                        )
+                        or "recent_conversation" in payload
+                    ):
                         raise AssertionError(payload)
 
             provider = Provider()
@@ -2648,10 +2639,12 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             ],
                             [call],
                         )
-                    if [tool["name"] for tool in tools] != [
-                        "send_message",
-                        "respond",
-                    ]:
+                    names = [tool["name"] for tool in tools]
+                    if (
+                        "send_message" not in names
+                        or "respond" not in names
+                        or "memory_search" not in names
+                    ):
                         raise AssertionError(tools)
                     if self.calls == 2:
                         call = ToolCall(
@@ -2797,10 +2790,12 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             for block in content
                             if isinstance(block, dict)
                         )
-                    if [tool["name"] for tool in tools] != [
-                        "send_message",
-                        "respond",
-                    ]:
+                    names = [tool["name"] for tool in tools]
+                    if (
+                        "send_message" not in names
+                        or "respond" not in names
+                        or "memory_search" not in names
+                    ):
                         raise AssertionError(tools)
                     if self.calls == 2:
                         call = ToolCall(
@@ -3605,10 +3600,10 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn(
             "send_message", [tool["name"] for tool in llm_requests[1]["tools"]]
         )
-        self.assertEqual(
-            [tool["name"] for tool in llm_requests[7]["tools"]],
-            ["send_message", "respond"],
-        )
+        final_tools = [tool["name"] for tool in llm_requests[7]["tools"]]
+        self.assertIn("send_message", final_tools)
+        self.assertIn("respond", final_tools)
+        self.assertIn("memory_search", final_tools)
         self.assertNotIn("tool_choice", llm_requests[7])
         self.assertEqual(
             llm_requests[1]["system"][0]["cache_control"], {"type": "ephemeral"}
@@ -3619,7 +3614,11 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(len(llm_requests[1]["system"]), 2)
         self.assertIn("Memory tools", llm_requests[1]["system"][1]["text"])
-        self.assertEqual(len(llm_requests[7]["system"]), 1)
+        self.assertEqual(len(llm_requests[7]["system"]), 2)
+        self.assertEqual(
+            llm_requests[1]["system"][1]["text"],
+            llm_requests[7]["system"][1]["text"],
+        )
         self.assertEqual(
             llm_requests[1]["system"][0]["text"],
             llm_requests[7]["system"][0]["text"],

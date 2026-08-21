@@ -30,6 +30,10 @@ Rules:
   inputs already look sufficient. Genuine rest still names the smallest exact
   continuity topic for this moment.
 
+- `recent_turn_base` and `recent_turn_append` form one ordered Turn history.
+  `recent_turn_focus` lists the Turn labels that are the default focus. Other
+  supplied Turns are background evidence.
+
 - Assess whether supplied state, recent conversation, topics, Goals, and
   reminders are enough to execute the activity. If an exact
   older fact or conversation is necessary, put at most two bounded lookups in

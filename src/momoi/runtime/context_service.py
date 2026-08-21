@@ -12,7 +12,6 @@ from .context_assembler import (
     assemble_main_context,
     assemble_planner_recent_turns,
     build_plan_retrieval,
-    assemble_compact_recent_conversation,
     render_planner_recent_turn_focus,
     render_planner_recent_turns,
 )
@@ -326,8 +325,9 @@ def render_heartbeat_planner_request(
     active_goals: str,
     pending_reminders: str,
     recent_topics: list[dict[str, object]],
-    recent_turns: str,
-    recent_conversation: str,
+    recent_turns: dict[str, object],
+    recent_turn_base_count: int,
+    active_recent_turn_ids: list[str],
     recent_heartbeat_activities: list[dict[str, str]],
     previous_activity: dict[str, object],
     current_self_state: str,
@@ -338,6 +338,9 @@ def render_heartbeat_planner_request(
         f"{key}: {str(previous_activity.get(key) or '(none)').strip()}"
         for key in ("activity", "result")
     )
+    turns = recent_turns.get("turns")
+    turn_items = turns if isinstance(turns, list) else []
+    base_count = max(0, min(int(recent_turn_base_count), len(turn_items)))
     return _sections(
         (
             "available_internal_tools",
@@ -349,8 +352,32 @@ def render_heartbeat_planner_request(
         ("recent_memories", _planner_value(recent_memories)),
         ("active_goals", _planner_value(active_goals)),
         ("pending_reminders", _planner_value(pending_reminders)),
-        ("recent_turns", _planner_value(recent_turns)),
-        ("recent_conversation", _planner_value(recent_conversation)),
+        (
+            "recent_turn_base",
+            _planner_value(
+                render_planner_recent_turns(
+                    {"version": 1, "turns": turn_items[:base_count]}
+                )
+            ),
+        ),
+        (
+            "recent_turn_append",
+            _planner_value(
+                render_planner_recent_turns(
+                    {"version": 1, "turns": turn_items[base_count:]},
+                    start_index=base_count + 1,
+                )
+            ),
+        ),
+        (
+            "recent_turn_focus",
+            _planner_value(
+                render_planner_recent_turn_focus(
+                    recent_turns,
+                    active_recent_turn_ids,
+                )
+            ),
+        ),
         ("recent_topics", _planner_value(_heartbeat_topic_lines(recent_topics))),
         ("recent_heartbeat_activities", _planner_value(_heartbeat_activity_lines(recent_heartbeat_activities))),
         ("previous_activity", _planner_value(previous_lines)),
@@ -782,8 +809,6 @@ class ContextService:
         self_context: str,
         conversation: dict[str, object],
         recent_topics: list[dict[str, object]],
-        recent_turns: str,
-        recent_conversation: str,
         goals: str,
         reminders: str,
         long_term_memories: str,
@@ -793,6 +818,19 @@ class ContextService:
         available_mcp_servers = {
             str(server["id"]) for server in mcp_server_catalog
         }
+        planner_recent_turns, active_recent_turn_ids, recent_turn_base_count = (
+            assemble_planner_recent_turns(
+                self.store,
+                self.config.planner_recent_base_turns or self.config.recent_turns,
+                self.config.planner_recent_append_turns or self.config.recent_turns,
+                self.config.planner_active_recent_turns or self.config.recent_turns,
+                self.config.planner_recent_tokens
+                or min(
+                    88000,
+                    max(1000, int(self.config.max_input_tokens * 0.55)),
+                ),
+            )
+        )
         request = [
             {
                 "role": "user",
@@ -804,9 +842,10 @@ class ContextService:
                     recent_memories=recent_memories,
                     active_goals=goals,
                     pending_reminders=reminders,
-                    recent_turns=recent_turns,
+                    recent_turns=planner_recent_turns,
+                    recent_turn_base_count=recent_turn_base_count,
+                    active_recent_turn_ids=active_recent_turn_ids,
                     recent_topics=recent_topics,
-                    recent_conversation=recent_conversation,
                     recent_heartbeat_activities=self.store.recent_heartbeat_activities(),
                     previous_activity={
                         "activity": state.get("activity"),
