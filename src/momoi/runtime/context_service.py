@@ -9,6 +9,7 @@ from ..logging_context import TRACE, compact_log_value, log_context, log_event, 
 from ..models import IncomingMessage
 from ..storage import estimate_tokens
 from .context_assembler import (
+    RECENT_TURN_CONTEXT_TOKENS,
     assemble_main_context,
     assemble_planner_recent_turns,
     build_plan_retrieval,
@@ -325,6 +326,7 @@ def render_heartbeat_planner_request(
     active_goals: str,
     pending_reminders: str,
     recent_topics: list[dict[str, object]],
+    recent_turns: str,
     recent_conversation: str,
     recent_heartbeat_activities: list[dict[str, str]],
     previous_activity: dict[str, object],
@@ -347,8 +349,9 @@ def render_heartbeat_planner_request(
         ("recent_memories", _planner_value(recent_memories)),
         ("active_goals", _planner_value(active_goals)),
         ("pending_reminders", _planner_value(pending_reminders)),
-        ("recent_topics", _planner_value(_heartbeat_topic_lines(recent_topics))),
+        ("recent_turns", _planner_value(recent_turns)),
         ("recent_conversation", _planner_value(recent_conversation)),
+        ("recent_topics", _planner_value(_heartbeat_topic_lines(recent_topics))),
         ("recent_heartbeat_activities", _planner_value(_heartbeat_activity_lines(recent_heartbeat_activities))),
         ("previous_activity", _planner_value(previous_lines)),
         ("current_self_state", _planner_value(_heartbeat_self_state_lines(current_self_state))),
@@ -447,10 +450,13 @@ class ContextService:
                 self.config.planner_recent_base_turns or self.config.recent_turns,
                 self.config.planner_recent_append_turns or self.config.recent_turns,
                 self.config.planner_active_recent_turns or self.config.recent_turns,
-                self.config.planner_recent_tokens
-                or min(
-                    88000,
-                    max(1000, int(self.config.max_input_tokens * 0.55)),
+                min(
+                    RECENT_TURN_CONTEXT_TOKENS,
+                    self.config.planner_recent_tokens
+                    or min(
+                        88000,
+                        max(1000, int(self.config.max_input_tokens * 0.55)),
+                    ),
                 ),
                 min(event.received_at for event in events),
             )
@@ -734,6 +740,7 @@ class ContextService:
             or retrieval.get("version") != 3
             or not isinstance(retrieval.get("recall_memories"), list)
             or not isinstance(retrieval.get("reflection_memories"), list)
+            or not isinstance(retrieval.get("recalled_turns"), list)
         ):
             retrieval = build_plan_retrieval(self.store, plan, self.config)
             record = self.store.save_context_retrieval(
@@ -752,6 +759,7 @@ class ContextService:
             self.config.recent_raw_tokens,
             self.config.recent_turns,
             min(event.received_at for event in events),
+            RECENT_TURN_CONTEXT_TOKENS,
         )
 
     async def _plan_heartbeat_context(
@@ -762,6 +770,7 @@ class ContextService:
         self_context: str,
         conversation: dict[str, object],
         recent_topics: list[dict[str, object]],
+        recent_turns: str,
         recent_conversation: str,
         goals: str,
         reminders: str,
@@ -783,6 +792,7 @@ class ContextService:
                     recent_memories=recent_memories,
                     active_goals=goals,
                     pending_reminders=reminders,
+                    recent_turns=recent_turns,
                     recent_topics=recent_topics,
                     recent_conversation=recent_conversation,
                     recent_heartbeat_activities=self.store.recent_heartbeat_activities(),

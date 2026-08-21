@@ -2368,7 +2368,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn("整理笔记", provider.turn_request)
             daemon.store.close()
 
-    async def test_heartbeat_handoff_lookup_is_executed_by_turn(self) -> None:
+    async def test_heartbeat_handoff_lookup_is_satisfied_by_harness_recall(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
                 llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
@@ -2439,6 +2439,9 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "activity": {
                                     "intent": "浏览微博关注流",
                                     "reason": "看看最近感兴趣的动态",
+                                    "recall_queries": [
+                                        "微博登录过期 | 刷微博遇到错误"
+                                    ],
                                 },
                                 "heartbeat_handoff": {
                                     "context": {
@@ -2476,25 +2479,14 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             or "<heartbeat_plan>" not in request
                             or "浏览微博关注流" not in request
                             or "微博登录过期 | 刷微博遇到错误" not in request
-                            or "shared.weibo.login_expired_notify" in request
+                            or "shared.weibo.login_expired_notify" not in request
+                            or "微博登录过期时主动提醒" not in request
                             or "memory_search" not in names
                             or "memory_remember" not in names
                             or "goal_update" not in names
                             or "reminder_create" not in names
                         ):
                             raise AssertionError((system, request, names))
-                        call = ToolCall(
-                            "heartbeat-memory",
-                            "memory_search",
-                            {"query": "微博登录过期 | 刷微博遇到错误"},
-                        )
-                    else:
-                        request = json.dumps(messages, ensure_ascii=False)
-                        if (
-                            "shared.weibo.login_expired_notify" not in request
-                            or "微博登录过期时主动提醒" not in request
-                        ):
-                            raise AssertionError((system, request))
                         call = ToolCall(
                             "heartbeat-done",
                             "respond",
@@ -2553,7 +2545,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 )
             )
             await daemon._complete_heartbeat_turn(asyncio.Event())
-            self.assertEqual(provider.calls, 3)
+            self.assertEqual(provider.calls, 2)
             self.assertEqual(
                 daemon.store.self_state()["activity"], "浏览微博关注流"
             )

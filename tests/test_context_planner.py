@@ -142,6 +142,7 @@ class ContextPlannerTest(unittest.TestCase):
             active_goals="- id=g1 status=active title=goal",
             pending_reminders="(none)",
             recent_topics=[{"title": "Game", "topics": ["BA"]}],
+            recent_turns="T-1\n  owner: hello",
             recent_conversation="owner: hello",
             recent_heartbeat_activities=[{"at": "now", "text": "rest"}],
             previous_activity={"activity": "rest", "result": "quiet"},
@@ -154,6 +155,27 @@ class ContextPlannerTest(unittest.TestCase):
         self.assertIn("<long_term_memories>\n- owner likes short replies", rendered)
         self.assertIn("<recent_memories>\n- shared game night", rendered)
         self.assertIn("<recent_topics>\n- title=Game topics=BA", rendered)
+        self.assertIn("<recent_turns>\nT-1", rendered)
+        self.assertLess(
+            rendered.index("<available_internal_tools>"),
+            rendered.index("<available_mcp_servers>"),
+        )
+        self.assertLess(
+            rendered.index("<recent_memories>"),
+            rendered.index("<active_goals>"),
+        )
+        self.assertLess(
+            rendered.index("<pending_reminders>"),
+            rendered.index("<recent_turns>"),
+        )
+        self.assertLess(
+            rendered.index("<recent_turns>"),
+            rendered.index("<recent_conversation>"),
+        )
+        self.assertLess(
+            rendered.index("<recent_conversation>"),
+            rendered.index("<current_time>"),
+        )
         self.assertNotIn('"available_mcp_servers"', rendered)
 
     def test_mcp_catalog_uses_server_capability_descriptions(self) -> None:

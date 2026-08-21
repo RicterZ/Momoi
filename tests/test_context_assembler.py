@@ -10,6 +10,8 @@ from momoi.models import AgentReply, IncomingMessage, MemoryCandidate, TurnDraft
 from momoi.runtime.context_assembler import (
     _episode_header,
     _planner_final,
+    _rank_recall_items,
+    _recalled_turn_context,
     assemble_main_context,
     assemble_planner_recent_turns,
     assemble_recent_turns,
@@ -17,6 +19,7 @@ from momoi.runtime.context_assembler import (
     project_recent_turns_for_planner,
     project_recent_turns_for_owner,
     recall_episode_context,
+    recall_episode_context_parts,
 )
 from momoi.runtime.turn_support import pack_user_context
 from momoi.storage import Store, estimate_tokens
@@ -77,6 +80,86 @@ def plan(query: str, episode_id: str = "episode-mail") -> dict[str, object]:
 
 
 class ContextAssemblerTest(unittest.TestCase):
+    def test_recall_ranking_prefers_recency_then_keyword_count(self) -> None:
+        ranked = _rank_recall_items(
+            [
+                {
+                    "turn_id": "keyword",
+                    "matched_keywords": ["a"],
+                    "last_activity_at": 50,
+                },
+                {
+                    "turn_id": "recent",
+                    "is_recent": True,
+                    "last_activity_at": 50,
+                },
+                {
+                    "turn_id": "multi",
+                    "matched_keywords": ["a", "b"],
+                    "last_activity_at": 50,
+                },
+                {
+                    "turn_id": "recent-keyword",
+                    "is_recent": True,
+                    "matched_keywords": ["a"],
+                    "last_activity_at": 50,
+                },
+                {
+                    "turn_id": "recent-multi",
+                    "is_recent": True,
+                    "matched_keywords": ["a", "b"],
+                    "last_activity_at": 50,
+                },
+            ]
+        )
+
+        self.assertEqual(
+            [item["turn_id"] for item in ranked],
+            [
+                "recent-multi",
+                "recent-keyword",
+                "multi",
+                "recent",
+                "keyword",
+            ],
+        )
+
+    def test_recalled_turn_context_has_independent_six_thousand_token_budget(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            turns = []
+            for index in range(8):
+                event = IncomingMessage(
+                    f"recall-budget-{index}",
+                    f"recall-budget-{index}",
+                    f"关键词{index} " + "很长的主人聊天内容" * 500,
+                    index + 1,
+                    index + 1,
+                )
+                store.add_event(event)
+                store.commit_turn(
+                    [event],
+                    event.text,
+                    AgentReply([]),
+                    turn_id=f"recall-budget-turn-{index}",
+                )
+                turns.append(
+                    {
+                        "turn_id": f"recall-budget-turn-{index}",
+                        "matched_keywords": [f"关键词{index}"],
+                        "last_activity_at": index,
+                    }
+                )
+
+            rendered = _recalled_turn_context(store, turns, 6000)
+
+            self.assertLessEqual(estimate_tokens(rendered), 6000)
+            self.assertLessEqual(rendered.count("[recalled turn="), 6)
+            self.assertGreater(rendered.count("[recalled turn="), 0)
+            store.close()
+
     def test_owner_context_puts_fixed_memory_and_agenda_state_first(self) -> None:
         rendered = pack_user_context(
             ("recent_turns", "history"),
@@ -86,6 +169,8 @@ class ContextAssemblerTest(unittest.TestCase):
             ("long_term_memories", "long term"),
             ("recall_memories", "recalled"),
             ("query_recall", "recall"),
+            ("episode_directory", "episodes"),
+            ("recalled_turns", "recalled turns"),
         )
         self.assertLess(rendered.index("<long_term_memories>"), rendered.index("<recent_memories>"))
         self.assertLess(rendered.index("<recent_memories>"), rendered.index("<active_goals>"))
@@ -93,6 +178,8 @@ class ContextAssemblerTest(unittest.TestCase):
         self.assertLess(rendered.index("<pending_reminders>"), rendered.index("<recent_turns>"))
         self.assertLess(rendered.index("<recent_turns>"), rendered.index("<query_recall>"))
         self.assertLess(rendered.index("<query_recall>"), rendered.index("<recall_memories>"))
+        self.assertLess(rendered.index("<recall_memories>"), rendered.index("<episode_directory>"))
+        self.assertLess(rendered.index("<episode_directory>"), rendered.index("<recalled_turns>"))
 
     def test_retrieval_keeps_fixed_and_dynamic_memory_layers_distinct(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -962,7 +1049,7 @@ class ContextAssemblerTest(unittest.TestCase):
             self.assertEqual(
                 retrieval["episodes"][0]["relation"], "recent"
             )
-            self.assertEqual(retrieval["episodes"][0]["unit_ids"], [])
+            self.assertEqual(retrieval["episodes"][0]["unit_ids"], ["mail"])
             store.close()
 
     def test_old_keyword_episodes_are_not_automatically_recalled(self) -> None:
@@ -1049,8 +1136,15 @@ class ContextAssemblerTest(unittest.TestCase):
             )
 
             episode_ids = [item["episode_id"] for item in retrieval["episodes"]]
-            self.assertEqual(episode_ids[:3], ["recent-only", "recent-single", "recent-multi"])
-            self.assertIn("old-multi", episode_ids)
+            self.assertEqual(
+                episode_ids,
+                [
+                    "recent-multi",
+                    "recent-single",
+                    "old-multi",
+                    "recent-only",
+                ],
+            )
             store.close()
 
     def test_recent_episode_window_is_independent_of_directory_cap(self) -> None:
@@ -1261,7 +1355,7 @@ class ContextAssemblerTest(unittest.TestCase):
             self.assertIn("Sakana", assembled["long_term_memories"])
             store.close()
 
-    def test_raw_detail_requires_explicit_conversation_read(
+    def test_recall_parts_include_bounded_matching_turn_evidence(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1292,13 +1386,31 @@ class ContextAssemblerTest(unittest.TestCase):
                    WHERE id='episode-old'"""
             )
 
-            recalled = recall_episode_context(
-                store, "蓝色保温杯 第三个纸箱", 3, 1000, 1000
+            recalled, recalled_turns = recall_episode_context_parts(
+                store, "蓝色保温杯 | 第三个纸箱", 3, 1000, 1000
             )
             self.assertIn("summary_quality: empty", recalled)
             self.assertNotIn("聊过家中物品的位置", recalled)
             self.assertNotIn("蓝色保温杯藏在阁楼第三个纸箱里", recalled)
-            self.assertNotIn("matched_raw", recalled)
+            self.assertIn("蓝色保温杯藏在阁楼第三个纸箱里", recalled_turns)
+            self.assertIn("[recalled turn=rare-turn]", recalled_turns)
+            retrieval = build_plan_retrieval(
+                store,
+                plan("蓝色保温杯 | 第三个纸箱", "episode-old"),
+                config(directory),
+            )
+            assembled = assemble_main_context(
+                store,
+                retrieval,
+                1000,
+                2000,
+                recent_turns=1,
+            )
+            self.assertIn("蓝色保温杯藏在阁楼第三个纸箱里", assembled["recent_turns"])
+            self.assertNotIn(
+                "蓝色保温杯藏在阁楼第三个纸箱里",
+                assembled["recalled_turns"],
+            )
             self.assertIn(
                 "蓝色保温杯藏在阁楼第三个纸箱里",
                 store.conversation_episode("episode-old")["messages"][0]["content"],
@@ -1309,11 +1421,12 @@ class ContextAssemblerTest(unittest.TestCase):
             store.close()
 
             reopened = Store(Path(directory) / "momoi.sqlite3")
-            self.assertNotIn(
+            _, reopened_turns = recall_episode_context_parts(
+                reopened, "蓝色保温杯 | 第三个纸箱", 3, 1000, 1000
+            )
+            self.assertIn(
                 "蓝色保温杯藏在阁楼第三个纸箱里",
-                recall_episode_context(
-                    reopened, "蓝色保温杯 第三个纸箱", 3, 1000, 1000
-                ),
+                reopened_turns,
             )
             reopened.close()
 

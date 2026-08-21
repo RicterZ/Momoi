@@ -18,12 +18,16 @@ from ..reply_wait import REPLY_FOLLOWUP_RETRY_SECONDS
 from ..storage import estimate_tokens, truncate_tokens
 from ..text_replacement import cyber_keyword_pre_hook
 from .context_assembler import (
+    RECENT_TURN_CONTEXT_TOKENS,
     assemble_main_context,
     assemble_compact_recent_conversation,
+    assemble_recent_turns,
     assemble_recent_webhook_activity,
     assemble_recent_conversation,
     build_plan_retrieval,
+    project_recent_turns_for_owner,
     recall_episode_context,
+    recall_episode_context_parts,
 )
 from .context_service import (
     _heartbeat_activity_lines,
@@ -211,6 +215,7 @@ class TurnOrchestrator:
                     ("recent_conversation", recalled["recent_conversation"]),
                     ("episode_directory", recalled["episodes"]),
                     ("query_recall", recalled["query_recall"]),
+                    ("recalled_turns", recalled["recalled_turns"]),
                     (
                         "interrupted_reply_expectation",
                         self.store.cooled_reply_expectation_context(),
@@ -243,14 +248,6 @@ class TurnOrchestrator:
         state = self.store.begin_turn(turn_id, "autonomous", [turn_id])
         if state in {"completed", "cancelled", "needs_reconciliation"}:
             raise RuntimeError(f"webhook turn is {state}")
-        episodes = recall_episode_context(
-            self.store,
-            prompt,
-            self.config.summary_results,
-            self.config.summary_tokens,
-            self.config.recent_raw_tokens,
-            skip_empty_webhook=True,
-        )
         memories = self.store.memory_context(
             prompt, self.config.memory_results, self.config.memory_tokens
         )
@@ -267,6 +264,29 @@ class TurnOrchestrator:
             self.store,
             4,
             min(1600, max(400, self.config.recent_raw_tokens // 3)),
+        )
+        recent_turn_records, _ = assemble_recent_turns(
+            self.store,
+            self.config.recent_turns,
+            RECENT_TURN_CONTEXT_TOKENS,
+        )
+        recent_turns = project_recent_turns_for_owner(
+            recent_turn_records,
+            RECENT_TURN_CONTEXT_TOKENS,
+        )
+        recent_turn_ids = {
+            str(item.get("turn_id") or "")
+            for item in recent_turn_records.get("turns") or []
+            if isinstance(item, dict) and item.get("turn_id")
+        }
+        episodes, recalled_turns = recall_episode_context_parts(
+            self.store,
+            prompt,
+            self.config.summary_results,
+            self.config.summary_tokens,
+            self.config.recent_raw_tokens,
+            skip_empty_webhook=True,
+            exclude_turn_ids=recent_turn_ids,
         )
         conversation = self.store.heartbeat_conversation_snapshot()
         self_state = self.store.self_state_context()
@@ -302,11 +322,13 @@ class TurnOrchestrator:
                 "recent_conversation",
                 recent_conversation,
             ),
+            ("recent_turns", recent_turns),
             ("episode_directory", episodes),
             ("long_term_memories", long_term_memories),
             ("recent_memories", recent_memories),
             ("recall_memories", memories),
             ("reflection_memories", learned),
+            ("recalled_turns", recalled_turns),
             ("webhook_activity", assemble_recent_webhook_activity(self.store)),
         )
         system = [
@@ -823,6 +845,7 @@ class TurnOrchestrator:
             ("recent_conversation", recalled["recent_conversation"]),
             ("episode_directory", recalled["episodes"]),
             ("query_recall", recalled["query_recall"]),
+            ("recalled_turns", recalled["recalled_turns"]),
             ("open_reconciliations", reconciliations),
             (
                 "interrupted_reply_expectation",
@@ -1035,6 +1058,15 @@ class TurnOrchestrator:
             4,
             min(1600, max(400, self.config.recent_raw_tokens // 3)),
         )
+        heartbeat_turn_records, _ = assemble_recent_turns(
+            self.store,
+            self.config.recent_turns,
+            RECENT_TURN_CONTEXT_TOKENS,
+        )
+        recent_turns = project_recent_turns_for_owner(
+            heartbeat_turn_records,
+            RECENT_TURN_CONTEXT_TOKENS,
+        )
         recent_topics: list[dict[str, object]] = []
         topic_tokens = 0
         for episode in self.store.list_episode_candidates(
@@ -1074,6 +1106,7 @@ class TurnOrchestrator:
             self_context=self_context,
             conversation=conversation,
             recent_topics=recent_topics,
+            recent_turns=recent_turns,
             recent_conversation=recent_conversation,
             goals=goals,
             reminders=reminders,
@@ -1086,6 +1119,8 @@ class TurnOrchestrator:
             retrieval,
             self.config.summary_tokens,
             self.config.recent_raw_tokens,
+            recent_turns=self.config.recent_turns,
+            recent_turn_token_budget=RECENT_TURN_CONTEXT_TOKENS,
         )
         artifact_root = self._artifact_root().resolve()
         minimum = max(1, int(self.config.heartbeat.min_interval_seconds / 60))
@@ -1136,12 +1171,14 @@ class TurnOrchestrator:
                 "recent_conversation",
                 recent_conversation,
             ),
+            ("recent_turns", recalled["recent_turns"]),
             ("episode_directory", recalled["episodes"]),
             ("query_recall", recalled["query_recall"]),
             ("long_term_memories", recalled["long_term_memories"]),
             ("recent_memories", recalled["recent_memories"]),
             ("recall_memories", recalled["recall_memories"]),
             ("reflection_memories", recalled["reflection_memories"]),
+            ("recalled_turns", recalled["recalled_turns"]),
         )
         system = [
             *self._system(),
@@ -1468,13 +1505,6 @@ class TurnOrchestrator:
         review_at = context_timestamp(goal["next_review_at"])
         self_state = self.store.self_state_context()
         memory_query = f"{goal['title']} {goal['next_action']} {goal['latest_result']}"
-        episodes = recall_episode_context(
-            self.store,
-            memory_query,
-            self.config.summary_results,
-            self.config.summary_tokens,
-            self.config.recent_raw_tokens,
-        )
         memories = self.store.memory_context(
             memory_query, self.config.memory_results, self.config.memory_tokens
         )
@@ -1489,6 +1519,28 @@ class TurnOrchestrator:
         long_term_memories = self.store.always_memory_context()
         recent_conversation, _ = assemble_recent_conversation(
             self.store, self.config.recent_turns, self.config.recent_raw_tokens
+        )
+        goal_turn_records, _ = assemble_recent_turns(
+            self.store,
+            self.config.recent_turns,
+            RECENT_TURN_CONTEXT_TOKENS,
+        )
+        recent_turns = project_recent_turns_for_owner(
+            goal_turn_records,
+            RECENT_TURN_CONTEXT_TOKENS,
+        )
+        recent_turn_ids = {
+            str(item.get("turn_id") or "")
+            for item in goal_turn_records.get("turns") or []
+            if isinstance(item, dict) and item.get("turn_id")
+        }
+        episodes, recalled_turns = recall_episode_context_parts(
+            self.store,
+            memory_query,
+            self.config.summary_results,
+            self.config.summary_tokens,
+            self.config.recent_raw_tokens,
+            exclude_turn_ids=recent_turn_ids,
         )
         conversation = self.store.heartbeat_conversation_snapshot()
         goal_event = (
@@ -1543,12 +1595,14 @@ class TurnOrchestrator:
                     }
                 ),
             ),
+            ("recent_turns", recent_turns),
             ("recent_conversation", recent_conversation),
             ("episode_directory", episodes),
             ("long_term_memories", long_term_memories),
             ("recent_memories", recent_memories),
             ("recall_memories", memories),
             ("reflection_memories", learned),
+            ("recalled_turns", recalled_turns),
         )
         messages: list[dict[str, Any]] = [
             {

@@ -1484,6 +1484,37 @@ class Store(MemoryStore, DeliveryStore):
             used += size
         return [item for group in reversed(selected) for item in group]
 
+    def conversation_messages_for_turns(
+        self, turn_ids: list[str]
+    ) -> list[dict[str, object]]:
+        ordered_ids = list(dict.fromkeys(str(turn_id) for turn_id in turn_ids if turn_id))
+        if not ordered_ids:
+            return []
+        placeholders = ",".join("?" for _ in ordered_ids)
+        rows = self._db.execute(
+            f"""SELECT m.id, m.turn_id, m.role, m.content, m.created_at,
+                       m.delivery_state
+                FROM messages AS m
+                WHERE m.turn_id IN ({placeholders})
+                  AND (
+                      m.role='user'
+                      OR m.role='assistant'
+                         AND m.delivery_state IN ('delivered', 'uncertain')
+                  )
+                ORDER BY m.id""",
+            tuple(ordered_ids),
+        ).fetchall()
+        by_turn: dict[str, list[dict[str, object]]] = {}
+        for row in rows:
+            item = dict(row)
+            item["timestamp"] = context_timestamp(item["created_at"])
+            by_turn.setdefault(str(row["turn_id"]), []).append(item)
+        return [
+            message
+            for turn_id in ordered_ids
+            for message in by_turn.get(turn_id, [])
+        ]
+
     def recent_turn_record_count(
         self,
         before_timestamp: float | None = None,
@@ -2049,7 +2080,7 @@ class Store(MemoryStore, DeliveryStore):
             searchable_text = content
             if scoped_text:
                 if str(message["role"]) in {"user", "event"}:
-                    searchable_text = ""
+                    searchable_text = scoped_text
                 elif str(message["relation"]) != "primary":
                     searchable_text = ""
             messages_by_episode.setdefault(episode_id, []).append(
@@ -2122,6 +2153,7 @@ class Store(MemoryStore, DeliveryStore):
             ]
             episode["matched_keywords"] = list(hit.matched_keywords)
             episode["keyword_match_count"] = len(hit.matched_keywords)
+            episode["search_score"] = hit.score
             results.append(episode)
         return results
 
