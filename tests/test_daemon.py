@@ -289,7 +289,10 @@ class DaemonTest(unittest.TestCase):
         self.assertIn("timing, impulse, and conversational rhythm", system)
         self.assertIn("fragment, a partial thought", system)
         self.assertNotIn("one complete non-empty message", system)
-        self.assertIn("`<recent_turns>` preserves each recent Turn", system)
+        self.assertIn(
+            "`<recent_turn_base>` followed by `<recent_turn_append>`",
+            system,
+        )
         self.assertIn("actually persisted", system)
         self.assertIn("owner-relevant result beat", system)
         self.assertIn("A task need not be complete before Momoi speaks", system)

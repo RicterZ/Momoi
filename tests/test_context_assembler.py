@@ -20,6 +20,8 @@ from momoi.runtime.context_assembler import (
     project_recent_turns_for_owner,
     recall_episode_context,
     recall_episode_context_parts,
+    render_planner_recent_turn_focus,
+    render_planner_recent_turns,
 )
 from momoi.runtime.turn_support import pack_user_context
 from momoi.storage import Store, estimate_tokens
@@ -188,9 +190,47 @@ class ContextAssemblerTest(unittest.TestCase):
             self.assertIn("第7轮", rendered)
             store.close()
 
+    def test_main_recent_turns_keep_stable_base_and_dynamic_append(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+
+            def add(index: int) -> None:
+                event = IncomingMessage(
+                    f"event-{index}",
+                    f"event-{index}",
+                    f"第{index}轮",
+                    index,
+                    index,
+                )
+                store.add_event(event)
+                store.commit_turn(
+                    [event],
+                    event.text,
+                    AgentReply([f"回复{index}"]),
+                    turn_id=f"turn-{index}",
+                )
+
+            for index in range(1, 7):
+                add(index)
+            six = assemble_main_context(store, {}, 2000, 2000, recent_turns=6)
+
+            add(7)
+            seven = assemble_main_context(store, {}, 2000, 2000, recent_turns=6)
+
+            self.assertEqual(six["recent_turn_base"], seven["recent_turn_base"])
+            self.assertEqual(six["recent_turn_append"], "")
+            self.assertIn("T-7", seven["recent_turn_append"])
+            self.assertIn("第7轮", seven["recent_turn_append"])
+            self.assertEqual(
+                seven["recent_turns"],
+                seven["recent_turn_base"] + "\n\n" + seven["recent_turn_append"],
+            )
+            store.close()
+
     def test_owner_context_puts_fixed_memory_and_agenda_state_first(self) -> None:
         rendered = pack_user_context(
-            ("recent_turns", "history"),
+            ("recent_turn_append", "appended history"),
+            ("recent_turn_base", "stable history"),
             ("pending_reminders", "reminders"),
             ("recent_memories", "recent"),
             ("active_goals", "goals"),
@@ -198,12 +238,17 @@ class ContextAssemblerTest(unittest.TestCase):
             ("recall_memories", "recalled"),
             ("episode_directory", "episodes"),
             ("recalled_turns", "recalled turns"),
+            ("open_reconciliations", "reconciliations"),
+            ("interrupted_reply_expectation", "interrupted"),
         )
         self.assertLess(rendered.index("<long_term_memories>"), rendered.index("<recent_memories>"))
         self.assertLess(rendered.index("<recent_memories>"), rendered.index("<active_goals>"))
         self.assertLess(rendered.index("<active_goals>"), rendered.index("<pending_reminders>"))
-        self.assertLess(rendered.index("<pending_reminders>"), rendered.index("<recent_turns>"))
-        self.assertLess(rendered.index("<recent_turns>"), rendered.index("<recall_memories>"))
+        self.assertLess(rendered.index("<pending_reminders>"), rendered.index("<open_reconciliations>"))
+        self.assertLess(rendered.index("<open_reconciliations>"), rendered.index("<interrupted_reply_expectation>"))
+        self.assertLess(rendered.index("<interrupted_reply_expectation>"), rendered.index("<recent_turn_base>"))
+        self.assertLess(rendered.index("<recent_turn_base>"), rendered.index("<recent_turn_append>"))
+        self.assertLess(rendered.index("<recent_turn_append>"), rendered.index("<recall_memories>"))
         self.assertLess(rendered.index("<recall_memories>"), rendered.index("<episode_directory>"))
         self.assertLess(rendered.index("<episode_directory>"), rendered.index("<recalled_turns>"))
 
@@ -386,7 +431,7 @@ class ContextAssemblerTest(unittest.TestCase):
 
             for index in range(1, 7):
                 add(index)
-            six, active = assemble_planner_recent_turns(
+            six, active, base_count = assemble_planner_recent_turns(
                 store, 6, 6, 6, 88000
             )
             self.assertEqual(
@@ -394,6 +439,7 @@ class ContextAssemblerTest(unittest.TestCase):
                 [f"turn-{index}" for index in range(1, 7)],
             )
             self.assertEqual(active, [f"turn-{index}" for index in range(1, 7)])
+            self.assertEqual(base_count, 6)
             first_result = next(
                 item
                 for item in six["turns"][0]["timeline"]
@@ -402,7 +448,7 @@ class ContextAssemblerTest(unittest.TestCase):
             self.assertTrue(first_result["result"]["result"]["truncated"])
 
             add(7)
-            seven, active = assemble_planner_recent_turns(
+            seven, active, base_count = assemble_planner_recent_turns(
                 store, 6, 6, 6, 88000
             )
             self.assertEqual(
@@ -410,6 +456,20 @@ class ContextAssemblerTest(unittest.TestCase):
                 [f"turn-{index}" for index in range(1, 8)],
             )
             self.assertEqual(active, [f"turn-{index}" for index in range(2, 8)])
+            self.assertEqual(base_count, 6)
+            six_base = render_planner_recent_turns(
+                {"version": 1, "turns": six["turns"][:6]}
+            )
+            seven_base = render_planner_recent_turns(
+                {"version": 1, "turns": seven["turns"][:base_count]}
+            )
+            self.assertEqual(six_base, seven_base)
+            self.assertNotIn(" active ", seven_base)
+            self.assertNotIn(" background ", seven_base)
+            self.assertEqual(
+                render_planner_recent_turn_focus(seven, active),
+                "T-2, T-3, T-4, T-5, T-6, T-7",
+            )
             six_prefix = json.dumps(
                 six, ensure_ascii=False, separators=(",", ":")
             )[:-2]
@@ -421,11 +481,12 @@ class ContextAssemblerTest(unittest.TestCase):
 
             for index in range(8, 12):
                 add(index)
-            eleven, active = assemble_planner_recent_turns(
+            eleven, active, base_count = assemble_planner_recent_turns(
                 store, 6, 6, 6, 88000
             )
             self.assertEqual(len(eleven["turns"]), 11)
             self.assertEqual(active, [f"turn-{index}" for index in range(6, 12)])
+            self.assertEqual(base_count, 6)
             self.assertTrue(
                 json.dumps(
                     eleven, ensure_ascii=False, separators=(",", ":")
@@ -433,7 +494,7 @@ class ContextAssemblerTest(unittest.TestCase):
             )
 
             add(12)
-            twelve, active = assemble_planner_recent_turns(
+            twelve, active, base_count = assemble_planner_recent_turns(
                 store, 6, 6, 6, 88000
             )
             self.assertEqual(
@@ -441,6 +502,7 @@ class ContextAssemblerTest(unittest.TestCase):
                 [f"turn-{index}" for index in range(7, 13)],
             )
             self.assertEqual(active, [f"turn-{index}" for index in range(7, 13)])
+            self.assertEqual(base_count, 6)
             store.close()
 
     def test_planner_recent_turns_drop_previous_block_at_token_limit(self) -> None:
@@ -463,13 +525,13 @@ class ContextAssemblerTest(unittest.TestCase):
                     turn_id=f"turn-{index}",
                 )
 
-            one, _ = assemble_planner_recent_turns(
+            one, _, _ = assemble_planner_recent_turns(
                 store, 1, 1, 1, 88000
             )
             one_size = estimate_tokens(
                 json.dumps(one, ensure_ascii=False, separators=(",", ":"))
             )
-            selected, active = assemble_planner_recent_turns(
+            selected, active, base_count = assemble_planner_recent_turns(
                 store,
                 6,
                 6,
@@ -481,6 +543,7 @@ class ContextAssemblerTest(unittest.TestCase):
                 ["turn-7"],
             )
             self.assertEqual(active, ["turn-7"])
+            self.assertEqual(base_count, 0)
             store.close()
 
     def test_recent_turns_keep_messages_tools_and_committed_mutations_together(

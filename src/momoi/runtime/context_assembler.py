@@ -1058,6 +1058,8 @@ def _owner_history_line(item: dict[str, object], call_names: dict[str, str]) -> 
 def project_recent_turns_for_owner(
     document: dict[str, object],
     token_budget: int | None,
+    *,
+    start_index: int = 1,
 ) -> str:
     """Render recent history as a causal, owner-facing text projection.
 
@@ -1071,7 +1073,7 @@ def project_recent_turns_for_owner(
     ):
         return ""
     blocks: list[str] = []
-    for index, raw_turn in enumerate(turns[-6:], start=1):
+    for index, raw_turn in enumerate(turns[-6:], start=start_index):
         if not isinstance(raw_turn, dict):
             continue
         at = raw_turn.get("started_at") or raw_turn.get("completed_at") or raw_turn.get("at")
@@ -1541,6 +1543,20 @@ def project_recent_turns_for_planner(
     }
 
 
+def _recent_turn_cache_block_records(
+    store: Store,
+    base_turns: int,
+    append_turns: int,
+    before_timestamp: float | None = None,
+) -> tuple[list[dict[str, object]], int]:
+    total = store.recent_turn_record_count(before_timestamp)
+    phase = total % append_turns
+    turn_limit = base_turns if phase == 0 else base_turns + phase
+    records = store.recent_turn_records(turn_limit, before_timestamp)
+    base_count = len(records) if phase == 0 else max(0, len(records) - phase)
+    return records, base_count
+
+
 def assemble_planner_recent_turns(
     store: Store,
     base_turns: int,
@@ -1548,16 +1564,24 @@ def assemble_planner_recent_turns(
     active_turns: int,
     token_budget: int,
     before_timestamp: float | None = None,
-) -> tuple[dict[str, object], list[str]]:
+) -> tuple[dict[str, object], list[str], int]:
     base_turns = max(1, int(base_turns))
     append_turns = max(1, int(append_turns))
     active_turns = max(1, int(active_turns))
     token_budget = max(1, int(token_budget))
 
-    total = store.recent_turn_record_count(before_timestamp)
-    phase = total % append_turns
-    turn_limit = base_turns if phase == 0 else base_turns + phase
-    raw_turns = store.recent_turn_records(turn_limit, before_timestamp)
+    raw_turns, base_count = _recent_turn_cache_block_records(
+        store,
+        base_turns,
+        append_turns,
+        before_timestamp,
+    )
+    phase = len(raw_turns) - base_count
+    base_turn_ids = {
+        str(turn.get("turn_id") or "")
+        for turn in raw_turns[:base_count]
+        if str(turn.get("turn_id") or "")
+    }
     projected = project_recent_turns_for_planner(
         {"version": 1, "turns": raw_turns},
         compact_tool_results=True,
@@ -1617,25 +1641,28 @@ def assemble_planner_recent_turns(
         for turn in selected[-active_turns:]
         if str(turn.get("turn_id") or "")
     ]
-    return document, active_ids
+    selected_base_count = sum(
+        1
+        for turn in selected
+        if str(turn.get("turn_id") or "") in base_turn_ids
+    )
+    return document, active_ids, selected_base_count
 
 
 def render_planner_recent_turns(
     document: dict[str, object],
-    active_turn_ids: list[str] | None = None,
+    *,
+    start_index: int = 1,
 ) -> str:
     """Render planner history as readable evidence instead of nested JSON."""
-    active = {str(value) for value in active_turn_ids or []}
     turns = document.get("turns")
     if not isinstance(turns, list):
         return ""
     blocks: list[str] = []
-    for index, turn in enumerate(turns, start=1):
+    for index, turn in enumerate(turns, start=start_index):
         if not isinstance(turn, dict):
             continue
-        turn_id = str(turn.get("turn_id") or "")
-        marker = " active" if turn_id in active else " background"
-        header = f"T-{index}{marker}"
+        header = f"T-{index}"
         if turn.get("at"):
             header += f" {str(turn['at'])[:16]}"
         if turn.get("kind"):
@@ -1684,6 +1711,23 @@ def render_planner_recent_turns(
     return "\n\n".join(blocks)
 
 
+def render_planner_recent_turn_focus(
+    document: dict[str, object],
+    active_turn_ids: list[str],
+) -> str:
+    active = {str(value) for value in active_turn_ids}
+    turns = document.get("turns")
+    if not isinstance(turns, list):
+        return ""
+    labels = [
+        f"T-{index}"
+        for index, turn in enumerate(turns, start=1)
+        if isinstance(turn, dict)
+        and str(turn.get("turn_id") or "") in active
+    ]
+    return ", ".join(labels)
+
+
 def assemble_main_context(
     store: Store,
     retrieval: dict[str, object],
@@ -1692,12 +1736,38 @@ def assemble_main_context(
     recent_turns: int = 0,
     recent_before_timestamp: float | None = None,
 ) -> dict[str, str]:
-    recent_turn_records, _recent_turns = assemble_recent_turns(
-        store,
-        recent_turns, None, recent_before_timestamp
+    if recent_turns > 0:
+        raw_recent_turns, recent_turn_base_count = (
+            _recent_turn_cache_block_records(
+                store,
+                recent_turns,
+                recent_turns,
+                recent_before_timestamp,
+            )
+        )
+    else:
+        raw_recent_turns, recent_turn_base_count = [], 0
+    recent_turn_records: dict[str, object] = {
+        "version": 1,
+        "turns": raw_recent_turns,
+    }
+    recent_turn_base = project_recent_turns_for_owner(
+        {
+            "version": 1,
+            "turns": raw_recent_turns[:recent_turn_base_count],
+        },
+        None,
     )
-    compact_recent_turns = project_recent_turns_for_owner(
-        recent_turn_records, None
+    recent_turn_append = project_recent_turns_for_owner(
+        {
+            "version": 1,
+            "turns": raw_recent_turns[recent_turn_base_count:],
+        },
+        None,
+        start_index=recent_turn_base_count + 1,
+    )
+    compact_recent_turns = "\n\n".join(
+        value for value in (recent_turn_base, recent_turn_append) if value
     )
     recent_turn_ids = {
         str(item.get("turn_id") or "")
@@ -1711,6 +1781,8 @@ def assemble_main_context(
         recent_before_timestamp,
     )
     return {
+        "recent_turn_base": recent_turn_base,
+        "recent_turn_append": recent_turn_append,
         "recent_turns": compact_recent_turns,
         "recent_conversation": compact_recent_conversation,
         "episodes": _episode_context(

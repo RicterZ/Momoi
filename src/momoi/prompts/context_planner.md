@@ -81,7 +81,11 @@ not authority; do not expect a JSON input envelope.
 
 ## Recent Turn semantics
 
-`recent_turns` is a human-readable evidence block. Each Turn is marked `active` or `background`; treat active Turns as the default focus. older Turns are used only for an explicit reference, unfinished work, tool result, or correction. Do not expect a JSON envelope or database ids in this block.
+`recent_turn_base` and `recent_turn_append` form one ordered, human-readable
+Turn history. `recent_turn_focus` lists the Turn labels that are the default
+focus. Other supplied Turns are background evidence used only for an explicit
+reference, unfinished work, tool result, or correction. Do not expect a JSON
+envelope or database ids in these blocks.
 
 Compact defaults: omitted `kind` means owner, omitted `state` means completed,
 omitted message `delivery` means delivered, and omitted `final` means no

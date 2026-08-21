@@ -13,6 +13,7 @@ from .context_assembler import (
     assemble_planner_recent_turns,
     build_plan_retrieval,
     assemble_compact_recent_conversation,
+    render_planner_recent_turn_focus,
     render_planner_recent_turns,
 )
 from .context_candidates import (
@@ -366,7 +367,7 @@ def render_context_planner_request(
     long_term_memories: str,
     recent_memories: str,
     recent_turns: dict[str, object],
-    recent_conversation: str,
+    recent_turn_base_count: int,
     active_recent_turn_ids: list[str],
     candidate_goals: list[dict[str, object]],
     candidate_reminders: list[dict[str, object]],
@@ -375,6 +376,9 @@ def render_context_planner_request(
     owner_messages: list[dict[str, object]],
 ) -> str:
     """Serialize the exact human-readable user prompt sent to Context Planner."""
+    turns = recent_turns.get("turns")
+    turn_items = turns if isinstance(turns, list) else []
+    base_count = max(0, min(int(recent_turn_base_count), len(turn_items)))
     return _sections(
         (
             "available_internal_tools",
@@ -395,21 +399,40 @@ def render_context_planner_request(
             _planner_value(_planner_state_lines(candidate_reminders, reminder=True)),
         ),
         (
-            "recent_turns",
-            _planner_value(
-                render_planner_recent_turns(recent_turns, active_recent_turn_ids)
-            ),
-        ),
-        ("recent_conversation", _planner_value(recent_conversation)),
-        (
-            "candidate_episodes",
-            _planner_value(render_candidate_context(candidate_episodes)),
-        ),
-        (
             "interrupted_reply_expectation",
             _planner_value(
                 _planner_interrupted_reply_lines(interrupted_reply_expectation)
             ),
+        ),
+        (
+            "recent_turn_base",
+            _planner_value(
+                render_planner_recent_turns(
+                    {"version": 1, "turns": turn_items[:base_count]}
+                )
+            ),
+        ),
+        (
+            "recent_turn_append",
+            _planner_value(
+                render_planner_recent_turns(
+                    {"version": 1, "turns": turn_items[base_count:]},
+                    start_index=base_count + 1,
+                )
+            ),
+        ),
+        (
+            "recent_turn_focus",
+            _planner_value(
+                render_planner_recent_turn_focus(
+                    recent_turns,
+                    active_recent_turn_ids,
+                )
+            ),
+        ),
+        (
+            "candidate_episodes",
+            _planner_value(render_candidate_context(candidate_episodes)),
         ),
         (
             "owner_messages",
@@ -443,7 +466,7 @@ class ContextService:
         available_mcp_servers = {
             str(group["id"]) for group in mcp_server_catalog
         }
-        planner_recent_turns, active_recent_turn_ids = (
+        planner_recent_turns, active_recent_turn_ids, recent_turn_base_count = (
             assemble_planner_recent_turns(
                 self.store,
                 self.config.planner_recent_base_turns or self.config.recent_turns,
@@ -456,12 +479,6 @@ class ContextService:
                 ),
                 min(event.received_at for event in events),
             )
-        )
-        recent_conversation = assemble_compact_recent_conversation(
-            self.store,
-            4,
-            min(1600, max(400, self.config.recent_raw_tokens // 3)),
-            min(event.received_at for event in events),
         )
         candidates = collect_episode_candidates(
             self.store,
@@ -538,7 +555,7 @@ class ContextService:
                         max(100, self.config.memory_tokens // 8)
                     ),
                     recent_turns=planner_recent_turns,
-                    recent_conversation=recent_conversation,
+                    recent_turn_base_count=recent_turn_base_count,
                     active_recent_turn_ids=active_recent_turn_ids,
                     candidate_goals=candidate_goals,
                     candidate_reminders=candidate_reminders,

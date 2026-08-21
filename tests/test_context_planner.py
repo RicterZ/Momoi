@@ -398,12 +398,13 @@ class ContextPlannerTest(unittest.TestCase):
     ) -> None:
         self.assertIn("## Planning process", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertIn("Assess whether that baseline, supplied Recent Turns", CONTEXT_PLANNER_SYSTEM_PROMPT)
-        self.assertIn("active` or `background", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn("`recent_turn_base` and `recent_turn_append`", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn("`recent_turn_focus`", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertIn(
             "interrupted_reply_expectation", CONTEXT_PLANNER_SYSTEM_PROMPT
         )
         self.assertIn(
-            "older Turns are used only for",
+            "Other supplied Turns are background evidence",
             CONTEXT_PLANNER_SYSTEM_PROMPT,
         )
         self.assertIn("omitted `kind` means owner", CONTEXT_PLANNER_SYSTEM_PROMPT)
@@ -1022,10 +1023,11 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "recent_memories",
                                 "candidate_goals",
                                 "candidate_reminders",
-                                "recent_turns",
-                                "recent_conversation",
-                                "candidate_episodes",
                                 "interrupted_reply_expectation",
+                                "recent_turn_base",
+                                "recent_turn_append",
+                                "recent_turn_focus",
+                                "candidate_episodes",
                                 "owner_messages",
                             ],
                         )
@@ -1037,11 +1039,17 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                             payload["owner_messages"],
                             r"at=\d{4}-\d{2}-\d{2}T",
                         )
-                        recent = str(payload["recent_turns"])
+                        recent = (
+                            str(payload["recent_turn_base"])
+                            + "\n"
+                            + str(payload["recent_turn_append"])
+                        )
                         provider_self.planner_recent = recent
                         self.assertIn("RECENT CONTEXT 1", recent)
                         self.assertIn("RECENT CONTEXT 2", recent)
                         self.assertIn("GLOBAL RAW MUST NOT LEAK", recent)
+                        self.assertNotIn(" active ", recent)
+                        self.assertNotIn(" background ", recent)
                         self.assertEqual(
                             payload["interrupted_reply_expectation"], "(none)"
                         )
@@ -1068,7 +1076,9 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                         text = str(content)
                     provider_self.main_rendered = text
                     self.assertIn("<context_resolution>", text)
-                    self.assertIn("<recent_turns>", text)
+                    self.assertIn("<recent_turn_base>", text)
+                    self.assertIn("<recent_turn_append>", text)
+                    self.assertNotIn("<recent_conversation>", text)
                     self.assertIn("<long_term_memories>", text)
                     self.assertIn("喜欢简短回复", text)
                     self.assertIn("<recent_memories>", text)
@@ -1082,7 +1092,7 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                     self.assertIn("browse social feed", text)
                     self.assertNotIn('"salience"', text)
                     self.assertIn("RECENT CONTEXT 2", text)
-                    self.assertNotIn("GLOBAL RAW MUST NOT LEAK", text)
+                    self.assertIn("GLOBAL RAW MUST NOT LEAK", text)
                     self.assertEqual(len(messages), 1)
                     call = ToolCall(
                         "respond",
@@ -1112,7 +1122,7 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn("RECENT CONTEXT 1", provider.planner_recent)
             self.assertIn("RECENT CONTEXT 2", provider.main_rendered)
             self.assertIn("2286-11-21T", provider.main_rendered)
-            self.assertNotIn("GLOBAL RAW MUST NOT LEAK", provider.main_rendered)
+            self.assertIn("GLOBAL RAW MUST NOT LEAK", provider.main_rendered)
             stored = daemon.store.context_plan(turn_id)
             self.assertEqual(stored["state"], "recalled")
             self.assertEqual(stored["retrieval"]["version"], 3)
