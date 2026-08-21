@@ -12,6 +12,8 @@ from .budget import SECTION_BUDGET_ALLOCATOR
 
 
 logger = logging.getLogger(__name__)
+RECENT_EPISODE_LIMIT = 6
+RECALLED_EPISODE_LIMIT = 6
 RECALLED_TURN_CONTEXT_TOKENS = 6000
 RECALLED_TURN_LIMIT = 6
 
@@ -40,7 +42,8 @@ def build_plan_retrieval(
     }
     recent_episodes = (
         store.list_recent_episodes(
-            time.time() - config.recent_episode_hours * 3600
+            time.time() - config.recent_episode_hours * 3600,
+            RECENT_EPISODE_LIMIT,
         )
         if config.recent_episode_hours > 0 and config.summary_tokens > 0
         else []
@@ -252,10 +255,14 @@ def build_plan_retrieval(
 
     # Query-specific episodes supplement the time-window directory, without
     # duplicating an episode already selected by recency.
+    ranked_recalled_episodes = _rank_recall_items(
+        list(recalled_episode_rows.values())
+    )[:RECALLED_EPISODE_LIMIT]
     existing_episodes = {
         str(item.get("episode_id")): item for item in episodes
     }
-    for episode_id, selected in recalled_episode_rows.items():
+    for selected in ranked_recalled_episodes:
+        episode_id = str(selected["episode_id"])
         existing = existing_episodes.get(episode_id)
         if existing is None:
             episodes.append(selected)
@@ -280,7 +287,7 @@ def build_plan_retrieval(
         existing["is_recent"] = True
     episodes = _rank_recall_items(episodes)
     recalled_turns = _collect_recalled_turns(
-        list(recalled_episode_rows.values())
+        ranked_recalled_episodes
     )
     for item in recalled_turns:
         item["is_recent"] = str(item["turn_id"]) in recent_turn_ids
@@ -340,7 +347,7 @@ def build_plan_retrieval(
             "recall_queries": len(recall_queries),
             "recall_memory_hits": len(recall_memories),
             "recall_reflection_hits": len(reflection_memories),
-            "recall_episode_hits": len(recalled_episode_rows),
+            "recall_episode_hits": len(ranked_recalled_episodes),
             "recall_turn_hits": len(recalled_turns),
         },
     )

@@ -1766,7 +1766,11 @@ class Store(MemoryStore, DeliveryStore):
             results.append(episode)
         return results
 
-    def list_recent_episodes(self, after: float) -> list[dict[str, object]]:
+    def list_recent_episodes(
+        self, after: float, limit: int = 6
+    ) -> list[dict[str, object]]:
+        if limit <= 0:
+            return []
         rows = self._db.execute(
             """SELECT e.*, COALESCE((
                        SELECT MAX(t.updated_at) FROM episode_turns AS et
@@ -1779,8 +1783,9 @@ class Store(MemoryStore, DeliveryStore):
                    JOIN messages AS m ON m.turn_id=et.turn_id
                    WHERE et.episode_id=e.id AND m.created_at>=?
                )
-               ORDER BY last_activity_at DESC, e.id DESC""",
-            (after,),
+               ORDER BY last_activity_at DESC, e.id DESC
+               LIMIT ?""",
+            (after, limit),
         ).fetchall()
         results = []
         for row in rows:

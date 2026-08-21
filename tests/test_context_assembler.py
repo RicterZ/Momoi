@@ -1020,7 +1020,7 @@ class ContextAssemblerTest(unittest.TestCase):
 
             self.assertEqual(
                 [item["episode_id"] for item in retrieval["episodes"]],
-                [f"recent-topic-{index:02d}" for index in range(13)],
+                [f"recent-topic-{index:02d}" for index in range(6)],
             )
             self.assertTrue(
                 all(item["relation"] == "recent" for item in retrieval["episodes"])
@@ -1029,7 +1029,8 @@ class ContextAssemblerTest(unittest.TestCase):
                 all(item["unit_ids"] == [] for item in retrieval["episodes"])
             )
             assembled = assemble_main_context(store, retrieval, 2000, 2000)
-            self.assertIn("最近六小时话题 12", assembled["episodes"])
+            self.assertIn("最近六小时话题 05", assembled["episodes"])
+            self.assertNotIn("最近六小时话题 06", assembled["episodes"])
             self.assertNotIn("六小时前旧话题", assembled["episodes"])
 
             disabled = build_plan_retrieval(
@@ -1076,6 +1077,71 @@ class ContextAssemblerTest(unittest.TestCase):
                 retrieval["episodes"][0]["relation"], "recent"
             )
             self.assertEqual(retrieval["episodes"][0]["unit_ids"], ["mail"])
+            store.close()
+
+    def test_recent_and_recalled_episode_groups_are_capped_and_deduplicated(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            now = time.time()
+
+            def add_episode(episode_id: str, title: str, timestamp: float) -> None:
+                turn_id = f"turn-{episode_id}"
+                store.create_episode(title, episode_id=episode_id)
+                store.begin_turn(turn_id, "autonomous", [turn_id])
+                with store._db:
+                    store._db.execute(
+                        """INSERT INTO messages
+                           (turn_id, role, content, created_at,
+                            source_event_ids_json, delivery_state)
+                           VALUES (?, 'assistant', ?, ?, '[]', 'internal')""",
+                        (turn_id, title, timestamp),
+                    )
+                    store._db.execute(
+                        """UPDATE turns SET state='completed', updated_at=?
+                           WHERE id=?""",
+                        (timestamp, turn_id),
+                    )
+                store.link_turn_to_episode(episode_id, turn_id)
+
+            for index in range(8):
+                title = "旧甲 近期重叠" if index == 0 else f"近期话题 {index}"
+                add_episode(f"recent-{index}", title, now - index * 60)
+            for index in range(4):
+                add_episode(
+                    f"old-a-{index}",
+                    f"旧甲 历史话题 {index}",
+                    now - 7 * 3600 - index * 60,
+                )
+                add_episode(
+                    f"old-b-{index}",
+                    f"旧乙 历史话题 {index}",
+                    now - 8 * 3600 - index * 60,
+                )
+
+            recall_plan = plan("旧甲")
+            recall_plan["intent_units"][0]["recall_queries"] = ["旧甲", "旧乙"]
+            retrieval = build_plan_retrieval(
+                store,
+                recall_plan,
+                config(directory, recent_episode_hours=6, summary_results=12),
+            )
+            episode_ids = [
+                str(item["episode_id"]) for item in retrieval["episodes"]
+            ]
+            recent_count = sum(
+                item["relation"] == "recent" for item in retrieval["episodes"]
+            )
+            recalled_count = sum(
+                item["relation"] == "recalled" for item in retrieval["episodes"]
+            )
+
+            self.assertEqual(recent_count, 6)
+            self.assertLessEqual(recalled_count, 6)
+            self.assertLessEqual(len(episode_ids), 12)
+            self.assertEqual(len(episode_ids), len(set(episode_ids)))
+            self.assertEqual(episode_ids.count("recent-0"), 1)
             store.close()
 
     def test_old_keyword_episodes_are_not_automatically_recalled(self) -> None:
