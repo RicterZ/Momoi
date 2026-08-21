@@ -21,10 +21,14 @@ Rules:
   activities. Continue one of them only when it still fits now. Do not switch
   merely for variety, and do not avoid an activity merely because it appears there.
 - Keep `intent` and `reason` concise. This is one decision, not a menu of options.
-- When recall-activated memory, an older Episode, or a daily reflection is
-  relevant to the selected activity but absent from the fixed inputs, add at
-  most three short `activity.recall_queries`. The framework resolves these
-  before the Heartbeat Turn. Omit them when supplied context is sufficient.
+- Always include one to three short `activity.recall_queries`. Each array item
+  is one OR expression using half-width ` | ` between concrete entities,
+  aliases, key numbers, and active shared-topic terms, for example
+  `百花缭乱 | Part1 | 480青辉石`. Never join alternatives with spaces or submit a
+  full sentence. The framework resolves them across recall memory, reflections,
+  Episodes, and matching Turns before the Heartbeat Turn, even when the fixed
+  inputs already look sufficient. Genuine rest still names the smallest exact
+  continuity topic for this moment.
 
 - Assess whether supplied state, recent conversation, topics, Goals, and
   reminders are enough to execute the activity. If an exact
@@ -35,7 +39,8 @@ Rules:
   chronology is required after a relevant Turn is known. These are instructions
   for the Heartbeat Turn, not searches performed by the framework.
 - Select only supplied `available_mcp_servers` required for the chosen activity.
-  Internal Memory, Conversation, Agenda, and Builtin tools are resident. Do not
+  `<available_internal_tools>` lists capabilities the Heartbeat model may use
+  after planning; you do not call them yourself. Do not
   preload an external server merely because it might be useful; the Heartbeat
   Turn may enable an omitted server through `tool_enable`.
 - Use execution mode `rest` only for genuine rest. It must have sufficient

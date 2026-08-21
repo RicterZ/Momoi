@@ -47,6 +47,7 @@ def context_plan_response(messages: list[dict[str, Any]]) -> ProviderResponse:
             "intent": "test owner intent",
             "speech_act": "request",
             "references": [],
+            "recall_queries": ["test owner intent"],
         }
         for index, message in enumerate(owner_messages, 1)
     ]
@@ -106,6 +107,7 @@ def heartbeat_plan_response(messages: list[dict[str, Any]]) -> ProviderResponse:
         "activity": {
             "intent": "spend time freely",
             "reason": "Continue the current activity for this test.",
+            "recall_queries": ["current activity"],
         },
         "heartbeat_handoff": {
             "context": {

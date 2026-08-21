@@ -56,6 +56,7 @@ def response_plan() -> dict[str, object]:
                 "intent": "browse social feed",
                 "speech_act": "casual_share",
                 "references": [],
+                "recall_queries": ["微博"],
             },
             {
                 "id": "mail",
@@ -64,6 +65,7 @@ def response_plan() -> dict[str, object]:
                 "intent": "check mail",
                 "speech_act": "request",
                 "references": ["之前等的邮件"],
+                "recall_queries": ["等待中的邮件"],
             },
         ],
         "episode_actions": [
@@ -130,6 +132,9 @@ def tool_plan_response(plan: dict[str, object]) -> ProviderResponse:
 class ContextPlannerTest(unittest.TestCase):
     def test_heartbeat_planner_request_is_tagged_text_with_fixed_memory(self) -> None:
         rendered = render_heartbeat_planner_request(
+            internal_tools=[
+                {"id": "memory_search", "description": "Search memory"}
+            ],
             mcp_servers=[{"id": "weibo", "description": "Browse Weibo"}],
             workspace_guidance="Choose one activity.",
             long_term_memories="- owner likes short replies",
@@ -144,7 +149,8 @@ class ContextPlannerTest(unittest.TestCase):
             conversation_state={"owner_event_revision": 1},
             current_time="2026-08-20T20:00:00+08:00",
         )
-        self.assertTrue(rendered.startswith("<available_mcp_servers>"))
+        self.assertTrue(rendered.startswith("<available_internal_tools>"))
+        self.assertIn("id=memory_search", rendered)
         self.assertIn("<long_term_memories>\n- owner likes short replies", rendered)
         self.assertIn("<recent_memories>\n- shared game night", rendered)
         self.assertIn("<recent_topics>\n- title=Game topics=BA", rendered)
@@ -191,6 +197,10 @@ class ContextPlannerTest(unittest.TestCase):
             "recall_queries",
             schema["properties"]["activity"]["properties"],
         )
+        self.assertIn(
+            "recall_queries",
+            schema["properties"]["activity"]["required"],
+        )
         self.assertIn("recall_queries", HEARTBEAT_PLANNER_SYSTEM_PROMPT)
         self.assertIn("recent_heartbeat_activities", HEARTBEAT_PLANNER_SYSTEM_PROMPT)
         plan = parse_heartbeat_plan(
@@ -199,7 +209,7 @@ class ContextPlannerTest(unittest.TestCase):
                 "activity": {
                     "intent": "浏览微博关注流",
                     "reason": "看看最近感兴趣的动态",
-                    "recall_queries": ["微博 登录规则", "最近关注的游戏"],
+                    "recall_queries": ["微博 | 登录规则", "最近关注的游戏"],
                 },
                 "heartbeat_handoff": {
                     "context": {
@@ -236,7 +246,7 @@ class ContextPlannerTest(unittest.TestCase):
         )
         self.assertEqual(
             plan["activity"]["recall_queries"],
-            ["微博 登录规则", "最近关注的游戏"],
+            ["微博 | 登录规则", "最近关注的游戏"],
         )
         with self.assertRaisesRegex(ContextPlanError, "invalid_heartbeat_plan"):
             parse_heartbeat_plan(
@@ -402,7 +412,7 @@ class ContextPlannerTest(unittest.TestCase):
         unit = schema["properties"]["intent_units"]["items"]  # type: ignore[index]
         self.assertIn("recall_queries", unit["properties"])
         self.assertIn(
-            "unfamiliar public named-entity",
+            "exact-word OR expression",
             unit["properties"]["recall_queries"]["description"],
         )
         self.assertEqual(schema["properties"]["uncertainty"]["maxItems"], 4)  # type: ignore[index]
@@ -521,12 +531,12 @@ class ContextPlannerTest(unittest.TestCase):
         with self.assertRaisesRegex(ContextPlanError, "unsupported_version"):
             parse_context_plan(plan, ["event-1"], [], "turn-1", 1)
 
-    def test_casual_units_can_skip_recall_without_parser_semantics(self) -> None:
+    def test_every_unit_requires_recall_queries(self) -> None:
         plan = response_plan()
+        del plan["intent_units"][0]["recall_queries"]
         plan["episode_actions"][0]["open_loops"] = ["饭后再弄"]
-        parsed = parse_context_plan(json.dumps(plan), ["event-1"], [], "turn-1", 1)
-        self.assertNotIn("recall_queries", parsed["intent_units"][0])
-        self.assertEqual(parsed["episode_actions"][0]["open_loops"], ["饭后再弄"])
+        with self.assertRaisesRegex(ContextPlanError, "invalid_intent_unit"):
+            parse_context_plan(json.dumps(plan), ["event-1"], [], "turn-1", 1)
 
     def test_bound_episode_does_not_inject_history_or_remove_tools(
         self,
@@ -548,6 +558,7 @@ class ContextPlannerTest(unittest.TestCase):
                         "intent": "share current activity",
                         "speech_act": "casual_share",
                         "references": ["它 -> 刚聊过的键盘"],
+                        "recall_queries": ["键盘"],
                     }
                 ],
                 "episode_actions": [
@@ -564,11 +575,12 @@ class ContextPlannerTest(unittest.TestCase):
                 "episode_links": [],
                 "uncertainty": [],
             }
+            recalled = build_plan_retrieval(
+                daemon.store, plan, app_config(directory)
+            )
             self.assertEqual(
-                build_plan_retrieval(daemon.store, plan, app_config(directory))[
-                    "episodes"
-                ],
-                [],
+                [item["episode_id"] for item in recalled["episodes"]],
+                ["hhkb"],
             )
             self.assertEqual(
                 [spec["name"] for spec in daemon._owner_tool_specs(plan)],
@@ -714,6 +726,7 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "intent": "combined owner update",
                                 "speech_act": "casual_share",
                                 "references": [],
+                                "recall_queries": ["第一条 | 第二条"],
                             }
                         ],
                         "episode_actions": [
@@ -827,6 +840,7 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "intent": "find stored drinking container",
                                 "speech_act": "question",
                                 "references": ["喝水用的东西"],
+                                "recall_queries": ["保温杯 | 收纳位置"],
                             }
                         ],
                         "episode_actions": [
@@ -977,6 +991,7 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual(
                             list(payload),
                             [
+                                "available_internal_tools",
                                 "available_mcp_servers",
                                 "long_term_memories",
                                 "recent_memories",

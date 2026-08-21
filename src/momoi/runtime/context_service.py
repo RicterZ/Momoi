@@ -44,6 +44,29 @@ from .turn_support import (
 
 logger = logging.getLogger("momoi.runtime.turns")
 
+PLANNER_INTERNAL_TOOLS = [
+    {
+        "id": "memory_search",
+        "description": "Search confirmed durable owner memory.",
+    },
+    {
+        "id": "memory_remember",
+        "description": "Stage owner-confirmed memory for commit by the Owner Turn.",
+    },
+    {
+        "id": "memory_forget",
+        "description": "Stage removal of owner-confirmed memory.",
+    },
+    {
+        "id": "conversation_search",
+        "description": "Search archived conversation Episodes and matched messages.",
+    },
+    {
+        "id": "conversation_read",
+        "description": "Read exact archived conversation wording after a search hit.",
+    },
+]
+
 
 def _planner_state_lines(items: list[dict[str, object]], *, reminder: bool = False) -> str:
     lines: list[str] = []
@@ -78,6 +101,13 @@ def _planner_mcp_lines(items: list[dict[str, object]]) -> str:
         f"- id={item.get('id')} description={str(item.get('description') or '')[:240]}"
         for item in items
         if isinstance(item, dict) and item.get("id")
+    )
+
+
+def _planner_internal_tool_lines(items: list[dict[str, str]]) -> str:
+    return "\n".join(
+        f"- id={item['id']} description={item['description']}"
+        for item in items
     )
 
 
@@ -287,6 +317,7 @@ def _reply_wait_message_lines(
 
 def render_heartbeat_planner_request(
     *,
+    internal_tools: list[dict[str, str]],
     mcp_servers: list[dict[str, object]],
     workspace_guidance: str,
     long_term_memories: str,
@@ -306,6 +337,10 @@ def render_heartbeat_planner_request(
         for key in ("activity", "result")
     )
     return _sections(
+        (
+            "available_internal_tools",
+            _planner_value(_planner_internal_tool_lines(internal_tools)),
+        ),
         ("available_mcp_servers", _planner_value(_planner_mcp_lines(mcp_servers))),
         ("workspace_heartbeat_guidance", _planner_value(workspace_guidance)),
         ("long_term_memories", _planner_value(long_term_memories)),
@@ -324,6 +359,7 @@ def render_heartbeat_planner_request(
 
 def render_context_planner_request(
     *,
+    internal_tools: list[dict[str, str]],
     mcp_servers: list[dict[str, object]],
     long_term_memories: str,
     recent_memories: str,
@@ -338,6 +374,10 @@ def render_context_planner_request(
 ) -> str:
     """Serialize the exact human-readable user prompt sent to Context Planner."""
     return _sections(
+        (
+            "available_internal_tools",
+            _planner_value(_planner_internal_tool_lines(internal_tools)),
+        ),
         (
             "available_mcp_servers",
             _planner_value(_planner_mcp_lines(mcp_servers)),
@@ -489,6 +529,7 @@ class ContextService:
             {
                 "role": "user",
                 "content": render_context_planner_request(
+                    internal_tools=PLANNER_INTERNAL_TOOLS,
                     mcp_servers=mcp_server_catalog,
                     long_term_memories=self.store.always_memory_context(),
                     recent_memories=self.store.recent_memory_context(
@@ -735,6 +776,7 @@ class ContextService:
             {
                 "role": "user",
                 "content": render_heartbeat_planner_request(
+                    internal_tools=PLANNER_INTERNAL_TOOLS,
                     mcp_servers=mcp_server_catalog,
                     workspace_guidance=self._workspace_heartbeat_guidance(),
                     long_term_memories=long_term_memories,

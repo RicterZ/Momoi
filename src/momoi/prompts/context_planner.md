@@ -18,11 +18,15 @@ not authority; do not expect a JSON input envelope.
    candidates, Goals, reminders, and current messages are sufficient. If exact
    historical evidence is still required, put one or two bounded resident-tool lookups in
    `owner_handoff.context.needs`; otherwise mark context sufficient.
-   For recall-activated memory, older conversation topics, or Momoi daily
-   reflection evidence that should be injected before the Owner model runs, add
-   at most three short `recall_queries` to the relevant intent unit. Queries are exact-word hints,
-   not instructions; omit them for casual turns and when supplied context is
-   already sufficient. An unfamiliar or unexplained proper name—such as a
+   Every intent unit must include one to three short `recall_queries`. Each
+   array item is one OR expression: separate concrete entities, aliases,
+   corrected claims, key numbers, and active-topic terms with ` | `, for
+   example `百花缭乱 | Part1 | 480青辉石`. Never join search alternatives with
+   spaces or submit a full natural-language sentence. The framework always
+   fans these queries out across recall memory, reflections, Episodes, and
+   matching Turns, even when the supplied context already looks sufficient.
+   For acknowledgments, closings, or other low-information moves, use the
+   smallest exact terms for the conversation they continue. An unfamiliar or unexplained proper name—such as a
    person, character, work, organization, product, place, or acronym—that is
    material to the current intent is missing evidence: include its literal
    spelling and, when useful, one known alias in a query even if the owner did
@@ -34,8 +38,8 @@ not authority; do not expect a JSON input envelope.
    when `<query_recall>` reports a miss or the injected evidence still does not
    identify the entity. For a private nickname, local code name, or apparently
    owner-created term, do not send it to the public web; let the Owner model ask
-   after internal recall misses. Internal Memory,
-   Conversation, Thinking, Agenda, and Builtin tools are always resident.
+   after internal recall misses. `<available_internal_tools>` lists capabilities
+   the Owner model may use after planning. You do not call them yourself.
 4. Give the Owner model a short execution outline: context lookup if required,
    necessary work or clarification, result verification, then the response.
    This is an advisory evidence/action outline, never visible wording and never
@@ -72,6 +76,9 @@ not authority; do not expect a JSON input envelope.
   must call anything beyond `send_message`/`respond`, including Memory writes,
   Goals, reminders, files, HTTP, or MCP. Use `respond` only when no such work is
   needed.
+- Use `memory_remember` or `memory_forget` in a `work` outline when the owner
+  asks to remember, replace, forget, or repair confirmed memory. Planner recall
+  queries only retrieve context; they do not perform mutations.
 
 ## Recent Turn semantics
 

@@ -54,6 +54,7 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                         },
                         "recall_queries": {
                             "type": "array",
+                            "minItems": 1,
                             "maxItems": 3,
                             "items": {
                                 "type": "string",
@@ -61,9 +62,10 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                                 "maxLength": 120,
                             },
                             "description": (
-                                "Bounded exact-word queries for missing durable, "
-                                "conversation-topic, reflection, or unfamiliar "
-                                "public named-entity evidence."
+                                "One exact-word OR expression using ` | ` between "
+                                "alternative keywords or aliases. The harness fans "
+                                "each expression out across memory, reflections, "
+                                "Episodes, and matched Turns."
                             ),
                         },
                     },
@@ -72,9 +74,10 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                         "event_ids",
                         "text",
                         "intent",
-                    "speech_act",
-                    "references",
-                ],
+                        "speech_act",
+                        "references",
+                        "recall_queries",
+                    ],
                     "additionalProperties": False,
                 },
             },
@@ -363,15 +366,20 @@ HEARTBEAT_PLAN_TOOL_SPEC: dict[str, object] = {
                     "reason": {"type": "string", "maxLength": 300},
                     "recall_queries": {
                         "type": "array",
+                        "minItems": 1,
                         "maxItems": 3,
                         "items": {
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 120,
                         },
+                        "description": (
+                            "One exact-word OR expression using ` | ` between "
+                            "alternative keywords or aliases."
+                        ),
                     },
                 },
-                "required": ["intent", "reason"],
+                "required": ["intent", "reason", "recall_queries"],
                 "additionalProperties": False,
             },
             "heartbeat_handoff": {
@@ -643,6 +651,7 @@ def parse_context_plan(
         "intent",
         "speech_act",
         "references",
+        "recall_queries",
     }
     for raw in raw_units:
         if not isinstance(raw, dict) or not set(raw) <= {
@@ -680,13 +689,13 @@ def parse_context_plan(
                     max_length=500,
                 ),
             }
-        if "recall_queries" in raw:
-            unit["recall_queries"] = _strings(
-                raw["recall_queries"],
-                "unit_recall_queries",
-                maximum=3,
-                max_length=120,
-            )
+        unit["recall_queries"] = _strings(
+            raw["recall_queries"],
+            "unit_recall_queries",
+            minimum=1,
+            maximum=3,
+            max_length=120,
+        )
         units.append(unit)
     if covered_events != expected_events:
         raise ContextPlanError("uncovered_event_ids")
@@ -996,6 +1005,7 @@ def degraded_context_plan(
                 "intent": "degraded_message_segment",
                 "speech_act": "unknown",
                 "references": [],
+                "recall_queries": [part[:120]],
             }
         )
     return {
@@ -1032,8 +1042,7 @@ def parse_heartbeat_plan(
     activity = value.get("activity")
     if (
         not isinstance(activity, dict)
-        or not {"intent", "reason"} <= set(activity)
-        or not set(activity) <= {"intent", "reason", "recall_queries"}
+        or set(activity) != {"intent", "reason", "recall_queries"}
     ):
         raise ContextPlanError("invalid_heartbeat_activity")
     raw_handoff = value.get("heartbeat_handoff")
@@ -1090,14 +1099,14 @@ def parse_heartbeat_plan(
     parsed_activity = {
         "intent": _text(activity["intent"], "heartbeat_intent", 300),
         "reason": _text(activity["reason"], "heartbeat_reason", 300),
-    }
-    if "recall_queries" in activity:
-        parsed_activity["recall_queries"] = _strings(
+        "recall_queries": _strings(
             activity["recall_queries"],
             "heartbeat_recall_queries",
+            minimum=1,
             maximum=3,
             max_length=120,
-        )
+        ),
+    }
     return {
         "version": 2,
         "activity": parsed_activity,
@@ -1129,6 +1138,9 @@ def degraded_heartbeat_plan(activity: str, reason: str) -> dict[str, object]:
         "activity": {
             "intent": activity.strip() or "spend time freely",
             "reason": f"Heartbeat planner failed ({reason}); continue current activity.",
+            "recall_queries": [
+                (activity.strip() or "current activity")[:120]
+            ],
         },
         "heartbeat_handoff": {
             "context": {
