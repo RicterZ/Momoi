@@ -9,7 +9,6 @@ from ..logging_context import TRACE, compact_log_value, log_context, log_event, 
 from ..models import IncomingMessage
 from ..storage import estimate_tokens
 from .context_assembler import (
-    RECENT_TURN_CONTEXT_TOKENS,
     assemble_main_context,
     assemble_planner_recent_turns,
     build_plan_retrieval,
@@ -450,13 +449,10 @@ class ContextService:
                 self.config.planner_recent_base_turns or self.config.recent_turns,
                 self.config.planner_recent_append_turns or self.config.recent_turns,
                 self.config.planner_active_recent_turns or self.config.recent_turns,
-                min(
-                    RECENT_TURN_CONTEXT_TOKENS,
-                    self.config.planner_recent_tokens
-                    or min(
-                        88000,
-                        max(1000, int(self.config.max_input_tokens * 0.55)),
-                    ),
+                self.config.planner_recent_tokens
+                or min(
+                    88000,
+                    max(1000, int(self.config.max_input_tokens * 0.55)),
                 ),
                 min(event.received_at for event in events),
             )
@@ -759,7 +755,6 @@ class ContextService:
             self.config.recent_raw_tokens,
             self.config.recent_turns,
             min(event.received_at for event in events),
-            RECENT_TURN_CONTEXT_TOKENS,
         )
 
     async def _plan_heartbeat_context(

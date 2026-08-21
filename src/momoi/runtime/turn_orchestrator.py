@@ -18,7 +18,6 @@ from ..reply_wait import REPLY_FOLLOWUP_RETRY_SECONDS
 from ..storage import estimate_tokens, truncate_tokens
 from ..text_replacement import cyber_keyword_pre_hook
 from .context_assembler import (
-    RECENT_TURN_CONTEXT_TOKENS,
     assemble_main_context,
     assemble_compact_recent_conversation,
     assemble_recent_turns,
@@ -268,11 +267,11 @@ class TurnOrchestrator:
         recent_turn_records, _ = assemble_recent_turns(
             self.store,
             self.config.recent_turns,
-            RECENT_TURN_CONTEXT_TOKENS,
+            None,
         )
         recent_turns = project_recent_turns_for_owner(
             recent_turn_records,
-            RECENT_TURN_CONTEXT_TOKENS,
+            None,
         )
         recent_turn_ids = {
             str(item.get("turn_id") or "")
@@ -1061,11 +1060,11 @@ class TurnOrchestrator:
         heartbeat_turn_records, _ = assemble_recent_turns(
             self.store,
             self.config.recent_turns,
-            RECENT_TURN_CONTEXT_TOKENS,
+            None,
         )
         recent_turns = project_recent_turns_for_owner(
             heartbeat_turn_records,
-            RECENT_TURN_CONTEXT_TOKENS,
+            None,
         )
         recent_topics: list[dict[str, object]] = []
         topic_tokens = 0
@@ -1120,7 +1119,6 @@ class TurnOrchestrator:
             self.config.summary_tokens,
             self.config.recent_raw_tokens,
             recent_turns=self.config.recent_turns,
-            recent_turn_token_budget=RECENT_TURN_CONTEXT_TOKENS,
         )
         artifact_root = self._artifact_root().resolve()
         minimum = max(1, int(self.config.heartbeat.min_interval_seconds / 60))
@@ -1523,11 +1521,11 @@ class TurnOrchestrator:
         goal_turn_records, _ = assemble_recent_turns(
             self.store,
             self.config.recent_turns,
-            RECENT_TURN_CONTEXT_TOKENS,
+            None,
         )
         recent_turns = project_recent_turns_for_owner(
             goal_turn_records,
-            RECENT_TURN_CONTEXT_TOKENS,
+            None,
         )
         recent_turn_ids = {
             str(item.get("turn_id") or "")

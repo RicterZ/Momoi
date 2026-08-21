@@ -12,7 +12,6 @@ from .budget import SECTION_BUDGET_ALLOCATOR
 
 
 logger = logging.getLogger(__name__)
-RECENT_TURN_CONTEXT_TOKENS = 4000
 RECALLED_TURN_CONTEXT_TOKENS = 6000
 RECALLED_TURN_LIMIT = 6
 
@@ -493,9 +492,6 @@ def _recalled_turn_context(
     for item in selected:
         turn_id = str(item["turn_id"])
         lines = [f"[recalled turn={turn_id}]"]
-        keywords = item.get("matched_keywords") or []
-        if keywords:
-            lines.append("matched: " + " | ".join(str(value) for value in keywords))
         for message in by_turn.get(turn_id, []):
             role = "OWNER" if message["role"] == "user" else "MOMOI"
             delivery = str(message.get("delivery_state") or "")
@@ -1054,7 +1050,7 @@ def _owner_history_line(item: dict[str, object], call_names: dict[str, str]) -> 
 
 def project_recent_turns_for_owner(
     document: dict[str, object],
-    token_budget: int,
+    token_budget: int | None,
 ) -> str:
     """Render recent history as a causal, owner-facing text projection.
 
@@ -1063,7 +1059,9 @@ def project_recent_turns_for_owner(
     replay of the runtime journal, so tool payloads are reduced to one line.
     """
     turns = document.get("turns")
-    if not isinstance(turns, list) or token_budget <= 0:
+    if not isinstance(turns, list) or (
+        token_budget is not None and token_budget <= 0
+    ):
         return ""
     blocks: list[str] = []
     for index, raw_turn in enumerate(turns[-6:], start=1):
@@ -1115,16 +1113,22 @@ def project_recent_turns_for_owner(
                         lines.append(f"  final: {mutation_name}=" + ",".join(labels))
         blocks.append("\n".join(lines))
     rendered = "\n\n".join(blocks)
-    return truncate_tokens(rendered, token_budget)
+    return (
+        rendered
+        if token_budget is None
+        else truncate_tokens(rendered, token_budget)
+    )
 
 
 def assemble_recent_turns(
     store: Store,
     turn_limit: int,
-    token_budget: int,
+    token_budget: int | None,
     before_timestamp: float | None = None,
 ) -> tuple[dict[str, object], str]:
-    if turn_limit <= 0 or token_budget <= 0:
+    if turn_limit <= 0 or (
+        token_budget is not None and token_budget <= 0
+    ):
         empty: dict[str, object] = {"version": 1, "turns": []}
         return empty, json.dumps(empty, separators=(",", ":"))
     records = store.recent_turn_records(turn_limit, before_timestamp)
@@ -1139,7 +1143,7 @@ def assemble_recent_turns(
         )
         size = estimate_tokens(rendered)
         candidate = record
-        if not selected and size > token_budget:
+        if token_budget is not None and not selected and size > token_budget:
             candidate = _compact_turn_record(record, token_budget)
             rendered = json.dumps(
                 candidate,
@@ -1148,7 +1152,7 @@ def assemble_recent_turns(
                 default=str,
             )
             size = estimate_tokens(rendered)
-        if selected and used + size > token_budget:
+        if token_budget is not None and selected and used + size > token_budget:
             break
         selected.append(candidate)
         used += size
@@ -1680,19 +1684,13 @@ def assemble_main_context(
     raw_token_budget: int,
     recent_turns: int = 0,
     recent_before_timestamp: float | None = None,
-    recent_turn_token_budget: int | None = None,
 ) -> dict[str, str]:
-    turn_budget = (
-        raw_token_budget
-        if recent_turn_token_budget is None
-        else min(raw_token_budget, recent_turn_token_budget)
-    )
     recent_turn_records, _recent_turns = assemble_recent_turns(
         store,
-        recent_turns, turn_budget, recent_before_timestamp
+        recent_turns, None, recent_before_timestamp
     )
     compact_recent_turns = project_recent_turns_for_owner(
-        recent_turn_records, turn_budget
+        recent_turn_records, None
     )
     recent_turn_ids = {
         str(item.get("turn_id") or "")

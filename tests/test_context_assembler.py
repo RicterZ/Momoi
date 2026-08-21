@@ -160,6 +160,34 @@ class ContextAssemblerTest(unittest.TestCase):
             self.assertGreater(rendered.count("[recalled turn="), 0)
             store.close()
 
+    def test_recent_turns_keep_six_turns_without_token_pruning(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            for index in range(8):
+                event = IncomingMessage(
+                    f"recent-full-{index}",
+                    f"recent-full-{index}",
+                    f"第{index}轮 " + "包含较长内容" * 500,
+                    index + 1,
+                    index + 1,
+                )
+                store.add_event(event)
+                store.commit_turn(
+                    [event],
+                    event.text,
+                    AgentReply([]),
+                    turn_id=f"recent-full-turn-{index}",
+                )
+
+            document, _ = assemble_recent_turns(store, 6, None)
+            rendered = project_recent_turns_for_owner(document, None)
+
+            self.assertEqual(len(document["turns"]), 6)
+            self.assertEqual(rendered.count("\n\nT-") + 1, 6)
+            self.assertIn("第2轮", rendered)
+            self.assertIn("第7轮", rendered)
+            store.close()
+
     def test_owner_context_puts_fixed_memory_and_agenda_state_first(self) -> None:
         rendered = pack_user_context(
             ("recent_turns", "history"),
@@ -1394,6 +1422,7 @@ class ContextAssemblerTest(unittest.TestCase):
             self.assertNotIn("蓝色保温杯藏在阁楼第三个纸箱里", recalled)
             self.assertIn("蓝色保温杯藏在阁楼第三个纸箱里", recalled_turns)
             self.assertIn("[recalled turn=rare-turn]", recalled_turns)
+            self.assertNotIn("matched:", recalled_turns)
             retrieval = build_plan_retrieval(
                 store,
                 plan("蓝色保温杯 | 第三个纸箱", "episode-old"),
