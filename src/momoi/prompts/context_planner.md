@@ -76,11 +76,14 @@ or persona-specific wording from it.
    actions, verification, and clarification; leave it empty when none apply.
    Separately plan owner-visible delivery as silence or an ordered list of
    intended `send_message` items. Follow the exact shared Style Card below for
-   bubble boundaries, timing, and utterance form. Record only each item's
-   timing, form, and conversational purpose; do not draft wording or prescribe
-   persona-specific lexical choices. The downstream Owner realizes the plan
-   through the Soul and may revise it when owner intent or tool evidence
-   changes.
+   bubble boundaries, timing, and utterance form: plan one short utterance per
+   item, and plan successive clauses of the same reply as successive items.
+   Derive the item count and the opening form from what this moment itself has
+   to say, judged fresh from the current move; the bubble shapes of earlier
+   Turns are history. Record only each item's timing, form, and conversational
+   purpose; do not draft wording or prescribe persona-specific lexical choices.
+   The downstream Owner realizes the plan through the Soul and may revise it
+   when owner intent or tool evidence changes.
 6. Bind every intent unit to exactly one Episode action.
 
 ## Handoff decisions

@@ -459,6 +459,16 @@ class ContextPlannerTest(unittest.TestCase):
         self.assertIn("thinking_search", CONTEXT_PLANNER_PROTOCOL_PROMPT)
         self.assertIn("owner-visible delivery", CONTEXT_PLANNER_PROTOCOL_PROMPT)
         self.assertIn(
+            "one short utterance per\n   item", CONTEXT_PLANNER_PROTOCOL_PROMPT
+        )
+        self.assertIn(
+            "successive clauses of the same reply as successive items",
+            CONTEXT_PLANNER_PROTOCOL_PROMPT,
+        )
+        self.assertIn(
+            "judged fresh from the current move", CONTEXT_PLANNER_PROTOCOL_PROMPT
+        )
+        self.assertIn(
             "explicit `recall_mode` decision", CONTEXT_PLANNER_PROTOCOL_PROMPT
         )
         self.assertIn("not its social tone", CONTEXT_PLANNER_PROTOCOL_PROMPT)
@@ -1012,12 +1022,12 @@ class ContextPlannerTest(unittest.TestCase):
         )
         self.assertIn("{{SOUL}}", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertNotIn("{{STYLE_CARD}}", CONTEXT_PLANNER_SYSTEM_PROMPT)
-        self.assertIn("Expressive micro-bubbles", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn("begin by simply speaking", CONTEXT_PLANNER_SYSTEM_PROMPT)
         for phrase in (
-            "prefer the half-beat",
+            "impulse genuinely arrives that way",
             "whole bubble",
             "completed content",
-            "unfolding sequence",
+            "wordless reaction",
             "before, between, or after",
             "fixed default, minimum, preferred count",
         ):
