@@ -2905,6 +2905,7 @@ class Store(MemoryStore, DeliveryStore):
                                 episode["summarized_through_ordinal"]
                             ),
                             "messages": [],
+                            "relevant_memories": [],
                         }
                     continue
                 if len(ordinals) <= tail_turns:
@@ -2946,10 +2947,26 @@ class Store(MemoryStore, DeliveryStore):
                 )
                 if cursor.rowcount != 1:
                     continue
+                episode_item = self._episode_dict(episode)
+                review_texts = [str(episode_item.get("title") or "")]
+                for field in ("topics", "entities", "open_loops"):
+                    review_texts.extend(
+                        str(value)
+                        for value in episode_item.get(field, [])
+                        if str(value).strip()
+                    )
+                review_texts.extend(
+                    str(message["content"])
+                    for message in compact
+                    if message.get("role") == "user"
+                )
                 return {
-                    "episode": self._episode_dict(episode),
+                    "episode": episode_item,
                     "through_ordinal": through,
                     "messages": compact,
+                    "relevant_memories": self.memory_review_candidates(
+                        review_texts
+                    ),
                 }
         return None
 
