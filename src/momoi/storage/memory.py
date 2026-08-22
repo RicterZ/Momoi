@@ -1,8 +1,5 @@
-import re
 import sqlite3
 import time
-import unicodedata
-from collections.abc import Sequence
 
 from ..context_time import context_timestamp
 from ..policies import MemoryPolicy
@@ -475,64 +472,6 @@ class MemoryStore:
             ranked.append((score, row))
         ranked.sort(key=lambda item: item[0], reverse=True)
         return [dict(row) for _, row in ranked[:max_results]]
-
-    @staticmethod
-    def _memory_review_tokens(text: str) -> set[str]:
-        normalized = unicodedata.normalize("NFKC", text).casefold()
-        tokens = {
-            token
-            for token in re.findall(r"[a-z0-9][a-z0-9_.-]+", normalized)
-            if len(token) >= 2
-        }
-        for run in re.findall(r"[\u3400-\u9fff]+", normalized):
-            tokens.update(run[index : index + 2] for index in range(len(run) - 1))
-        return tokens
-
-    def memory_review_candidates(
-        self, texts: Sequence[str], limit: int = 16
-    ) -> list[dict[str, object]]:
-        """Return a small, deterministic inventory for background memory review."""
-
-        if limit <= 0:
-            return []
-        source_tokens = self._memory_review_tokens("\n".join(texts))
-        now = time.time()
-        rows = self._db.execute(
-            """SELECT id, kind, key, content, activation, importance,
-                      updated_at, expires_at
-               FROM memories AS m
-               WHERE m.superseded_by IS NULL
-                 AND (m.expires_at IS NULL OR m.expires_at > ?)
-                 AND (m.activation<>'recent' OR m.updated_at>=?)
-                 AND NOT EXISTS (
-                     SELECT 1 FROM memory_tombstones AS t
-                     WHERE t.kind=m.kind AND t.key=m.key
-                 )""",
-            (now, now - RECENT_MEMORY_WINDOW_SECONDS),
-        ).fetchall()
-        ranked: list[tuple[float, float, int, sqlite3.Row]] = []
-        for row in rows:
-            memory_tokens = self._memory_review_tokens(
-                f"{row['key']}\n{row['content']}"
-            )
-            overlap = len(source_tokens & memory_tokens)
-            activation_weight = {
-                "always": 0.2,
-                "recent": 0.1,
-                "recall": 0.0,
-            }.get(str(row["activation"]), 0.0)
-            if overlap == 0 and activation_weight == 0:
-                continue
-            score = (
-                min(1.0, overlap / max(1, min(len(memory_tokens), 8)))
-                + activation_weight
-                + float(row["importance"]) * 0.05
-            )
-            ranked.append(
-                (score, float(row["updated_at"]), int(row["id"]), row)
-            )
-        ranked.sort(key=lambda item: item[:3], reverse=True)
-        return [dict(row) for *_rank, row in ranked[:limit]]
 
     def has_memory(self, kind: str, key: str) -> bool:
         return (

@@ -9,13 +9,7 @@ from pathlib import Path
 from momoi.channel.napcat import NapCatConfig
 from momoi.config import AppConfig, LLMConfig
 from momoi.logging_context import current_log_context
-from momoi.models import (
-    AgentReply,
-    IncomingMessage,
-    MemoryCandidate,
-    ProviderResponse,
-    TurnDraft,
-)
+from momoi.models import AgentReply, IncomingMessage, ProviderResponse
 from momoi.runtime import MomoiDaemon
 from momoi.runtime.context_assembler import assemble_main_context
 from momoi.runtime.episode_prompt_renderer import (
@@ -200,118 +194,6 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("&lt;", prompt)
         self.assertNotIn("\\u", prompt)
         self.assertFalse(prompt.startswith("{"))
-
-    def test_annealing_prompt_identifies_relevant_memory_targets(self) -> None:
-        prompt = render_episode_annealing_request(
-            {"id": "episode-1", "title": "一次纠正"},
-            [],
-            [
-                {
-                    "id": 34,
-                    "kind": "shared",
-                    "key": "capability.coop-control",
-                    "content": "今晚可以进行双人操控游戏",
-                    "activation": "recall",
-                    "importance": 0.7,
-                }
-            ],
-        )
-
-        self.assertIn(
-            "Memory 1 [memory_id=34 | kind=shared | "
-            "key=capability.coop-control | activation=recall | importance=0.7]",
-            prompt,
-        )
-        self.assertIn(
-            "<exact_memory_content>\n今晚可以进行双人操控游戏\n"
-            "</exact_memory_content>",
-            prompt,
-        )
-
-    def test_v3_summary_memory_targets_are_limited_to_supplied_inventory(
-        self,
-    ) -> None:
-        result = parse_episode_summary_result(
-            json.dumps(
-                {
-                    "version": 3,
-                    "claims": [],
-                    "narrative_summary": "",
-                    "emotional_context": {},
-                    "outcomes": [],
-                    "memory_actions": [
-                        {
-                            "action": "update",
-                            "target_memory_id": 34,
-                            "content": "目前不能进行双人操控游戏",
-                            "activation": "recall",
-                            "ttl_hours": 0,
-                            "importance": 0.7,
-                            "evidence_message_id": 12,
-                            "evidence": "现在还没有这个能力",
-                        }
-                    ],
-                },
-                ensure_ascii=False,
-            ),
-            relevant_memory_ids={34},
-        )
-
-        self.assertEqual(result["memory_actions"][0]["target_memory_id"], 34)
-        with self.assertRaisesRegex(RuntimeError, "unknown memory target"):
-            parse_episode_summary_result(
-                json.dumps(
-                    {
-                        **result,
-                        "memory_actions": [
-                            {**result["memory_actions"][0], "target_memory_id": 99}
-                        ],
-                    },
-                    ensure_ascii=False,
-                ),
-                relevant_memory_ids={34},
-            )
-
-    async def test_annealing_candidate_includes_matching_recall_memory(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            daemon = MomoiDaemon(config(directory))
-            evidence = "以后可以一起玩双人操控游戏"
-            event = IncomingMessage("memory-event", "memory-event", evidence, 0, 0)
-            daemon.store.add_event(event)
-            daemon.store.commit_turn(
-                [event],
-                evidence,
-                AgentReply([]),
-                TurnDraft(
-                    memories=[
-                        MemoryCandidate(
-                            "shared",
-                            "capability.coop-control",
-                            "以后可以进行双人操控游戏",
-                            evidence,
-                            0.7,
-                            False,
-                            "recall",
-                            0,
-                        )
-                    ]
-                ),
-                turn_id="memory-turn",
-            )
-            daemon.store.create_episode(
-                "双人操控游戏能力", episode_id="episode-main"
-            )
-            for ordinal in range(1, 6):
-                add_turn(daemon, ordinal)
-
-            candidate = daemon.store.claim_episode_annealing_candidate(2, 1000)
-
-            self.assertEqual(
-                [memory["key"] for memory in candidate["relevant_memories"]],
-                ["capability.coop-control"],
-            )
-            daemon.store.release_episode_annealing("episode-main", failed=False)
-            daemon.store.close()
 
     async def test_maintenance_timeout_uses_episode_retry_backoff(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

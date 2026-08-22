@@ -196,9 +196,7 @@ class TurnRunner(
         episode = candidate["episode"]
         episode_id = str(episode["id"])
         user_prompt = render_episode_annealing_request(
-            episode,
-            candidate["messages"],
-            candidate.get("relevant_memories", []),
+            episode, candidate["messages"]
         )
         request = [{"role": "user", "content": user_prompt}]
         try:
@@ -223,13 +221,7 @@ class TurnRunner(
             ).strip()
             if not summary:
                 raise RuntimeError("episode summary provider returned no text")
-            relevant_memory_ids = {
-                int(memory["id"])
-                for memory in candidate.get("relevant_memories", [])
-            }
-            result = parse_episode_summary_result(
-                summary, relevant_memory_ids=relevant_memory_ids
-            )
+            result = parse_episode_summary_result(summary)
             working_summary = self.store.finish_episode_annealing(
                 episode_id,
                 int(candidate["through_ordinal"]),
