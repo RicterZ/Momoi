@@ -5,7 +5,6 @@ import math
 import re
 import sqlite3
 import time
-import unicodedata
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -26,7 +25,6 @@ from ..logging_context import log_event, safe_preview
 from ..models import (
     AgentReply,
     IncomingMessage,
-    MemoryCandidate,
     TurnDraft,
 )
 from ..policies import MemoryPolicy
@@ -45,9 +43,6 @@ from .episode_search import (
     StringEpisodeSearchBackend,
 )
 from .memory import (
-    ALWAYS_MEMORY_KINDS,
-    MEMORY_ACTIVATIONS,
-    MEMORY_KINDS,
     MemoryStore,
     estimate_tokens,
     token_chunk,
@@ -2984,17 +2979,7 @@ class Store(MemoryStore, DeliveryStore):
         narrative_summary: str = "",
         emotional_context: dict[str, object] | None = None,
         outcomes: list[object] | None = None,
-        memory_actions: list[dict[str, object]] | None = None,
-        relevant_memory_ids: set[int] | None = None,
     ) -> str:
-        episode_row = self._db.execute(
-            """SELECT summarized_through_ordinal FROM conversation_episodes
-               WHERE id=? AND summary_claimed_at IS NOT NULL""",
-            (episode_id,),
-        ).fetchone()
-        if episode_row is None:
-            raise ValueError("claimed episode summary was not found")
-        previous_ordinal = int(episode_row["summarized_through_ordinal"])
         if not 1 <= len(claims) <= 64:
             raise ValueError("episode summary needs 1 to 64 evidence claims")
         normalized: list[dict[str, object]] = []
@@ -3137,249 +3122,8 @@ class Store(MemoryStore, DeliveryStore):
             )
             if cursor.rowcount != 1:
                 raise ValueError("claimed episode summary was not found")
-            self._apply_episode_memory_actions(
-                episode_id,
-                previous_ordinal,
-                through_ordinal,
-                memory_actions or [],
-                relevant_memory_ids or set(),
-                now=time.time(),
-            )
             self._reindex_episode_terms(episode_id)
         return working_summary
-
-    @staticmethod
-    def _normalized_memory_content(value: object) -> str:
-        normalized = unicodedata.normalize("NFKC", str(value)).casefold()
-        return re.sub(r"\s+", "", normalized)
-
-    def _episode_memory_evidence_source(
-        self,
-        episode_id: str,
-        previous_ordinal: int,
-        through_ordinal: int,
-        message_id: object,
-        evidence: object,
-    ) -> str | None:
-        if (
-            isinstance(message_id, bool)
-            or not isinstance(message_id, int)
-            or not isinstance(evidence, str)
-            or not evidence.strip()
-            or len(evidence) > 500
-        ):
-            return None
-        row = self._db.execute(
-            """SELECT m.content, m.source_event_ids_json
-               FROM episode_turns AS et
-               JOIN messages AS m ON m.turn_id=et.turn_id
-               WHERE et.episode_id=? AND m.id=? AND m.role='user'
-                 AND et.ordinal>? AND et.ordinal<=?""",
-            (episode_id, message_id, previous_ordinal, through_ordinal),
-        ).fetchone()
-        if row is None or evidence not in str(row["content"]):
-            return None
-        try:
-            source_ids = json.loads(str(row["source_event_ids_json"]))
-        except (json.JSONDecodeError, TypeError):
-            return None
-        if not isinstance(source_ids, list):
-            return None
-        for source_id in source_ids:
-            event = self._db.execute(
-                "SELECT content FROM events WHERE id=?", (str(source_id),)
-            ).fetchone()
-            if event is not None and evidence in str(event["content"]):
-                return str(source_id)
-        return None
-
-    def _episode_memory_candidate(
-        self,
-        action: dict[str, object],
-        *,
-        kind: object,
-        key: object,
-        evidence: str,
-    ) -> tuple[MemoryCandidate | None, str]:
-        content = action.get("content")
-        activation = action.get("activation")
-        ttl_hours = action.get("ttl_hours")
-        importance = action.get("importance")
-        if kind not in MEMORY_KINDS:
-            return None, "invalid_kind"
-        if (
-            not isinstance(key, str)
-            or not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,199}", key)
-        ):
-            return None, "invalid_key"
-        if (
-            not isinstance(content, str)
-            or not content.strip()
-            or len(content) > 2000
-        ):
-            return None, "invalid_content"
-        if activation not in MEMORY_ACTIVATIONS:
-            return None, "invalid_activation"
-        if activation == "always" and kind not in ALWAYS_MEMORY_KINDS:
-            return None, "always_memory_kind"
-        if (
-            isinstance(ttl_hours, bool)
-            or not isinstance(ttl_hours, (int, float))
-            or (
-                activation == "recent"
-                and not (
-                    self._memory_policy.recent_min_ttl_hours
-                    <= float(ttl_hours)
-                    <= self._memory_policy.recent_max_ttl_hours
-                )
-            )
-            or (activation != "recent" and float(ttl_hours) != 0)
-        ):
-            return None, "invalid_ttl"
-        if (
-            isinstance(importance, bool)
-            or not isinstance(importance, (int, float))
-            or not 0 <= float(importance) <= 1
-        ):
-            return None, "invalid_importance"
-        return (
-            MemoryCandidate(
-                str(kind),
-                key,
-                content.strip(),
-                evidence,
-                float(importance),
-                True,
-                str(activation),
-                float(ttl_hours),
-            ),
-            "",
-        )
-
-    def _equivalent_active_memory_id(
-        self, content: str, *, excluding_id: int | None = None
-    ) -> int | None:
-        normalized = self._normalized_memory_content(content)
-        rows = self._db.execute(
-            """SELECT id, content FROM memories AS m
-               WHERE m.superseded_by IS NULL
-                 AND (m.expires_at IS NULL OR m.expires_at>?)
-                 AND NOT EXISTS (
-                     SELECT 1 FROM memory_tombstones AS t
-                     WHERE t.kind=m.kind AND t.key=m.key
-                 )""",
-            (time.time(),),
-        ).fetchall()
-        for row in rows:
-            memory_id = int(row["id"])
-            if memory_id != excluding_id and self._normalized_memory_content(
-                row["content"]
-            ) == normalized:
-                return memory_id
-        return None
-
-    def _apply_episode_memory_actions(
-        self,
-        episode_id: str,
-        previous_ordinal: int,
-        through_ordinal: int,
-        actions: list[dict[str, object]],
-        relevant_memory_ids: set[int],
-        *,
-        now: float,
-    ) -> None:
-        counts = {"remember": 0, "update": 0, "forget": 0, "rejected": 0}
-        for index, action in enumerate(actions):
-            action_name = str(action.get("action") or "")
-            reason = ""
-            source_event_id = self._episode_memory_evidence_source(
-                episode_id,
-                previous_ordinal,
-                through_ordinal,
-                action.get("evidence_message_id"),
-                action.get("evidence"),
-            )
-            if source_event_id is None:
-                reason = "evidence_not_in_new_owner_message"
-            target_id = action.get("target_memory_id")
-            target = None
-            if not reason and action_name in {"update", "forget"}:
-                if (
-                    isinstance(target_id, bool)
-                    or not isinstance(target_id, int)
-                    or target_id not in relevant_memory_ids
-                ):
-                    reason = "unknown_memory_target"
-                else:
-                    target = self._active_memory_row(target_id)
-                    if target is None:
-                        reason = "stale_memory_target"
-            evidence = str(action.get("evidence") or "").strip()
-            if not reason and action_name == "remember":
-                if target_id is not None:
-                    reason = "unexpected_memory_target"
-                else:
-                    candidate, reason = self._episode_memory_candidate(
-                        action,
-                        kind=action.get("kind"),
-                        key=action.get("key"),
-                        evidence=evidence,
-                    )
-                    if not reason and candidate is not None:
-                        if self.has_memory(candidate.kind, candidate.key):
-                            reason = "duplicate_memory_key"
-                        elif self._equivalent_active_memory_id(candidate.content):
-                            reason = "duplicate_memory_content"
-                        else:
-                            self._remember_validated(candidate, source_event_id, now)
-                            counts["remember"] += 1
-            elif not reason and action_name == "update" and target is not None:
-                candidate, reason = self._episode_memory_candidate(
-                    action,
-                    kind=target["kind"],
-                    key=target["key"],
-                    evidence=evidence,
-                )
-                if not reason and candidate is not None:
-                    if candidate.content == str(target["content"]):
-                        reason = "unchanged_memory"
-                    elif self._equivalent_active_memory_id(
-                        candidate.content, excluding_id=int(target["id"])
-                    ):
-                        reason = "duplicate_memory_content"
-                    else:
-                        self._remember_validated(candidate, source_event_id, now)
-                        counts["update"] += 1
-            elif not reason and action_name == "forget" and target is not None:
-                self._forget_memory_validated(
-                    str(target["kind"]),
-                    str(target["key"]),
-                    evidence,
-                    source_event_id,
-                    now,
-                )
-                counts["forget"] += 1
-            elif not reason and action_name not in {"remember", "update", "forget"}:
-                reason = "invalid_memory_action"
-            if reason:
-                counts["rejected"] += 1
-                log_event(
-                    logger,
-                    logging.WARNING,
-                    "episode_memory_action_rejected",
-                    episode_id=episode_id,
-                    action_index=index,
-                    action=action_name,
-                    reason=reason,
-                )
-        if actions:
-            log_event(
-                logger,
-                logging.DEBUG,
-                "episode_memory_actions_complete",
-                episode_id=episode_id,
-                **counts,
-            )
 
     def release_episode_annealing(
         self, episode_id: str, *, failed: bool = True

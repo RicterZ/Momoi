@@ -237,8 +237,6 @@ class TurnRunner(
                 narrative_summary=str(result["narrative_summary"]),
                 emotional_context=result["emotional_context"],  # type: ignore[arg-type]
                 outcomes=result["outcomes"],  # type: ignore[arg-type]
-                memory_actions=result["memory_actions"],  # type: ignore[arg-type]
-                relevant_memory_ids=relevant_memory_ids,
             )
             metrics = response.usage or {}
             self.store.record_turn_usage(

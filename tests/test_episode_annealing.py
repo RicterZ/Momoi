@@ -228,7 +228,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
             prompt,
         )
 
-    def test_v3_summary_parser_preserves_memory_target_for_storage_validation(
+    def test_v3_summary_memory_targets_are_limited_to_supplied_inventory(
         self,
     ) -> None:
         result = parse_episode_summary_result(
@@ -258,19 +258,19 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(result["memory_actions"][0]["target_memory_id"], 34)
-        stale = parse_episode_summary_result(
-            json.dumps(
-                {
-                    **result,
-                    "memory_actions": [
-                        {**result["memory_actions"][0], "target_memory_id": 99}
-                    ],
-                },
-                ensure_ascii=False,
-            ),
-            relevant_memory_ids={34},
-        )
-        self.assertEqual(stale["memory_actions"][0]["target_memory_id"], 99)
+        with self.assertRaisesRegex(RuntimeError, "unknown memory target"):
+            parse_episode_summary_result(
+                json.dumps(
+                    {
+                        **result,
+                        "memory_actions": [
+                            {**result["memory_actions"][0], "target_memory_id": 99}
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                relevant_memory_ids={34},
+            )
 
     async def test_annealing_candidate_includes_matching_recall_memory(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -311,120 +311,6 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                 ["capability.coop-control"],
             )
             daemon.store.release_episode_annealing("episode-main", failed=False)
-            daemon.store.close()
-
-    async def test_annealing_updates_targeted_memory_from_new_owner_evidence(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            daemon = MomoiDaemon(config(directory))
-            daemon.store.create_episode(
-                "双人操控游戏能力", episode_id="episode-main"
-            )
-            old_evidence = "今晚可以一起玩双人操控游戏"
-            old_event = IncomingMessage(
-                "old-memory-event", "old-memory-event", old_evidence, 0, 0
-            )
-            daemon.store.add_event(old_event)
-            daemon.store.commit_turn(
-                [old_event],
-                old_evidence,
-                AgentReply([]),
-                TurnDraft(
-                    memories=[
-                        MemoryCandidate(
-                            "shared",
-                            "capability.coop-control",
-                            "今晚可以进行双人操控游戏",
-                            old_evidence,
-                            0.7,
-                            False,
-                            "recall",
-                            0,
-                        )
-                    ]
-                ),
-                turn_id="old-memory-turn",
-            )
-            daemon.store.link_turn_to_episode("episode-main", "old-memory-turn")
-            correction = "现在还不能玩双人操控游戏，要等 agent 技术发展"
-            correction_event = IncomingMessage(
-                "correction-event", "correction-event", correction, 1, 1
-            )
-            daemon.store.add_event(correction_event)
-            daemon.store.commit_turn(
-                [correction_event],
-                correction,
-                AgentReply([]),
-                turn_id="correction-turn",
-            )
-            daemon.store.link_turn_to_episode("episode-main", "correction-turn")
-            for ordinal in range(2, 6):
-                add_turn(daemon, ordinal)
-
-            class Provider:
-                async def complete(
-                    provider_self,
-                    system: object,
-                    messages: list[dict[str, object]],
-                    tools: list[dict[str, object]],
-                    **_: object,
-                ) -> ProviderResponse:
-                    prompt = str(messages[0]["content"])
-                    owner_message = next(
-                        item
-                        for item in annealing_items(
-                            prompt, "new_messages", "Message"
-                        )
-                        if item["content"] == correction
-                    )
-                    memory_id = int(
-                        re.search(
-                            r"memory_id=(\d+)",
-                            prompt_section(prompt, "relevant_memories"),
-                        ).group(1)
-                    )
-                    result = {
-                        "version": 3,
-                        "claims": [
-                            {
-                                "message_id": owner_message["message_id"],
-                                "turn_id": owner_message["turn_id"],
-                                "ordinal": owner_message["ordinal"],
-                                "quote": correction,
-                            }
-                        ],
-                        "narrative_summary": "主人纠正了双人操控能力的现状。",
-                        "emotional_context": {},
-                        "outcomes": [],
-                        "memory_actions": [
-                            {
-                                "action": "update",
-                                "target_memory_id": memory_id,
-                                "content": "目前不能进行双人操控游戏，需等待 agent 技术发展",
-                                "activation": "recall",
-                                "ttl_hours": 0,
-                                "importance": 0.7,
-                                "evidence_message_id": owner_message["message_id"],
-                                "evidence": correction,
-                            }
-                        ],
-                    }
-                    return ProviderResponse(
-                        [{"type": "text", "text": json.dumps(result, ensure_ascii=False)}],
-                        [],
-                    )
-
-            daemon.provider = Provider()  # type: ignore[assignment]
-
-            self.assertTrue(await daemon._run_episode_annealing_once())
-            memory = daemon.store.active_memory(
-                "shared", "capability.coop-control"
-            )
-            self.assertEqual(
-                memory["content"],
-                "目前不能进行双人操控游戏，需等待 agent 技术发展",
-            )
             daemon.store.close()
 
     async def test_maintenance_timeout_uses_episode_retry_backoff(self) -> None:
