@@ -3341,9 +3341,7 @@ class Store(MemoryStore, DeliveryStore):
                     evidence=evidence,
                 )
                 if not reason and candidate is not None:
-                    if candidate.content == str(target["content"]):
-                        reason = "unchanged_memory"
-                    elif self._equivalent_active_memory_id(
+                    if self._equivalent_active_memory_id(
                         candidate.content, excluding_id=int(target["id"])
                     ):
                         reason = "duplicate_memory_content"
