@@ -1430,6 +1430,11 @@ class StorageMemoryTest(unittest.TestCase):
             BuiltinTools.capability(ToolCall("list", "list_dir", {})),
             "read",
         )
+        for name in ("makedirs", "move_file", "delete_file"):
+            self.assertEqual(
+                BuiltinTools.capability(ToolCall(name, name, {})),
+                "write",
+            )
 
     def test_progress_message_crash_reuses_outbox_without_reconciliation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

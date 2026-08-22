@@ -2,6 +2,7 @@ import asyncio
 import copy
 import hashlib
 import os
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -140,6 +141,58 @@ BUILTIN_TOOL_SPECS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "makedirs",
+        "description": "Create a directory and any missing parent directories.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Absolute path or path relative to the Momoi workspace.",
+                },
+            },
+            "required": ["path"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "move_file",
+        "description": (
+            "Move or rename one file. The destination parent must exist, and an "
+            "existing destination is never overwritten."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "source": {
+                    "type": "string",
+                    "description": "Absolute path or path relative to the Momoi workspace.",
+                },
+                "destination": {
+                    "type": "string",
+                    "description": "Absolute path or path relative to the Momoi workspace.",
+                },
+            },
+            "required": ["source", "destination"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "delete_file",
+        "description": "Delete one file. Directories are never deleted.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Absolute path or path relative to the Momoi workspace.",
+                },
+            },
+            "required": ["path"],
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": "sleep",
         "description": (
             "Wait inside this Turn for a number of seconds, then continue. "
@@ -197,7 +250,13 @@ class BuiltinTools:
     def capability(call: ToolCall) -> str:
         if call.name in {"read_file", "list_dir", "sleep"}:
             return "read"
-        if call.name in {"write_file", "apply_patch"}:
+        if call.name in {
+            "write_file",
+            "apply_patch",
+            "makedirs",
+            "move_file",
+            "delete_file",
+        }:
             return "write"
         if call.name == "curl":
             method = str(call.arguments.get("method", "GET")).upper()
@@ -216,6 +275,12 @@ class BuiltinTools:
                 return await asyncio.to_thread(self._write_file, call.arguments)
             if call.name == "apply_patch":
                 return await asyncio.to_thread(self._apply_patch, call.arguments)
+            if call.name == "makedirs":
+                return await asyncio.to_thread(self._makedirs, call.arguments)
+            if call.name == "move_file":
+                return await asyncio.to_thread(self._move_file, call.arguments)
+            if call.name == "delete_file":
+                return await asyncio.to_thread(self._delete_file, call.arguments)
             if call.name == "sleep":
                 seconds = min(3600.0, max(0.0, float(call.arguments.get("seconds", 0))))
                 await asyncio.sleep(seconds)
@@ -400,6 +465,46 @@ class BuiltinTools:
         if applied.returncode:
             raise RuntimeError((applied.stderr or applied.stdout or "patch failed").strip())
         return {"ok": True, "cwd": str(cwd)}
+
+    def _makedirs(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        path = self.resolve_path(arguments.get("path"))
+        existed = path.exists()
+        if existed and not path.is_dir():
+            raise FileExistsError(f"path exists and is not a directory: {path}")
+        path.mkdir(parents=True, exist_ok=True)
+        return {"ok": True, "path": str(path), "created": not existed}
+
+    def _move_file(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        source = self.resolve_path(arguments.get("source"))
+        destination = self.resolve_path(arguments.get("destination"))
+        if not source.exists():
+            raise FileNotFoundError(f"source file does not exist: {source}")
+        if not source.is_file():
+            raise IsADirectoryError(f"source is not a file: {source}")
+        if destination.exists():
+            raise FileExistsError(f"destination already exists: {destination}")
+        if not destination.parent.is_dir():
+            raise FileNotFoundError(
+                f"destination parent directory does not exist: {destination.parent}"
+            )
+        size = source.stat().st_size
+        shutil.move(str(source), str(destination))
+        return {
+            "ok": True,
+            "source": str(source),
+            "destination": str(destination),
+            "bytes": size,
+        }
+
+    def _delete_file(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        path = self.resolve_path(arguments.get("path"))
+        if not path.exists():
+            raise FileNotFoundError(f"file does not exist: {path}")
+        if not path.is_file():
+            raise IsADirectoryError(f"path is not a file: {path}")
+        size = path.stat().st_size
+        path.unlink()
+        return {"ok": True, "path": str(path), "bytes": size}
 
     def _apply_structured_patch(self, cwd: Path, patch: str) -> dict[str, Any]:
         lines = patch.splitlines()

@@ -903,8 +903,17 @@ def _owner_history_argument(name: str, arguments: object) -> str:
         if isinstance(messages, list):
             return f"messages={len(messages)}"
         return ""
-    elif name in {"curl", "read_file", "list_dir", "write_file", "apply_patch"}:
-        keep = ("url", "path", "query")
+    elif name in {
+        "curl",
+        "read_file",
+        "list_dir",
+        "write_file",
+        "apply_patch",
+        "makedirs",
+        "move_file",
+        "delete_file",
+    }:
+        keep = ("url", "path", "source", "destination", "query")
     else:
         keep = ("query", "keyword", "limit", "path", "url", "id")
     selected = [

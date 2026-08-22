@@ -1514,6 +1514,40 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertTrue(wrapped["ok"], wrapped)
                 self.assertEqual(path.read_text(), "wrapped\n")
+                made = await workspace_tools.execute(
+                    ToolCall("mkdir-1", "makedirs", {"path": "notes/archive"})
+                )
+                self.assertTrue(made["ok"], made)
+                self.assertTrue(made["created"])
+                self.assertTrue((Path(directory) / "notes/archive").is_dir())
+                made_again = await workspace_tools.execute(
+                    ToolCall("mkdir-2", "makedirs", {"path": "notes/archive"})
+                )
+                self.assertTrue(made_again["ok"], made_again)
+                self.assertFalse(made_again["created"])
+                moved = await workspace_tools.execute(
+                    ToolCall(
+                        "move-1",
+                        "move_file",
+                        {
+                            "source": "note.txt",
+                            "destination": "notes/archive/note.txt",
+                        },
+                    )
+                )
+                self.assertTrue(moved["ok"], moved)
+                moved_path = Path(directory) / "notes/archive/note.txt"
+                self.assertFalse(path.exists())
+                self.assertEqual(moved_path.read_text(), "wrapped\n")
+                deleted = await workspace_tools.execute(
+                    ToolCall(
+                        "delete-1",
+                        "delete_file",
+                        {"path": "notes/archive/note.txt"},
+                    )
+                )
+                self.assertTrue(deleted["ok"], deleted)
+                self.assertFalse(moved_path.exists())
             self.assertTrue(
                 (await tools.execute(ToolCall("sleep-1", "sleep", {"seconds": 0})))[
                     "ok"
