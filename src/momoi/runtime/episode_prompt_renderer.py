@@ -1,4 +1,5 @@
 import json
+import re
 from collections.abc import Mapping, Sequence
 
 
@@ -202,10 +203,12 @@ def render_episode_annealing_request(
 def _parse_memory_actions(
     value: object, relevant_memory_ids: set[int] | None
 ) -> list[dict[str, object]]:
+    # Target membership is deliberately rechecked by storage so one stale or
+    # hallucinated action cannot discard an otherwise valid Episode summary.
+    _ = relevant_memory_ids
     if not isinstance(value, list) or len(value) > 12:
         raise RuntimeError("episode summary provider returned invalid memory actions")
     actions: list[dict[str, object]] = []
-    targeted_ids: set[int] = set()
     remembered_keys: set[tuple[str, str]] = set()
     for item in value:
         if not isinstance(item, dict):
@@ -270,8 +273,7 @@ def _parse_memory_actions(
                         "routine",
                     }
                     or not isinstance(key, str)
-                    or not key
-                    or len(key) > 200
+                    or re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,199}", key) is None
                 ):
                     raise RuntimeError(
                         "episode summary provider returned invalid memory action"
@@ -296,15 +298,6 @@ def _parse_memory_actions(
                 raise RuntimeError(
                     "episode summary provider returned invalid memory target"
                 )
-            if relevant_memory_ids is not None and target not in relevant_memory_ids:
-                raise RuntimeError(
-                    "episode summary provider returned unknown memory target"
-                )
-            if target in targeted_ids:
-                raise RuntimeError(
-                    "episode summary provider returned duplicate memory target"
-                )
-            targeted_ids.add(target)
         evidence_message_id = item.get("evidence_message_id")
         evidence = item.get("evidence")
         if (

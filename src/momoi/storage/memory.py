@@ -582,7 +582,14 @@ class MemoryStore:
             or len(memory.evidence) > 500
         ):
             return
-        source_event_id = source_event.event_id
+        self._remember_validated(memory, source_event.event_id, now)
+
+    def _remember_validated(
+        self,
+        memory: MemoryCandidate,
+        source_event_id: str,
+        now: float,
+    ) -> None:
         self._db.execute(
             "DELETE FROM memory_tombstones WHERE kind=? AND key=?",
             (memory.kind, memory.key),
@@ -642,6 +649,7 @@ class MemoryStore:
         self._add_memory_evidence(
             int(cursor.lastrowid), source_event_id, memory.evidence, now
         )
+
     def _add_memory_evidence(
         self,
         memory_id: int,
@@ -667,6 +675,22 @@ class MemoryStore:
         )
         if source_event is None:
             return
+        self._forget_memory_validated(
+            memory.kind,
+            memory.key,
+            memory.evidence,
+            source_event.event_id,
+            now,
+        )
+
+    def _forget_memory_validated(
+        self,
+        kind: str,
+        key: str,
+        evidence: str,
+        source_event_id: str,
+        now: float,
+    ) -> None:
         self._db.execute(
             """INSERT INTO memory_tombstones
                (kind, key, source_event_id, evidence_quote, created_at)
@@ -675,5 +699,5 @@ class MemoryStore:
                  source_event_id=excluded.source_event_id,
                  evidence_quote=excluded.evidence_quote,
                  created_at=excluded.created_at""",
-            (memory.kind, memory.key, source_event.event_id, memory.evidence, now),
+            (kind, key, source_event_id, evidence, now),
         )
