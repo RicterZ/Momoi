@@ -126,10 +126,7 @@ ACTIVITY_DECISION_SCHEMA: dict[str, Any] = {
     "oneOf": [
         {
             "type": "object",
-            "description": (
-                "The current activity snapshot and its latest result are still "
-                "accurate after this Owner Turn."
-            ),
+            "description": "Keep the current activity text and result unchanged.",
             "properties": {
                 "decision": {"type": "string", "enum": ["unchanged"]}
             },
@@ -138,10 +135,7 @@ ACTIVITY_DECISION_SCHEMA: dict[str, Any] = {
         },
         {
             "type": "object",
-            "description": (
-                "This Owner Turn changed Momoi's actual activity scene or produced "
-                "a new concrete result for it."
-            ),
+            "description": "Replace a contradicted activity text or result.",
             "properties": {
                 "decision": {"type": "string", "enum": ["updated"]},
                 "text": {
@@ -149,18 +143,16 @@ ACTIVITY_DECISION_SCHEMA: dict[str, Any] = {
                     "minLength": 1,
                     "maxLength": 300,
                     "description": (
-                        "Concise truthful snapshot of what Momoi is actually doing "
-                        "or experiencing now, with the same meaning as Current self "
-                        "state activity. Reuse the current text exactly when the same "
-                        "activity continues; do not write protocol bookkeeping."
+                        "Concise corrected activity snapshot with the same meaning as "
+                        "Current self state activity."
                     ),
                 },
                 "result": {
                     "type": "string",
                     "maxLength": 2000,
                     "description": (
-                        "Concrete outcome of this Owner Turn for the activity. It may "
-                        "be empty when nothing concrete was produced."
+                        "Corrected concrete outcome. It may be empty when no result "
+                        "is now true."
                     ),
                 },
             },
@@ -277,8 +269,13 @@ def owner_respond_tool_spec() -> dict[str, Any]:
             "Required terminal state update for this Owner Turn, called only after "
             "all tool work and send_message calls are complete and always as the "
             "only tool call in its response. It never sends owner-visible messages. "
-            "The activity decision keeps Current self state aligned with the life "
-            "scene and outcome that are actually true after this Turn."
+            "For activity, compare Current self state with authenticated owner input "
+            "and reliable evidence from this Turn. Correct it only when this Turn "
+            "completes, cancels, replaces, proves impossible, invalidates a premise "
+            "of the activity, or disproves its result. A different topic, ordinary "
+            "conversation, requested work, or a compatible new activity or outcome "
+            "is not a conflict. If only the result is wrong, preserve the activity "
+            "text; without a conflict, leave both unchanged."
         ),
         "input_schema": {
             **schema,

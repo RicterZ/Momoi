@@ -457,6 +457,21 @@ class DaemonTest(unittest.TestCase):
             set(activity_shapes[1]["required"]),
             {"decision", "text", "result"},
         )
+        self.assertIn("Replace", activity_shapes[1]["description"])
+        owner_description = owner_respond["description"]
+        self.assertIn("Correct it only when", owner_description)
+        self.assertIn("is not a conflict", owner_description)
+        self.assertIn("without a conflict, leave both unchanged", owner_description)
+        self.assertNotIn("Momoi", owner_description)
+        system = (
+            Path(__file__).resolve().parents[1]
+            / "src"
+            / "momoi"
+            / "prompts"
+            / "system.md"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("Correct it only when", system)
+        self.assertNotIn("activity or outcome does not replace", system)
 
     def test_context_budget_drops_old_history_and_truncates_tool_results(self) -> None:
         daemon = object.__new__(MomoiDaemon)
