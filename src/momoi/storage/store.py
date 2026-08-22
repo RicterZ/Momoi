@@ -5632,6 +5632,27 @@ class Store(MemoryStore, DeliveryStore):
                 )
             self._index_turn_episode_terms(turn_id)
             self._apply_mood_update(reply.mood_update, now)
+            if reply.activity_update is not None:
+                current_activity = self._db.execute(
+                    "SELECT activity, activity_since FROM self_state WHERE id=1"
+                ).fetchone()
+                activity_text = str(reply.activity_update["text"])
+                activity_since = (
+                    current_activity["activity_since"]
+                    if current_activity is not None
+                    and current_activity["activity"] == activity_text
+                    else now
+                )
+                self._db.execute(
+                    """UPDATE self_state SET activity=?, activity_result=?,
+                       activity_since=?, updated_at=? WHERE id=1""",
+                    (
+                        activity_text,
+                        str(reply.activity_update["result"])[:2000],
+                        activity_since,
+                        now,
+                    ),
+                )
             for memory in draft.memories if draft else []:
                 self._remember(memory, events, now)
             for forgotten in draft.forgotten_memories if draft else []:
@@ -5651,6 +5672,11 @@ class Store(MemoryStore, DeliveryStore):
                         else {}
                     ),
                     "mood_change": reply.mood_update,
+                    **(
+                        {"activity_change": reply.activity_update}
+                        if reply.activity_update
+                        else {}
+                    ),
                     "mutations": {
                         "memories": [
                             vars(memory)

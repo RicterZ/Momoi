@@ -1064,6 +1064,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "expects_reply": False,
                                 "reply_expectation": "",
                                 "mood": {"decision": "unchanged"},
+                                "activity": {"decision": "unchanged"},
                             },
                         )
                     return ProviderResponse(
@@ -1150,6 +1151,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "expects_reply": False,
                                 "reply_expectation": "",
                                 "mood": {"decision": "unchanged"},
+                                "activity": {"decision": "unchanged"},
                             },
                         )
                     return ProviderResponse(

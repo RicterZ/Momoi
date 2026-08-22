@@ -1480,6 +1480,7 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "expects_reply": False,
                             "reply_expectation": "",
                             "mood": {"decision": "unchanged"},
+                            "activity": {"decision": "unchanged"},
                         },
                     )
                     return ProviderResponse([], [call])
@@ -1563,6 +1564,7 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "expects_reply": False,
                             "reply_expectation": "",
                             "mood": {"decision": "unchanged"},
+                            "activity": {"decision": "unchanged"},
                         },
                     )
                     return ProviderResponse([], [call])

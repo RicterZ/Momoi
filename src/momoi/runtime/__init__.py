@@ -6,6 +6,7 @@ from .protocol import (
     RESPOND_TOOL_SPEC,
     SEND_MESSAGE_TOOL_SPEC,
     heartbeat_respond_tool_spec,
+    owner_respond_tool_spec,
 )
 
 __all__ = [
@@ -15,5 +16,6 @@ __all__ = [
     "RESPOND_TOOL_SPEC",
     "SEND_MESSAGE_TOOL_SPEC",
     "heartbeat_respond_tool_spec",
+    "owner_respond_tool_spec",
     "MomoiDaemon",
 ]

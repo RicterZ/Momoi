@@ -59,6 +59,7 @@ class AgentReply:
     heartbeat: dict[str, Any] | None = None
     reply_wait: dict[str, Any] | None = None
     plan_adjustment: dict[str, Any] | None = None
+    activity_update: dict[str, Any] | None = None
 
     @property
     def should_schedule_reply_wait(self) -> bool:

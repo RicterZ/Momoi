@@ -97,6 +97,7 @@ def parse_response(
     arguments: dict[str, Any],
     *,
     require_heartbeat: bool = False,
+    allow_activity_update: bool = False,
 ) -> tuple[AgentReply | None, str | None]:
     if "messages" in arguments:
         return None, "messages_not_allowed_in_respond"
@@ -105,6 +106,13 @@ def parse_response(
     mood, error = parse_mood_decision(arguments.get("mood"))
     if error is not None:
         return None, error
+    activity_update = None
+    if allow_activity_update:
+        activity_update, error = parse_activity_decision(arguments.get("activity"))
+        if error is not None:
+            return None, error
+    elif "activity" in arguments:
+        return None, "activity_update_not_allowed"
     raw_reply_wait = arguments.get("reply_wait")
     if (
         "reply_wait" not in arguments
@@ -185,10 +193,41 @@ def parse_response(
     return AgentReply(
         messages,
         mood_update=mood,
+        activity_update=activity_update,
         heartbeat=heartbeat if require_heartbeat else None,
         reply_wait=reply_wait,
         plan_adjustment=plan_adjustment,
     ), None
+
+
+def parse_activity_decision(
+    value: object,
+) -> tuple[dict[str, Any] | None, str | None]:
+    if not isinstance(value, dict):
+        return None, "invalid_activity_decision"
+    decision = value.get("decision")
+    if decision == "unchanged" and set(value) == {"decision"}:
+        return None, None
+    if decision != "updated" or set(value) != {
+        "decision",
+        "text",
+        "result",
+    }:
+        return None, "invalid_activity_decision"
+    text = value.get("text")
+    result = value.get("result")
+    if (
+        not isinstance(text, str)
+        or not text.strip()
+        or len(text) > 300
+        or not isinstance(result, str)
+        or len(result) > 2000
+    ):
+        return None, "invalid_activity_decision"
+    return {
+        "text": text.strip(),
+        "result": result.strip(),
+    }, None
 
 
 def parse_mood_decision(

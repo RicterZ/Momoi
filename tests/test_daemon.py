@@ -26,10 +26,15 @@ from momoi.runtime import (
     RESPOND_TOOL_SPEC,
     SEND_MESSAGE_TOOL_SPEC,
     heartbeat_respond_tool_spec,
+    owner_respond_tool_spec,
     MomoiDaemon,
 )
 from momoi.runtime.jobs import AutonomousJob
-from momoi.runtime.protocol import CHANNEL_MESSAGE_SCHEMA, MOOD_UPDATE_SCHEMA
+from momoi.runtime.protocol import (
+    ACTIVITY_DECISION_SCHEMA,
+    CHANNEL_MESSAGE_SCHEMA,
+    MOOD_UPDATE_SCHEMA,
+)
 from momoi.models import (
     AgentReply,
     IncomingMessage,
@@ -440,6 +445,18 @@ class DaemonTest(unittest.TestCase):
             "continue_waiting_for_reply",
             heartbeat_respond["input_schema"]["properties"]["heartbeat"]["properties"],
         )
+        owner_respond = owner_respond_tool_spec()
+        self.assertIn("activity", owner_respond["input_schema"]["required"])
+        self.assertNotIn("heartbeat", owner_respond["input_schema"]["properties"])
+        activity_shapes = ACTIVITY_DECISION_SCHEMA["oneOf"]
+        self.assertEqual(
+            [shape["properties"]["decision"]["enum"][0] for shape in activity_shapes],
+            ["unchanged", "updated"],
+        )
+        self.assertEqual(
+            set(activity_shapes[1]["required"]),
+            {"decision", "text", "result"},
+        )
 
     def test_context_budget_drops_old_history_and_truncates_tool_results(self) -> None:
         daemon = object.__new__(MomoiDaemon)
@@ -731,6 +748,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "expects_reply": False,
                             "reply_expectation": "",
                             "mood": {"decision": "unchanged"},
+                            "activity": {"decision": "unchanged"},
                         }
                     call = ToolCall(
                         f"respond-{provider_self.calls}",
@@ -854,6 +872,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "expects_reply": False,
                                 "reply_expectation": "",
                                 "mood": {"decision": "unchanged"},
+                                "activity": {"decision": "unchanged"},
                             },
                         )
                     return ProviderResponse(
@@ -1474,6 +1493,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             {
                                 "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
+                                "activity": {"decision": "unchanged"},
                             },
                         )
                     return ProviderResponse([], [call])
@@ -1583,6 +1603,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             {
                                 "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
+                                "activity": {"decision": "unchanged"},
                             },
                         )
                     return ProviderResponse([], [call])
@@ -1892,6 +1913,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "expects_reply": False,
                                 "reply_expectation": "",
                                 "mood": {"decision": "unchanged"},
+                                "activity": {"decision": "unchanged"},
                             },
                         )
                     return ProviderResponse(
@@ -2687,6 +2709,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "expects_reply": False,
                                 "reply_expectation": "",
                                 "mood": {"decision": "unchanged"},
+                                "activity": {"decision": "unchanged"},
                             },
                         )
                     return ProviderResponse(
@@ -2837,6 +2860,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             {
                                 "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
+                                "activity": {"decision": "unchanged"},
                             },
                         )
                     return ProviderResponse(
@@ -3038,6 +3062,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 {
                                     "reply_expectation": "",
                                     "mood": {"decision": "unchanged"},
+                                    "activity": {"decision": "unchanged"},
                                 },
                             )
                         ]
@@ -3537,6 +3562,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "expects_reply": False,
                                 "reply_expectation": "",
                                 "mood": {"decision": "unchanged"},
+                                "activity": {"decision": "unchanged"},
                             },
                         }
                     ],

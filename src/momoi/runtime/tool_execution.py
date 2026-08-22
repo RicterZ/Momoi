@@ -26,7 +26,7 @@ from .progress_announce import (
 from .parsing import parse_messages, parse_response, response_text
 from .protocol import (
     AUTONOMOUS_FINISH_SPEC,
-    RESPOND_TOOL_SPEC,
+    owner_respond_tool_spec,
     send_message_tool_spec,
     tool_enable_spec,
 )
@@ -230,7 +230,7 @@ class ToolExecutionService:
             *all_internal,
             tool_enable_spec(group_catalog),
             *optional,
-            RESPOND_TOOL_SPEC,
+            owner_respond_tool_spec(),
         ]
         full = [
             self._send_message_tool_spec(channel_name),
@@ -241,7 +241,7 @@ class ToolExecutionService:
                 for specs in mcp_groups.values()
                 for spec in specs
             ],
-            RESPOND_TOOL_SPEC,
+            owner_respond_tool_spec(),
         ]
         self._log_owner_tool_projection(
             visible=visible,
@@ -568,6 +568,7 @@ class ToolExecutionService:
                 reply, error = parse_response(
                     response.tool_calls[0].arguments,
                     require_heartbeat=heartbeat_turn,
+                    allow_activity_update=authority == "owner",
                 )
                 if plain_text:
                     reply = None

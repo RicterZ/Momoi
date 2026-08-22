@@ -122,6 +122,53 @@ MOOD_DECISION_SCHEMA: dict[str, Any] = {
         },
     ]
 }
+ACTIVITY_DECISION_SCHEMA: dict[str, Any] = {
+    "oneOf": [
+        {
+            "type": "object",
+            "description": (
+                "The current activity snapshot and its latest result are still "
+                "accurate after this Owner Turn."
+            ),
+            "properties": {
+                "decision": {"type": "string", "enum": ["unchanged"]}
+            },
+            "required": ["decision"],
+            "additionalProperties": False,
+        },
+        {
+            "type": "object",
+            "description": (
+                "This Owner Turn changed Momoi's actual activity scene or produced "
+                "a new concrete result for it."
+            ),
+            "properties": {
+                "decision": {"type": "string", "enum": ["updated"]},
+                "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 300,
+                    "description": (
+                        "Concise truthful snapshot of what Momoi is actually doing "
+                        "or experiencing now, with the same meaning as Current self "
+                        "state activity. Reuse the current text exactly when the same "
+                        "activity continues; do not write protocol bookkeeping."
+                    ),
+                },
+                "result": {
+                    "type": "string",
+                    "maxLength": 2000,
+                    "description": (
+                        "Concrete outcome of this Owner Turn for the activity. It may "
+                        "be empty when nothing concrete was produced."
+                    ),
+                },
+            },
+            "required": ["decision", "text", "result"],
+            "additionalProperties": False,
+        },
+    ]
+}
 REPLY_WAIT_DECISION_SCHEMA: dict[str, Any] = {
     "oneOf": [
         {
@@ -220,6 +267,28 @@ RESPOND_TOOL_SPEC: dict[str, Any] = {
         "additionalProperties": False,
     },
 }
+
+
+def owner_respond_tool_spec() -> dict[str, Any]:
+    schema = RESPOND_TOOL_SPEC["input_schema"]
+    return {
+        **RESPOND_TOOL_SPEC,
+        "description": (
+            "Required terminal state update for this Owner Turn, called only after "
+            "all tool work and send_message calls are complete and always as the "
+            "only tool call in its response. It never sends owner-visible messages. "
+            "The activity decision keeps Current self state aligned with the life "
+            "scene and outcome that are actually true after this Turn."
+        ),
+        "input_schema": {
+            **schema,
+            "properties": {
+                **schema["properties"],
+                "activity": ACTIVITY_DECISION_SCHEMA,
+            },
+            "required": [*schema["required"], "activity"],
+        },
+    }
 
 HEARTBEAT_STATE_SCHEMA: dict[str, Any] = {
     "type": "object",

@@ -37,7 +37,11 @@ from momoi.models import (
     ToolCall,
 )
 from momoi.reply_wait import decode_reply_wait, encode_reply_wait
-from momoi.runtime.parsing import parse_messages, parse_response
+from momoi.runtime.parsing import (
+    parse_activity_decision,
+    parse_messages,
+    parse_response,
+)
 from momoi.storage import Store
 from tests.support import with_context_planner
 
@@ -692,6 +696,56 @@ class MessagingTest(unittest.TestCase):
             ["file", "text"],
         )
 
+    def test_owner_activity_decision_is_explicit_and_gated(self) -> None:
+        self.assertEqual(
+            parse_activity_decision({"decision": "unchanged"}),
+            (None, None),
+        )
+        updated, error = parse_activity_decision(
+            {
+                "decision": "updated",
+                "text": "和老师聊清双人操控能力限制，停下今晚的合作准备",
+                "result": "双人合作推迟到 agent 能力升级以后",
+            }
+        )
+        self.assertIsNone(error)
+        self.assertEqual(updated["text"], "和老师聊清双人操控能力限制，停下今晚的合作准备")
+
+        reply, error = parse_response(
+            {
+                "reply_wait": {"wait": False},
+                "mood": {"decision": "unchanged"},
+                "activity": {
+                    "decision": "updated",
+                    "text": "和老师聊清双人操控能力限制，停下今晚的合作准备",
+                    "result": "双人合作推迟到 agent 能力升级以后",
+                },
+            },
+            allow_activity_update=True,
+        )
+        self.assertIsNone(error)
+        self.assertEqual(reply.activity_update, updated)
+
+        missing, error = parse_response(
+            {
+                "reply_wait": {"wait": False},
+                "mood": {"decision": "unchanged"},
+            },
+            allow_activity_update=True,
+        )
+        self.assertIsNone(missing)
+        self.assertEqual(error, "invalid_activity_decision")
+
+        disallowed, error = parse_response(
+            {
+                "reply_wait": {"wait": False},
+                "mood": {"decision": "unchanged"},
+                "activity": {"decision": "unchanged"},
+            }
+        )
+        self.assertIsNone(disallowed)
+        self.assertEqual(error, "activity_update_not_allowed")
+
     def test_commit_turn_uses_owner_occurred_at_for_user_message(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
@@ -806,6 +860,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "expects_reply": False,
                             "reply_expectation": "",
                             "mood": {"decision": "unchanged"},
+                            "activity": {"decision": "unchanged"},
                         },
                     )
                     return ProviderResponse([], [call])
@@ -882,6 +937,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                                         "reason": "需要按老师的选择继续",
                                     },
                                     "mood": {"decision": "unchanged"},
+                                    "activity": {"decision": "unchanged"},
                                 },
                             )
                         ],
@@ -1002,6 +1058,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "expects_reply": False,
                             "reply_expectation": "",
                             "mood": {"decision": "unchanged"},
+                            "activity": {"decision": "unchanged"},
                         },
                     )
                     return ProviderResponse(
@@ -1076,6 +1133,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "expects_reply": False,
                                 "reply_expectation": "",
                                 "mood": {"decision": "unchanged"},
+                                "activity": {"decision": "unchanged"},
                             },
                         )
                         return ProviderResponse([], [call])
@@ -1176,6 +1234,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "expects_reply": False,
                             "reply_expectation": "",
                             "mood": {"decision": "unchanged"},
+                            "activity": {"decision": "unchanged"},
                         }
                     call = ToolCall(
                         f"emotion-{self.calls}",
@@ -1415,6 +1474,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                                     "expects_reply": False,
                                     "reply_expectation": "",
                                     "mood": {"decision": "unchanged"},
+                                    "activity": {"decision": "unchanged"},
                                 },
                             )
                         ],

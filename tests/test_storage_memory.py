@@ -32,6 +32,63 @@ from momoi.storage.scheduling import next_schedule_at
 
 
 class StorageMemoryTest(unittest.TestCase):
+    def test_owner_activity_update_preserves_or_resets_scene_age(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store._db.execute(
+                """UPDATE self_state SET activity='傍晚刷微博闲逛',
+                   activity_result='刷到联动消息', activity_since=500,
+                   last_heartbeat_at=400, next_heartbeat_at=2000 WHERE id=1"""
+            )
+
+            with patch("momoi.storage.store.time.time", return_value=900):
+                store.commit_turn([], "普通回应", AgentReply([]), turn_id="unchanged")
+            unchanged = store.self_state()
+            self.assertEqual(unchanged["activity"], "傍晚刷微博闲逛")
+            self.assertEqual(unchanged["activity_result"], "刷到联动消息")
+            self.assertEqual(unchanged["activity_since"], 500)
+
+            with patch("momoi.storage.store.time.time", return_value=1000):
+                store.commit_turn(
+                    [],
+                    "继续聊联动",
+                    AgentReply(
+                        [],
+                        activity_update={
+                            "text": "傍晚刷微博闲逛",
+                            "result": "和老师确认联动大概是日本限定",
+                        },
+                    ),
+                    turn_id="same-activity",
+                )
+            continuing = store.self_state()
+            self.assertEqual(continuing["activity_result"], "和老师确认联动大概是日本限定")
+            self.assertEqual(continuing["activity_since"], 500)
+
+            with patch("momoi.storage.store.time.time", return_value=1100):
+                store.commit_turn(
+                    [],
+                    "纠正双人合作",
+                    AgentReply(
+                        [],
+                        activity_update={
+                            "text": "和老师聊清双人操控能力限制，停下今晚的合作准备",
+                            "result": "双人合作推迟到 agent 能力升级以后",
+                        },
+                    ),
+                    turn_id="new-activity",
+                )
+            changed = store.self_state()
+            self.assertEqual(
+                changed["activity"],
+                "和老师聊清双人操控能力限制，停下今晚的合作准备",
+            )
+            self.assertEqual(changed["activity_result"], "双人合作推迟到 agent 能力升级以后")
+            self.assertEqual(changed["activity_since"], 1100)
+            self.assertEqual(changed["last_heartbeat_at"], 400)
+            self.assertEqual(changed["next_heartbeat_at"], 2000)
+            store.close()
+
     def test_episode_links_reject_conflicts_cycles_and_unknown_endpoints(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
