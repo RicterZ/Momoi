@@ -193,11 +193,20 @@ class StorageMemoryTest(unittest.TestCase):
                         (created_at, turn_id),
                     )
                 store.link_turn_to_episode("long-running", turn_id)
+            with store._db:
+                store._db.execute(
+                    """UPDATE conversation_episodes
+                       SET narrative_summary='八月新内容已经覆盖七月记录',
+                           topics_json='[\"八月新内容\"]'
+                       WHERE id='long-running'"""
+                )
+                store._reindex_episode_terms("long-running")
 
             old = store.search_episodes(
                 "七月旧暗号", 5, after=50, before=150
             )
             self.assertEqual([item["id"] for item in old], ["long-running"])
+            self.assertEqual(old[0]["last_activity_at"], 100)
             self.assertEqual(
                 [match["content"] for match in old[0]["matches"]],
                 ["七月旧暗号"],
@@ -206,6 +215,26 @@ class StorageMemoryTest(unittest.TestCase):
                 store.search_episodes("八月新内容", 5, after=50, before=150),
                 [],
             )
+            searched = MemoryTools(store).execute(
+                ToolCall(
+                    "search",
+                    "conversation_search",
+                    {
+                        "query": "七月旧暗号",
+                        "time_range": {
+                            "kind": "range",
+                            "from": "1970-01-01T00:00:50+00:00",
+                            "to": "1970-01-01T00:02:30+00:00",
+                        },
+                    },
+                ),
+                [],
+                TurnDraft(),
+            )
+            self.assertEqual(searched["results"][0]["summary_quality"], "window_matches")
+            self.assertIn("七月旧暗号", searched["results"][0]["summary"])
+            self.assertNotIn("八月新内容", searched["results"][0]["summary"])
+            self.assertEqual(searched["results"][0]["topics"], [])
             listed = MemoryTools(store).execute(
                 ToolCall(
                     "browse",

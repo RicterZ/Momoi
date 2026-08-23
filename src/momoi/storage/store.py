@@ -2022,40 +2022,49 @@ class Store(MemoryStore, DeliveryStore):
             messages = tuple(messages_by_episode.get(episode_id, []))
             if time_filter and not messages:
                 continue
+            fields = (
+                ()
+                if time_filter
+                else (
+                    EpisodeSearchField("title", str(row["title"] or "")),
+                    EpisodeSearchField(
+                        "working_summary", str(row["working_summary"] or "")
+                    ),
+                    EpisodeSearchField(
+                        "summary",
+                        (
+                            str(row["summary"] or "")
+                            if "summary" in row.keys()
+                            else ""
+                        ),
+                    ),
+                    EpisodeSearchField(
+                        "narrative_summary",
+                        str(row["narrative_summary"] or ""),
+                    ),
+                    *(
+                        EpisodeSearchField("topic", str(value))
+                        for value in json.loads(str(row["topics_json"] or "[]"))
+                    ),
+                    *(
+                        EpisodeSearchField("entity", str(value))
+                        for value in json.loads(str(row["entities_json"] or "[]"))
+                    ),
+                    *(
+                        EpisodeSearchField("open_loop", str(value))
+                        for value in json.loads(str(row["open_loops_json"] or "[]"))
+                    ),
+                )
+            )
             documents.append(
                 EpisodeSearchDocument(
                     episode_id=episode_id,
-                    fields=(
-                        EpisodeSearchField("title", str(row["title"] or "")),
-                        EpisodeSearchField(
-                            "working_summary", str(row["working_summary"] or "")
-                        ),
-                        EpisodeSearchField(
-                            "summary",
-                            (
-                                str(row["summary"] or "")
-                                if "summary" in row.keys()
-                                else ""
-                            ),
-                        ),
-                        EpisodeSearchField(
-                            "narrative_summary",
-                            str(row["narrative_summary"] or ""),
-                        ),
-                        *(
-                            EpisodeSearchField("topic", str(value))
-                            for value in json.loads(str(row["topics_json"] or "[]"))
-                        ),
-                        *(
-                            EpisodeSearchField("entity", str(value))
-                            for value in json.loads(str(row["entities_json"] or "[]"))
-                        ),
-                        *(
-                            EpisodeSearchField("open_loop", str(value))
-                            for value in json.loads(str(row["open_loops_json"] or "[]"))
-                        ),
+                    fields=fields,
+                    last_activity_at=(
+                        max(message.created_at for message in messages)
+                        if time_filter
+                        else float(row["last_activity_at"])
                     ),
-                    last_activity_at=float(row["last_activity_at"]),
                     salience=float(row["salience"]),
                     messages=messages,
                 ),
@@ -2094,8 +2103,9 @@ class Store(MemoryStore, DeliveryStore):
             if row is None:
                 continue
             episode = self._episode_dict(row)
+            episode["last_activity_at"] = hit.last_activity_at
             episode["last_activity_timestamp"] = context_timestamp(
-                row["last_activity_at"]
+                hit.last_activity_at
             )
             episode["matches"] = [
                 {

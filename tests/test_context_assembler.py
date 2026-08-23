@@ -312,6 +312,7 @@ class ContextAssemblerTest(unittest.TestCase):
     def test_retrieval_keeps_fixed_and_dynamic_memory_layers_distinct(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
+            store.create_episode("蓝色杯子共同回忆", episode_id="cup")
             now = time.time()
             with store._db:
                 store._db.executemany(
@@ -375,6 +376,47 @@ class ContextAssemblerTest(unittest.TestCase):
             self.assertTrue(heartbeat_retrieval["recall_memories"])
             self.assertTrue(heartbeat_retrieval["reflection_memories"])
             self.assertIn("queries=蓝色杯子", heartbeat_retrieval["query_recall"])
+
+            shared_intent = "整理蓝色杯子的共同回忆"
+            owner_episode_retrieval = build_plan_retrieval(
+                store,
+                {
+                    "intent_units": [
+                        {
+                            "id": "u1",
+                            "intent": shared_intent,
+                            "recall_queries": ["蓝色杯子"],
+                        }
+                    ]
+                },
+                config(directory, recent_episode_hours=0),
+            )
+            heartbeat_episode_retrieval = build_plan_retrieval(
+                store,
+                {
+                    "activity": {
+                        "intent": shared_intent,
+                        "recall_queries": ["蓝色杯子"],
+                    }
+                },
+                config(directory, recent_episode_hours=0),
+            )
+            self.assertEqual(
+                [item["episode_id"] for item in owner_episode_retrieval["episodes"]],
+                [
+                    item["episode_id"]
+                    for item in heartbeat_episode_retrieval["episodes"]
+                ],
+            )
+            for owner_item, heartbeat_item in zip(
+                owner_episode_retrieval["episodes"],
+                heartbeat_episode_retrieval["episodes"],
+                strict=True,
+            ):
+                self.assertAlmostEqual(
+                    owner_item["search_score"],
+                    heartbeat_item["search_score"],
+                )
             store.close()
 
     def test_owner_history_keeps_action_ledger_for_memory_and_external_tools(self) -> None:

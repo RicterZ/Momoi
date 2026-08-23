@@ -84,6 +84,19 @@ def _episode_claim_excerpt(
     )
 
 
+def _episode_match_excerpt(episode: dict[str, object]) -> str:
+    lines = []
+    for match in episode.get("matches", []):
+        if not isinstance(match, dict) or not str(match.get("content") or "").strip():
+            continue
+        role = "OWNER" if match.get("role") == "user" else "MOMOI"
+        lines.append(
+            f"- [{role} ordinal={match.get('ordinal')}] "
+            f"{json.dumps(str(match['content']), ensure_ascii=False)}"
+        )
+    return truncate_tokens("\n".join(lines), _EPISODE_SEARCH_SUMMARY_TOKENS)
+
+
 def _episode_time_range(
     value: object,
 ) -> tuple[float | None, float | None, dict[str, object]]:
@@ -587,14 +600,16 @@ class MemoryTools:
         compact = []
         for episode in results:
             claims = episode.get("working_summary_claims")
-            # ponytail: time-filtered searches still use the Episode-wide summary;
-            # add window-scoped claims/activity only if real queries become misleading.
-            summary = str(episode.get("narrative_summary") or "")
-            if not summary:
+            time_scoped = window.get("kind") != "all"
+            if time_scoped:
+                summary = _episode_match_excerpt(episode)
+            else:
+                summary = str(episode.get("narrative_summary") or "")
+            if not time_scoped and not summary:
                 summary = _episode_claim_excerpt(
                     episode, query, self.store.search_backend
                 )
-            else:
+            elif summary:
                 summary = truncate_tokens(summary, _EPISODE_SEARCH_SUMMARY_TOKENS)
             compact.append(
                 {
@@ -607,15 +622,19 @@ class MemoryTools:
                     ),
                     "summary": summary,
                     "summary_quality": (
-                        "narrative"
+                        "window_matches"
+                        if time_scoped and summary
+                        else "narrative"
                         if episode.get("narrative_summary")
+                        and not time_scoped
                         else "extractive"
                         if isinstance(claims, list) and claims
+                        and not time_scoped
                         else "empty"
                     ),
-                    "topics": episode["topics"],
-                    "entities": episode["entities"],
-                    "open_loops": episode["open_loops"],
+                    "topics": [] if time_scoped else episode["topics"],
+                    "entities": [] if time_scoped else episode["entities"],
+                    "open_loops": [] if time_scoped else episode["open_loops"],
                     "matches": [
                         {
                             key: match.get(key)

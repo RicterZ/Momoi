@@ -1049,9 +1049,7 @@ class TurnOrchestrator:
         )
         recent_topics: list[dict[str, object]] = []
         topic_tokens = 0
-        for episode in self.store.list_episode_candidates(
-            min(6, max(1, self.config.recent_turns))
-        ):
+        for episode in self.store.list_recent_episode_directory(8):
             topic = {
                 "title": episode["title"],
                 "created_timestamp": episode.get("created_timestamp"),
