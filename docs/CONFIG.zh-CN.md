@@ -258,7 +258,7 @@ momoi --workspace ~/.momoi run
     "memory_results": 6,
     "memory_tokens": 8000,
     "max_input_tokens": 96000,
-    "summary_results": 12,
+    "summary_results": 8,
     "summary_tokens": 6000,
     "recent_episode_hours": 6
   }
@@ -278,7 +278,7 @@ momoi --workspace ~/.momoi run
 | `memory_results` | `6` | 自动召回的持久记忆最大数量 |
 | `memory_tokens` | `8000` | 召回持久记忆的 token 预算 |
 | `max_input_tokens` | `96000` | 包括工具 schema 在内的完整模型输入目标上限 |
-| `summary_results` | `12` | 关键词召回最多返回的 Episode 数量，之后再与近期 Episode 合并 |
+| `summary_results` | `8` | 关键词召回最多返回的 Episode 数量，可显式配置到 `12`，之后再与近期 Episode 合并 |
 | `summary_tokens` | `6000` | 召回对话片段的 token 预算 |
 | `recent_episode_hours` | `6` | 默认注入最近多少小时内活跃的 Episode 摘要；设为 `0` 可关闭 |
 

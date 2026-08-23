@@ -264,10 +264,10 @@ class EpisodeSearchTest(unittest.TestCase):
         )
         self.assertGreater(ranked[0].context_score, 0)
 
-    def test_ranker_defaults_to_six_and_filters_before_paging(self) -> None:
+    def test_ranker_defaults_to_eight_and_filters_before_paging(self) -> None:
         documents = [
             document(f"strong-{index}", title="紫罗兰钥匙")
-            for index in range(7)
+            for index in range(9)
         ] + [document("weak", message="钥匙")]
         query = EpisodeRecallQuery("钥匙|紫罗兰钥匙", context="紫罗兰钥匙")
         service = EpisodeQueryService(
@@ -277,9 +277,9 @@ class EpisodeSearchTest(unittest.TestCase):
 
         first = rank_episode_matches([query], matches, documents, now=100)
         second = rank_episode_matches(
-            [query], matches, documents, limit=6, offset=6, now=100
+            [query], matches, documents, limit=8, offset=8, now=100
         )
 
-        self.assertEqual(len(first), 6)
+        self.assertEqual(len(first), 8)
         self.assertEqual(len(second), 1)
         self.assertNotIn("weak", {item.episode_id for item in first + second})

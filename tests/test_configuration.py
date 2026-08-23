@@ -161,7 +161,7 @@ class ConfigurationTest(unittest.TestCase):
             self.assertTrue(config.llm.tool_choice)
             self.assertEqual(config.llm.max_tokens, 16384)
             self.assertEqual(config.llm.timeout_seconds, 300)
-            self.assertEqual(config.summary_results, 12)
+            self.assertEqual(config.summary_results, 8)
             self.assertEqual(config.recent_episode_hours, 6)
             self.assertEqual(config.planner_recent_base_turns, 6)
             self.assertEqual(config.planner_recent_append_turns, 6)

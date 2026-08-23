@@ -64,7 +64,7 @@
     "memory_results": 6,
     "memory_tokens": 8000,
     "max_input_tokens": 96000,
-    "summary_results": 12,
+    "summary_results": 8,
     "summary_tokens": 6000,
     "recent_episode_hours": 6
   },

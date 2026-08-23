@@ -120,7 +120,7 @@ class AppConfig:
     planner_recent_append_turns: int = 0
     planner_active_recent_turns: int = 0
     planner_recent_tokens: int = 0
-    summary_results: int = 12
+    summary_results: int = 8
     summary_tokens: int = 6000
     recent_episode_hours: float = 6
     soul_prompt: str = ""
@@ -489,7 +489,7 @@ def load_config(path: str | Path) -> AppConfig:
         ),
         planner_recent_tokens=planner_recent_tokens,
         summary_results=min(
-            12, max(0, int(context_raw.get("summary_results", 12)))
+            12, max(0, int(context_raw.get("summary_results", 8)))
         ),
         summary_tokens=max(0, int(context_raw.get("summary_tokens", 6000))),
         recent_episode_hours=_nonnegative(

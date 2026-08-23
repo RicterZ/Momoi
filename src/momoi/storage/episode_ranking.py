@@ -320,7 +320,7 @@ def rank_episode_matches(
     matches: list[EpisodeQueryMatches],
     documents: list[EpisodeSearchDocument],
     *,
-    limit: int = 6,
+    limit: int = 8,
     offset: int = 0,
     now: float | None = None,
 ) -> list[RankedEpisodeHit]:

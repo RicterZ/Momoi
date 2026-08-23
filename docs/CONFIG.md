@@ -164,7 +164,7 @@ All fields must be positive. Weixin credentials and state are stored under
     "memory_results": 6,
     "memory_tokens": 8000,
     "max_input_tokens": 96000,
-    "summary_results": 12,
+    "summary_results": 8,
     "summary_tokens": 6000,
     "recent_episode_hours": 6
   }
@@ -184,7 +184,7 @@ All fields must be positive. Weixin credentials and state are stored under
 | `memory_results` | `6` | Configured durable-memory recall result count; minimum `0` |
 | `memory_tokens` | `8000` | Durable-memory context budget; minimum `0` |
 | `max_input_tokens` | `96000` | Target ceiling for complete model input; minimum `1000` |
-| `summary_results` | `12` | Maximum query-recalled Episodes, capped at `12`; `0` disables query recall |
+| `summary_results` | `8` | Maximum query-recalled Episodes, configurable up to `12`; `0` disables query recall |
 | `summary_tokens` | `6000` | Merged Episode-summary token budget; `0` disables this layer |
 | `recent_episode_hours` | `6` | Recent-Episode window in hours; `0` disables it |
 
