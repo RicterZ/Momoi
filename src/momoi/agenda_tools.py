@@ -92,7 +92,18 @@ AGENDA_TOOL_SPECS: list[dict[str, Any]] = [
                 "next_action": {"type": "string"},
                 "waiting_for": {"type": "string"},
                 "blocked_reason": {"type": "string"},
-                "latest_result": {"type": "string"},
+                "latest_result": {
+                    "type": "string",
+                    "description": (
+                        "What this execution did: what you checked, what you "
+                        "sent, and which angle you used so the next run can "
+                        "vary it. Keep it to your own actions and wording. The "
+                        "owner's situation reaches every review fresh through "
+                        "memory and conversation, so leave it out here; a copy "
+                        "stored on the Goal keeps its own age and outlives the "
+                        "situation it described."
+                    ),
+                },
                 "next_review_at": {"type": "string"},
                 "schedule": _schedule_schema(),
                 "clear_schedule": {"type": "boolean"},

@@ -1731,6 +1731,9 @@ def render_planner_recent_turns(
                     "assistant_message": "momoi",
                     "event": "event",
                 }[item_type]
+                delivery = str(item.get("delivery") or "")
+                if delivery not in {"", "delivered"}:
+                    role += f" [{delivery}]"
                 lines.append(f"  {role}: {str(item.get('text') or '')}")
             elif item_type == "tool_call":
                 args = _owner_history_argument(

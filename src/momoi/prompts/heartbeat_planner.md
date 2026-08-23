@@ -21,14 +21,21 @@ Rules:
   activities. Continue one of them only when it still fits now. Do not switch
   merely for variety, and do not avoid an activity merely because it appears there.
 - Keep `intent` and `reason` concise. This is one decision, not a menu of options.
-- Always include one to three short `activity.recall_queries`. Each array item
-  is one OR expression using half-width `|` without surrounding spaces between
-  concrete entities, aliases, key numbers, and active shared-topic terms, for example
+- Include one to six short `activity.recall_queries`. Each array item is one
+  topic keyword, or exact aliases of that same thing joined by half-width `|`
+  without surrounding spaces, for example
   `primary-name|known-alias|exact-identifier`. Never join alternatives with
-  spaces or submit a full sentence. The framework resolves them across recall memory, reflections,
-  Episodes, and matching Turns before the Heartbeat Turn, even when the fixed
-  inputs already look sufficient. Genuine rest still names the smallest exact
-  continuity topic for this moment.
+  spaces or submit a full sentence.
+- A keyword earns its place by naming what separates the records this activity
+  needs from the rest of the history: a proper name, an identifier, a number, or
+  the exact term for the topic at hand. Keep only the keywords that clear that
+  bar, however few that leaves. When none of them do, submit the single item
+  `SKIP_RECALL` and nothing else; that is the complete and expected answer
+  whenever this activity is grounded in what the fixed inputs already say. The
+  framework resolves the remaining keywords across recall memory, reflections,
+  Episodes, and matching Turns before the Heartbeat Turn. Genuine rest still
+  names the smallest exact continuity topic for this moment, or `SKIP_RECALL`
+  when it has none.
 
 - `recent_turn_base` and `recent_turn_append` form one ordered Turn history.
   `recent_turn_focus` lists the Turn labels that are the default focus. Other

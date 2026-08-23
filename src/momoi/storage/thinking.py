@@ -10,7 +10,14 @@ from pathlib import Path
 from typing import Any
 
 from ..logging_context import log_event
-from ..search import SearchBackend, StringSearchBackend, search_expression
+from ..search import (
+    SearchBackend,
+    StringSearchBackend,
+    alternative_weights,
+    document_frequency,
+    search_alternatives,
+    search_expression,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -149,13 +156,28 @@ class ThinkingStore:
         for month in months:
             rows.extend(self._scan_month(month, turn_id, after, before, stage))
         rows.sort(key=lambda item: (-float(item["created_at"]), int(item["round"])))
+        reasonings = [
+            decode_reasoning(row["reasoning_codec"], row["reasoning_blob"])
+            for row in rows
+        ]
+        weights = (
+            alternative_weights(
+                document_frequency(
+                    search_alternatives(query),
+                    ((reasoning,) for reasoning in reasonings),
+                    self._search_backend,
+                ),
+                len(reasonings),
+            )
+            if query.strip()
+            else None
+        )
         matched: list[dict[str, Any]] = []
-        for row in rows:
-            reasoning = decode_reasoning(row["reasoning_codec"], row["reasoning_blob"])
+        for row, reasoning in zip(rows, reasonings):
             excerpt = reasoning
             if query.strip():
                 found = search_expression(
-                    query, (reasoning,), self._search_backend
+                    query, (reasoning,), self._search_backend, weights=weights
                 )
                 if found is None:
                     continue

@@ -21,6 +21,7 @@ SPEECH_ACTS = {
     "unknown",
 }
 CONTEXT_PLAN_TOOL_NAME = "submit_context_plan"
+SKIP_RECALL = "SKIP_RECALL"
 
 
 def _has_directed_cycle(edges: list[tuple[str, str]]) -> bool:
@@ -360,15 +361,19 @@ HEARTBEAT_PLAN_TOOL_SPEC: dict[str, object] = {
                     "recall_queries": {
                         "type": "array",
                         "minItems": 1,
-                        "maxItems": 3,
+                        "maxItems": 6,
                         "items": {
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 120,
                         },
                         "description": (
-                            "One exact-word OR expression using `|` without "
-                            "surrounding spaces between alternative keywords or aliases."
+                            "One topic keyword per item, or exact aliases of "
+                            "that same thing joined by `|` without surrounding "
+                            "spaces. Each keyword must name what separates the "
+                            "records this activity needs from the rest of the "
+                            "history. Use the single item `SKIP_RECALL` when "
+                            "nothing here meets that bar."
                         ),
                     },
                 },
@@ -532,16 +537,20 @@ def _recall_queries(
     name: str,
     *,
     minimum: int = 1,
+    maximum: int = 3,
 ) -> list[str]:
+    """Normalize OR expressions, dropping the sentinel that stands for no recall."""
+
     return [
-        re.sub(r"\s*\|\s*", "|", query)
+        normalized
         for query in _strings(
             value,
             name,
             minimum=minimum,
-            maximum=3,
+            maximum=maximum,
             max_length=120,
         )
+        if (normalized := re.sub(r"\s*\|\s*", "|", query)) != SKIP_RECALL
     ]
 
 
@@ -1220,6 +1229,7 @@ def parse_heartbeat_plan(
         "recall_queries": _recall_queries(
             activity["recall_queries"],
             "heartbeat_recall_queries",
+            maximum=6,
         ),
     }
     return {

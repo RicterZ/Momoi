@@ -391,6 +391,34 @@ class ContextAssemblerTest(unittest.TestCase):
         self.assertIn("feed fetched", rendered)
         self.assertIn("final: memories=shared:games", rendered)
 
+    def test_planner_recent_turns_mark_internal_records_apart_from_speech(
+        self,
+    ) -> None:
+        rendered = render_planner_recent_turns(
+            {
+                "version": 1,
+                "turns": [
+                    {
+                        "at": "2026-08-23T07:30:00+08:00",
+                        "kind": "autonomous",
+                        "timeline": [
+                            {
+                                "type": "assistant_message",
+                                "text": "[AUTONOMOUS GOAL REVIEW RECORD]\nLatest result: 已发送建议",
+                                "delivery": "internal",
+                            },
+                            {
+                                "type": "assistant_message",
+                                "text": "周日早安！南岸今天多云",
+                            },
+                        ],
+                    }
+                ],
+            }
+        )
+        self.assertIn("momoi [internal]: [AUTONOMOUS GOAL REVIEW RECORD]", rendered)
+        self.assertIn("momoi: 周日早安！南岸今天多云", rendered)
+
     def test_planner_projection_preserves_owner_plan_adjustment(self) -> None:
         adjustment = {
             "reason": "工具证据推翻旧引用",
@@ -1244,8 +1272,9 @@ class ContextAssemblerTest(unittest.TestCase):
             for index in range(13):
                 episode_id = f"keyword-{index:02d}"
                 turn_id = f"keyword-turn-{index:02d}"
+                marker = "关键词" if index < 4 else "其他"
                 store.create_episode(
-                    f"关键词话题 {index:02d}", episode_id=episode_id
+                    f"{marker}话题 {index:02d}", episode_id=episode_id
                 )
                 store.begin_turn(turn_id, "autonomous", [turn_id])
                 timestamp = now - 7 * 3600 - index * 60
@@ -1255,7 +1284,7 @@ class ContextAssemblerTest(unittest.TestCase):
                            (turn_id, role, content, created_at,
                             source_event_ids_json, delivery_state)
                            VALUES (?, 'assistant', ?, ?, '[]', 'internal')""",
-                        (turn_id, f"关键词内容 {index:02d}", timestamp),
+                        (turn_id, f"{marker}内容 {index:02d}", timestamp),
                     )
                     store._db.execute(
                         """UPDATE turns SET state='completed', updated_at=?
@@ -1276,6 +1305,12 @@ class ContextAssemblerTest(unittest.TestCase):
 
             self.assertTrue(retrieval["episodes"])
             self.assertEqual(retrieval["episodes"][0]["relation"], "recalled")
+            self.assertTrue(
+                all(
+                    str(item["episode_id"]) in {f"keyword-{index:02d}" for index in range(4)}
+                    for item in retrieval["episodes"]
+                )
+            )
             store.close()
 
     def test_episode_baseline_contains_recent_episodes_only(

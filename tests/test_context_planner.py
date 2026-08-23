@@ -306,6 +306,62 @@ class ContextPlannerTest(unittest.TestCase):
         with self.assertRaisesRegex(ContextPlanError, "invalid_heartbeat_execution"):
             parse_heartbeat_plan(invalid_rest)
 
+    def test_heartbeat_recall_keywords_admit_six_and_honor_the_skip_sentinel(
+        self,
+    ) -> None:
+        schema = HEARTBEAT_PLAN_TOOL_SPEC["input_schema"]
+        queries_schema = schema["properties"]["activity"]["properties"][
+            "recall_queries"
+        ]
+        self.assertEqual(queries_schema["maxItems"], 6)
+        self.assertIn("SKIP_RECALL", queries_schema["description"])
+        self.assertIn("SKIP_RECALL", HEARTBEAT_PLANNER_SYSTEM_PROMPT)
+
+        def parsed_queries(queries: list[str]) -> list[str]:
+            plan = parse_heartbeat_plan(
+                {
+                    "version": 2,
+                    "activity": {
+                        "intent": "浏览微博关注流",
+                        "reason": "看看最近感兴趣的动态",
+                        "recall_queries": queries,
+                    },
+                    "heartbeat_handoff": {
+                        "context": {
+                            "status": "lookup_required",
+                            "needs": [
+                                {
+                                    "tool": "memory_search",
+                                    "query": "微博登录错误报告规则",
+                                    "evidence": "relevant_history",
+                                }
+                            ],
+                            "reason": "执行活动需要已知规则",
+                        },
+                        "mcp": {
+                            "servers": ["weibo"],
+                            "reason": "计划浏览微博关注流",
+                        },
+                        "execution": {
+                            "mode": "work",
+                            "outline": ["查询已知规则", "浏览关注流", "核对结果"],
+                            "reason": "需要实际执行浏览活动",
+                        },
+                    },
+                    "uncertainty": [],
+                },
+                {"weibo", "gog"},
+            )
+            return plan["activity"]["recall_queries"]
+
+        six = ["锦江reit|508609", "gog", "青辉石", "南岸", "骑行", "阿洛娜"]
+        self.assertEqual(parsed_queries(six), six)
+        self.assertEqual(parsed_queries(["SKIP_RECALL"]), [])
+        self.assertEqual(
+            parsed_queries(["SKIP_RECALL", "锦江reit | 508609"]),
+            ["锦江reit|508609"],
+        )
+
     def test_context_plan_shape_lives_in_tool_schema(self) -> None:
         self.assertIn(CONTEXT_PLAN_TOOL_NAME, CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertNotIn('"intent_units"', CONTEXT_PLANNER_SYSTEM_PROMPT)

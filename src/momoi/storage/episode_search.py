@@ -1,7 +1,13 @@
 from dataclasses import dataclass
 from typing import Protocol
 
-from ..search import RankedSearchBackend, SearchBackend, search_alternatives
+from ..search import (
+    RankedSearchBackend,
+    SearchBackend,
+    alternative_weights,
+    discriminating_alternatives,
+    search_alternatives,
+)
 
 
 @dataclass(frozen=True)
@@ -120,21 +126,32 @@ class EpisodeQueryService:
         alternatives = search_alternatives(expression)
         if not alternatives or max_results <= 0 or offset < 0:
             return []
+        per_alternative_limit = max(max_results, len(documents))
+        hits_by_alternative = {
+            alternative: self.backend.search_one(
+                alternative, documents, per_alternative_limit
+            )
+            for alternative in alternatives
+        }
+        weights = alternative_weights(
+            {
+                alternative: len(hits)
+                for alternative, hits in hits_by_alternative.items()
+            },
+            len(documents),
+        )
         merged: dict[
             str,
             dict[str, object],
         ] = {}
-        per_alternative_limit = max(max_results, len(documents))
-        for alternative in alternatives:
-            for rank, hit in enumerate(
-                self.backend.search_one(
-                    alternative, documents, per_alternative_limit
-                )
-            ):
+        for alternative in discriminating_alternatives(alternatives, weights):
+            weight = weights[alternative]
+            for rank, hit in enumerate(hits_by_alternative[alternative]):
                 state = merged.setdefault(
                     hit.episode_id,
                     {
                         "alternatives": set(),
+                        "weight": 0.0,
                         "reciprocal_rank": 0.0,
                         "score": 0.0,
                         "last_activity_at": hit.last_activity_at,
@@ -144,8 +161,9 @@ class EpisodeQueryService:
                 alternatives_seen = state["alternatives"]
                 assert isinstance(alternatives_seen, set)
                 alternatives_seen.add(alternative)
+                state["weight"] = float(state["weight"]) + weight
                 state["reciprocal_rank"] = float(state["reciprocal_rank"]) + (
-                    1.0 / (rank + 1)
+                    weight / (rank + 1)
                 )
                 state["score"] = max(float(state["score"]), hit.score)
                 matches = state["matches"]
@@ -155,7 +173,7 @@ class EpisodeQueryService:
         ranked = sorted(
             merged.items(),
             key=lambda item: (
-                len(item[1]["alternatives"]),
+                round(float(item[1]["weight"]), 6),
                 float(item[1]["reciprocal_rank"]),
                 float(item[1]["score"]),
                 float(item[1]["last_activity_at"]),

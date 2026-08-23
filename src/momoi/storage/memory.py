@@ -3,7 +3,12 @@ import time
 
 from ..context_time import context_timestamp
 from ..policies import MemoryPolicy
-from ..search import search_expression
+from ..search import (
+    alternative_weights,
+    document_frequency,
+    search_alternatives,
+    search_expression,
+)
 from ..models import (
     IncomingMessage,
     MemoryCandidate,
@@ -389,6 +394,18 @@ class MemoryStore:
             used += size
         return "\n".join(lines) if len(lines) > 1 else ""
 
+    def _alternative_weights(
+        self,
+        query: str,
+        documents: list[tuple[str, ...]],
+    ) -> dict[str, float]:
+        return alternative_weights(
+            document_frequency(
+                search_alternatives(query), documents, self._search_backend
+            ),
+            len(documents),
+        )
+
     def search_reflection_memories(
         self,
         query: str,
@@ -401,14 +418,18 @@ class MemoryStore:
             return []
         core_kinds = {"owner_profile", "self_insight", "relationship", "practice"}
         ranked: list[tuple[float, sqlite3.Row]] = []
-        for row in self._db.execute(
+        rows = self._db.execute(
             """SELECT id, kind, key, content, confidence FROM reflection_memories
                ORDER BY updated_at DESC"""
-        ).fetchall():
+        ).fetchall()
+        documents = [(str(row["key"]), str(row["content"])) for row in rows]
+        weights = self._alternative_weights(query, documents)
+        for row, document in zip(rows, documents):
             match = search_expression(
                 query,
-                (str(row["key"]), str(row["content"])),
+                document,
                 self._search_backend,
+                weights=weights,
             )
             core = include_core and row["kind"] in core_kinds
             if core and core_match_only and match is None:
@@ -455,11 +476,14 @@ class MemoryStore:
         ).fetchall()
         core_kinds = {"profile", "relationship", "shared"}
         ranked: list[tuple[float, sqlite3.Row]] = []
-        for row in rows:
+        documents = [(str(row["key"]), str(row["content"])) for row in rows]
+        weights = self._alternative_weights(query, documents)
+        for row, document in zip(rows, documents):
             match = search_expression(
                 query,
-                (str(row["key"]), str(row["content"])),
+                document,
                 self._search_backend,
+                weights=weights,
             )
             core = include_core and row["kind"] in core_kinds
             if not core and match is None:

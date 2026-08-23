@@ -1,8 +1,10 @@
+from collections import Counter
 from dataclasses import dataclass
 import math
 import time
 import unicodedata
 
+from ..search import alternative_weights
 from ..storage import Store
 
 
@@ -36,20 +38,6 @@ _FEATURE_WEIGHTS = {
     "recency": 0.04,
     "status": 0.02,
 }
-_GENERIC_METADATA = {
-    "assistant",
-    "momoi",
-    "napcat",
-    "owner",
-    "user",
-    "weixin",
-    "主人",
-    "小桃",
-    "桃衣",
-    "老师",
-}
-
-
 def _normalized(value: object) -> str:
     return unicodedata.normalize("NFKC", str(value or "")).casefold()
 
@@ -62,20 +50,40 @@ def _phrase_match(query: str, value: object) -> float:
     return float(query_text in value_text or value_text in query_text)
 
 
-def _exact_metadata(query: str, candidate: dict[str, object]) -> float:
-    normalized = query.casefold()
-    values = [
-        value
+def _metadata_values(candidate: dict[str, object]) -> set[str]:
+    return {
+        stripped
         for name in ("topics", "entities", "open_loops")
         for value in candidate.get(name, [])
-        if isinstance(value, str)
-    ]
+        if isinstance(value, str) and len(stripped := value.strip().casefold()) >= 2
+    }
+
+
+def _non_discriminating_metadata(
+    candidates: list[dict[str, object]],
+) -> frozenset[str]:
+    """Metadata values carried by most candidates cannot tell them apart."""
+
+    counts = Counter(
+        value for candidate in candidates for value in _metadata_values(candidate)
+    )
+    return frozenset(
+        value
+        for value, weight in alternative_weights(counts, len(candidates)).items()
+        if weight <= 0.0
+    )
+
+
+def _exact_metadata(
+    query: str,
+    candidate: dict[str, object],
+    non_discriminating: frozenset[str],
+) -> float:
+    normalized = query.casefold()
     return float(
         any(
-            len(value.strip()) >= 2
-            and value.strip().casefold() not in _GENERIC_METADATA
-            and value.strip().casefold() in normalized
-            for value in values
+            value not in non_discriminating and value in normalized
+            for value in _metadata_values(candidate)
         )
     )
 
@@ -98,6 +106,7 @@ def _candidate_features(
     query: str,
     context_scores: dict[str, dict[str, float]],
     now: float,
+    non_discriminating: frozenset[str],
 ) -> dict[str, float]:
     episode_id = str(candidate["id"])
     last_activity = float(candidate.get("last_activity_at") or now)
@@ -110,7 +119,7 @@ def _candidate_features(
         or ""
     )
     return {
-        "exact_metadata": _exact_metadata(query, candidate),
+        "exact_metadata": _exact_metadata(query, candidate, non_discriminating),
         "title_overlap": _phrase_match(query, candidate.get("title")),
         "topics_overlap": _phrase_match(query, candidate.get("topics")),
         "entities_overlap": _phrase_match(query, candidate.get("entities")),
@@ -140,9 +149,12 @@ def rank_episode_candidates(
     now: float | None = None,
 ) -> list[dict[str, object]]:
     now = time.time() if now is None else now
+    non_discriminating = _non_discriminating_metadata(candidates)
     ranked = []
     for candidate in candidates:
-        features = _candidate_features(candidate, query, context_scores, now)
+        features = _candidate_features(
+            candidate, query, context_scores, now, non_discriminating
+        )
         contributions = {
             name: value * _FEATURE_WEIGHTS[name]
             for name, value in features.items()

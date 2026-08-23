@@ -1,6 +1,12 @@
 import unittest
 
-from momoi.search import StringSearchBackend, search_alternatives, search_expression
+from momoi.search import (
+    StringSearchBackend,
+    alternative_weights,
+    document_frequency,
+    search_alternatives,
+    search_expression,
+)
 
 
 class ScoredBackend:
@@ -35,6 +41,65 @@ class SearchContractTest(unittest.TestCase):
 
         self.assertEqual(backend.search_one("ＦＯＯ", ("prefix foo suffix",)), 1.0)
         self.assertIsNone(backend.search_one("bar", ("prefix foo suffix",)))
+
+
+class AlternativeWeightTest(unittest.TestCase):
+    def corpus(self, ubiquitous: int, rare: int, total: int) -> list[tuple[str, ...]]:
+        return [
+            (
+                ("老师 " if index < ubiquitous else "")
+                + ("日程" if index < rare else "别的"),
+            )
+            for index in range(total)
+        ]
+
+    def test_frequency_counts_documents_not_occurrences(self) -> None:
+        corpus = [("老师 老师 老师",), ("老师",), ("别的",)]
+
+        self.assertEqual(
+            document_frequency(("老师", "别的"), corpus, StringSearchBackend()),
+            {"老师": 2, "别的": 1},
+        )
+
+    def test_alternative_matching_most_of_the_corpus_loses_its_weight(self) -> None:
+        weights = alternative_weights({"老师": 59, "日程": 1, "行程": 0}, 79)
+
+        self.assertEqual(weights["老师"], 0.0)
+        self.assertEqual(weights["日程"], 1.0)
+        self.assertEqual(weights["行程"], 0.0)
+
+    def test_small_corpus_keeps_every_alternative_at_full_weight(self) -> None:
+        self.assertEqual(
+            alternative_weights({"老师": 5, "日程": 1}, 5),
+            {"老师": 1.0, "日程": 1.0},
+        )
+
+    def test_expression_ignores_alternatives_that_narrow_nothing(self) -> None:
+        backend = StringSearchBackend()
+        corpus = self.corpus(ubiquitous=59, rare=1, total=79)
+        weights = alternative_weights(
+            document_frequency(("老师", "日程", "行程"), corpus, backend), len(corpus)
+        )
+
+        self.assertIsNone(
+            search_expression("老师|日程|行程", corpus[30], backend, weights=weights)
+        )
+        match = search_expression(
+            "老师|日程|行程", corpus[0], backend, weights=weights
+        )
+        self.assertIsNotNone(match)
+        self.assertEqual(match.alternatives, ("日程",))
+        self.assertEqual(match.score, 1.0)
+
+    def test_expression_without_weights_keeps_plain_coverage_scoring(self) -> None:
+        backend = StringSearchBackend()
+        corpus = self.corpus(ubiquitous=59, rare=1, total=79)
+
+        match = search_expression("老师|日程|行程", corpus[30], backend)
+
+        self.assertIsNotNone(match)
+        self.assertEqual(match.alternatives, ("老师",))
+        self.assertEqual(match.score, 1 / 3)
 
 
 if __name__ == "__main__":
