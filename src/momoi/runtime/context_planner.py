@@ -370,10 +370,11 @@ HEARTBEAT_PLAN_TOOL_SPEC: dict[str, object] = {
                         "description": (
                             "One topic keyword per item, or exact aliases of "
                             "that same thing joined by `|` without surrounding "
-                            "spaces. Each keyword must name what separates the "
-                            "records this activity needs from the rest of the "
-                            "history. Use the single item `SKIP_RECALL` when "
-                            "nothing here meets that bar."
+                            "spaces. Each keyword names one particular thing "
+                            "rather than the kind of thing it is: a proper "
+                            "name, an identifier, a number, or an exact title. "
+                            "Use the single item `SKIP_RECALL` when nothing "
+                            "here meets that bar."
                         ),
                     },
                 },

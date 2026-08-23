@@ -26,16 +26,16 @@ Rules:
   without surrounding spaces, for example
   `primary-name|known-alias|exact-identifier`. Never join alternatives with
   spaces or submit a full sentence.
-- A keyword earns its place by naming what separates the records this activity
-  needs from the rest of the history: a proper name, an identifier, a number, or
-  the exact term for the topic at hand. Keep only the keywords that clear that
-  bar, however few that leaves. When none of them do, submit the single item
-  `SKIP_RECALL` and nothing else; that is the complete and expected answer
-  whenever this activity is grounded in what the fixed inputs already say. The
-  framework resolves the remaining keywords across recall memory, reflections,
-  Episodes, and matching Turns before the Heartbeat Turn. Genuine rest still
-  names the smallest exact continuity topic for this moment, or `SKIP_RECALL`
-  when it has none.
+- A keyword names one particular thing rather than the kind of thing it is: a
+  proper name, an identifier, a number, or the exact title of the item at hand.
+  When what you need history about has a name, that name is the whole keyword.
+  Keep only the keywords that clear that bar, however few that leaves. When none
+  of them do, submit the single item `SKIP_RECALL` and nothing else; that is the
+  complete and expected answer whenever this activity is grounded in what the
+  fixed inputs already say. The framework resolves the remaining keywords across
+  recall memory, reflections, Episodes, and matching Turns before the Heartbeat
+  Turn. Genuine rest still names the one thing it is carrying forward, or
+  `SKIP_RECALL` when it has none.
 
 - `recent_turn_base` and `recent_turn_append` form one ordered Turn history.
   `recent_turn_focus` lists the Turn labels that are the default focus. Other

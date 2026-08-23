@@ -46,9 +46,10 @@ or persona-specific wording from it.
    exact-word OR expression using `|` without surrounding spaces between
    concrete search anchors or aliases, for example
    `primary-name|known-alias|exact-identifier`. Do not submit a natural-language
-   sentence. A term earns its place in a query by naming what separates the
-   records this intent needs from the rest of the history: a proper name, an
-   identifier, a number, or the exact term for the topic at hand.
+   sentence. Every term names one particular thing rather than the kind of
+   thing it is: a proper name, an identifier, a number, or the exact title of
+   the item at hand. When what you need history about has a name, that name is
+   the whole term.
    Include the literal spelling of every new or unresolved proper name
    material to the intent. For a new entity, make its first query the literal
    name plus only genuine aliases of that same entity. Do not add its work,
