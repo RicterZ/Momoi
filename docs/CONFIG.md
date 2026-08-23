@@ -1,56 +1,15 @@
-# Configuration and capability access
+# Configuration reference
 
 EN | [中文](./CONFIG.zh-CN.md)
 
-Momoi reads configuration from a workspace. The default workspace is `~/.momoi`; pass `--workspace` before any command to select another one.
+Momoi reads `config.json` from its workspace. The default workspace is
+`~/.momoi`; pass `--workspace` before a command to select another directory.
+The complete starter file is
+[config.example/config.json](../config.example/config.json).
 
-```bash
-momoi run
-momoi --workspace /path/to/workspace run
-```
-
-Create a workspace from the generic template before the first run:
-
-```bash
-mkdir -p ~/.momoi
-cp -R config.example/. ~/.momoi/
-```
-
-The complete template is [config.example/config.json](../config.example/config.json).
-
-## Choose an integration path
-
-| Need | Use |
-| --- | --- |
-| Let the model discover and call an external capability | MCP server in `mcp.json` |
-| Let Home Assistant, Jellyfin, or another service push an event | Webhook Workflow |
-| Repeat work that needs fresh reasoning or tool calls | Goal |
-| Deliver fixed text at a known time | Reminder |
-| Fetch a URL during an owner task | Built-in HTTP tool |
-
-MCP is the normal way to add model-controlled capabilities. Workflows are for event-driven, predefined sequences. See [WORKFLOW.md](./WORKFLOW.md) for webhook setup and YAML reference.
-
-## Paths and workspace files
-
-Relative paths in `config.json` are resolved from the directory containing that file.
-
-```text
-~/.momoi/
-├── config.json
-├── mcp.json
-├── prompts/
-│   ├── SOUL.md
-│   └── HEARTBEAT.md
-├── workflows/
-│   ├── *.yaml
-│   └── workflow-executors.yaml
-├── emotion/
-├── channel/
-│   └── weixin/       # created only when the Weixin channel is used
-└── data/
-```
-
-This makes the workspace relocatable. Absolute paths are also accepted where a path field is supported.
+Relative paths are resolved from the directory containing `config.json`.
+Absolute paths are accepted for every path field. `config.json` does not expand
+`${VAR}` placeholders.
 
 ## LLM
 
@@ -79,56 +38,21 @@ This makes the workspace relocatable. Absolute paths are also accepted where a p
 
 | Field | Required | Default | Description |
 | --- | --- | --- | --- |
-| `api_format` | No | `anthropic` | `anthropic` or `openai` |
+| `api_format` | No | `anthropic` | Request format: `anthropic` or `openai` |
 | `base_url` | Yes | — | Compatible API base URL |
-| `api_key` | Yes | — | API credential; must not be empty |
-| `model` | Yes | — | Model identifier sent to the provider |
-| `max_tokens` | No | `16384` | Maximum output tokens for one model call |
+| `api_key` | Yes | — | Non-empty API credential |
+| `model` | Yes | — | Provider model identifier |
+| `max_tokens` | No | `16384` | Maximum output tokens per model call |
 | `temperature` | No | `0.6` | Sampling temperature |
 | `timeout_seconds` | No | `300` | Positive request timeout |
-| `max_retries` | No | `3` | Retries for transient connection and server errors; OpenAI-compatible endpoints also retry unusable successful responses |
-| `tool_choice` | No | `true` | Require tool use in OpenAI-compatible requests; set to `false` for models such as Thinking mode that reject `tool_choice` |
-| `thinking.effort` | No | Provider default | Default reasoning effort: `low`, `high`, or `max` |
-| `thinking.stages` | No | `{}` | Per-stage effort overrides keyed by runtime stage |
+| `max_retries` | No | `3` | Retry count for transient errors |
+| `tool_choice` | No | `true` | Require tool use in OpenAI-format requests; set `false` for endpoints that reject `tool_choice` |
+| `thinking.effort` | No | provider default | Default reasoning effort: `low`, `high`, or `max` |
+| `thinking.stages` | No | `{}` | Reasoning-effort overrides keyed by runtime stage |
 
-For Anthropic-compatible providers, Momoi calls `/v1/messages`. For OpenAI-compatible providers, a host-only URL receives `/v1/chat/completions`; a URL that already contains a gateway path receives `/chat/completions` below that path.
-
-When thinking is configured, OpenAI-format requests send `thinking.type=enabled`
-and `reasoning_effort`; Anthropic-format requests send `output_config.effort`.
-Momoi also returns OpenAI `reasoning_content` on later requests in the same tool
-loop, as required by DeepSeek. Omit `thinking` for the provider's default.
-DeepSeek maps `medium` to `high`, so Momoi accepts only `low`, `high`, and `max`.
-Its thinking mode ignores `temperature`.
-
-The example profile keeps nuanced Owner, Context Planner, Heartbeat planning and
-creation, tool-work, memory, and consolidation stages at `high`.
-`reply_followup` is a bounded contact decision, and `episode_anneal` is an
-extractive, citation-verified evidence-selection pass; these use `low`.
-`episode_consolidate` remains `high` because it decides how archived Turns are
-merged. Known stage names include `context_plan`, `owner`, `heartbeat_plan`,
-`heartbeat`, `reply_followup`, `goal`, `webhook`, `reflection`,
-`episode_anneal`, and `episode_consolidate`; unknown stages use
-`thinking.effort`.
-
-`config.json` does not expand `${VAR}` placeholders. Keep it private and restrict its file permissions if it contains credentials. Docker and one-command runs can override the fields below with `MOMOI_*` environment variables; those values win over the file for that process.
-
-| Variable | Overrides |
-| --- | --- |
-| `MOMOI_LLM_API_FORMAT` | `llm.api_format` |
-| `MOMOI_LLM_BASE_URL` | `llm.base_url` |
-| `MOMOI_LLM_API_KEY` | `llm.api_key` |
-| `MOMOI_LLM_MODEL` | `llm.model` |
-| `MOMOI_NAPCAT_URL` | NapCat `url` |
-| `MOMOI_OWNER_QQ` | NapCat `owner_qq` |
-| `MOMOI_PRIMARY` | `channels.primary` |
-| `MOMOI_TIMEZONE` | `notifications.timezone` |
-| `MOMOI_DASHBOARD_TOKEN` | `dashboard.token` |
-| `MOMOI_WEBHOOKS_ENABLED` | `webhooks.enabled` |
-| `MOMOI_WEBHOOKS_HOST` | `webhooks.host` |
-| `MOMOI_WEBHOOKS_TOKEN` | `webhooks.token` |
-| `MOMOI_USAGE_API_KEY` | `usage.api_key` |
-| `MOMOI_ASR_SECRET_ID` | `asr.settings.secret_id` |
-| `MOMOI_ASR_SECRET_KEY` | `asr.settings.secret_key` |
+Known stage names are `context_plan`, `owner`, `heartbeat_plan`, `heartbeat`,
+`reply_followup`, `goal`, `webhook`, `reflection`, `episode_anneal`, and
+`episode_consolidate`. Unknown stages use `thinking.effort`.
 
 ## Inbound speech recognition
 
@@ -152,20 +76,16 @@ merged. Known stage names include `context_plan`, `owner`, `heartbeat_plan`,
 | Field | Default | Description |
 | --- | --- | --- |
 | `enabled` | `false` | Enable ASR for inbound NapCat voice messages |
-| `provider` | `tencent` | Built-in `tencent`, or a dotted Python class naming an `ASRProvider` subclass |
-| `timeout_seconds` | `30` | Positive timeout for one provider request |
-| `max_audio_bytes` | `3145728` | Maximum audio size passed to the provider |
-| `settings` | `{}` | Arguments forwarded to the provider constructor |
+| `provider` | `tencent` | Built-in `tencent` or the dotted name of an `ASRProvider` subclass |
+| `timeout_seconds` | `30` | Positive timeout for one transcription |
+| `max_audio_bytes` | `3145728` | Positive maximum input size in bytes |
+| `settings` | `{}` | Provider constructor arguments |
 
-The built-in Tencent provider uses the sentence-recognition API. `secret_id` and `secret_key` are required when it is enabled; `region` may be empty and `engine` defaults to `16k_zh`. NapCat first asks `get_record` to convert the exclusive voice bubble to MP3. On success the Channel emits one ordinary text message; when ASR is disabled or fails it emits the `[QQ 语音消息暂时无法转写]` text placeholder. The database, batching pipeline, and LLM never receive an audio path, `record` segment, or ASR state.
+Tencent ASR requires non-empty `settings.secret_id` and
+`settings.secret_key` when enabled. `settings.region` may be empty, and
+`settings.engine` defaults to `16k_zh`.
 
-External ASR providers are currently injected into NapCat only. Weixin continues to use the platform-provided `voice_item.text` and never calls this provider.
-
-A custom provider must subclass `momoi.asr.ASRProvider` and implement async `transcribe(AudioInput) -> str`. `timeout_seconds` is forwarded to the constructor together with `settings`.
-
-## Channel
-
-Momoi can run multiple Channel plugins at once. They share one conversation, memory, goals, mood, and identity. Replies stay on the channel where the owner spoke; new proactive messages use `primary`.
+## Channels
 
 ```json
 {
@@ -179,7 +99,9 @@ Momoi can run multiple Channel plugins at once. They share one conversation, mem
         "max_batch_seconds": 60,
         "heartbeat_seconds": 30,
         "reconnect_max_seconds": 30,
-        "send_timeout_seconds": 20
+        "send_timeout_seconds": 20,
+        "media_max_bytes": 20971520,
+        "media_download_timeout_seconds": 15
       },
       "weixin": {
         "quiet_seconds": 6,
@@ -193,58 +115,40 @@ Momoi can run multiple Channel plugins at once. They share one conversation, mem
 }
 ```
 
-`primary` must name an entry in `enabled`. A disconnected channel keeps its own messages queued without blocking the others, and Momoi never silently reroutes a message across platforms.
+`primary` is required and must name an entry in `enabled`. Every entry in
+`enabled` is loaded as a Channel plugin.
 
-`napcat` names this third-party adapter. A future official QQ AI Bot adapter will use a distinct `qq` plugin name.
+### NapCat
 
 | Field | Required | Default | Description |
 | --- | --- | --- | --- |
 | `url` | Yes | — | NapCat WebSocket URL |
-| `owner_qq` | Yes | — | Digits-only QQ ID accepted as the owner |
-| `quiet_seconds` | No | `1` | Wait after the latest owner message before starting; a new message resets the wait |
-| `max_batch_seconds` | No | `60` | Maximum time a continuously growing message batch may wait |
-| `heartbeat_seconds` | No | `30` | NapCat connection heartbeat interval |
+| `owner_qq` | Yes | — | Digits-only owner QQ ID |
+| `quiet_seconds` | No | `1` | Wait after the latest owner message |
+| `max_batch_seconds` | No | `60` | Maximum message-batch wait |
+| `heartbeat_seconds` | No | `30` | Connection heartbeat interval |
 | `reconnect_max_seconds` | No | `30` | Maximum reconnect backoff |
-| `send_timeout_seconds` | No | `20` | Timeout for one outbound NapCat request |
-| `media_max_bytes` | No | `20971520` | Maximum size of one remote inbound image materialized for model input |
-| `media_download_timeout_seconds` | No | `15` | Timeout for downloading one remote inbound image |
+| `send_timeout_seconds` | No | `20` | Outbound request timeout |
+| `media_max_bytes` | No | `20971520` | Maximum downloaded inbound image size |
+| `media_download_timeout_seconds` | No | `15` | Inbound image download timeout |
 
-All channel timing fields must be positive.
+The starter file sets `quiet_seconds` to `6`; omitting it uses the runtime
+default of one second. Timing and size fields must be positive.
 
-The starter template uses six seconds so a natural sequence of short messages can be handled together. Omitting the field uses the one-second runtime default.
-
-NapCat owner input-status notices refresh the same quiet window, including while an Owner Turn is already running. At model and tool boundaries, Momoi waits for the owner to remain quiet and folds any newly arrived message into that Turn, still bounded by `max_batch_seconds`. Input status is transient activity: it is never stored as a conversation message or sent to the model.
-
-### Weixin (Tencent iLink)
-
-Authenticate once in the same workspace, then run the daemon:
-
-```bash
-momoi --workspace ~/.momoi channel login weixin
-momoi --workspace ~/.momoi run
-```
-
-The login command prints a QR code in the terminal. Credentials, the update cursor, and the latest conversation context token are stored atomically with mode `0600` in `channel/weixin/state.json`. Decrypted inbound attachments are stored in `channel/weixin/media/inbound/`; protect and back up these files as part of the workspace.
-
-Weixin receives text, quotes, images, video, files, and voice. Images are supplied to vision-capable models; other media are represented by local attachment descriptions. Server voice transcription is preferred, with raw SILK retained when no transcript is available. It sends text, images, video, and files; outbound audio is sent as a file attachment. `media_max_bytes` is a positive byte limit for inbound downloads and outbound local, HTTP(S), or `base64://` sources.
+### Weixin
 
 | Field | Default | Description |
 | --- | --- | --- |
-| `quiet_seconds` | `6` | Wait after the latest owner message before starting |
-| `max_batch_seconds` | `60` | Maximum time a continuously growing message batch may wait |
-| `reconnect_max_seconds` | `30` | Maximum delay after repeated update failures |
-| `send_timeout_seconds` | `20` | Timeout for one outbound request |
-| `media_max_bytes` | `104857600` | Maximum size of one inbound or outbound media item |
+| `quiet_seconds` | `6` | Wait after the latest owner message |
+| `max_batch_seconds` | `60` | Maximum message-batch wait |
+| `reconnect_max_seconds` | `30` | Maximum update retry delay |
+| `send_timeout_seconds` | `20` | Outbound request timeout |
+| `media_max_bytes` | `104857600` | Maximum inbound or outbound media size |
 
-This implementation follows Tencent's MIT-licensed [`@tencent-weixin/openclaw-weixin` 2.4.6](https://github.com/Tencent/openclaw-weixin) protocol behavior. Use of Weixin and iLink remains subject to the applicable Tencent and Weixin service terms. Momoi supports one linked account and its single scanning owner, not groups or multiple simultaneous accounts.
+All fields must be positive. Weixin credentials and state are stored under
+`channel/weixin/` in the workspace.
 
-### Adding a Channel
-
-A Channel plugin is one module or package under `momoi.channel`. It exports `load_config(value, workspace)` and `create_channel(config)`. The created Channel supplies its unique `name`, batch timing, `run`, `send_message`, `content_blocks`, and Workflow variables. Incoming events identify their source with the plugin name, so NapCat events use `napcat:` and Weixin events use `weixin:`; `qq:` remains available for an official QQ AI Bot plugin.
-
-Protocol-specific parsing, content rendering, and connection logs belong in that plugin module. The daemon, store, and webhook layers use only the common Channel interface.
-
-## Context and memory budgets
+## Context
 
 ```json
 {
@@ -269,32 +173,24 @@ Protocol-specific parsing, content rendering, and connection logs belong in that
 
 | Field | Default | Description |
 | --- | --- | --- |
-| `soul_prompt` | `prompts/SOUL.md` | Persona file, relative to the workspace |
-| `heartbeat_prompt` | `prompts/HEARTBEAT.md` | Workspace heartbeat guidance; omitted when the file is absent |
-| `recent_raw_tokens` | `32000` | Budget for canonical recent Turn records |
-| `recent_turns` | `6` | Owner-model Recent cache Base size and Append rotation interval |
-| `planner_recent_base_turns` | `recent_turns` | Turns in the Planner's cache-stable base block |
-| `planner_recent_append_turns` | `recent_turns` | Turns appended before the Planner rotates its base block |
-| `planner_active_recent_turns` | `recent_turns` | Newest Turns treated as the Planner's default conversational focus |
-| `planner_recent_tokens` | automatic | Planner-only recent-log budget; capped at `88000` and reduced with the input budget |
-| `memory_results` | `6` | Maximum durable memories recalled automatically |
-| `memory_tokens` | `8000` | Token budget for recalled durable memory |
-| `max_input_tokens` | `96000` | Target ceiling for the complete model input, including tool schemas |
-| `summary_results` | `12` | Maximum Episodes returned by keyword recall before merging with recent Episodes |
-| `summary_tokens` | `6000` | Token budget for recalled conversation segments |
-| `recent_episode_hours` | `6` | Automatically include Episode summaries active within this many recent hours; set to `0` to disable |
+| `soul_prompt` | `prompts/SOUL.md` | Required, non-empty persona file |
+| `heartbeat_prompt` | `prompts/HEARTBEAT.md` | Optional heartbeat guidance file |
+| `recent_raw_tokens` | `32000` | Recent Turn token budget; minimum `1` |
+| `recent_turns` | `6` | Recent Turn count; minimum `1` |
+| `planner_recent_base_turns` | `recent_turns` | Planner stable-base Turn count; minimum `1` |
+| `planner_recent_append_turns` | `recent_turns` | Planner append Turn count; minimum `1` |
+| `planner_active_recent_turns` | `recent_turns` | Planner focus Turn count; minimum `1` |
+| `planner_recent_tokens` | automatic | Planner recent-log budget; minimum `1000` |
+| `memory_results` | `6` | Configured durable-memory recall result count; minimum `0` |
+| `memory_tokens` | `8000` | Durable-memory context budget; minimum `0` |
+| `max_input_tokens` | `96000` | Target ceiling for complete model input; minimum `1000` |
+| `summary_results` | `12` | Maximum query-recalled Episodes, capped at `12`; `0` disables query recall |
+| `summary_tokens` | `6000` | Merged Episode-summary token budget; `0` disables this layer |
+| `recent_episode_hours` | `6` | Recent-Episode window in hours; `0` disables it |
 
-Set `max_input_tokens` below the provider's real context window. These are context-building budgets, not a promise that every provider counts tokens identically.
-
-`recent_raw_tokens` and `recent_turns` govern the main model's blocked recent-Turn log: a stable Base is followed by up to `recent_turns - 1` newly appended Turns. At the next rotation boundary, the newest `recent_turns` Turns become the new Base and Append becomes empty. With the default value `6`, the blocks therefore progress as `6+0` through `6+5`, then rotate to a new `6+0`. Low-frequency interrupted-reply state precedes the Base; only dynamic Append, recall evidence, current state, and the current message follow it. Reconciliation remains persisted and enforced by the runtime but is not repeated in every model prompt. Owner Planner and main-model prompts do not repeat `recent_conversation` already represented by the Turn projection. Heartbeat Planner and Heartbeat Turns use the same blocked log. The Context Planner uses its separately configured Base and Append sizes. `planner_active_recent_turns` marks the actual conversational focus in a separate Focus section instead of rewriting Turns inside the Base; older retained Turns are used only for explicit references, unfinished work, tool results, and corrections. The Planner projection preserves tool names and complete arguments while avoiding repeated success, internal-visibility, and provenance wrappers; state-changing tools keep only their key final state. Historical tool results use one deterministic size-bounded projection: large file, directory, search, MCP, or unknown result shapes use structured truncation with original size/count and head/tail previews. Historical messages omit inferable trust, delivered state, and per-item timestamps; Turn-level `at` supplies the time anchor, and empty Final objects and duplicated historical intent text are not sent. Non-default delivery, failure, external effect, reply wait, mood change, and mutation state remain explicit. When omitted, `planner_recent_tokens` is the smaller of `max_input_tokens × 55%` and `88000`, reserving room for dynamic candidates, provider-counting variance, and roughly 30% input headroom.
-
-`recent_episode_hours` adds every Episode active in the configured window, independent of keyword recall. `summary_results` limits keyword-recalled Episodes to 12 by default. The two sets are deduplicated, then ordered with recent keyword matches first, other keyword matches next, and recent-only Episodes last. More matched keyword alternatives rank ahead within the keyword groups. `summary_tokens` is shared by the merged Episode summaries.
-
-The Owner model uses the same compact Recent projection. Stable Owner Preferences, Core Reflection, and recent memory precede the current Owner message so their prefix can be reused; the dynamic current message remains last. Owner Turns always expose the complete internal tool surface plus `send_message`, `tool_enable`, and `respond`. Planner-selected MCP servers are appended after `tool_enable`; `tool_enable.groups` can load additional MCP servers on the next model step, and those additions stay for the rest of the current Owner Turn only. The Context Planner selects only the external MCP servers needed now, with a required routing reason. Heartbeat planning uses the same handoff pattern: select one activity, identify at most two Memory/Conversation lookups, route external MCP servers, and provide a bounded execution outline for the Heartbeat Turn. Heartbeat lookups are no longer executed automatically by the framework. A genuine `rest` plan carries no lookup, MCP server, or outline. Autonomous tools remain limited by autonomy patterns. A degraded plan preloads no MCP server but retains `tool_enable`, so capability remains available without restoring every external schema.
-
-The Owner Context Planner makes an explicit recall decision for every intent unit. It normally submits one to three ranked expressions, written as `name|alias|identifier` without spaces around `|`. A self-contained low-information social unit may instead explicitly skip recall; requests, questions, corrections, unresolved references, unfamiliar names, mutations, and work items cannot use that shortcut. The framework fairly executes a globally bounded subset across recall memory, reflections, Episodes, and matched Turns, taking each searching unit's first expression before lower-ranked expressions. Separately, the Planner returns a structured `owner_handoff`: whether supplied and automatically recalled context is sufficient, at most two targeted Memory/Conversation/Thinking lookups for the Owner model, selected MCP servers, and an execution mode/outline. The framework also supplies Recent Episodes, recent/core memory, and current Goals/Reminders as a deterministic baseline. The main model may correct the handoff, load an omitted MCP server, and record `plan_adjustment` only when current intent or verified evidence materially overturns the plan.
-
-Set a baseline context result count or token budget to `0` to disable that injected layer. Explicit memory and conversation search remain available as resident internal tools.
+When omitted, `planner_recent_tokens` is the smaller of 55% of
+`max_input_tokens` and `88000`. Set `max_input_tokens` below the provider's
+actual context window.
 
 ## Storage
 
@@ -307,13 +203,14 @@ Set a baseline context result count or token budget to `0` to disable that injec
 }
 ```
 
-`database` is required. A relative path is resolved from the workspace, and its parent directory is created automatically.
+| Field | Required | Default | Description |
+| --- | --- | --- | --- |
+| `database` | Yes | — | SQLite database path; its parent directory is created automatically |
+| `thinking` | No | database directory | Directory for monthly `thinking-YYYY-MM.sqlite3` files |
 
-`thinking` is the directory for monthly model-thinking files (`thinking-YYYY-MM.sqlite3`). Omit it or set `null` to use the same directory as `database`. A relative path is resolved from the workspace.
+Set `thinking` to `null` or an empty string to use the database directory.
 
-Back up the complete workspace to preserve conversation history, memory, goals, reminders, emotion assets, pending delivery state, and recorded thinking.
-
-## MCP and tool results
+## Tools and MCP
 
 ```json
 {
@@ -326,93 +223,29 @@ Back up the complete workspace to preserve conversation history, memory, goals, 
 
 | Field | Default | Description |
 | --- | --- | --- |
-| `mcp_config` | `mcp.json` | Standard MCP server configuration; use `null` or an empty string to disable MCP loading |
-| `result_max_chars` | `30000` | Maximum normalized tool-result size returned to the model; minimum `1000` |
+| `mcp_config` | `mcp.json` | MCP server configuration path; `null` or `""` disables MCP loading |
+| `result_max_chars` | `30000` | Maximum normalized tool-result size; minimum `1000` characters |
 
-Built-in file tools resolve relative paths from the workspace. Absolute paths remain supported.
+An MCP server entry in `mcp.json` uses either `command` plus optional `args`,
+`cwd`, and `env`, or a remote `url` plus optional `headers`. The optional fields
+below control discovery and routing.
 
-### Configure a stdio MCP server
+| MCP field | Default | Description |
+| --- | --- | --- |
+| `description` | generated from server id | Optional capability summary, 1–500 characters when set |
+| `enabled_tools` | `["*"]` | Raw or fully qualified tool names to register; `[]` registers none |
+| `readOnlyTools` | `[]` | Raw names of tools that should be treated as read-only |
+| `disabled` | `false` | Keep the definition without connecting |
 
-```json
-{
-  "mcpServers": {
-    "local-tools": {
-      "command": "your-mcp-server",
-      "args": ["--option", "value"],
-      "description": "Search and read records from the local service.",
-      "enabled_tools": ["search", "read"],
-      "cwd": "/optional/working/directory",
-      "env": {
-        "SERVICE_TOKEN": "${SERVICE_TOKEN}"
-      }
-    }
-  }
-}
-```
-
-#### Connect gog Gmail and Calendar
-
-Use the built-in read-only `gog` MCP server directly:
-
-```json
-{
-  "mcpServers": {
-    "gog": {
-      "command": "/opt/homebrew/bin/gog",
-      "description": "Search and read Gmail; list Google Calendar events.",
-      "args": [
-        "--account", "you@gmail.com",
-        "--readonly",
-        "--no-input",
-        "mcp",
-        "--allow-tool", "gmail,calendar"
-      ]
-    }
-  }
-}
-```
-
-Run `gog --account you@gmail.com mcp --allow-tool gmail,calendar --list-tools` to inspect the exposed tools first. This configuration permits Gmail and Calendar reads only; widen it explicitly if writes are later required.
-
-### Configure a remote MCP server
-
-```json
-{
-  "mcpServers": {
-    "remote-tools": {
-      "url": "https://mcp.example.com/mcp",
-      "description": "Read and update records in the remote service.",
-      "headers": {
-        "Authorization": "Bearer ${MCP_TOKEN}"
-      }
-    }
-  }
-}
-```
-
-MCP environment values, remote URLs, and headers support `${VARIABLE}` expansion from Momoi's process environment. The variable must exist when Momoi starts. Add `"disabled": true` to keep a server definition without connecting it.
-
-Each connected server is isolated by name. Its tools appear to the model with a `mcp__<server>__<tool>` prefix. Connection failures are logged without preventing other configured servers from starting.
-
-Give every server a concise `description` of the capability it provides.
-Context Planner and `tool_enable` receive only the server id and this
-description before selection; tool names, argument schemas, and full tool
-descriptions are sent only after the server is selected or loaded. Descriptions
-must contain 1 to 500 characters.
-
-Use `enabled_tools` to restrict which discovered MCP tools are registered.
-Omit it or use `["*"]` for all tools, use `[]` for none, or list raw server
-tool names (such as `search`) or complete wire names (such as
-`mcp__local-tools__search`). Unknown entries produce a startup warning.
-
-Some MCP servers omit the standard `readOnlyHint`. Add `readOnlyTools` with the server's original tool names when a tool is known to be read-only. This declaration does not expose the tool by itself; self-directed work must also allow its prefixed name through `autonomy.allowed_tools`.
+Unlike `config.json`, MCP environment values, URLs, and headers expand
+`${VARIABLE}` from the Momoi process environment.
 
 ## Turn budgets
 
 ```json
 {
   "turn": {
-    "max_seconds": 1800,
+    "max_seconds": 0,
     "max_total_tokens": 0
   }
 }
@@ -420,12 +253,13 @@ Some MCP servers omit the standard `readOnlyHint`. Add `readOnlyTools` with the 
 
 | Field | Default | Description |
 | --- | --- | --- |
-| `max_seconds` | `0` | Maximum wall time for one agent task; `0` disables the time limit |
-| `max_total_tokens` | `0` | Maximum raw input and output tokens accumulated across model calls, including repeated or cached input; `0` disables the token limit |
+| `max_seconds` | `0` | Per-Turn wall-time limit; `0` disables it |
+| `max_total_tokens` | `0` | Accumulated raw input/output token limit; `0` disables it |
 
-These are safety budgets, not limits on the number of tool calls.
+Both values must be non-negative. The starter file omits this section so the
+limits remain disabled.
 
-## Proactive notification policy
+## Notifications
 
 ```json
 {
@@ -441,17 +275,16 @@ These are safety budgets, not limits on the number of tool calls.
 
 | Field | Default | Description |
 | --- | --- | --- |
-| `timezone` | `UTC` | Valid IANA timezone used by schedules and quiet hours |
-| `quiet_start` | unset | Local `HH:MM` start of the quiet window |
-| `quiet_end` | unset | Local `HH:MM` end of the quiet window |
-| `cooldown_seconds` | `1800` | Minimum interval between proactive contacts with the same key |
-| `pending_owner_delay_seconds` | `30` | Delay durable proactive delivery while an owner message is waiting |
+| `timezone` | `UTC` | IANA timezone for schedules and quiet hours |
+| `quiet_start` | unset | Quiet-window start in local `HH:MM` |
+| `quiet_end` | unset | Quiet-window end in local `HH:MM` |
+| `cooldown_seconds` | `1800` | Non-negative interval between proactive contacts with the same key |
+| `pending_owner_delay_seconds` | `30` | Non-negative delivery delay while an owner message is pending |
 
-`quiet_start` and `quiet_end` must either both be omitted or both use distinct `HH:MM` values. Overnight windows are supported.
+`quiet_start` and `quiet_end` must be distinct and either both set or both
+omitted. Overnight windows are supported.
 
-This policy applies to proactive Goal and Heartbeat contacts. Goal notifications are durable and move to the next eligible time. Heartbeat conversation is ephemeral: if it is not eligible for immediate delivery, it stays silent instead of retaining text for later replay. A fixed Reminder follows its requested schedule.
-
-## Autonomous heartbeat
+## Heartbeat
 
 ```json
 {
@@ -466,41 +299,28 @@ This policy applies to proactive Goal and Heartbeat contacts. Goal notifications
 
 | Field | Default | Description |
 | --- | --- | --- |
-| `enabled` | `false` | Enable autonomous heartbeat evaluations |
-| `initial_delay_seconds` | `900` | Delay before the first heartbeat in a new workspace |
-| `min_interval_seconds` | `1800` | Smallest next interval Momoi may select |
-| `max_interval_seconds` | `5400` | Largest next interval Momoi may select (90 minutes by default) |
+| `enabled` | `false` | Enable automatic heartbeat evaluations |
+| `initial_delay_seconds` | `900` | Positive delay before the first heartbeat |
+| `min_interval_seconds` | `1800` | Positive minimum interval |
+| `max_interval_seconds` | `5400` | Positive maximum interval |
 
-Intervals must be positive, and the maximum must not be smaller than the ordinary minimum.
+`max_interval_seconds` must be at least `min_interval_seconds`.
 
-When a non-empty `prompts/HEARTBEAT.md` exists, Momoi automatically appends it as workspace heartbeat guidance. No additional prompt is injected when the file is absent. Change the path with `context.heartbeat_prompt`.
-
-A heartbeat may use explicitly allowed read-only tools, search memory, create files under `<workspace>/artifacts`, or create an agent-owned Goal for work that must continue. It records the real result before deciding whether contacting the owner is useful. Owner Goals and reminders remain separate and are never performed or imitated by a heartbeat.
-
-Send `/heartbeat` in the private owner chat to trigger one evaluation immediately, even when automatic heartbeat scheduling is disabled. A command received while another heartbeat is queued or running is deduplicated.
-
-When `respond` creates a reply wait, Momoi chooses one deadline from 1–10 minutes, the information expected from the owner, and the private reason a follow-up is warranted. The clock starts only after the last visible message is delivered. The source Turn still completes transactionally, but its Episode consolidation and annealing remain deferred while the expectation is active. An owner message before the deadline atomically cancels the timer and supplies the expectation and reason to that Owner Turn as context. If the deadline expires first, the runtime triggers exactly one mandatory follow-up; it does not ask the model whether to remain silent or check again. The follow-up message is appended to the source Turn's conversation timeline, while its separate execution record is used only for retry, usage, and audit and does not advance Recent Turn counting. Reply attention has its own clock and never replaces the ordinary `next_heartbeat_at` rhythm.
-
-Owner Turns exclusively answer owner input. A heartbeat is deferred while owner events, an Owner Turn, or its outgoing reply are in flight. It records the owner-event revision it read and discards visible heartbeat output if the conversation changes before commit; internal heartbeat activity is still retained.
-
-## Self-directed tool allowlist
+## Autonomous tools
 
 ```json
 {
   "autonomy": {
-    "allowed_tools": [
-      "curl",
-      "read_file",
-      "write_file",
-      "mcp__brave-search__brave_web_search"
-    ]
+    "allowed_tools": ["curl", "read_file", "write_file", "list_dir"]
   }
 }
 ```
 
-The default is `curl`, `read_file`, `write_file`, and `list_dir`. `curl` is limited to GET, HEAD, and OPTIONS. Autonomous file access is restricted to `<workspace>/artifacts`. MCP tools must be both listed here and classified read-only through `readOnlyHint` or `readOnlyTools`. Agent-owned Goals inherit the same boundary; owner-created Goals retain the tools authorized by the owner's task.
+`allowed_tools` is an array of non-empty strings. The default is `curl`,
+`read_file`, `write_file`, and `list_dir`. MCP tools must use their full
+`mcp__<server>__<tool>` names.
 
-## Daily reflection
+## Reflection
 
 ```json
 {
@@ -511,13 +331,12 @@ The default is `curl`, `read_file`, `write_file`, and `list_dir`. `curl` is limi
 }
 ```
 
-Reflection uses `notifications.timezone` and reviews the local calendar day that just ended at `03:00`. `at` accepts `HH:MM` and defaults to `03:00`; the feature is disabled when omitted, while the example workspace enables it.
+| Field | Default | Description |
+| --- | --- | --- |
+| `enabled` | `false` | Enable daily reflection |
+| `at` | `03:00` | Local run time in `HH:MM`, using `notifications.timezone` |
 
-Reflection never contacts the owner or receives external tools. The complete summary and candidate learning are stored in SQLite `reflections`; promoted durable learning is stored in `reflection_memories` and enters later context below confirmed owner memory. Owner profile and preference items are accepted only when they quote owner text from that day. The same Turn reviews still-open conversation episodes and may close a thread that the day's record shows is finished or expired.
-
-Send `/reflect` in the private owner chat to review the current local calendar day immediately, even when automatic reflection is disabled. A command received while that day's reflection is already running is ignored; a completed day can be reviewed again and overwrites that day's summary and promoted memories.
-
-## Episode history maintenance
+## Episode maintenance
 
 ```json
 {
@@ -531,11 +350,9 @@ Send `/reflect` in the private owner chat to review the current local calendar d
 
 | Field | Default | Description |
 | --- | --- | --- |
-| `enabled` | `true` | Maintain older conversation Episodes in the background |
-| `idle_seconds` | `60` | Required owner-idle time before maintenance starts |
-| `max_seconds` | `650` | Maximum model time for one maintenance batch |
-
-Maintenance is coalesced and processes one Episode batch at a time. A new owner message cancels active maintenance without counting it as a failure; the work becomes eligible again after the owner is idle.
+| `enabled` | `true` | Enable background Episode maintenance |
+| `idle_seconds` | `60` | Non-negative required owner-idle time |
+| `max_seconds` | `650` | Positive model-time limit for one batch |
 
 ## Webhooks
 
@@ -555,19 +372,15 @@ Maintenance is coalesced and processes one Episode batch at a time. A new owner 
 | Field | Default | Description |
 | --- | --- | --- |
 | `enabled` | `false` | Start the webhook API and workflow worker |
-| `host` | `127.0.0.1` | Bind address; use a reachable interface only when another machine must connect |
+| `host` | `127.0.0.1` | Bind address |
 | `port` | `8787` | TCP port from `1` to `65535` |
-| `token` | empty | Bearer token; required when webhooks are enabled |
-| `workflows` | `workflows` | Directory containing workflow YAML files |
-| `executors` | `workflows/workflow-executors.yaml` | File containing predefined command executors; may live inside the workflows directory and is skipped when loading workflows |
+| `token` | empty | Bearer token; required when enabled |
+| `workflows` | `workflows` | Workflow YAML directory |
+| `executors` | `workflows/workflow-executors.yaml` | Command-executor definition file |
 
-Use a long random token and place a TLS reverse proxy in front of Momoi when the endpoint crosses an untrusted network. Continue with [WORKFLOW.md](./WORKFLOW.md).
+See [WORKFLOW.md](./WORKFLOW.md) for the workflow YAML reference.
 
 ## Dashboard
-
-The local Web dashboard is a small window into Momoi's records: conversations, daily reflections, memories, image reactions, goals, and recorded model thinking. From there you can also edit memories, manage reactions, and adjust goals that are still in progress. Thinking is read-only.
-
-It starts only with `momoi run --dashboard`. Bind address and port come from the CLI; `config.json` holds the access passphrase.
 
 ```json
 {
@@ -579,13 +392,11 @@ It starts only with `momoi run --dashboard`. Bind address and port come from the
 
 | Field | Default | Description |
 | --- | --- | --- |
-| `token` | empty | Passphrase required whenever `--dashboard` is enabled. Enter it on the page to unlock the dashboard; the browser keeps access for about one year |
+| `token` | empty | Access passphrase required when the dashboard is enabled from the CLI |
 
-Open `http://127.0.0.1:8788` by default. Use `--dashboard-host` and `--dashboard-port` to change the listener. Keep the dashboard on localhost or a trusted network — do not expose the port directly to the public Internet.
+Dashboard bind address and port are CLI options, not `config.json` fields.
 
 ## Usage
-
-The dashboard records each LLM call locally. A Usage plugin supplies official token rates, and optionally a live account balance, so the page can estimate cost. Leave `provider` empty to keep request and token counts without pricing.
 
 ```json
 {
@@ -600,59 +411,13 @@ The dashboard records each LLM call locally. A Usage plugin supplies official to
 
 | Field | Default | Description |
 | --- | --- | --- |
-| `provider` | empty | Dotted class name of a `UsagePlugin` |
-| `api_key` | empty | Passed to the plugin constructor as `api_key` |
-| other keys | — | Forwarded as constructor keyword arguments |
+| `provider` | empty | Dotted name of a `UsagePlugin` class |
+| `api_key` | empty | Plugin constructor's `api_key` argument |
+| other fields | — | Additional plugin constructor keyword arguments |
 
-The included DeepSeek plugin prices `deepseek-v4-flash` and `deepseek-v4-pro` in CNY per 1M tokens (cache hit, cache miss, output) and reads `/user/balance` when `api_key` is set. `base_url` and `timeout_seconds` are optional.
-
-Restart `momoi run` after changing `usage`. The class must be importable from Momoi's Python environment.
-
-### Writing a plugin
-
-Subclass `momoi.extensions.UsagePlugin`. Implement `token_rates`. Override `balance` if the dashboard should show account funds. The default `parse_usage` understands OpenAI and Anthropic usage objects; override it when the provider bills from different fields, such as DeepSeek's `prompt_cache_hit_tokens`. The default `estimate_cost` multiplies those rates by token counts; override it only when pricing is not linear.
-
-```python
-from momoi.extensions import UsagePlugin
-
-
-class FlatRatePlugin(UsagePlugin):
-    def __init__(
-        self,
-        *,
-        api_key: str = "",
-        input_cny: float = 2.0,
-        output_cny: float = 8.0,
-    ) -> None:
-        self.input_cny = float(input_cny)
-        self.output_cny = float(output_cny)
-
-    def token_rates(self, model: str, timestamp: float) -> tuple[float, float, float]:
-        # CNY per 1M tokens: cache hit, cache miss, output
-        return (self.input_cny, self.input_cny, self.output_cny)
-
-    async def balance(self) -> dict[str, object]:
-        return {
-            "source": "unavailable",
-            "currency": "CNY",
-            "is_available": False,
-            "total_balance": "0",
-        }
-```
-
-Point `provider` at the dotted class name. Extra fields become constructor arguments:
-
-```json
-{
-  "usage": {
-    "provider": "my_package.usage.FlatRatePlugin",
-    "input_cny": 2.0,
-    "output_cny": 8.0
-  }
-}
-```
-
-`balance()` must include `source`, `currency`, `is_available`, and `total_balance`. Use `source` `"live"` when the value is current, or `"unavailable"` when it is not.
+The bundled DeepSeek plugin accepts optional `base_url` and
+`timeout_seconds` fields. Leave `provider` empty to record token counts without
+provider pricing or balance lookup.
 
 ## Logging
 
@@ -666,10 +431,33 @@ Point `provider` at the dotted class name. Extra fields become constructor argum
 
 | Field | Default | Description |
 | --- | --- | --- |
-| `level` | `DEBUG` | Python logging level; supports `TRACE`, `DEBUG`, `INFO`, `WARNING`, `ERROR`, and `CRITICAL` |
+| `level` | `DEBUG` | `TRACE`, `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL` |
 
-Use `INFO` for normal operation and `DEBUG` for development. `TRACE` also writes complete LLM requests and raw responses under `llm-dumps/` in the workspace. DEBUG and TRACE logs may contain owner messages, model output, and tool status; treat them as private data.
+`TRACE` writes complete LLM requests and raw responses under `llm-dumps/`.
+Debug and trace output may contain private conversation and tool data.
 
-## Apply changes
+## Environment overrides
 
-`SOUL.md` and `HEARTBEAT.md` are reloaded for each new Turn, so edits need no restart. Restart `momoi run` after changing `config.json`, `mcp.json`, workflow files, or executor definitions. Startup validates required configuration and reports a concise configuration error before connecting services.
+Environment values override `config.json` for the current process.
+
+| Variable | Configuration field |
+| --- | --- |
+| `MOMOI_LLM_API_FORMAT` | `llm.api_format` |
+| `MOMOI_LLM_BASE_URL` | `llm.base_url` |
+| `MOMOI_LLM_API_KEY` | `llm.api_key` |
+| `MOMOI_LLM_MODEL` | `llm.model` |
+| `MOMOI_NAPCAT_URL` | `channels.enabled.napcat.url` |
+| `MOMOI_OWNER_QQ` | `channels.enabled.napcat.owner_qq` |
+| `MOMOI_PRIMARY` | `channels.primary` |
+| `MOMOI_TIMEZONE` | `notifications.timezone` |
+| `MOMOI_DASHBOARD_TOKEN` | `dashboard.token` |
+| `MOMOI_WEBHOOKS_ENABLED` | `webhooks.enabled` |
+| `MOMOI_WEBHOOKS_HOST` | `webhooks.host` |
+| `MOMOI_WEBHOOKS_TOKEN` | `webhooks.token` |
+| `MOMOI_USAGE_API_KEY` | `usage.api_key` |
+| `MOMOI_ASR_SECRET_ID` | `asr.settings.secret_id` |
+| `MOMOI_ASR_SECRET_KEY` | `asr.settings.secret_key` |
+
+Keep files containing credentials private. Restart `momoi run` after changing
+`config.json`, `mcp.json`, workflows, or executor definitions. Prompt files are
+reloaded before each new Turn.
