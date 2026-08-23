@@ -508,9 +508,7 @@ def rank_episode_matches(
 
 
 def recall_item_score(item: dict[str, object], *, now: float | None = None) -> float:
-    relevance = float(
-        item.get("recall_score") or item.get("search_score") or 0.0
-    )
+    relevance = float(item.get("search_score") or 0.0)
     if relevance > 0:
         return relevance
     now = time.time() if now is None else now
