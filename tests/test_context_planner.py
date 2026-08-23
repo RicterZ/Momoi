@@ -1116,7 +1116,6 @@ class ContextPlannerTest(unittest.TestCase):
             "`delivery=uncertain`",
             "`reply_wait` records",
             "`plan_adjustment`: include it",
-            "An open reconciliation means",
             "Current self state` is persistent mood",
         ):
             self.assertNotIn(phrase, CONTEXT_PLANNER_PROTOCOL_PROMPT)

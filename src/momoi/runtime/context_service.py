@@ -106,8 +106,8 @@ def _planner_owner_lines(items: list[dict[str, object]]) -> str:
         if not isinstance(item, dict):
             continue
         blocks.append(
-            f"[event id={item.get('event_id')} channel={item.get('channel')} "
-            f"at={item.get('timestamp')}]\n{item.get('text') or ''}"
+            f"[event id={item.get('event_id')} at={item.get('timestamp')}]\n"
+            f"{item.get('text') or ''}"
         )
     return "\n\n".join(blocks)
 
@@ -524,7 +524,6 @@ class ContextService:
         owner_messages = [
             {
                 "event_id": event.event_id,
-                "channel": event.channel,
                 "timestamp": context_timestamp(event.occurred_at),
                 "text": event.text,
             }

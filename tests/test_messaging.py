@@ -1427,7 +1427,11 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                     serialized = json.dumps(messages, ensure_ascii=False)
                     if self.calls == 3:
                         case.assertIn("QQ 上说过的事", serialized)
-                        case.assertIn("Channel: weixin", serialized)
+                        case.assertNotIn("Channel: weixin", serialized)
+                        case.assertNotIn("[weixin]", serialized)
+                        case.assertNotIn("[napcat]", serialized)
+                        case.assertNotIn("channel=weixin", serialized)
+                        case.assertNotIn("channel=napcat", serialized)
                         spec = next(
                             tool for tool in tools if tool["name"] == "send_message"
                         )

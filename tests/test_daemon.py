@@ -3223,7 +3223,12 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             await daemon._complete_batch_turn([event], asyncio.Event(), turn_id)
 
             self.assertIn(f"/resolve {turn_id[:12]}", daemon.store.due_outbox()[0].text)
-            self.assertIn(turn_id, daemon.store.open_reconciliations_context())
+            self.assertEqual(
+                daemon.store._db.execute(
+                    "SELECT status FROM reconciliations WHERE turn_id=?", (turn_id,)
+                ).fetchone()["status"],
+                "open",
+            )
             daemon.store.close()
 
     async def test_scheduler_queues_persisted_notification(self) -> None:
@@ -3491,9 +3496,12 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     ).fetchone()["state"],
                     "dispatching",
                 )
-                self.assertIn(
-                    daemon._turn_id(original.event_id),
-                    daemon.store.open_reconciliations_context(),
+                self.assertEqual(
+                    daemon.store._db.execute(
+                        "SELECT status FROM reconciliations WHERE turn_id=?",
+                        (daemon._turn_id(original.event_id),),
+                    ).fetchone()["status"],
+                    "open",
                 )
             finally:
                 worker.cancel()

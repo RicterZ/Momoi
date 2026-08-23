@@ -80,7 +80,6 @@ class NapCatConfig:
 
 class NapCatChannel:
     name = "napcat"
-    prompt_context = "Authenticated private QQ conversation through NapCat with the single owner."
 
     def __init__(
         self,

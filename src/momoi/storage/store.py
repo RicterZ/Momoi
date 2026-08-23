@@ -3545,15 +3545,6 @@ class Store(MemoryStore, DeliveryStore):
             (turn_id, reason[:500], now, now),
         )
 
-    def open_reconciliations_context(self) -> str:
-        rows = self._db.execute(
-            """SELECT turn_id, reason, created_at FROM reconciliations
-               WHERE status='open' ORDER BY created_at LIMIT 10"""
-        ).fetchall()
-        return "\n".join(
-            f"- turn_id={row['turn_id']} reason={row['reason']}" for row in rows
-        )
-
     def resolve_reconciliation(
         self, turn_prefix: str, resolution: str, *, resume: bool
     ) -> dict[str, object]:

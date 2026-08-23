@@ -1081,7 +1081,10 @@ def _owner_history_line(item: dict[str, object], call_names: dict[str, str]) -> 
         }[item_type]
         delivery = str(item.get("delivery") or "")
         suffix = f" [{delivery}]" if delivery not in {"", "delivered"} else ""
-        return f"{role}{suffix}: {str(item.get('text') or '')}"
+        text = str(item.get("text") or "")
+        if item_type == "owner_message":
+            text = _owner_message_text(text)
+        return f"{role}{suffix}: {text}"
     if item_type == "tool_call":
         call = _short_identifier(item.get("tool_call_id") or item.get("call"), prefix="c-")
         name = str(item.get("name") or "tool")
@@ -1220,10 +1223,19 @@ def assemble_recent_turns(
     return document, rendered
 
 
+def _owner_message_text(value: object) -> str:
+    text = str(value or "")
+    return re.sub(
+        r"(?m)^(\d{4}-\d{2}-\d{2}T\S+)\s+\[[^\]\n]+\]\s*",
+        r"\1 ",
+        text,
+    )
+
+
 def _planner_message_text(value: object) -> str:
     text = str(value or "")
     return re.sub(
-        r"(?m)^\d{4}-\d{2}-\d{2}T\S+\s+\[[^\]\n]+\]\s*",
+        r"(?m)^\d{4}-\d{2}-\d{2}T\S+(?:\s+\[[^\]\n]+\])?\s*",
         "",
         text,
     )

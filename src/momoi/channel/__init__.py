@@ -50,7 +50,6 @@ class ChannelDependencies:
 
 class Channel(Protocol):
     name: str
-    prompt_context: str
     quiet_seconds: float
     max_batch_seconds: float
 

@@ -119,7 +119,6 @@ USER_CONTEXT_SECTION_ORDER = (
     "pending_reminders",
     "always_memory_inventory",
     "recent_memory_inventory",
-    "open_reconciliations",
     "interrupted_reply_expectation",
     "recent_turn_base",
     "recent_turn_append",

@@ -37,7 +37,6 @@ MESSAGE_VIDEO = 5
 
 class WeixinChannel:
     name = "weixin"
-    prompt_context = "Authenticated private Weixin conversation through Tencent iLink with the single owner."
 
     def __init__(self, config: WeixinConfig) -> None:
         self.config = config

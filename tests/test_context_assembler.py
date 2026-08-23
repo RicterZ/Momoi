@@ -255,7 +255,54 @@ class ContextAssemblerTest(unittest.TestCase):
                 seven["recent_turns"],
                 seven["recent_turn_base"] + "\n\n" + seven["recent_turn_append"],
             )
+
+            for index in range(8, 12):
+                add(index)
+            eleven = assemble_main_context(store, {}, 2000, 2000, recent_turns=6)
+            self.assertEqual(eleven["recent_turn_base"], six["recent_turn_base"])
+            self.assertEqual(eleven["recent_turn_append"].count("\n\nT-") + 1, 5)
+            self.assertIn("第11轮", eleven["recent_turn_append"])
+
+            add(12)
+            twelve = assemble_main_context(store, {}, 2000, 2000, recent_turns=6)
+            self.assertEqual(twelve["recent_turn_append"], "")
+            self.assertNotEqual(twelve["recent_turn_base"], six["recent_turn_base"])
+            self.assertNotIn("第6轮", twelve["recent_turn_base"])
+            self.assertIn("第7轮", twelve["recent_turn_base"])
+            self.assertIn("第12轮", twelve["recent_turn_base"])
+
+            add(13)
+            thirteen = assemble_main_context(store, {}, 2000, 2000, recent_turns=6)
+            self.assertEqual(thirteen["recent_turn_base"], twelve["recent_turn_base"])
+            self.assertIn("T-7", thirteen["recent_turn_append"])
+            self.assertIn("第13轮", thirteen["recent_turn_append"])
             store.close()
+
+    def test_owner_projection_removes_legacy_channel_prefixes(self) -> None:
+        rendered = project_recent_turns_for_owner(
+            {
+                "turns": [
+                    {
+                        "timeline": [
+                            {
+                                "type": "owner_message",
+                                "text": "2026-08-23T22:50:28+08:00 [napcat] 在干嘛",
+                            },
+                            {
+                                "type": "owner_message",
+                                "text": "2026-08-23T22:51:28+08:00 [weixin] 回我一下",
+                            },
+                        ]
+                    }
+                ]
+            },
+            None,
+        )
+
+        self.assertIn("owner: 2026-08-23T22:50:28+08:00 在干嘛", rendered)
+        self.assertIn("owner: 2026-08-23T22:51:28+08:00 回我一下", rendered)
+        self.assertNotIn("[napcat]", rendered)
+        self.assertNotIn("[weixin]", rendered)
 
     def test_owner_context_puts_fixed_memory_and_agenda_state_first(self) -> None:
         rendered = pack_user_context(
@@ -268,14 +315,12 @@ class ContextAssemblerTest(unittest.TestCase):
             ("recall_memories", "recalled"),
             ("episode_directory", "episodes"),
             ("recalled_turns", "recalled turns"),
-            ("open_reconciliations", "reconciliations"),
             ("interrupted_reply_expectation", "interrupted"),
         )
         self.assertLess(rendered.index("<long_term_memories>"), rendered.index("<recent_memories>"))
         self.assertLess(rendered.index("<recent_memories>"), rendered.index("<active_goals>"))
         self.assertLess(rendered.index("<active_goals>"), rendered.index("<pending_reminders>"))
-        self.assertLess(rendered.index("<pending_reminders>"), rendered.index("<open_reconciliations>"))
-        self.assertLess(rendered.index("<open_reconciliations>"), rendered.index("<interrupted_reply_expectation>"))
+        self.assertLess(rendered.index("<pending_reminders>"), rendered.index("<interrupted_reply_expectation>"))
         self.assertLess(rendered.index("<interrupted_reply_expectation>"), rendered.index("<recent_turn_base>"))
         self.assertLess(rendered.index("<recent_turn_base>"), rendered.index("<recent_turn_append>"))
         self.assertLess(rendered.index("<recent_turn_append>"), rendered.index("<recall_memories>"))

@@ -1363,7 +1363,12 @@ class StorageMemoryTest(unittest.TestCase):
                 turn["failure_reason"],
                 "process_interrupted_after_external_effect",
             )
-            self.assertIn("turn-crash", recovered.open_reconciliations_context())
+            self.assertEqual(
+                recovered._db.execute(
+                    "SELECT status FROM reconciliations WHERE turn_id='turn-crash'"
+                ).fetchone()["status"],
+                "open",
+            )
             recovered.close()
 
     def test_read_only_tool_crash_does_not_require_reconciliation(self) -> None:
@@ -1411,7 +1416,12 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertEqual(turn["input_tokens"], 0)
             self.assertEqual(turn["output_tokens"], 0)
             self.assertGreaterEqual(turn["started_at"], before_retry)
-            self.assertEqual(recovered.open_reconciliations_context(), "")
+            self.assertEqual(
+                recovered._db.execute(
+                    "SELECT COUNT(*) FROM reconciliations WHERE status='open'"
+                ).fetchone()[0],
+                0,
+            )
             recovered.close()
 
         self.assertEqual(
@@ -1460,7 +1470,12 @@ class StorageMemoryTest(unittest.TestCase):
                 ).fetchone()[0],
                 1,
             )
-            self.assertEqual(recovered.open_reconciliations_context(), "")
+            self.assertEqual(
+                recovered._db.execute(
+                    "SELECT COUNT(*) FROM reconciliations WHERE status='open'"
+                ).fetchone()[0],
+                0,
+            )
             recovered.close()
 
     def test_owner_can_resolve_or_resume_open_reconciliation_by_prefix(self) -> None:
@@ -1489,7 +1504,12 @@ class StorageMemoryTest(unittest.TestCase):
             result = daemon._apply_reconciliation_commands([command])
             self.assertIn("status=resumed", result)
             self.assertIn("设备确认没有打开，请继续", result)
-            self.assertEqual(daemon.store.open_reconciliations_context(), "")
+            self.assertEqual(
+                daemon.store._db.execute(
+                    "SELECT COUNT(*) FROM reconciliations WHERE status='open'"
+                ).fetchone()[0],
+                0,
+            )
             with self.assertRaisesRegex(ValueError, "not found"):
                 daemon.store.resolve_reconciliation(
                     turn_id[:12], "重复确认", resume=False
