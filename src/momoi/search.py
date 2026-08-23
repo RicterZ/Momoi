@@ -1,3 +1,4 @@
+import re
 import unicodedata
 from dataclasses import dataclass
 from math import log
@@ -31,16 +32,27 @@ class SearchBackend(Protocol):
 
 
 class StringSearchBackend:
-    """Deterministic exact-substring baseline for small text groups."""
+    """Deterministic literal matcher for small text groups."""
 
     def search_one(self, keyword: str, texts: Iterable[str]) -> float | None:
         needle = unicodedata.normalize("NFKC", keyword).casefold().strip()
         if not needle:
             return None
+        left_boundary = (
+            r"(?<![0-9a-z])"
+            if needle[0].isascii() and needle[0].isalnum()
+            else ""
+        )
+        right_boundary = (
+            r"(?![0-9a-z])"
+            if needle[-1].isascii() and needle[-1].isalnum()
+            else ""
+        )
+        pattern = re.compile(left_boundary + re.escape(needle) + right_boundary)
         return (
             1.0
             if any(
-                needle in unicodedata.normalize("NFKC", text).casefold()
+                pattern.search(unicodedata.normalize("NFKC", text).casefold())
                 for text in texts
                 if text
             )

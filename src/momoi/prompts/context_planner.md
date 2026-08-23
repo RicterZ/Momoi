@@ -22,7 +22,8 @@ or persona-specific wording from it.
    attach both the corrected and correcting event ids; do not preserve revoked
    work as another unit. Every supplied event id must appear in at least one
    unit. Resolve omitted subjects from supplied evidence when possible.
-2. Evaluate the fixed memory baseline, Recent Turns, Episode candidates,
+2. Evaluate the fixed memory baseline, Recent Turns, the eight most recently
+   active Episode candidates,
    Goals, reminders, and current events. Put a targeted lookup in
    `handoff.context_needs` only when material historical evidence may
    still be missing after the runtime's automatic recall. Otherwise mark the

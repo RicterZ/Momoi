@@ -10,7 +10,6 @@ from momoi.models import AgentReply, IncomingMessage, MemoryCandidate, TurnDraft
 from momoi.runtime.context_assembler import (
     _episode_header,
     _planner_final,
-    _rank_recall_items,
     _recalled_turn_context,
     assemble_main_context,
     assemble_planner_recent_turns,
@@ -25,6 +24,7 @@ from momoi.runtime.context_assembler import (
 )
 from momoi.runtime.turn_support import pack_user_context
 from momoi.storage import Store, estimate_tokens
+from momoi.storage.episode_ranking import rank_recall_items
 
 
 def config(
@@ -112,48 +112,30 @@ class ContextAssemblerTest(unittest.TestCase):
             self.assertIn("query_count=6/9", retrieval["query_recall"])
             store.close()
 
-    def test_recall_ranking_prefers_recency_then_keyword_count(self) -> None:
-        ranked = _rank_recall_items(
+    def test_recall_ranking_uses_continuous_relevance_before_recency(self) -> None:
+        ranked = rank_recall_items(
             [
                 {
-                    "turn_id": "keyword",
-                    "matched_keywords": ["a"],
-                    "last_activity_at": 50,
+                    "turn_id": "older-strong",
+                    "search_score": 2.4,
+                    "last_activity_at": 10,
                 },
                 {
-                    "turn_id": "recent",
-                    "is_recent": True,
-                    "last_activity_at": 50,
+                    "turn_id": "recent-weak",
+                    "search_score": 0.7,
+                    "last_activity_at": 99,
                 },
                 {
-                    "turn_id": "multi",
-                    "matched_keywords": ["a", "b"],
-                    "last_activity_at": 50,
+                    "turn_id": "recent-only",
+                    "last_activity_at": 100,
                 },
-                {
-                    "turn_id": "recent-keyword",
-                    "is_recent": True,
-                    "matched_keywords": ["a"],
-                    "last_activity_at": 50,
-                },
-                {
-                    "turn_id": "recent-multi",
-                    "is_recent": True,
-                    "matched_keywords": ["a", "b"],
-                    "last_activity_at": 50,
-                },
-            ]
+            ],
+            now=100,
         )
 
         self.assertEqual(
             [item["turn_id"] for item in ranked],
-            [
-                "recent-multi",
-                "recent-keyword",
-                "multi",
-                "recent",
-                "keyword",
-            ],
+            ["older-strong", "recent-weak", "recent-only"],
         )
 
     def test_recalled_turn_context_has_independent_six_thousand_token_budget(
@@ -1304,8 +1286,8 @@ class ContextAssemblerTest(unittest.TestCase):
             )
 
             self.assertEqual(recent_count, 6)
-            self.assertLessEqual(recalled_count, 6)
-            self.assertLessEqual(len(episode_ids), 12)
+            self.assertLessEqual(recalled_count, 12)
+            self.assertLessEqual(len(episode_ids), 18)
             self.assertEqual(len(episode_ids), len(set(episode_ids)))
             self.assertEqual(episode_ids.count("recent-0"), 1)
             store.close()
@@ -1405,9 +1387,9 @@ class ContextAssemblerTest(unittest.TestCase):
                 episode_ids,
                 [
                     "recent-multi",
-                    "recent-single",
                     "old-multi",
                     "recent-only",
+                    "recent-single",
                 ],
             )
             store.close()

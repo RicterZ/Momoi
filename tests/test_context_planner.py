@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 import tempfile
 import time
 import unittest
@@ -1248,22 +1249,24 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             daemon.store.close()
 
-    async def test_closed_episode_directory_allows_semantic_planner_binding(
+    async def test_context_planner_receives_only_eight_most_recent_episodes(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(app_config(directory))
-            daemon.store.create_episode(
-                "蓝色保温杯收纳",
-                episode_id="old-cup",
-                topics=["保温杯", "阁楼收纳"],
-            )
-            daemon.store._db.execute(
-                """UPDATE conversation_episodes
-                   SET status='closed', working_summary='杯子放在阁楼纸箱中'
-                   WHERE id='old-cup'"""
-            )
-            daemon.store._db.commit()
+            with daemon.store._db:
+                for index in range(9):
+                    episode_id = f"recent-{index}"
+                    daemon.store.create_episode(
+                        f"近期话题 {index}",
+                        episode_id=episode_id,
+                        topics=[f"话题{index}"],
+                    )
+                    daemon.store._db.execute(
+                        """UPDATE conversation_episodes SET updated_at=?
+                           WHERE id=?""",
+                        (100 + index, episode_id),
+                    )
 
             class Provider:
                 async def complete(
@@ -1275,7 +1278,13 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                 ) -> ProviderResponse:
                     self.assertEqual(system, CONTEXT_PLANNER_SYSTEM_PROMPT)
                     payload = planner_sections(str(messages[0]["content"]))
-                    self.assertIn("id=old-cup", payload["candidate_episodes"])
+                    candidate_ids = re.findall(
+                        r"(?m)^- id=([^\s]+)",
+                        payload["candidate_episodes"],
+                    )
+                    self.assertEqual(len(candidate_ids), 8)
+                    self.assertEqual(candidate_ids[0], "recent-8")
+                    self.assertNotIn("recent-0", candidate_ids)
                     plan = {
                         "version": 3,
                         "intent_units": [
@@ -1293,9 +1302,9 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                         "episode_actions": [
                             {
                                 "action": "continue",
-                                "episode_ref": "old-cup",
+                                "episode_ref": "recent-8",
                                 "unit_ids": ["u1"],
-                                "topics": ["保温杯", "阁楼收纳"],
+                                "topics": ["话题8"],
                                 "entities": [],
                                 "open_loops": [],
                                 "salience": 0.7,
@@ -1344,7 +1353,9 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
             with self.assertLogs("momoi.runtime.turns", level="DEBUG") as logs:
                 planned = await daemon._plan_owner_context([event], turn_id)
 
-            self.assertEqual(planned["episode_actions"][0]["episode_id"], "old-cup")
+            self.assertEqual(
+                planned["episode_actions"][0]["episode_id"], "recent-8"
+            )
             received = next(
                 record
                 for record in logs.records
@@ -1354,7 +1365,7 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                 "find stored drinking container",
                 received.momoi_fields["intent_units"],
             )
-            self.assertIn("old-cup", received.momoi_fields["episode_actions"])
+            self.assertIn("recent-8", received.momoi_fields["episode_actions"])
             daemon.store.close()
 
     async def test_planner_runs_without_tools_before_main_and_commits_episodes(

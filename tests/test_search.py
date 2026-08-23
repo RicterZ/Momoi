@@ -36,10 +36,13 @@ class SearchContractTest(unittest.TestCase):
         self.assertEqual(match.alternatives, ("房间", "屋子"))
         self.assertEqual(match.alternative_scores, (0.91, 0.55))
 
-    def test_string_backend_keeps_exact_substring_behavior(self) -> None:
+    def test_string_backend_normalizes_literals_and_bounds_ascii_words(self) -> None:
         backend = StringSearchBackend()
 
         self.assertEqual(backend.search_one("ＦＯＯ", ("prefix foo suffix",)), 1.0)
+        self.assertEqual(backend.search_one("RAG", ("RAG数据索引",)), 1.0)
+        self.assertIsNone(backend.search_one("RAG", ("encouraged",)))
+        self.assertEqual(backend.search_one("数据", ("RAG数据索引",)), 1.0)
         self.assertIsNone(backend.search_one("bar", ("prefix foo suffix",)))
 
 

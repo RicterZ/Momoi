@@ -1,13 +1,13 @@
 from dataclasses import dataclass
 from typing import Protocol
 
-from ..search import (
-    RankedSearchBackend,
-    SearchBackend,
-    alternative_weights,
-    discriminating_alternatives,
-    search_alternatives,
-)
+from ..search import SearchBackend, search_alternatives
+
+
+@dataclass(frozen=True)
+class EpisodeSearchField:
+    name: str
+    text: str
 
 
 @dataclass(frozen=True)
@@ -15,18 +15,20 @@ class EpisodeSearchMessage:
     id: int
     turn_id: str
     ordinal: int
+    relation: str
     role: str
     content: str
     created_at: float
     delivery_state: str
     timestamp: str
     searchable_text: str
+    scoped: bool = False
 
 
 @dataclass(frozen=True)
 class EpisodeSearchDocument:
     episode_id: str
-    metadata: tuple[str, ...]
+    fields: tuple[EpisodeSearchField, ...]
     last_activity_at: float
     salience: float
     messages: tuple[EpisodeSearchMessage, ...]
@@ -34,173 +36,134 @@ class EpisodeSearchDocument:
 
 @dataclass(frozen=True)
 class EpisodeSearchHit:
+    """Unranked evidence that one exact alternative matched one Episode."""
+
     episode_id: str
-    score: float
+    alternative: str
     last_activity_at: float
+    salience: float
+    field_matches: tuple[str, ...]
     matches: tuple[EpisodeSearchMessage, ...]
-    matched_keywords: tuple[str, ...] = ()
+    message_match_count: int
+    distinct_turn_count: int
 
 
-class EpisodeSearchBackend(
-    RankedSearchBackend[EpisodeSearchDocument, EpisodeSearchHit],
-    Protocol,
-):
-    """Episode-specific specialization of the ranked document backend."""
+@dataclass(frozen=True)
+class EpisodeAlternativeMatches:
+    alternative: str
+    hits: tuple[EpisodeSearchHit, ...]
+
+
+@dataclass(frozen=True)
+class EpisodeQueryMatches:
+    expression: str
+    alternatives: tuple[EpisodeAlternativeMatches, ...]
+
+
+class EpisodeSearchBackend(Protocol):
+    """Find evidence for one intact alternative without ranking Episodes."""
+
+    def match_one(
+        self,
+        alternative: str,
+        documents: list[EpisodeSearchDocument],
+    ) -> list[EpisodeSearchHit]: ...
 
 
 class StringEpisodeSearchBackend:
-    """Exact-string ranked document baseline."""
+    """Deterministic exact-substring evidence collector."""
 
     def __init__(self, text_backend: SearchBackend) -> None:
         self.text_backend = text_backend
 
-    def search_one(
+    def match_one(
         self,
-        keyword: str,
+        alternative: str,
         documents: list[EpisodeSearchDocument],
-        max_results: int,
     ) -> list[EpisodeSearchHit]:
-        ranked: list[
-            tuple[float, int, float, float, str, tuple[EpisodeSearchMessage, ...]]
-        ] = []
+        hits: list[EpisodeSearchHit] = []
         for document in documents:
-            metadata_match = self.text_backend.search_one(
-                keyword, document.metadata
+            field_matches = tuple(
+                field.name
+                for field in document.fields
+                if self.text_backend.search_one(alternative, (field.text,))
+                is not None
             )
-            matches = tuple(
+            all_message_matches = tuple(
+                message
+                for message in document.messages
+                if self.text_backend.search_one(
+                    alternative,
+                    (message.searchable_text,),
+                )
+                is not None
+            )
+            if not field_matches and not all_message_matches:
+                continue
+            ordered_matches = tuple(
                 sorted(
-                    (
-                        message
-                        for message in document.messages
-                        if self.text_backend.search_one(
-                            keyword, (message.searchable_text,)
-                        )
-                        is not None
-                    ),
+                    all_message_matches,
                     key=lambda message: (message.ordinal, message.id),
                     reverse=True,
                 )[:4]
             )
-            if metadata_match is None and not matches:
-                continue
-            score = max(metadata_match or 0.0, float(bool(matches)))
-            ranked.append(
-                (
-                    score,
-                    len(matches),
-                    document.last_activity_at,
-                    document.salience,
-                    document.episode_id,
-                    matches,
+            hits.append(
+                EpisodeSearchHit(
+                    episode_id=document.episode_id,
+                    alternative=alternative,
+                    last_activity_at=document.last_activity_at,
+                    salience=document.salience,
+                    field_matches=field_matches,
+                    matches=ordered_matches,
+                    message_match_count=len(all_message_matches),
+                    distinct_turn_count=len(
+                        {message.turn_id for message in all_message_matches}
+                    ),
                 )
             )
-        ranked.sort(key=lambda item: item[:5], reverse=True)
-        return [
-            EpisodeSearchHit(
-                episode_id,
-                score,
-                last_activity_at,
-                matches,
-                (keyword,),
-            )
-            for score, _, last_activity_at, _, episode_id, matches in ranked[
-                :max_results
-            ]
-        ]
+        return hits
 
 
 class EpisodeQueryService:
-    """Parse `A | B | C`, search each phrase, then merge and rank Episodes."""
+    """Collect evidence for query expressions; relevance belongs to the ranker."""
 
     def __init__(self, backend: EpisodeSearchBackend) -> None:
         self.backend = backend
 
-    def search(
+    def match_many(
+        self,
+        expressions: list[str],
+        documents: list[EpisodeSearchDocument],
+    ) -> list[EpisodeQueryMatches]:
+        parsed = [search_alternatives(expression) for expression in expressions]
+        unique_alternatives = tuple(
+            dict.fromkeys(
+                alternative
+                for alternatives in parsed
+                for alternative in alternatives
+            )
+        )
+        hits_by_alternative = {
+            alternative: tuple(self.backend.match_one(alternative, documents))
+            for alternative in unique_alternatives
+        }
+        return [
+            EpisodeQueryMatches(
+                expression=expression,
+                alternatives=tuple(
+                    EpisodeAlternativeMatches(
+                        alternative=alternative,
+                        hits=hits_by_alternative[alternative],
+                    )
+                    for alternative in alternatives
+                ),
+            )
+            for expression, alternatives in zip(expressions, parsed, strict=True)
+        ]
+
+    def match(
         self,
         expression: str,
         documents: list[EpisodeSearchDocument],
-        max_results: int,
-        *,
-        offset: int = 0,
-    ) -> list[EpisodeSearchHit]:
-        alternatives = search_alternatives(expression)
-        if not alternatives or max_results <= 0 or offset < 0:
-            return []
-        per_alternative_limit = max(max_results, len(documents))
-        hits_by_alternative = {
-            alternative: self.backend.search_one(
-                alternative, documents, per_alternative_limit
-            )
-            for alternative in alternatives
-        }
-        weights = alternative_weights(
-            {
-                alternative: len(hits)
-                for alternative, hits in hits_by_alternative.items()
-            },
-            len(documents),
-        )
-        merged: dict[
-            str,
-            dict[str, object],
-        ] = {}
-        for alternative in discriminating_alternatives(alternatives, weights):
-            weight = weights[alternative]
-            for rank, hit in enumerate(hits_by_alternative[alternative]):
-                state = merged.setdefault(
-                    hit.episode_id,
-                    {
-                        "alternatives": set(),
-                        "weight": 0.0,
-                        "reciprocal_rank": 0.0,
-                        "score": 0.0,
-                        "last_activity_at": hit.last_activity_at,
-                        "matches": {},
-                    },
-                )
-                alternatives_seen = state["alternatives"]
-                assert isinstance(alternatives_seen, set)
-                alternatives_seen.add(alternative)
-                state["weight"] = float(state["weight"]) + weight
-                state["reciprocal_rank"] = float(state["reciprocal_rank"]) + (
-                    weight / (rank + 1)
-                )
-                state["score"] = max(float(state["score"]), hit.score)
-                matches = state["matches"]
-                assert isinstance(matches, dict)
-                for message in hit.matches:
-                    matches.setdefault(message.id, message)
-        ranked = sorted(
-            merged.items(),
-            key=lambda item: (
-                round(float(item[1]["weight"]), 6),
-                float(item[1]["reciprocal_rank"]),
-                float(item[1]["score"]),
-                float(item[1]["last_activity_at"]),
-                item[0],
-            ),
-            reverse=True,
-        )
-        results: list[EpisodeSearchHit] = []
-        for episode_id, state in ranked[offset : offset + max_results]:
-            matches = state["matches"]
-            assert isinstance(matches, dict)
-            ordered_matches = tuple(
-                sorted(
-                    matches.values(),
-                    key=lambda message: (message.ordinal, message.id),
-                    reverse=True,
-                )[:4]
-            )
-            results.append(
-                EpisodeSearchHit(
-                    episode_id=episode_id,
-                    score=float(state["score"]),
-                    last_activity_at=float(state["last_activity_at"]),
-                    matches=ordered_matches,
-                    matched_keywords=tuple(
-                        sorted(str(value) for value in state["alternatives"])
-                    ),
-                )
-            )
-        return results
+    ) -> EpisodeQueryMatches:
+        return self.match_many([expression], documents)[0]

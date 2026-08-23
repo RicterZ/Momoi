@@ -39,9 +39,11 @@ from .episode_search import (
     EpisodeQueryService,
     EpisodeSearchBackend,
     EpisodeSearchDocument,
+    EpisodeSearchField,
     EpisodeSearchMessage,
     StringEpisodeSearchBackend,
 )
+from .episode_ranking import EpisodeRecallQuery, rank_episode_matches
 from .memory import (
     MemoryStore,
     estimate_tokens,
@@ -1809,93 +1811,30 @@ class Store(MemoryStore, DeliveryStore):
             results.append(episode)
         return results
 
-    def episode_candidates_by_ids(
-        self, episode_ids: list[str]
+    def list_recent_episode_directory(
+        self, limit: int = 8
     ) -> list[dict[str, object]]:
-        episode_ids = list(dict.fromkeys(episode_ids))
-        if not episode_ids:
+        if limit <= 0:
             return []
-        placeholders = ",".join("?" for _ in episode_ids)
         rows = self._db.execute(
-            f"""SELECT e.*, COALESCE((
+            """SELECT e.*, COALESCE((
                        SELECT MAX(t.updated_at) FROM episode_turns AS et
                        JOIN turns AS t ON t.id=et.turn_id
                        WHERE et.episode_id=e.id
                    ), e.updated_at) AS last_activity_at
-                FROM conversation_episodes AS e
-                WHERE e.id IN ({placeholders})""",
-            tuple(episode_ids),
+               FROM conversation_episodes AS e
+               ORDER BY last_activity_at DESC, e.id DESC
+               LIMIT ?""",
+            (limit,),
         ).fetchall()
-        by_id: dict[str, dict[str, object]] = {}
+        results = []
         for row in rows:
             episode = self._episode_dict(row)
             episode["last_activity_timestamp"] = context_timestamp(
                 row["last_activity_at"]
             )
-            by_id[str(episode["id"])] = episode
-        return [by_id[episode_id] for episode_id in episode_ids if episode_id in by_id]
-
-    def episode_context_scores(
-        self, recent_turn_ids: list[str]
-    ) -> dict[str, dict[str, float]]:
-        recent_turn_ids = list(dict.fromkeys(recent_turn_ids))
-        if not recent_turn_ids:
-            return {}
-        placeholders = ",".join("?" for _ in recent_turn_ids)
-        rows = self._db.execute(
-            f"""SELECT episode_id, turn_id FROM episode_turns
-                WHERE turn_id IN ({placeholders})""",
-            tuple(recent_turn_ids),
-        ).fetchall()
-        turn_rows = self._db.execute(
-            f"""SELECT id, kind, updated_at FROM turns
-                WHERE id IN ({placeholders})""",
-            tuple(recent_turn_ids),
-        ).fetchall()
-        updated_at = {str(row["id"]): float(row["updated_at"]) for row in turn_rows}
-        kind = {str(row["id"]): str(row["kind"]) for row in turn_rows}
-        latest = max(updated_at.values(), default=time.time())
-        turn_weights = {
-            turn_id: (0.62 ** (len(recent_turn_ids) - index - 1))
-            * math.exp(
-                -max(0.0, latest - updated_at.get(turn_id, latest)) / (6 * 3600)
-            )
-            * (1.0 if kind.get(turn_id) == "owner" else 0.4)
-            for index, turn_id in enumerate(recent_turn_ids)
-        }
-        scores: dict[str, dict[str, float]] = {}
-        for row in rows:
-            episode_id = str(row["episode_id"])
-            score = turn_weights[str(row["turn_id"])]
-            scores.setdefault(episode_id, {})["recent_context"] = max(
-                score,
-                scores.get(episode_id, {}).get("recent_context", 0.0),
-            )
-        direct_ids = list(scores)
-        if not direct_ids:
-            return scores
-        direct_placeholders = ",".join("?" for _ in direct_ids)
-        links = self._db.execute(
-            f"""SELECT from_episode_id, to_episode_id, kind FROM episode_links
-                WHERE from_episode_id IN ({direct_placeholders})
-                   OR to_episode_id IN ({direct_placeholders})""",
-            (*direct_ids, *direct_ids),
-        ).fetchall()
-        kind_weight = {"continues": 1.0, "supersedes": 0.9, "references": 0.55}
-        for link in links:
-            source = str(link["from_episode_id"])
-            target = str(link["to_episode_id"])
-            kind = str(link["kind"])
-            for direct, neighbor in ((source, target), (target, source)):
-                recent = scores.get(direct, {}).get("recent_context")
-                if recent is None or neighbor == direct:
-                    continue
-                linked = recent * kind_weight[kind]
-                scores.setdefault(neighbor, {})["linked_context"] = max(
-                    linked,
-                    scores.get(neighbor, {}).get("linked_context", 0.0),
-                )
-        return scores
+            results.append(episode)
+        return results
 
     def list_dashboard_conversations(
         self, limit: int = 64
@@ -1985,46 +1924,13 @@ class Store(MemoryStore, DeliveryStore):
             )
             self._reindex_episode_terms(episode_id)
 
-    def search_episodes(
+    def _episode_search_documents(
         self,
-        query: str,
-        max_results: int,
         *,
         after: float | None = None,
         before: float | None = None,
-        offset: int = 0,
-    ) -> list[dict[str, object]]:
-        if max_results <= 0 or offset < 0:
-            return []
+    ) -> tuple[dict[str, sqlite3.Row], list[EpisodeSearchDocument]]:
         time_filter = after is not None or before is not None
-        if not query.strip():
-            rows = self._db.execute(
-                """SELECT e.*, COALESCE((
-                       SELECT MAX(t.updated_at) FROM episode_turns AS et
-                       JOIN turns AS t ON t.id=et.turn_id
-                       WHERE et.episode_id=e.id
-                   ), e.updated_at) AS last_activity_at
-                   FROM conversation_episodes AS e
-                   WHERE (? IS NULL AND ? IS NULL) OR EXISTS (
-                       SELECT 1 FROM episode_turns AS et
-                       JOIN messages AS m ON m.turn_id=et.turn_id
-                       WHERE et.episode_id=e.id
-                         AND (? IS NULL OR m.created_at>=?)
-                         AND (? IS NULL OR m.created_at<?)
-                   )""",
-                (after, before, after, after, before, before),
-            ).fetchall()
-            ranked = [(0.0, float(row["last_activity_at"]), row) for row in rows]
-            ranked.sort(key=lambda item: item[1], reverse=True)
-            results = []
-            for _, _, row in ranked[offset : offset + max_results]:
-                episode = self._episode_dict(row)
-                episode["last_activity_timestamp"] = context_timestamp(
-                    row["last_activity_at"]
-                )
-                episode["matches"] = []
-                results.append(episode)
-            return results
         rows = self._db.execute(
             """SELECT e.*, COALESCE((
                        SELECT MAX(t.updated_at) FROM episode_turns AS et
@@ -2062,7 +1968,6 @@ class Store(MemoryStore, DeliveryStore):
                     AND active.revision=cp.revision"""
             ).fetchall()
         }
-        scoped_text_by_episode: dict[str, list[str]] = {}
         messages_by_episode: dict[str, list[EpisodeSearchMessage]] = {}
         for message in message_rows:
             episode_id = str(message["episode_id"])
@@ -2090,10 +1995,6 @@ class Store(MemoryStore, DeliveryStore):
                 )
                 if value
             )
-            if scoped_text:
-                values = scoped_text_by_episode.setdefault(episode_id, [])
-                if scoped_text not in values:
-                    values.append(scoped_text)
             content = str(message["content"])
             searchable_text = content
             if scoped_text:
@@ -2106,12 +2007,14 @@ class Store(MemoryStore, DeliveryStore):
                     id=int(message["id"]),
                     turn_id=turn_id,
                     ordinal=int(message["ordinal"]),
+                    relation=str(message["relation"]),
                     role=str(message["role"]),
                     content=content,
                     created_at=float(message["created_at"]),
                     delivery_state=str(message["delivery_state"]),
                     timestamp=context_timestamp(message["created_at"]),
                     searchable_text=searchable_text,
+                    scoped=bool(scoped_text),
                 )
             )
         documents: list[EpisodeSearchDocument] = []
@@ -2122,27 +2025,68 @@ class Store(MemoryStore, DeliveryStore):
             documents.append(
                 EpisodeSearchDocument(
                     episode_id=episode_id,
-                    metadata=(
-                    str(row["title"] or ""),
-                    str(row["working_summary"] or ""),
-                    (
-                        str(row["summary"] or "")
-                        if "summary" in row.keys()
-                        else ""
-                    ),
-                    str(row["narrative_summary"] or ""),
-                    str(row["topics_json"] or ""),
-                    str(row["entities_json"] or ""),
-                    str(row["open_loops_json"] or ""),
-                    *scoped_text_by_episode.get(episode_id, []),
+                    fields=(
+                        EpisodeSearchField("title", str(row["title"] or "")),
+                        EpisodeSearchField(
+                            "working_summary", str(row["working_summary"] or "")
+                        ),
+                        EpisodeSearchField(
+                            "summary",
+                            (
+                                str(row["summary"] or "")
+                                if "summary" in row.keys()
+                                else ""
+                            ),
+                        ),
+                        EpisodeSearchField(
+                            "narrative_summary",
+                            str(row["narrative_summary"] or ""),
+                        ),
+                        *(
+                            EpisodeSearchField("topic", str(value))
+                            for value in json.loads(str(row["topics_json"] or "[]"))
+                        ),
+                        *(
+                            EpisodeSearchField("entity", str(value))
+                            for value in json.loads(str(row["entities_json"] or "[]"))
+                        ),
+                        *(
+                            EpisodeSearchField("open_loop", str(value))
+                            for value in json.loads(str(row["open_loops_json"] or "[]"))
+                        ),
                     ),
                     last_activity_at=float(row["last_activity_at"]),
                     salience=float(row["salience"]),
                     messages=messages,
                 ),
             )
-        hits = self._episode_query.search(
-            query, documents, max_results, offset=offset
+        return rows_by_id, documents
+
+    def _ranked_episode_results(
+        self,
+        queries: list[EpisodeRecallQuery],
+        max_results: int,
+        *,
+        after: float | None = None,
+        before: float | None = None,
+        offset: int = 0,
+    ) -> list[dict[str, object]]:
+        if max_results <= 0 or offset < 0 or not queries:
+            return []
+        rows_by_id, documents = self._episode_search_documents(
+            after=after,
+            before=before,
+        )
+        matches = self._episode_query.match_many(
+            [query.expression for query in queries],
+            documents,
+        )
+        hits = rank_episode_matches(
+            queries,
+            matches,
+            documents,
+            limit=max_results,
+            offset=offset,
         )
         results: list[dict[str, object]] = []
         for hit in hits:
@@ -2160,6 +2104,7 @@ class Store(MemoryStore, DeliveryStore):
                         "id",
                         "turn_id",
                         "ordinal",
+                        "relation",
                         "role",
                         "created_at",
                         "delivery_state",
@@ -2172,6 +2117,88 @@ class Store(MemoryStore, DeliveryStore):
             episode["matched_keywords"] = list(hit.matched_keywords)
             episode["keyword_match_count"] = len(hit.matched_keywords)
             episode["search_score"] = hit.score
+            episode["semantic_score"] = hit.semantic_score
+            episode["context_score"] = hit.context_score
+            episode["context_coverage"] = hit.context_coverage
+            episode["relevance_confidence"] = hit.relevance_confidence
+            episode["matched_queries"] = [
+                {
+                    "expression": query.expression,
+                    "unit_ids": list(query.unit_ids),
+                    "priority": query.priority,
+                    "score": query.score,
+                    "matched_alternatives": list(query.matched_alternatives),
+                    "alternative_count": query.alternative_count,
+                    "field_matches": list(query.field_matches),
+                    "message_ids": list(query.message_ids),
+                    "turn_ids": list(query.turn_ids),
+                }
+                for query in hit.matched_queries
+            ]
+            results.append(episode)
+        return results
+
+    def search_episode_queries(
+        self,
+        queries: list[EpisodeRecallQuery],
+        max_results: int,
+        *,
+        after: float | None = None,
+        before: float | None = None,
+        offset: int = 0,
+    ) -> list[dict[str, object]]:
+        return self._ranked_episode_results(
+            queries,
+            max_results,
+            after=after,
+            before=before,
+            offset=offset,
+        )
+
+    def search_episodes(
+        self,
+        query: str,
+        max_results: int,
+        *,
+        after: float | None = None,
+        before: float | None = None,
+        offset: int = 0,
+    ) -> list[dict[str, object]]:
+        if max_results <= 0 or offset < 0:
+            return []
+        if query.strip():
+            return self._ranked_episode_results(
+                [EpisodeRecallQuery(query.strip(), context=query.strip())],
+                max_results,
+                after=after,
+                before=before,
+                offset=offset,
+            )
+        rows = self._db.execute(
+            """SELECT e.*, COALESCE((
+                       SELECT MAX(t.updated_at) FROM episode_turns AS et
+                       JOIN turns AS t ON t.id=et.turn_id
+                       WHERE et.episode_id=e.id
+                   ), e.updated_at) AS last_activity_at
+               FROM conversation_episodes AS e
+               WHERE (? IS NULL AND ? IS NULL) OR EXISTS (
+                   SELECT 1 FROM episode_turns AS et
+                   JOIN messages AS m ON m.turn_id=et.turn_id
+                   WHERE et.episode_id=e.id
+                     AND (? IS NULL OR m.created_at>=?)
+                     AND (? IS NULL OR m.created_at<?)
+               )""",
+            (after, before, after, after, before, before),
+        ).fetchall()
+        ranked = [(float(row["last_activity_at"]), row) for row in rows]
+        ranked.sort(key=lambda item: item[0], reverse=True)
+        results = []
+        for _, row in ranked[offset : offset + max_results]:
+            episode = self._episode_dict(row)
+            episode["last_activity_timestamp"] = context_timestamp(
+                row["last_activity_at"]
+            )
+            episode["matches"] = []
             results.append(episode)
         return results
 

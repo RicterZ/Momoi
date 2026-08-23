@@ -18,12 +18,6 @@ from .context_assembler import (
     render_planner_recent_turn_focus,
     render_planner_recent_turns,
 )
-from .context_candidates import (
-    DEFAULT_EPISODE_CANDIDATE_POLICY,
-    EpisodeCandidatePolicy,
-    collect_episode_candidates,
-    render_candidate_context,
-)
 from .context_planner import (
     CONTEXT_PLAN_TOOL_NAME,
     CONTEXT_PLAN_TOOL_SPEC,
@@ -110,6 +104,33 @@ def _planner_owner_lines(items: list[dict[str, object]]) -> str:
             f"{item.get('text') or ''}"
         )
     return "\n\n".join(blocks)
+
+
+def _planner_episode_lines(items: list[dict[str, object]]) -> str:
+    blocks: list[str] = []
+    for episode in items:
+        fields = [
+            f"id={episode['id']}",
+            f"status={episode['status']}",
+            f"title={str(episode['title'])[:120]}",
+        ]
+        summary = str(
+            episode.get("narrative_summary")
+            or episode.get("working_summary")
+            or ""
+        ).strip()
+        if summary:
+            fields.append(f"summary={summary[:240]}")
+        topics = episode.get("topics") or []
+        if topics:
+            fields.append("topics=" + ",".join(str(item) for item in topics[:8]))
+        loops = episode.get("open_loops") or []
+        if loops:
+            fields.append(
+                "open_loops=" + ",".join(str(item) for item in loops[:4])
+            )
+        blocks.append("- " + " ".join(fields))
+    return "\n".join(blocks)
 
 
 def _planner_interrupted_reply_lines(value: str) -> str:
@@ -448,7 +469,7 @@ def render_context_planner_request(
         ),
         (
             "candidate_episodes",
-            _planner_value(render_candidate_context(candidate_episodes)),
+            _planner_value(_planner_episode_lines(candidate_episodes)),
         ),
         (
             "owner_messages",
@@ -469,7 +490,6 @@ class ContextService:
         self,
         events: list[IncomingMessage],
         turn_id: str,
-        candidate_policy: EpisodeCandidatePolicy = DEFAULT_EPISODE_CANDIDATE_POLICY,
     ) -> dict[str, object]:
         event_ids = [event.event_id for event in events]
         active = self.store.context_plan(turn_id)
@@ -477,7 +497,6 @@ class ContextService:
             return self._stored_context_plan(active)
 
         revision = self.store.next_context_plan_revision(turn_id)
-        owner_query = "\n".join(event.text for event in events)
         mcp_server_catalog = self._mcp_server_catalog()
         available_mcp_servers = {
             str(group["id"]) for group in mcp_server_catalog
@@ -496,12 +515,7 @@ class ContextService:
                 min(event.received_at for event in events),
             )
         )
-        candidates = collect_episode_candidates(
-            self.store,
-            owner_query,
-            candidate_policy,
-            recent_turn_ids=active_recent_turn_ids,
-        )
+        candidates = self.store.list_recent_episode_directory(8)
         log_event(
             logger,
             TRACE,
@@ -514,9 +528,7 @@ class ContextService:
                     "id": candidate["id"],
                     "title": candidate["title"],
                     "status": candidate["status"],
-                    "score": candidate.get("match_score"),
-                    "features": candidate.get("match_features"),
-                    "signals": candidate.get("match_signals"),
+                    "last_activity": candidate.get("last_activity_timestamp"),
                 }
                 for candidate in candidates
             ],
