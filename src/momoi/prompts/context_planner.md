@@ -169,6 +169,10 @@ content was absent.
 - Candidate scores and signals are hints. Choose `continue` only when the unit
   clearly belongs to the same concrete experience, event, discussion,
   emotional process, or project stage as a supplied candidate.
+- Webhook Events in Recent Turns are immutable archive evidence, not writable
+  Episode targets. Use `none` for a mere acknowledgment. When the owner develops
+  an Event into a meaningful discussion or experience, create a new Episode
+  named for that topic.
 - Choose `new` only when the bound units already form a meaningful experience
   worth remembering and no supplied candidate is that experience. Choose
   `none` for a self-contained greeting, acknowledgment, reaction, filler, or

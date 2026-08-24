@@ -516,7 +516,9 @@ class ContextService:
                 min(event.received_at for event in events),
             )
         )
-        candidates = self.store.list_recent_episode_directory(8)
+        candidates = self.store.list_recent_episode_directory(
+            8, exclude_webhook_archives=True
+        )
         log_event(
             logger,
             TRACE,

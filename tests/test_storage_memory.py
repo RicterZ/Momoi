@@ -752,6 +752,150 @@ class StorageMemoryTest(unittest.TestCase):
             )
             store.close()
 
+    def test_webhook_archive_is_visible_but_not_owner_writable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            now = time.time()
+            with store._db:
+                archive_id = store._ensure_autonomous_episode(
+                    "webhook:event-message:day:2026-08-24",
+                    "webhook:run:0",
+                    "Webhook event-message 2026-08-24",
+                    now,
+                    "门锁通知",
+                )
+                store._db.execute(
+                    "UPDATE turns SET state='completed' WHERE id='webhook:run:0'"
+                )
+            store.create_episode("普通话题", episode_id="ordinary")
+
+            self.assertIn(
+                archive_id,
+                {item["id"] for item in store.list_recent_episode_directory(8)},
+            )
+            self.assertNotIn(
+                archive_id,
+                {
+                    item["id"]
+                    for item in store.list_recent_episode_directory(
+                        8, exclude_webhook_archives=True
+                    )
+                },
+            )
+            self.assertNotIn(
+                archive_id,
+                {
+                    item["id"]
+                    for item in store.list_episode_directory(
+                        8, exclude_webhook_archives=True
+                    )
+                },
+            )
+            self.assertNotIn(
+                archive_id,
+                {item["id"] for item in store.open_conversation_inventory()},
+            )
+
+            store.apply_conversation_actions(
+                [{"action": "close", "episode_id": archive_id}], now=now + 1
+            )
+            self.assertEqual(store.episode(archive_id)["status"], "open")
+
+            stale_event = IncomingMessage(
+                "stale", "stale", "旧计划误选归档", now + 2, now + 2
+            )
+            store.add_event(stale_event)
+            store.begin_turn("stale-owner", "owner", [stale_event.event_id])
+            store.save_context_plan(
+                "stale-owner",
+                1,
+                [stale_event.event_id],
+                {
+                    "version": 3,
+                    "intent_units": [],
+                    "episode_actions": [
+                        {
+                            "action": "continue",
+                            "episode_id": archive_id,
+                            "is_new": False,
+                            "title": "Webhook event-message 2026-08-24",
+                            "relation": "primary",
+                            "unit_ids": ["u1"],
+                            "topics": ["错误话题"],
+                            "entities": [],
+                            "open_loops": [],
+                            "salience": 0.5,
+                        }
+                    ],
+                    "episode_links": [],
+                    "uncertainty": [],
+                },
+            )
+            with self.assertLogs("momoi.storage.store", level="WARNING"):
+                store.commit_turn(
+                    [stale_event],
+                    stale_event.text,
+                    AgentReply([]),
+                    turn_id="stale-owner",
+                )
+            self.assertEqual(
+                store._db.execute(
+                    "SELECT COUNT(*) FROM episode_turns WHERE turn_id='stale-owner'"
+                ).fetchone()[0],
+                0,
+            )
+            self.assertNotIn("错误话题", store.episode(archive_id)["topics"])
+
+            store.commit_turn(
+                [], "这条发展成新话题", AgentReply([]), turn_id="owner-pending"
+            )
+            with self.assertRaisesRegex(
+                ValueError, "webhook archive does not accept non-webhook turns"
+            ):
+                store.link_turn_to_episode(archive_id, "owner-pending")
+
+            store.commit_turn(
+                [], "旧版本误绑的后续", AgentReply([]), turn_id="legacy-owner"
+            )
+            with store._db:
+                store._db.execute(
+                    """INSERT INTO episode_turns
+                       (episode_id, turn_id, ordinal, relation, unit_ids_json)
+                       VALUES (?, 'legacy-owner', 2, 'primary', '[]')""",
+                    (archive_id,),
+                )
+                store._release_reply_episode_hold("legacy-owner", now + 3)
+                self.assertEqual(store.episode(archive_id)["status"], "open")
+                store._db.execute(
+                    "UPDATE conversation_episodes SET status='closing' WHERE id=?",
+                    (archive_id,),
+                )
+                store._apply_context_plan_episodes("unrelated", now + 4, "")
+                self.assertEqual(store.episode(archive_id)["status"], "closing")
+
+            candidate = store.claim_episode_consolidation_candidate()
+            self.assertNotIn(
+                archive_id,
+                {item["id"] for item in candidate["candidate_episodes"]},
+            )
+            self.assertEqual(candidate["context_turns"], [])
+            decision = {
+                "action": "continue",
+                "episode_id": archive_id,
+                "turn_ids": ["owner-pending"],
+                "topics": [],
+                "entities": [],
+                "open_loops": [],
+                "salience": 0.5,
+            }
+            with self.assertRaisesRegex(
+                ValueError, "webhook archive does not accept owner turns"
+            ):
+                store.apply_episode_consolidation(
+                    ["owner-pending"], [decision], [archive_id]
+                )
+            store.close()
+
     def test_latest_consolidation_turn_is_deferred_then_reconsidered(
         self,
     ) -> None:

@@ -38,7 +38,7 @@ from momoi.runtime.turn_support import (
     STYLE_CARD_SYSTEM_PROMPT,
 )
 from momoi.runtime.turn_support import conversation_guidance
-from tests.support import planner_sections
+from tests.support import context_plan_response, planner_sections
 
 
 def app_config(directory: str) -> AppConfig:
@@ -1134,6 +1134,8 @@ class ContextPlannerTest(unittest.TestCase):
             "merely plausible extra reply does not reopen it",
             "do not compose, compare, or revise candidate utterances",
             "remains eligible for background Episode consolidation",
+            "immutable archive evidence, not writable Episode targets",
+            "develops an Event into a meaningful discussion or experience",
         ):
             self.assertIn(phrase, compact_prompt)
         self.assertNotIn(
@@ -1225,6 +1227,71 @@ class ContextPlannerTest(unittest.TestCase):
 
 
 class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
+    async def test_webhook_archive_is_recent_evidence_not_episode_candidate(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(app_config(directory))
+            now = time.time()
+            with daemon.store._db:
+                daemon.store._ensure_autonomous_episode(
+                    "webhook:event-message:day:2026-08-24",
+                    "webhook:run:0",
+                    "Webhook event-message 2026-08-24",
+                    now,
+                    "门锁检测到有人停留",
+                )
+                daemon.store._db.execute(
+                    """INSERT INTO messages
+                       (turn_id, role, content, created_at,
+                        source_event_ids_json, delivery_state)
+                       VALUES ('webhook:run:0', 'event', ?, ?, '[]', 'delivered')""",
+                    ("门锁检测到有人停留", now),
+                )
+                daemon.store._db.execute(
+                    """UPDATE turns SET state='completed', stage='completed',
+                       updated_at=? WHERE id='webhook:run:0'""",
+                    (now,),
+                )
+
+            class Provider:
+                async def complete(
+                    provider_self,
+                    system: object,
+                    messages: list[dict[str, object]],
+                    tools: list[dict[str, object]],
+                    **_: object,
+                ) -> ProviderResponse:
+                    self.assertEqual(system, CONTEXT_PLANNER_SYSTEM_PROMPT)
+                    sections = planner_sections(str(messages[0]["content"]))
+                    self.assertIn(
+                        "门锁检测到有人停留",
+                        sections["recent_turn_base"]
+                        + sections["recent_turn_append"],
+                    )
+                    self.assertNotIn(
+                        "Webhook event-message 2026-08-24",
+                        sections["candidate_episodes"],
+                    )
+                    return context_plan_response(messages)  # type: ignore[arg-type]
+
+            daemon.provider = Provider()  # type: ignore[assignment]
+            event = IncomingMessage(
+                "event-1",
+                "1",
+                "最近门口总有人，我有点担心",
+                now + 1,
+                now + 1,
+            )
+            daemon.store.add_event(event)
+            turn_id = daemon._turn_id(event.event_id)
+            daemon.store.begin_turn(turn_id, "owner", [event.event_id])
+
+            plan = await daemon._plan_owner_context([event], turn_id)
+
+            self.assertEqual(plan["episode_actions"][0]["action"], "new")
+            daemon.store.close()
+
     async def test_missing_new_episode_ref_retry_names_exact_format(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(app_config(directory))

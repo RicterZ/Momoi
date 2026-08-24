@@ -468,6 +468,11 @@ class Store(MemoryStore, DeliveryStore):
                WHERE status='open' AND open_loops_json='[]'
                  AND id IN (
                      SELECT episode_id FROM episode_turns WHERE turn_id=?
+                 )
+                 AND NOT EXISTS (
+                     SELECT 1 FROM episode_turns AS archive_turn
+                     WHERE archive_turn.episode_id=conversation_episodes.id
+                       AND archive_turn.turn_id GLOB 'webhook:*'
                  )""",
             (now, turn_id),
         )
@@ -1392,6 +1397,18 @@ class Store(MemoryStore, DeliveryStore):
         self._index_turn_episode_terms(turn_id)
         return episode_id
 
+    def _is_webhook_archive_episode(self, episode_id: str) -> bool:
+        """Return whether an Episode is the endpoint-owned Webhook day archive."""
+        return (
+            self._db.execute(
+                """SELECT 1 FROM episode_turns
+                   WHERE episode_id=? AND turn_id GLOB 'webhook:*'
+                   LIMIT 1""",
+                (episode_id,),
+            ).fetchone()
+            is not None
+        )
+
 
     def create_episode(
         self,
@@ -1749,7 +1766,11 @@ class Store(MemoryStore, DeliveryStore):
         return results
 
     def list_episode_directory(
-        self, limit: int = 64, *, after: float | None = None
+        self,
+        limit: int = 64,
+        *,
+        after: float | None = None,
+        exclude_webhook_archives: bool = False,
     ) -> list[dict[str, object]]:
         if limit <= 0:
             return []
@@ -1760,18 +1781,23 @@ class Store(MemoryStore, DeliveryStore):
                        WHERE et.episode_id=e.id
                    ), e.updated_at) AS last_activity_at
                FROM conversation_episodes AS e
-               WHERE ? IS NULL OR COALESCE((
+               WHERE (? IS NULL OR COALESCE((
                    SELECT MAX(t.updated_at) FROM episode_turns AS et
                    JOIN turns AS t ON t.id=et.turn_id
                    WHERE et.episode_id=e.id
-               ), e.updated_at)>=?
+               ), e.updated_at)>=?)
+               AND (?=0 OR NOT EXISTS (
+                   SELECT 1 FROM episode_turns AS archive_turn
+                   WHERE archive_turn.episode_id=e.id
+                     AND archive_turn.turn_id GLOB 'webhook:*'
+               ))
                ORDER BY status='open' DESC, status='closing' DESC,
                         COALESCE((
                             SELECT MAX(t.updated_at) FROM episode_turns AS et
                             JOIN turns AS t ON t.id=et.turn_id
                             WHERE et.episode_id=e.id
                         ), e.updated_at) DESC, salience DESC LIMIT ?""",
-            (after, after, limit),
+            (after, after, int(exclude_webhook_archives), limit),
         ).fetchall()
         results = []
         for row in rows:
@@ -1813,7 +1839,7 @@ class Store(MemoryStore, DeliveryStore):
         return results
 
     def list_recent_episode_directory(
-        self, limit: int = 8
+        self, limit: int = 8, *, exclude_webhook_archives: bool = False
     ) -> list[dict[str, object]]:
         if limit <= 0:
             return []
@@ -1824,9 +1850,14 @@ class Store(MemoryStore, DeliveryStore):
                        WHERE et.episode_id=e.id
                    ), e.updated_at) AS last_activity_at
                FROM conversation_episodes AS e
+               WHERE ?=0 OR NOT EXISTS (
+                   SELECT 1 FROM episode_turns AS archive_turn
+                   WHERE archive_turn.episode_id=e.id
+                     AND archive_turn.turn_id GLOB 'webhook:*'
+               )
                ORDER BY last_activity_at DESC, e.id DESC
                LIMIT ?""",
-            (limit,),
+            (int(exclude_webhook_archives), limit),
         ).fetchall()
         results = []
         for row in rows:
@@ -1862,6 +1893,11 @@ class Store(MemoryStore, DeliveryStore):
                       ), e.updated_at) AS last_activity_at
                FROM conversation_episodes AS e
                WHERE e.status IN ('open', 'closing')
+                 AND NOT EXISTS (
+                     SELECT 1 FROM episode_turns AS archive_turn
+                     WHERE archive_turn.episode_id=e.id
+                       AND archive_turn.turn_id GLOB 'webhook:*'
+                 )
                ORDER BY e.status='open' DESC, last_activity_at DESC, e.updated_at DESC
                LIMIT ?""",
             (limit,),
@@ -1914,7 +1950,7 @@ class Store(MemoryStore, DeliveryStore):
                    WHERE id=? AND status IN ('open', 'closing')""",
                 (episode_id,),
             ).fetchone()
-            if row is None:
+            if row is None or self._is_webhook_archive_episode(episode_id):
                 continue
             self._db.execute(
                 """UPDATE conversation_episodes
@@ -2322,6 +2358,11 @@ class Store(MemoryStore, DeliveryStore):
     ) -> dict[str, object]:
         if relation not in {"primary", "related"}:
             raise ValueError("episode turn relation must be primary or related")
+        if (
+            not turn_id.startswith("webhook:")
+            and self._is_webhook_archive_episode(episode_id)
+        ):
+            raise ValueError("webhook archive does not accept non-webhook turns")
         now = time.time()
         with self._db:
             inserted = False
@@ -2596,6 +2637,11 @@ class Store(MemoryStore, DeliveryStore):
                JOIN episode_turns AS et ON et.turn_id=t.id
                WHERE t.kind='owner' AND t.state='completed'
                  AND t.updated_at>?
+                 AND NOT EXISTS (
+                     SELECT 1 FROM episode_turns AS archive_turn
+                     WHERE archive_turn.episode_id=et.episode_id
+                       AND archive_turn.turn_id GLOB 'webhook:*'
+                 )
                ORDER BY t.updated_at
                LIMIT 12""",
             (oldest_updated,),
@@ -2641,7 +2687,9 @@ class Store(MemoryStore, DeliveryStore):
                 "open_loops": episode["open_loops"],
             }
             for episode in self.list_episode_directory(
-                12, after=time.time() - EPISODE_CONSOLIDATION_LOOKBACK_SECONDS
+                12,
+                after=time.time() - EPISODE_CONSOLIDATION_LOOKBACK_SECONDS,
+                exclude_webhook_archives=True,
             )
         ]
         for episode in extra_episodes:
@@ -2766,6 +2814,10 @@ class Store(MemoryStore, DeliveryStore):
                         or self.episode(episode_id) is None
                     ):
                         raise ValueError("unknown consolidation episode")
+                    if self._is_webhook_archive_episode(episode_id):
+                        raise ValueError(
+                            "webhook archive does not accept owner turns"
+                        )
                 else:
                     key = str(decision["key"])
                     if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,39}", key):
@@ -3448,12 +3500,25 @@ class Store(MemoryStore, DeliveryStore):
         links = plan.get("episode_links", [])
         selected: set[str] = set()
         resolved: dict[str, str] = {}
+        rejected: set[str] = set()
         self._db.execute("DELETE FROM episode_turns WHERE turn_id=?", (turn_id,))
         for action in actions:
             episode_id = str(action["episode_id"])
             existing = self._db.execute(
                 "SELECT * FROM conversation_episodes WHERE id=?", (episode_id,)
             ).fetchone()
+            if existing is not None and self._is_webhook_archive_episode(episode_id):
+                rejected.add(episode_id)
+                log_event(
+                    logger,
+                    logging.WARNING,
+                    "owner_episode_binding_rejected",
+                    stage="storage",
+                    turn_id=turn_id,
+                    episode_id=episode_id,
+                    reason="webhook_archive",
+                )
+                continue
             if existing is not None:
                 episode_id = self._roll_episode(
                     episode_id, turn_id, now, raw_text
@@ -3530,6 +3595,11 @@ class Store(MemoryStore, DeliveryStore):
                 f"""UPDATE conversation_episodes SET status='closed',
                     closed_at=?, updated_at=?
                     WHERE status='closing' AND id NOT IN ({placeholders})
+                      AND NOT EXISTS (
+                          SELECT 1 FROM episode_turns AS archive_turn
+                          WHERE archive_turn.episode_id=conversation_episodes.id
+                            AND archive_turn.turn_id GLOB 'webhook:*'
+                      )
                       AND id IN (
                           SELECT et.episode_id FROM episode_turns AS et
                           JOIN turns AS t ON t.id=et.turn_id WHERE t.kind='owner'
@@ -3540,7 +3610,13 @@ class Store(MemoryStore, DeliveryStore):
             self._db.execute(
                 """UPDATE conversation_episodes SET status='closed',
                    closed_at=?, updated_at=?
-                   WHERE status='closing' AND id IN (
+                   WHERE status='closing'
+                     AND NOT EXISTS (
+                         SELECT 1 FROM episode_turns AS archive_turn
+                         WHERE archive_turn.episode_id=conversation_episodes.id
+                           AND archive_turn.turn_id GLOB 'webhook:*'
+                     )
+                     AND id IN (
                        SELECT et.episode_id FROM episode_turns AS et
                        JOIN turns AS t ON t.id=et.turn_id WHERE t.kind='owner'
                    )""",
@@ -3548,6 +3624,11 @@ class Store(MemoryStore, DeliveryStore):
             )
         for link in links if isinstance(links, list) else []:
             if not isinstance(link, dict):
+                continue
+            if (
+                str(link["from_episode_id"]) in rejected
+                or str(link["to_episode_id"]) in rejected
+            ):
                 continue
             source = resolved.get(
                 str(link["from_episode_id"]), str(link["from_episode_id"])
@@ -4075,6 +4156,8 @@ class Store(MemoryStore, DeliveryStore):
                         ).fetchall()
                     ]
                     for episode_id in episode_ids:
+                        if self._is_webhook_archive_episode(episode_id):
+                            continue
                         self._db.execute(
                             """UPDATE conversation_episodes
                                SET status=CASE
