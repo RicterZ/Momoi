@@ -42,14 +42,44 @@ AGENDA_TOOL_POLICY = """### Agenda tools
 def _schedule_schema(description: str | None = None) -> dict[str, Any]:
     schema: dict[str, Any] = {
         "type": "object",
-        "properties": {
-            "kind": {"type": "string", "enum": ["interval", "daily"]},
-            "timezone": {"type": "string"},
-            "every_seconds": {"type": "integer", "minimum": 60},
-            "at": {"type": "string"},
-        },
-        "required": ["kind", "timezone"],
-        "additionalProperties": False,
+        "oneOf": [
+            {
+                "type": "object",
+                "properties": {
+                    "kind": {"type": "string", "enum": ["interval"]},
+                    "timezone": {
+                        "type": "string",
+                        "description": "IANA timezone, for example Asia/Shanghai.",
+                    },
+                    "every_seconds": {"type": "integer", "minimum": 60},
+                },
+                "required": ["kind", "timezone", "every_seconds"],
+                "additionalProperties": False,
+            },
+            {
+                "type": "object",
+                "properties": {
+                    "kind": {"type": "string", "enum": ["daily"]},
+                    "timezone": {
+                        "type": "string",
+                        "description": "IANA timezone, for example Asia/Shanghai.",
+                    },
+                    "times": {
+                        "type": "array",
+                        "description": "One or more distinct local times in HH:MM format.",
+                        "items": {
+                            "type": "string",
+                            "pattern": r"^(?:[01]\d|2[0-3]):[0-5]\d$",
+                        },
+                        "minItems": 1,
+                        "maxItems": 24,
+                        "uniqueItems": True,
+                    },
+                },
+                "required": ["kind", "timezone", "times"],
+                "additionalProperties": False,
+            },
+        ],
     }
     if description:
         schema["description"] = description

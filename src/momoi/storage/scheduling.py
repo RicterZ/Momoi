@@ -21,10 +21,22 @@ def normalize_schedule(value: object) -> dict[str, object]:
             raise ValueError("interval schedule requires every_seconds >= 60")
         return {"kind": kind, "timezone": timezone, "every_seconds": every_seconds}
     if kind == "daily":
-        at = str(value.get("at") or "")
-        if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", at):
-            raise ValueError("daily schedule requires at in HH:MM format")
-        return {"kind": kind, "timezone": timezone, "at": at}
+        raw_times = value.get("times")
+        if raw_times is None and "at" in value:
+            # Persisted schedules created before daily.times remain readable.
+            raw_times = [value.get("at")]
+        if not isinstance(raw_times, list) or not 1 <= len(raw_times) <= 24:
+            raise ValueError("daily schedule requires 1 to 24 times")
+        times: list[str] = []
+        for item in raw_times:
+            if not isinstance(item, str) or not re.fullmatch(
+                r"(?:[01]\d|2[0-3]):[0-5]\d", item
+            ):
+                raise ValueError("daily schedule times must use HH:MM format")
+            times.append(item)
+        if len(set(times)) != len(times):
+            raise ValueError("daily schedule times must be unique")
+        return {"kind": kind, "timezone": timezone, "times": sorted(times)}
     raise ValueError("schedule.kind must be interval or daily")
 
 
@@ -34,11 +46,17 @@ def next_schedule_at(schedule: dict[str, object], after: float | None = None) ->
     if normalized["kind"] == "interval":
         return after + int(normalized["every_seconds"])
     zone = ZoneInfo(str(normalized["timezone"]))
-    hour, minute = (int(part) for part in str(normalized["at"]).split(":"))
     local = datetime.fromtimestamp(after, zone)
-    candidate = local.replace(hour=hour, minute=minute, second=0, microsecond=0)
-    if candidate.timestamp() <= after:
-        candidate += timedelta(days=1)
+    for at in normalized["times"]:
+        hour, minute = (int(part) for part in str(at).split(":"))
+        candidate = local.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if candidate.timestamp() > after:
+            return candidate.timestamp()
+    first = str(normalized["times"][0])
+    hour, minute = (int(part) for part in first.split(":"))
+    candidate = (local + timedelta(days=1)).replace(
+        hour=hour, minute=minute, second=0, microsecond=0
+    )
     return candidate.timestamp()
 
 

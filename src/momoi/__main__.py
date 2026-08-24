@@ -71,7 +71,12 @@ def parse_args() -> argparse.Namespace:
     timing = goal_add.add_mutually_exclusive_group()
     timing.add_argument("--at", help="next review as an ISO 8601 timestamp")
     timing.add_argument("--every-seconds", type=int)
-    timing.add_argument("--daily", metavar="HH:MM")
+    timing.add_argument(
+        "--daily",
+        metavar="HH:MM",
+        action="append",
+        help="daily local time; repeat for multiple times",
+    )
     goal_list = goal_commands.add_parser("list", help="list goals")
     goal_list.add_argument("--all", action="store_true", dest="include_closed")
     goal_del = goal_commands.add_parser("del", help="cancel a goal")
@@ -160,7 +165,7 @@ def goal(args: argparse.Namespace) -> None:
                 arguments["schedule"] = {
                     "kind": "daily",
                     "timezone": config.notifications.timezone,
-                    "at": args.daily,
+                    "times": args.daily,
                 }
             else:
                 arguments["next_review_at"] = args.at or (

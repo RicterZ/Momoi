@@ -1345,10 +1345,14 @@ class StorageMemoryTest(unittest.TestCase):
             if item["name"] in {"goal_create", "goal_update", "reminder_create"}
         ]
         self.assertEqual(
-            [schedule["properties"] for schedule in schedules],
-            [schedules[0]["properties"]] * 3,
+            [schedule["oneOf"] for schedule in schedules],
+            [schedules[0]["oneOf"]] * 3,
         )
         self.assertEqual(len({id(schedule) for schedule in schedules}), 3)
+        daily = schedules[0]["oneOf"][1]
+        self.assertIn("times", daily["properties"])
+        self.assertNotIn("at", daily["properties"])
+        self.assertEqual(daily["required"], ["kind", "timezone", "times"])
         self.assertIn("calls together in one response", AGENDA_TOOL_POLICY)
         self.assertIn("governed", AGENDA_TOOL_POLICY)
         self.assertIn("by the shared Style Card", AGENDA_TOOL_POLICY)
@@ -3169,6 +3173,31 @@ class StorageMemoryTest(unittest.TestCase):
             )
             self.assertEqual(
                 datetime.fromtimestamp(next_daily, ZoneInfo("Asia/Shanghai")),
+                datetime(2026, 7, 21, 8, tzinfo=ZoneInfo("Asia/Shanghai")),
+            )
+
+            next_same_day = next_schedule_at(
+                {
+                    "kind": "daily",
+                    "times": ["20:00", "08:00", "12:00"],
+                    "timezone": "Asia/Shanghai",
+                },
+                after.timestamp(),
+            )
+            self.assertEqual(
+                datetime.fromtimestamp(next_same_day, ZoneInfo("Asia/Shanghai")),
+                datetime(2026, 7, 20, 12, tzinfo=ZoneInfo("Asia/Shanghai")),
+            )
+            next_day = next_schedule_at(
+                {
+                    "kind": "daily",
+                    "times": ["08:00", "12:00", "20:00"],
+                    "timezone": "Asia/Shanghai",
+                },
+                datetime(2026, 7, 20, 20, tzinfo=ZoneInfo("Asia/Shanghai")).timestamp(),
+            )
+            self.assertEqual(
+                datetime.fromtimestamp(next_day, ZoneInfo("Asia/Shanghai")),
                 datetime(2026, 7, 21, 8, tzinfo=ZoneInfo("Asia/Shanghai")),
             )
             store.close()
