@@ -413,6 +413,9 @@ class DaemonTest(unittest.TestCase):
         )
         self.assertIn("mood", END_TURN_TOOL_SPEC["input_schema"]["required"])
         self.assertIn("reply_wait", END_TURN_TOOL_SPEC["input_schema"]["required"])
+        mood_schema = END_TURN_TOOL_SPEC["input_schema"]["properties"]["mood"]
+        self.assertIn("Reassess the Current self state mood", mood_schema["description"])
+        self.assertIn("do not otherwise favor unchanged over updated", mood_schema["description"])
         self.assertNotIn("continuity", END_TURN_TOOL_SPEC["input_schema"]["properties"])
         self.assertNotIn("delivery", END_TURN_TOOL_SPEC["input_schema"]["properties"])
         self.assertNotIn("expects_reply", END_TURN_TOOL_SPEC["input_schema"]["properties"])

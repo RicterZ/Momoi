@@ -462,7 +462,12 @@ function previewUsageApi() {
               emotions: 0,
               memories: records.memories.length,
             },
-            mood: { state: "happy", intensity: 0.65, cause: "preview" },
+            mood: {
+              state: "happy",
+              intensity: 0.65,
+              cause: "preview",
+              updated_at: now - 900,
+            },
             activity: {
               name: "previewing dashboard",
               result: "本地预览用量折线",

@@ -1206,6 +1206,16 @@ class ContextPlannerTest(unittest.TestCase):
             self.assertNotIn(phrase, CONTEXT_PLANNER_PROTOCOL_PROMPT)
             self.assertIn(phrase, DOWNSTREAM_OWNER_CONTRACT_PROMPT)
 
+    def test_mood_update_protocol_is_private_to_end_turn_schema(self) -> None:
+        self.assertNotIn(
+            "Reassess the Current self state mood",
+            CONTEXT_PLANNER_SYSTEM_PROMPT,
+        )
+        self.assertNotIn(
+            "do not otherwise favor unchanged over updated",
+            CONTEXT_PLANNER_SYSTEM_PROMPT,
+        )
+
 
 class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
     async def test_missing_new_episode_ref_retry_names_exact_format(self) -> None:

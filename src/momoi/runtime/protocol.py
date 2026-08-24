@@ -102,9 +102,23 @@ MOOD_UPDATE_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 MOOD_DECISION_SCHEMA: dict[str, Any] = {
+    "description": (
+        "Persistent but evolving mood state. Reassess the Current self state mood "
+        "at every end_turn using its age and this Turn's emotional context. Update "
+        "when the state meaningfully shifts, intensity changes, the recorded cause "
+        "no longer has continuing influence, or the mood naturally settles as time "
+        "and context move on. Keep it unchanged only while its existing state, "
+        "intensity, and cause all remain accurate. A truly momentary reaction that "
+        "leaves the underlying mood intact does not by itself require an update; do "
+        "not otherwise favor unchanged over updated."
+    ),
     "oneOf": [
         {
             "type": "object",
+            "description": (
+                "Keep the existing mood only when its state, intensity, and cause "
+                "still accurately describe the current persistent mood."
+            ),
             "properties": {
                 "decision": {"type": "string", "enum": ["unchanged"]}
             },
@@ -113,6 +127,10 @@ MOOD_DECISION_SCHEMA: dict[str, Any] = {
         },
         {
             "type": "object",
+            "description": (
+                "Replace the mood when its state, intensity, or continuing cause "
+                "has changed, including natural settling over time."
+            ),
             "properties": {
                 "decision": {"type": "string", "enum": ["updated"]},
                 **MOOD_UPDATE_SCHEMA["properties"],

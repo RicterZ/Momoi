@@ -582,6 +582,9 @@ function OverviewBody({ data }) {
               <MoodHearts intensity={data.mood.intensity} />
             </div>
             <p className="state-detail">{data.mood.cause}</p>
+            <StampMeta
+              items={[{ label: "更新于", value: formatDate(data.mood.updated_at) }]}
+            />
           </article>
         </div>
       </OverviewSection>

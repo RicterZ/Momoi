@@ -17,6 +17,7 @@ from momoi.config import (
     LLMConfig,
     NotificationConfig,
 )
+from momoi.context_time import context_timestamp
 from momoi.memory_tools import MEMORY_TOOL_POLICY, MEMORY_TOOL_SPECS, MemoryTools
 from momoi.models import (
     AgentReply,
@@ -1954,6 +1955,20 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertEqual(active["mood_state"], "excited")
             self.assertEqual(active["mood_intensity"], 0.8)
             self.assertEqual(active["mood_cause"], "一起分享了开心的事")
+            store.close()
+
+    def test_self_state_context_exposes_mood_update_time_and_age(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            with store._db:
+                store._db.execute(
+                    "UPDATE self_state SET mood_updated_at=? WHERE id=1", (1000,)
+                )
+
+            context = json.loads(store.self_state_context(now=1180))
+
+            self.assertEqual(context["mood"]["updated_at"], context_timestamp(1000))
+            self.assertEqual(context["mood"]["age_minutes"], 3)
             store.close()
 
     def test_recurring_reminder_fires_multiple_occurrences(self) -> None:
