@@ -1545,7 +1545,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(provider.calls, 3)
             daemon.store.close()
 
-    async def test_owner_direct_reply_mode_keeps_internal_tools(self) -> None:
+    async def test_owner_message_only_mode_keeps_internal_tools(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "note.txt").write_text("workspace group loaded")
@@ -1640,7 +1640,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         "reason": "不需要外部服务",
                     },
                     "execution": {
-                        "mode": "direct_reply",
+                        "mode": "message_only",
                         "outline": ["回复"],
                         "reason": "普通回应",
                     },

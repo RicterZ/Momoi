@@ -605,7 +605,7 @@ class ContextPlannerTest(unittest.TestCase):
         social["intent_units"][0]["recall_queries"] = []
         social["episode_actions"] = [social["episode_actions"][0]]
         social["episode_links"] = []
-        social["handoff"]["execution_mode"] = "direct_reply"
+        social["handoff"]["execution_mode"] = "message_only"
         parsed = parse_context_plan(social, ["event-1"], [], "turn-1", 1)
         self.assertEqual(parsed["intent_units"][0]["recall_queries"], [])
         self.assertEqual(
@@ -679,7 +679,7 @@ class ContextPlannerTest(unittest.TestCase):
         )
 
         social = response_plan()
-        social["handoff"]["execution_mode"] = "direct_reply"
+        social["handoff"]["execution_mode"] = "message_only"
         social["handoff"]["execution_outline"] = []
         social["handoff"]["execution_reason"] = "only visible social delivery is needed"
         social["handoff"]["delivery_bubbles"] = [
@@ -691,6 +691,14 @@ class ContextPlannerTest(unittest.TestCase):
         ]
         parsed = parse_context_plan(social, ["event-1"], [], "turn-1", 1)
         self.assertEqual(parsed["owner_handoff"]["execution"]["outline"], [])
+        guidance = conversation_guidance(parsed)
+        self.assertIn("mode: message_only", guidance)
+        self.assertIn(
+            "protocol: deliver owner-visible content with send_message; "
+            "ordinary assistant text is not delivered; call end_turn separately "
+            "after delivery",
+            guidance,
+        )
         self.assertEqual(
             parsed["owner_handoff"]["execution"]["delivery"]["bubbles"][0]["form"],
             "fragmentary",
@@ -986,7 +994,7 @@ class ContextPlannerTest(unittest.TestCase):
                     },
                     "mcp": {"servers": [], "reason": "不需要外部服务"},
                     "execution": {
-                        "mode": "direct_reply",
+                        "mode": "message_only",
                         "outline": ["回复老师"],
                         "reason": "普通回应",
                     },
@@ -1193,7 +1201,7 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "context_reason": "当前上下文足够",
                             "mcp_servers": [],
                             "mcp_reason": "不需要外部服务",
-                            "execution_mode": "direct_reply",
+                            "execution_mode": "message_only",
                             "execution_outline": ["处理合并后的主人消息"],
                             "execution_reason": "当前输入已足够回应",
                             "delivery_mode": "bubbles",
@@ -1323,7 +1331,7 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "context_reason": "需要查历史收纳位置",
                             "mcp_servers": [],
                             "mcp_reason": "不需要外部服务",
-                            "execution_mode": "direct_reply",
+                            "execution_mode": "message_only",
                             "execution_outline": ["查找收纳位置", "根据证据回答"],
                             "execution_reason": "主人在问旧物品位置",
                             "delivery_mode": "bubbles",

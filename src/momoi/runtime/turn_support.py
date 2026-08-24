@@ -233,7 +233,14 @@ def conversation_guidance(plan: dict[str, object]) -> str:
         execution = owner_handoff.get("execution")
         if isinstance(execution, dict):
             lines.append("Execution handoff")
-            lines.append(f"  mode: {execution.get('mode') or 'direct_reply'}")
+            mode = str(execution.get("mode") or "message_only")
+            lines.append(f"  mode: {mode}")
+            if mode == "message_only":
+                lines.append(
+                    "  protocol: deliver owner-visible content with send_message; "
+                    "ordinary assistant text is not delivered; call end_turn "
+                    "separately after delivery"
+                )
             for index, step in enumerate(execution.get("outline") or [], start=1):
                 lines.append(f"  step {index}: {' '.join(str(step).split())}")
             lines.append(

@@ -112,9 +112,12 @@ or persona-specific wording from it.
   exempt by conversational tone: route public search when the supplied evidence
   does not identify it, with internal recall as the first step. Do not preload a
   server merely because it might become useful; give a concise routing reason.
-- Use `direct_reply` when no tool beyond owner-visible messaging and terminal
-  state submission is needed. Use `clarify` only when missing owner input prevents safe
-  or materially correct execution now. Use `work` whenever any Memory, Goal,
+- Use `message_only` when no work tool is needed. It does not mean a direct
+  assistant response or a no-tool response: all owner-visible content must still
+  be delivered with `send_message`, followed later by a separate `end_turn` call.
+  Describe its reason as message-only delivery, never as direct reply, natural
+  response, or no-tool output. Use `clarify` only when missing owner input prevents
+  safe or materially correct execution now. Use `work` whenever any Memory, Goal,
   reminder, file, HTTP, MCP, or other execution tool is required.
 - When the owner explicitly requests a confirmed memory mutation, name the
   appropriate memory operation in a `work` outline. Recall queries never mutate
