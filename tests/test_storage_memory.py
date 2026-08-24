@@ -29,7 +29,7 @@ from momoi.runtime import (
     MomoiDaemon,
 )
 from momoi.storage import MemoryRecallQuery, Store, estimate_tokens
-from momoi.storage.scheduling import next_schedule_at
+from momoi.storage.scheduling import next_schedule_at, normalize_schedule
 
 
 class StorageMemoryTest(unittest.TestCase):
@@ -3168,13 +3168,25 @@ class StorageMemoryTest(unittest.TestCase):
 
             after = datetime(2026, 7, 20, 9, tzinfo=ZoneInfo("Asia/Shanghai"))
             next_daily = next_schedule_at(
-                {"kind": "daily", "at": "08:00", "timezone": "Asia/Shanghai"},
+                {
+                    "kind": "daily",
+                    "times": ["08:00"],
+                    "timezone": "Asia/Shanghai",
+                },
                 after.timestamp(),
             )
             self.assertEqual(
                 datetime.fromtimestamp(next_daily, ZoneInfo("Asia/Shanghai")),
                 datetime(2026, 7, 21, 8, tzinfo=ZoneInfo("Asia/Shanghai")),
             )
+            with self.assertRaisesRegex(ValueError, "requires 1 to 24 times"):
+                normalize_schedule(
+                    {
+                        "kind": "daily",
+                        "at": "08:00",
+                        "timezone": "Asia/Shanghai",
+                    }
+                )
 
             next_same_day = next_schedule_at(
                 {

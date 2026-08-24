@@ -22,9 +22,6 @@ def normalize_schedule(value: object) -> dict[str, object]:
         return {"kind": kind, "timezone": timezone, "every_seconds": every_seconds}
     if kind == "daily":
         raw_times = value.get("times")
-        if raw_times is None and "at" in value:
-            # Persisted schedules created before daily.times remain readable.
-            raw_times = [value.get("at")]
         if not isinstance(raw_times, list) or not 1 <= len(raw_times) <= 24:
             raise ValueError("daily schedule requires 1 to 24 times")
         times: list[str] = []

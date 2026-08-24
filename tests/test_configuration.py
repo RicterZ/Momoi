@@ -622,8 +622,7 @@ class ConfigurationTest(unittest.TestCase):
                         "schedule": {
                             "kind": "daily",
                             "timezone": "Asia/Shanghai",
-                            "at": "07:30",
-                            "every_seconds": 86400,
+                            "times": ["07:30"],
                         },
                     },
                 ),
