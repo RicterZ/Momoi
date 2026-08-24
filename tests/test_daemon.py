@@ -314,12 +314,9 @@ class DaemonTest(unittest.TestCase):
         self.assertIn("give each its own item in spoken order", system)
         self.assertIn("timing, impulse, and conversational rhythm", system)
         self.assertIn("fragment, a partial thought", system)
-        self.assertIn("Form applies to the whole item", system)
-        self.assertIn("free of any statement, explanation", system)
-        self.assertIn("leave a planned fragment unfinished", system)
-        self.assertIn("several consecutive bubbles", system)
-        self.assertIn("adjacent and in spoken order", system)
-        self.assertIn("Smoother or more explicit wording", system)
+        self.assertIn("it does not plan any bubble", system)
+        self.assertIn("choose the wording, number and order of bubbles", system)
+        self.assertIn("whether a fitting catalog reaction asset", system)
         self.assertNotIn("one complete non-empty message", system)
         self.assertIn(
             "`<recent_turn_base>` followed by `<recent_turn_append>`",

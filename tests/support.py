@@ -54,7 +54,7 @@ def context_plan_response(messages: list[dict[str, Any]]) -> ProviderResponse:
     ]
     episode_ref = candidate_ids[0] if candidate_ids else "new:test-thread"
     plan = {
-        "version": 3,
+        "version": 4,
         "intent_units": units,
         "episode_actions": [
             {
@@ -79,13 +79,10 @@ def context_plan_response(messages: list[dict[str, Any]]) -> ProviderResponse:
             "execution_outline": ["Handle the test owner request."],
             "execution_reason": "Exercise the Owner tool loop.",
             "delivery_mode": "bubbles",
-            "delivery_bubbles": [
-                {
-                    "timing": "after the requested work",
-                    "form": "complete",
-                    "purpose": "report the verified result",
-                }
-            ],
+            "delivery_plan": (
+                "Report the verified result and any material uncertainty after "
+                "the requested work."
+            ),
         },
         "uncertainty": [],
     }

@@ -76,7 +76,7 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
     "input_schema": {
         "type": "object",
         "properties": {
-            "version": {"type": "integer", "enum": [3]},
+            "version": {"type": "integer", "enum": [4]},
             "intent_units": {
                 "type": "array",
                 "minItems": 1,
@@ -353,44 +353,21 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                         "enum": ["silent", "bubbles"],
                         "description": (
                             "silent when no owner-visible move remains; bubbles "
-                            "when one or more intended delivery beats remain."
+                            "when an owner-visible response remains."
                         ),
                     },
-                    "delivery_bubbles": {
-                        "type": "array",
-                        "maxItems": 12,
+                    "delivery_plan": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1200,
                         "description": (
-                            "Ordered intended delivery beats with distinct timing or "
-                            "impulse. The downstream Owner may split one beat's "
-                            "multi-clause realization into adjacent "
-                            "send_message.messages items; empty when delivery_mode is "
-                            "silent."
+                            "Outcome-level owner-visible delivery plan. Fully describe "
+                            "what the response should accomplish and which established "
+                            "facts or uncertainty it must handle. Do not prescribe "
+                            "wording, bubble count or order, timing, utterance form, "
+                            "boundaries, persona expression, or reaction assets. For "
+                            "silent mode, explain why no visible move remains."
                         ),
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "timing": {
-                                    "type": "string",
-                                    "minLength": 1,
-                                    "maxLength": 160,
-                                },
-                                "form": {
-                                    "type": "string",
-                                    "enum": [
-                                        "non_propositional",
-                                        "fragmentary",
-                                        "complete",
-                                    ],
-                                },
-                                "purpose": {
-                                    "type": "string",
-                                    "minLength": 1,
-                                    "maxLength": 300,
-                                },
-                            },
-                            "required": ["timing", "form", "purpose"],
-                            "additionalProperties": False,
-                        },
                     },
                 },
                 "required": [
@@ -403,7 +380,7 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                     "execution_outline",
                     "execution_reason",
                     "delivery_mode",
-                    "delivery_bubbles",
+                    "delivery_plan",
                 ],
                 "additionalProperties": False,
             },
@@ -640,43 +617,6 @@ def _recall_queries(
     ]
 
 
-def _parse_delivery_plan(raw: object) -> dict[str, object]:
-    if not isinstance(raw, dict):
-        raise ContextPlanError("invalid_delivery_handoff")
-    mode = raw.get("mode")
-    if mode == "silent":
-        if set(raw) != {"mode", "reason"}:
-            raise ContextPlanError("invalid_delivery_handoff")
-        return {
-            "mode": "silent",
-            "reason": _text(raw["reason"], "delivery_reason", 300),
-        }
-    if mode != "bubbles" or set(raw) != {"mode", "bubbles"}:
-        raise ContextPlanError("invalid_delivery_handoff")
-    raw_bubbles = raw["bubbles"]
-    if not isinstance(raw_bubbles, list) or not 1 <= len(raw_bubbles) <= 12:
-        raise ContextPlanError("invalid_delivery_handoff")
-    bubbles: list[dict[str, str]] = []
-    for bubble in raw_bubbles:
-        if not isinstance(bubble, dict) or set(bubble) != {
-            "timing",
-            "form",
-            "purpose",
-        }:
-            raise ContextPlanError("invalid_delivery_bubble")
-        form = bubble["form"]
-        if form not in {"non_propositional", "fragmentary", "complete"}:
-            raise ContextPlanError("invalid_delivery_form")
-        bubbles.append(
-            {
-                "timing": _text(bubble["timing"], "delivery_timing", 160),
-                "form": str(form),
-                "purpose": _text(bubble["purpose"], "delivery_purpose", 300),
-            }
-        )
-    return {"mode": "bubbles", "bubbles": bubbles}
-
-
 def _parse_mcp_route(
     raw: object,
     available_mcp_servers: set[str] | None,
@@ -769,7 +709,7 @@ def parse_context_plan(
             raise ContextPlanError("invalid_json") from error
     if not isinstance(value, dict):
         raise ContextPlanError("invalid_top_level")
-    if value.get("version") != 3:
+    if value.get("version") != 4:
         raise ContextPlanError("unsupported_version")
     if set(value) != {
         "version",
@@ -1088,7 +1028,7 @@ def parse_context_plan(
         "execution_outline",
         "execution_reason",
         "delivery_mode",
-        "delivery_bubbles",
+        "delivery_plan",
     }
     if not isinstance(raw_handoff, dict) or set(raw_handoff) != required_handoff_keys:
         raise ContextPlanError("invalid_owner_handoff")
@@ -1124,21 +1064,12 @@ def parse_context_plan(
         if context["status"] != "sufficient":
             raise ContextPlanError("invalid_recall_skip")
     delivery_mode = raw_handoff["delivery_mode"]
-    delivery_bubbles = raw_handoff["delivery_bubbles"]
-    if delivery_mode == "silent":
-        if delivery_bubbles != []:
-            raise ContextPlanError("invalid_delivery_handoff")
-        raw_delivery: dict[str, object] = {
-            "mode": "silent",
-            "reason": raw_handoff["execution_reason"],
-        }
-    elif delivery_mode == "bubbles":
-        raw_delivery = {
-            "mode": "bubbles",
-            "bubbles": delivery_bubbles,
-        }
-    else:
+    if delivery_mode not in {"silent", "bubbles"}:
         raise ContextPlanError("invalid_delivery_handoff")
+    delivery = {
+        "mode": str(delivery_mode),
+        "plan": _text(raw_handoff["delivery_plan"], "delivery_plan", 1200),
+    }
     execution: dict[str, object] = {
         "mode": str(mode),
         "outline": _strings(
@@ -1152,10 +1083,10 @@ def parse_context_plan(
             "execution_reason",
             300,
         ),
-        "delivery": _parse_delivery_plan(raw_delivery),
+        "delivery": delivery,
     }
     return {
-        "version": 3,
+        "version": 4,
         "intent_units": units,
         "episode_actions": bindings,
         "episode_links": links,
@@ -1220,7 +1151,7 @@ def degraded_context_plan(
             }
         )
     return {
-        "version": 3,
+        "version": 4,
         "intent_units": units,
         "episode_actions": [
             {"action": "none", "unit_ids": [str(unit["id"])]} for unit in units

@@ -252,30 +252,18 @@ def conversation_guidance(plan: dict[str, object]) -> str:
                     lines.append(
                         "  action: no owner-visible delivery; call end_turn alone"
                     )
-                    lines.append(
-                        f"  reason: {' '.join(str(delivery.get('reason') or '').split())}"
-                    )
                 elif delivery_mode == "bubbles":
                     lines.append(
-                        "  action: call send_message; realize the bubbles below "
-                        "through send_message.messages in order"
+                        "  action: call send_message; plan and realize the concrete "
+                        "response through the Soul and Style Card"
                     )
                     lines.append(
                         "  sequence: send_message with no assistant content; after "
                         "its result, call end_turn alone in a later response"
                     )
-                for index, bubble in enumerate(
-                    delivery.get("bubbles") or [], start=1
-                ):
-                    if not isinstance(bubble, dict):
-                        continue
-                    timing = " ".join(str(bubble.get("timing") or "").split())
-                    form = " ".join(str(bubble.get("form") or "").split())
-                    purpose = " ".join(str(bubble.get("purpose") or "").split())
-                    lines.append(
-                        f"  bubble {index}: timing={timing} form={form} "
-                        f"purpose={purpose}"
-                    )
+                plan = " ".join(str(delivery.get("plan") or "").split())
+                if plan:
+                    lines.append(f"  plan: {plan}")
 
     for item in uncertainty or []:
         lines.append(f"Uncertainty: {' '.join(str(item).split())}")
