@@ -1127,6 +1127,7 @@ class ContextPlannerTest(unittest.TestCase):
             "Do not explore equally valid alternatives",
             "merely plausible extra reply does not reopen it",
             "do not compose, compare, or revise candidate utterances",
+            "Do not select, name, or reserve a beat for a catalog",
             "remains eligible for background Episode consolidation",
             "immutable archive evidence, not writable Episode targets",
             "develops an Event into a meaningful discussion or experience",
@@ -1175,6 +1176,15 @@ class ContextPlannerTest(unittest.TestCase):
             self.assertIn(phrase, STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn(
             "leave a planned fragment unfinished", CONTEXT_PLANNER_SYSTEM_PROMPT
+        )
+        self.assertIn(
+            "does not require `plan_adjustment`", CONTEXT_PLANNER_SYSTEM_PROMPT
+        )
+        self.assertIn("at any position", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn("or choose not to include one", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        self.assertIn(
+            "never turns a silent handoff into visible delivery",
+            CONTEXT_PLANNER_SYSTEM_PROMPT,
         )
         self.assertNotIn("Momoi", STYLE_CARD_SYSTEM_PROMPT)
         schema = CONTEXT_PLAN_TOOL_SPEC["input_schema"]

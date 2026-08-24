@@ -442,6 +442,8 @@ class DaemonTest(unittest.TestCase):
         bubble_description = CHANNEL_MESSAGE_SCHEMA["oneOf"][0]["description"]
         self.assertIn("private-chat bubble", bubble_description)
         self.assertIn("blank lines", bubble_description)
+        self.assertIn("emotion://<listed-slug>", bubble_description)
+        self.assertIn("standalone reaction image", bubble_description)
         wait_shapes = END_TURN_TOOL_SPEC["input_schema"]["properties"]["reply_wait"][
             "oneOf"
         ]

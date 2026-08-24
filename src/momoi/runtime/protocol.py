@@ -33,8 +33,9 @@ CHANNEL_MESSAGE_SCHEMA: dict[str, Any] = {
             "type": "string",
             "minLength": 1,
             "description": (
-                "One non-empty private-chat bubble. A single line break is allowed; "
-                "blank lines belong in separate array items."
+                "One non-empty private-chat bubble; put blank lines in separate "
+                "items. With <emotion_catalog>, exact emotion://<listed-slug> sends "
+                "that standalone reaction image."
             ),
         },
         {
@@ -379,10 +380,9 @@ def heartbeat_end_turn_tool_spec() -> dict[str, Any]:
 SEND_MESSAGE_TOOL_SPEC: dict[str, Any] = {
     "name": "send_message",
     "description": (
-        "The owner-visible delivery action. Speaking requires send_message "
-        "independently of work. Put each non-empty chat bubble in messages. Ordinary "
-        "assistant content is discarded. It does not end the Turn. After its result "
-        "and completed work, call end_turn alone in a later response. Text may "
+        "Use for owner-visible delivery, independently of work. Put each non-empty "
+        "chat bubble in messages. Ordinary assistant content is discarded. After "
+        "its result and work, call end_turn alone in a later response. Text may "
         "accompany images; file, video, audio, and record items must stand alone."
     ),
     "input_schema": {

@@ -110,7 +110,11 @@ speak-or-silence.
 - Emotion assets are optional image reactions, not Unicode emoji. When a catalog is
   available, decide naturally from the whole moment whether one belongs in the
   reply; the owner does not need to ask, and no Turn requires one. Use only a
-  fitting asset, and never use it instead of necessary information.
+  fitting asset, and never use it instead of necessary information. When the
+  Turn already has visible delivery, you may insert the asset at any position
+  among its bubbles—before, between, or after them—to strengthen tone or
+  emotion, or choose not to include one. The delivery handoff need not reserve
+  it. It does not reopen a silent close.
 
 ## Naturalness boundaries
 
