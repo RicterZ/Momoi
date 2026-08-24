@@ -27,11 +27,193 @@ from momoi.models import (
 from momoi.runtime import (
     MomoiDaemon,
 )
-from momoi.storage import Store, estimate_tokens
+from momoi.storage import MemoryRecallQuery, Store, estimate_tokens
 from momoi.storage.scheduling import next_schedule_at
 
 
 class StorageMemoryTest(unittest.TestCase):
+    def test_ranked_memory_recall_keeps_categories_separate_on_equal_match(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            now = time.time()
+            with store._db:
+                store._db.execute(
+                    """INSERT INTO memories
+                       (kind, key, content, activation, authority, source_event_id,
+                        evidence_quote, importance, created_at, updated_at)
+                       VALUES ('routine', 'home.ac.confirmed', '打开客厅空调',
+                               'recall', 'owner', 'source', '打开客厅空调',
+                               0.8, ?, ?)""",
+                    (now, now),
+                )
+                store._db.execute(
+                    """INSERT INTO reflections
+                       (id, local_date, state, scheduled_at, created_at, completed_at)
+                       VALUES ('reflection:rank', '2030-01-01', 'completed', ?, ?, ?)""",
+                    (now, now, now),
+                )
+                store._db.execute(
+                    """INSERT INTO reflection_memories
+                       (kind, key, content, evidence, confidence,
+                        source_reflection_id, created_at, updated_at)
+                       VALUES ('practice', 'home.ac.reflection', '打开客厅空调',
+                               'evidence', 1.0, 'reflection:rank', ?, ?)""",
+                    (now, now),
+                )
+
+            ranked = store.rank_recalled_memories(
+                [MemoryRecallQuery("打开客厅空调", ("home",), 0)],
+                1,
+                now=now,
+            )
+
+            self.assertEqual(ranked[0]["source"], "confirmed")
+            self.assertEqual(ranked[0]["key"], "home.ac.confirmed")
+            self.assertEqual(ranked[1]["source"], "reflection")
+            self.assertEqual(ranked[1]["key"], "home.ac.reflection")
+            store.close()
+
+    def test_ranked_memory_recall_keeps_more_relevant_reflection(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            now = time.time()
+            with store._db:
+                store._db.execute(
+                    """INSERT INTO memories
+                       (kind, key, content, activation, authority, source_event_id,
+                        evidence_quote, importance, created_at, updated_at)
+                       VALUES ('routine', 'home.ac.generic', '打开空调',
+                               'recall', 'owner', 'source', '打开空调',
+                               1.0, ?, ?)""",
+                    (now, now),
+                )
+                store._db.execute(
+                    """INSERT INTO reflections
+                       (id, local_date, state, scheduled_at, created_at, completed_at)
+                       VALUES ('reflection:rank', '2030-01-01', 'completed', ?, ?, ?)""",
+                    (now, now, now),
+                )
+                store._db.execute(
+                    """INSERT INTO reflection_memories
+                       (kind, key, content, evidence, confidence,
+                        source_reflection_id, created_at, updated_at)
+                       VALUES ('practice', 'home.ac.living_room',
+                               '打开空调时处理客厅设备', 'evidence', 1.0,
+                               'reflection:rank', ?, ?)""",
+                    (now, now),
+                )
+
+            ranked = store.rank_recalled_memories(
+                [
+                    MemoryRecallQuery("空调", ("home",), 0),
+                    MemoryRecallQuery("客厅", ("home",), 1),
+                ],
+                1,
+                now=now,
+            )
+
+            confirmed = next(row for row in ranked if row["source"] == "confirmed")
+            reflected = next(row for row in ranked if row["source"] == "reflection")
+            self.assertEqual(reflected["key"], "home.ac.living_room")
+            self.assertGreater(reflected["search_score"], confirmed["search_score"])
+            store.close()
+
+    def test_ranked_memory_recall_applies_category_score_floors(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            now = time.time()
+            with store._db:
+                store._db.executemany(
+                    """INSERT INTO memories
+                       (kind, key, content, activation, authority, source_event_id,
+                        evidence_quote, importance, created_at, updated_at)
+                       VALUES ('routine', ?, ?, 'recall', 'owner', 'source',
+                               'evidence', 0.9, ?, ?)""",
+                    [
+                        (
+                            f"confirmed.{index}",
+                            f"{'空调' if index < 5 else '照明'}确认记忆{index}",
+                            now,
+                            now,
+                        )
+                        for index in range(10)
+                    ],
+                )
+                store._db.execute(
+                    """INSERT INTO reflections
+                       (id, local_date, state, scheduled_at, created_at, completed_at)
+                       VALUES ('reflection:floor', '2030-01-01', 'completed', ?, ?, ?)""",
+                    (now, now, now),
+                )
+                store._db.executemany(
+                    """INSERT INTO reflection_memories
+                       (kind, key, content, evidence, confidence,
+                        source_reflection_id, created_at, updated_at)
+                       VALUES ('practice', ?, ?, 'evidence', 0.5,
+                               'reflection:floor', ?, ?)""",
+                    [
+                        (
+                            f"reflection.{index}",
+                            f"{'空调' if index < 5 else '照明'}复盘记忆{index}",
+                            now,
+                            now,
+                        )
+                        for index in range(10)
+                    ],
+                )
+
+            ranked = store.rank_recalled_memories(
+                [MemoryRecallQuery("空调", ("home",), 0)],
+                6,
+                now=now,
+            )
+
+            self.assertEqual(
+                len([row for row in ranked if row["source"] == "confirmed"]),
+                5,
+            )
+            self.assertFalse(
+                [row for row in ranked if row["source"] == "reflection"]
+            )
+            store.close()
+
+    def test_fresh_confident_reflection_can_match_the_third_ranked_query(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            now = time.time()
+            with store._db:
+                store._db.execute(
+                    """INSERT INTO reflections
+                       (id, local_date, state, scheduled_at, created_at, completed_at)
+                       VALUES ('reflection:tertiary', '2030-01-01', 'completed', ?, ?, ?)""",
+                    (now, now, now),
+                )
+                store._db.execute(
+                    """INSERT INTO reflection_memories
+                       (kind, key, content, evidence, confidence,
+                        source_reflection_id, created_at, updated_at)
+                       VALUES ('practice', 'home.ac.tertiary', '空调复盘经验',
+                               'evidence', 1.0, 'reflection:tertiary', ?, ?)""",
+                    (now, now),
+                )
+
+            ranked = store.rank_recalled_memories(
+                [MemoryRecallQuery("空调", ("home",), 2)],
+                6,
+                now=now,
+            )
+
+            self.assertEqual(len(ranked), 1)
+            self.assertEqual(ranked[0]["source"], "reflection")
+            self.assertGreaterEqual(ranked[0]["search_score"], 0.35)
+            store.close()
+
     def test_context_read_indexes_are_installed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")

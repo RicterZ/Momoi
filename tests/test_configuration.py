@@ -205,6 +205,7 @@ class ConfigurationTest(unittest.TestCase):
             self.assertEqual(load_config(path).recent_episode_hours, 2.5)
 
             value["context"]["summary_results"] = 99  # type: ignore[index]
+            value["context"]["memory_results"] = 99  # type: ignore[index]
             value["context"]["planner_recent_base_turns"] = 7  # type: ignore[index]
             value["context"]["planner_recent_append_turns"] = 5  # type: ignore[index]
             value["context"]["planner_active_recent_turns"] = 4  # type: ignore[index]
@@ -212,6 +213,7 @@ class ConfigurationTest(unittest.TestCase):
             path.write_text(json.dumps(value))
             configured = load_config(path)
             self.assertEqual(configured.summary_results, 12)
+            self.assertEqual(configured.memory_results, 6)
             self.assertEqual(configured.planner_recent_base_turns, 7)
             self.assertEqual(configured.planner_recent_append_turns, 5)
             self.assertEqual(configured.planner_active_recent_turns, 4)

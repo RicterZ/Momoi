@@ -473,7 +473,7 @@ def load_config(path: str | Path) -> AppConfig:
         system_prompt=system_prompt,
         recent_raw_tokens=max(1, int(context_raw.get("recent_raw_tokens", 32000))),
         recent_turns=recent_turns,
-        memory_results=max(0, int(context_raw.get("memory_results", 6))),
+        memory_results=min(6, max(0, int(context_raw.get("memory_results", 6)))),
         memory_tokens=max(0, int(context_raw.get("memory_tokens", 8000))),
         database=database,
         log_level=str(logging_raw.get("level", "DEBUG")).upper(),

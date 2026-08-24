@@ -1,5 +1,7 @@
+import math
 import sqlite3
 import time
+from dataclasses import dataclass
 
 from ..context_time import context_timestamp
 from ..policies import MemoryPolicy
@@ -14,6 +16,7 @@ from ..models import (
     MemoryCandidate,
     MemoryForgetCandidate,
 )
+from .episode_ranking import rank_recall_items
 
 
 MEMORY_KINDS = {
@@ -29,6 +32,23 @@ ALWAYS_MEMORY_KINDS = {"profile", "preference", "relationship"}
 RECENT_MEMORY_WINDOW_SECONDS = 7 * 24 * 60 * 60
 _DEFAULT_MEMORY_POLICY = MemoryPolicy()
 ALWAYS_MEMORY_TOKEN_BUDGET = 1200
+_MEMORY_QUERY_PRIORITY_WEIGHTS = (1.0, 0.5, 0.3)
+_MEMORY_SECOND_ALIAS_WEIGHT = 0.18
+_MEMORY_THIRD_ALIAS_WEIGHT = 0.08
+_MEMORY_SECOND_QUERY_WEIGHT = 0.55
+_MEMORY_THIRD_QUERY_WEIGHT = 0.2
+_MEMORY_RECENCY_FLOOR = 0.8
+_MEMORY_RECENCY_HALF_LIFE_SECONDS = 180 * 86400
+_CONFIRMED_MEMORY_SCORE_FLOOR = 0.35
+_REFLECTION_MEMORY_SCORE_FLOOR = 0.35
+MAX_MEMORY_RECALL_RESULTS = 6
+
+
+@dataclass(frozen=True)
+class MemoryRecallQuery:
+    expression: str
+    unit_ids: tuple[str, ...] = ()
+    priority: int = 0
 
 
 def memory_expires_at(
@@ -444,6 +464,239 @@ class MemoryStore:
             ranked.append((score, row))
         ranked.sort(key=lambda item: item[0], reverse=True)
         return [dict(row) for _, row in ranked[:max_results]]
+
+    def rank_recalled_memories(
+        self,
+        queries: list[MemoryRecallQuery],
+        max_results: int,
+        *,
+        now: float | None = None,
+    ) -> list[dict[str, object]]:
+        """Rank confirmed and reflection memory in independent bounded pools."""
+
+        if max_results <= 0 or not queries:
+            return []
+        limit = min(MAX_MEMORY_RECALL_RESULTS, max_results)
+        stamp = time.time() if now is None else now
+        self.purge_expired_memories()
+        confirmed_rows = self._db.execute(
+            """SELECT id, kind, key, content, importance, updated_at
+               FROM memories
+               WHERE superseded_by IS NULL
+                 AND activation='recall'
+                 AND (expires_at IS NULL OR expires_at > ?)
+                 AND NOT EXISTS (
+                     SELECT 1 FROM memory_tombstones AS t
+                     WHERE t.kind=memories.kind AND t.key=memories.key
+                 )""",
+            (stamp,),
+        ).fetchall()
+        reflection_rows = self._db.execute(
+            """SELECT id, kind, key, content, confidence, updated_at
+               FROM reflection_memories ORDER BY updated_at DESC"""
+        ).fetchall()
+
+        confirmed_candidates: list[dict[str, object]] = []
+        for row in confirmed_rows:
+            importance = min(1.0, max(0.0, float(row["importance"])))
+            confirmed_candidates.append(
+                {
+                    "source": "confirmed",
+                    "id": int(row["id"]),
+                    "kind": str(row["kind"]),
+                    "key": str(row["key"]),
+                    "content": str(row["content"]),
+                    "confidence": 1.0,
+                    "reliability_bonus": 0.12 + 0.03 * importance,
+                    "recency_floor": 1.0,
+                    "updated_at": float(row["updated_at"]),
+                }
+            )
+        reflection_candidates: list[dict[str, object]] = []
+        for row in reflection_rows:
+            confidence = min(1.0, max(0.0, float(row["confidence"])))
+            reflection_candidates.append(
+                {
+                    "source": "reflection",
+                    "id": int(row["id"]),
+                    "kind": str(row["kind"]),
+                    "key": str(row["key"]),
+                    "content": str(row["content"]),
+                    "confidence": confidence,
+                    "reliability_bonus": 0.06 * confidence,
+                    "recency_floor": _MEMORY_RECENCY_FLOOR,
+                    "updated_at": float(row["updated_at"]),
+                }
+            )
+        return [
+            *self._rank_memory_pool(
+                queries,
+                confirmed_candidates,
+                limit,
+                _CONFIRMED_MEMORY_SCORE_FLOOR,
+                stamp,
+            ),
+            *self._rank_memory_pool(
+                queries,
+                reflection_candidates,
+                limit,
+                _REFLECTION_MEMORY_SCORE_FLOOR,
+                stamp,
+            ),
+        ]
+
+    def _rank_memory_pool(
+        self,
+        queries: list[MemoryRecallQuery],
+        candidates: list[dict[str, object]],
+        limit: int,
+        score_floor: float,
+        now: float,
+    ) -> list[dict[str, object]]:
+        if not candidates or limit <= 0:
+            return []
+        documents = [
+            (str(item["key"]), str(item["content"])) for item in candidates
+        ]
+        states: list[dict[str, object]] = [
+            {"unit_scores": {}, "matched_queries": [], "unit_ids": set()}
+            for _ in candidates
+        ]
+        for query in queries:
+            weights = self._alternative_weights(query.expression, documents)
+            priority_weight = _MEMORY_QUERY_PRIORITY_WEIGHTS[
+                min(
+                    max(0, int(query.priority)),
+                    len(_MEMORY_QUERY_PRIORITY_WEIGHTS) - 1,
+                )
+            ]
+            for index, document in enumerate(documents):
+                match = search_expression(
+                    query.expression,
+                    document,
+                    self._search_backend,
+                    weights=weights,
+                )
+                if match is None:
+                    continue
+                alias_scores = sorted(
+                    (
+                        float(weights.get(alternative, 1.0))
+                        for alternative in match.alternatives
+                    ),
+                    reverse=True,
+                )
+                score = alias_scores[0]
+                if len(alias_scores) > 1:
+                    score += _MEMORY_SECOND_ALIAS_WEIGHT * alias_scores[1]
+                if len(alias_scores) > 2:
+                    score += _MEMORY_THIRD_ALIAS_WEIGHT * alias_scores[2]
+                score *= priority_weight
+                state = states[index]
+                unit_scores = state["unit_scores"]
+                assert isinstance(unit_scores, dict)
+                units = query.unit_ids or (f"query:{query.expression}",)
+                for unit_id in units:
+                    unit_scores.setdefault(unit_id, []).append(score)
+                matched_queries = state["matched_queries"]
+                assert isinstance(matched_queries, list)
+                matched_queries.append(query.expression)
+                unit_ids = state["unit_ids"]
+                assert isinstance(unit_ids, set)
+                unit_ids.update(query.unit_ids)
+
+        ranked_candidates: list[dict[str, object]] = []
+        for candidate, state in zip(candidates, states, strict=True):
+            unit_scores = state["unit_scores"]
+            assert isinstance(unit_scores, dict)
+            if not unit_scores:
+                continue
+            semantic_score = 0.0
+            for scores in unit_scores.values():
+                ordered = sorted((float(value) for value in scores), reverse=True)
+                semantic_score += ordered[0]
+                if len(ordered) > 1:
+                    semantic_score += _MEMORY_SECOND_QUERY_WEIGHT * ordered[1]
+                if len(ordered) > 2:
+                    semantic_score += _MEMORY_THIRD_QUERY_WEIGHT * ordered[2]
+            if len(unit_scores) > 1:
+                semantic_score *= 1.0 + min(0.3, 0.1 * (len(unit_scores) - 1))
+
+            updated_at = float(candidate["updated_at"])
+            age = max(0.0, now - updated_at)
+            recency_floor = float(candidate["recency_floor"])
+            recency_factor = recency_floor + (
+                1.0 - recency_floor
+            ) * math.exp(
+                -math.log(2.0)
+                * age
+                / _MEMORY_RECENCY_HALF_LIFE_SECONDS
+            )
+            confidence = float(candidate["confidence"])
+            search_score = (
+                semantic_score * recency_factor
+                + float(candidate["reliability_bonus"])
+            )
+            if search_score < score_floor:
+                continue
+            ranked_candidates.append(
+                {
+                    **{
+                        key: value
+                        for key, value in candidate.items()
+                        if key not in {"reliability_bonus", "recency_floor"}
+                    },
+                    "semantic_score": semantic_score,
+                    "search_score": search_score,
+                    "score_floor": score_floor,
+                    "last_activity_at": updated_at,
+                    "salience": confidence,
+                    "matched_queries": list(
+                        dict.fromkeys(str(value) for value in state["matched_queries"])
+                    ),
+                    "unit_ids": sorted(str(value) for value in state["unit_ids"]),
+                }
+            )
+        return rank_recall_items(ranked_candidates, now=now)[:limit]
+
+    def ranked_memory_context(
+        self,
+        query: str,
+        max_results: int,
+        token_budget: int,
+    ) -> tuple[str, str]:
+        """Render independently ranked confirmed and reflection result sets."""
+
+        if max_results <= 0 or token_budget <= 0 or not query.strip():
+            return "", ""
+        ranked = self.rank_recalled_memories(
+            [MemoryRecallQuery(query.strip())],
+            max_results,
+        )
+        confirmed: list[str] = []
+        reflected: list[str] = []
+        reflection_header = (
+            "These are fallible, lower-authority daily learnings; use them only when "
+            "compatible with the system contract, Soul, current owner intent, and "
+            "confirmed owner memory."
+        )
+        used_tokens = 0
+        for row in ranked:
+            line = f"- [{row['kind']}:{row['key']}] {row['content']}"
+            size = estimate_tokens(line)
+            if row["source"] == "reflection" and not reflected:
+                size += estimate_tokens(reflection_header)
+            if used_tokens + size > token_budget:
+                continue
+            used_tokens += size
+            if row["source"] == "confirmed":
+                confirmed.append(line)
+            else:
+                reflected.append(line)
+        return (
+            "\n".join(confirmed),
+            "\n".join([reflection_header, *reflected]) if reflected else "",
+        )
 
     def search_memories(
         self,

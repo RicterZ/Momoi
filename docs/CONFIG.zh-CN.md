@@ -178,7 +178,7 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
 | `planner_recent_append_turns` | `recent_turns` | Planner 追加区的 Turn 数量；最小值为 `1` |
 | `planner_active_recent_turns` | `recent_turns` | Planner 关注区的 Turn 数量；最小值为 `1` |
 | `planner_recent_tokens` | 自动 | Planner 近期日志预算；最小值为 `1000` |
-| `memory_results` | `6` | 持久记忆召回结果数量；最小值为 `0` |
+| `memory_results` | `6` | 已确认召回记忆与复盘记忆各自的 top-k；范围为 `0`–`6`，设为 `0` 时关闭两者（合计最多 `12` 条） |
 | `memory_tokens` | `8000` | 持久记忆上下文预算；最小值为 `0` |
 | `max_input_tokens` | `96000` | 完整模型输入的目标上限；最小值为 `1000` |
 | `summary_results` | `8` | 查询召回的 Episode 上限，最多可配置为 `12`；`0` 关闭查询召回 |

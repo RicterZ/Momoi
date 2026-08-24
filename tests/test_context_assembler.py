@@ -419,6 +419,123 @@ class ContextAssemblerTest(unittest.TestCase):
                 )
             store.close()
 
+    def test_memory_results_limits_each_recall_kind_separately(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            now = time.time()
+            with store._db:
+                store._db.executemany(
+                    """INSERT INTO memories
+                       (kind, key, content, activation, authority, source_event_id,
+                        evidence_quote, importance, created_at, updated_at)
+                       VALUES ('routine', ?, ?, 'recall', 'owner', 'source',
+                               '空调', 0.9, ?, ?)""",
+                    [
+                        ("ac.confirmed.one", "空调确认经验一", now, now),
+                        ("ac.confirmed.two", "空调确认经验二", now, now),
+                    ],
+                )
+                store._db.execute(
+                    """INSERT INTO reflections
+                       (id, local_date, state, scheduled_at, created_at, completed_at)
+                       VALUES ('reflection:limit', '2030-01-01', 'completed', ?, ?, ?)""",
+                    (now, now, now),
+                )
+                store._db.executemany(
+                    """INSERT INTO reflection_memories
+                       (kind, key, content, evidence, confidence,
+                        source_reflection_id, created_at, updated_at)
+                       VALUES ('practice', ?, ?, '空调', 0.8,
+                               'reflection:limit', ?, ?)""",
+                    [
+                        ("ac.reflection.one", "空调复盘经验一", now, now),
+                        ("ac.reflection.two", "空调复盘经验二", now, now),
+                    ],
+                )
+
+            retrieval = build_plan_retrieval(
+                store,
+                plan("空调"),
+                config(directory, memory_results=2),
+            )
+
+            self.assertEqual(
+                len(retrieval["recall_memories"])
+                + len(retrieval["reflection_memories"]),
+                4,
+            )
+            self.assertEqual(len(retrieval["recall_memories"]), 2)
+            self.assertEqual(len(retrieval["reflection_memories"]), 2)
+            store.close()
+
+    def test_memory_recall_caps_each_kind_at_six(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            now = time.time()
+            with store._db:
+                store._db.executemany(
+                    """INSERT INTO memories
+                       (kind, key, content, activation, authority, source_event_id,
+                        evidence_quote, importance, created_at, updated_at)
+                       VALUES ('routine', ?, ?, 'recall', 'owner', 'source',
+                               '空调', 0.9, ?, ?)""",
+                    [
+                        (f"ac.confirmed.{index}", f"空调确认经验{index}", now, now)
+                        for index in range(7)
+                    ],
+                )
+                store._db.execute(
+                    """INSERT INTO reflections
+                       (id, local_date, state, scheduled_at, created_at, completed_at)
+                       VALUES ('reflection:cap', '2030-01-01', 'completed', ?, ?, ?)""",
+                    (now, now, now),
+                )
+                store._db.executemany(
+                    """INSERT INTO reflection_memories
+                       (kind, key, content, evidence, confidence,
+                        source_reflection_id, created_at, updated_at)
+                       VALUES ('practice', ?, ?, '空调', 0.8,
+                               'reflection:cap', ?, ?)""",
+                    [
+                        (f"ac.reflection.{index}", f"空调复盘经验{index}", now, now)
+                        for index in range(7)
+                    ],
+                )
+
+            retrieval = build_plan_retrieval(
+                store,
+                plan("空调"),
+                config(directory, memory_results=20),
+            )
+
+            self.assertEqual(len(retrieval["recall_memories"]), 6)
+            self.assertEqual(len(retrieval["reflection_memories"]), 6)
+            store.close()
+
+    def test_zero_memory_results_disables_both_recall_kinds(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            now = time.time()
+            with store._db:
+                store._db.execute(
+                    """INSERT INTO memories
+                       (kind, key, content, activation, authority, source_event_id,
+                        evidence_quote, importance, created_at, updated_at)
+                       VALUES ('routine', 'ac.confirmed', '空调经验', 'recall',
+                               'owner', 'source', '空调', 1.0, ?, ?)""",
+                    (now, now),
+                )
+
+            retrieval = build_plan_retrieval(
+                store,
+                plan("空调"),
+                config(directory, memory_results=0),
+            )
+
+            self.assertEqual(retrieval["recall_memories"], [])
+            self.assertEqual(retrieval["reflection_memories"], [])
+            store.close()
+
     def test_owner_history_keeps_action_ledger_for_memory_and_external_tools(self) -> None:
         rendered = project_recent_turns_for_owner(
             {

@@ -7,7 +7,7 @@ import time
 from ..config import AppConfig
 from ..context_time import context_timestamp
 from ..logging_context import log_event, safe_preview
-from ..storage import Store, estimate_tokens, truncate_tokens
+from ..storage import MemoryRecallQuery, Store, estimate_tokens, truncate_tokens
 from ..storage.episode_ranking import EpisodeRecallQuery, rank_recall_items
 from .budget import SECTION_BUDGET_ALLOCATOR
 
@@ -203,8 +203,49 @@ def build_plan_retrieval(
         and query.get("turn_ids")
     }
 
-    recall_memories: list[dict[str, object]] = []
-    reflection_memories: list[dict[str, object]] = []
+    ranked_memories = store.rank_recalled_memories(
+        [
+            MemoryRecallQuery(
+                expression=str(item["expression"]),
+                unit_ids=tuple(str(value) for value in item["unit_ids"]),
+                priority=int(item["priority"]),
+            )
+            for item in recall_queries
+        ],
+        max(0, config.memory_results),
+    )
+    recall_memories = [
+        {
+            "kind": truncate_tokens(str(row.get("kind") or ""), 24),
+            "key": truncate_tokens(str(row.get("key") or ""), 64),
+            "content": truncate_tokens(str(row.get("content") or ""), 160),
+            "unit_ids": list(row.get("unit_ids") or []),
+        }
+        for row in ranked_memories
+        if row.get("source") == "confirmed"
+    ]
+    reflection_memories = [
+        {
+            "kind": truncate_tokens(str(row.get("kind") or ""), 24),
+            "key": truncate_tokens(str(row.get("key") or ""), 64),
+            "content": truncate_tokens(str(row.get("content") or ""), 160),
+            "unit_ids": list(row.get("unit_ids") or []),
+        }
+        for row in ranked_memories
+        if row.get("source") == "reflection"
+    ]
+    memory_hit_query_set = {
+        str(query)
+        for row in ranked_memories
+        if row.get("source") == "confirmed"
+        for query in row.get("matched_queries") or []
+    }
+    reflection_hit_query_set = {
+        str(query)
+        for row in ranked_memories
+        if row.get("source") == "reflection"
+        for query in row.get("matched_queries") or []
+    }
     recalled_episode_rows: dict[str, dict[str, object]] = {}
     recall_hits: list[str] = []
     recall_misses: list[str] = []
@@ -214,65 +255,11 @@ def build_plan_retrieval(
     turn_hit_queries: list[str] = []
     for recall_query in recall_queries:
         query = str(recall_query["expression"])
-        unit_ids = [str(value) for value in recall_query["unit_ids"]]
-        memory_limit = min(3, max(1, config.memory_results))
-        memory_rows = store.search_memories(
-            query, memory_limit, activation="recall"
-        )
-        reflection_rows = store.search_reflection_memories(
-            query,
-            min(3, max(1, config.memory_results)),
-            include_core=True,
-            core_match_only=True,
-        )
-        query_hit = False
-        memory_hit = bool(memory_rows)
-        reflection_hit = bool(reflection_rows)
+        memory_hit = query in memory_hit_query_set
+        reflection_hit = query in reflection_hit_query_set
         topic_hit = query in episode_hit_queries
         turn_hit = query in episode_turn_hit_queries
-        for row in memory_rows:
-            key = (str(row.get("kind") or ""), str(row.get("key") or ""))
-            existing = next(
-                (item for item in recall_memories if (str(item.get("kind") or ""), str(item.get("key") or "")) == key),
-                None,
-            )
-            if existing is not None:
-                query_hit = True
-                units = set(existing.get("unit_ids") or [])
-                units.update(unit_ids)
-                existing["unit_ids"] = sorted(units)
-                continue
-            item = {
-                "kind": truncate_tokens(str(row.get("kind") or ""), 24),
-                "key": truncate_tokens(str(row.get("key") or ""), 64),
-                "content": truncate_tokens(str(row.get("content") or ""), 160),
-                "unit_ids": sorted(unit_ids),
-            }
-            recall_memories.append(item)
-            query_hit = True
-        for row in reflection_rows:
-            key = (str(row.get("kind") or ""), str(row.get("key") or ""))
-            existing = next(
-                (item for item in reflection_memories if (str(item.get("kind") or ""), str(item.get("key") or "")) == key),
-                None,
-            )
-            if existing is not None:
-                query_hit = True
-                units = set(existing.get("unit_ids") or [])
-                units.update(unit_ids)
-                existing["unit_ids"] = sorted(units)
-                continue
-            reflection_memories.append(
-                {
-                    "kind": truncate_tokens(str(row.get("kind") or ""), 24),
-                    "key": truncate_tokens(str(row.get("key") or ""), 64),
-                    "content": truncate_tokens(str(row.get("content") or ""), 160),
-                    "unit_ids": sorted(unit_ids),
-                }
-            )
-            query_hit = True
-        if topic_hit:
-            query_hit = True
+        query_hit = memory_hit or reflection_hit or topic_hit
         if memory_hit:
             memory_hit_queries.append(query)
         if reflection_hit:
@@ -401,8 +388,8 @@ def build_plan_retrieval(
         "recent_memories": store.recent_memory_context(
             max(100, config.memory_tokens // 8)
         ),
-        "recall_memories": recall_memories[:8],
-        "reflection_memories": reflection_memories[:8],
+        "recall_memories": recall_memories,
+        "reflection_memories": reflection_memories,
         "recalled_turns": recalled_turns,
         "goals": goals,
         "reminders": reminders,
@@ -435,6 +422,19 @@ def build_plan_retrieval(
         "context_recall_detail",
         stage="context_recall",
         selected=safe_preview(retrieval, 5000),
+        memory_rank=safe_preview(
+            [
+                {
+                    "source": row.get("source"),
+                    "key": row.get("key"),
+                    "score": round(float(row.get("search_score") or 0.0), 4),
+                    "floor": row.get("score_floor"),
+                    "queries": row.get("matched_queries"),
+                }
+                for row in ranked_memories
+            ],
+            3000,
+        ),
     )
     return retrieval
 

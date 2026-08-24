@@ -181,7 +181,7 @@ All fields must be positive. Weixin credentials and state are stored under
 | `planner_recent_append_turns` | `recent_turns` | Planner append Turn count; minimum `1` |
 | `planner_active_recent_turns` | `recent_turns` | Planner focus Turn count; minimum `1` |
 | `planner_recent_tokens` | automatic | Planner recent-log budget; minimum `1000` |
-| `memory_results` | `6` | Configured durable-memory recall result count; minimum `0` |
+| `memory_results` | `6` | Per-category top-k for confirmed recall memory and reflection memory; range `0`–`6`, and `0` disables both (combined maximum `12`) |
 | `memory_tokens` | `8000` | Durable-memory context budget; minimum `0` |
 | `max_input_tokens` | `96000` | Target ceiling for complete model input; minimum `1000` |
 | `summary_results` | `8` | Maximum query-recalled Episodes, configurable up to `12`; `0` disables query recall |

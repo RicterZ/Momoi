@@ -247,13 +247,10 @@ class TurnOrchestrator:
         state = self.store.begin_turn(turn_id, "autonomous", [turn_id])
         if state in {"completed", "cancelled", "needs_reconciliation"}:
             raise RuntimeError(f"webhook turn is {state}")
-        memories = self.store.memory_context(
-            prompt, self.config.memory_results, self.config.memory_tokens
-        )
-        learned = self.store.reflection_memory_context(
+        memories, learned = self.store.ranked_memory_context(
             prompt,
-            max(1, self.config.memory_results // 2),
-            max(1000, self.config.memory_tokens // 2),
+            self.config.memory_results,
+            self.config.memory_tokens,
         )
         recent_memories = self.store.recent_memory_context(
             max(100, self.config.memory_tokens // 8)
@@ -1279,13 +1276,10 @@ class TurnOrchestrator:
         record = cyber_keyword_pre_hook(raw_record)
         owner_source = cyber_keyword_pre_hook(str(source["owner_text"]))
         knowledge_source = cyber_keyword_pre_hook(str(source["knowledge_text"]))
-        confirmed_memory = self.store.memory_context(
-            query, self.config.memory_results, self.config.memory_tokens
-        )
-        learned = self.store.reflection_memory_context(
+        confirmed_memory, learned = self.store.ranked_memory_context(
             query,
-            max(1, self.config.memory_results),
-            max(1000, self.config.memory_tokens),
+            self.config.memory_results,
+            self.config.memory_tokens,
         )
         always_inventory = self.store.always_memory_inventory()
         always_memory_ids = {int(item["id"]) for item in always_inventory}
@@ -1476,13 +1470,10 @@ class TurnOrchestrator:
         review_at = context_timestamp(goal["next_review_at"])
         self_state = self.store.self_state_context()
         memory_query = f"{goal['title']} {goal['next_action']} {goal['latest_result']}"
-        memories = self.store.memory_context(
-            memory_query, self.config.memory_results, self.config.memory_tokens
-        )
-        learned = self.store.reflection_memory_context(
+        memories, learned = self.store.ranked_memory_context(
             memory_query,
-            max(1, self.config.memory_results // 2),
-            max(1000, self.config.memory_tokens // 2),
+            self.config.memory_results,
+            self.config.memory_tokens,
         )
         recent_memories = self.store.recent_memory_context(
             max(100, self.config.memory_tokens // 8)
