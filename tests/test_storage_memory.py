@@ -32,6 +32,25 @@ from momoi.storage.scheduling import next_schedule_at
 
 
 class StorageMemoryTest(unittest.TestCase):
+    def test_context_read_indexes_are_installed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            indexes = {
+                str(row["name"]): str(row["sql"] or "")
+                for row in store._db.execute(
+                    "SELECT name, sql FROM sqlite_master WHERE type='index'"
+                ).fetchall()
+            }
+            self.assertIn("messages_turn", indexes)
+            self.assertIn("messages(turn_id, id)", indexes["messages_turn"])
+            self.assertIn("turns_context_recent", indexes)
+            self.assertIn(
+                "turns(updated_at DESC, kind, id)",
+                indexes["turns_context_recent"],
+            )
+            self.assertIn("state<>'running'", indexes["turns_context_recent"])
+            store.close()
+
     def test_owner_activity_update_preserves_or_resets_scene_age(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")

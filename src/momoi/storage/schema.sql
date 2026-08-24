@@ -24,6 +24,8 @@ CREATE INDEX IF NOT EXISTS messages_delivery
     ON messages(delivery_state, outbox_id);
 CREATE UNIQUE INDEX IF NOT EXISTS messages_outbox
     ON messages(outbox_id) WHERE outbox_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS messages_turn
+    ON messages(turn_id, id);
 CREATE TABLE IF NOT EXISTS outbox (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     turn_id TEXT NOT NULL,
@@ -235,6 +237,8 @@ CREATE TABLE IF NOT EXISTS turns (
     started_at REAL NOT NULL,
     updated_at REAL NOT NULL
 );
+CREATE INDEX IF NOT EXISTS turns_context_recent
+    ON turns(updated_at DESC, kind, id) WHERE state<>'running';
 CREATE TABLE IF NOT EXISTS conversation_episodes (
     id TEXT PRIMARY KEY,
     status TEXT NOT NULL DEFAULT 'open'
