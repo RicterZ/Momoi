@@ -43,6 +43,6 @@ Rules:
 - Group consecutive Turns when their meaning comes from the surrounding context;
   do not create an Episode for every sentence.
 - `open_loops` contains only concrete unfinished matters that remain pending beyond
-  the batch. Goals and reminders remain separate durable objects.
+  the batch. Goals remain separate durable objects.
 - Keep topics, entities, and salience sparse. Do not invent facts or emotional
   meaning absent from the supplied messages.

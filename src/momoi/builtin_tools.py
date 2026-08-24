@@ -197,7 +197,7 @@ BUILTIN_TOOL_SPECS: list[dict[str, Any]] = [
         "description": (
             "Wait inside this Turn for a number of seconds, then continue. "
             "Use it only for a short wait you will observe now; it is not a "
-            "reminder or scheduler."
+            "cross-Turn scheduler or substitute for a Goal."
         ),
         "input_schema": {
             "type": "object",

@@ -51,30 +51,23 @@ PLANNER_INTERNAL_TOOLS = [
 ]
 
 
-def _planner_state_lines(items: list[dict[str, object]], *, reminder: bool = False) -> str:
+def _planner_state_lines(items: list[dict[str, object]]) -> str:
     lines: list[str] = []
     for item in items:
         if not isinstance(item, dict) or not item.get("id"):
             continue
-        if reminder:
-            fields = [f"id={item['id']}"]
-            if item.get("text"):
-                fields.append(f"text={str(item['text'])[:160]}")
-            if item.get("fire_timestamp"):
-                fields.append(f"at={item['fire_timestamp']}")
-        else:
-            fields = [
-                f"id={item['id']}",
-                f"status={item.get('status') or 'unknown'}",
-                f"title={str(item.get('title') or '')[:100]}",
-            ]
-            for key, label, limit in (
-                ("next_action", "next", 120),
-                ("waiting_for", "waiting", 100),
-                ("latest_result", "last", 160),
-            ):
-                if item.get(key) not in (None, "", [], {}):
-                    fields.append(f"{label}={str(item[key])[:limit]}")
+        fields = [
+            f"id={item['id']}",
+            f"status={item.get('status') or 'unknown'}",
+            f"title={str(item.get('title') or '')[:100]}",
+        ]
+        for key, label, limit in (
+            ("next_action", "next", 120),
+            ("waiting_for", "waiting", 100),
+            ("latest_result", "last", 160),
+        ):
+            if item.get(key) not in (None, "", [], {}):
+                fields.append(f"{label}={str(item[key])[:limit]}")
         lines.append("- " + " ".join(fields))
     return "\n".join(lines)
 
@@ -334,7 +327,6 @@ def render_heartbeat_planner_request(
     long_term_memories: str,
     recent_memories: str,
     active_goals: str,
-    pending_reminders: str,
     recent_topics: list[dict[str, object]],
     recent_turns: dict[str, object],
     recent_turn_base_count: int,
@@ -362,7 +354,6 @@ def render_heartbeat_planner_request(
         ("long_term_memories", _planner_value(long_term_memories)),
         ("recent_memories", _planner_value(recent_memories)),
         ("active_goals", _planner_value(active_goals)),
-        ("pending_reminders", _planner_value(pending_reminders)),
         (
             "recent_turn_base",
             _planner_value(
@@ -408,7 +399,6 @@ def render_context_planner_request(
     recent_turn_base_count: int,
     active_recent_turn_ids: list[str],
     candidate_goals: list[dict[str, object]],
-    candidate_reminders: list[dict[str, object]],
     candidate_episodes: list[dict[str, object]],
     interrupted_reply_expectation: str,
     owner_messages: list[dict[str, object]],
@@ -431,10 +421,6 @@ def render_context_planner_request(
         (
             "candidate_goals",
             _planner_value(_planner_state_lines(candidate_goals)),
-        ),
-        (
-            "candidate_reminders",
-            _planner_value(_planner_state_lines(candidate_reminders, reminder=True)),
         ),
         (
             "interrupted_reply_expectation",
@@ -561,15 +547,6 @@ class ContextService:
                 : self.config.policies.context.max_visible_goals
             ]
         ]
-        candidate_reminders = [
-            {
-                name: reminder.get(name)
-                for name in ("id", "text", "fire_timestamp", "schedule")
-            }
-            for reminder in self.store.list_reminders(
-                self.config.policies.context.max_visible_reminders
-            )
-        ]
         interrupted_reply = self.store.cooled_reply_expectation_context()
         # Prefix-cache order: fixed memory and agenda fields precede append-only
         # conversation evidence; query-specific episodes and the owner message
@@ -588,7 +565,6 @@ class ContextService:
                     recent_turn_base_count=recent_turn_base_count,
                     active_recent_turn_ids=active_recent_turn_ids,
                     candidate_goals=candidate_goals,
-                    candidate_reminders=candidate_reminders,
                     candidate_episodes=candidates,
                     interrupted_reply_expectation=interrupted_reply,
                     owner_messages=owner_messages,
@@ -814,7 +790,6 @@ class ContextService:
         conversation: dict[str, object],
         recent_topics: list[dict[str, object]],
         goals: str,
-        reminders: str,
         long_term_memories: str,
         recent_memories: str,
     ) -> dict[str, object]:
@@ -845,7 +820,6 @@ class ContextService:
                     long_term_memories=long_term_memories,
                     recent_memories=recent_memories,
                     active_goals=goals,
-                    pending_reminders=reminders,
                     recent_turns=planner_recent_turns,
                     recent_turn_base_count=recent_turn_base_count,
                     active_recent_turn_ids=active_recent_turn_ids,

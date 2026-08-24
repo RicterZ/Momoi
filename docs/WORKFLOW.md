@@ -57,7 +57,7 @@ curl -X POST http://127.0.0.1:8787/webhooks/event-message \
   --data '{"event_prompt":"The washing machine has finished. Remind the owner to collect the laundry."}'
 ```
 
-Momoi receives her current conversation context, relevant memory, goals, reminders, mood, activity, and emotion catalog. The event is not treated as owner speech, but the resulting message still comes from the same Momoi.
+Momoi receives her current conversation context, relevant memory, goals, mood, activity, and emotion catalog. The event is not treated as owner speech, but the resulting message still comes from the same Momoi.
 
 A message step may use HTTP to fetch data required by the event prompt, then must finish by sending one or more messages. It cannot call arbitrary MCP or file tools.
 

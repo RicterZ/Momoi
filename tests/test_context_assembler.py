@@ -290,7 +290,6 @@ class ContextAssemblerTest(unittest.TestCase):
         rendered = pack_user_context(
             ("recent_turn_append", "appended history"),
             ("recent_turn_base", "stable history"),
-            ("pending_reminders", "reminders"),
             ("recent_memories", "recent"),
             ("active_goals", "goals"),
             ("long_term_memories", "long term"),
@@ -301,8 +300,7 @@ class ContextAssemblerTest(unittest.TestCase):
         )
         self.assertLess(rendered.index("<long_term_memories>"), rendered.index("<recent_memories>"))
         self.assertLess(rendered.index("<recent_memories>"), rendered.index("<active_goals>"))
-        self.assertLess(rendered.index("<active_goals>"), rendered.index("<pending_reminders>"))
-        self.assertLess(rendered.index("<pending_reminders>"), rendered.index("<interrupted_reply_expectation>"))
+        self.assertLess(rendered.index("<active_goals>"), rendered.index("<interrupted_reply_expectation>"))
         self.assertLess(rendered.index("<interrupted_reply_expectation>"), rendered.index("<recent_turn_base>"))
         self.assertLess(rendered.index("<recent_turn_base>"), rendered.index("<recent_turn_append>"))
         self.assertLess(rendered.index("<recent_turn_append>"), rendered.index("<recall_memories>"))
@@ -1987,15 +1985,6 @@ class ContextAssemblerTest(unittest.TestCase):
                     ("goal-social", "整理微博收藏", "整理微博", now, now),
                 ],
             )
-            store._db.executemany(
-                """INSERT INTO reminders
-                   (id, text, source_event_id, status, fire_at, created_at, updated_at)
-                   VALUES (?, ?, 'source', 'pending', ?, ?, ?)""",
-                [
-                    ("reminder-mail", "检查项目邮件", now + 60, now, now),
-                    ("reminder-social", "看看微博收藏", now + 60, now, now),
-                ],
-            )
             store._db.commit()
 
             with self.assertLogs(
@@ -2043,25 +2032,17 @@ class ContextAssemblerTest(unittest.TestCase):
             self.assertIn(
                 "跟进项目邮件", [item["title"] for item in state_log["goals"]]
             )
-            self.assertIn(
-                "检查项目邮件", [item["text"] for item in state_log["reminders"]]
-            )
 
             self.assertTrue(retrieval["recall_memories"])
             self.assertEqual(
                 [item["id"] for item in retrieval["goals"]],
                 ["goal-mail", "goal-social"],
             )
-            self.assertEqual(
-                [item["id"] for item in retrieval["reminders"]],
-                ["reminder-mail", "reminder-social"],
-            )
             rendered = "\n".join(assembled.values())
             self.assertNotIn("较早的项目邮件仍在等待", rendered)
             self.assertIn("项目邮件关系到当前合作", rendered)
             self.assertIn("goal-mail", rendered)
             self.assertIn("goal-social", rendered)
-            self.assertIn("reminder-social", rendered)
             autonomous = recall_episode_context(store, "项目邮件", 3, 2000, 2000)
             self.assertNotIn("较早的项目邮件仍在等待", autonomous)
             self.assertIn("summary_quality: empty", autonomous)

@@ -131,19 +131,6 @@ CREATE TABLE IF NOT EXISTS goals (
 );
 CREATE INDEX IF NOT EXISTS goals_due
     ON goals(next_review_at) WHERE status IN ('active', 'waiting');
-CREATE TABLE IF NOT EXISTS reminders (
-    id TEXT PRIMARY KEY,
-    text TEXT NOT NULL,
-    source_event_id TEXT NOT NULL,
-    status TEXT NOT NULL CHECK (status IN ('pending', 'fired', 'cancelled')),
-    fire_at REAL NOT NULL,
-    schedule_json TEXT NOT NULL DEFAULT '',
-    claimed_at REAL,
-    created_at REAL NOT NULL,
-    updated_at REAL NOT NULL
-);
-CREATE INDEX IF NOT EXISTS reminders_due
-    ON reminders(fire_at) WHERE status='pending';
 CREATE TABLE IF NOT EXISTS self_state (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     mood_state TEXT NOT NULL,

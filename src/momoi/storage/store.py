@@ -312,9 +312,6 @@ class Store(MemoryStore, DeliveryStore):
         )
         self._db.execute("UPDATE goals SET review_claimed_at=NULL")
         self._db.execute(
-            "UPDATE reminders SET claimed_at=NULL WHERE status='pending'"
-        )
-        self._db.execute(
             "UPDATE notifications SET claimed_at=NULL WHERE state='pending'"
         )
         self._supersede_heartbeat_contacts(
@@ -4192,7 +4189,6 @@ class Store(MemoryStore, DeliveryStore):
                 )
             else:
                 self._apply_goal_mutations(draft, now)
-                self._apply_reminder_mutations(draft, now)
                 for memory in draft.memories if draft else []:
                     self._remember(memory, memory_events or [], now)
                 for forgotten in draft.forgotten_memories if draft else []:
@@ -4868,11 +4864,6 @@ class Store(MemoryStore, DeliveryStore):
                        WHERE status IN ('active', 'waiting', 'blocked')"""
                 ).fetchone()[0]
             ),
-            "reminders": int(
-                self._db.execute(
-                    "SELECT COUNT(*) FROM reminders WHERE status='pending'"
-                ).fetchone()[0]
-            ),
             "emotions": int(
                 self._db.execute("SELECT COUNT(*) FROM emotions").fetchone()[0]
             ),
@@ -5153,43 +5144,6 @@ class Store(MemoryStore, DeliveryStore):
             )
         return "\n".join(lines)
 
-    def active_reminders_context(self) -> str:
-        rows = self._db.execute(
-            """SELECT id, text, fire_at, schedule_json FROM reminders
-               WHERE status='pending' ORDER BY fire_at LIMIT 20"""
-        ).fetchall()
-        return "\n".join(
-            f"- id={row['id']} fire_at={context_timestamp(row['fire_at'])} "
-            f"schedule={row['schedule_json'] or 'none'} text={row['text']}"
-            for row in rows
-        )
-
-    def list_reminders(
-        self, limit: int = 20, *, include_closed: bool = False
-    ) -> list[dict[str, object]]:
-        if limit <= 0:
-            return []
-        where = "" if include_closed else "WHERE status='pending'"
-        rows = self._db.execute(
-            f"""SELECT * FROM reminders {where}
-                ORDER BY status='pending' DESC,
-                         CASE WHEN status='pending' THEN fire_at END,
-                         updated_at DESC LIMIT ?""",
-            (limit,),
-        ).fetchall()
-        return [self._reminder_dict(row) for row in rows]
-
-    def cancel_reminder(self, reminder_id: str) -> dict[str, object] | None:
-        now = time.time()
-        with self._db:
-            cursor = self._db.execute(
-                """UPDATE reminders
-                   SET status='cancelled', claimed_at=NULL, updated_at=?
-                   WHERE id=? AND status='pending'""",
-                (now, reminder_id),
-            )
-        return self.reminder(reminder_id) if cursor.rowcount else None
-
     def add_emotion(
         self, slug: str, path: str | Path, description: str
     ) -> dict[str, object]:
@@ -5324,131 +5278,6 @@ class Store(MemoryStore, DeliveryStore):
             segments = payload.get("segments") or []
             kind = str(segments[0].get("type")) if len(segments) == 1 else "message"
         return text, kind, media_path(payload), payload
-
-    def reminder(self, reminder_id: str) -> dict[str, object] | None:
-        row = self._db.execute(
-            "SELECT * FROM reminders WHERE id=?", (reminder_id,)
-        ).fetchone()
-        return self._reminder_dict(row) if row else None
-
-    @staticmethod
-    def _reminder_dict(row: sqlite3.Row) -> dict[str, object]:
-        reminder = dict(row)
-        _add_context_timestamps(reminder, ("fire_at", "created_at", "updated_at"))
-        schedule_json = str(reminder.pop("schedule_json", ""))
-        reminder["schedule"] = json.loads(schedule_json) if schedule_json else None
-        return reminder
-
-    def claim_due_reminder(self) -> dict[str, object] | None:
-        now = time.time()
-        with self._db:
-            row = self._db.execute(
-                """SELECT * FROM reminders
-                   WHERE status='pending' AND fire_at<=? AND claimed_at IS NULL
-                   ORDER BY fire_at LIMIT 1""",
-                (now,),
-            ).fetchone()
-            if row is None:
-                return None
-            self._db.execute(
-                "UPDATE reminders SET claimed_at=? WHERE id=?", (now, row["id"])
-            )
-        return self._reminder_dict(row)
-
-    def next_reminder_due_at(self) -> float | None:
-        row = self._db.execute(
-            """SELECT MIN(fire_at) AS due FROM reminders
-               WHERE status='pending' AND claimed_at IS NULL"""
-        ).fetchone()
-        return float(row["due"]) if row and row["due"] is not None else None
-
-    def fire_reminder(
-        self,
-        reminder_id: str,
-        config: NotificationConfig | None = None,
-        target_channel: str = "",
-    ) -> bool:
-        now = time.time()
-        with self._db:
-            row = self._db.execute(
-                """SELECT text, fire_at, schedule_json FROM reminders
-                   WHERE id=? AND status='pending'""",
-                (reminder_id,),
-            ).fetchone()
-            if row is None:
-                return False
-            schedule = (
-                json.loads(str(row["schedule_json"])) if row["schedule_json"] else None
-            )
-            if schedule is not None and config is not None:
-                quiet_end = quiet_until(now, config)
-                if quiet_end > now:
-                    self._db.execute(
-                        """UPDATE reminders SET fire_at=?, claimed_at=NULL, updated_at=?
-                           WHERE id=?""",
-                        (quiet_end, now, reminder_id),
-                    )
-                    return False
-            occurrence = int(float(row["fire_at"]))
-            if schedule is None:
-                self._db.execute(
-                    """UPDATE reminders SET status='fired', claimed_at=NULL, updated_at=?
-                       WHERE id=?""",
-                    (now, reminder_id),
-                )
-            else:
-                self._db.execute(
-                    """UPDATE reminders SET fire_at=?, claimed_at=NULL, updated_at=?
-                       WHERE id=?""",
-                    (next_schedule_at(schedule, now), now, reminder_id),
-                )
-            reminder_turn_id = f"reminder:{reminder_id}:{occurrence}"
-            outbox = self._db.execute(
-                """INSERT OR IGNORE INTO outbox
-                   (turn_id, dedupe_key, text, target_channel)
-                   VALUES (?, ?, ?, ?)""",
-                (
-                    reminder_turn_id,
-                    reminder_turn_id,
-                    row["text"],
-                    target_channel,
-                ),
-            )
-            outbox_id = (
-                int(outbox.lastrowid)
-                if outbox.lastrowid
-                else int(
-                    self._db.execute(
-                        "SELECT id FROM outbox WHERE dedupe_key=?",
-                        (reminder_turn_id,),
-                    ).fetchone()["id"]
-                )
-            )
-            self._db.execute(
-                """INSERT INTO messages
-                   (turn_id, role, content, created_at, source_event_ids_json,
-                    outbox_id, delivery_state)
-                   SELECT ?, 'assistant', ?, ?, ?, ?, 'queued'
-                   WHERE NOT EXISTS (
-                       SELECT 1 FROM messages WHERE outbox_id=?
-                   )""",
-                (
-                    reminder_turn_id,
-                    row["text"],
-                    now,
-                    json.dumps([f"reminder:{reminder_id}"]),
-                    outbox_id,
-                    outbox_id,
-                ),
-            )
-            self._ensure_autonomous_episode(
-                f"reminder:{reminder_id}",
-                reminder_turn_id,
-                self._episode_title(str(row["text"]), "Reminder conversation"),
-                now,
-                row["text"],
-            )
-        return True
 
     @staticmethod
     def _goal_dict(row: sqlite3.Row) -> dict[str, object]:
@@ -5843,7 +5672,6 @@ class Store(MemoryStore, DeliveryStore):
             for forgotten in draft.forgotten_memories if draft else []:
                 self._forget_memory(forgotten, events, now)
             self._apply_goal_mutations(draft, now)
-            self._apply_reminder_mutations(draft, now)
             self._apply_cooled_reply_action(draft, now)
             self._append_turn_journal(
                 turn_id,
@@ -5874,9 +5702,6 @@ class Store(MemoryStore, DeliveryStore):
                             )
                         ],
                         "goals": list(draft.goals.values()) if draft else [],
-                        "reminders": (
-                            list(draft.reminders.values()) if draft else []
-                        ),
                     },
                 },
                 visibility="internal",
@@ -5912,7 +5737,6 @@ class Store(MemoryStore, DeliveryStore):
         now = time.time()
         with self._db:
             self._apply_goal_mutations(draft, now)
-            self._apply_reminder_mutations(draft, now)
             if goal_id not in draft.goals:
                 current = self.goal(goal_id)
                 next_review_at = (
@@ -6225,34 +6049,6 @@ class Store(MemoryStore, DeliveryStore):
                     if goal.get("schedule")
                     else "",
                     goal.get("next_review_at"),
-                    now,
-                    now,
-                ),
-            )
-
-    def _apply_reminder_mutations(self, draft: TurnDraft | None, now: float) -> None:
-        for reminder in draft.reminders.values() if draft else []:
-            self._db.execute(
-                """INSERT INTO reminders
-                   (id, text, source_event_id, status, fire_at, schedule_json,
-                    claimed_at, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)
-                   ON CONFLICT(id) DO UPDATE SET
-                     text=excluded.text,
-                     status=excluded.status,
-                     fire_at=excluded.fire_at,
-                     schedule_json=excluded.schedule_json,
-                     claimed_at=NULL,
-                     updated_at=excluded.updated_at""",
-                (
-                    reminder["id"],
-                    reminder["text"],
-                    reminder["source_event_id"],
-                    reminder["status"],
-                    reminder["fire_at"],
-                    json.dumps(reminder.get("schedule"), ensure_ascii=False)
-                    if reminder.get("schedule")
-                    else "",
                     now,
                     now,
                 ),

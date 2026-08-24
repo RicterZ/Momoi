@@ -674,19 +674,6 @@ class MomoiDaemon(TurnRunner):
     async def _scheduler_worker(self, stop: asyncio.Event) -> None:
         while not stop.is_set():
             self.agenda_changed.clear()
-            reminder = self.store.claim_due_reminder()
-            if reminder is not None:
-                if self.store.fire_reminder(
-                    str(reminder["id"]), self.config.notifications, self.channel.name
-                ):
-                    log_event(
-                        logger,
-                        logging.INFO,
-                        "reminder_fired",
-                        reminder_id=reminder["id"],
-                    )
-                    self.outbox_changed.set()
-                continue
             notification = self.store.claim_due_notification(self.config.notifications)
             if notification is not None:
                 if self.store.queue_notification(
@@ -746,7 +733,6 @@ class MomoiDaemon(TurnRunner):
             due_times = [
                 due
                 for due in (
-                    self.store.next_reminder_due_at(),
                     self.store.next_notification_due_at(),
                     self.store.next_goal_due_at(),
                     self.store.next_reflection_due_at(

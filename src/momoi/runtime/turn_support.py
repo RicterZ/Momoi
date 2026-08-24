@@ -73,8 +73,6 @@ AGENDA_POLICY_TOOLS = frozenset(
         "goal_update",
         "goal_finish",
         "goal_cancel",
-        "reminder_create",
-        "reminder_cancel",
         "owner_notify",
     }
 )
@@ -116,7 +114,6 @@ USER_CONTEXT_SECTION_ORDER = (
     "long_term_memories",
     "recent_memories",
     "active_goals",
-    "pending_reminders",
     "always_memory_inventory",
     "recent_memory_inventory",
     "interrupted_reply_expectation",

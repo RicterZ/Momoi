@@ -29,7 +29,7 @@ required field is determined.
    unit. Resolve omitted subjects from supplied evidence when possible.
 2. Evaluate the fixed memory baseline, Recent Turns, the eight most recently
    active Episode candidates,
-   Goals, reminders, and current events. Put a targeted lookup in
+   Goals and current events. Put a targeted lookup in
    `handoff.context_needs` only when material historical evidence may
    still be missing after the runtime's automatic recall. Otherwise mark the
    context sufficient.
@@ -136,7 +136,7 @@ required field is determined.
   set the execution reason to exactly `owner-visible delivery only` or `silent
   close`; do not paraphrase it. Use `clarify` only when missing owner input
   prevents safe or materially correct execution now. Use `work` whenever any
-  Memory, Goal, reminder, file, HTTP, MCP, or other non-delivery work action is
+  Memory, Goal, file, HTTP, MCP, or other non-delivery work action is
   required.
 - When the owner explicitly requests a confirmed memory mutation, name the
   appropriate memory operation in a `work` outline. Recall queries never mutate

@@ -130,7 +130,6 @@ _EVENT_GROUPS = {
     "mcp_config_missing": "MCP",
     "usage_plugin_loaded": "SERVICE",
     "reflection_queued": "AGENDA",
-    "reminder_fired": "AGENDA",
     "prompt_reload_failed": "SERVICE",
 }
 def new_trace_id() -> str:

@@ -57,7 +57,7 @@ curl -X POST http://127.0.0.1:8787/webhooks/event-message \
   --data '{"event_prompt":"The washing machine has finished. Remind the owner to collect the laundry."}'
 ```
 
-Momoi 会获得当前对话上下文、相关记忆、目标、提醒、情绪、活动和情绪素材库。该事件不会被当作主人说的话，但最终消息仍由同一个 Momoi 发出。
+Momoi 会获得当前对话上下文、相关记忆、目标、情绪、活动和情绪素材库。该事件不会被当作主人说的话，但最终消息仍由同一个 Momoi 发出。
 
 `message` 步骤可以使用 HTTP 获取事件 prompt 所需的数据，然后必须先把事件写入对话时间线。是否向主人发可见消息另判，可以静默结束。它不能调用任意 MCP 或文件工具。
 

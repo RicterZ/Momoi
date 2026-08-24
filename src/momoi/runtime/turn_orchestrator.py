@@ -210,7 +210,6 @@ class TurnOrchestrator:
                     ("recall_status", recalled["query_recall"]),
                     ("reflection_memories", recalled["reflection_memories"]),
                     ("active_goals", recalled["goals"]),
-                    ("pending_reminders", recalled["reminders"]),
                     ("recent_turn_base", recalled["recent_turn_base"]),
                     ("recent_turn_append", recalled["recent_turn_append"]),
                     ("episode_directory", recalled["episodes"]),
@@ -833,7 +832,6 @@ class TurnOrchestrator:
             ("recall_status", recalled["query_recall"]),
             ("reflection_memories", recalled["reflection_memories"]),
             ("active_goals", recalled["goals"]),
-            ("pending_reminders", recalled["reminders"]),
             ("recent_turn_base", recalled["recent_turn_base"]),
             ("recent_turn_append", recalled["recent_turn_append"]),
             ("episode_directory", recalled["episodes"]),
@@ -906,7 +904,6 @@ class TurnOrchestrator:
             memories=len(draft.memories),
             forgotten_memories=len(draft.forgotten_memories),
             goals=len(draft.goals),
-            reminders=len(draft.reminders),
             expects_reply=reply.expects_reply,
             schedule_reply_wait=reply.should_schedule_reply_wait,
             llm=self.store.turn_usage(turn_id),
@@ -1069,7 +1066,6 @@ class TurnOrchestrator:
             recent_topics.append(topic)
             topic_tokens += size
         goals = self.store.active_goals_context(authority="agent")
-        reminders = self.store.active_reminders_context()
         recent_memories = self.store.recent_memory_context(
             max(100, self.config.memory_tokens // 8)
         )
@@ -1082,7 +1078,6 @@ class TurnOrchestrator:
             conversation=conversation,
             recent_topics=recent_topics,
             goals=goals,
-            reminders=reminders,
             long_term_memories=long_term_memories,
             recent_memories=recent_memories,
         )
@@ -1130,7 +1125,6 @@ class TurnOrchestrator:
                 _heartbeat_plan_lines(plan),
             ),
             ("active_goals", goals),
-            ("pending_reminders", reminders),
             (
                 "recent_topic_reference",
                 _heartbeat_topic_lines(recent_topics),
@@ -1254,7 +1248,6 @@ class TurnOrchestrator:
             memories=len(draft.memories),
             forgotten_memories=len(draft.forgotten_memories),
             goals=len(draft.goals),
-            reminders=len(draft.reminders),
             next_minutes=decision["next_check_minutes"],
             llm=self.store.turn_usage(turn_id),
         )
@@ -1636,7 +1629,6 @@ class TurnOrchestrator:
             tools=_turn_tool_names(draft),
             tool_calls=len(draft.tool_calls),
             goals=len(draft.goals),
-            reminders=len(draft.reminders),
             llm=self.store.turn_usage(turn_id),
         )
         self.agenda_changed.set()

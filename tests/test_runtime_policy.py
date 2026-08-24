@@ -24,7 +24,6 @@ class RuntimePolicyDefaultsTests(unittest.TestCase):
         self.assertEqual(policies.memory, MemoryPolicy())
         self.assertEqual(MAX_CONSECUTIVE_TOOL_FAILURES, 3)
         self.assertEqual(policies.context.max_visible_goals, 8)
-        self.assertEqual(policies.context.max_visible_reminders, 8)
         self.assertEqual(policies.memory.lexical_overlap_floor, 0.1)
         self.assertEqual(_message_gap_bounds("短句"), (4.0, 5.0))
         self.assertEqual(_message_gap_bounds("中等长度" * 8), (5.0, 6.0))

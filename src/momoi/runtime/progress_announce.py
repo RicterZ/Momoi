@@ -7,8 +7,6 @@ ANNOUNCE_LOCAL_TOOLS = frozenset(
         "curl",
         "goal_create",
         "goal_cancel",
-        "reminder_create",
-        "reminder_cancel",
     }
 )
 ANNOUNCE_FIELD = "say_to_owner"

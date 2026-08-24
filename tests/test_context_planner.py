@@ -155,7 +155,6 @@ class ContextPlannerTest(unittest.TestCase):
             long_term_memories="- owner likes short replies",
             recent_memories="- shared game night",
             active_goals="- id=g1 status=active title=goal",
-            pending_reminders="(none)",
             recent_topics=[{"title": "Game", "topics": ["BA"]}],
             recent_turns={
                 "turns": [
@@ -189,10 +188,7 @@ class ContextPlannerTest(unittest.TestCase):
             rendered.index("<recent_memories>"),
             rendered.index("<active_goals>"),
         )
-        self.assertLess(
-            rendered.index("<pending_reminders>"),
-            rendered.index("<recent_turn_base>"),
-        )
+        self.assertLess(rendered.index("<active_goals>"), rendered.index("<recent_turn_base>"))
         self.assertLess(
             rendered.index("<recent_turn_base>"),
             rendered.index("<recent_turn_append>"),
@@ -1041,8 +1037,6 @@ class ContextPlannerTest(unittest.TestCase):
                     "goal_update",
                     "goal_finish",
                     "goal_cancel",
-                    "reminder_create",
-                    "reminder_cancel",
                     "curl",
                     "read_file",
                     "list_dir",
@@ -1639,22 +1633,6 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                         for index in range(9)
                     ],
                 )
-                daemon.store._db.executemany(
-                    """INSERT INTO reminders
-                       (id, text, source_event_id, status, fire_at,
-                        created_at, updated_at)
-                       VALUES (?, ?, 'source', 'pending', 9999999999, ?, ?)""",
-                    [
-                        (
-                            f"reminder-{index}",
-                            "检查等待邮件" if index == 0 else f"无关提醒 {index}",
-                            index,
-                            index,
-                        )
-                        for index in range(9)
-                    ],
-                )
-
             class Provider:
                 calls: list[str] = []
                 planner_recent = ""
@@ -1679,7 +1657,6 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "long_term_memories",
                                 "recent_memories",
                                 "candidate_goals",
-                                "candidate_reminders",
                                 "interrupted_reply_expectation",
                                 "recent_turn_base",
                                 "recent_turn_append",
@@ -1715,11 +1692,6 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual(payload["candidate_goals"].count("id="), 8)
                         self.assertIn("id=goal-8", payload["candidate_goals"])
                         self.assertNotIn("id=goal-0", payload["candidate_goals"])
-                        self.assertEqual(payload["candidate_reminders"].count("id="), 8)
-                        self.assertIn("id=reminder-8", payload["candidate_reminders"])
-                        self.assertNotIn(
-                            "id=reminder-0", payload["candidate_reminders"]
-                        )
                         return tool_plan_response(response_plan())
                     provider_self.calls.append("main")
                     content = messages[0]["content"]

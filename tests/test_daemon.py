@@ -1828,7 +1828,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "mcp__test__read" not in names
                             or {
                                 "mcp__test__write",
-                                "reminder_create",
                             }
                             & names
                         ):
@@ -2228,8 +2227,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "goal_update",
                             "goal_finish",
                             "goal_cancel",
-                            "reminder_create",
-                            "reminder_cancel",
                             "curl",
                             "read_file",
                             "list_dir",
@@ -2574,7 +2571,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             or "memory_search" not in names
                             or "memory_remember" not in names
                             or "goal_update" not in names
-                            or "reminder_create" not in names
                         ):
                             raise AssertionError((system, request, names))
                         call = ToolCall(

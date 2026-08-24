@@ -18,7 +18,6 @@ class DaemonPolicy:
 @dataclass(frozen=True)
 class ContextPolicy:
     max_visible_goals: int = 8
-    max_visible_reminders: int = 8
 
 
 @dataclass(frozen=True)

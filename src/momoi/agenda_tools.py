@@ -23,11 +23,11 @@ AGENDA_TOOL_POLICY = """### Agenda tools
   successfully completed when its success criteria are satisfied. `goal_cancel`
   closes it without claiming success when it should no longer be pursued.
 - When reviewing a due goal, update, finish, or cancel it before the Turn ends.
-- Use `reminder_create` for a one-time reminder. Its `text` is the exact message
-  delivered at `fire_at`, without another LLM call. A fixed recurring reminder
-  may use an interval or daily `schedule` instead. Use `reminder_cancel` to cancel
-  it. Do not use `sleep` or a Goal for a reminder whose text needs no new research.
-- Submit independent reminder calls together in one response.
+- Use a Goal for every future action, including a one-time or recurring owner
+  notification. Use `next_review_at` once or a recurring `schedule`; describe the
+  intended notification in its success criteria and next action. At review time,
+  use current context and `owner_notify`, then finish a one-time Goal or update a
+  recurring one. Never use `sleep` to cross Turns.
 - `owner_notify` is available only during autonomous work. Use it only for a
   useful result, a needed decision, or a meaningful failure; otherwise finish
   the autonomous Turn silently. Give it one to three separate short `messages`
@@ -168,39 +168,6 @@ AGENDA_TOOL_SPECS: list[dict[str, Any]] = [
             "additionalProperties": False,
         },
     },
-    {
-        "name": "reminder_create",
-        "description": "Schedule one exact message to be delivered once in the future.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "text": {"type": "string"},
-                "fire_at": {
-                    "type": "string",
-                    "description": "Future ISO 8601 timestamp with timezone.",
-                },
-                "schedule": _schedule_schema(
-                    "Recurring interval or daily local-time schedule."
-                ),
-            },
-            "required": ["text"],
-            "oneOf": [
-                {"required": ["fire_at"]},
-                {"required": ["schedule"]},
-            ],
-            "additionalProperties": False,
-        },
-    },
-    {
-        "name": "reminder_cancel",
-        "description": "Cancel a pending one-time reminder.",
-        "input_schema": {
-            "type": "object",
-            "properties": {"reminder_id": {"type": "string"}},
-            "required": ["reminder_id"],
-            "additionalProperties": False,
-        },
-    },
 ]
 
 OWNER_NOTIFY_SPEC: dict[str, Any] = {
@@ -275,12 +242,6 @@ class AgendaTools:
                 return self._update(call.arguments, draft)
             if call.name in {"goal_finish", "goal_cancel"}:
                 return self._close(call.name, call.arguments, draft)
-            if call.name == "reminder_create":
-                return self._create_reminder(
-                    call.arguments, draft, source_event_id
-                )
-            if call.name == "reminder_cancel":
-                return self._cancel_reminder(call.arguments, draft)
             if call.name == "owner_notify" and allow_notify:
                 return self._notify(call.arguments, draft)
             return {"ok": False, "error": "tool_not_allowed"}
@@ -395,54 +356,6 @@ class AgendaTools:
             raise ValueError("blocked goal requires blocked_reason")
         draft.goals[goal_id] = goal
         return {"ok": True, "state": "staged", "goal": goal}
-
-    def _create_reminder(
-        self,
-        arguments: dict[str, Any],
-        draft: TurnDraft,
-        source_event_id: str,
-    ) -> dict[str, Any]:
-        text = str(arguments.get("text") or "").strip()
-        if not text or len(text) > 2000:
-            raise ValueError("text must contain 1 to 2000 characters")
-        reminder_id = uuid.uuid4().hex
-        has_fire_at = bool(str(arguments.get("fire_at") or "").strip())
-        has_schedule = arguments.get("schedule") is not None
-        if has_fire_at == has_schedule:
-            raise ValueError("use exactly one of fire_at or schedule")
-        schedule = (
-            normalize_schedule(arguments["schedule"])
-            if has_schedule
-            else None
-        )
-        reminder = {
-            "id": reminder_id,
-            "text": text,
-            "source_event_id": source_event_id,
-            "status": "pending",
-            "fire_at": (
-                next_schedule_at(schedule)
-                if schedule is not None
-                else _future_timestamp(arguments.get("fire_at"), "fire_at")
-            ),
-            "schedule": schedule,
-        }
-        draft.reminders[reminder_id] = reminder
-        return {"ok": True, "state": "staged", "reminder": reminder}
-
-    def _cancel_reminder(
-        self, arguments: dict[str, Any], draft: TurnDraft
-    ) -> dict[str, Any]:
-        reminder_id = str(arguments.get("reminder_id") or "").strip()
-        reminder = draft.reminders.get(reminder_id) or self.store.reminder(reminder_id)
-        if reminder is None:
-            raise ValueError("reminder not found")
-        if reminder["status"] != "pending":
-            raise ValueError("only a pending reminder can be cancelled")
-        cancelled = dict(reminder)
-        cancelled["status"] = "cancelled"
-        draft.reminders[reminder_id] = cancelled
-        return {"ok": True, "state": "staged", "reminder": cancelled}
 
     def _close(self, name: str, arguments: dict[str, Any], draft: TurnDraft) -> dict[str, Any]:
         goal_id = str(arguments.get("goal_id") or "")

@@ -85,14 +85,6 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
                            'active', '[]', '收拾文件', '', '', '', '', ?, ?, ?)""",
                 (now + 3600, now, now),
             )
-            self.store._db.execute(
-                """INSERT INTO reminders
-                   (id, text, source_event_id, status, fire_at, schedule_json,
-                    created_at, updated_at)
-                   VALUES ('reminder-one', '站起来活动一下', 'event', 'pending',
-                           ?, '', ?, ?)""",
-                (now + 1800, now, now),
-            )
         self.store.link_turn_to_episode("episode-one", "turn-one")
         with self.store._db:
             self.store._db.executemany(
@@ -189,7 +181,6 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(overview["counts"]["reflections"], 1)
         self.assertEqual(overview["counts"]["emotions"], 1)
         self.assertEqual(overview["counts"]["memories"], 3)
-        self.assertEqual(overview["counts"]["reminders"], 1)
         self.assertEqual(overview["usage"]["today"]["requests"], 0)
         self.assertEqual(overview["balance"]["source"], "unavailable")
         self.assertEqual(overview["balance"]["total_balance"], "0")
@@ -236,11 +227,6 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(reflections["items"][0]["summary"], "今天完成了测试。")
         self.assertEqual(reflections["items"][0]["memories"][0]["key"], "testing")
         self.assertNotIn("next_cursor", reflections)
-
-        reminders = await (
-            await self.client.get("/api/reminders", headers=auth)
-        ).json()
-        self.assertEqual(reminders["items"][0]["text"], "站起来活动一下")
 
         emotions = await (await self.client.get("/api/emotions", headers=auth)).json()
         self.assertNotIn("path", emotions["items"][0])
@@ -441,8 +427,6 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
                 {"title": "被改", "success_criteria": "x", "next_action": "y", "status": "active"},
             ),
             ("DELETE", "/api/goals/goal-one", {"reason": "nope"}),
-            ("GET", "/api/reminders", None),
-            ("DELETE", "/api/reminders/reminder-one", None),
             ("DELETE", "/api/emotions/hello", None),
         ]
         for method, path, body in cases:
@@ -471,28 +455,6 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             await self.client.get("/api/emotions", headers=self._auth())
         ).json()
         self.assertEqual(emotions["items"][0]["slug"], "hello")
-
-    async def test_reminder_list_and_cancel(self) -> None:
-        auth = self._auth()
-        pending = await (
-            await self.client.get("/api/reminders", headers=auth)
-        ).json()
-        self.assertEqual([item["id"] for item in pending["items"]], ["reminder-one"])
-
-        cancelled = await self.client.delete(
-            "/api/reminders/reminder-one", headers=auth
-        )
-        self.assertEqual(cancelled.status, 200)
-        self.assertEqual((await cancelled.json())["status"], "cancelled")
-
-        pending = await (
-            await self.client.get("/api/reminders", headers=auth)
-        ).json()
-        self.assertEqual(pending["items"], [])
-        all_items = await (
-            await self.client.get("/api/reminders?all=true", headers=auth)
-        ).json()
-        self.assertEqual(all_items["items"][0]["status"], "cancelled")
 
     async def test_auth_token_issues_year_long_jwt(self) -> None:
         denied = await self.client.post(

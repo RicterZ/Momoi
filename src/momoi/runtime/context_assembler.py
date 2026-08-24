@@ -112,15 +112,6 @@ def build_plan_retrieval(
             : config.policies.context.max_visible_goals
         ]
     ]
-    reminders = [
-        {
-            name: row.get(name)
-            for name in ("id", "text", "fire_at", "fire_timestamp", "schedule")
-        }
-        for row in store.list_reminders(
-            config.policies.context.max_visible_reminders
-        )
-    ]
     # Every search-mode unit carries one or more recall expressions. Execute
     # them fairly across units: take each unit's first expression before any
     # unit's second, deduplicate shared expressions, then enforce the global
@@ -417,7 +408,6 @@ def build_plan_retrieval(
         "reflection_memories": reflection_memories,
         "recalled_turns": recalled_turns,
         "goals": goals,
-        "reminders": reminders,
         "uncertainty": plan.get("uncertainty", []),
         "query_recall": "\n".join(recall_index),
     }
@@ -496,7 +486,6 @@ def build_plan_retrieval(
         counts={
             "episodes": len(episodes),
             "goals": len(goals),
-            "reminders": len(reminders),
             "recall_queries": len(recall_queries),
             "recall_queries_emitted": len(emitted_queries),
             "recall_query_units_skipped": len(skipped_unit_ids),
@@ -540,14 +529,6 @@ def build_plan_retrieval(
                 "next_action": _recall_log_text(item.get("next_action"), 240),
             }
             for item in goals
-        ],
-        reminders=[
-            {
-                "id": item.get("id"),
-                "text": _recall_log_text(item.get("text"), 240),
-                "fire_at": item.get("fire_timestamp") or item.get("fire_at"),
-            }
-            for item in reminders
         ],
     )
     log_event(
@@ -736,33 +717,6 @@ def _goal_lines(items: object) -> str:
             value = item.get(key)
             if value not in (None, "", [], {}):
                 fields.append(f"{label}={truncate_tokens(str(value), limit)}")
-        lines.append("- " + " ".join(fields))
-    return "\n".join(lines)
-
-
-def _reminder_lines(items: object) -> str:
-    if not isinstance(items, list):
-        return ""
-    lines = []
-    for item in items:
-        if not isinstance(item, dict) or not item.get("id"):
-            continue
-        when = item.get("fire_timestamp")
-        if not when and item.get("fire_at") is not None:
-            when = context_timestamp(item["fire_at"])
-        fields = [f"id={item['id']}"]
-        if when:
-            fields.append(f"at={when}")
-        if item.get("schedule") not in (None, "", [], {}):
-            fields.append(
-                "schedule="
-                + truncate_tokens(
-                    json.dumps(item["schedule"], ensure_ascii=False, separators=(",", ":")),
-                    80,
-                )
-            )
-        if item.get("text"):
-            fields.append(f"text={truncate_tokens(str(item['text']), 120)}")
         lines.append("- " + " ".join(fields))
     return "\n".join(lines)
 
@@ -1038,8 +992,6 @@ def _owner_history_argument(name: str, arguments: object) -> str:
         keep = ("episode_id", "message_id", "content_offset", "before_ordinal")
     elif name in {"goal_create", "goal_update", "goal_finish", "goal_cancel"}:
         keep = ("goal_id", "title", "status", "next_action")
-    elif name in {"reminder_create", "reminder_cancel"}:
-        keep = ("reminder_id", "text", "fire_at")
     elif name in {"send_message", "owner_notify"}:
         messages = arguments.get("messages")
         if isinstance(messages, list):
@@ -1132,7 +1084,7 @@ def _owner_history_result(name: str, value: object, ok: object = True) -> str:
         item = value.get(key)
         if item not in (None, "", [], {}):
             parts.append(f"{key}={item}")
-    nested = value.get("goal") or value.get("reminder") or value.get("memory")
+    nested = value.get("goal") or value.get("memory")
     if isinstance(nested, dict):
         for key in ("id", "title", "key", "kind", "activation", "status", "next_action"):
             item = nested.get(key)
@@ -1293,7 +1245,7 @@ def project_recent_turns_for_owner(
                 lines.append("  final: external_effect=true")
             mutations = final.get("mutations")
             if isinstance(mutations, dict):
-                for mutation_name in ("memories", "forgotten_memories", "goals", "reminders"):
+                for mutation_name in ("memories", "forgotten_memories", "goals"):
                     entries = mutations.get(mutation_name)
                     if not isinstance(entries, list) or not entries:
                         continue
@@ -1549,13 +1501,6 @@ def _planner_state_result(value: dict[str, object]) -> dict[str, object]:
                 "next_review_at",
             )
             if goal.get(key) not in (None, "", [], {})
-        }
-    reminder = projected.get("reminder")
-    if isinstance(reminder, dict):
-        projected["reminder"] = {
-            key: copy.deepcopy(reminder[key])
-            for key in ("id", "text", "status", "fire_at", "schedule")
-            if reminder.get(key) not in (None, "", [], {})
         }
     memory = projected.get("memory")
     if isinstance(memory, dict):
@@ -2008,7 +1953,6 @@ def assemble_main_context(
             exclude_turn_ids=recent_turn_ids,
         ),
         "goals": _goal_lines(retrieval.get("goals")),
-        "reminders": _reminder_lines(retrieval.get("reminders")),
     }
 
 

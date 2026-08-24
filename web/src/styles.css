@@ -580,7 +580,7 @@ main.is-record .error {
   background: var(--surface);
 }
 
-.panel, .goal-card, .reflection-card, .reminder-card {
+.panel, .goal-card, .reflection-card {
   border: 2px solid var(--ink);
   border-radius: 12px;
   background: var(--surface);
@@ -1336,41 +1336,6 @@ a.tag:hover {
 }
 .goal-details p { margin: 5px 0 0; font-size: 12px; line-height: 1.6; }
 
-.reminder-list { display: grid; gap: 14px; }
-.reminder-card {
-  display: grid;
-  grid-template-columns: minmax(180px, .28fr) minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 24px;
-  padding: 22px 24px;
-}
-.reminder-card:nth-child(even) { box-shadow: 4px 4px 0 var(--pink); }
-.reminder-time {
-  align-self: stretch;
-  padding-right: 24px;
-  border-right: 2px solid var(--ink);
-}
-.reminder-time strong,
-.reminder-time small { display: block; }
-.reminder-time strong { margin-top: 10px; font-size: 17px; line-height: 1.45; }
-.reminder-time small {
-  margin-top: 8px;
-  color: var(--muted);
-  font-size: 10px;
-  line-height: 1.5;
-}
-.reminder-copy h2 {
-  margin: 12px 0 0;
-  white-space: pre-wrap;
-  font-size: 18px;
-  line-height: 1.55;
-}
-.reminder-copy p {
-  margin: 9px 0 0;
-  color: var(--soft);
-  font-size: 10px;
-}
-
 .emotion-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1559,13 +1524,6 @@ a.tag:hover {
     display: none;
     margin: 0;
   }
-  .reminder-card { grid-template-columns: 1fr auto; }
-  .reminder-time {
-    grid-column: 1 / -1;
-    padding: 0 0 16px;
-    border-right: 0;
-    border-bottom: 2px solid var(--ink);
-  }
 }
 
 @media (max-width: 460px) {
@@ -1573,6 +1531,5 @@ a.tag:hover {
   .overview-section-head { align-items: start; flex-direction: column; gap: 5px; }
   .overview-group { padding: 20px; }
   .goal-grid, .emotion-grid { grid-template-columns: 1fr; }
-  .reminder-card { grid-template-columns: 1fr; }
   .message { grid-template-columns: 1fr; gap: 7px; }
 }

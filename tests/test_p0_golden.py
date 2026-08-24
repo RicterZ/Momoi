@@ -13,7 +13,7 @@ class P0GoldenTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
             event = IncomingMessage(
-                "event-1", "message-1", "记住我喜欢乌龙茶，再提醒我买茶", 1, 1
+                "event-1", "message-1", "记住我喜欢乌龙茶，明天提醒我买茶", 1, 1
             )
             store.add_event(event)
             draft = TurnDraft()
@@ -36,11 +36,13 @@ class P0GoldenTests(unittest.TestCase):
             self.assertTrue(
                 AgendaTools(store).execute(
                     ToolCall(
-                        "reminder-1",
-                        "reminder_create",
+                        "goal-1",
+                        "goal_create",
                         {
-                            "text": "买乌龙茶",
-                            "fire_at": "2030-01-01T12:00:00+00:00",
+                            "title": "提醒买乌龙茶",
+                            "success_criteria": "已经提醒主人买乌龙茶",
+                            "next_action": "通知主人买乌龙茶，然后完成 Goal",
+                            "next_review_at": "2030-01-01T12:00:00+00:00",
                         },
                     ),
                     draft,
@@ -52,14 +54,14 @@ class P0GoldenTests(unittest.TestCase):
             store.commit_turn(
                 [event],
                 event.text,
-                AgentReply(["记住了，也安排了提醒。"]),
+                AgentReply(["记住了，也安排好了。"]),
                 draft,
                 turn_id="turn-1",
                 target_channel="test",
             )
             store.record_turn_usage("turn-1", 12, 3)
             outbox = store.due_outbox()[0]
-            reminder = store.list_reminders(1)[0]
+            goal = store.list_goals()[0]
             memory = dict(
                 store._db.execute(
                     """SELECT kind, key, content, activation FROM memories
@@ -74,9 +76,9 @@ class P0GoldenTests(unittest.TestCase):
                     "channel": outbox.channel,
                 },
                 "memory": memory,
-                "reminder": {
-                    key: reminder[key]
-                    for key in ("text", "status", "fire_at", "schedule")
+                "goal": {
+                    key: goal[key]
+                    for key in ("title", "status", "next_review_at", "schedule")
                 },
                 "usage": store.turn_usage("turn-1"),
                 "turn": dict(
@@ -91,7 +93,7 @@ class P0GoldenTests(unittest.TestCase):
                 {
                     "outbox": {
                         "turn_id": "turn-1",
-                        "text": "记住了，也安排了提醒。",
+                        "text": "记住了，也安排好了。",
                         "state": "pending",
                         "channel": "test",
                     },
@@ -101,10 +103,10 @@ class P0GoldenTests(unittest.TestCase):
                         "content": "喜欢乌龙茶",
                         "activation": "recall",
                     },
-                    "reminder": {
-                        "text": "买乌龙茶",
-                        "status": "pending",
-                        "fire_at": 1893499200.0,
+                    "goal": {
+                        "title": "提醒买乌龙茶",
+                        "status": "active",
+                        "next_review_at": 1893499200.0,
                         "schedule": None,
                     },
                     "usage": {"llm_calls": 1, "input": 12, "output": 3},

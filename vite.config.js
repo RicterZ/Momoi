@@ -277,23 +277,6 @@ function previewRecords() {
     },
   };
 
-  const reminders = Array.from({ length: 14 }, (_, index) => ({
-    id: `reminder-${index + 1}`,
-    text:
-      index % 3 === 0
-        ? `预览提醒 ${index + 1}：站起来活动一下，顺便看看滚动条。`
-        : index % 3 === 1
-          ? `预览提醒 ${index + 1}：检查洗衣机有没有把衣服烘干。`
-          : `预览提醒 ${index + 1}：把关卡节奏笔记收进今天的复盘。`,
-    status: index > 10 ? "fired" : "pending",
-    fire_at: now + (index + 1) * 3600,
-    created_at: now - (index + 1) * 7200,
-    schedule:
-      index % 4 === 0
-        ? { kind: "daily", times: ["09:00", "15:00", "21:00"], timezone: "Asia/Shanghai" }
-        : null,
-  }));
-
   const memories = [
     {
       id: 1,
@@ -368,7 +351,7 @@ function previewRecords() {
   });
   reflections.sort((left, right) => right.local_date.localeCompare(left.local_date));
 
-  return { conversations, conversationDetails, reminders, memories, goals, reflections };
+  return { conversations, conversationDetails, memories, goals, reflections };
 }
 
 function previewUsageApi() {
@@ -465,7 +448,6 @@ function previewUsageApi() {
               goals: records.goals.filter((item) =>
                 ["active", "waiting", "blocked"].includes(item.status),
               ).length,
-              reminders: records.reminders.filter((item) => item.status === "pending").length,
               emotions: 0,
               memories: records.memories.length,
             },
@@ -561,18 +543,6 @@ function previewUsageApi() {
             return;
           }
           json(res, item);
-          return;
-        }
-        if (req.method === "GET" && path === "/api/reminders") {
-          const includeClosed = new URL(req.url, "http://127.0.0.1").searchParams
-            .get("all")
-            ?.toLowerCase();
-          const closed = includeClosed === "1" || includeClosed === "true" || includeClosed === "yes";
-          json(res, {
-            items: closed
-              ? records.reminders
-              : records.reminders.filter((item) => item.status === "pending"),
-          });
           return;
         }
         if (req.method === "GET" && path === "/api/memories") {

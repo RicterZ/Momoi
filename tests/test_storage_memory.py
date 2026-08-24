@@ -1331,29 +1331,23 @@ class StorageMemoryTest(unittest.TestCase):
             )
             store.close()
 
-    def test_reminder_create_contract_requires_exactly_one_timing_mode(self) -> None:
-        spec = next(
-            spec for spec in AGENDA_TOOL_SPECS if spec["name"] == "reminder_create"
-        )
-        self.assertEqual(
-            spec["input_schema"]["oneOf"],
-            [{"required": ["fire_at"]}, {"required": ["schedule"]}],
-        )
+    def test_goal_schedule_contract_is_shared_and_precise(self) -> None:
         schedules = [
             item["input_schema"]["properties"]["schedule"]
             for item in AGENDA_TOOL_SPECS
-            if item["name"] in {"goal_create", "goal_update", "reminder_create"}
+            if item["name"] in {"goal_create", "goal_update"}
         ]
         self.assertEqual(
             [schedule["oneOf"] for schedule in schedules],
-            [schedules[0]["oneOf"]] * 3,
+            [schedules[0]["oneOf"]] * 2,
         )
-        self.assertEqual(len({id(schedule) for schedule in schedules}), 3)
+        self.assertEqual(len({id(schedule) for schedule in schedules}), 2)
         daily = schedules[0]["oneOf"][1]
         self.assertIn("times", daily["properties"])
         self.assertNotIn("at", daily["properties"])
         self.assertEqual(daily["required"], ["kind", "timezone", "times"])
-        self.assertIn("calls together in one response", AGENDA_TOOL_POLICY)
+        self.assertNotIn("reminder_create", {item["name"] for item in AGENDA_TOOL_SPECS})
+        self.assertIn("Use a Goal for every future action", AGENDA_TOOL_POLICY)
         self.assertIn("governed", AGENDA_TOOL_POLICY)
         self.assertIn("by the shared Style Card", AGENDA_TOOL_POLICY)
         self.assertIn("judgment, not a reflex", MEMORY_TOOL_POLICY)
@@ -1990,98 +1984,6 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertTrue(any("检查完成" in item["content"] for item in archived))
             store.close()
 
-    def test_one_time_reminder_fires_once_and_can_be_cancelled(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            store = Store(Path(directory) / "momoi.sqlite3")
-            tools = AgendaTools(store)
-            event = IncomingMessage("qq:1:reminder", "reminder", "提醒我活动", 1, 1)
-            store.add_event(event)
-            draft = TurnDraft()
-            created = tools.execute(
-                ToolCall(
-                    "reminder-create",
-                    "reminder_create",
-                    {
-                        "text": "该起来活动一下啦",
-                        "fire_at": (
-                            datetime.now().astimezone() + timedelta(milliseconds=20)
-                        ).isoformat(),
-                    },
-                ),
-                draft,
-                authority="owner",
-                source_event_id=event.event_id,
-                allow_notify=False,
-            )
-            self.assertTrue(created["ok"])
-            reminder_id = created["reminder"]["id"]
-            store.commit_turn([event], event.text, AgentReply(["好"]), draft)
-            time.sleep(0.03)
-            claimed = store.claim_due_reminder()
-            self.assertEqual(claimed["id"], reminder_id)
-            self.assertTrue(store.fire_reminder(reminder_id))
-            self.assertFalse(store.fire_reminder(reminder_id))
-            first = store.due_outbox()[0]
-            store.mark_sent(first.id)
-            reminder_outbox = store.due_outbox()[0]
-            self.assertEqual(reminder_outbox.text, "该起来活动一下啦")
-            reminder_message = store._db.execute(
-                """SELECT turn_id FROM messages
-                   WHERE content='该起来活动一下啦' ORDER BY id DESC LIMIT 1"""
-            ).fetchone()
-            self.assertEqual(reminder_message["turn_id"], reminder_outbox.turn_id)
-            self.assertEqual(store.reminder(reminder_id)["status"], "fired")
-            reminder_episode = store.search_episodes("起来活动", 3)[0]
-            self.assertIn(
-                "该起来活动一下啦",
-                store.conversation_episode(str(reminder_episode["id"]))["messages"][0][
-                    "content"
-                ],
-            )
-
-            cancel_event = IncomingMessage(
-                "qq:1:cancel-reminder", "cancel-reminder", "取消提醒", 2, 2
-            )
-            store.add_event(cancel_event)
-            create_cancelled = TurnDraft()
-            pending = tools.execute(
-                ToolCall(
-                    "reminder-create-2",
-                    "reminder_create",
-                    {
-                        "text": "这条不该发送",
-                        "fire_at": (
-                            datetime.now().astimezone() + timedelta(hours=1)
-                        ).isoformat(),
-                    },
-                ),
-                create_cancelled,
-                authority="owner",
-                source_event_id=cancel_event.event_id,
-                allow_notify=False,
-            )["reminder"]
-            self.assertTrue(
-                tools.execute(
-                    ToolCall(
-                        "reminder-cancel",
-                        "reminder_cancel",
-                        {"reminder_id": pending["id"]},
-                    ),
-                    create_cancelled,
-                    authority="owner",
-                    source_event_id=cancel_event.event_id,
-                    allow_notify=False,
-                )["ok"]
-            )
-            store.commit_turn(
-                [cancel_event],
-                cancel_event.text,
-                AgentReply(["取消了"]),
-                create_cancelled,
-            )
-            self.assertEqual(store.reminder(pending["id"])["status"], "cancelled")
-            store.close()
-
     def test_mood_update_persists_until_next_decision(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
@@ -2117,92 +2019,6 @@ class StorageMemoryTest(unittest.TestCase):
 
             self.assertEqual(context["mood"]["updated_at"], context_timestamp(1000))
             self.assertEqual(context["mood"]["age_minutes"], 3)
-            store.close()
-
-    def test_recurring_reminder_fires_multiple_occurrences(self) -> None:
-        with (
-            tempfile.TemporaryDirectory() as directory,
-            patch("momoi.storage.store.time.time", return_value=1000),
-        ):
-            store = Store(Path(directory) / "momoi.sqlite3")
-            tools = AgendaTools(store)
-            event = IncomingMessage("qq:1:repeat", "repeat", "每分钟提醒", 1, 1)
-            store.add_event(event)
-            draft = TurnDraft()
-            reminder = tools.execute(
-                ToolCall(
-                    "reminder-repeat",
-                    "reminder_create",
-                    {
-                        "text": "喝口水啦",
-                        "schedule": {
-                            "kind": "interval",
-                            "every_seconds": 60,
-                            "timezone": "Asia/Shanghai",
-                        },
-                    },
-                ),
-                draft,
-                authority="owner",
-                source_event_id=event.event_id,
-                allow_notify=False,
-            )["reminder"]
-            store.commit_turn([event], event.text, AgentReply(["好"]), draft)
-
-            with patch("momoi.storage.store.time.time", return_value=1061):
-                self.assertEqual(store.claim_due_reminder()["id"], reminder["id"])
-                self.assertTrue(store.fire_reminder(reminder["id"]))
-            with patch("momoi.storage.store.time.time", return_value=1122):
-                self.assertEqual(store.claim_due_reminder()["id"], reminder["id"])
-                self.assertTrue(store.fire_reminder(reminder["id"]))
-
-            rows = store._db.execute(
-                "SELECT dedupe_key FROM outbox WHERE turn_id LIKE 'reminder:%' ORDER BY id"
-            ).fetchall()
-            self.assertEqual(len(rows), 2)
-            self.assertNotEqual(rows[0]["dedupe_key"], rows[1]["dedupe_key"])
-            self.assertEqual(store.reminder(reminder["id"])["status"], "pending")
-            store.close()
-
-    def test_recurring_reminder_waits_until_quiet_hours_end(self) -> None:
-        zone = ZoneInfo("Asia/Shanghai")
-        due = datetime(2026, 7, 21, 23, 30, tzinfo=zone).timestamp()
-        quiet_end = datetime(2026, 7, 22, 8, 0, tzinfo=zone).timestamp()
-        policy = NotificationConfig(
-            timezone="Asia/Shanghai", quiet_start="23:00", quiet_end="08:00"
-        )
-        with (
-            tempfile.TemporaryDirectory() as directory,
-            patch("momoi.storage.store.time.time", return_value=due),
-        ):
-            store = Store(Path(directory) / "momoi.sqlite3")
-            store._db.execute(
-                """INSERT INTO reminders
-                   (id, text, source_event_id, status, fire_at, schedule_json,
-                    created_at, updated_at)
-                   VALUES ('quiet-repeat', '喝水', 'test', 'pending', ?, ?, ?, ?)""",
-                (
-                    due,
-                    json.dumps(
-                        {
-                            "kind": "interval",
-                            "every_seconds": 3600,
-                            "timezone": "Asia/Shanghai",
-                        }
-                    ),
-                    due,
-                    due,
-                ),
-            )
-            store._db.commit()
-            self.assertIsNotNone(store.claim_due_reminder())
-            self.assertFalse(store.fire_reminder("quiet-repeat", policy))
-            self.assertEqual(store.reminder("quiet-repeat")["fire_at"], quiet_end)
-            self.assertEqual(store.due_outbox(), [])
-            with patch("momoi.storage.store.time.time", return_value=quiet_end):
-                self.assertIsNotNone(store.claim_due_reminder())
-                self.assertTrue(store.fire_reminder("quiet-repeat", policy))
-            self.assertEqual(store.due_outbox()[0].text, "喝水")
             store.close()
 
     def test_heartbeat_has_no_daily_evaluation_cap(self) -> None:
@@ -2253,7 +2069,7 @@ class StorageMemoryTest(unittest.TestCase):
             )
             store.close()
 
-    def test_heartbeat_commits_memory_and_reminder_mutations(self) -> None:
+    def test_heartbeat_commits_memory_mutations(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
             event = IncomingMessage(
@@ -2282,31 +2098,14 @@ class StorageMemoryTest(unittest.TestCase):
                 [event],
                 draft,
             )
-            reminder = AgendaTools(store).execute(
-                ToolCall(
-                    "reminder",
-                    "reminder_create",
-                    {
-                        "text": "看看微博登录状态",
-                        "fire_at": (
-                            datetime.now().astimezone() + timedelta(hours=1)
-                        ).isoformat(),
-                    },
-                ),
-                draft,
-                authority="agent",
-                source_event_id="heartbeat:test",
-                allow_notify=False,
-            )
             self.assertTrue(memory["ok"])
-            self.assertTrue(reminder["ok"])
             store.begin_turn("heartbeat-tools", "autonomous", ["heartbeat:test"])
             store.commit_heartbeat(
                 "heartbeat-tools",
                 owner_event_revision=1,
                 notification_config=NotificationConfig(),
                 activity="整理微博使用方式",
-                result="记下规则并安排检查",
+                result="记下规则",
                 next_heartbeat_at=time.time() + 3600,
                 mood_update=None,
                 messages=[],
@@ -2315,7 +2114,6 @@ class StorageMemoryTest(unittest.TestCase):
                 memory_events=[event],
             )
             self.assertTrue(store.has_memory("shared", "shared.weibo.session_check"))
-            self.assertIn("看看微博登录状态", store.active_reminders_context())
             store.close()
 
     def test_expected_reply_keeps_heartbeat_attention_until_owner_returns(self) -> None:

@@ -17,7 +17,7 @@ Most chatbots are stateless request handlers with a personality prompt attached.
 - **One continuous identity.** Personality, relationship, memory, mood, current activity, and unfinished threads carry across conversations and restarts.
 - **Context before response.** She first understands what this moment is about, then brings back the shared history that matters — not the entire chat log.
 - **Agency, not turn-taking.** She can acknowledge a task, use tools, send useful progress, and continue until the work is complete or genuinely blocked.
-- **Autonomy with restraint.** Goals, reminders, and heartbeats let her act over time without turning every timer into an unwanted notification.
+- **Autonomy with restraint.** Goals and heartbeats let her act over time without turning every timer into an unwanted notification.
 - **One life across every channel.** QQ messages, webhooks, scheduled work, and proactive thoughts all reach the same Momoi.
 - **Honest execution.** She only claims an external action succeeded after receiving a confirming result.
 
@@ -42,7 +42,7 @@ flowchart TB
     reflection["Daily reflection"]
     memory["Lasting memory"]
     history["Shared history"]
-    agenda["Goals and reminders"]
+    agenda["Goals"]
   end
   reach --> momoi
   momoi --> out
@@ -114,8 +114,7 @@ Momoi separates different kinds of future behavior:
 
 | Mechanism | Best for | Behavior |
 | --- | --- | --- |
-| Reminder | “Remind me to stretch in one hour” | Delivers known content at the requested time |
-| Goal | “Every morning, check the weather and give me a riding recommendation” | Wakes up, gathers fresh information, reasons, and continues the task |
+| Goal | “Remind me to stretch in one hour” or “Every morning, check the weather” | Wakes at the next review, uses current context and tools when needed, and continues or finishes the task |
 | Heartbeat | Momoi's own activity and initiative | May use allowed tools, create her own Goal, share a useful result, or remain silent |
 | Reflection | Form durable learning each day | Reviews the day that just ended, keeps what should last, and does not send a message |
 | Webhook | An external event happened | Handles the event in Momoi's normal voice, or stays silent when it would add nothing |
@@ -127,12 +126,12 @@ Goal and Heartbeat notifications respect quiet hours, cooldowns, and pending own
 - Hold one continuous private conversation across QQ and Weixin
 - Carry relevant context, memories, preferences, and commitments over time
 - Use connected tools and services to complete real tasks
-- Manage one-time reminders and work that continues or repeats
+- Manage one-time, continuing, and recurring future work as Goals
 - Respond naturally to external events, or stay quiet when they add nothing
 - Exchange chat media and use optional image reactions
 - Maintain mood, activity, reflection, and bounded initiative
 - Stop work or recover safely when an external result is uncertain
-- Browse and tidy conversations, reflections, memories, reactions, reminders, goals, and thinking in a local Web dashboard
+- Browse and tidy conversations, reflections, memories, reactions, goals, and thinking in a local Web dashboard
 
 ## Getting started
 
@@ -183,7 +182,7 @@ Then start Momoi and send a private message from either owner account. Replies s
 
 ### Web dashboard
 
-When you want to see what Momoi has been chatting about, remembering, or working on, open the Web dashboard alongside her. It is less a control panel and more a small window into her records: conversations, daily reflections, memories, image reactions, reminders, goals, and how she thought through a moment. From there you can also edit memories, manage reactions, and adjust goals or reminders that are still in progress.
+When you want to see what Momoi has been chatting about, remembering, or working on, open the Web dashboard alongside her. It is less a control panel and more a small window into her records: conversations, daily reflections, memories, image reactions, goals, and how she thought through a moment. From there you can also edit memories, manage reactions, and adjust goals that are still in progress.
 
 Put an access passphrase in `config.json` first:
 

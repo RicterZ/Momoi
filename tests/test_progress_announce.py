@@ -27,8 +27,6 @@ class ProgressAnnounceTest(unittest.TestCase):
         self.assertTrue(should_announce("curl", mcp=False))
         self.assertTrue(should_announce("goal_create", mcp=False))
         self.assertTrue(should_announce("goal_cancel", mcp=False))
-        self.assertTrue(should_announce("reminder_create", mcp=False))
-        self.assertTrue(should_announce("reminder_cancel", mcp=False))
         self.assertFalse(should_announce("goal_update", mcp=False))
         self.assertFalse(should_announce("goal_finish", mcp=False))
         self.assertFalse(should_announce("sleep", mcp=False))
@@ -219,9 +217,7 @@ class ProgressAnnounceTest(unittest.TestCase):
         heartbeat = {spec["name"]: spec for spec in daemon._self_directed_tool_specs()}
         self.assertEqual(announce_field(owner["curl"]), ANNOUNCE_FIELD)
         self.assertEqual(announce_field(owner["goal_create"]), ANNOUNCE_FIELD)
-        self.assertEqual(announce_field(owner["reminder_create"]), ANNOUNCE_FIELD)
         self.assertEqual(announce_field(owner["goal_cancel"]), ANNOUNCE_FIELD)
-        self.assertEqual(announce_field(owner["reminder_cancel"]), ANNOUNCE_FIELD)
         self.assertEqual(
             announce_field(owner["mcp__brave-search__brave_web_search"]),
             ANNOUNCE_FIELD,

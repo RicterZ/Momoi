@@ -457,27 +457,6 @@ def create_dashboard_app(
             raise web.HTTPNotFound(text="goal not found")
         return web.json_response(item)
 
-    async def reminders(request: web.Request) -> web.Response:
-        include_closed = request.query.get("all", "").lower() in {
-            "1",
-            "true",
-            "yes",
-        }
-        limit = _bounded_int(request, "limit", 200, 1, 500)
-        return web.json_response(
-            {
-                "items": store.list_reminders(
-                    limit, include_closed=include_closed
-                )
-            }
-        )
-
-    async def delete_reminder(request: web.Request) -> web.Response:
-        item = store.cancel_reminder(request.match_info["reminder_id"])
-        if item is None:
-            raise web.HTTPNotFound(text="pending reminder not found")
-        return web.json_response(item)
-
     async def emotions(_request: web.Request) -> web.Response:
         items = [_public_emotion(item) for item in store.list_emotions()]
         return web.json_response({"items": items})
@@ -608,8 +587,6 @@ def create_dashboard_app(
     app.router.add_get("/api/goals", goals)
     app.router.add_patch("/api/goals/{goal_id}", update_goal)
     app.router.add_delete("/api/goals/{goal_id}", delete_goal)
-    app.router.add_get("/api/reminders", reminders)
-    app.router.add_delete("/api/reminders/{reminder_id}", delete_reminder)
     app.router.add_get("/api/emotions", emotions)
     app.router.add_post("/api/emotions", create_emotion)
     app.router.add_patch("/api/emotions/{slug}", update_emotion)

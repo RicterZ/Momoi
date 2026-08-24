@@ -39,15 +39,6 @@ class GoalMutation(TypedDict):
     next_review_at: float | None
 
 
-class ReminderMutation(TypedDict):
-    id: str
-    text: str
-    source_event_id: str
-    status: Literal["pending", "fired", "cancelled"]
-    fire_at: float
-    schedule: dict[str, object] | None
-
-
 class ToolResult(TypedDict, total=False):
     ok: bool
     error: str | None

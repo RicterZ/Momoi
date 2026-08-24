@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Any
 
-from .contracts import GoalMutation, ReminderMutation
+from .contracts import GoalMutation
 
 
 @dataclass(frozen=True)
@@ -115,7 +115,6 @@ class TurnDraft:
     memories: list[MemoryCandidate] = field(default_factory=list)
     forgotten_memories: list[MemoryForgetCandidate] = field(default_factory=list)
     goals: dict[str, GoalMutation] = field(default_factory=dict)
-    reminders: dict[str, ReminderMutation] = field(default_factory=dict)
     notification_messages: list[str] | None = None
     notification_key: str = ""
     notification_priority: str = "normal"
