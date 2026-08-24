@@ -34,38 +34,45 @@ required field is determined.
    still be missing after the runtime's automatic recall. Otherwise mark the
    context sufficient.
 3. Give every unit one explicit `recall_mode` decision based on its informational
-   dependencies, not its social tone or `speech_act`. Use `search` whenever
-   unsupplied history could materially change the response or work; provide one
-   to three ranked queries, highest-value first. A newly introduced or
+   dependencies, not its social tone or `speech_act`. Prefer `search`: use it
+   whenever any plausible unsupplied history could improve correctness,
+   relevance, continuity, personalization, or novelty, or prevent contradiction,
+   repetition, or repeated work. The current request being understandable,
+   complete, or answerable from model knowledge is not enough to skip recall.
+   When in reasonable doubt, search; a miss is useful evidence that no matching
+   history was found. Provide one to three ranked queries, highest-value first.
+   A newly introduced or
    uncertain named person, character, work, place, product, or term that matters
    to the reply always requires `search`, even inside casual sharing or banter.
    It matters when it is the subject of the owner's impression, prediction, or
    reaction, or when any planned delivery beat would acknowledge, evaluate, or
    speculate about it; a factual question is not required.
-   Search is still required when a generic reaction would be possible or a miss
+   Search is still required when a generic response would be possible or a miss
    seems likely: avoiding unknown details does not establish that prior shared
-   context is irrelevant, and discovering that no history is available is part
-   of the recall result. Model prior knowledge, a presumed downstream persona,
+   context is irrelevant. Model prior knowledge, a presumed downstream persona,
    plausible inference from the owner's wording, or a resolution written into
    `references` is not supplied evidence.
-   Each query is a short
-   exact-word OR expression using `|` without surrounding spaces between
-   concrete search anchors or aliases, for example
+   Each query is a short exact-word expression. Prefer a concrete name, title,
+   identifier, or other discriminating anchor. When the needed history concerns
+   a relationship or recurring pattern rather than one named entity, use a
+   concise subject-plus-facet anchor instead of a broad subject or a
+   natural-language question. An expression may use `|` without surrounding
+   spaces between genuine aliases or wording variants of the same anchor, for example
    `primary-name|known-alias|exact-identifier`. Do not submit a natural-language
-   sentence. Every term names one particular thing rather than the kind of
-   thing it is: a proper name, an identifier, a number, or the exact title of
-   the item at hand. When what you need history about has a name, that name is
-   the whole term.
+   sentence or combine unrelated historical needs as OR alternatives. When what
+   you need history about has a name, that name is the whole term.
    Include the literal spelling of every new or unresolved proper name
    material to the intent. For a new entity, make its first query the literal
    name plus only genuine aliases of that same entity. Do not add its work,
    category, location, associates, or other broader topic as OR alternatives;
    a hit on surrounding context does not establish that the entity was recalled.
-   Use `recall_mode=skip` when the supplied current/recent context directly and
-   completely establishes every meaning, referent, and premise needed for the
-   response or work. Decide this independently of `speech_act`: a fully grounded
-   question, correction, request, or social beat may skip. It is not enough that
-   the owner supplied a broad category or impression of a new entity.
+   Use `recall_mode=skip` only when the supplied evidence already contains all
+   historical context that could reasonably affect the response or work, or
+   when history clearly cannot improve it. Decide this independently of
+   `speech_act`: a fully grounded question, correction, request, or social beat
+   may skip only under this stricter test. `context_status=sufficient` is
+   compatible with `recall_mode=search`: it can mean automatic recall is enough
+   and no later manual lookup is needed.
    If `uncertainty` would note missing identity, background, prior relationship,
    or other recallable context, `skip` contradicts that uncertainty. Never use
    `skip` for a new or unresolved name, missing historical premise, or unresolved

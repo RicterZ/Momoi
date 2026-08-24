@@ -559,6 +559,20 @@ class ContextPlannerTest(unittest.TestCase):
             "explicit `recall_mode` decision", CONTEXT_PLANNER_PROTOCOL_PROMPT
         )
         self.assertIn("not its social tone", CONTEXT_PLANNER_PROTOCOL_PROMPT)
+        self.assertIn("Prefer `search`", CONTEXT_PLANNER_PROTOCOL_PROMPT)
+        self.assertIn(
+            "correctness, relevance, continuity, personalization, or novelty",
+            " ".join(CONTEXT_PLANNER_PROTOCOL_PROMPT.split()),
+        )
+        self.assertIn(
+            "answerable from model knowledge is not enough to skip recall",
+            " ".join(CONTEXT_PLANNER_PROTOCOL_PROMPT.split()),
+        )
+        self.assertIn("subject-plus-facet anchor", CONTEXT_PLANNER_PROTOCOL_PROMPT)
+        self.assertIn(
+            "`context_status=sufficient` is compatible with `recall_mode=search`",
+            " ".join(CONTEXT_PLANNER_PROTOCOL_PROMPT.split()),
+        )
         self.assertIn("even inside casual sharing", CONTEXT_PLANNER_PROTOCOL_PROMPT)
         self.assertIn(
             "subject of the owner's impression", CONTEXT_PLANNER_PROTOCOL_PROMPT
@@ -579,7 +593,10 @@ class ContextPlannerTest(unittest.TestCase):
         self.assertIn(
             "broader topic as OR alternatives", CONTEXT_PLANNER_PROTOCOL_PROMPT
         )
-        self.assertIn("without surrounding spaces", CONTEXT_PLANNER_PROTOCOL_PROMPT)
+        self.assertIn(
+            "without surrounding spaces",
+            " ".join(CONTEXT_PLANNER_PROTOCOL_PROMPT.split()),
+        )
         self.assertIn(
             "internal-recall/private-name/public-search",
             CONTEXT_PLANNER_PROTOCOL_PROMPT,
@@ -598,6 +615,14 @@ class ContextPlannerTest(unittest.TestCase):
         self.assertEqual(unit["properties"]["recall_mode"]["enum"], ["search", "skip"])
         self.assertIn(
             "without surrounding spaces",
+            unit["properties"]["recall_queries"]["description"],
+        )
+        self.assertIn(
+            "A complete, answerable current request is not enough",
+            unit["properties"]["recall_mode"]["description"],
+        )
+        self.assertIn(
+            "subject-plus-history-facet",
             unit["properties"]["recall_queries"]["description"],
         )
         self.assertEqual(schema["properties"]["uncertainty"]["maxItems"], 4)  # type: ignore[index]

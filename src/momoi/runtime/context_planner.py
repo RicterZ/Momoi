@@ -105,10 +105,13 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                             "type": "string",
                             "enum": ["search", "skip"],
                             "description": (
-                                "Search when unsupplied history could materially "
-                                "change the response or work. Skip when supplied "
-                                "context completely grounds the unit, regardless "
-                                "of speech act."
+                                "Prefer search whenever plausible unsupplied history "
+                                "could improve correctness, relevance, continuity, "
+                                "personalization, or novelty, or prevent contradiction, "
+                                "repetition, or repeated work. Skip only when all such "
+                                "history is supplied or history clearly cannot matter. "
+                                "A complete, answerable current request is not enough "
+                                "to skip."
                             ),
                         },
                         "recall_queries": {
@@ -120,9 +123,11 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                                 "maxLength": 120,
                             },
                             "description": (
-                                "Ranked exact-word OR expressions for search; "
-                                "empty for skip. Join genuine aliases with `|` "
-                                "without surrounding spaces."
+                                "Ranked narrow exact-word expressions for search: "
+                                "a concrete named anchor or a concise subject-plus-"
+                                "history-facet anchor. Empty only for skip. Join only "
+                                "genuine aliases or wording variants of one anchor "
+                                "with `|` without surrounding spaces."
                             ),
                         },
                     },
