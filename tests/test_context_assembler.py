@@ -1998,10 +1998,54 @@ class ContextAssemblerTest(unittest.TestCase):
             )
             store._db.commit()
 
-            retrieval = build_plan_retrieval(
-                store, plan("项目邮件"), config(directory)
-            )
+            with self.assertLogs(
+                "momoi.runtime.context_assembler", level="INFO"
+            ) as captured:
+                retrieval = build_plan_retrieval(
+                    store, plan("项目邮件"), config(directory)
+                )
             assembled = assemble_main_context(store, retrieval, 2000, 2000)
+
+            recall_logs = {
+                record.momoi_event: record.momoi_fields
+                for record in captured.records
+                if hasattr(record, "momoi_event")
+            }
+            self.assertEqual(
+                recall_logs["context_recall"]["queries"][0]["expression"],
+                "项目邮件",
+            )
+            self.assertTrue(
+                any(
+                    "主人正在等待项目邮件" in item["content"]
+                    for item in recall_logs["context_recall_memory_results"][
+                        "results"
+                    ]
+                )
+            )
+            self.assertTrue(
+                any(
+                    item["title"] == "项目邮件" and item["evidence"]
+                    for item in recall_logs["context_recall_episode_results"][
+                        "results"
+                    ]
+                )
+            )
+            self.assertTrue(
+                any(
+                    item["turn_id"] == "turn-mail" and item["evidence"]
+                    for item in recall_logs["context_recall_turn_results"][
+                        "results"
+                    ]
+                )
+            )
+            state_log = recall_logs["context_recall_state_results"]
+            self.assertIn(
+                "跟进项目邮件", [item["title"] for item in state_log["goals"]]
+            )
+            self.assertIn(
+                "检查项目邮件", [item["text"] for item in state_log["reminders"]]
+            )
 
             self.assertTrue(retrieval["recall_memories"])
             self.assertEqual(

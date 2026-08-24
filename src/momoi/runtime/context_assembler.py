@@ -19,6 +19,31 @@ RECALLED_TURN_LIMIT = 6
 PLAN_RECALL_QUERY_LIMIT = 6
 
 
+def _recall_log_text(value: object, limit: int = 300) -> str:
+    text = " ".join(str(value or "").split())
+    return text if len(text) <= limit else text[: max(0, limit - 3)].rstrip() + "..."
+
+
+def _recall_log_matches(value: object, limit: int = 2) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        return []
+    results: list[dict[str, object]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        results.append(
+            {
+                "turn_id": item.get("turn_id"),
+                "role": item.get("role"),
+                "timestamp": item.get("timestamp"),
+                "content": _recall_log_text(item.get("content")),
+            }
+        )
+        if len(results) >= limit:
+            break
+    return results
+
+
 def _merge_matches(target: dict[str, object], source: dict[str, object]) -> None:
     existing = target.get("matches")
     incoming = source.get("matches")
@@ -396,13 +421,78 @@ def build_plan_retrieval(
         "uncertainty": plan.get("uncertainty", []),
         "query_recall": "\n".join(recall_index),
     }
+    query_log = [
+        {
+            "expression": item["expression"],
+            "priority": item["priority"],
+            "unit_ids": item["unit_ids"],
+        }
+        for item in recall_queries
+    ]
+    memory_log = [
+        {
+            "source": row.get("source"),
+            "kind": row.get("kind"),
+            "key": row.get("key"),
+            "score": round(float(row.get("search_score") or 0.0), 4),
+            "floor": row.get("score_floor"),
+            "queries": row.get("matched_queries"),
+            "content": _recall_log_text(row.get("content")),
+        }
+        for row in ranked_memories
+    ]
+    episode_log = [
+        {
+            "episode_id": row.get("id"),
+            "title": _recall_log_text(row.get("title"), 160),
+            "score": round(float(row.get("search_score") or 0.0), 4),
+            "queries": [
+                item.get("expression")
+                for item in row.get("matched_queries") or []
+                if isinstance(item, dict)
+            ],
+            "matched_keywords": row.get("matched_keywords") or [],
+            "evidence": _recall_log_matches(row.get("matches")),
+        }
+        for row in episode_rows
+    ]
+    episode_titles = {
+        str(row.get("id") or ""): _recall_log_text(row.get("title"), 160)
+        for row in episode_rows
+    }
+    turn_evidence: dict[str, list[dict[str, object]]] = {}
+    for row in episode_rows:
+        for match in _recall_log_matches(row.get("matches"), 4):
+            turn_id = str(match.get("turn_id") or "")
+            if turn_id:
+                turn_evidence.setdefault(turn_id, []).append(match)
+    turn_log = [
+        {
+            "turn_id": item.get("turn_id"),
+            "episodes": [
+                {
+                    "episode_id": episode_id,
+                    "title": episode_titles.get(str(episode_id), ""),
+                }
+                for episode_id in item.get("episode_ids") or []
+            ],
+            "matched_keywords": item.get("matched_keywords") or [],
+            "score": round(float(item.get("search_score") or 0.0), 4),
+            "evidence": turn_evidence.get(str(item.get("turn_id") or ""), [])[:2],
+        }
+        for item in recalled_turns
+    ]
     log_event(
         logger,
         logging.INFO,
         "context_recall",
         stage="context_recall",
-        goals=[{"id": item["id"]} for item in goals],
-        reminders=[{"id": item["id"]} for item in reminders],
+        queries=query_log,
+        requested_query_count=len(emitted_queries),
+        selected_query_count=len(recall_queries),
+        skipped_unit_ids=sorted(skipped_unit_ids),
+        hits=recall_hits,
+        misses=recall_misses,
         counts={
             "episodes": len(episodes),
             "goals": len(goals),
@@ -415,6 +505,50 @@ def build_plan_retrieval(
             "recall_episode_hits": len(ranked_recalled_episodes),
             "recall_turn_hits": len(recalled_turns),
         },
+    )
+    log_event(
+        logger,
+        logging.INFO,
+        "context_recall_memory_results",
+        stage="context_recall",
+        results=memory_log,
+    )
+    log_event(
+        logger,
+        logging.INFO,
+        "context_recall_episode_results",
+        stage="context_recall",
+        results=episode_log,
+    )
+    log_event(
+        logger,
+        logging.INFO,
+        "context_recall_turn_results",
+        stage="context_recall",
+        results=turn_log,
+    )
+    log_event(
+        logger,
+        logging.INFO,
+        "context_recall_state_results",
+        stage="context_recall",
+        goals=[
+            {
+                "id": item.get("id"),
+                "status": item.get("status"),
+                "title": _recall_log_text(item.get("title"), 160),
+                "next_action": _recall_log_text(item.get("next_action"), 240),
+            }
+            for item in goals
+        ],
+        reminders=[
+            {
+                "id": item.get("id"),
+                "text": _recall_log_text(item.get("text"), 240),
+                "fire_at": item.get("fire_timestamp") or item.get("fire_at"),
+            }
+            for item in reminders
+        ],
     )
     log_event(
         logger,
