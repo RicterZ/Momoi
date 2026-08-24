@@ -159,7 +159,8 @@ content was absent.
 - Keep topics and entities sparse. `open_loops` contains only concrete
   unfinished work, an explicit promise, unanswered matter that must persist, or
   real waiting—not a conversational hook. Do not create permanent category or
-  meta-memory Episodes. New refs use `new:<ascii-slug>`.
+  meta-memory Episodes. Follow the tool schema for exact action-dependent fields
+  and Episode ref syntax.
 - `episode_links` is empty by default. Its source must be an Episode bound by
   this Turn; its target may be another bound Episode or a supplied candidate.
   `continues` means the source continues the older target; `references` means

@@ -396,7 +396,18 @@ class ContextPlannerTest(unittest.TestCase):
         episode_description = schema["properties"]["episode_actions"]["items"][  # type: ignore[index]
             "description"
         ]
-        self.assertIn("continue also needs episode_ref", episode_description)
+        self.assertIn("continue: also include episode_ref", episode_description)
+        episode_properties = schema["properties"]["episode_actions"]["items"][  # type: ignore[index]
+            "properties"
+        ]
+        self.assertIn(
+            "new:[a-z0-9][a-z0-9_-]{0,39}",
+            episode_properties["episode_ref"]["description"],
+        )
+        self.assertIn(
+            "Required and non-empty for new",
+            episode_properties["title"]["description"],
+        )
         status_description = schema["properties"]["handoff"]["properties"][  # type: ignore[index]
             "context_status"
         ]["description"]
@@ -852,6 +863,17 @@ class ContextPlannerTest(unittest.TestCase):
         with self.assertRaisesRegex(ContextPlanError, "invalid_new_episode_ref"):
             parse_context_plan(plan, ["event-1"], [], "turn-1", 1)
 
+    def test_new_episode_reports_missing_required_fields_precisely(self) -> None:
+        missing_ref = response_plan()
+        del missing_ref["episode_actions"][0]["episode_ref"]
+        with self.assertRaisesRegex(ContextPlanError, "missing_new_episode_ref"):
+            parse_context_plan(missing_ref, ["event-1"], [], "turn-1", 1)
+
+        missing_title = response_plan()
+        del missing_title["episode_actions"][0]["title"]
+        with self.assertRaisesRegex(ContextPlanError, "missing_new_episode_title"):
+            parse_context_plan(missing_title, ["event-1"], [], "turn-1", 1)
+
     def test_v3_defaults_optional_episode_metadata_and_keeps_existing_title(
         self,
     ) -> None:
@@ -883,7 +905,7 @@ class ContextPlannerTest(unittest.TestCase):
 
         missing_new_title = response_plan()
         del missing_new_title["episode_actions"][0]["title"]
-        with self.assertRaisesRegex(ContextPlanError, "invalid_episode_action"):
+        with self.assertRaisesRegex(ContextPlanError, "missing_new_episode_title"):
             parse_context_plan(missing_new_title, ["event-1"], [], "turn-1", 1)
 
     def test_v3_requires_each_unit_exactly_once(self) -> None:
@@ -1151,6 +1173,49 @@ class ContextPlannerTest(unittest.TestCase):
 
 
 class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
+    async def test_missing_new_episode_ref_retry_names_exact_format(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(app_config(directory))
+
+            class Provider:
+                calls = 0
+
+                async def complete(
+                    provider_self,
+                    system: object,
+                    messages: list[dict[str, object]],
+                    tools: list[dict[str, object]],
+                    **_: object,
+                ) -> ProviderResponse:
+                    self.assertEqual(system, CONTEXT_PLANNER_SYSTEM_PROMPT)
+                    provider_self.calls += 1
+                    plan = response_plan()
+                    if provider_self.calls == 1:
+                        del plan["episode_actions"][0]["episode_ref"]
+                    else:
+                        correction = str(messages[-1]["content"])
+                        self.assertIn(
+                            "action=new requires episode_ref matching "
+                            "new:[a-z0-9][a-z0-9_-]{0,39}",
+                            correction,
+                        )
+                    return tool_plan_response(plan)
+
+            provider = Provider()
+            daemon.provider = provider  # type: ignore[assignment]
+            event = IncomingMessage("event-1", "1", "刷微博，也看下邮件", 1, 1)
+            daemon.store.add_event(event)
+            turn_id = daemon._turn_id(event.event_id)
+            daemon.store.begin_turn(turn_id, "owner", [event.event_id])
+
+            plan = await daemon._plan_owner_context([event], turn_id)
+
+            self.assertEqual(provider.calls, 2)
+            self.assertEqual(plan["episode_actions"][0]["action"], "new")
+            self.assertEqual(plan["episode_actions"][0]["title"], "微博浏览")
+            self.assertEqual(daemon.store.context_plan(turn_id)["state"], "planned")
+            daemon.store.close()
+
     async def test_new_owner_message_cancels_and_restarts_context_planner(
         self,
     ) -> None:

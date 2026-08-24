@@ -24,6 +24,7 @@ from .context_planner import (
     HEARTBEAT_PLAN_TOOL_NAME,
     HEARTBEAT_PLAN_TOOL_SPEC,
     ContextPlanError,
+    context_plan_correction,
     degraded_context_plan,
     degraded_heartbeat_plan,
     parse_context_plan,
@@ -680,6 +681,7 @@ class ContextService:
                 )
             except ContextPlanError as error:
                 last_error = str(error)
+                correction_reason = context_plan_correction(last_error)
                 log_event(
                     logger,
                     logging.WARNING,
@@ -700,12 +702,12 @@ class ContextService:
                 if attempt == 0:
                     correction = (
                         "[Trusted protocol correction: the previous context plan "
-                        f"failed validation with {last_error}. Call "
+                        f"failed validation: {correction_reason}. Call "
                         f"{CONTEXT_PLAN_TOOL_NAME} exactly once with corrected arguments.]"
                     )
                     correction_content = [
                         *[
-                            _tool_error_block(call.id, last_error)
+                            _tool_error_block(call.id, correction_reason)
                             for call in response.tool_calls
                         ],
                         {"type": "text", "text": correction},

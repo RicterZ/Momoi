@@ -22,6 +22,29 @@ SPEECH_ACTS = {
 }
 CONTEXT_PLAN_TOOL_NAME = "submit_context_plan"
 SKIP_RECALL = "SKIP_RECALL"
+NEW_EPISODE_REF_FORMAT = "new:[a-z0-9][a-z0-9_-]{0,39}"
+
+
+def context_plan_correction(reason: str) -> str:
+    guidance = {
+        "missing_new_episode_ref": (
+            "action=new requires episode_ref matching "
+            f"{NEW_EPISODE_REF_FORMAT} and a non-empty title"
+        ),
+        "invalid_new_episode_ref": (
+            "for action=new, episode_ref must match "
+            f"{NEW_EPISODE_REF_FORMAT}; for example, new:morning-alice"
+        ),
+        "missing_new_episode_title": (
+            "action=new requires a non-empty title and episode_ref matching "
+            f"{NEW_EPISODE_REF_FORMAT}"
+        ),
+        "missing_continue_episode_ref": (
+            "action=continue requires episode_ref equal to one supplied "
+            "candidate Episode id"
+        ),
+    }
+    return guidance.get(reason, reason)
 
 
 def _has_directed_cycle(edges: list[tuple[str, str]]) -> bool:
@@ -123,21 +146,51 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                 "items": {
                     "type": "object",
                     "description": (
-                        "none needs action and unit_ids. continue also needs "
-                        "episode_ref. new also needs episode_ref and title. "
-                        "Metadata fields are optional and default empty or zero."
+                        "Choose exactly one action shape. none: action and "
+                        "unit_ids only. continue: also include episode_ref equal "
+                        "to a supplied candidate Episode id. new: also include "
+                        "episode_ref matching new:[a-z0-9][a-z0-9_-]{0,39} and "
+                        "a non-empty title. Metadata fields are optional and "
+                        "default empty or zero."
                     ),
                     "properties": {
                         "action": {
                             "type": "string",
                             "enum": ["none", "continue", "new"],
+                            "description": (
+                                "none creates no Episode binding; continue binds "
+                                "to a supplied candidate; new creates an Episode."
+                            ),
                         },
-                        "episode_ref": {"type": "string"},
-                        "title": {"type": "string"},
+                        "episode_ref": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200,
+                            "description": (
+                                "Omit for none. Required for continue and must "
+                                "equal a supplied candidate Episode id. Required "
+                                "for new and must match "
+                                "new:[a-z0-9][a-z0-9_-]{0,39}, for example "
+                                "new:morning-alice."
+                            ),
+                        },
+                        "title": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200,
+                            "description": (
+                                "Required and non-empty for new. Omit for none; "
+                                "a title supplied for continue is ignored."
+                            ),
+                        },
                         "unit_ids": {
                             "type": "array",
                             "minItems": 1,
                             "items": {"type": "string"},
+                            "description": (
+                                "Intent unit ids assigned to this action; every "
+                                "unit must appear in exactly one Episode action."
+                            ),
                         },
                         "topics": {
                             "type": "array",
@@ -170,8 +223,20 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                 "items": {
                     "type": "object",
                     "properties": {
-                        "from_episode_ref": {"type": "string"},
-                        "to_episode_ref": {"type": "string"},
+                        "from_episode_ref": {
+                            "type": "string",
+                            "description": (
+                                "episode_ref of a new or continued Episode bound "
+                                "by this Turn."
+                            ),
+                        },
+                        "to_episode_ref": {
+                            "type": "string",
+                            "description": (
+                                "episode_ref bound by this Turn or an exact "
+                                "supplied candidate Episode id."
+                            ),
+                        },
                         "kind": {
                             "type": "string",
                             "enum": ["continues", "references", "supersedes"],
@@ -812,13 +877,14 @@ def parse_context_plan(
                 }
             )
             continue
-        if (
-            action not in {"continue", "new"}
-            or "episode_ref" not in raw
-            or "unit_ids" not in raw
-            or (action == "new" and "title" not in raw)
-        ):
+        if action not in {"continue", "new"} or "unit_ids" not in raw:
             raise ContextPlanError("invalid_episode_action")
+        if action == "continue" and "episode_ref" not in raw:
+            raise ContextPlanError("missing_continue_episode_ref")
+        if action == "new" and "episode_ref" not in raw:
+            raise ContextPlanError("missing_new_episode_ref")
+        if action == "new" and "title" not in raw:
+            raise ContextPlanError("missing_new_episode_title")
         raw_bindings.append(
             {
                 "action": action,
@@ -867,7 +933,7 @@ def parse_context_plan(
         action = str(raw["action"])
         is_new = action == "new"
         if is_new:
-            if not re.fullmatch(r"new:[a-z0-9][a-z0-9_-]{0,39}", episode_ref):
+            if not re.fullmatch(NEW_EPISODE_REF_FORMAT, episode_ref):
                 raise ContextPlanError("invalid_new_episode_ref")
         elif episode_ref.startswith("new:") or episode_ref not in candidate_ids:
             raise ContextPlanError("unknown_episode_ref")
