@@ -82,14 +82,14 @@ class ThinkingStoreTests(unittest.TestCase):
                 stage="webhook",
                 round=1,
                 model="test",
-                tools=["respond"],
+                tools=["end_turn"],
                 reasoning="适用性检查后决定静默，不发送衣服洗好了提醒。",
             )
             found = store.search_thinking(query="衣服洗好了")
             self.assertTrue(found["ok"])
             self.assertEqual(found["count"], 1)
             self.assertEqual(found["calls"][0]["turn_id"], "turn-laundry")
-            self.assertEqual(found["calls"][0]["tools"], ["respond"])
+            self.assertEqual(found["calls"][0]["tools"], ["end_turn"])
             self.assertIn("衣服洗好了", found["calls"][0]["excerpt"])
             read = store.read_thinking("turn-laundry")
             self.assertTrue(read["ok"])
@@ -131,7 +131,7 @@ class ThinkingStoreTests(unittest.TestCase):
                 call_id="call-3",
                 stage="webhook",
                 round=1,
-                tools=["respond"],
+                tools=["end_turn"],
                 reasoning="烘干结束提醒并非老师要求，所以这次也静默。",
             )
             tools = ThinkingTools(store)
@@ -218,7 +218,7 @@ class ThinkingStoreTests(unittest.TestCase):
                 call_id="call-dash-2",
                 stage="owner",
                 round=2,
-                tools=["respond"],
+                tools=["end_turn"],
                 reasoning="收束。",
             )
             listed = store.dashboard_thinking()

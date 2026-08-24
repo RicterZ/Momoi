@@ -112,8 +112,8 @@ or persona-specific wording from it.
   exempt by conversational tone: route public search when the supplied evidence
   does not identify it, with internal recall as the first step. Do not preload a
   server merely because it might become useful; give a concise routing reason.
-- Use `respond` when no tool beyond owner-visible messaging and terminal
-  response is needed. Use `clarify` only when missing owner input prevents safe
+- Use `direct_reply` when no tool beyond owner-visible messaging and terminal
+  state submission is needed. Use `clarify` only when missing owner input prevents safe
   or materially correct execution now. Use `work` whenever any Memory, Goal,
   reminder, file, HTTP, MCP, or other execution tool is required.
 - When the owner explicitly requests a confirmed memory mutation, name the

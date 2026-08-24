@@ -469,7 +469,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 [{"role": "user", "content": "测试"}],
                                 [
                                     {
-                                        "name": "respond",
+                                        "name": "end_turn",
                                         "input_schema": {"type": "object"},
                                     }
                                 ],
@@ -509,7 +509,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                                     {
                                         "id": "call-1",
                                         "function": {
-                                            "name": "respond",
+                                            "name": "end_turn",
                                             "arguments": "{}",
                                         },
                                     }
@@ -544,7 +544,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                         response = await provider.complete(
                             "system",
                             [{"role": "user", "content": "测试"}],
-                            [{"name": "respond", "input_schema": {"type": "object"}}],
+                            [{"name": "end_turn", "input_schema": {"type": "object"}}],
                             require_tool=True,
                         )
             finally:
@@ -1058,8 +1058,8 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                         )
                     else:
                         call = ToolCall(
-                            "respond-corrected",
-                            "respond",
+                            "end_turn-corrected",
+                            "end_turn",
                             {
                                 "expects_reply": False,
                                 "reply_expectation": "",
@@ -1146,7 +1146,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                     else:
                         call = ToolCall(
                             "corrected-response",
-                            "respond",
+                            "end_turn",
                             {
                                 "expects_reply": False,
                                 "reply_expectation": "",
@@ -1199,7 +1199,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                                         "id": "call-new",
                                         "type": "function",
                                         "function": {
-                                            "name": "respond",
+                                            "name": "end_turn",
                                             "arguments": json.dumps(
                                                 {
                                                     "expects_reply": False,
@@ -1282,7 +1282,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                     ],
                     [
                         {
-                            "name": "respond",
+                            "name": "end_turn",
                             "description": "Finish the Turn.",
                             "input_schema": {
                                 "type": "object",
@@ -1315,7 +1315,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                     [{"role": "user", "content": "测试"}],
                     [
                         {
-                            "name": "respond",
+                            "name": "end_turn",
                             "description": "Finish the Turn.",
                             "input_schema": {"type": "object"},
                         }
@@ -1325,7 +1325,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
         finally:
             await server.close()
 
-        self.assertEqual(response.tool_calls[0].name, "respond")
+        self.assertEqual(response.tool_calls[0].name, "end_turn")
         self.assertEqual(
             response.tool_calls[0].arguments,
             {
@@ -1349,7 +1349,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(payload["messages"][3]["tool_call_id"], "call-old")
         self.assertEqual(payload["tools"][0]["type"], "function")
-        self.assertEqual(payload["tools"][0]["function"]["name"], "respond")
+        self.assertEqual(payload["tools"][0]["function"]["name"], "end_turn")
         self.assertEqual(payload["tool_choice"], "required")
         self.assertNotIn("tool_choice", requests[1][0])
 
@@ -1365,7 +1365,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                                         "id": "bad-arguments",
                                         "type": "function",
                                         "function": {
-                                            "name": "respond",
+                                            "name": "end_turn",
                                             "arguments": "{not-json",
                                         },
                                     }
@@ -1398,7 +1398,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                     [{"role": "user", "content": "test"}],
                     [
                         {
-                            "name": "respond",
+                            "name": "end_turn",
                             "input_schema": {"type": "object"},
                         }
                     ],

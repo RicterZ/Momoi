@@ -23,10 +23,10 @@ from momoi.config import (
 )
 from momoi.runtime import (
     AUTONOMOUS_FINISH_SPEC,
-    RESPOND_TOOL_SPEC,
+    END_TURN_TOOL_SPEC,
     SEND_MESSAGE_TOOL_SPEC,
-    heartbeat_respond_tool_spec,
-    owner_respond_tool_spec,
+    heartbeat_end_turn_tool_spec,
+    owner_end_turn_tool_spec,
     MomoiDaemon,
 )
 from momoi.runtime.jobs import AutonomousJob
@@ -405,13 +405,13 @@ class DaemonTest(unittest.TestCase):
             parse_mood_decision('{"decision": "unchanged"}'),
             (None, "invalid_mood_decision"),
         )
-        self.assertIn("mood", RESPOND_TOOL_SPEC["input_schema"]["required"])
-        self.assertIn("reply_wait", RESPOND_TOOL_SPEC["input_schema"]["required"])
-        self.assertNotIn("continuity", RESPOND_TOOL_SPEC["input_schema"]["properties"])
-        self.assertNotIn("delivery", RESPOND_TOOL_SPEC["input_schema"]["properties"])
-        self.assertNotIn("expects_reply", RESPOND_TOOL_SPEC["input_schema"]["properties"])
-        self.assertNotIn("segments", RESPOND_TOOL_SPEC["input_schema"]["properties"])
-        self.assertNotIn("forward", RESPOND_TOOL_SPEC["input_schema"]["properties"])
+        self.assertIn("mood", END_TURN_TOOL_SPEC["input_schema"]["required"])
+        self.assertIn("reply_wait", END_TURN_TOOL_SPEC["input_schema"]["required"])
+        self.assertNotIn("continuity", END_TURN_TOOL_SPEC["input_schema"]["properties"])
+        self.assertNotIn("delivery", END_TURN_TOOL_SPEC["input_schema"]["properties"])
+        self.assertNotIn("expects_reply", END_TURN_TOOL_SPEC["input_schema"]["properties"])
+        self.assertNotIn("segments", END_TURN_TOOL_SPEC["input_schema"]["properties"])
+        self.assertNotIn("forward", END_TURN_TOOL_SPEC["input_schema"]["properties"])
         self.assertNotIn(
             "delivery", SEND_MESSAGE_TOOL_SPEC["input_schema"]["properties"]
         )
@@ -422,7 +422,7 @@ class DaemonTest(unittest.TestCase):
         bubble_description = CHANNEL_MESSAGE_SCHEMA["oneOf"][0]["description"]
         self.assertIn("private-chat bubble", bubble_description)
         self.assertIn("blank lines", bubble_description)
-        wait_shapes = RESPOND_TOOL_SPEC["input_schema"]["properties"]["reply_wait"][
+        wait_shapes = END_TURN_TOOL_SPEC["input_schema"]["properties"]["reply_wait"][
             "oneOf"
         ]
         self.assertEqual(
@@ -435,19 +435,22 @@ class DaemonTest(unittest.TestCase):
         self.assertEqual(
             wait_shapes[1]["properties"]["delay_minutes"]["maximum"], 10
         )
-        self.assertIn("conversational Turn", RESPOND_TOOL_SPEC["description"])
-        self.assertNotIn("messages", RESPOND_TOOL_SPEC["input_schema"]["properties"])
-        heartbeat_respond = heartbeat_respond_tool_spec()
-        self.assertEqual(heartbeat_respond["name"], "respond")
-        self.assertIn("heartbeat", heartbeat_respond["input_schema"]["required"])
-        self.assertIn("mood", heartbeat_respond["input_schema"]["required"])
+        self.assertIn("conversational Turn", END_TURN_TOOL_SPEC["description"])
+        terminal_properties = END_TURN_TOOL_SPEC["input_schema"]["properties"]
+        for visible_field in ("message", "messages", "text", "content", "delivery"):
+            self.assertNotIn(visible_field, terminal_properties)
+        self.assertFalse(END_TURN_TOOL_SPEC["input_schema"]["additionalProperties"])
+        heartbeat_end_turn = heartbeat_end_turn_tool_spec()
+        self.assertEqual(heartbeat_end_turn["name"], "end_turn")
+        self.assertIn("heartbeat", heartbeat_end_turn["input_schema"]["required"])
+        self.assertIn("mood", heartbeat_end_turn["input_schema"]["required"])
         self.assertNotIn(
             "continue_waiting_for_reply",
-            heartbeat_respond["input_schema"]["properties"]["heartbeat"]["properties"],
+            heartbeat_end_turn["input_schema"]["properties"]["heartbeat"]["properties"],
         )
-        owner_respond = owner_respond_tool_spec()
-        self.assertIn("activity", owner_respond["input_schema"]["required"])
-        self.assertNotIn("heartbeat", owner_respond["input_schema"]["properties"])
+        owner_end_turn = owner_end_turn_tool_spec()
+        self.assertIn("activity", owner_end_turn["input_schema"]["required"])
+        self.assertNotIn("heartbeat", owner_end_turn["input_schema"]["properties"])
         activity_shapes = ACTIVITY_DECISION_SCHEMA["oneOf"]
         self.assertEqual(
             [shape["properties"]["decision"]["enum"][0] for shape in activity_shapes],
@@ -458,7 +461,7 @@ class DaemonTest(unittest.TestCase):
             {"decision", "text", "result"},
         )
         self.assertIn("Replace", activity_shapes[1]["description"])
-        owner_description = owner_respond["description"]
+        owner_description = owner_end_turn["description"]
         self.assertIn("Correct it only when", owner_description)
         self.assertIn("is not a conflict", owner_description)
         self.assertIn("without a conflict, leave both unchanged", owner_description)
@@ -758,7 +761,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         tool_name = "send_message"
                         arguments = {"messages": [text]}
                     else:
-                        tool_name = "respond"
+                        tool_name = "end_turn"
                         arguments = {
                             "expects_reply": False,
                             "reply_expectation": "",
@@ -766,7 +769,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "activity": {"decision": "unchanged"},
                         }
                     call = ToolCall(
-                        f"respond-{provider_self.calls}",
+                        f"end_turn-{provider_self.calls}",
                         tool_name,
                         arguments,
                     )
@@ -812,7 +815,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(daemon.store.pending_events(), [])
             daemon.store.close()
 
-    async def test_owner_updates_interrupt_after_tool_and_before_respond(self) -> None:
+    async def test_owner_updates_interrupt_after_tool_and_before_end_turn(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(
                 AppConfig(
@@ -829,9 +832,9 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             tool_started = asyncio.Event()
             finish_tool = asyncio.Event()
-            stale_respond_started = asyncio.Event()
-            finish_stale_respond = asyncio.Event()
-            stale_respond_cancelled = asyncio.Event()
+            stale_end_turn_started = asyncio.Event()
+            finish_stale_end_turn = asyncio.Event()
+            stale_end_turn_cancelled = asyncio.Event()
 
             async def execute_tool(call: ToolCall) -> dict[str, object]:
                 self.assertEqual(call.name, "read_file")
@@ -860,11 +863,11 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         self.assertIn(
                             "地址改成上海", json.dumps(messages, ensure_ascii=False)
                         )
-                        stale_respond_started.set()
+                        stale_end_turn_started.set()
                         try:
-                            await finish_stale_respond.wait()
+                            await finish_stale_end_turn.wait()
                         except asyncio.CancelledError:
-                            stale_respond_cancelled.set()
+                            stale_end_turn_cancelled.set()
                             raise
                         call = ToolCall(
                             "stale-message",
@@ -881,8 +884,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         )
                     else:
                         call = ToolCall(
-                            "final-respond",
-                            "respond",
+                            "final-end_turn",
+                            "end_turn",
                             {
                                 "expects_reply": False,
                                 "reply_expectation": "",
@@ -918,9 +921,9 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             await tool_started.wait()
             await daemon._receive(first_update)
             finish_tool.set()
-            await stale_respond_started.wait()
+            await stale_end_turn_started.wait()
             await daemon._receive(second_update)
-            await asyncio.wait_for(stale_respond_cancelled.wait(), timeout=1)
+            await asyncio.wait_for(stale_end_turn_cancelled.wait(), timeout=1)
             await turn
 
             self.assertEqual(provider.calls, 4)
@@ -1226,7 +1229,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 )
 
             tools = run.await_args.args[2]
-            self.assertEqual([tool["name"] for tool in tools], ["send_message", "respond"])
+            self.assertEqual([tool["name"] for tool in tools], ["send_message", "end_turn"])
             self.assertTrue(run.await_args.kwargs["reply_wait_turn"])
             request = json.dumps(run.await_args.args[:2], ensure_ascii=False)
             self.assertIn("<pending_owner_reply>", request)
@@ -1312,7 +1315,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
 
             tools = run.await_args.args[2]
             self.assertEqual(
-                [tool["name"] for tool in tools], ["send_message", "respond"]
+                [tool["name"] for tool in tools], ["send_message", "end_turn"]
             )
             request = json.dumps(run.await_args.args[:2], ensure_ascii=False)
             self.assertIn("这个问题需要老师决定", request)
@@ -1369,8 +1372,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     provider_self.calls += 1
                     if provider_self.calls == 1:
                         call = ToolCall(
-                            "early-respond",
-                            "respond",
+                            "early-end_turn",
+                            "end_turn",
                             {
                                 "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
@@ -1385,7 +1388,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     elif provider_self.calls == 3:
                         call = ToolCall(
                             "rearm",
-                            "respond",
+                            "end_turn",
                             {
                                 "reply_wait": {
                                     "wait": True,
@@ -1399,7 +1402,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     else:
                         call = ToolCall(
                             "close",
-                            "respond",
+                            "end_turn",
                             {
                                 "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
@@ -1504,7 +1507,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         self.assertIn("planner fallback works", json.dumps(messages))
                         call = ToolCall(
                             "finish",
-                            "respond",
+                            "end_turn",
                             {
                                 "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
@@ -1542,7 +1545,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(provider.calls, 3)
             daemon.store.close()
 
-    async def test_owner_respond_mode_keeps_internal_tools(self) -> None:
+    async def test_owner_direct_reply_mode_keeps_internal_tools(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "note.txt").write_text("workspace group loaded")
@@ -1614,7 +1617,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         )
                         call = ToolCall(
                             "finish-workspace",
-                            "respond",
+                            "end_turn",
                             {
                                 "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
@@ -1637,7 +1640,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         "reason": "不需要外部服务",
                     },
                     "execution": {
-                        "mode": "respond",
+                        "mode": "direct_reply",
                         "outline": ["回复"],
                         "reason": "普通回应",
                     },
@@ -1830,8 +1833,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             },
                         )
                     else:
-                        if [tool["name"] for tool in tools] == ["respond"]:
-                            raise AssertionError("goal must not use owner respond")
+                        if [tool["name"] for tool in tools] == ["end_turn"]:
+                            raise AssertionError("goal must not use owner end_turn")
                         call = ToolCall("finish", "autonomous_finish", {})
                     return ProviderResponse(
                         [
@@ -1923,7 +1926,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         self.assert_terminal_tools(tools)
                         call = ToolCall(
                             "failed-response",
-                            "respond",
+                            "end_turn",
                             {
                                 "expects_reply": False,
                                 "reply_expectation": "",
@@ -1946,7 +1949,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 @staticmethod
                 def assert_terminal_tools(tools: list[dict[str, object]]) -> None:
                     names = [tool["name"] for tool in tools]
-                    if "send_message" not in names or "respond" not in names:
+                    if "send_message" not in names or "end_turn" not in names:
                         raise AssertionError(tools)
                     if "goal_create" not in names:
                         raise AssertionError(tools)
@@ -2197,7 +2200,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "write_file",
                             "tool_enable",
                             "send_message",
-                            "respond",
+                            "end_turn",
                         }
                         if names != expected:
                             raise AssertionError(names)
@@ -2229,7 +2232,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         expects_reply = self.calls == 5
                         call = ToolCall(
                             f"heartbeat-{self.calls}",
-                            "respond",
+                            "end_turn",
                             {
                                 "reply_wait": (
                                     {
@@ -2370,7 +2373,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     self.turn_request = json.dumps(messages, ensure_ascii=False)
                     call = ToolCall(
                         "heartbeat-done",
-                        "respond",
+                        "end_turn",
                         {
                             "expects_reply": False,
                             "reply_expectation": "",
@@ -2540,7 +2543,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             raise AssertionError((system, request, names))
                         call = ToolCall(
                             "heartbeat-done",
-                            "respond",
+                            "end_turn",
                             {
                                 "expects_reply": False,
                                 "reply_expectation": "",
@@ -2648,7 +2651,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((turn["state"], turn["llm_calls"]), ("completed", 0))
             daemon.store.close()
 
-    async def test_plain_text_with_respond_is_retried_through_send_message(
+    async def test_plain_text_with_end_turn_is_retried_through_send_message(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -2683,8 +2686,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     self.calls += 1
                     if self.calls == 1:
                         call = ToolCall(
-                            "bad-respond",
-                            "respond",
+                            "bad-end_turn",
+                            "end_turn",
                             {
                                 "expects_reply": False,
                                 "reply_expectation": "",
@@ -2706,7 +2709,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     names = [tool["name"] for tool in tools]
                     if (
                         "send_message" not in names
-                        or "respond" not in names
+                        or "end_turn" not in names
                         or "memory_search" not in names
                     ):
                         raise AssertionError(tools)
@@ -2719,7 +2722,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     else:
                         call = ToolCall(
                             "finish",
-                            "respond",
+                            "end_turn",
                             {
                                 "expects_reply": False,
                                 "reply_expectation": "",
@@ -2825,8 +2828,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     self.calls += 1
                     if self.calls == 1:
                         call = ToolCall(
-                            "bad-respond",
-                            "respond",
+                            "bad-end_turn",
+                            "end_turn",
                             {
                                 "reply_wait": {"wait": False},
                                 "mood": "unchanged",
@@ -2858,7 +2861,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     names = [tool["name"] for tool in tools]
                     if (
                         "send_message" not in names
-                        or "respond" not in names
+                        or "end_turn" not in names
                         or "memory_search" not in names
                     ):
                         raise AssertionError(tools)
@@ -2871,7 +2874,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     else:
                         call = ToolCall(
                             "finish",
-                            "respond",
+                            "end_turn",
                             {
                                 "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
@@ -3073,7 +3076,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         calls = [
                             ToolCall(
                                 "finish",
-                                "respond",
+                                "end_turn",
                                 {
                                     "reply_expectation": "",
                                     "mood": {"decision": "unchanged"},
@@ -3358,7 +3361,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     else:
                         call = ToolCall(
                             "stop-response",
-                            "respond",
+                            "end_turn",
                             {
                                 "expects_reply": False,
                                 "reply_expectation": "",
@@ -3445,7 +3448,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     else:
                         call = ToolCall(
                             "stop-after-tool",
-                            "respond",
+                            "end_turn",
                             {
                                 "expects_reply": False,
                                 "reply_expectation": "",
@@ -3579,8 +3582,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     "content": [
                         {
                             "type": "tool_use",
-                            "id": "respond-1",
-                            "name": "respond",
+                            "id": "end_turn-1",
+                            "name": "end_turn",
                             "input": {
                                 "expects_reply": False,
                                 "reply_expectation": "",
@@ -3678,7 +3681,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         )
         final_tools = [tool["name"] for tool in llm_requests[7]["tools"]]
         self.assertIn("send_message", final_tools)
-        self.assertIn("respond", final_tools)
+        self.assertIn("end_turn", final_tools)
         self.assertIn("memory_search", final_tools)
         self.assertNotIn("tool_choice", llm_requests[7])
         self.assertEqual(

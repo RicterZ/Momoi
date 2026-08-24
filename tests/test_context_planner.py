@@ -605,7 +605,7 @@ class ContextPlannerTest(unittest.TestCase):
         social["intent_units"][0]["recall_queries"] = []
         social["episode_actions"] = [social["episode_actions"][0]]
         social["episode_links"] = []
-        social["handoff"]["execution_mode"] = "respond"
+        social["handoff"]["execution_mode"] = "direct_reply"
         parsed = parse_context_plan(social, ["event-1"], [], "turn-1", 1)
         self.assertEqual(parsed["intent_units"][0]["recall_queries"], [])
         self.assertEqual(
@@ -679,7 +679,7 @@ class ContextPlannerTest(unittest.TestCase):
         )
 
         social = response_plan()
-        social["handoff"]["execution_mode"] = "respond"
+        social["handoff"]["execution_mode"] = "direct_reply"
         social["handoff"]["execution_outline"] = []
         social["handoff"]["execution_reason"] = "only visible social delivery is needed"
         social["handoff"]["delivery_bubbles"] = [
@@ -973,7 +973,7 @@ class ContextPlannerTest(unittest.TestCase):
                     "delete_file",
                     "sleep",
                     "tool_enable",
-                    "respond",
+                    "end_turn",
                 ],
             )
             routed = {
@@ -986,7 +986,7 @@ class ContextPlannerTest(unittest.TestCase):
                     },
                     "mcp": {"servers": [], "reason": "不需要外部服务"},
                     "execution": {
-                        "mode": "respond",
+                        "mode": "direct_reply",
                         "outline": ["回复老师"],
                         "reason": "普通回应",
                     },
@@ -1193,7 +1193,7 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "context_reason": "当前上下文足够",
                             "mcp_servers": [],
                             "mcp_reason": "不需要外部服务",
-                            "execution_mode": "respond",
+                            "execution_mode": "direct_reply",
                             "execution_outline": ["处理合并后的主人消息"],
                             "execution_reason": "当前输入已足够回应",
                             "delivery_mode": "bubbles",
@@ -1323,7 +1323,7 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "context_reason": "需要查历史收纳位置",
                             "mcp_servers": [],
                             "mcp_reason": "不需要外部服务",
-                            "execution_mode": "respond",
+                            "execution_mode": "direct_reply",
                             "execution_outline": ["查找收纳位置", "根据证据回答"],
                             "execution_reason": "主人在问旧物品位置",
                             "delivery_mode": "bubbles",
@@ -1543,8 +1543,8 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                     self.assertIn("GLOBAL RAW MUST NOT LEAK", text)
                     self.assertEqual(len(messages), 1)
                     call = ToolCall(
-                        "respond",
-                        "respond",
+                        "end_turn",
+                        "end_turn",
                         {
                             "expects_reply": False,
                             "reply_expectation": "",
@@ -1627,8 +1627,8 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                     self.assertIn("<context_resolution>", text)
                     self.assertIn("without automatic historical recall", text)
                     call = ToolCall(
-                        "respond",
-                        "respond",
+                        "end_turn",
+                        "end_turn",
                         {
                             "expects_reply": False,
                             "reply_expectation": "",

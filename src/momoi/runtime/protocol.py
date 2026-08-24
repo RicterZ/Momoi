@@ -238,15 +238,20 @@ PLAN_ADJUSTMENT_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 
-RESPOND_TOOL_SPEC: dict[str, Any] = {
-    "name": "respond",
+END_TURN_TOOL_SPEC: dict[str, Any] = {
+    "name": "end_turn",
     "description": (
-        "Required terminal state update for every conversational Turn, called only "
-        "after all tool work and send_message calls are complete and always as the "
-        "only tool call in its response. It never sends owner-visible messages."
+        "End the current conversational Turn by committing its private state. This "
+        "is not a reply or messaging tool and cannot send owner-visible content. "
+        "Call it exactly once, only after all work and send_message calls are "
+        "complete, and as the only tool call in the model response."
     ),
     "input_schema": {
         "type": "object",
+        "description": (
+            "Private Turn state only. Visible text, message, messages, content, and "
+            "delivery fields are not valid here."
+        ),
         "properties": {
             "reply_wait": REPLY_WAIT_DECISION_SCHEMA,
             "plan_adjustment": PLAN_ADJUSTMENT_SCHEMA,
@@ -261,14 +266,16 @@ RESPOND_TOOL_SPEC: dict[str, Any] = {
 }
 
 
-def owner_respond_tool_spec() -> dict[str, Any]:
-    schema = RESPOND_TOOL_SPEC["input_schema"]
+def owner_end_turn_tool_spec() -> dict[str, Any]:
+    schema = END_TURN_TOOL_SPEC["input_schema"]
     return {
-        **RESPOND_TOOL_SPEC,
+        **END_TURN_TOOL_SPEC,
         "description": (
-            "Required terminal state update for this Owner Turn, called only after "
-            "all tool work and send_message calls are complete and always as the "
-            "only tool call in its response. It never sends owner-visible messages. "
+            "End this Owner Turn by committing private state. This is not a reply "
+            "or messaging tool: it cannot send owner-visible content and has no "
+            "message parameter. Use send_message for every visible reply. Call "
+            "end_turn exactly once, only after all work and send_message calls are "
+            "complete, and as the only tool call in the model response. "
             "For activity, compare Current self state with authenticated owner input "
             "and reliable evidence from this Turn. Correct it only when this Turn "
             "completes, cancels, replaces, proves impossible, invalidates a premise "
@@ -308,14 +315,16 @@ HEARTBEAT_STATE_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 
-def heartbeat_respond_tool_spec() -> dict[str, Any]:
-    schema = RESPOND_TOOL_SPEC["input_schema"]
+def heartbeat_end_turn_tool_spec() -> dict[str, Any]:
+    schema = END_TURN_TOOL_SPEC["input_schema"]
     return {
-        **RESPOND_TOOL_SPEC,
+        **END_TURN_TOOL_SPEC,
         "description": (
-            "Required terminal state update for this autonomous heartbeat Turn, called "
-            "only after all tool work and optional send_message calls are complete. "
-            "It never sends owner-visible messages. The heartbeat object records "
+            "End this autonomous heartbeat Turn by committing private state. This is "
+            "not a reply or messaging tool and cannot send owner-visible content; use "
+            "send_message for any visible message. Call end_turn exactly once, only "
+            "after all work and optional send_message calls are complete, and as the "
+            "only tool call in the model response. The heartbeat object records "
             "Momoi's activity and schedules her next Turn."
         ),
         "input_schema": {
@@ -330,10 +339,11 @@ def heartbeat_respond_tool_spec() -> dict[str, Any]:
 SEND_MESSAGE_TOOL_SPEC: dict[str, Any] = {
     "name": "send_message",
     "description": (
-        "Send one or more non-empty owner-visible private-chat bubbles without "
-        "ending the Turn. Text may accompany images; file, video, audio, and record "
-        "items must stand alone. Call respond after all visible beats and work are "
-        "complete."
+        "The only tool for sending owner-visible content. Send one or more non-empty "
+        "private-chat bubbles; never put visible reply text in end_turn or ordinary "
+        "assistant output. This tool does not end the Turn. Text may accompany images; "
+        "file, video, audio, and record items must stand alone. After all visible beats "
+        "and work are complete, call end_turn alone."
     ),
     "input_schema": {
         "type": "object",

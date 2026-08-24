@@ -184,7 +184,7 @@ steps:
 
 
 class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
-    async def test_webhook_turn_uses_normal_curl_and_respond_loop(self) -> None:
+    async def test_webhook_turn_uses_normal_curl_and_end_turn_loop(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
                 llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
@@ -285,7 +285,7 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                     else:
                         call = ToolCall(
                             "finish",
-                            "respond",
+                            "end_turn",
                             {
                                 "expects_reply": False,
                                 "reply_expectation": "",
@@ -336,7 +336,7 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(reply.messages, [])
             self.assertEqual(provider.calls, 3)
             self.assertEqual(
-                provider.tool_names[0], ["send_message", "curl", "respond"]
+                provider.tool_names[0], ["send_message", "curl", "end_turn"]
             )
             curl_spec = next(
                 tool for tool in provider.tools if tool["name"] == "curl"

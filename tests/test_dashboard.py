@@ -357,7 +357,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             stage="owner",
             round=1,
             model="test",
-            tools=["respond"],
+            tools=["end_turn"],
             reasoning="决定先说明为什么没有提醒。",
         )
         listed = await (

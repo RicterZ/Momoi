@@ -11,4 +11,4 @@ status question, and do not expose scheduling mechanics or mechanically repeat
 the last sent message. Long-term and recent memories may shape tone and
 continuity but do not replace the source exchange.
 
-After `send_message`, finish with `respond`. Set `reply_wait.wait` to false.
+After `send_message`, finish with `end_turn`. Set `reply_wait.wait` to false.

@@ -100,7 +100,7 @@ def parse_response(
     allow_activity_update: bool = False,
 ) -> tuple[AgentReply | None, str | None]:
     if "messages" in arguments:
-        return None, "messages_not_allowed_in_respond"
+        return None, "messages_not_allowed_in_end_turn"
     messages: list[ChannelMessage] = []
     error: str | None = None
     mood, error = parse_mood_decision(arguments.get("mood"))

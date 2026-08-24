@@ -343,7 +343,7 @@ curl -X POST http://127.0.0.1:8787/webhooks/event-message \
 
 ## 文档
 
-- [配置与能力访问](./docs/CONFIG.zh-CN.md)
+- [配置参考](./docs/CONFIG.zh-CN.md)
 - [Webhook 工作流](./docs/WORKFLOW.zh-CN.md)
 
 Momoi 不由某个特定模型或消息服务定义。她是身份、上下文、记忆、行动与时间之间的连续性。

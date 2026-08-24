@@ -566,7 +566,7 @@ class MessagingTest(unittest.TestCase):
             }
         )
         self.assertIsNone(legacy)
-        self.assertEqual(error, "messages_not_allowed_in_respond")
+        self.assertEqual(error, "messages_not_allowed_in_end_turn")
         heartbeat, error = parse_response(
             {
                 "reply_wait": {"wait": False},
@@ -827,7 +827,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             daemon.store.close()
 
-    async def test_respond_can_close_a_turn_without_a_visible_message(self) -> None:
+    async def test_end_turn_can_close_a_turn_without_a_visible_message(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
                 llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
@@ -851,11 +851,11 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                     tools: list[dict[str, object]],
                     **___: object,
                 ) -> ProviderResponse:
-                    respond = next(tool for tool in tools if tool["name"] == "respond")
-                    case.assertNotIn("messages", respond["input_schema"]["properties"])
+                    end_turn = next(tool for tool in tools if tool["name"] == "end_turn")
+                    case.assertNotIn("messages", end_turn["input_schema"]["properties"])
                     call = ToolCall(
                         "silent-close",
-                        "respond",
+                        "end_turn",
                         {
                             "expects_reply": False,
                             "reply_expectation": "",
@@ -883,7 +883,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(daemon.store.pending_events(), [])
             daemon.store.close()
 
-    async def test_empty_respond_can_wait_for_a_send_message_reply(self) -> None:
+    async def test_empty_end_turn_can_wait_for_a_send_message_reply(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(
                 AppConfig(
@@ -928,7 +928,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                         [
                             ToolCall(
                                 "close-after-question",
-                                "respond",
+                                "end_turn",
                                 {
                                     "reply_wait": {
                                         "wait": True,
@@ -1053,7 +1053,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                     self.messages = messages
                     call = ToolCall(
                         "image-response",
-                        "respond",
+                        "end_turn",
                         {
                             "expects_reply": False,
                             "reply_expectation": "",
@@ -1128,7 +1128,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                     if self.calls > 1:
                         call = ToolCall(
                             "emotion-close",
-                            "respond",
+                            "end_turn",
                             {
                                 "expects_reply": False,
                                 "reply_expectation": "",
@@ -1229,7 +1229,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                         tool_name = "send_message"
                         arguments = {"messages": [value]}
                     else:
-                        tool_name = "respond"
+                        tool_name = "end_turn"
                         arguments = {
                             "expects_reply": False,
                             "reply_expectation": "",
@@ -1472,8 +1472,8 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                         [],
                         [
                             ToolCall(
-                                f"respond-{self.calls}",
-                                "respond",
+                                f"end_turn-{self.calls}",
+                                "end_turn",
                                 {
                                     "expects_reply": False,
                                     "reply_expectation": "",

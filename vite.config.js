@@ -31,9 +31,9 @@ function previewThinkingCalls() {
       tools: ["send_message"],
       reasoning_chars: 2557,
       excerpt:
-        "先核对 outbox。那次 webhook 只调了 respond，没有 send_message，所以老师确实没收到。",
+        "先核对 outbox。那次 webhook 只调了 end_turn，没有 send_message，所以老师确实没收到。",
       reasoning:
-        "先看事实，不看旧笔记。\n\n那次 webhook 的工具只有 respond，outbox 是空的。thinking 里写过「烘干结束提醒并非老师要求」，那是当时的判断，不能当成现行禁令。\n\n老师现在明确在问为什么没提醒。结论：衣服洗好这件事到了，我评估后选择了静默，所以没有发出去。接下来用 send_message 把这件事说清楚，不要假装已经提醒过。",
+        "先看事实，不看旧笔记。\n\n那次 webhook 的工具只有 end_turn，outbox 是空的。thinking 里写过「烘干结束提醒并非老师要求」，那是当时的判断，不能当成现行禁令。\n\n老师现在明确在问为什么没提醒。结论：衣服洗好这件事到了，我评估后选择了静默，所以没有发出去。接下来用 send_message 把这件事说清楚，不要假装已经提醒过。",
     },
     {
       turn_id: "9d5db6937f765921b2d6cbe0773e5111",
@@ -42,7 +42,7 @@ function previewThinkingCalls() {
       stage: "owner",
       round: 2,
       model: "deepseek-v4-flash",
-      tools: ["respond"],
+      tools: ["end_turn"],
       reasoning_chars: 46,
       excerpt: "已经说明原因，这轮可以收束。",
       reasoning: "已经说明原因，这轮可以收束。",
@@ -68,12 +68,12 @@ function previewThinkingCalls() {
       stage: "heartbeat",
       round: 1,
       model: "deepseek-v4-flash",
-      tools: ["respond"],
+      tools: ["end_turn"],
       reasoning_chars: 9802,
       excerpt:
         "关卡节奏可以再压一拍。这次只记下来，先不发消息。",
       reasoning:
-        "读完一条新玩法公开。关卡可以做成「先看见机关，再决定要不要踩」。\n\n这不是必须告诉老师的事。记下活动结果，respond 收束，不发 send_message。",
+        "读完一条新玩法公开。关卡可以做成「先看见机关，再决定要不要踩」。\n\n这不是必须告诉老师的事。记下活动结果，end_turn 收束，不发 send_message。",
     },
     {
       turn_id: "webhook:event-message:0",
@@ -82,12 +82,12 @@ function previewThinkingCalls() {
       stage: "webhook",
       round: 1,
       model: "deepseek-v4-flash",
-      tools: ["respond"],
+      tools: ["end_turn"],
       reasoning_chars: 1840,
       excerpt:
         "衣服洗好了。旧 Episode 写过烘干结束不必提醒，所以这次也先静默。",
       reasoning:
-        "Webhook 任务：衣服洗好了。\n\n对照 recent_conversation，老师没有正在等这条。旧 Episode 笔记写过「烘干结束提醒并非老师要求」。webhook 合同说：如果只是重复已知状态，可以静默。\n\n决定：不发 send_message，直接 respond。",
+        "Webhook 任务：衣服洗好了。\n\n对照 recent_conversation，老师没有正在等这条。旧 Episode 笔记写过「烘干结束提醒并非老师要求」。webhook 合同说：如果只是重复已知状态，可以静默。\n\n决定：不发 send_message，直接 end_turn。",
     },
     {
       turn_id: "july-quest-note",
@@ -96,7 +96,7 @@ function previewThinkingCalls() {
       stage: "heartbeat",
       round: 1,
       model: "deepseek-v4-flash",
-      tools: ["respond"],
+      tools: ["end_turn"],
       reasoning_chars: 640,
       excerpt: "七月那次心跳只整理了关卡节奏，没有打扰老师。",
       reasoning: "老师不在。关卡节奏可以再压一拍，先记在活动结果里，不发消息。",
@@ -130,7 +130,7 @@ function previewThinkingCalls() {
         stage,
         round: 1,
         model: "deepseek-v4-flash",
-        tools: ["respond"],
+        tools: ["end_turn"],
         reasoning_chars: reasoning.length,
         excerpt: `预览条目 ${index + 1}：把思考列表撑高，方便看滚动条。`,
         reasoning,
@@ -233,7 +233,7 @@ function previewRecords() {
 
   const longReply = [
     "先看事实，不看旧笔记。",
-    "那次 webhook 的工具只有 respond，outbox 是空的，所以老师确实没收到提醒。",
+    "那次 webhook 的工具只有 end_turn，outbox 是空的，所以老师确实没收到提醒。",
     "thinking 里写过「烘干结束提醒并非老师要求」，那是当时的判断，不能当成现行禁令。",
     "老师现在明确在问为什么没提醒。结论：衣服洗好这件事到了，我评估后选择了静默。",
     "接下来用 send_message 把这件事说清楚，不要假装已经提醒过。",

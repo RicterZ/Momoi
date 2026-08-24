@@ -254,7 +254,7 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                     },
                     "execution_mode": {
                         "type": "string",
-                        "enum": ["respond", "clarify", "work"],
+                        "enum": ["direct_reply", "clarify", "work"],
                     },
                     "execution_outline": {
                         "type": "array",
@@ -1032,7 +1032,7 @@ def parse_context_plan(
         thinking_requires_past_reasoning=True,
     )
     mode = raw_handoff["execution_mode"]
-    if mode not in {"respond", "clarify", "work"}:
+    if mode not in {"direct_reply", "clarify", "work"}:
         raise ContextPlanError("invalid_execution_handoff")
     if units and all(unit["recall"]["mode"] == "skip" for unit in units):
         if context["status"] != "sufficient":

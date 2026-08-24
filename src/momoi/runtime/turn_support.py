@@ -233,7 +233,7 @@ def conversation_guidance(plan: dict[str, object]) -> str:
         execution = owner_handoff.get("execution")
         if isinstance(execution, dict):
             lines.append("Execution handoff")
-            lines.append(f"  mode: {execution.get('mode') or 'respond'}")
+            lines.append(f"  mode: {execution.get('mode') or 'direct_reply'}")
             for index, step in enumerate(execution.get("outline") or [], start=1):
                 lines.append(f"  step {index}: {' '.join(str(step).split())}")
             lines.append(

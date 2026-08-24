@@ -3,19 +3,19 @@ from .jobs import AutonomousJob
 from .protocol import (
     AUTONOMOUS_FINISH_SPEC,
     REFLECTION_FINISH_SPEC,
-    RESPOND_TOOL_SPEC,
+    END_TURN_TOOL_SPEC,
     SEND_MESSAGE_TOOL_SPEC,
-    heartbeat_respond_tool_spec,
-    owner_respond_tool_spec,
+    heartbeat_end_turn_tool_spec,
+    owner_end_turn_tool_spec,
 )
 
 __all__ = [
     "AUTONOMOUS_FINISH_SPEC",
     "AutonomousJob",
     "REFLECTION_FINISH_SPEC",
-    "RESPOND_TOOL_SPEC",
+    "END_TURN_TOOL_SPEC",
     "SEND_MESSAGE_TOOL_SPEC",
-    "heartbeat_respond_tool_spec",
-    "owner_respond_tool_spec",
+    "heartbeat_end_turn_tool_spec",
+    "owner_end_turn_tool_spec",
     "MomoiDaemon",
 ]

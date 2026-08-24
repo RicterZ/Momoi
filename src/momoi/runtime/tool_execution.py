@@ -26,7 +26,7 @@ from .progress_announce import (
 from .parsing import parse_messages, parse_response, response_text
 from .protocol import (
     AUTONOMOUS_FINISH_SPEC,
-    owner_respond_tool_spec,
+    owner_end_turn_tool_spec,
     send_message_tool_spec,
     tool_enable_spec,
 )
@@ -230,7 +230,7 @@ class ToolExecutionService:
             *all_internal,
             tool_enable_spec(group_catalog),
             *optional,
-            owner_respond_tool_spec(),
+            owner_end_turn_tool_spec(),
         ]
         full = [
             self._send_message_tool_spec(channel_name),
@@ -241,7 +241,7 @@ class ToolExecutionService:
                 for specs in mcp_groups.values()
                 for spec in specs
             ],
-            owner_respond_tool_spec(),
+            owner_end_turn_tool_spec(),
         ]
         self._log_owner_tool_projection(
             visible=visible,
@@ -508,7 +508,7 @@ class ToolExecutionService:
                     turn_id=turn_id,
                     call_id=call_id,
                     round=llm_round,
-                    reason="respond_tool_required",
+                    reason="end_turn_tool_required",
                 )
                 messages.extend(
                     [
@@ -518,7 +518,7 @@ class ToolExecutionService:
                             "content": (
                                 "[Trusted runtime protocol error. The previous text was not "
                                 "delivered. Send any owner-visible reply with send_message, "
-                                "then finish by calling respond for the Turn state. Do not "
+                                "then finish by calling end_turn for the Turn state. Do not "
                                 "output plain assistant text.]"
                             ),
                         },
@@ -551,13 +551,13 @@ class ToolExecutionService:
             if (
                 require_response
                 and len(response.tool_calls) == 1
-                and response.tool_calls[0].name == "respond"
+                and response.tool_calls[0].name == "end_turn"
             ):
                 plain_text = response_text(response.content)
                 log_event(
                     logger,
                     TRACE,
-                    "respond_received",
+                    "end_turn_received",
                     stage=stage,
                     turn_id=turn_id,
                     call_id=call_id,
@@ -572,7 +572,7 @@ class ToolExecutionService:
                 )
                 if plain_text:
                     reply = None
-                    error = "plain_text_with_respond"
+                    error = "plain_text_with_end_turn"
                 if reply is not None and heartbeat_turn and reply.heartbeat:
                     minutes = int(reply.heartbeat["next_check_minutes"])
                     seconds = minutes * 60
@@ -613,7 +613,7 @@ class ToolExecutionService:
                     log_event(
                         logger,
                         TRACE,
-                        "respond_accepted",
+                        "end_turn_accepted",
                         stage=stage,
                         turn_id=turn_id,
                         call_id=call_id,
@@ -626,7 +626,7 @@ class ToolExecutionService:
                 log_event(
                     logger,
                     TRACE,
-                    "respond_rejected",
+                    "end_turn_rejected",
                     stage=stage,
                     turn_id=turn_id,
                     call_id=call_id,
@@ -649,12 +649,12 @@ class ToolExecutionService:
                                             "[Trusted runtime protocol correction: "
                                             "plain assistant text is not delivered. "
                                             "Send any owner-visible reply with "
-                                            "send_message first, then call respond "
+                                            "send_message first, then call end_turn "
                                             "alone to finish.]"
                                         ),
                                     },
                                 ]
-                                if error == "plain_text_with_respond"
+                                if error == "plain_text_with_end_turn"
                                 else [
                                     _tool_error_block(
                                         response.tool_calls[0].id, error
@@ -712,7 +712,7 @@ class ToolExecutionService:
                                 "[Trusted runtime protocol stop. Tool calls failed "
                                 "validation three consecutive times. Do not retry tools "
                                 "in this Turn. Use send_message for the last concrete "
-                                "failure reason, then call respond to close the Turn.]"
+                                "failure reason, then call end_turn to close the Turn.]"
                             ),
                         }
                     )
@@ -797,11 +797,11 @@ class ToolExecutionService:
                     }
                 elif call.name not in allowed_tool_names:
                     result = {"ok": False, "error": "tool_not_allowed"}
-                elif call.name == "respond":
+                elif call.name == "end_turn":
                     result = {
                         "ok": False,
                         "error": (
-                            "respond_must_be_the_only_terminal_tool"
+                            "end_turn_must_be_the_only_terminal_tool"
                             if require_response
                             else "tool_not_allowed"
                         ),
@@ -1102,7 +1102,7 @@ class ToolExecutionService:
                         "[Trusted runtime protocol stop. Tool calls failed validation "
                         "three consecutive times. Do not retry tools in this Turn. "
                         "Use send_message for the last concrete failure reason, then "
-                        "call respond to close the Turn.]"
+                        "call end_turn to close the Turn.]"
                     ),
                 }
             )
@@ -1164,7 +1164,7 @@ class ToolExecutionService:
 
     def _tool_source(self, name: str, *, allow_notify: bool) -> str:
         if name in {
-            "respond",
+            "end_turn",
             "send_message",
             "tool_enable",
             "autonomous_finish",
