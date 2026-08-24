@@ -1274,6 +1274,10 @@ class TurnOrchestrator:
         raw_record = str(source["text"] or "").strip()
         query = raw_record[-20000:]
         record = cyber_keyword_pre_hook(raw_record)
+        tool_timeline = cyber_keyword_pre_hook(str(source["tool_timeline"]))
+        reflection_evidence = "\n\n".join(
+            value for value in (record, tool_timeline) if value.strip()
+        )
         owner_source = cyber_keyword_pre_hook(str(source["owner_text"]))
         knowledge_source = cyber_keyword_pre_hook(str(source["knowledge_text"]))
         confirmed_memory, learned = self.store.ranked_memory_context(
@@ -1327,6 +1331,7 @@ class TurnOrchestrator:
             ("mood_timeline", str(source.get("mood_timeline") or "(none)")),
             ("topic_timeline", str(source.get("topic_timeline") or "(none)")),
             ("mutation_timeline", str(source.get("mutation_timeline") or "(none)")),
+            ("tool_timeline", tool_timeline),
         )
         current_input = cyber_keyword_pre_hook(current_input)
         system = [
@@ -1401,7 +1406,7 @@ class TurnOrchestrator:
             ):
                 decision, error = parse_reflection_finish(
                     response.tool_calls[0].arguments,
-                    record,
+                    reflection_evidence,
                     owner_source,
                     knowledge_source,
                     always_memory_ids,

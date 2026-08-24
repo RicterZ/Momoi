@@ -369,7 +369,8 @@ function memoryKindLabel(kind) {
       world_knowledge: "外部信息",
       self_insight: "Momoi 的体会",
       shared_experience: "共同经历",
-      practice: "行动习惯",
+      practice: "方法论",
+      tool_skill: "工具经验",
     }[kind] || "记忆"
   );
 }

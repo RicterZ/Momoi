@@ -560,15 +560,31 @@ REFLECTION_FINISH_SPEC: dict[str, Any] = {
                         "kind": {
                             "type": "string",
                             "enum": sorted(REFLECTION_MEMORY_KINDS),
+                            "description": (
+                                "Use tool_skill for reusable knowledge about a "
+                                "specific tool or integration. Use practice for a "
+                                "reusable method, workflow, or decision process whose "
+                                "main lesson is not a particular tool invocation."
+                            ),
                         },
                         "key": {
                             "type": "string",
                             "description": "Stable lowercase dot-separated key.",
                         },
-                        "content": {"type": "string", "minLength": 1},
+                        "content": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": (
+                                "Concise reusable lesson, including when it applies "
+                                "and how to verify success or avoid a known failure."
+                            ),
+                        },
                         "evidence": {
                             "type": "string",
-                            "description": "Exact contiguous quote from the supplied day record.",
+                            "description": (
+                                "Exact contiguous quote from the supplied day or tool "
+                                "evidence."
+                            ),
                         },
                         "confidence": {
                             "type": "number",

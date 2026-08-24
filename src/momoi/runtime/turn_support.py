@@ -146,6 +146,7 @@ USER_CONTEXT_SECTION_ORDER = (
     "mood_timeline",
     "topic_timeline",
     "mutation_timeline",
+    "tool_timeline",
     "current_webhook_task",
     "daily_reflection_record",
     "autonomous_heartbeat",

@@ -75,6 +75,7 @@ REFLECTION_MEMORY_KINDS = {
     "relationship",
     "shared_experience",
     "practice",
+    "tool_skill",
 }
 def _group_thinking_turns(calls: list[dict[str, object]]) -> list[dict[str, object]]:
     buckets: dict[str, list[dict[str, object]]] = {}
@@ -4493,8 +4494,11 @@ class Store(MemoryStore, DeliveryStore):
 
         mood_entries: list[str] = []
         mutation_entries: list[str] = []
+        tool_calls: dict[tuple[str, str], dict[str, object]] = {}
+        tool_order: list[tuple[str, str]] = []
         for row in self._db.execute(
-            """SELECT j.created_at, j.item_type, j.payload_json
+            """SELECT j.turn_id, j.created_at, j.item_type, j.trust,
+                      j.payload_json
                FROM turn_journal AS j JOIN turns AS t ON t.id=j.turn_id
                WHERE j.created_at>=? AND j.created_at<?
                  AND j.item_type IN ('final','tool_call','tool_result')
@@ -4505,7 +4509,31 @@ class Store(MemoryStore, DeliveryStore):
             if not isinstance(payload, dict):
                 continue
             stamp = context_timestamp(row["created_at"])
-            if row["item_type"] == "final":
+            if row["item_type"] in {"tool_call", "tool_result"}:
+                call_id = str(payload.get("tool_call_id") or "unknown")
+                identity = (str(row["turn_id"]), call_id)
+                call = tool_calls.get(identity)
+                if call is None:
+                    call = {
+                        "created_at": float(row["created_at"]),
+                        "turn_id": str(row["turn_id"]),
+                        "call_id": call_id,
+                        "name": str(payload.get("name") or "unknown"),
+                    }
+                    tool_calls[identity] = call
+                    tool_order.append(identity)
+                if payload.get("name"):
+                    call["name"] = str(payload["name"])
+                if row["item_type"] == "tool_call":
+                    call["source"] = str(payload.get("source") or "unknown")
+                    call["arguments"] = payload.get("arguments", {})
+                else:
+                    call["result_trust"] = str(row["trust"])
+                    call["ok"] = bool(payload.get("ok"))
+                    if payload.get("error") not in (None, ""):
+                        call["error"] = payload.get("error")
+                    call["result"] = payload.get("result", {})
+            elif row["item_type"] == "final":
                 mood = payload.get("mood_change")
                 if isinstance(mood, dict) and mood.get("state"):
                     mood_entries.append(
@@ -4525,6 +4553,50 @@ class Store(MemoryStore, DeliveryStore):
                         else:
                             details = _reflection_compact_value(value, 300)
                         mutation_entries.append(f"{stamp} {key}: {details}")
+
+        tool_entries: list[tuple[float, str, str, bool, bool]] = []
+        for identity in tool_order:
+            call = tool_calls[identity]
+            details = [
+                f"turn={call['turn_id']}",
+                f"call={call['call_id']}",
+                f"name={call['name']}",
+                f"source={call.get('source', 'unknown')}",
+                "arguments="
+                + _reflection_compact_value(call.get("arguments", {}), 1200),
+            ]
+            if "ok" in call:
+                details.append(f"ok={str(bool(call['ok'])).lower()}")
+                if call.get("error") not in (None, ""):
+                    details.append(
+                        "error=" + _reflection_compact_value(call["error"], 400)
+                    )
+                details.append(
+                    "result="
+                    + _reflection_compact_value(call.get("result", {}), 1800)
+                )
+                details.append(
+                    f"result_trust={call.get('result_trust', 'untrusted_tool_data')}"
+                )
+            else:
+                details.append("result=(missing)")
+            tool_entries.append(
+                (
+                    float(call["created_at"]),
+                    f"TOOL TRACE {call['name']}",
+                    " ".join(details),
+                    False,
+                    False,
+                )
+            )
+        selected_tools = _reflection_select_entries(
+            tool_entries,
+            max(1000, min(8000, token_budget // 3)),
+        )
+        tool_timeline = "\n\n".join(
+            f"[{context_timestamp(occurred_at)} {label}]\n{content}"
+            for occurred_at, label, content, _, _ in selected_tools
+        )
 
         topic_entries: list[str] = []
         episode_rows = self._db.execute(
@@ -4578,6 +4650,7 @@ class Store(MemoryStore, DeliveryStore):
             "mutation_timeline": truncate_tokens(
                 "\n".join(mutation_entries), 2600
             ) or "(no recorded state mutations)",
+            "tool_timeline": tool_timeline or "(no journaled tool calls)",
             "start_at": start.timestamp(),
             "end_at": end.timestamp(),
         }

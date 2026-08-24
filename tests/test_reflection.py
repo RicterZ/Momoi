@@ -68,6 +68,30 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                 ('{"subject":"project summary"}', occurred, occurred),
             )
             daemon.store._db.commit()
+            daemon.store.append_turn_journal(
+                "tool-turn",
+                "tool_call",
+                {
+                    "tool_call_id": "mail-search",
+                    "name": "mcp__gog__gmail_search",
+                    "source": "mcp",
+                    "arguments": {"query": "project summary", "limit": 10},
+                },
+                created_at=occurred + 1,
+            )
+            daemon.store.append_turn_journal(
+                "tool-turn",
+                "tool_result",
+                {
+                    "tool_call_id": "mail-search",
+                    "name": "mcp__gog__gmail_search",
+                    "ok": True,
+                    "error": None,
+                    "result": {"messages": [{"subject": "project summary"}]},
+                },
+                trust="untrusted_tool_data",
+                created_at=occurred + 2,
+            )
 
             class Provider:
                 async def complete(
@@ -80,6 +104,10 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                     assert tools == [REFLECTION_FINISH_SPEC]
                     request = json.dumps(_messages, ensure_ascii=False)
                     assert "<daily_reflection_record>" in request
+                    assert "<tool_timeline>" in request
+                    assert "arguments=" in request
+                    assert "project summary" in request
+                    assert "result_trust=untrusted_tool_data" in request
                     assert "<runtime_state>" in request
                     assert "<always_memory_inventory>" in request
                     assert "<open_conversations>" in request
@@ -89,6 +117,12 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                         "state=completed ok=true capability=read" in request
                     )
                     assert "own diary" in json.dumps(_system, ensure_ascii=False)
+                    assert "reusable knowledge about a specific tool" in json.dumps(
+                        _system, ensure_ascii=False
+                    )
+                    assert "reusable methodology" in json.dumps(
+                        _system, ensure_ascii=False
+                    )
                     assert "always_memory_inventory" in json.dumps(
                         _system, ensure_ascii=False
                     )
@@ -117,6 +151,16 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                                     ),
                                     "evidence": "回答直接说结论就好",
                                     "confidence": 0.6,
+                                },
+                                {
+                                    "kind": "tool_skill",
+                                    "key": "tools.gmail.search_project_summary",
+                                    "content": (
+                                        "Search project-summary mail with "
+                                        "mcp__gog__gmail_search and verify returned subjects."
+                                    ),
+                                    "evidence": "project summary",
+                                    "confidence": 0.8,
                                 }
                             ],
                         },
@@ -149,6 +193,16 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                 "lead with the conclusion",
                 daemon.store.reflection_memory_context("直接回答", 4, 2000),
             )
+            self.assertIn(
+                "mcp__gog__gmail_search",
+                daemon.store.reflection_memory_context("gmail", 4, 2000),
+            )
+            _, ranked_reflection = daemon.store.ranked_memory_context(
+                "gmail", 4, 2000
+            )
+            self.assertIn("mcp__gog__gmail_search", ranked_reflection)
+            stored_memories = json.loads(reflection["memories_json"])
+            self.assertEqual(stored_memories[2]["kind"], "tool_skill")
             self.assertEqual(
                 daemon.store.next_reflection_due_at(
                     config.reflection,
@@ -221,6 +275,30 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(error)
         self.assertEqual(result["memories"][0]["key"], memory["key"])
         self.assertEqual(result["always_memory_actions"], [])
+
+    def test_methodology_practice_does_not_require_tool_or_owner_evidence(self) -> None:
+        result, error = parse_reflection_finish(
+            {
+                "summary": "测试",
+                "memories": [
+                    {
+                        "kind": "practice",
+                        "key": "debugging.reproduce_before_fix",
+                        "content": (
+                            "Reproduce the failure before changing code, then rerun "
+                            "the same check to verify the fix."
+                        ),
+                        "evidence": "先复现失败，再修改并用同一个检查验证",
+                        "confidence": 0.8,
+                    }
+                ],
+            },
+            "[MOMOI]\n先复现失败，再修改并用同一个检查验证",
+            "",
+            "",
+        )
+        self.assertIsNone(error)
+        self.assertEqual(result["memories"][0]["kind"], "practice")
 
     def test_always_memory_actions_are_validated(self) -> None:
         base = {"summary": "测试", "memories": []}
