@@ -517,9 +517,10 @@ class ToolExecutionService:
                             "role": "user",
                             "content": (
                                 "[Trusted runtime protocol error. The previous text was not "
-                                "delivered. Send any owner-visible reply with send_message, "
-                                "then finish by calling end_turn for the Turn state. Do not "
-                                "output plain assistant text.]"
+                                "delivered. In this response, call send_message with the "
+                                "owner-visible reply; do not output assistant text or call "
+                                "end_turn. After the send_message result, call end_turn "
+                                "alone in a later response.]"
                             ),
                         },
                     ]
@@ -648,9 +649,10 @@ class ToolExecutionService:
                                         "text": (
                                             "[Trusted runtime protocol correction: "
                                             "plain assistant text is not delivered. "
-                                            "Send any owner-visible reply with "
-                                            "send_message first, then call end_turn "
-                                            "alone to finish.]"
+                                            "In this response, call send_message with "
+                                            "the owner-visible reply and do not call "
+                                            "end_turn. After its result, call end_turn "
+                                            "alone in a later response.]"
                                         ),
                                     },
                                 ]
@@ -711,8 +713,9 @@ class ToolExecutionService:
                             "content": (
                                 "[Trusted runtime protocol stop. Tool calls failed "
                                 "validation three consecutive times. Do not retry tools "
-                                "in this Turn. Use send_message for the last concrete "
-                                "failure reason, then call end_turn to close the Turn.]"
+                                "in this Turn. In this response, use send_message for "
+                                "the last concrete failure reason without end_turn. "
+                                "After its result, call end_turn alone in a later response.]"
                             ),
                         }
                     )
@@ -1101,8 +1104,9 @@ class ToolExecutionService:
                     "content": (
                         "[Trusted runtime protocol stop. Tool calls failed validation "
                         "three consecutive times. Do not retry tools in this Turn. "
-                        "Use send_message for the last concrete failure reason, then "
-                        "call end_turn to close the Turn.]"
+                        "In this response, use send_message for the last concrete "
+                        "failure reason without end_turn. After its result, call "
+                        "end_turn alone in a later response.]"
                     ),
                 }
             )

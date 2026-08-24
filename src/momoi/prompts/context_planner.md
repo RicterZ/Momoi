@@ -77,10 +77,13 @@ or persona-specific wording from it.
    uses public search only if that recalled evidence still does not identify it.
    Never publicly route a possibly private name. `<available_internal_tools>`
    lists downstream resident capabilities; you do not call them.
-5. Give a short execution outline containing only applicable evidence checks,
-   actions, verification, and clarification; leave it empty when none apply.
+5. Give a short execution outline containing only applicable non-delivery work
+   actions: evidence checks, execution, verification, and clarification. Leave
+   it empty when none apply.
    Separately plan owner-visible delivery as silence or an ordered list of
-   intended `send_message` items. Follow the exact shared Style Card below for
+   intended bubbles. The downstream Owner realizes every resulting bubble as a
+   `send_message.messages` item, never as ordinary assistant content.
+   Follow the exact shared Style Card below for
    bubble boundaries, timing, and utterance form: plan one short utterance per
    item, and plan successive clauses of the same reply as successive items.
    Derive the item count and the opening form from what this moment itself has
@@ -112,13 +115,14 @@ or persona-specific wording from it.
   exempt by conversational tone: route public search when the supplied evidence
   does not identify it, with internal recall as the first step. Do not preload a
   server merely because it might become useful; give a concise routing reason.
-- Use `message_only` when no work tool is needed. It does not mean a direct
-  assistant response or a no-tool response: all owner-visible content must still
-  be delivered with `send_message`, followed later by a separate `end_turn` call.
-  Describe its reason as message-only delivery, never as direct reply, natural
-  response, or no-tool output. Use `clarify` only when missing owner input prevents
-  safe or materially correct execution now. Use `work` whenever any Memory, Goal,
-  reminder, file, HTTP, MCP, or other execution tool is required.
+- Use `message_only` when no non-delivery work action is needed. Delivery remains
+  a separate action: `delivery_mode=bubbles` requires `send_message`, while
+  `delivery_mode=silent` requires no owner-visible delivery. For `message_only`,
+  set the execution reason to exactly `owner-visible delivery only` or `silent
+  close`; do not paraphrase it. Use `clarify` only when missing owner input
+  prevents safe or materially correct execution now. Use `work` whenever any
+  Memory, Goal, reminder, file, HTTP, MCP, or other non-delivery work action is
+  required.
 - When the owner explicitly requests a confirmed memory mutation, name the
   appropriate memory operation in a `work` outline. Recall queries never mutate
   memory.

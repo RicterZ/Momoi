@@ -241,10 +241,10 @@ PLAN_ADJUSTMENT_SCHEMA: dict[str, Any] = {
 END_TURN_TOOL_SPEC: dict[str, Any] = {
     "name": "end_turn",
     "description": (
-        "End the current conversational Turn by committing its private state. This "
-        "is not a reply or messaging tool and cannot send owner-visible content. "
-        "Call it exactly once, only after all work and send_message calls are "
-        "complete, and as the only tool call in the model response."
+        "Terminal action that commits private conversational Turn state; it cannot "
+        "send owner-visible content. Call it exactly once and alone after all work "
+        "and delivery are complete. After send_message, wait for its result and call "
+        "end_turn in a later model response."
     ),
     "input_schema": {
         "type": "object",
@@ -271,11 +271,10 @@ def owner_end_turn_tool_spec() -> dict[str, Any]:
     return {
         **END_TURN_TOOL_SPEC,
         "description": (
-            "End this Owner Turn by committing private state. This is not a reply "
-            "or messaging tool: it cannot send owner-visible content and has no "
-            "message parameter. Use send_message for every visible reply. Call "
-            "end_turn exactly once, only after all work and send_message calls are "
-            "complete, and as the only tool call in the model response. "
+            "Terminal action for this Owner Turn. It commits private state and "
+            "cannot send owner-visible content. Call it exactly once and alone after "
+            "all work and delivery are complete. After send_message, wait for its "
+            "result and call end_turn in a later model response. "
             "For activity, compare Current self state with authenticated owner input "
             "and reliable evidence from this Turn. Correct it only when this Turn "
             "completes, cancels, replaces, proves impossible, invalidates a premise "
@@ -320,12 +319,11 @@ def heartbeat_end_turn_tool_spec() -> dict[str, Any]:
     return {
         **END_TURN_TOOL_SPEC,
         "description": (
-            "End this autonomous heartbeat Turn by committing private state. This is "
-            "not a reply or messaging tool and cannot send owner-visible content; use "
-            "send_message for any visible message. Call end_turn exactly once, only "
-            "after all work and optional send_message calls are complete, and as the "
-            "only tool call in the model response. The heartbeat object records "
-            "Momoi's activity and schedules her next Turn."
+            "Terminal action for this autonomous heartbeat Turn. It commits private "
+            "state and cannot send owner-visible content. After any send_message "
+            "result and completed work, call end_turn exactly once and alone in a "
+            "later model response. The heartbeat object records Momoi's activity and "
+            "schedules her next Turn."
         ),
         "input_schema": {
             **schema,
@@ -339,11 +337,11 @@ def heartbeat_end_turn_tool_spec() -> dict[str, Any]:
 SEND_MESSAGE_TOOL_SPEC: dict[str, Any] = {
     "name": "send_message",
     "description": (
-        "The only tool for sending owner-visible content. Send one or more non-empty "
-        "private-chat bubbles; never put visible reply text in end_turn or ordinary "
-        "assistant output. This tool does not end the Turn. Text may accompany images; "
-        "file, video, audio, and record items must stand alone. After all visible beats "
-        "and work are complete, call end_turn alone."
+        "The owner-visible delivery action. Speaking requires send_message "
+        "independently of work. Put each non-empty chat bubble in messages. Ordinary "
+        "assistant content is discarded. It does not end the Turn. After its result "
+        "and completed work, call end_turn alone in a later response. Text may "
+        "accompany images; file, video, audio, and record items must stand alone."
     ),
     "input_schema": {
         "type": "object",

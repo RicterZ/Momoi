@@ -403,6 +403,19 @@ class ContextPlannerTest(unittest.TestCase):
         self.assertIn("sufficient with no context_needs", status_description)
         self.assertNotIn("none needs only", CONTEXT_PLANNER_SYSTEM_PROMPT)
         self.assertNotIn("sufficient` requires empty", CONTEXT_PLANNER_SYSTEM_PROMPT)
+        handoff = schema["properties"]["handoff"]["properties"]  # type: ignore[index]
+        self.assertIn(
+            "no non-delivery work action",
+            handoff["execution_mode"]["description"],
+        )
+        self.assertIn(
+            "exactly owner-visible delivery only or silent close",
+            handoff["execution_reason"]["description"],
+        )
+        self.assertIn(
+            "through downstream send_message.messages",
+            handoff["delivery_bubbles"]["description"],
+        )
 
     def test_context_plan_selects_only_available_mcp_servers(self) -> None:
         plan = response_plan()
@@ -693,12 +706,18 @@ class ContextPlannerTest(unittest.TestCase):
         self.assertEqual(parsed["owner_handoff"]["execution"]["outline"], [])
         guidance = conversation_guidance(parsed)
         self.assertIn("mode: message_only", guidance)
+        self.assertIn("work actions: none", guidance)
         self.assertIn(
-            "protocol: deliver owner-visible content with send_message; "
-            "ordinary assistant text is not delivered; call end_turn separately "
-            "after delivery",
+            "action: call send_message; realize the bubbles below through "
+            "send_message.messages in order",
             guidance,
         )
+        self.assertIn(
+            "sequence: send_message with no assistant content; after its result, "
+            "call end_turn alone in a later response",
+            guidance,
+        )
+        self.assertNotIn("only visible social delivery is needed", guidance)
         self.assertEqual(
             parsed["owner_handoff"]["execution"]["delivery"]["bubbles"][0]["form"],
             "fragmentary",

@@ -255,6 +255,10 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                     "execution_mode": {
                         "type": "string",
                         "enum": ["message_only", "clarify", "work"],
+                        "description": (
+                            "Work-action mode. message_only means no non-delivery "
+                            "work action; delivery_mode still governs delivery."
+                        ),
                     },
                     "execution_outline": {
                         "type": "array",
@@ -269,6 +273,10 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                         "type": "string",
                         "minLength": 1,
                         "maxLength": 300,
+                        "description": (
+                            "Reason for the work-action mode. For message_only use "
+                            "exactly owner-visible delivery only or silent close."
+                        ),
                     },
                     "delivery_mode": {
                         "type": "string",
@@ -278,8 +286,10 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                         "type": "array",
                         "maxItems": 12,
                         "description": (
-                            "Ordered intended send_message items; empty when "
-                            "delivery_mode is silent."
+                            "Ordered intended bubble beats. Realize their owner-visible "
+                            "content through downstream send_message.messages, not "
+                            "ordinary assistant content; empty when delivery_mode is "
+                            "silent."
                         ),
                         "items": {
                             "type": "object",

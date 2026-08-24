@@ -358,7 +358,9 @@ class DaemonTest(unittest.TestCase):
         self.assertIn("Send exactly one", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertIn("<source_messages>", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertIn("<last_sent_messages>", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("Set `reply_wait.wait` to false", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("After the `send_message` result", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("alone in a later response", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("`reply_wait.wait` to false", REPLY_WAIT_SYSTEM_PROMPT)
 
     def test_mood_update_parser_accepts_open_state_labels(self) -> None:
         mood, error = parse_mood_update(
@@ -417,7 +419,17 @@ class DaemonTest(unittest.TestCase):
         )
         self.assertIn("non-empty", SEND_MESSAGE_TOOL_SPEC["description"])
         self.assertIn("owner-visible", SEND_MESSAGE_TOOL_SPEC["description"])
-        self.assertIn("chat bubbles", SEND_MESSAGE_TOOL_SPEC["description"])
+        self.assertIn(
+            "independently of work", SEND_MESSAGE_TOOL_SPEC["description"]
+        )
+        self.assertIn(
+            "each non-empty chat bubble", SEND_MESSAGE_TOOL_SPEC["description"]
+        )
+        self.assertIn(
+            "Ordinary assistant content is discarded",
+            SEND_MESSAGE_TOOL_SPEC["description"],
+        )
+        self.assertIn("later response", SEND_MESSAGE_TOOL_SPEC["description"])
         self.assertIn("must stand alone", SEND_MESSAGE_TOOL_SPEC["description"])
         bubble_description = CHANNEL_MESSAGE_SCHEMA["oneOf"][0]["description"]
         self.assertIn("private-chat bubble", bubble_description)
@@ -462,6 +474,8 @@ class DaemonTest(unittest.TestCase):
         )
         self.assertIn("Replace", activity_shapes[1]["description"])
         owner_description = owner_end_turn["description"]
+        self.assertIn("Terminal action", owner_description)
+        self.assertIn("later model response", owner_description)
         self.assertIn("Correct it only when", owner_description)
         self.assertIn("is not a conflict", owner_description)
         self.assertIn("without a conflict, leave both unchanged", owner_description)
@@ -473,6 +487,9 @@ class DaemonTest(unittest.TestCase):
             / "prompts"
             / "system.md"
         ).read_text(encoding="utf-8")
+        self.assertIn("Work actions are optional", system)
+        self.assertIn("each chat bubble is one item in `messages`", system)
+        self.assertIn("Ordinary assistant content is discarded", system)
         self.assertNotIn("Correct it only when", system)
         self.assertNotIn("activity or outcome does not replace", system)
 
@@ -2679,7 +2696,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 async def complete(
                     self,
                     _system: object,
-                    _messages: list[dict[str, object]],
+                    messages: list[dict[str, object]],
                     tools: list[dict[str, object]],
                     **_: object,
                 ) -> ProviderResponse:
@@ -2714,6 +2731,12 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     ):
                         raise AssertionError(tools)
                     if self.calls == 2:
+                        correction = json.dumps(messages, ensure_ascii=False)
+                        if (
+                            "do not call end_turn" not in correction
+                            or "alone in a later response" not in correction
+                        ):
+                            raise AssertionError(correction)
                         call = ToolCall(
                             "send",
                             "send_message",
@@ -2932,7 +2955,12 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
 
             self.assertEqual(provider.calls, 3)
             self.assertTrue(
-                any("send_message first" in text for text in provider.corrections)
+                any(
+                    "call send_message" in text
+                    and "do not call end_turn" in text
+                    and "alone in a later response" in text
+                    for text in provider.corrections
+                )
             )
             self.assertEqual(reply.messages, [])
             self.assertEqual(

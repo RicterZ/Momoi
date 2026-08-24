@@ -236,16 +236,15 @@ def conversation_guidance(plan: dict[str, object]) -> str:
             mode = str(execution.get("mode") or "message_only")
             lines.append(f"  mode: {mode}")
             if mode == "message_only":
+                lines.append("  work actions: none")
+            else:
+                for index, step in enumerate(
+                    execution.get("outline") or [], start=1
+                ):
+                    lines.append(f"  step {index}: {' '.join(str(step).split())}")
                 lines.append(
-                    "  protocol: deliver owner-visible content with send_message; "
-                    "ordinary assistant text is not delivered; call end_turn "
-                    "separately after delivery"
+                    f"  reason: {' '.join(str(execution.get('reason') or '').split())}"
                 )
-            for index, step in enumerate(execution.get("outline") or [], start=1):
-                lines.append(f"  step {index}: {' '.join(str(step).split())}")
-            lines.append(
-                f"  reason: {' '.join(str(execution.get('reason') or '').split())}"
-            )
             delivery = execution.get("delivery")
             if isinstance(delivery, dict):
                 delivery_mode = str(delivery.get("mode") or "")
@@ -253,7 +252,19 @@ def conversation_guidance(plan: dict[str, object]) -> str:
                 lines.append(f"  mode: {delivery_mode or 'unspecified'}")
                 if delivery_mode == "silent":
                     lines.append(
+                        "  action: no owner-visible delivery; call end_turn alone"
+                    )
+                    lines.append(
                         f"  reason: {' '.join(str(delivery.get('reason') or '').split())}"
+                    )
+                elif delivery_mode == "bubbles":
+                    lines.append(
+                        "  action: call send_message; realize the bubbles below "
+                        "through send_message.messages in order"
+                    )
+                    lines.append(
+                        "  sequence: send_message with no assistant content; after "
+                        "its result, call end_turn alone in a later response"
                     )
                 for index, bubble in enumerate(
                     delivery.get("bubbles") or [], start=1
