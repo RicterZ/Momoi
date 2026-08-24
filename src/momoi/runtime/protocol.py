@@ -180,6 +180,15 @@ ACTIVITY_DECISION_SCHEMA: dict[str, Any] = {
     ]
 }
 REPLY_WAIT_DECISION_SCHEMA: dict[str, Any] = {
+    "description": (
+        "Whether this conversational beat remains open after the last visible "
+        "message. Use wait=false when it is complete, nothing remains open, or "
+        "another scheduler owns the work. Use wait=true when a reply, reaction, "
+        "information still coming, or a later continuation is genuinely expected; "
+        "do not default to false merely because the close feels routine. wait=true "
+        "requires a visible message in this Turn and schedules exactly one "
+        "follow-up if the owner stays silent."
+    ),
     "oneOf": [
         {
             "type": "object",
@@ -239,17 +248,32 @@ REPLY_WAIT_DECISION_SCHEMA: dict[str, Any] = {
 
 PLAN_ADJUSTMENT_SCHEMA: dict[str, Any] = {
     "type": "object",
+    "description": (
+        "Include only when current owner intent or verified tool evidence "
+        "materially overturns the Planner handoff. Omit it when the handoff was "
+        "adequate; do not manufacture feedback merely because this field exists."
+    ),
     "properties": {
-        "reason": {"type": "string", "minLength": 1, "maxLength": 300},
+        "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300,
+            "description": "Why the supplied handoff was materially wrong.",
+        },
         "corrected_direction": {
             "type": "string",
             "minLength": 1,
             "maxLength": 500,
+            "description": "The corrected execution or delivery direction.",
         },
         "resolved_context_needs": {
             "type": "array",
             "maxItems": 4,
             "items": {"type": "string", "minLength": 1, "maxLength": 100},
+            "description": (
+                "Planner context needs that current evidence or tool results "
+                "resolved despite the adjustment."
+            ),
         },
     },
     "required": ["reason", "corrected_direction", "resolved_context_needs"],

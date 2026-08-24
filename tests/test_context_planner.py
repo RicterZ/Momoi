@@ -1199,12 +1199,19 @@ class ContextPlannerTest(unittest.TestCase):
     def test_shared_owner_rules_are_not_duplicated_in_planner_protocol(self) -> None:
         for phrase in (
             "`delivery=uncertain`",
-            "`reply_wait` records",
-            "`plan_adjustment`: include it",
             "Current self state` is persistent mood",
         ):
             self.assertNotIn(phrase, CONTEXT_PLANNER_PROTOCOL_PROMPT)
             self.assertIn(phrase, DOWNSTREAM_OWNER_CONTRACT_PROMPT)
+
+    def test_terminal_protocol_is_private_to_owner_tool_schemas(self) -> None:
+        for phrase in (
+            "Ordinary assistant content is discarded",
+            "After send_message, wait for its result",
+            "Whether this conversational beat remains open",
+            "materially overturns the Planner handoff",
+        ):
+            self.assertNotIn(phrase, CONTEXT_PLANNER_SYSTEM_PROMPT)
 
     def test_mood_update_protocol_is_private_to_end_turn_schema(self) -> None:
         self.assertNotIn(

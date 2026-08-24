@@ -105,9 +105,8 @@ required field is determined.
    the exact shared Style Card below for each beat's form and boundaries. The
    downstream Owner realizes each beat through the Soul in
    `send_message.messages`, may split wording that runs to several clauses into
-   adjacent bubbles, and never uses ordinary assistant content. Record only
-   timing, form, and conversational purpose. The Owner may revise the plan when
-   current intent or tool evidence changes.
+   adjacent bubbles. Record only timing, form, and conversational purpose. The
+   Owner may revise the plan when current intent or tool evidence changes.
 6. Bind every intent unit to exactly one Episode action.
 
 ## Handoff decisions

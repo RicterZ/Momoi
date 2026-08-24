@@ -353,8 +353,9 @@ class DaemonTest(unittest.TestCase):
             / "prompts"
             / "system.md"
         ).read_text(encoding="utf-8")
-        self.assertIn("continuation is still expected", system)
-        self.assertIn("mandatory follow-up", system)
+        wait_schema = END_TURN_TOOL_SPEC["input_schema"]["properties"]["reply_wait"]
+        self.assertIn("genuinely expected", wait_schema["description"])
+        self.assertIn("exactly one follow-up", wait_schema["description"])
         self.assertIn("<interrupted_reply_expectation>", system)
         self.assertIn("timer is already cancelled", system)
         self.assertIn("follow-up must be sent now", REPLY_WAIT_SYSTEM_PROMPT)
@@ -444,6 +445,17 @@ class DaemonTest(unittest.TestCase):
         wait_shapes = END_TURN_TOOL_SPEC["input_schema"]["properties"]["reply_wait"][
             "oneOf"
         ]
+        wait_schema = END_TURN_TOOL_SPEC["input_schema"]["properties"]["reply_wait"]
+        self.assertIn("another scheduler owns the work", wait_schema["description"])
+        self.assertIn("exactly one follow-up", wait_schema["description"])
+        adjustment_schema = END_TURN_TOOL_SPEC["input_schema"]["properties"][
+            "plan_adjustment"
+        ]
+        self.assertIn("materially overturns", adjustment_schema["description"])
+        self.assertIn(
+            "Omit it when the handoff was adequate",
+            adjustment_schema["description"],
+        )
         self.assertEqual(
             [shape["properties"]["wait"]["enum"][0] for shape in wait_shapes],
             [False, True],
@@ -496,7 +508,7 @@ class DaemonTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("Work actions are optional", system)
         self.assertIn("each chat bubble is one item in `messages`", system)
-        self.assertIn("Ordinary assistant content is discarded", system)
+        self.assertNotIn("Ordinary assistant content is discarded", system)
         self.assertNotIn("Correct it only when", system)
         self.assertNotIn("activity or outcome does not replace", system)
 
