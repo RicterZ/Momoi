@@ -290,7 +290,7 @@ function previewRecords() {
     created_at: now - (index + 1) * 7200,
     schedule:
       index % 4 === 0
-        ? { kind: "daily", at: "21:00", timezone: "Asia/Shanghai" }
+        ? { kind: "daily", times: ["09:00", "15:00", "21:00"], timezone: "Asia/Shanghai" }
         : null,
   }));
 
@@ -330,7 +330,14 @@ function previewRecords() {
     waiting_for: index === 6 ? "等老师回关卡意见" : "",
     blocked_reason: index === 7 ? "还缺一张表情包素材" : "",
     latest_result: index % 2 ? "已经记过一版草稿。" : "",
-    schedule: null,
+    schedule:
+      index === 0
+        ? {
+            kind: "daily",
+            times: ["10:30", "14:00", "16:00"],
+            timezone: "Asia/Shanghai",
+          }
+        : null,
     next_review_at: now + 86400,
   }));
 

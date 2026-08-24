@@ -1306,8 +1306,15 @@ function Memories({ refreshKey, token, onMutated }) {
   );
 }
 
+function dailyScheduleText(schedule) {
+  const times = Array.isArray(schedule?.times) ? schedule.times : [];
+  const timeText = times.length ? times.join("、") : "未设置时间";
+  const timezoneText = schedule?.timezone ? ` · ${schedule.timezone}` : "";
+  return `每天 ${timeText}${timezoneText}`;
+}
+
 function scheduleText(schedule, nextReview) {
-  if (schedule?.kind === "daily") return `每天 ${schedule.at}`;
+  if (schedule?.kind === "daily") return dailyScheduleText(schedule);
   if (schedule?.kind === "interval") return `每 ${schedule.every_seconds} 秒`;
   return nextReview ? formatDate(nextReview) : "无计划时间";
 }
@@ -1318,7 +1325,7 @@ function reminderStatus(status) {
 
 function reminderSchedule(item) {
   if (item.schedule?.kind === "daily") {
-    return `每天 ${item.schedule.at} · ${item.schedule.timezone}`;
+    return dailyScheduleText(item.schedule);
   }
   if (item.schedule?.kind === "interval") {
     return `每 ${item.schedule.every_seconds} 秒`;
