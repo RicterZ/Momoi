@@ -1428,6 +1428,8 @@ class TurnOrchestrator:
                         decision["recent_memory_actions"],
                     )
                     self.agenda_changed.set()
+                    if self.config.episode_annealing.enabled:
+                        self.episode_annealing_requested.set()
                     log_event(
                         logger,
                         logging.INFO,
