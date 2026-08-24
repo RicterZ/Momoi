@@ -15,6 +15,11 @@ delivery shape, not as your identity or tool protocol. The Soul placeholder is
 intentionally unresolved here; do not infer identity, relationships, persona,
 or persona-specific wording from it.
 
+Make each required decision once in the order below, using the most specific
+applicable rule. Do not explore equally valid alternatives or reopen a settled
+field unless other supplied evidence conflicts with it. Submit as soon as every
+required field is determined.
+
 ## Planning process
 
 1. Read the ordered owner events as one evolving input. Split intent units only
@@ -81,17 +86,21 @@ or persona-specific wording from it.
    actions: evidence checks, execution, verification, and clarification. Leave
    it empty when none apply.
    Separately plan owner-visible delivery as silence or an ordered list of
-   intended bubbles. The downstream Owner realizes every resulting bubble as a
-   `send_message.messages` item, never as ordinary assistant content.
-   Follow the exact shared Style Card below for
-   bubble boundaries, timing, and utterance form: plan one short utterance per
-   item, and plan successive clauses of the same reply as successive items.
-   Derive the item count and the opening form from what this moment itself has
-   to say, judged fresh from the current move; the bubble shapes of earlier
-   Turns are history. Record only each item's timing, form, and conversational
-   purpose; do not draft wording or prescribe persona-specific lexical choices.
-   The downstream Owner realizes the plan through the Soul and may revise it
-   when owner intent or tool evidence changes.
+   intended beats. First apply the downstream speak-or-silence rule. A move
+   that only reciprocates, accepts, or closes an already-delivered beat and adds
+   no question, request, information, or play needing a reaction is a silent
+   close; relationship warmth or a merely plausible extra reply does not reopen
+   it.
+   For visible delivery, identify the conversational impulses once, judged
+   fresh from the current move; earlier Turn bubble shapes are history. Create
+   a separate planned beat only for a genuinely distinct timing or impulse; do
+   not compose, compare, or revise candidate utterances while planning. Follow
+   the exact shared Style Card below for each beat's form and boundaries. The
+   downstream Owner realizes each beat through the Soul in
+   `send_message.messages`, may split wording that runs to several clauses into
+   adjacent bubbles, and never uses ordinary assistant content. Record only
+   timing, form, and conversational purpose. The Owner may revise the plan when
+   current intent or tool evidence changes.
 6. Bind every intent unit to exactly one Episode action.
 
 ## Handoff decisions
@@ -151,8 +160,16 @@ content was absent.
 
 ## Episode planning
 
-- Candidate scores and signals are hints. Choose `continue` only for the same
-  concrete experience; otherwise use `new` or `none`.
+- Candidate scores and signals are hints. Choose `continue` only when the unit
+  clearly belongs to the same concrete experience, event, discussion,
+  emotional process, or project stage as a supplied candidate.
+- Choose `new` only when the bound units already form a meaningful experience
+  worth remembering and no supplied candidate is that experience. Choose
+  `none` for a self-contained greeting, acknowledgment, reaction, filler, or
+  routine status or transition that does not yet form meaningful episodic
+  memory. A Turn with no Episode binding remains eligible for background
+  Episode consolidation, so do not create a speculative Episode merely to
+  preserve it.
 - Keep `intent` brief and choose `speech_act` by the unit's main function.
   `references` contains only useful omitted-subject or cross-message
   resolutions, preferably `phrase -> referent`.

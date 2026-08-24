@@ -249,6 +249,10 @@ class DaemonTest(unittest.TestCase):
             "only accepts or closes a beat that already landed",
             STYLE_CARD_SYSTEM_PROMPT,
         )
+        self.assertIn(
+            "merely plausible\n  or warm extra reply",
+            STYLE_CARD_SYSTEM_PROMPT,
+        )
         self.assertIn("ordinary social chat that", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("one short utterance", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("its own bubble, in\n  the order it comes", STYLE_CARD_SYSTEM_PROMPT)

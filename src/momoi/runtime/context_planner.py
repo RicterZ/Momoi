@@ -346,14 +346,19 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                     "delivery_mode": {
                         "type": "string",
                         "enum": ["silent", "bubbles"],
+                        "description": (
+                            "silent when no owner-visible move remains; bubbles "
+                            "when one or more intended delivery beats remain."
+                        ),
                     },
                     "delivery_bubbles": {
                         "type": "array",
                         "maxItems": 12,
                         "description": (
-                            "Ordered intended bubble beats. Realize their owner-visible "
-                            "content through downstream send_message.messages, not "
-                            "ordinary assistant content; empty when delivery_mode is "
+                            "Ordered intended delivery beats with distinct timing or "
+                            "impulse. The downstream Owner may split one beat's "
+                            "multi-clause realization into adjacent "
+                            "send_message.messages items; empty when delivery_mode is "
                             "silent."
                         ),
                         "items": {
