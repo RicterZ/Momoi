@@ -1,10 +1,7 @@
 from __future__ import annotations
 
 import math
-import re
 import time
-import unicodedata
-from collections import Counter
 from dataclasses import dataclass
 
 from .episode_search import (
@@ -20,16 +17,19 @@ _SECOND_ALIAS_WEIGHT = 0.18
 _THIRD_ALIAS_WEIGHT = 0.08
 _SECOND_QUERY_WEIGHT = 0.55
 _THIRD_QUERY_WEIGHT = 0.2
-_CONTEXT_ALIGNMENT_WEIGHT = 3.0
 _RECENCY_FLOOR = 0.8
 _RECENCY_HALF_LIFE_SECONDS = 180 * 86400
 _RELEVANCE_CONFIDENCE_FLOOR = 0.47
-_CONFIDENCE_CONTEXT_COVERAGE_WEIGHT = 0.30
-_CONFIDENCE_CONTEXT_ALIGNMENT_WEIGHT = 0.18
-_CONFIDENCE_ALIAS_COVERAGE_WEIGHT = 0.24
+_CONFIDENCE_SCOPED_EXPRESSION_MATCH_WEIGHT = 0.36
+_CONFIDENCE_QUERY_EXPRESSION_MATCH_WEIGHT = 0.28
+_CONFIDENCE_REPEATED_MESSAGE_EXPRESSION_MATCH_WEIGHT = 0.20
+_CONFIDENCE_MESSAGE_ONLY_EXPRESSION_MATCH_WEIGHT = 0.12
 _CONFIDENCE_TURN_SUPPORT_WEIGHT = 0.06
-_CONFIDENCE_FIELD_EVIDENCE_WEIGHT = 0.12
-_CONFIDENCE_QUERY_COVERAGE_WEIGHT = 0.10
+_CONFIDENCE_FIELD_EVIDENCE_WEIGHT = 0.15
+_CONFIDENCE_QUERY_MATCH_WEIGHT = 0.10
+_MIN_SELECTIVE_LITERAL_CHARS = 3
+_SHORT_LITERAL_TURN_SUPPORT = 3
+_SHORT_LITERAL_CONFIDENCE_CEILING = _RELEVANCE_CONFIDENCE_FLOOR - 0.001
 _FIELD_WEIGHTS = {
     "title": 3.0,
     "topic": 2.7,
@@ -40,6 +40,7 @@ _FIELD_WEIGHTS = {
     "working_summary": 1.7,
     "summary": 1.7,
 }
+_SELECTIVE_FIELDS = {"title", "topic", "entity", "open_loop"}
 
 
 @dataclass(frozen=True)
@@ -47,7 +48,6 @@ class EpisodeRecallQuery:
     expression: str
     unit_ids: tuple[str, ...] = ()
     priority: int = 0
-    context: str = ""
 
 
 @dataclass(frozen=True)
@@ -60,6 +60,7 @@ class EpisodeRankedQuery:
     alternative_count: int
     field_matches: tuple[str, ...]
     message_ids: tuple[int, ...]
+    scoped_message_ids: tuple[int, ...]
     turn_ids: tuple[str, ...]
 
 
@@ -68,115 +69,12 @@ class RankedEpisodeHit:
     episode_id: str
     score: float
     semantic_score: float
-    context_score: float
-    context_coverage: float
     relevance_confidence: float
     last_activity_at: float
     salience: float
     matches: tuple[EpisodeSearchMessage, ...]
     matched_keywords: tuple[str, ...]
     matched_queries: tuple[EpisodeRankedQuery, ...]
-
-
-_CONTEXT_PART = re.compile(r"[\u3400-\u9fff]+|[a-z0-9][a-z0-9_.:+/-]*")
-
-
-def _context_terms(text: str) -> Counter[str]:
-    normalized = unicodedata.normalize("NFKC", text).casefold()
-    terms: Counter[str] = Counter()
-    for match in _CONTEXT_PART.finditer(normalized):
-        part = match.group(0)
-        if "\u3400" <= part[0] <= "\u9fff":
-            if len(part) == 1:
-                terms[part] += 1
-                continue
-            terms.update(part[index : index + 2] for index in range(len(part) - 1))
-            if 2 < len(part) <= 4:
-                terms[part] += 1
-        elif len(part) >= 2:
-            terms[part] += 1
-    return terms
-
-
-class _EpisodeContextIndex:
-    def __init__(self, documents: list[EpisodeSearchDocument]) -> None:
-        self._vectors: dict[str, Counter[str]] = {}
-        frequencies: Counter[str] = Counter()
-        for document in documents:
-            vector: Counter[str] = Counter()
-            for field in document.fields:
-                multiplier = (
-                    3
-                    if field.name == "title"
-                    else 2
-                    if field.name in {"topic", "entity", "open_loop"}
-                    else 1
-                )
-                for term, count in _context_terms(field.text).items():
-                    vector[term] += multiplier * count
-            for message in document.messages:
-                vector.update(_context_terms(message.searchable_text))
-            self._vectors[document.episode_id] = vector
-            frequencies.update(vector.keys())
-        document_count = len(documents)
-        self._idf = {
-            term: math.log1p(
-                (document_count - frequency + 0.5) / (frequency + 0.5)
-            )
-            for term, frequency in frequencies.items()
-        }
-        self._norms = {
-            episode_id: self._norm(vector)
-            for episode_id, vector in self._vectors.items()
-        }
-        self._queries: dict[str, tuple[Counter[str], float]] = {}
-
-    def _norm(self, vector: Counter[str]) -> float:
-        return math.sqrt(
-            sum(
-                ((1.0 + math.log(count)) * self._idf.get(term, 0.0)) ** 2
-                for term, count in vector.items()
-            )
-        )
-
-    def similarity(self, context: str, episode_id: str) -> float:
-        query, query_norm = self._query(context)
-        document = self._vectors.get(episode_id)
-        if not query or not document:
-            return 0.0
-        document_norm = self._norms.get(episode_id, 0.0)
-        if query_norm <= 0 or document_norm <= 0:
-            return 0.0
-        common = query.keys() & document.keys()
-        dot = sum(
-            (1.0 + math.log(query[term]))
-            * (1.0 + math.log(document[term]))
-            * self._idf.get(term, 0.0) ** 2
-            for term in common
-        )
-        return dot / (query_norm * document_norm)
-
-    def coverage(self, context: str, episode_id: str) -> float:
-        query, query_norm = self._query(context)
-        document = self._vectors.get(episode_id)
-        if not query or not document or query_norm <= 0:
-            return 0.0
-        covered = math.sqrt(
-            sum(
-                ((1.0 + math.log(count)) * self._idf.get(term, 0.0)) ** 2
-                for term, count in query.items()
-                if term in document
-            )
-        )
-        return covered / query_norm
-
-    def _query(self, context: str) -> tuple[Counter[str], float]:
-        cached = self._queries.get(context)
-        if cached is None:
-            query = _context_terms(context)
-            cached = (query, self._norm(query))
-            self._queries[context] = cached
-        return cached
 
 
 def _idf(document_count: int, document_frequency: int) -> float:
@@ -220,7 +118,7 @@ def _hit_strength(hit: EpisodeSearchHit) -> float:
         math.log1p(max(0, hit.message_match_count - 1)),
         math.log(5),
     )
-    turn_support = 0.12 * min(
+    turn_support = 0.20 * min(
         math.log1p(max(0, hit.distinct_turn_count - 1)),
         math.log(4),
     )
@@ -265,33 +163,21 @@ def _query_score(
     return results
 
 
-def _relevance_confidence(
-    queries: list[EpisodeRecallQuery],
-    matched_queries: tuple[EpisodeRankedQuery, ...],
-    *,
-    context_score: float,
-    context_coverage: float,
+def _query_relevance_confidence(
+    matched_query: EpisodeRankedQuery,
 ) -> float:
-    total_query_weight = sum(
-        _priority_weight(query.priority) for query in queries
-    )
-    if total_query_weight <= 0:
-        return 0.0
-    matched_query_weight = sum(
-        _priority_weight(query.priority) for query in matched_queries
-    )
-    query_coverage = matched_query_weight / total_query_weight
-    alias_coverage = sum(
-        _priority_weight(query.priority)
-        * len(query.matched_alternatives)
-        / max(1, query.alternative_count)
-        for query in matched_queries
-    ) / total_query_weight
+    """Measure whether one retrieval need has enough supporting evidence.
+
+    Query order, cross-query coverage, and matching additional parallel aliases
+    are ranking preferences.  They must not make an Episode that strongly
+    satisfies one independent retrieval need ineligible merely because it does
+    not also satisfy the other needs or aliases emitted for the same intent.
+    """
+
     field_values = sorted(
         (
             min(1.0, _FIELD_WEIGHTS.get(field, 1.0) / 3.0)
-            for query in matched_queries
-            for field in query.field_matches
+            for field in matched_query.field_matches
         ),
         reverse=True,
     )
@@ -300,18 +186,59 @@ def _relevance_confidence(
         (field_values[0] if field_values else 0.0)
         + 0.12 * sum(field_values[1:3]),
     )
-    turn_count = len(
-        {turn_id for query in matched_queries for turn_id in query.turn_ids}
-    )
+    turn_count = len(set(matched_query.turn_ids))
     turn_support = min(1.0, math.log1p(turn_count) / math.log(4.0))
-    context_alignment = math.sqrt(min(1.0, 2.0 * context_score))
-    return (
-        _CONFIDENCE_CONTEXT_COVERAGE_WEIGHT * context_coverage
-        + _CONFIDENCE_CONTEXT_ALIGNMENT_WEIGHT * context_alignment
-        + _CONFIDENCE_ALIAS_COVERAGE_WEIGHT * alias_coverage
+    scoped_support = bool(matched_query.scoped_message_ids)
+    if scoped_support:
+        expression_match_weight = _CONFIDENCE_SCOPED_EXPRESSION_MATCH_WEIGHT
+    elif field_values:
+        expression_match_weight = _CONFIDENCE_QUERY_EXPRESSION_MATCH_WEIGHT
+    elif turn_count > 1:
+        expression_match_weight = (
+            _CONFIDENCE_REPEATED_MESSAGE_EXPRESSION_MATCH_WEIGHT
+        )
+    else:
+        expression_match_weight = _CONFIDENCE_MESSAGE_ONLY_EXPRESSION_MATCH_WEIGHT
+    confidence = (
+        expression_match_weight
         + _CONFIDENCE_TURN_SUPPORT_WEIGHT * turn_support
         + _CONFIDENCE_FIELD_EVIDENCE_WEIGHT * field_evidence
-        + _CONFIDENCE_QUERY_COVERAGE_WEIGHT * query_coverage
+        + _CONFIDENCE_QUERY_MATCH_WEIGHT
+    )
+    selective_literal = any(
+        sum(character.isalnum() for character in alternative)
+        >= _MIN_SELECTIVE_LITERAL_CHARS
+        for alternative in matched_query.matched_alternatives
+    )
+    selective_support = bool(
+        _SELECTIVE_FIELDS.intersection(matched_query.field_matches)
+    ) or turn_count >= _SHORT_LITERAL_TURN_SUPPORT or (
+        scoped_support and matched_query.alternative_count == 1
+    )
+    if not selective_literal and not selective_support:
+        # A very short exact literal found only in prose is ambiguous even when
+        # generated summaries repeat it. Keep it below the eligibility floor;
+        # title/topic/entity evidence or recurrence across Turns can establish it.
+        confidence = min(confidence, _SHORT_LITERAL_CONFIDENCE_CEILING)
+    return confidence
+
+
+def _relevance_confidence(
+    matched_queries: tuple[EpisodeRankedQuery, ...],
+) -> float:
+    """Return the strongest independently supported retrieval need.
+
+    The semantic score below still rewards priority and evidence spanning
+    multiple queries.  Eligibility is intentionally the maximum per-query
+    confidence so unrelated retrieval needs cannot veto one another.
+    """
+
+    return max(
+        (
+            _query_relevance_confidence(query)
+            for query in matched_queries
+        ),
+        default=0.0,
     )
 
 
@@ -323,13 +250,13 @@ def rank_episode_matches(
     limit: int = 8,
     offset: int = 0,
     now: float | None = None,
+    minimum_confidence: float = _RELEVANCE_CONFIDENCE_FLOOR,
 ) -> list[RankedEpisodeHit]:
-    if limit <= 0 or offset < 0 or not queries:
+    if limit <= 0 or offset < 0 or minimum_confidence < 0 or not queries:
         return []
     if len(queries) != len(matches):
         raise ValueError("query and match counts differ")
     now = time.time() if now is None else now
-    context_index = _EpisodeContextIndex(documents)
     episodes: dict[str, dict[str, object]] = {}
     for query_index, (query, query_matches) in enumerate(
         zip(queries, matches, strict=True)
@@ -344,8 +271,6 @@ def rank_episode_matches(
                 {
                     "queries": [],
                     "unit_scores": {},
-                    "unit_context_scores": {},
-                    "unit_context_coverage": {},
                     "matches": {},
                     "keywords": set(),
                     "last_activity_at": 0.0,
@@ -370,6 +295,13 @@ def rank_episode_matches(
                 alternative_count=len(query_matches.alternatives),
                 field_matches=tuple(sorted(field_matches)),
                 message_ids=tuple(sorted(message_matches)),
+                scoped_message_ids=tuple(
+                    sorted(
+                        message.id
+                        for message in message_matches.values()
+                        if message.scoped
+                    )
+                ),
                 turn_ids=tuple(
                     sorted({message.turn_id for message in message_matches.values()})
                 ),
@@ -382,17 +314,6 @@ def rank_episode_matches(
             units = query.unit_ids or (f"query:{query_index}",)
             for unit_id in units:
                 unit_scores.setdefault(unit_id, []).append(score)
-                context = query.context.strip() or query.expression
-                unit_context_scores = state["unit_context_scores"]
-                assert isinstance(unit_context_scores, dict)
-                unit_context_scores.setdefault(unit_id, []).append(
-                    context_index.similarity(context, episode_id)
-                )
-                unit_context_coverage = state["unit_context_coverage"]
-                assert isinstance(unit_context_coverage, dict)
-                unit_context_coverage.setdefault(unit_id, []).append(
-                    context_index.coverage(context, episode_id)
-                )
             all_matches = state["matches"]
             assert isinstance(all_matches, dict)
             all_matches.update(message_matches)
@@ -422,29 +343,6 @@ def rank_episode_matches(
                 semantic_score += _THIRD_QUERY_WEIGHT * ordered[2]
         if len(unit_scores) > 1:
             semantic_score *= 1.0 + min(0.3, 0.1 * (len(unit_scores) - 1))
-        unit_context_scores = state["unit_context_scores"]
-        assert isinstance(unit_context_scores, dict)
-        context_score = (
-            sum(
-                max(float(value) for value in scores)
-                for scores in unit_context_scores.values()
-            )
-            / len(unit_context_scores)
-            if unit_context_scores
-            else 0.0
-        )
-        unit_context_coverage = state["unit_context_coverage"]
-        assert isinstance(unit_context_coverage, dict)
-        context_coverage = (
-            sum(
-                max(float(value) for value in scores)
-                for scores in unit_context_coverage.values()
-            )
-            / len(unit_context_coverage)
-            if unit_context_coverage
-            else 0.0
-        )
-        semantic_score *= 1.0 + _CONTEXT_ALIGNMENT_WEIGHT * context_score
         last_activity_at = float(state["last_activity_at"])
         age = max(0.0, now - last_activity_at)
         recency_factor = _RECENCY_FLOOR + (1.0 - _RECENCY_FLOOR) * math.exp(
@@ -467,12 +365,7 @@ def rank_episode_matches(
             evidence
             for _, evidence in sorted(query_rows, key=lambda item: item[0])
         )
-        relevance_confidence = _relevance_confidence(
-            queries,
-            ranked_queries,
-            context_score=context_score,
-            context_coverage=context_coverage,
-        )
+        relevance_confidence = _relevance_confidence(ranked_queries)
         keywords = state["keywords"]
         assert isinstance(keywords, set)
         ranked.append(
@@ -480,8 +373,6 @@ def rank_episode_matches(
                 episode_id=episode_id,
                 score=score,
                 semantic_score=semantic_score,
-                context_score=context_score,
-                context_coverage=context_coverage,
                 relevance_confidence=relevance_confidence,
                 last_activity_at=last_activity_at,
                 salience=salience,
@@ -502,7 +393,7 @@ def rank_episode_matches(
     relevant = [
         hit
         for hit in ranked
-        if hit.relevance_confidence >= _RELEVANCE_CONFIDENCE_FLOOR
+        if hit.relevance_confidence >= minimum_confidence
     ]
     return relevant[offset : offset + limit]
 

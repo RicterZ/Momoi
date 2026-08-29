@@ -91,9 +91,29 @@ class ToolResultFitter:
             }
         if not isinstance(parsed, dict):
             parsed = {"ok": True, "value": parsed}
+        provenance = parsed.get("provenance")
+        if (
+            parsed.get("ok") is True
+            and isinstance(provenance, dict)
+            and provenance.get("tool") == "read_file"
+            and isinstance(parsed.get("content"), str)
+        ):
+            return self._fit_read_file(parsed, value, limit)
         preserved = {
             key: parsed[key]
-            for key in ("ok", "error", "message", "provenance")
+            for key in (
+                "ok",
+                "error",
+                "message",
+                "provenance",
+                "path",
+                "start_line",
+                "end_line",
+                "total_lines",
+                "sha256",
+                "content_offset",
+                "next_content_offset",
+            )
             if key in parsed
         }
         if "message" in preserved:
@@ -113,6 +133,54 @@ class ToolResultFitter:
             }
         )
         return json.dumps(preserved, ensure_ascii=False, default=str)
+
+    @staticmethod
+    def _fit_read_file(parsed: dict[str, object], value: str, limit: int) -> str:
+        content = str(parsed["content"])
+        content_offset = int(parsed.get("content_offset") or 0)
+        start_line = int(parsed.get("start_line") or 1)
+        base = {
+            key: parsed[key]
+            for key in (
+                "ok",
+                "error",
+                "message",
+                "provenance",
+                "path",
+                "start_line",
+                "end_line",
+                "total_lines",
+                "sha256",
+                "content_offset",
+                "next_content_offset",
+            )
+            if key in parsed
+        }
+        base.update({"truncated": True, "original_chars": len(value)})
+
+        def candidate(length: int) -> dict[str, object]:
+            visible = content[:length]
+            result = {
+                **base,
+                "content": visible,
+                "next_content_offset": content_offset + len(visible),
+                "end_line": start_line + visible.count("\n"),
+            }
+            if not visible or visible.endswith("\n"):
+                result["end_line"] = int(result["end_line"]) - 1
+            return result
+
+        low, high = 0, len(content)
+        while low < high:
+            middle = (low + high + 1) // 2
+            rendered = json.dumps(
+                candidate(middle), ensure_ascii=False, default=str
+            )
+            if len(rendered) <= limit:
+                low = middle
+            else:
+                high = middle - 1
+        return json.dumps(candidate(low), ensure_ascii=False, default=str)
 
 
 class SectionBudgetAllocator:

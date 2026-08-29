@@ -7,16 +7,24 @@ import time
 from ..config import AppConfig
 from ..context_time import context_timestamp
 from ..logging_context import log_event, safe_preview
-from ..storage import MemoryRecallQuery, Store, estimate_tokens, truncate_tokens
+from ..storage import (
+    REFLECTION_MEMORY_CAUTION,
+    MemoryRecallQuery,
+    Store,
+    estimate_tokens,
+    format_reflection_memory,
+    truncate_tokens,
+)
 from ..storage.episode_ranking import EpisodeRecallQuery, rank_recall_items
 from .budget import SECTION_BUDGET_ALLOCATOR
 
 
 logger = logging.getLogger(__name__)
 RECENT_EPISODE_LIMIT = 6
-RECALLED_TURN_CONTEXT_TOKENS = 6000
-RECALLED_TURN_LIMIT = 6
 PLAN_RECALL_QUERY_LIMIT = 6
+RECENT_EXTERNAL_EVENT_LIMIT = 6
+RECENT_EXTERNAL_EVENT_LOOKBACK_SECONDS = 6 * 3600
+RECENT_EXTERNAL_EVENT_TOKEN_BUDGET = 1200
 
 
 def _recall_log_text(value: object, limit: int = 300) -> str:
@@ -61,11 +69,6 @@ def build_plan_retrieval(
     plan: dict[str, object],
     config: AppConfig,
 ) -> dict[str, object]:
-    recent_turn_ids = {
-        str(item.get("turn_id") or "")
-        for item in store.recent_turn_records(config.recent_turns)
-        if item.get("turn_id")
-    }
     recent_episodes = (
         store.list_recent_episodes(
             time.time() - config.recent_episode_hours * 3600,
@@ -117,6 +120,7 @@ def build_plan_retrieval(
     # unit's second, deduplicate shared expressions, then enforce the global
     # fan-out.
     recall_queries: list[dict[str, object]] = []
+    reused_units_by_turn: dict[str, list[str]] = {}
     recall_units = list(plan.get("intent_units") or [])
     activity = plan.get("activity")
     if isinstance(activity, dict) and activity.get("recall_queries"):
@@ -127,11 +131,17 @@ def build_plan_retrieval(
                 "recall_queries": activity["recall_queries"],
             }
         )
-    unit_queries: list[tuple[str, list[str], str]] = []
+    unit_queries: list[tuple[str, list[str]]] = []
     for unit in recall_units:
         if not isinstance(unit, dict):
             continue
         unit_id = str(unit.get("id") or "")
+        recall = unit.get("recall")
+        if isinstance(recall, dict) and recall.get("mode") == "reuse":
+            source_turn_id = str(recall.get("from_turn_id") or "")
+            if source_turn_id and unit_id:
+                reused_units_by_turn.setdefault(source_turn_id, []).append(unit_id)
+            continue
         queries: list[str] = []
         for raw_query in unit.get("recall_queries") or []:
             query = " ".join(str(raw_query).split())[:120]
@@ -139,28 +149,88 @@ def build_plan_retrieval(
                 continue
             queries.append(query)
         if queries:
-            context = "\n".join(
-                str(value)
-                for value in (
-                    unit.get("text"),
-                    unit.get("intent"),
-                    " ".join(str(item) for item in unit.get("references") or []),
-                )
-                if value
+            unit_queries.append((unit_id, queries))
+
+    inherited_memories: list[dict[str, object]] = []
+    inherited_reflections: list[dict[str, object]] = []
+    inherited_episodes: list[dict[str, object]] = []
+    inherited_queries: list[str] = []
+    visited_reuse_sources: set[str] = set()
+
+    def inherit_recall(source_turn_id: str, unit_ids: list[str]) -> None:
+        if not source_turn_id or source_turn_id in visited_reuse_sources:
+            return
+        visited_reuse_sources.add(source_turn_id)
+        record = store.context_plan(source_turn_id)
+        if record is None or record.get("state") != "recalled":
+            return
+        source_retrieval = record.get("retrieval")
+        source_plan = record.get("plan")
+        if (
+            not isinstance(source_retrieval, dict)
+            or source_retrieval.get("version") != 4
+            or not isinstance(source_plan, dict)
+        ):
+            return
+        stored_queries = source_retrieval.get("effective_recall_queries")
+        if isinstance(stored_queries, list) and stored_queries:
+            inherited_queries.extend(
+                " ".join(str(query).split())[:120]
+                for query in stored_queries
+                if " ".join(str(query).split())
             )
-            unit_queries.append((unit_id, queries, context))
+        else:
+            query_recall = str(source_retrieval.get("query_recall") or "")
+            if "hits=" in query_recall and "misses=" not in query_recall:
+                inherited_queries.extend(
+                    " ".join(str(query).split())[:120]
+                    for source_unit in source_plan.get("intent_units") or []
+                    if isinstance(source_unit, dict)
+                    for query in source_unit.get("recall_queries") or []
+                    if " ".join(str(query).split())
+                )
+        for item in source_retrieval.get("recall_memories") or []:
+            if isinstance(item, dict):
+                inherited_memories.append(
+                    {**copy.deepcopy(item), "unit_ids": unit_ids}
+                )
+        for item in source_retrieval.get("reflection_memories") or []:
+            if isinstance(item, dict):
+                inherited_reflections.append(
+                    {**copy.deepcopy(item), "unit_ids": unit_ids}
+                )
+        for item in source_retrieval.get("episodes") or []:
+            if not isinstance(item, dict) or not item.get("matched_queries"):
+                continue
+            inherited = copy.deepcopy(item)
+            inherited["unit_ids"] = unit_ids
+            for query in inherited.get("matched_queries") or []:
+                if isinstance(query, dict):
+                    query["unit_ids"] = unit_ids
+            inherited_episodes.append(inherited)
+        if isinstance(stored_queries, list) and stored_queries:
+            return
+        for source_unit in source_plan.get("intent_units") or []:
+            if not isinstance(source_unit, dict):
+                continue
+            parent_turn_id = str(source_unit.get("recall_from_turn_id") or "")
+            if parent_turn_id:
+                inherit_recall(parent_turn_id, unit_ids)
+
+    for source_turn_id, unit_ids in reused_units_by_turn.items():
+        inherit_recall(source_turn_id, list(dict.fromkeys(unit_ids)))
 
     emitted_queries = {
-        query for _unit_id, queries, _context in unit_queries for query in queries
+        query for _unit_id, queries in unit_queries for query in queries
     }
     selected_by_query: dict[str, dict[str, object]] = {}
     skipped_unit_ids: set[str] = set()
     max_query_rank = max(
-        (len(queries) for _, queries, _context in unit_queries),
+        (len(queries) for _, queries in unit_queries),
         default=0,
     )
     for query_rank in range(max_query_rank):
-        for unit_id, queries, context in unit_queries:
+        for unit_id, queries in unit_queries:
             if query_rank >= len(queries):
                 continue
             query = queries[query_rank]
@@ -170,10 +240,6 @@ def build_plan_retrieval(
                 assert isinstance(selected_units, list)
                 if unit_id and unit_id not in selected_units:
                     selected_units.append(unit_id)
-                contexts = selected["contexts"]
-                assert isinstance(contexts, list)
-                if context and context not in contexts:
-                    contexts.append(context)
                 selected["priority"] = min(
                     int(selected["priority"]), query_rank
                 )
@@ -186,7 +252,6 @@ def build_plan_retrieval(
                 "expression": query,
                 "unit_ids": [unit_id] if unit_id else [],
                 "priority": query_rank,
-                "contexts": [context] if context else [],
             }
             selected_by_query[query] = selected
             recall_queries.append(selected)
@@ -196,7 +261,6 @@ def build_plan_retrieval(
             expression=str(item["expression"]),
             unit_ids=tuple(str(value) for value in item["unit_ids"]),
             priority=int(item["priority"]),
-            context="\n".join(str(value) for value in item["contexts"]),
         )
         for item in recall_queries
     ]
@@ -204,21 +268,12 @@ def build_plan_retrieval(
         episode_queries,
         max(0, config.summary_results),
     )
-    episode_hit_queries = {
+    episode_hit_query_set = {
         str(query.get("expression") or "")
         for row in episode_rows
         for query in row.get("matched_queries") or []
         if isinstance(query, dict) and query.get("expression")
     }
-    episode_turn_hit_queries = {
-        str(query.get("expression") or "")
-        for row in episode_rows
-        for query in row.get("matched_queries") or []
-        if isinstance(query, dict)
-        and query.get("expression")
-        and query.get("turn_ids")
-    }
-
     ranked_memories = store.rank_recalled_memories(
         [
             MemoryRecallQuery(
@@ -245,11 +300,36 @@ def build_plan_retrieval(
             "kind": truncate_tokens(str(row.get("kind") or ""), 24),
             "key": truncate_tokens(str(row.get("key") or ""), 64),
             "content": truncate_tokens(str(row.get("content") or ""), 160),
+            "local_date": str(row.get("local_date") or "unknown"),
             "unit_ids": list(row.get("unit_ids") or []),
         }
         for row in ranked_memories
         if row.get("source") == "reflection"
     ]
+    for target, inherited in (
+        (recall_memories, inherited_memories),
+        (reflection_memories, inherited_reflections),
+    ):
+        seen = {
+            (
+                str(item.get("kind") or ""),
+                str(item.get("key") or ""),
+                str(item.get("content") or ""),
+            )
+            for item in target
+        }
+        for item in inherited:
+            if len(target) >= config.memory_results:
+                break
+            identity = (
+                str(item.get("kind") or ""),
+                str(item.get("key") or ""),
+                str(item.get("content") or ""),
+            )
+            if identity in seen:
+                continue
+            target.append(item)
+            seen.add(identity)
     memory_hit_query_set = {
         str(query)
         for row in ranked_memories
@@ -267,23 +347,19 @@ def build_plan_retrieval(
     recall_misses: list[str] = []
     memory_hit_queries: list[str] = []
     reflection_hit_queries: list[str] = []
-    topic_hit_queries: list[str] = []
-    turn_hit_queries: list[str] = []
+    episode_hit_queries: list[str] = []
     for recall_query in recall_queries:
         query = str(recall_query["expression"])
         memory_hit = query in memory_hit_query_set
         reflection_hit = query in reflection_hit_query_set
-        topic_hit = query in episode_hit_queries
-        turn_hit = query in episode_turn_hit_queries
-        query_hit = memory_hit or reflection_hit or topic_hit
+        episode_hit = query in episode_hit_query_set
+        query_hit = memory_hit or reflection_hit or episode_hit
         if memory_hit:
             memory_hit_queries.append(query)
         if reflection_hit:
             reflection_hit_queries.append(query)
-        if topic_hit:
-            topic_hit_queries.append(query)
-        if turn_hit:
-            turn_hit_queries.append(query)
+        if episode_hit:
+            episode_hit_queries.append(query)
         (recall_hits if query_hit else recall_misses).append(query)
 
     for row in episode_rows:
@@ -317,6 +393,23 @@ def build_plan_retrieval(
             "matched_queries": matched_queries,
             "is_recent": episode_id in recent_episode_ids,
         }
+
+    for inherited in inherited_episodes:
+        episode_id = str(inherited.get("episode_id") or "")
+        if not episode_id:
+            continue
+        existing = recalled_episode_rows.get(episode_id)
+        if existing is None:
+            inherited["is_recent"] = episode_id in recent_episode_ids
+            recalled_episode_rows[episode_id] = inherited
+            continue
+        _merge_matches(existing, inherited)
+        existing["unit_ids"] = sorted(
+            {
+                *(str(item) for item in existing.get("unit_ids") or []),
+                *(str(item) for item in inherited.get("unit_ids") or []),
+            }
+        )
 
     # Query-specific episodes supplement the time-window directory, without
     # duplicating an episode already selected by recency.
@@ -357,16 +450,12 @@ def build_plan_retrieval(
         )
         existing["is_recent"] = True
     episodes = rank_recall_items(episodes)
-    recalled_turns = _collect_recalled_turns(
-        ranked_recalled_episodes
-    )
-    for item in recalled_turns:
-        item["is_recent"] = str(item["turn_id"]) in recent_turn_ids
-        item["keyword_match_count"] = len(
-            item.get("matched_keywords") or []
-        )
-    recalled_turns = rank_recall_items(recalled_turns)
     recall_index: list[str] = []
+    if reused_units_by_turn:
+        recall_index.extend(
+            f"reused_from={turn_id} units={','.join(dict.fromkeys(unit_ids))}"
+            for turn_id, unit_ids in reused_units_by_turn.items()
+        )
     if recall_queries:
         recall_index.append(
             "queries="
@@ -389,16 +478,15 @@ def build_plan_retrieval(
             recall_index.append(
                 "reflection_hits=" + " | ".join(reflection_hit_queries)
             )
-        if topic_hit_queries:
+        if episode_hit_queries:
             recall_index.append(
-                "topic_hits=" + " | ".join(topic_hit_queries)
+                "episode_hits=" + " | ".join(episode_hit_queries)
             )
-        if turn_hit_queries:
-            recall_index.append(
-                "turn_hits=" + " | ".join(turn_hit_queries)
-            )
+    effective_recall_queries = list(
+        dict.fromkeys([*recall_hits, *inherited_queries])
+    )
     retrieval = {
-        "version": 3,
+        "version": 4,
         "episodes": episodes,
         "long_term_memories": store.always_memory_context(),
         "recent_memories": store.recent_memory_context(
@@ -406,10 +494,10 @@ def build_plan_retrieval(
         ),
         "recall_memories": recall_memories,
         "reflection_memories": reflection_memories,
-        "recalled_turns": recalled_turns,
         "goals": goals,
         "uncertainty": plan.get("uncertainty", []),
         "query_recall": "\n".join(recall_index),
+        "effective_recall_queries": effective_recall_queries,
     }
     query_log = [
         {
@@ -446,32 +534,6 @@ def build_plan_retrieval(
         }
         for row in episode_rows
     ]
-    episode_titles = {
-        str(row.get("id") or ""): _recall_log_text(row.get("title"), 160)
-        for row in episode_rows
-    }
-    turn_evidence: dict[str, list[dict[str, object]]] = {}
-    for row in episode_rows:
-        for match in _recall_log_matches(row.get("matches"), 4):
-            turn_id = str(match.get("turn_id") or "")
-            if turn_id:
-                turn_evidence.setdefault(turn_id, []).append(match)
-    turn_log = [
-        {
-            "turn_id": item.get("turn_id"),
-            "episodes": [
-                {
-                    "episode_id": episode_id,
-                    "title": episode_titles.get(str(episode_id), ""),
-                }
-                for episode_id in item.get("episode_ids") or []
-            ],
-            "matched_keywords": item.get("matched_keywords") or [],
-            "score": round(float(item.get("search_score") or 0.0), 4),
-            "evidence": turn_evidence.get(str(item.get("turn_id") or ""), [])[:2],
-        }
-        for item in recalled_turns
-    ]
     log_event(
         logger,
         logging.INFO,
@@ -481,6 +543,7 @@ def build_plan_retrieval(
         requested_query_count=len(emitted_queries),
         selected_query_count=len(recall_queries),
         skipped_unit_ids=sorted(skipped_unit_ids),
+        reused_from_turn_ids=list(reused_units_by_turn),
         hits=recall_hits,
         misses=recall_misses,
         counts={
@@ -489,10 +552,13 @@ def build_plan_retrieval(
             "recall_queries": len(recall_queries),
             "recall_queries_emitted": len(emitted_queries),
             "recall_query_units_skipped": len(skipped_unit_ids),
+            "recall_reuse_units": sum(
+                len(set(unit_ids)) for unit_ids in reused_units_by_turn.values()
+            ),
+            "recall_reuse_sources": len(reused_units_by_turn),
             "recall_memory_hits": len(recall_memories),
             "recall_reflection_hits": len(reflection_memories),
             "recall_episode_hits": len(ranked_recalled_episodes),
-            "recall_turn_hits": len(recalled_turns),
         },
     )
     log_event(
@@ -508,13 +574,6 @@ def build_plan_retrieval(
         "context_recall_episode_results",
         stage="context_recall",
         results=episode_log,
-    )
-    log_event(
-        logger,
-        logging.INFO,
-        "context_recall_turn_results",
-        stage="context_recall",
-        results=turn_log,
     )
     log_event(
         logger,
@@ -571,114 +630,17 @@ def _memory_lines(items: object) -> str:
     )
 
 
-def _collect_recalled_turns(
-    episodes: list[dict[str, object]],
-) -> list[dict[str, object]]:
-    turns: dict[str, dict[str, object]] = {}
-    for episode in episodes:
-        episode_id = str(
-            episode.get("episode_id") or episode.get("id") or ""
-        )
-        keywords = {
-            str(item)
-            for item in episode.get("matched_keywords") or []
-            if str(item)
-        }
-        for match in episode.get("matches") or []:
-            if not isinstance(match, dict) or not match.get("turn_id"):
-                continue
-            turn_id = str(match["turn_id"])
-            state = turns.setdefault(
-                turn_id,
-                {
-                    "turn_id": turn_id,
-                    "episode_ids": [],
-                    "matched_keywords": set(),
-                    "match_ids": set(),
-                    "last_activity_at": 0.0,
-                    "search_score": 0.0,
-                },
-            )
-            episode_ids = state["episode_ids"]
-            if isinstance(episode_ids, list) and episode_id and episode_id not in episode_ids:
-                episode_ids.append(episode_id)
-            matched_keywords = state["matched_keywords"]
-            if isinstance(matched_keywords, set):
-                matched_keywords.update(keywords)
-            match_ids = state["match_ids"]
-            if isinstance(match_ids, set) and match.get("id") is not None:
-                match_ids.add(int(match["id"]))
-            state["last_activity_at"] = max(
-                float(state["last_activity_at"]),
-                float(match.get("created_at") or 0),
-            )
-            state["search_score"] = max(
-                float(state["search_score"]),
-                float(episode.get("search_score") or 0),
-            )
-    results: list[dict[str, object]] = []
-    for state in turns.values():
-        results.append(
-            {
-                **state,
-                "matched_keywords": sorted(state["matched_keywords"]),
-                "match_ids": sorted(state["match_ids"]),
-            }
-        )
-    return results
-
-
-def _recalled_turn_context(
-    store: Store,
-    turns: object,
-    token_budget: int = RECALLED_TURN_CONTEXT_TOKENS,
-    *,
-    exclude_turn_ids: set[str] | None = None,
-) -> str:
-    if not isinstance(turns, list) or token_budget <= 0:
+def _reflection_memory_lines(items: object) -> str:
+    if not isinstance(items, list):
         return ""
-    excluded = exclude_turn_ids or set()
-    selected = rank_recall_items(
-        [
-            item
-            for item in turns
-            if isinstance(item, dict)
-            and str(item.get("turn_id") or "")
-            and str(item.get("turn_id")) not in excluded
-        ]
-    )[:RECALLED_TURN_LIMIT]
-    turn_ids = [str(item["turn_id"]) for item in selected]
-    messages = store.conversation_messages_for_turns(turn_ids)
-    by_turn: dict[str, list[dict[str, object]]] = {}
-    for message in messages:
-        by_turn.setdefault(str(message["turn_id"]), []).append(message)
-    blocks: list[str] = []
-    used = 0
-    for item in selected:
-        turn_id = str(item["turn_id"])
-        lines = [f"[recalled turn={turn_id}]"]
-        for message in by_turn.get(turn_id, []):
-            role = "OWNER" if message["role"] == "user" else "MOMOI"
-            delivery = str(message.get("delivery_state") or "")
-            suffix = (
-                f" delivery={delivery}"
-                if role == "MOMOI" and delivery != "delivered"
-                else ""
-            )
-            lines.append(
-                f"{role} at={message.get('timestamp') or '?'}{suffix}: "
-                f"{str(message.get('content') or '').strip()}"
-            )
-        block = "\n".join(lines)
-        size = estimate_tokens(block)
-        if blocks and used + size > token_budget:
-            break
-        if not blocks and size > token_budget:
-            block = truncate_tokens(block, token_budget)
-            size = estimate_tokens(block)
-        blocks.append(block)
-        used += size
-    return "\n\n".join(blocks)
+    return "\n".join(
+        format_reflection_memory(item)
+        for item in items
+        if isinstance(item, dict)
+        and item.get("kind") not in (None, "")
+        and item.get("key") not in (None, "")
+        and item.get("content") not in (None, "")
+    )
 
 
 def _episode_search_text(episode: dict[str, object]) -> str:
@@ -879,6 +841,35 @@ def assemble_compact_recent_conversation(
     return truncate_tokens(rendered, max(1, token_budget)) if rendered else "(none)"
 
 
+def assemble_recent_external_events(
+    store: Store,
+    before_timestamp: float | None = None,
+    *,
+    limit: int = RECENT_EXTERNAL_EVENT_LIMIT,
+    lookback_seconds: float = RECENT_EXTERNAL_EVENT_LOOKBACK_SECONDS,
+    token_budget: int = RECENT_EXTERNAL_EVENT_TOKEN_BUDGET,
+) -> str:
+    """Render silent autonomous Events as a folded, low-priority ledger."""
+
+    events = store.recent_external_events(limit, lookback_seconds, before_timestamp)
+    blocks: list[str] = []
+    for index, event in enumerate(events, 1):
+        first_seen = float(event["first_seen"])
+        last_seen = float(event["last_seen"])
+        occurrences = int(event["occurrences"])
+        lines = [
+            f"E-{index} {context_timestamp(last_seen)} [{event['source']}]",
+            f"  event: {event['event']}",
+        ]
+        if occurrences > 1:
+            lines.append(
+                f"  observations: {occurrences} since {context_timestamp(first_seen)}"
+            )
+        blocks.append("\n".join(lines))
+    rendered = "\n\n".join(blocks)
+    return truncate_tokens(rendered, max(1, token_budget)) if rendered else ""
+
+
 def assemble_recent_webhook_activity(
     store: Store,
     turn_limit: int = 4,
@@ -986,9 +977,9 @@ def _owner_history_argument(name: str, arguments: object) -> str:
     if not isinstance(arguments, dict):
         return ""
     keep: tuple[str, ...]
-    if name in {"memory_search", "conversation_search", "thinking_search"}:
+    if name in {"memory_search", "episode_search", "thinking_search"}:
         keep = ("query", "limit")
-    elif name in {"conversation_read", "thinking_read"}:
+    elif name in {"episode_read", "thinking_read"}:
         keep = ("episode_id", "message_id", "content_offset", "before_ordinal")
     elif name in {"goal_create", "goal_update", "goal_finish", "goal_cancel"}:
         keep = ("goal_id", "title", "status", "next_action")
@@ -1080,6 +1071,9 @@ def _owner_history_result(name: str, value: object, ok: object = True) -> str:
         original_chars = value.get("original_chars")
         if original_chars:
             parts.append(f"original_chars={original_chars}")
+        result_ref = value.get("result_ref")
+        if result_ref:
+            parts.append(f"result_ref={result_ref}")
     for key in ("state", "status", "count", "next_cursor"):
         item = value.get(key)
         if item not in (None, "", [], {}):
@@ -1893,10 +1887,6 @@ def assemble_main_context(
         )
     else:
         raw_recent_turns, recent_turn_base_count = [], 0
-    recent_turn_records: dict[str, object] = {
-        "version": 1,
-        "turns": raw_recent_turns,
-    }
     recent_turn_base = project_recent_turns_for_owner(
         {
             "version": 1,
@@ -1915,11 +1905,6 @@ def assemble_main_context(
     compact_recent_turns = "\n\n".join(
         value for value in (recent_turn_base, recent_turn_append) if value
     )
-    recent_turn_ids = {
-        str(item.get("turn_id") or "")
-        for item in recent_turn_records.get("turns") or []
-        if isinstance(item, dict) and item.get("turn_id")
-    }
     compact_recent_conversation = assemble_compact_recent_conversation(
         store,
         min(4, recent_turns),
@@ -1929,6 +1914,10 @@ def assemble_main_context(
     return {
         "recent_turn_base": recent_turn_base,
         "recent_turn_append": recent_turn_append,
+        "recent_external_events": assemble_recent_external_events(
+            store,
+            recent_before_timestamp,
+        ),
         "recent_turns": compact_recent_turns,
         "recent_conversation": compact_recent_conversation,
         "episodes": _episode_context(
@@ -1941,22 +1930,17 @@ def assemble_main_context(
         "recall_memories": _memory_lines(retrieval.get("recall_memories")),
         "query_recall": str(retrieval.get("query_recall") or ""),
         "reflection_memories": (
-            "Recalled daily reflections (top-k; fallible and lower authority):\n"
-            + _memory_lines(retrieval.get("reflection_memories"))
+            REFLECTION_MEMORY_CAUTION
+            + "\n"
+            + _reflection_memory_lines(retrieval.get("reflection_memories"))
             if retrieval.get("reflection_memories")
             else ""
-        ),
-        "recalled_turns": _recalled_turn_context(
-            store,
-            retrieval.get("recalled_turns"),
-            RECALLED_TURN_CONTEXT_TOKENS,
-            exclude_turn_ids=recent_turn_ids,
         ),
         "goals": _goal_lines(retrieval.get("goals")),
     }
 
 
-def recall_episode_context_parts(
+def recall_episode_context(
     store: Store,
     query: str,
     max_results: int,
@@ -1965,10 +1949,10 @@ def recall_episode_context_parts(
     *,
     skip_empty_webhook: bool = False,
     exclude_turn_ids: set[str] | None = None,
-) -> tuple[str, str]:
+) -> str:
     query = query.strip()
     if not query:
-        return "", ""
+        return ""
     episodes = SECTION_BUDGET_ALLOCATOR.select(
         [("query", store.search_episodes(query, max_results))],
         lambda row: row["id"],
@@ -1997,45 +1981,10 @@ def recall_episode_context_parts(
             for match in episode.get("matches") or []
         )
     episodes = rank_recall_items(episodes)
-    recalled_turns = _collect_recalled_turns(episodes)
-    for item in recalled_turns:
-        item["is_recent"] = str(item["turn_id"]) in recent_ids
-        item["keyword_match_count"] = len(
-            item.get("matched_keywords") or []
-        )
-    recalled_turns = rank_recall_items(recalled_turns)
-    return (
-        _episode_context(
-            store,
-            episodes,
-            summary_token_budget,
-            raw_token_budget,
-            skip_empty_webhook=skip_empty_webhook,
-        ),
-        _recalled_turn_context(
-            store,
-            recalled_turns,
-            min(raw_token_budget, RECALLED_TURN_CONTEXT_TOKENS),
-            exclude_turn_ids=exclude_turn_ids,
-        ),
-    )
-
-
-def recall_episode_context(
-    store: Store,
-    query: str,
-    max_results: int,
-    summary_token_budget: int,
-    raw_token_budget: int,
-    *,
-    skip_empty_webhook: bool = False,
-) -> str:
-    episodes, _ = recall_episode_context_parts(
+    return _episode_context(
         store,
-        query,
-        max_results,
+        episodes,
         summary_token_budget,
         raw_token_budget,
         skip_empty_webhook=skip_empty_webhook,
     )
-    return episodes

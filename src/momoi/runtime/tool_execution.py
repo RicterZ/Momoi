@@ -2,13 +2,21 @@ import copy
 import fnmatch
 import json
 import logging
+import re
 import time
+import unicodedata
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
 from ..agenda_tools import AGENDA_TOOL_SPECS
 from ..builtin_tools import BUILTIN_TOOL_SPECS, SELF_DIRECTED_BUILTIN_TOOL_SPECS
-from ..channel import Channel, ChannelMessage
+from ..channel import (
+    Channel,
+    ChannelMessage,
+    normalize_channel_message,
+    render_channel_message,
+)
 from ..contracts import ToolResult
 from ..emotions import EMOTION_PREFIX, emotion_slug
 from ..logging_context import TRACE, compact_log_value, log_context, log_event, new_trace_id, safe_preview
@@ -26,6 +34,7 @@ from .progress_announce import (
 from .parsing import parse_messages, parse_response, response_text
 from .protocol import (
     AUTONOMOUS_FINISH_SPEC,
+    READ_TOOL_RESULT_SPEC,
     owner_end_turn_tool_spec,
     send_message_tool_spec,
     tool_enable_spec,
@@ -42,6 +51,30 @@ from .turn_support import (
 
 logger = logging.getLogger("momoi.runtime.turns")
 MAX_TOOL_RESULT_TRUNCATION_ATTEMPTS = 16
+SIMILAR_SEND_MESSAGE_THRESHOLD = 0.75
+
+
+def _send_message_text(messages: list[ChannelMessage]) -> str:
+    rendered = [
+        message
+        if isinstance(message, str)
+        else render_channel_message(normalize_channel_message(message))
+        for message in messages
+    ]
+    text = unicodedata.normalize("NFKC", "\n".join(rendered)).casefold()
+    return re.sub(r"[^\w]+", "", text)
+
+
+def _send_message_similarity(
+    previous: list[ChannelMessage], current: list[ChannelMessage]
+) -> float:
+    previous_text = _send_message_text(previous)
+    current_text = _send_message_text(current)
+    if not previous_text or not current_text:
+        return 0.0
+    return SequenceMatcher(
+        None, previous_text, current_text, autojunk=False
+    ).ratio()
 
 
 class ToolExecutionService:
@@ -84,6 +117,7 @@ class ToolExecutionService:
 
     def _owner_internal_tool_surface(self) -> list[dict[str, Any]]:
         return [
+            READ_TOOL_RESULT_SPEC,
             *copy.deepcopy(MEMORY_TOOL_SPECS),
             *self._announced_tool_specs(AGENDA_TOOL_SPECS, mcp=False),
             *self._announced_tool_specs(BUILTIN_TOOL_SPECS, mcp=False),
@@ -176,12 +210,15 @@ class ToolExecutionService:
     ) -> list[dict[str, Any]]:
         patterns = self.config.autonomy.allowed_tools
         internal = [
-            spec
-            for spec in SELF_DIRECTED_BUILTIN_TOOL_SPECS
-            if any(
-                fnmatch.fnmatchcase(str(spec["name"]), pattern)
-                for pattern in patterns
-            )
+            READ_TOOL_RESULT_SPEC,
+            *[
+                spec
+                for spec in SELF_DIRECTED_BUILTIN_TOOL_SPECS
+                if any(
+                    fnmatch.fnmatchcase(str(spec["name"]), pattern)
+                    for pattern in patterns
+                )
+            ],
         ]
         groups = self._self_directed_mcp_server_groups()
         handoff = plan.get("heartbeat_handoff")
@@ -303,6 +340,9 @@ class ToolExecutionService:
         history_messages = max(0, len(messages) - 1)
         visible_since_owner_update = False
         owner_work_acknowledged = False
+        previous_tool_name: str | None = None
+        last_sent_messages: list[ChannelMessage] | None = None
+        last_sent_channel = ""
         llm_round = 0
         enable_tool_groups = (
             self._owner_enable_tool_groups()
@@ -333,6 +373,9 @@ class ToolExecutionService:
             if updates:
                 visible_since_owner_update = False
                 owner_work_acknowledged = False
+                previous_tool_name = None
+                last_sent_messages = None
+                last_sent_channel = ""
                 tools, source_event_id = await self._append_owner_updates(
                     updates,
                     current_events,
@@ -407,6 +450,9 @@ class ToolExecutionService:
                 )
                 visible_since_owner_update = False
                 owner_work_acknowledged = False
+                previous_tool_name = None
+                last_sent_messages = None
+                last_sent_channel = ""
                 tools, source_event_id = await self._append_owner_updates(
                     updates,
                     current_events,
@@ -457,6 +503,9 @@ class ToolExecutionService:
             if updates:
                 visible_since_owner_update = False
                 owner_work_acknowledged = False
+                previous_tool_name = None
+                last_sent_messages = None
+                last_sent_channel = ""
                 messages.append({"role": "assistant", "content": response.content})
                 if response.tool_calls:
                     messages.append(
@@ -851,19 +900,51 @@ class ToolExecutionService:
                             if target is None:
                                 result = {"ok": False, "error": "invalid_channel"}
                             else:
-                                self.store.queue_progress(
-                                    turn_id, call.id, progress, target.name
+                                similarity = (
+                                    _send_message_similarity(
+                                        last_sent_messages, progress
+                                    )
+                                    if previous_tool_name == "send_message"
+                                    and last_sent_messages is not None
+                                    and last_sent_channel == target.name
+                                    else 0.0
                                 )
-                                visible_since_owner_update = True
-                                if not check_contact:
-                                    owner_work_acknowledged = True
-                                self.outbox_changed.set()
-                                result = {
-                                    "ok": True,
-                                    "state": "queued",
-                                    "channel": target.name,
-                                    "messages": len(progress),
-                                }
+                                if similarity >= SIMILAR_SEND_MESSAGE_THRESHOLD:
+                                    log_event(
+                                        logger,
+                                        logging.WARNING,
+                                        "similar_send_message_skipped",
+                                        stage=stage,
+                                        turn_id=turn_id,
+                                        round=llm_round,
+                                        channel=target.name,
+                                        tool_call_id=call.id,
+                                        similarity=round(similarity, 3),
+                                        threshold=SIMILAR_SEND_MESSAGE_THRESHOLD,
+                                    )
+                                    result = {
+                                        "ok": True,
+                                        "state": "skipped",
+                                        "warning": (
+                                            "A very similar message was already sent."
+                                        ),
+                                    }
+                                else:
+                                    self.store.queue_progress(
+                                        turn_id, call.id, progress, target.name
+                                    )
+                                    visible_since_owner_update = True
+                                    if not check_contact:
+                                        owner_work_acknowledged = True
+                                    last_sent_messages = copy.deepcopy(progress)
+                                    last_sent_channel = target.name
+                                    self.outbox_changed.set()
+                                    result = {
+                                        "ok": True,
+                                        "state": "committed",
+                                        "channel": target.name,
+                                        "messages": len(progress),
+                                    }
                 elif call.name == "tool_enable":
                     requested = call.arguments.get("groups")
                     if (
@@ -894,6 +975,16 @@ class ToolExecutionService:
                             "groups": list(dict.fromkeys(requested)),
                             "tools": enabled_tools,
                         }
+                elif call.name == "read_tool_result":
+                    result = self.tool_results.read(
+                        call.arguments.get("result_ref"),
+                        call.arguments.get("cursor"),
+                        max_chars=self.config.tool_result_max_chars,
+                        provenance={
+                            "source": "runtime",
+                            "tool": "read_tool_result",
+                        },
+                    )
                 elif self.mcp.has_tool(call.name) or self.builtin_tools.has_tool(
                     call.name
                 ):
@@ -1064,6 +1155,7 @@ class ToolExecutionService:
                         ),
                     )
                 results.append(_tool_result_block(call.id, result))
+                previous_tool_name = call.name
                 if accept_owner_updates:
                     updates = await self._settle_owner_updates(
                         current_events, delivery_channel.name
@@ -1079,6 +1171,9 @@ class ToolExecutionService:
             messages.append({"role": "user", "content": results})
             if updates:
                 visible_since_owner_update = False
+                previous_tool_name = None
+                last_sent_messages = None
+                last_sent_channel = ""
                 tools, source_event_id = await self._append_owner_updates(
                     updates,
                     current_events,
@@ -1171,6 +1266,7 @@ class ToolExecutionService:
             "end_turn",
             "send_message",
             "tool_enable",
+            "read_tool_result",
             "autonomous_finish",
         }:
             return "runtime"
@@ -1206,24 +1302,27 @@ class ToolExecutionService:
         serialized = json.dumps(envelope, ensure_ascii=False, default=str)
         if len(serialized) <= self.config.tool_result_max_chars:
             return envelope
-        message = raw.get("message")
-        compact_payload = {
-            key: value for key, value in payload.items() if key != "message"
-        }
-        payload_text = json.dumps(
-            compact_payload, ensure_ascii=False, default=str
+        if (
+            call.name == "read_file"
+            and ok
+            and isinstance(payload.get("content"), str)
+        ):
+            return json.loads(
+                _truncate_tool_result_json(
+                    serialized, self.config.tool_result_max_chars
+                )
+            )
+        result_ref = self.tool_results.save(serialized)
+        status: dict[str, object] = {"ok": ok, "error": error}
+        if raw.get("message") is not None:
+            status["message"] = safe_preview(raw["message"], 1000)
+        return self.tool_results.read(
+            result_ref,
+            None,
+            max_chars=self.config.tool_result_max_chars,
+            provenance=provenance,
+            status=status,
         )
-        truncated = {
-            "ok": ok,
-            "error": error,
-            "truncated": True,
-            "provenance": provenance,
-            "original_chars": len(serialized),
-            "content": payload_text[: self.config.tool_result_max_chars],
-        }
-        if message is not None:
-            truncated["message"] = safe_preview(message, 1000)
-        return truncated
 
     def _artifact_path_allowed(self, call: ToolCall, root: Path) -> bool:
         try:
@@ -1282,6 +1381,9 @@ class ToolExecutionService:
 
     def _artifact_root(self) -> Path:
         return Path(self.config.workspace or self.config.database.parent) / "artifacts"
+
+    def _tool_result_root(self) -> Path:
+        return self.config.database.parent / "tool-results"
 
     def _check_turn_budget(
         self,
@@ -1367,9 +1469,13 @@ class ToolExecutionService:
                             )
                             break
                         attempts += 1
-                        candidate = _truncate_tool_result_json(
-                            result, max(1000, len(result) // 2)
-                        )
+                        target = max(1000, len(result) // 2)
+                        result_store = getattr(self, "tool_results", None)
+                        candidate = (
+                            result_store.refit(result, max_chars=target)
+                            if result_store is not None
+                            else None
+                        ) or _truncate_tool_result_json(result, target)
                         if len(candidate) >= len(result):
                             compression_breakers += 1
                             log_event(

@@ -9,7 +9,7 @@ from momoi.runtime.jobs import AutonomousJob
 
 
 class AutonomousQueueTests(unittest.IsolatedAsyncioTestCase):
-    async def test_current_reflection_goal_heartbeat_rotation_is_stable(self):
+    async def test_autonomous_jobs_follow_global_priority(self):
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(
                 AppConfig(
@@ -29,14 +29,22 @@ class AutonomousQueueTests(unittest.IsolatedAsyncioTestCase):
                 )
             )
             daemon.autonomous.put_nowait(AutonomousJob.heartbeat())
+            daemon.autonomous.put_nowait(
+                AutonomousJob.memory_maintenance("maintenance-1")
+            )
             daemon.autonomous.put_nowait(AutonomousJob.reflection("2030-01-01"))
             daemon.autonomous.put_nowait(AutonomousJob.goal("goal-1"))
+            self.assertEqual(
+                await daemon._next_work(),
+                ("goal", AutonomousJob.goal("goal-1")),
+            )
             self.assertEqual(
                 await daemon._next_work(),
                 ("goal", AutonomousJob.reflection("2030-01-01")),
             )
             self.assertEqual(
-                await daemon._next_work(), ("goal", AutonomousJob.goal("goal-1"))
+                await daemon._next_work(),
+                ("goal", AutonomousJob.memory_maintenance("maintenance-1")),
             )
             self.assertEqual(
                 await daemon._next_work(), ("goal", AutonomousJob.heartbeat())

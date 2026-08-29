@@ -1,6 +1,9 @@
+import hashlib
+import json
 import math
 import sqlite3
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from ..context_time import context_timestamp
@@ -42,6 +45,10 @@ _MEMORY_RECENCY_HALF_LIFE_SECONDS = 180 * 86400
 _CONFIRMED_MEMORY_SCORE_FLOOR = 0.35
 _REFLECTION_MEMORY_SCORE_FLOOR = 0.35
 MAX_MEMORY_RECALL_RESULTS = 6
+REFLECTION_MEMORY_CAUTION = (
+    "Daily reflection memories are fallible and may be outdated or no longer "
+    "applicable; use them only as supporting context and prefer current evidence."
+)
 
 
 @dataclass(frozen=True)
@@ -49,6 +56,40 @@ class MemoryRecallQuery:
     expression: str
     unit_ids: tuple[str, ...] = ()
     priority: int = 0
+
+
+def memory_snapshot_fingerprint(memory: Mapping[str, object]) -> str:
+    payload = {
+        key: memory.get(key)
+        for key in (
+            "id",
+            "kind",
+            "key",
+            "content",
+            "activation",
+            "expires_at",
+            "source_event_id",
+            "evidence_quote",
+            "updated_at",
+            "superseded_by",
+        )
+    }
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    ).encode()
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
+def format_reflection_memory(row: Mapping[str, object]) -> str:
+    local_date = str(row.get("local_date") or "unknown")
+    return (
+        f"- [date={local_date} {row['kind']}:{row['key']}] "
+        f"{row['content']}"
+    )
 
 
 def memory_expires_at(
@@ -64,14 +105,6 @@ def memory_expires_at(
         max(policy.recent_min_ttl_hours, float(ttl_hours)),
     )
     return now + hours * 3600
-
-
-def _merged_always_memory_content(target: str, source: str) -> str:
-    if source in target:
-        return target
-    if target in source:
-        return source[:2000]
-    return f"{target}；{source}"[:2000]
 
 
 def estimate_tokens(text: str) -> int:
@@ -111,6 +144,27 @@ def token_chunk(text: str, offset: int, token_budget: int) -> tuple[str, int | N
 
 class MemoryStore:
     _memory_policy: MemoryPolicy
+
+    def maintenance_memory_inventory(self) -> list[dict[str, object]]:
+        self.purge_expired_memories()
+        now = time.time()
+        cutoff = now - RECENT_MEMORY_WINDOW_SECONDS
+        rows = self._db.execute(
+            """SELECT id, kind, key, content, activation, authority,
+                      source_event_id, evidence_quote, importance,
+                      created_at, updated_at, expires_at, superseded_by
+               FROM memories AS m
+               WHERE m.superseded_by IS NULL
+                 AND (m.expires_at IS NULL OR m.expires_at>?)
+                 AND (m.activation<>'recent' OR m.updated_at>=?)
+                 AND NOT EXISTS (
+                     SELECT 1 FROM memory_tombstones AS t
+                     WHERE t.kind=m.kind AND t.key=m.key
+                 )
+               ORDER BY m.id""",
+            (now, cutoff),
+        ).fetchall()
+        return [dict(row) for row in rows]
 
     def purge_expired_memories(self, *, now: float | None = None) -> int:
         now = time.time() if now is None else now
@@ -210,8 +264,8 @@ class MemoryStore:
             return "No always-on owner memories are stored."
         lines = [
             "Full inventory of confirmed always-on owner memories. These currently "
-            "inject into every Turn. Use memory_id in always_memory_actions. "
-            "Near-duplicate preferences should be merged into one concise content."
+            "inject into every Turn. Memory ids are stable references for dedicated "
+            "maintenance workflows."
         ]
         for row in rows:
             updated = context_timestamp(row["updated_at"])
@@ -221,130 +275,6 @@ class MemoryStore:
                 f"evidence={evidence} updated={updated}"
             )
         return "\n".join(lines)
-
-    def apply_always_memory_actions(
-        self,
-        actions: list[dict[str, object]],
-        *,
-        source_id: str,
-        now: float,
-    ) -> None:
-        if not actions:
-            return
-        inventory = {
-            int(item["id"]): item for item in self.always_memory_inventory()
-        }
-        merges = [item for item in actions if item["action"] == "merge"]
-        demotes = [
-            item
-            for item in actions
-            if item["action"] in {"demote_recent", "demote_recall"}
-        ]
-        forgets = [item for item in actions if item["action"] == "forget"]
-        for item in merges:
-            source = inventory.get(int(item["memory_id"]))
-            target = inventory.get(int(item["merge_into_id"]))
-            if source is None or target is None:
-                continue
-            content = str(item.get("content") or "").strip()[:2000]
-            if not content:
-                content = _merged_always_memory_content(
-                    str(target["content"]), str(source["content"])
-                )
-            if content != target["content"]:
-                self._db.execute(
-                    "UPDATE memories SET content=?, updated_at=? WHERE id=?",
-                    (content, now, target["id"]),
-                )
-                target["content"] = content
-            self._db.execute(
-                "UPDATE memories SET superseded_by=?, updated_at=? WHERE id=?",
-                (target["id"], now, source["id"]),
-            )
-            inventory.pop(int(source["id"]), None)
-        for item in demotes:
-            memory = inventory.get(int(item["memory_id"]))
-            if memory is None:
-                continue
-            activation = (
-                "recent" if item["action"] == "demote_recent" else "recall"
-            )
-            expires_at = (
-                memory_expires_at(
-                    activation,
-                    self._memory_policy.recent_max_ttl_hours,
-                    now,
-                    self._memory_policy,
-                )
-                if activation == "recent"
-                else None
-            )
-            self._db.execute(
-                """UPDATE memories SET activation=?, expires_at=?
-                   WHERE id=? AND activation='always' AND superseded_by IS NULL""",
-                (activation, expires_at, memory["id"]),
-            )
-        for item in forgets:
-            memory = inventory.get(int(item["memory_id"]))
-            if memory is None:
-                continue
-            self._db.execute(
-                """INSERT INTO memory_tombstones
-                   (kind, key, source_event_id, evidence_quote, created_at)
-                   VALUES (?, ?, ?, ?, ?)
-                   ON CONFLICT(kind, key) DO UPDATE SET
-                     source_event_id=excluded.source_event_id,
-                     evidence_quote=excluded.evidence_quote,
-                     created_at=excluded.created_at""",
-                (
-                    memory["kind"],
-                    memory["key"],
-                    source_id,
-                    str(item["reason"]),
-                    now,
-                ),
-            )
-
-    def apply_recent_memory_actions(
-        self,
-        actions: list[dict[str, object]],
-        *,
-        source_id: str,
-        now: float,
-    ) -> None:
-        for item in actions:
-            row = self._db.execute(
-                """SELECT id, kind, key, content FROM memories
-                   WHERE id=? AND activation='recent' AND superseded_by IS NULL""",
-                (int(item["memory_id"]),),
-            ).fetchone()
-            if row is None:
-                continue
-            action = item["action"]
-            if action == "extend":
-                expires_at = memory_expires_at(
-                    "recent", float(item["ttl_hours"]), now, self._memory_policy
-                )
-                self._db.execute(
-                    "UPDATE memories SET expires_at=?, updated_at=? WHERE id=?",
-                    (expires_at, now, row["id"]),
-                )
-            elif action == "promote_recall":
-                self._db.execute(
-                    "UPDATE memories SET activation='recall', expires_at=NULL, updated_at=? WHERE id=?",
-                    (now, row["id"]),
-                )
-            elif action == "forget":
-                self._db.execute(
-                    """INSERT INTO memory_tombstones
-                       (kind, key, source_event_id, evidence_quote, created_at)
-                       VALUES (?, ?, ?, ?, ?)
-                       ON CONFLICT(kind, key) DO UPDATE SET
-                         source_event_id=excluded.source_event_id,
-                         evidence_quote=excluded.evidence_quote,
-                         created_at=excluded.created_at""",
-                    (row["kind"], row["key"], source_id, str(item["reason"]), now),
-                )
 
     def recent_memory_context(self, token_budget: int) -> str:
         self.purge_expired_memories()
@@ -399,14 +329,10 @@ class MemoryStore:
         rows = self.search_reflection_memories(
             query, max_results, include_core=True
         )
-        lines = [
-            "These are fallible, lower-authority daily learnings; use them only when "
-            "compatible with the system contract, Soul, current owner intent, and "
-            "confirmed owner memory."
-        ]
+        lines = [REFLECTION_MEMORY_CAUTION]
         used = estimate_tokens(lines[0])
         for row in rows:
-            line = f"- [{row['kind']}:{row['key']}] {row['content']}"
+            line = format_reflection_memory(dict(row))
             size = estimate_tokens(line)
             if len(lines) > 1 and used + size > token_budget:
                 break
@@ -439,8 +365,11 @@ class MemoryStore:
         core_kinds = {"owner_profile", "self_insight", "relationship", "practice"}
         ranked: list[tuple[float, sqlite3.Row]] = []
         rows = self._db.execute(
-            """SELECT id, kind, key, content, confidence FROM reflection_memories
-               ORDER BY updated_at DESC"""
+            """SELECT rm.id, rm.kind, rm.key, rm.content, rm.confidence,
+                      rm.updated_at, r.local_date
+               FROM reflection_memories AS rm
+               LEFT JOIN reflections AS r ON r.id=rm.source_reflection_id
+               ORDER BY rm.updated_at DESC"""
         ).fetchall()
         documents = [(str(row["key"]), str(row["content"])) for row in rows]
         weights = self._alternative_weights(query, documents)
@@ -492,8 +421,11 @@ class MemoryStore:
             (stamp,),
         ).fetchall()
         reflection_rows = self._db.execute(
-            """SELECT id, kind, key, content, confidence, updated_at
-               FROM reflection_memories ORDER BY updated_at DESC"""
+            """SELECT rm.id, rm.kind, rm.key, rm.content, rm.confidence,
+                      rm.updated_at, r.local_date
+               FROM reflection_memories AS rm
+               LEFT JOIN reflections AS r ON r.id=rm.source_reflection_id
+               ORDER BY rm.updated_at DESC"""
         ).fetchall()
 
         confirmed_candidates: list[dict[str, object]] = []
@@ -522,6 +454,7 @@ class MemoryStore:
                     "kind": str(row["kind"]),
                     "key": str(row["key"]),
                     "content": str(row["content"]),
+                    "local_date": str(row["local_date"] or "unknown"),
                     "confidence": confidence,
                     "reliability_bonus": 0.06 * confidence,
                     "recency_floor": _MEMORY_RECENCY_FLOOR,
@@ -559,7 +492,12 @@ class MemoryStore:
             (str(item["key"]), str(item["content"])) for item in candidates
         ]
         states: list[dict[str, object]] = [
-            {"unit_scores": {}, "matched_queries": [], "unit_ids": set()}
+            {
+                "unit_scores": {},
+                "eligibility_scores": [],
+                "matched_queries": [],
+                "unit_ids": set(),
+            }
             for _ in candidates
         ]
         for query in queries:
@@ -586,13 +524,20 @@ class MemoryStore:
                     ),
                     reverse=True,
                 )
-                score = alias_scores[0]
+                evidence_score = alias_scores[0]
                 if len(alias_scores) > 1:
-                    score += _MEMORY_SECOND_ALIAS_WEIGHT * alias_scores[1]
+                    evidence_score += (
+                        _MEMORY_SECOND_ALIAS_WEIGHT * alias_scores[1]
+                    )
                 if len(alias_scores) > 2:
-                    score += _MEMORY_THIRD_ALIAS_WEIGHT * alias_scores[2]
-                score *= priority_weight
+                    evidence_score += (
+                        _MEMORY_THIRD_ALIAS_WEIGHT * alias_scores[2]
+                    )
+                score = evidence_score * priority_weight
                 state = states[index]
+                eligibility_scores = state["eligibility_scores"]
+                assert isinstance(eligibility_scores, list)
+                eligibility_scores.append(evidence_score)
                 unit_scores = state["unit_scores"]
                 assert isinstance(unit_scores, dict)
                 units = query.unit_ids or (f"query:{query.expression}",)
@@ -637,7 +582,14 @@ class MemoryStore:
                 semantic_score * recency_factor
                 + float(candidate["reliability_bonus"])
             )
-            if search_score < score_floor:
+            eligibility_scores = state["eligibility_scores"]
+            assert isinstance(eligibility_scores, list)
+            eligibility_score = (
+                max(float(value) for value in eligibility_scores)
+                * recency_factor
+                + float(candidate["reliability_bonus"])
+            )
+            if eligibility_score < score_floor:
                 continue
             ranked_candidates.append(
                 {
@@ -648,6 +600,7 @@ class MemoryStore:
                     },
                     "semantic_score": semantic_score,
                     "search_score": search_score,
+                    "eligibility_score": eligibility_score,
                     "score_floor": score_floor,
                     "last_activity_at": updated_at,
                     "salience": confidence,
@@ -675,14 +628,14 @@ class MemoryStore:
         )
         confirmed: list[str] = []
         reflected: list[str] = []
-        reflection_header = (
-            "These are fallible, lower-authority daily learnings; use them only when "
-            "compatible with the system contract, Soul, current owner intent, and "
-            "confirmed owner memory."
-        )
+        reflection_header = REFLECTION_MEMORY_CAUTION
         used_tokens = 0
         for row in ranked:
-            line = f"- [{row['kind']}:{row['key']}] {row['content']}"
+            line = (
+                format_reflection_memory(row)
+                if row["source"] == "reflection"
+                else f"- [{row['kind']}:{row['key']}] {row['content']}"
+            )
             size = estimate_tokens(line)
             if row["source"] == "reflection" and not reflected:
                 size += estimate_tokens(reflection_header)

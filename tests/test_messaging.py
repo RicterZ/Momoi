@@ -534,7 +534,7 @@ class MessagingTest(unittest.TestCase):
                 "plan_adjustment": {
                     "reason": "工具结果推翻了旧引用",
                     "corrected_direction": "改为处理当前Goal",
-                    "resolved_context_needs": ["conversation_search"],
+                    "resolved_context_needs": ["episode_search"],
                 },
                 "mood": {"decision": "unchanged"},
             }
@@ -776,6 +776,98 @@ class MessagingTest(unittest.TestCase):
 
 
 class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
+    async def test_consecutive_similar_send_message_is_skipped_with_warning(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(
+                AppConfig(
+                    llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
+                    channel=NapCatConfig(
+                        "ws://127.0.0.1", "20000", 0.01, 60, 30, 30, 20
+                    ),
+                    system_prompt="You are Momoi.",
+                    recent_raw_tokens=1000,
+                    recent_turns=2,
+                    memory_results=2,
+                    memory_tokens=1000,
+                    database=Path(directory) / "momoi.sqlite3",
+                    log_level="INFO",
+                )
+            )
+
+            class Provider:
+                calls = 0
+                warning = ""
+
+                async def complete(
+                    self,
+                    _: object,
+                    messages: list[dict[str, object]],
+                    *__: object,
+                    **___: object,
+                ) -> ProviderResponse:
+                    self.calls += 1
+                    if self.calls == 1:
+                        call = ToolCall(
+                            "first-message",
+                            "send_message",
+                            {
+                                "messages": [
+                                    "嗝得这么响亮，这顿吃得超满意嘛",
+                                    "吃饱了就好，下午接着瘫着养精神",
+                                ]
+                            },
+                        )
+                    elif self.calls == 2:
+                        call = ToolCall(
+                            "similar-message",
+                            "send_message",
+                            {
+                                "messages": [
+                                    "嗝得这么响，看来这顿很满意嘛",
+                                    "吃饱了就好，下午接着舒服瘫着",
+                                ]
+                            },
+                        )
+                    else:
+                        self.warning = json.dumps(messages[-1], ensure_ascii=False)
+                        call = ToolCall(
+                            "close-after-warning",
+                            "end_turn",
+                            {
+                                "reply_wait": {"wait": False},
+                                "mood": {"decision": "unchanged"},
+                                "activity": {"decision": "unchanged"},
+                            },
+                        )
+                    return ProviderResponse([], [call])
+
+            provider = Provider()
+            daemon.provider = with_context_planner(provider)  # type: ignore[assignment]
+            event = IncomingMessage("qq:similar", "similar", "吃完饭啦", 1, 1)
+            daemon.store.add_event(event)
+            turn_id = daemon._turn_id(event.event_id)
+            daemon.store.begin_turn(turn_id, "owner", [event.event_id])
+            await daemon._complete_batch([event], turn_id)
+
+            self.assertEqual(provider.calls, 3)
+            self.assertIn("A very similar message was already sent.", provider.warning)
+            self.assertIn("skipped", provider.warning)
+            self.assertEqual(
+                [
+                    str(row["text"])
+                    for row in daemon.store._db.execute(
+                        "SELECT text FROM outbox ORDER BY id"
+                    ).fetchall()
+                ],
+                [
+                    "嗝得这么响亮，这顿吃得超满意嘛",
+                    "吃饱了就好，下午接着瘫着养精神",
+                ],
+            )
+            daemon.store.close()
+
     async def test_outbox_waits_only_between_messages_in_the_same_turn(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
@@ -1108,6 +1200,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             daemon = MomoiDaemon(config)
             daemon.store.add_emotion("happy-1", asset, "真心高兴或庆祝时使用")
             daemon.store.add_emotion("proud-1", second_asset, "得意收尾时使用")
+            case = self
 
             class Provider:
                 def __init__(self) -> None:
@@ -1126,6 +1219,9 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                     self.messages = messages
                     self.calls += 1
                     if self.calls > 1:
+                        case.assertIn(
+                            "committed", json.dumps(messages[-1], ensure_ascii=False)
+                        )
                         call = ToolCall(
                             "emotion-close",
                             "end_turn",

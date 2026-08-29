@@ -15,18 +15,21 @@ from ..memory_tools import MEMORY_TOOL_SPECS
 from ..models import AgentReply, IncomingMessage, ProviderResponse, TurnDraft
 from ..provider import ProviderError
 from ..reply_wait import REPLY_FOLLOWUP_RETRY_SECONDS
-from ..storage import estimate_tokens, truncate_tokens
+from ..storage import (
+    estimate_tokens,
+    truncate_tokens,
+)
 from ..text_replacement import cyber_keyword_pre_hook
 from .context_assembler import (
     assemble_main_context,
     assemble_compact_recent_conversation,
+    assemble_recent_external_events,
     assemble_recent_turns,
     assemble_recent_webhook_activity,
     assemble_recent_conversation,
     build_plan_retrieval,
     project_recent_turns_for_owner,
     recall_episode_context,
-    recall_episode_context_parts,
 )
 from .context_service import (
     _heartbeat_activity_lines,
@@ -37,16 +40,29 @@ from .context_service import (
     _pending_owner_reply_lines,
     _reply_wait_message_lines,
 )
+from .memory_maintenance import (
+    MEMORY_MAINTENANCE_RUN_VERSION,
+    MEMORY_MAINTENANCE_FINISH_SPEC,
+    build_atomic_memory_groups,
+    filter_owner_evidence_for_memories,
+    memory_maintenance_correction,
+    pack_memory_groups,
+    parse_memory_maintenance_result,
+    render_memory_maintenance_request,
+    select_daily_memory_seed_ids,
+)
 from .parsing import parse_reflection_finish
 from .protocol import (
     AUTONOMOUS_FINISH_SPEC,
     CURL_TOOL_SPEC,
-    REFLECTION_FINISH_SPEC,
     END_TURN_TOOL_SPEC,
+    READ_TOOL_RESULT_SPEC,
+    REFLECTION_FINISH_SPEC,
     heartbeat_end_turn_tool_spec,
 )
 from .turn_support import (
     ExternalToolTurnError,
+    MEMORY_MAINTENANCE_SYSTEM_PROMPT,
     OwnerMessagesChanged,
     TurnBudgetExceeded,
     REFLECTION_PROMPT_PATH,
@@ -55,6 +71,7 @@ from .turn_support import (
     WEBHOOK_SYSTEM_PROMPT,
     conversation_guidance as _conversation_guidance,
     live_prompt as _live_prompt,
+    pack_owner_context as _pack_owner_context,
     pack_user_context as _pack_user_context,
     provider_failure_message as _provider_failure_message,
     reconciliation_message as _reconciliation_message,
@@ -203,7 +220,7 @@ class TurnOrchestrator:
         content: list[dict[str, Any]] = [
             {
                 "type": "text",
-                "text": _pack_user_context(
+                "text": _pack_owner_context(
                     ("long_term_memories", recalled["long_term_memories"]),
                     ("recent_memories", recalled["recent_memories"]),
                     ("recall_memories", recalled["recall_memories"]),
@@ -212,8 +229,11 @@ class TurnOrchestrator:
                     ("active_goals", recalled["goals"]),
                     ("recent_turn_base", recalled["recent_turn_base"]),
                     ("recent_turn_append", recalled["recent_turn_append"]),
+                    (
+                        "recent_external_events",
+                        recalled["recent_external_events"],
+                    ),
                     ("episode_directory", recalled["episodes"]),
-                    ("recalled_turns", recalled["recalled_turns"]),
                     (
                         "interrupted_reply_expectation",
                         self.store.cooled_reply_expectation_context(),
@@ -274,7 +294,7 @@ class TurnOrchestrator:
             for item in recent_turn_records.get("turns") or []
             if isinstance(item, dict) and item.get("turn_id")
         }
-        episodes, recalled_turns = recall_episode_context_parts(
+        episodes = recall_episode_context(
             self.store,
             prompt,
             self.config.summary_results,
@@ -317,12 +337,15 @@ class TurnOrchestrator:
                 recent_conversation,
             ),
             ("recent_turns", recent_turns),
+            (
+                "recent_external_events",
+                assemble_recent_external_events(self.store),
+            ),
             ("episode_directory", episodes),
             ("long_term_memories", long_term_memories),
             ("recent_memories", recent_memories),
             ("recall_memories", memories),
             ("reflection_memories", learned),
-            ("recalled_turns", recalled_turns),
             ("webhook_activity", assemble_recent_webhook_activity(self.store)),
         )
         system = [
@@ -351,6 +374,7 @@ class TurnOrchestrator:
             [
                 self._send_message_tool_spec(channel.name),
                 *self._announced_tool_specs([CURL_TOOL_SPEC], mcp=False),
+                READ_TOOL_RESULT_SPEC,
                 END_TURN_TOOL_SPEC,
             ],
             [],
@@ -759,6 +783,326 @@ class TurnOrchestrator:
             self.store.release_reflection(local_date, type(error).__name__, 900)
             self.agenda_changed.set()
 
+    async def _complete_memory_maintenance_turn(
+        self, turn_id: str, stop: asyncio.Event
+    ) -> None:
+        if stop.is_set() or not self.store.claim_memory_maintenance_turn(turn_id):
+            return
+        try:
+            batches = 0
+            changes = 0
+            while not stop.is_set():
+                (
+                    completed,
+                    batch_changes,
+                    defer_reason,
+                ) = await self._run_memory_maintenance_batch(turn_id)
+                if defer_reason:
+                    self.store.release_memory_maintenance_turn(
+                        turn_id, defer_reason
+                    )
+                    log_event(
+                        logger,
+                        logging.WARNING,
+                        "memory_maintenance_protocol_deferred",
+                        stage="memory_maintenance",
+                        turn_id=turn_id,
+                        reason=defer_reason,
+                    )
+                    self.agenda_changed.set()
+                    return
+                if completed:
+                    break
+                batches += 1
+                changes += batch_changes
+            self.store.complete_background_turn(turn_id)
+            log_event(
+                logger,
+                logging.INFO,
+                "turn_complete",
+                stage="memory_maintenance",
+                turn_id=turn_id,
+                batches=batches,
+                changes=changes,
+            )
+        except asyncio.CancelledError:
+            self.store.release_memory_maintenance_turn(turn_id, "cancelled")
+            raise
+        except Exception as error:
+            self.store.release_memory_maintenance_turn(
+                turn_id, type(error).__name__
+            )
+            log_event(
+                logger,
+                logging.ERROR,
+                "turn_failure",
+                stage="memory_maintenance",
+                turn_id=turn_id,
+                error_type=type(error).__name__,
+                exc_info=True,
+            )
+            self.agenda_changed.set()
+
+    async def _run_memory_maintenance_batch(
+        self, turn_id: str
+    ) -> tuple[bool, int, str | None]:
+        journal = self.store.memory_maintenance_journal(turn_id)
+        plan = next(
+            (
+                item
+                for item in journal
+                if item.get("item_type") == "memory_maintenance_plan"
+            ),
+            None,
+        )
+        if plan is None:
+            previous = self.store.latest_memory_maintenance_completion() or {}
+            snapshot_at = time.time()
+            evidence_through = self.store.latest_owner_event_marker(
+                through=snapshot_at
+            )
+            plan = {
+                "mode": (
+                    "delta"
+                    if self.store.memory_maintenance_bootstrap_complete()
+                    else "bootstrap"
+                ),
+                "snapshot_at": snapshot_at,
+                "memory_after": float(previous.get("snapshot_at") or 0),
+                "evidence_after_at": float(
+                    previous.get("evidence_through_at") or 0
+                ),
+                "evidence_after_id": str(
+                    previous.get("evidence_through_id") or ""
+                ),
+                "evidence_through_at": evidence_through[0],
+                "evidence_through_id": evidence_through[1],
+                "source_ids": self.store.memory_maintenance_source_ids(turn_id),
+            }
+            self.store.append_turn_journal(
+                turn_id,
+                "memory_maintenance_plan",
+                plan,
+            )
+            journal = self.store.memory_maintenance_journal(turn_id)
+
+        inventory = self.store.maintenance_memory_inventory()
+        by_id = {int(item["id"]): item for item in inventory}
+        evidence_through = (
+            float(plan.get("evidence_through_at") or 0),
+            str(plan.get("evidence_through_id") or ""),
+        )
+        evidence = self.store.memory_maintenance_owner_evidence(
+            after_at=float(plan.get("evidence_after_at") or 0),
+            after_id=str(plan.get("evidence_after_id") or ""),
+            through_at=evidence_through[0],
+            through_id=evidence_through[1],
+        )
+        if plan.get("mode") == "bootstrap":
+            seed_ids = set(by_id)
+        else:
+            changed_ids = self.store.memory_maintenance_changed_ids(
+                after=float(plan.get("memory_after") or 0),
+                through=float(plan.get("snapshot_at") or time.time()),
+            )
+            seed_ids = select_daily_memory_seed_ids(
+                inventory, evidence, changed_ids
+            )
+
+        completed_ids: set[int] = set()
+        forced_groups: list[list[int]] = []
+        for item in journal:
+            if item.get("item_type") != "memory_maintenance_batch":
+                continue
+            completed_ids.update(
+                int(memory_id)
+                for memory_id in item.get(
+                    "completed_ids", item.get("reviewed_ids", [])
+                )
+            )
+            for request in item.get("regroup_requests", []):
+                if not isinstance(request, dict):
+                    continue
+                group = [
+                    *request.get("anchor_ids", []),
+                    *request.get("include_ids", []),
+                ]
+                if group:
+                    forced_groups.append([int(memory_id) for memory_id in group])
+        forced_groups = [
+            group
+            for group in forced_groups
+            if not set(group).issubset(completed_ids)
+        ]
+        forced_ids = {memory_id for group in forced_groups for memory_id in group}
+        completed_ids -= forced_ids
+        seed_ids = (seed_ids - completed_ids) | forced_ids
+
+        groups = build_atomic_memory_groups(
+            inventory,
+            seed_ids,
+            forced_groups=forced_groups,
+        )
+        if not groups:
+            self.store.append_turn_journal(
+                turn_id,
+                "memory_maintenance_complete",
+                {
+                    "mode": str(plan.get("mode") or "delta"),
+                    "snapshot_at": float(plan.get("snapshot_at") or time.time()),
+                    "evidence_through_at": evidence_through[0],
+                    "evidence_through_id": evidence_through[1],
+                },
+            )
+            return True, 0, None
+
+        batches = pack_memory_groups(
+            groups,
+            by_id,
+            max(1000, min(12000, self.config.max_input_tokens // 4)),
+        )
+        mutable_ids = batches[0]
+        mutable = {memory_id: by_id[memory_id] for memory_id in mutable_ids}
+        evidence_by_event = {
+            str(item["event_id"]): item
+            for item in filter_owner_evidence_for_memories(
+                evidence, list(mutable.values())
+            )
+        }
+        for item in self.store.memory_maintenance_evidence_for_memories(
+            mutable_ids
+        ):
+            evidence_by_event.setdefault(str(item["event_id"]), item)
+        evidence = list(evidence_by_event.values())
+        context = [
+            item
+            for item in inventory
+            if item["activation"] == "always" and int(item["id"]) not in mutable
+        ][:16]
+        request = render_memory_maintenance_request(
+            mutable_memories=list(mutable.values()),
+            context_memories=context,
+            memory_directory=inventory,
+            owner_evidence=evidence,
+            topic_context="",
+        )
+        owner_marker = self.store.latest_owner_event_marker()
+        batch_round = 1 + sum(
+            item.get("item_type")
+            in {
+                "memory_maintenance_batch",
+            }
+            for item in journal
+        )
+        messages: list[dict[str, Any]] = [{"role": "user", "content": request}]
+        evidence_by_id = {
+            str(item["event_id"]): str(item["content"]) for item in evidence
+        }
+        decision: dict[str, Any] | None = None
+        error = "invalid_memory_maintenance_result"
+        for protocol_round in range(1, 4):
+            call_id = new_trace_id()
+            with log_context(
+                stage="memory_maintenance",
+                turn_id=turn_id,
+                call_id=call_id,
+                round=batch_round,
+                protocol_round=protocol_round,
+            ):
+                response = await self.provider.complete(
+                    MEMORY_MAINTENANCE_SYSTEM_PROMPT,
+                    messages,
+                    [MEMORY_MAINTENANCE_FINISH_SPEC],
+                    require_tool=True,
+                )
+            if (
+                len(response.tool_calls) == 1
+                and response.tool_calls[0].name == "memory_maintenance_finish"
+            ):
+                arguments = response.tool_calls[0].arguments
+                decision, error = parse_memory_maintenance_result(
+                    arguments,
+                    mutable_memories=mutable,
+                    context_ids={int(item["id"]) for item in context},
+                    directory_ids=set(by_id),
+                    owner_evidence=evidence_by_id,
+                )
+            else:
+                arguments = {}
+                error = "memory_maintenance_finish_must_be_the_only_terminal_tool"
+            metrics = response.usage or {}
+            self.store.record_turn_usage(
+                turn_id,
+                int(
+                    metrics.get(
+                        "input",
+                        estimate_tokens(
+                            MEMORY_MAINTENANCE_SYSTEM_PROMPT
+                            + json.dumps(messages, ensure_ascii=False, default=str)
+                        ),
+                    )
+                ),
+                int(
+                    metrics.get(
+                        "output",
+                        estimate_tokens(
+                            json.dumps(arguments, ensure_ascii=False, default=str)
+                        ),
+                    )
+                ),
+            )
+            if decision is not None:
+                break
+            messages.append({"role": "assistant", "content": response.content})
+            correction = memory_maintenance_correction(
+                error or "invalid_memory_maintenance_result"
+            )
+            if response.tool_calls:
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": [
+                            _tool_error_block(
+                                call.id,
+                                correction,
+                            )
+                            for call in response.tool_calls
+                        ],
+                    }
+                )
+            else:
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "[Trusted runtime protocol error. "
+                            + correction
+                            + "]"
+                        ),
+                    }
+                )
+        if decision is None:
+            return False, 0, error or "invalid memory maintenance result"
+        self.store.apply_memory_maintenance_batch(
+            turn_id,
+            decision,
+            mutable,
+            owner_marker=owner_marker,
+        )
+        log_event(
+            logger,
+            logging.INFO,
+            "memory_maintenance_applied",
+            stage="memory_maintenance",
+            turn_id=turn_id,
+            mutable_ids=sorted(mutable),
+            reviewed_ids=decision["reviewed_ids"],
+            changes=safe_preview(decision["changes"], 6000),
+            regroup_requests=decision["regroup_requests"],
+            summary=safe_preview(decision["summary"], 500),
+        )
+        return False, len(decision["changes"]), None
+
     def _heartbeat_retry_delay(self, claim_kind: str = "") -> float:
         pending = self.store.pending_owner_reply()
         if claim_kind != "reply" or not pending:
@@ -825,7 +1169,7 @@ class TurnOrchestrator:
             )
         if reconciliation_control:
             directives.append(reconciliation_control)
-        current_text = _pack_user_context(
+        current_text = _pack_owner_context(
             ("long_term_memories", recalled["long_term_memories"]),
             ("recent_memories", recalled["recent_memories"]),
             ("recall_memories", recalled["recall_memories"]),
@@ -834,8 +1178,8 @@ class TurnOrchestrator:
             ("active_goals", recalled["goals"]),
             ("recent_turn_base", recalled["recent_turn_base"]),
             ("recent_turn_append", recalled["recent_turn_append"]),
+            ("recent_external_events", recalled["recent_external_events"]),
             ("episode_directory", recalled["episodes"]),
-            ("recalled_turns", recalled["recalled_turns"]),
             (
                 "interrupted_reply_expectation",
                 self.store.cooled_reply_expectation_context(),
@@ -1135,12 +1479,12 @@ class TurnOrchestrator:
             ),
             ("recent_turn_base", recalled["recent_turn_base"]),
             ("recent_turn_append", recalled["recent_turn_append"]),
+            ("recent_external_events", recalled["recent_external_events"]),
             ("episode_directory", recalled["episodes"]),
             ("long_term_memories", recalled["long_term_memories"]),
             ("recent_memories", recalled["recent_memories"]),
             ("recall_memories", recalled["recall_memories"]),
             ("reflection_memories", recalled["reflection_memories"]),
-            ("recalled_turns", recalled["recalled_turns"]),
         )
         system = [
             *self._system(),
@@ -1253,6 +1597,12 @@ class TurnOrchestrator:
         )
 
     async def _complete_reflection(self, local_date: str, turn_id: str) -> None:
+        maintenance_turn_id = self._turn_id(
+            "memory-maintenance",
+            MEMORY_MAINTENANCE_RUN_VERSION,
+            "reflection",
+            turn_id,
+        )
         source = self.store.reflection_source(
             local_date,
             self.config.notifications.timezone,
@@ -1278,14 +1628,11 @@ class TurnOrchestrator:
             self.config.memory_results,
             self.config.memory_tokens,
         )
-        always_inventory = self.store.always_memory_inventory()
-        always_memory_ids = {int(item["id"]) for item in always_inventory}
         open_conversations = self.store.open_conversation_inventory()
         open_episode_ids = {str(item["id"]) for item in open_conversations}
         recent_memories = self.store.recent_memory_context(
             max(100, self.config.memory_tokens // 8)
         )
-        recent_memory_inventory = self.store.recent_memory_inventory_context()
         episodes = recall_episode_context(
             self.store,
             query,
@@ -1314,10 +1661,8 @@ class TurnOrchestrator:
                 _heartbeat_self_state_lines(self.store.self_state_context()),
             ),
             ("episode_directory", episodes),
-            ("always_memory_inventory", self.store.always_memory_inventory_context()),
             ("open_conversations", self.store.open_conversation_inventory_context()),
             ("recent_memories", recent_memories),
-            ("recent_memory_inventory", recent_memory_inventory),
             ("recall_memories", confirmed_memory),
             ("reflection_memories", learned),
             ("reflection_scope", reflection_scope),
@@ -1402,13 +1747,7 @@ class TurnOrchestrator:
                     reflection_evidence,
                     owner_source,
                     knowledge_source,
-                    always_memory_ids,
                     open_episode_ids,
-                    {
-                        int(item["id"])
-                        for item in self.store.list_memories(32)
-                        if item.get("activation") == "recent"
-                    },
                 )
                 if decision is not None:
                     self._commit_reflection_state(
@@ -1416,10 +1755,10 @@ class TurnOrchestrator:
                         turn_id,
                         decision["summary"],
                         decision["memories"],
-                        decision["always_memory_actions"],
                         decision["conversation_actions"],
-                        decision["recent_memory_actions"],
+                        maintenance_turn_id,
                     )
+                    self._enqueue_memory_maintenance(maintenance_turn_id)
                     self.agenda_changed.set()
                     if self.config.episode_annealing.enabled:
                         self.episode_annealing_requested.set()
@@ -1433,7 +1772,6 @@ class TurnOrchestrator:
                         round=reflection_round,
                         local_date=local_date,
                         memories=len(decision["memories"]),
-                        always_memory_actions=len(decision["always_memory_actions"]),
                         conversation_actions=len(decision["conversation_actions"]),
                     )
                     return
@@ -1496,7 +1834,7 @@ class TurnOrchestrator:
             for item in goal_turn_records.get("turns") or []
             if isinstance(item, dict) and item.get("turn_id")
         }
-        episodes, recalled_turns = recall_episode_context_parts(
+        episodes = recall_episode_context(
             self.store,
             memory_query,
             self.config.summary_results,
@@ -1559,12 +1897,15 @@ class TurnOrchestrator:
             ),
             ("recent_turns", recent_turns),
             ("recent_conversation", recent_conversation),
+            (
+                "recent_external_events",
+                assemble_recent_external_events(self.store),
+            ),
             ("episode_directory", episodes),
             ("long_term_memories", long_term_memories),
             ("recent_memories", recent_memories),
             ("recall_memories", memories),
             ("reflection_memories", learned),
-            ("recalled_turns", recalled_turns),
         )
         messages: list[dict[str, Any]] = [
             {
@@ -1595,6 +1936,7 @@ class TurnOrchestrator:
             *memory_search,
             *agenda_specs,
             OWNER_NOTIFY_SPEC,
+            READ_TOOL_RESULT_SPEC,
             *(self._self_directed_tool_specs() if agent_owned else BUILTIN_TOOL_SPECS),
             *([] if agent_owned else self.mcp.tool_specs),
             AUTONOMOUS_FINISH_SPEC,

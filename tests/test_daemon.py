@@ -187,6 +187,7 @@ class DaemonTest(unittest.TestCase):
             self.assertIn("advisory `heartbeat_handoff`", rendered)
             self.assertIn("A `rest` plan is complete", rendered)
             self.assertIn("follows the shared Style Card", rendered)
+            self.assertNotIn("<recalled_turns>", rendered)
             heartbeat.unlink()
             self.assertNotIn(
                 "# Workspace heartbeat guidance", daemon._heartbeat_system_prompt()
@@ -314,9 +315,9 @@ class DaemonTest(unittest.TestCase):
         self.assertIn("give each its own item in spoken order", system)
         self.assertIn("timing, impulse, and conversational rhythm", system)
         self.assertIn("fragment, a partial thought", system)
-        self.assertIn("it does not plan any bubble", system)
-        self.assertIn("choose the wording, number and order of bubbles", system)
-        self.assertIn("whether a fitting catalog reaction asset", system)
+        self.assertIn("You own every concrete response choice", system)
+        self.assertIn("wording, number and order of bubbles", system)
+        self.assertIn("optional catalog reaction assets", system)
         self.assertNotIn("one complete non-empty message", system)
         self.assertIn(
             "`<recent_turn_base>` followed by `<recent_turn_append>`",
@@ -331,7 +332,9 @@ class DaemonTest(unittest.TestCase):
         self.assertNotIn("You are Momoi", system)
         self.assertNotIn("personal maid/agent", system)
         self.assertNotIn("<query_recall>", system)
-        self.assertIn("injected recall memory, Episode, and Turn evidence", system)
+        self.assertIn(
+            "injected recall memory, Episode, and Recent Turn evidence", system
+        )
         self.assertIn("recall-then-public-web fallback", system)
         self.assertIn("apparently private nickname", system)
         self.assertIn("A name matters when", system)
@@ -339,6 +342,9 @@ class DaemonTest(unittest.TestCase):
         self.assertIn("Social tone does not waive", system)
         self.assertIn("`<recall_status>` reports", system)
         self.assertIn("routing metadata, not factual evidence", system)
+        self.assertIn("Automatic recall is only the first retrieval pass", system)
+        self.assertIn("requiring `episode_search` unless", system)
+        self.assertIn("missing durable facts or preferences", system)
         self.assertIn("A same-name or weakly related hit", system)
         self.assertNotIn("Reply closure — CRITICAL", system)
 
@@ -732,10 +738,11 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             await daemon._receive(first)
             first_deadline = daemon._owner_quiet_until["napcat"]
-            await asyncio.sleep(0.05)
+            await asyncio.sleep(0.075)
             await daemon._receive(OwnerInputStatus("napcat"))
             extended_deadline = daemon._owner_quiet_until["napcat"]
             self.assertGreater(extended_deadline, first_deadline)
+            self.assertLess(extended_deadline - first_deadline, 0.075)
             await asyncio.sleep(
                 max(0.0, first_deadline - asyncio.get_running_loop().time() + 0.01)
             )
@@ -1166,6 +1173,50 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 await daemon.autonomous.get(), AutonomousJob.reflection(local_date)
             )
             self.assertEqual(daemon.store.reflection(local_date)["state"], "running")
+            daemon.store.close()
+
+    async def test_manual_tidy_command_queues_one_persistent_job(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(
+                AppConfig(
+                    llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
+                    channel=NapCatConfig(
+                        "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
+                    ),
+                    system_prompt="test",
+                    recent_raw_tokens=1000,
+                    recent_turns=2,
+                    memory_results=2,
+                    memory_tokens=1000,
+                    database=Path(directory) / "momoi.sqlite3",
+                    log_level="INFO",
+                )
+            )
+            command = IncomingMessage(
+                "qq:manual-tidy",
+                "manual-tidy",
+                "/tidy",
+                1,
+                1,
+                channel="napcat",
+            )
+            await daemon._receive(command)
+            await daemon._receive(command)
+
+            queued = await daemon.autonomous.get()
+            self.assertEqual(queued.kind, "memory_maintenance")
+            self.assertTrue(daemon.autonomous.empty())
+            self.assertEqual(
+                daemon.store.pending_memory_maintenance_turn(), queued.id
+            )
+            self.assertTrue(
+                daemon.store.claim_memory_maintenance_turn(queued.id)
+            )
+            self.assertEqual(
+                daemon.store.recover_memory_maintenance_turns(),
+                [queued.id],
+            )
+            self.assertEqual(daemon.store.pending_events(), [])
             daemon.store.close()
 
     async def test_reply_heartbeat_turn_uses_reply_check_schedule(self) -> None:
@@ -2157,6 +2208,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             daemon = MomoiDaemon(config)
             self.assertTrue((Path(directory) / "artifacts").is_dir())
+            self.assertTrue((Path(directory) / "tool-results").is_dir())
             daemon.store.create_episode(
                 "最近的聊天话题",
                 topics=["聊天"],
@@ -2216,8 +2268,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             raise AssertionError(__)
                         expected = {
                             "memory_search",
-                            "conversation_search",
-                            "conversation_read",
+                            "episode_search",
+                            "episode_read",
                             "memory_remember",
                             "memory_forget",
                             "thinking_search",
@@ -2230,6 +2282,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "read_file",
                             "list_dir",
                             "write_file",
+                            "read_tool_result",
                             "tool_enable",
                             "send_message",
                             "end_turn",
@@ -2525,6 +2578,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "activity": {
                                     "intent": "浏览微博关注流",
                                     "reason": "看看最近感兴趣的动态",
+                                    "recall_mode": "search",
                                     "recall_queries": [
                                         "微博登录过期 | 刷微博遇到错误"
                                     ],
@@ -3330,6 +3384,12 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 log_level="INFO",
             )
             daemon = MomoiDaemon(config)
+            daemon.store.queue_progress(
+                "old-napcat-turn", "old-napcat-call", ["仍在排队"], "napcat"
+            )
+            daemon.store.queue_progress(
+                "old-weixin-turn", "old-weixin-call", ["微信仍在排队"], "weixin"
+            )
             daemon._active_turn = asyncio.create_task(asyncio.sleep(3600))
             command = IncomingMessage("qq:1:stop", "stop", "/stop", 1, 1)
             await daemon._receive(command)
@@ -3337,6 +3397,14 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 await daemon._active_turn
             self.assertEqual((await daemon.incoming.get()).text, "/stop")
             self.assertEqual(daemon.store.pending_events()[0].text, "/stop")
+            states = {
+                row["target_channel"]: row["state"]
+                for row in daemon.store._db.execute(
+                    "SELECT target_channel, state FROM outbox ORDER BY id"
+                ).fetchall()
+            }
+            self.assertEqual(states["napcat"], "superseded")
+            self.assertEqual(states["weixin"], "pending")
             daemon.store.close()
 
     async def test_stop_cancels_autonomous_turn_and_defers_goal(self) -> None:

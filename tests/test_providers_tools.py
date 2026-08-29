@@ -267,7 +267,19 @@ class ProvidersToolsTest(unittest.TestCase):
             daemon = MomoiDaemon(config)
             call = ToolCall("large", "read_file", {"path": "/tmp/x"})
             result = daemon._normalize_tool_result(
-                call, {"ok": True, "content": "x" * 5000}, "builtin"
+                call,
+                {
+                    "ok": True,
+                    "path": "/tmp/x",
+                    "start_line": 1,
+                    "end_line": 1,
+                    "total_lines": 1,
+                    "sha256": "file-sha",
+                    "content_offset": 0,
+                    "next_content_offset": None,
+                    "content": "x" * 5000,
+                },
+                "builtin",
             )
             self.assertEqual(result["ok"], True)
             self.assertIsNone(result["error"])
@@ -275,9 +287,35 @@ class ProvidersToolsTest(unittest.TestCase):
             self.assertEqual(
                 result["provenance"], {"source": "builtin", "tool": "read_file"}
             )
-            self.assertEqual(len(result["content"]), 1000)
+            self.assertEqual(result["path"], "/tmp/x")
+            self.assertEqual(result["start_line"], 1)
+            self.assertEqual(result["end_line"], 1)
+            self.assertEqual(result["total_lines"], 1)
+            self.assertEqual(result["sha256"], "file-sha")
+            self.assertEqual(result["content_offset"], 0)
+            self.assertEqual(
+                result["next_content_offset"], len(result["content"])
+            )
+            self.assertGreater(len(result["content"]), 0)
+            self.assertLess(len(result["content"]), 1000)
+            self.assertLessEqual(
+                len(json.dumps(result, ensure_ascii=False)),
+                config.tool_result_max_chars,
+            )
             repeated = daemon._normalize_tool_result(
-                call, {"ok": True, "content": "x" * 5000}, "builtin"
+                call,
+                {
+                    "ok": True,
+                    "path": "/tmp/x",
+                    "start_line": 1,
+                    "end_line": 1,
+                    "total_lines": 1,
+                    "sha256": "file-sha",
+                    "content_offset": 0,
+                    "next_content_offset": None,
+                    "content": "x" * 5000,
+                },
+                "builtin",
             )
             self.assertEqual(result, repeated)
             failed = daemon._normalize_tool_result(
@@ -294,6 +332,58 @@ class ProvidersToolsTest(unittest.TestCase):
                 failed["message"],
                 "The patch context did not match the file.",
             )
+            self.assertIn("result_ref", failed)
+            daemon.store.close()
+
+    def test_large_mcp_result_is_snapshotted_and_can_be_read_exactly(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            config = AppConfig(
+                llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
+                channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                system_prompt="You are Momoi.",
+                recent_raw_tokens=1000,
+                recent_turns=2,
+                memory_results=2,
+                memory_tokens=1000,
+                database=Path(directory) / "momoi.sqlite3",
+                log_level="INFO",
+                tool_result_max_chars=1000,
+            )
+            daemon = MomoiDaemon(config)
+            raw = {"ok": True, "items": [{"text": "原文" * 1000}]}
+            call = ToolCall("large", "mcp__demo__search", {"query": "x"})
+            first = daemon._normalize_tool_result(call, raw, "mcp")
+            self.assertTrue(first["truncated"])
+            self.assertTrue(first["result_ref"].startswith("tr_"))
+            self.assertTrue(
+                (daemon._tool_result_root() / f"{first['result_ref']}.json").is_file()
+            )
+            chunks = [str(first["content"])]
+            cursor = first["next_cursor"]
+            while cursor is not None:
+                result = daemon.tool_results.read(
+                    first["result_ref"],
+                    cursor,
+                    max_chars=config.tool_result_max_chars,
+                    provenance={"source": "runtime", "tool": "read_tool_result"},
+                )
+                self.assertTrue(result["ok"], result)
+                chunks.append(str(result["content"]))
+                cursor = result["next_cursor"]
+            expected = json.dumps(
+                {
+                    "ok": True,
+                    "error": None,
+                    "truncated": False,
+                    "provenance": {
+                        "source": "mcp",
+                        "tool": "mcp__demo__search",
+                    },
+                    "items": raw["items"],
+                },
+                ensure_ascii=False,
+            )
+            self.assertEqual("".join(chunks), expected)
             daemon.store.close()
 
     def test_openai_message_adapter_preserves_image_blocks(self) -> None:
@@ -429,6 +519,27 @@ class ProvidersToolsTest(unittest.TestCase):
 
 
 class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
+    async def test_mcp_result_reaches_normalization_without_pretruncation(self) -> None:
+        class Result:
+            isError = False
+
+            def model_dump(self, **_: object) -> dict[str, object]:
+                return {"content": [{"type": "text", "text": "x" * 40_000}]}
+
+        class Session:
+            async def call_tool(
+                self, _tool: str, _arguments: dict[str, object]
+            ) -> Result:
+                return Result()
+
+        manager = MCPManager(None)
+        manager._sessions["demo"] = Session()  # type: ignore[assignment]
+        response = await manager._invoke("demo", "large", {})
+        payload = response["result"]
+        self.assertIsInstance(payload, dict)
+        self.assertFalse(response["truncated"])
+        self.assertEqual(len(payload["content"][0]["text"]), 40_000)
+
     async def test_openai_provider_dumps_final_request_at_trace(self) -> None:
         requests: list[dict[str, object]] = []
 
@@ -1449,6 +1560,20 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                     ToolCall("read-1", "read_file", {"path": "note.txt"})
                 )
                 self.assertEqual(read["content"], "old\n")
+                self.assertEqual(read["content_offset"], 0)
+                self.assertIsNone(read["next_content_offset"])
+                path.write_text("first\nsecond\n", encoding="utf-8")
+                continued = await workspace_tools.execute(
+                    ToolCall(
+                        "read-2",
+                        "read_file",
+                        {"path": "note.txt", "content_offset": 3},
+                    )
+                )
+                self.assertEqual(continued["content"], "st\nsecond\n")
+                self.assertEqual(continued["content_offset"], 3)
+                self.assertEqual(continued["start_line"], 1)
+                path.write_text("old\n", encoding="utf-8")
                 listed = await workspace_tools.execute(
                     ToolCall("list-1", "list_dir", {"path": "."})
                 )

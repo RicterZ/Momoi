@@ -49,10 +49,12 @@ def decorate_tool_spec(spec: dict[str, Any]) -> dict[str, Any]:
         "minLength": 1,
         "maxLength": 300,
         "description": (
-            "Optional natural owner-visible sentence before this tool. On the first "
-            "external-work batch after a new owner request, the first such tool must "
-            "include it unless send_message already acknowledged the work; later "
-            "rounds may omit it. Use only an evidence-backed reaction, result, "
+            "Conditionally required owner-visible sentence before this tool. The "
+            "first external-work batch after a new owner request MUST include it on "
+            "the first tool unless send_message already acknowledged the work. "
+            "Ordinary assistant content is discarded and does not satisfy this "
+            "requirement. Later tool rounds may omit it. Use only an evidence-backed "
+            "reaction, result, "
             "progress, failure, or route change—not a tool caption, retry narration, "
             "request recap, or promise of success. "
             f"{ANNOUNCE_MARKER} Do not also send_message for the same action."

@@ -29,6 +29,7 @@ Absolute paths are accepted for every path field. `config.json` does not expand
       "effort": "high",
       "stages": {
         "episode_anneal": "low",
+        "memory_maintenance": "low",
         "reply_followup": "low"
       }
     }
@@ -51,7 +52,7 @@ Absolute paths are accepted for every path field. `config.json` does not expand
 | `thinking.stages` | No | `{}` | Reasoning-effort overrides keyed by runtime stage |
 
 Known stage names are `context_plan`, `owner`, `heartbeat_plan`, `heartbeat`,
-`reply_followup`, `goal`, `webhook`, `reflection`, `episode_anneal`, and
+`reply_followup`, `goal`, `webhook`, `reflection`, `memory_maintenance`, `episode_anneal`, and
 `episode_consolidate`. Unknown stages use `thinking.effort`.
 
 ## Inbound speech recognition
@@ -145,8 +146,7 @@ default of one second. Timing and size fields must be positive.
 | `send_timeout_seconds` | `20` | Outbound request timeout |
 | `media_max_bytes` | `104857600` | Maximum inbound or outbound media size |
 
-All fields must be positive. Weixin credentials and state are stored under
-`channel/weixin/` in the workspace.
+All fields must be positive.
 
 ## Context
 
@@ -216,7 +216,8 @@ Set `thinking` to `null` or an empty string to use the database directory.
 {
   "tools": {
     "mcp_config": "mcp.json",
-    "result_max_chars": 30000
+    "result_max_chars": 12000,
+    "result_retention_days": 30
   }
 }
 ```
@@ -224,7 +225,8 @@ Set `thinking` to `null` or an empty string to use the database directory.
 | Field | Default | Description |
 | --- | --- | --- |
 | `mcp_config` | `mcp.json` | MCP server configuration path; `null` or `""` disables MCP loading |
-| `result_max_chars` | `30000` | Maximum normalized tool-result size; minimum `1000` characters |
+| `result_max_chars` | `12000` | Maximum model-visible tool-result chunk size; minimum `1000` characters |
+| `result_retention_days` | `30` | Days to retain private large-result snapshots; `0` disables age-based cleanup |
 
 An MCP server entry in `mcp.json` uses either `command` plus optional `args`,
 `cwd`, and `env`, or a remote `url` plus optional `headers`. The optional fields

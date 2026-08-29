@@ -35,6 +35,9 @@ Rules:
 - Use `continue` only when the Turns clearly belong to the same concrete
   experience, event, discussion, emotional process, or project stage as a supplied
   candidate Episode.
+- Webhook and Heartbeat day Episodes are runtime-owned archives. Treat their
+  Turns as read-only context; owner Turns that develop them belong in a separate
+  topic-specific Episode.
 - Use `new` when one or more consecutive Turns form a meaningful experience worth
   remembering. `key` is a lowercase ASCII slug containing only `a-z`, `0-9`, `_`,
   or `-`.

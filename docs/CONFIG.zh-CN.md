@@ -27,6 +27,7 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
       "effort": "high",
       "stages": {
         "episode_anneal": "low",
+        "memory_maintenance": "low",
         "reply_followup": "low"
       }
     }
@@ -49,7 +50,7 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
 | `thinking.stages` | 否 | `{}` | 按运行阶段覆盖推理强度 |
 
 已知阶段名称为 `context_plan`、`owner`、`heartbeat_plan`、`heartbeat`、
-`reply_followup`、`goal`、`webhook`、`reflection`、`episode_anneal` 和
+`reply_followup`、`goal`、`webhook`、`reflection`、`memory_maintenance`、`episode_anneal` 和
 `episode_consolidate`。未单独配置的阶段使用 `thinking.effort`。
 
 ## 入站语音识别
@@ -142,8 +143,7 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
 | `send_timeout_seconds` | `20` | 出站请求超时时间 |
 | `media_max_bytes` | `104857600` | 入站或出站媒体的最大大小 |
 
-所有字段都必须为正数。微信凭证和状态保存在 workspace 的
-`channel/weixin/` 下。
+所有字段都必须为正数。
 
 ## 上下文
 
@@ -212,7 +212,8 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
 {
   "tools": {
     "mcp_config": "mcp.json",
-    "result_max_chars": 30000
+    "result_max_chars": 12000,
+    "result_retention_days": 30
   }
 }
 ```
@@ -220,7 +221,8 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
 | `mcp_config` | `mcp.json` | MCP 服务器配置路径；`null` 或 `""` 关闭 MCP 加载 |
-| `result_max_chars` | `30000` | 标准化工具结果的最大长度；最小值为 `1000` 个字符 |
+| `result_max_chars` | `12000` | 模型可见的单个工具结果分段最大长度；最小值为 `1000` 个字符 |
+| `result_retention_days` | `30` | 大结果私有快照的保留天数；`0` 关闭按时间清理 |
 
 `mcp.json` 中的 MCP 服务器条目可以使用 `command`，以及可选的 `args`、
 `cwd` 和 `env`；也可以使用远程 `url`，以及可选的 `headers`。下列可选字段

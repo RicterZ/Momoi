@@ -109,9 +109,9 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                     assert "project summary" in request
                     assert "result_trust=untrusted_tool_data" in request
                     assert "<runtime_state>" in request
-                    assert "<always_memory_inventory>" in request
                     assert "<open_conversations>" in request
-                    assert "No always-on owner memories are stored." in request
+                    assert "<always_memory_inventory>" not in request
+                    assert "<recent_memory_inventory>" not in request
                     assert "No open or closing conversations are stored." in request
                     assert (
                         "state=completed ok=true capability=read" in request
@@ -121,9 +121,6 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                         _system, ensure_ascii=False
                     )
                     assert "reusable methodology" in json.dumps(
-                        _system, ensure_ascii=False
-                    )
-                    assert "always_memory_inventory" in json.dumps(
                         _system, ensure_ascii=False
                     )
                     assert "open_conversations" in json.dumps(
@@ -179,6 +176,12 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
 
             daemon.provider = Provider()
             await daemon._complete_reflection_turn("2026-07-21", asyncio.Event())
+            maintenance = await daemon.autonomous.get()
+            self.assertEqual(maintenance.kind, "memory_maintenance")
+            self.assertEqual(
+                daemon.store.pending_memory_maintenance_turn(),
+                maintenance.id,
+            )
             reflection = daemon.store.reflection("2026-07-21")
             self.assertEqual(reflection["state"], "completed")
             self.assertEqual(
@@ -197,10 +200,18 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                 "mcp__gog__gmail_search",
                 daemon.store.reflection_memory_context("gmail", 4, 2000),
             )
+            rendered_reflection = daemon.store.reflection_memory_context(
+                "gmail", 4, 2000
+            )
+            self.assertIn(
+                "may be outdated or no longer applicable", rendered_reflection
+            )
+            self.assertIn("[date=2026-07-21 tool_skill:", rendered_reflection)
             _, ranked_reflection = daemon.store.ranked_memory_context(
                 "gmail", 4, 2000
             )
             self.assertIn("mcp__gog__gmail_search", ranked_reflection)
+            self.assertIn("[date=2026-07-21 tool_skill:", ranked_reflection)
             stored_memories = json.loads(reflection["memories_json"])
             self.assertEqual(stored_memories[2]["kind"], "tool_skill")
             self.assertEqual(
@@ -274,7 +285,6 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIsNone(error)
         self.assertEqual(result["memories"][0]["key"], memory["key"])
-        self.assertEqual(result["always_memory_actions"], [])
 
     def test_methodology_practice_does_not_require_tool_or_owner_evidence(self) -> None:
         result, error = parse_reflection_finish(
@@ -300,132 +310,16 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(error)
         self.assertEqual(result["memories"][0]["kind"], "practice")
 
-    def test_always_memory_actions_are_validated(self) -> None:
-        base = {"summary": "测试", "memories": []}
-        result, error = parse_reflection_finish(
-            {
-                **base,
-                "always_memory_actions": [
-                    {
-                        "memory_id": 1,
-                        "action": "demote_recent",
-                        "reason": "这是当天在公司的状态，不应每轮注入。",
-                    }
-                ],
-            },
-            "",
-            "",
-            "",
-            {1, 2},
-        )
-        self.assertIsNone(error)
-        self.assertEqual(result["always_memory_actions"][0]["action"], "demote_recent")
-
-        _, error = parse_reflection_finish(
-            {
-                **base,
-                "always_memory_actions": [
-                    {
-                        "memory_id": 9,
-                        "action": "forget",
-                        "reason": "过期行程",
-                    }
-                ],
-            },
-            "",
-            "",
-            "",
-            {1, 2},
-        )
-        self.assertEqual(error, "unknown_always_memory")
-
-        result, error = parse_reflection_finish(
-            {
-                **base,
-                "always_memory_actions": [
-                    {
-                        "memory_id": 1,
-                        "action": "merge",
-                        "merge_into_id": 2,
-                        "content": "日常聊天不要用句号，会显得冷淡。",
-                        "reason": "同一条标点偏好，措辞不同。",
-                    }
-                ],
-            },
-            "",
-            "",
-            "",
-            {1, 2},
-        )
-        self.assertIsNone(error)
-        self.assertEqual(
-            result["always_memory_actions"][0]["content"],
-            "日常聊天不要用句号，会显得冷淡。",
-        )
-
-        _, error = parse_reflection_finish(
-            {
-                **base,
-                "always_memory_actions": [
-                    {
-                        "memory_id": 1,
-                        "action": "merge",
-                        "merge_into_id": 2,
-                        "reason": "缺少总结",
-                    }
-                ],
-            },
-            "",
-            "",
-            "",
-            {1, 2},
-        )
-        self.assertEqual(error, "invalid_always_memory_action")
-
-        _, error = parse_reflection_finish(
-            {
-                **base,
-                "always_memory_actions": [
-                    {
-                        "memory_id": 1,
-                        "action": "merge",
-                        "merge_into_id": 1,
-                        "content": "同一条",
-                        "reason": "同一条",
-                    }
-                ],
-            },
-            "",
-            "",
-            "",
-            {1, 2},
-        )
-        self.assertEqual(error, "invalid_always_memory_merge")
-
-        _, error = parse_reflection_finish(
-            {
-                **base,
-                "always_memory_actions": [
-                    {
-                        "memory_id": 1,
-                        "action": "merge",
-                        "merge_into_id": 2,
-                        "content": "主人不吃香菜。",
-                        "reason": "重复偏好",
-                    },
-                    {
-                        "memory_id": 2,
-                        "action": "forget",
-                        "reason": "已被合并",
-                    },
-                ],
-            },
-            "",
-            "",
-            "",
-            {1, 2},
-        )
-        self.assertEqual(error, "invalid_always_memory_merge")
+    def test_confirmed_memory_actions_are_rejected(self) -> None:
+        for field in ("always_memory_actions", "recent_memory_actions"):
+            result, error = parse_reflection_finish(
+                {"summary": "测试", "memories": [], field: []},
+                "",
+                "",
+                "",
+            )
+            self.assertIsNone(result)
+            self.assertEqual(error, "invalid_reflection_finish")
 
     def test_conversation_actions_are_validated(self) -> None:
         base = {"summary": "测试", "memories": []}
@@ -443,7 +337,6 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
             "",
             "",
             "",
-            None,
             {"trip-kyoto", "chat-today"},
         )
         self.assertIsNone(error)
@@ -463,7 +356,6 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
             "",
             "",
             "",
-            None,
             {"trip-kyoto"},
         )
         self.assertEqual(error, "unknown_open_conversation")
@@ -482,12 +374,11 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
             "",
             "",
             "",
-            None,
             {"trip-kyoto"},
         )
         self.assertEqual(error, "invalid_conversation_action")
 
-    async def test_daily_reflection_housekeeps_always_memories(self) -> None:
+    async def test_daily_reflection_leaves_confirmed_memories_unchanged(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
                 llm=LLMConfig("http://127.0.0.1", "test", "test", 1000, 0, 1, 0),
@@ -562,6 +453,12 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                     (kind, key, content, f"evt-{key}", evidence, occurred, occurred),
                 )
                 ids[key] = int(cursor.lastrowid)
+            recent_expires_at = 2_000_000_000.0
+            daemon.store._db.execute(
+                """UPDATE memories SET activation='recent', expires_at=?
+                   WHERE id=?""",
+                (recent_expires_at, ids["current.at_office"]),
+            )
             daemon.store._db.commit()
 
             class Provider:
@@ -574,44 +471,15 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                 ) -> ProviderResponse:
                     assert tools == [REFLECTION_FINISH_SPEC]
                     request = json.dumps(_messages, ensure_ascii=False)
-                    assert "<always_memory_inventory>" in request
                     assert "<open_conversations>" in request
-                    assert f"memory_id={ids['food.avoids_cilantro']}" in request
-                    assert "food.no_cilantro" in request
+                    assert "<always_memory_inventory>" not in request
+                    assert "<recent_memory_inventory>" not in request
                     call = ToolCall(
                         "finish-reflection",
                         "reflection_finish",
                         {
-                            "summary": (
-                                "整理了持续生效记忆：合并重复饮食偏好，"
-                                "把当日在岗状态降为近期，阅读偏好改为需要时回忆，"
-                                "并遗忘已结束的旅行。"
-                            ),
+                            "summary": "今天回顾了已经结束的旅行和当前状态。",
                             "memories": [],
-                            "always_memory_actions": [
-                                {
-                                    "memory_id": ids["food.no_cilantro"],
-                                    "action": "merge",
-                                    "merge_into_id": ids["food.avoids_cilantro"],
-                                    "content": "日常聊天不要用句号，会显得冷淡。",
-                                    "reason": "同一条标点偏好，措辞不同。",
-                                },
-                                {
-                                    "memory_id": ids["current.at_office"],
-                                    "action": "demote_recent",
-                                    "reason": "当天在公司加班，不是每轮都该注入的偏好。",
-                                },
-                                {
-                                    "memory_id": ids["hobby.reading"],
-                                    "action": "demote_recall",
-                                    "reason": "稳定爱好，但不必每轮注入。",
-                                },
-                                {
-                                    "memory_id": ids["trip.last_summer"],
-                                    "action": "forget",
-                                    "reason": "旅行早已结束。",
-                                },
-                            ],
                         },
                     )
                     return ProviderResponse(
@@ -634,12 +502,12 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                 (row["kind"], row["key"]): row
                 for row in daemon.store.always_memory_inventory()
             }
-            self.assertEqual(set(always), {("preference", "food.avoids_cilantro")})
+            self.assertEqual(len(always), len(seeds) - 1)
             self.assertEqual(
                 always[("preference", "food.avoids_cilantro")]["content"],
-                "日常聊天不要用句号，会显得冷淡。",
+                "老师希望后续日常回复末尾不使用中文句号。",
             )
-            self.assertFalse(
+            self.assertTrue(
                 daemon.store.has_memory("preference", "food.no_cilantro")
             )
             self.assertEqual(
@@ -649,14 +517,26 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                 ).fetchone()["activation"],
                 "recent",
             )
+            recent_row = daemon.store._db.execute(
+                """SELECT expires_at,updated_at FROM memories WHERE id=?""",
+                (ids["current.at_office"],),
+            ).fetchone()
+            self.assertEqual(recent_row["expires_at"], recent_expires_at)
+            self.assertEqual(recent_row["updated_at"], occurred)
+            self.assertIsNone(
+                daemon.store._db.execute(
+                    """SELECT 1 FROM memory_tombstones
+                       WHERE kind='preference' AND key='current.at_office'"""
+                ).fetchone()
+            )
             self.assertEqual(
                 daemon.store._db.execute(
                     "SELECT activation FROM memories WHERE id=?",
                     (ids["hobby.reading"],),
                 ).fetchone()["activation"],
-                "recall",
+                "always",
             )
-            self.assertFalse(daemon.store.has_memory("episodic", "trip.last_summer"))
+            self.assertTrue(daemon.store.has_memory("episodic", "trip.last_summer"))
             daemon.store.close()
 
     async def test_manual_reflect_overwrites_completed_day(self) -> None:
@@ -741,7 +621,6 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                         {
                             "summary": next(summaries),
                             "memories": next(memories),
-                            "always_memory_actions": [],
                         },
                     )
                     return ProviderResponse(

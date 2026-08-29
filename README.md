@@ -15,7 +15,7 @@ The goal is not to build another question-and-answer bot. The goal is to create 
 Most chatbots are stateless request handlers with a personality prompt attached. Momoi is designed differently:
 
 - **One continuous identity.** Personality, relationship, memory, mood, current activity, and unfinished threads carry across conversations and restarts.
-- **Context before response.** She first understands what this moment is about, then brings back the shared history that matters — not the entire chat log.
+- **Context before response.** She first understands what this moment is about, then brings back the memory and Episodes that matter — not the entire chat log.
 - **Agency, not turn-taking.** She can acknowledge a task, use tools, send useful progress, and continue until the work is complete or genuinely blocked.
 - **Autonomy with restraint.** Goals and heartbeats let her act over time without turning every timer into an unwanted notification.
 - **One life across every channel.** QQ messages, webhooks, scheduled work, and proactive thoughts all reach the same Momoi.
@@ -41,7 +41,7 @@ flowchart TB
     direction LR
     reflection["Daily reflection"]
     memory["Lasting memory"]
-    history["Shared history"]
+    history["Episodes"]
     agenda["Goals"]
   end
   reach --> momoi
@@ -58,7 +58,7 @@ Momoi can be reached in four ways:
 | Goal | Work that must continue later or repeat with fresh reasoning and tools |
 | Heartbeat | A low-priority autonomous Turn to explore, make artifacts, continue her own work, and decide whether to speak |
 
-They share the same identity and relevant context. Conversation, daily reflection, and memory stay with her. A webhook notification should sound like the person you were just talking to, not a separate automation bot.
+They share the same identity and relevant context. Conversation, Episodes, daily reflection, and memory stay with her. A webhook notification should sound like the person you were just talking to, not a separate automation bot.
 
 ### How a moment works
 
@@ -76,7 +76,7 @@ flowchart TB
     direction TB
     you["Your current words"]
     reading["A private reading of this moment"]
-    need["Only the memory and history it needs"]
+    need["Only the memory and Episodes it needs"]
     state["Time, mood, and open work"]
   end
   who --> now
@@ -86,9 +86,46 @@ flowchart TB
 
 **Who she is stays in front of every moment.** The same ground rules, Soul, and speaking style sit there every time. They say who she is, how she talks, and what may count as evidence. Personality cannot override those rules, and recalled memory cannot rewrite who she is.
 
-**This moment is assembled, not dumped.** Recent conversation is already with her. She first privately understands what this moment is about, then brings back only the older memory and shared history it needs. Your current words are the only current intent. Everything else — older chat, shared history, preferences, goals, daily notes, mood — is context she may use, not a new instruction. Your newest correction wins over older memory. What she learned on her own sits lower than what you actually said.
+**This moment is assembled, not dumped.** Recent conversation is already with her. She first privately understands what this moment is about, then brings back only the older memory and shared Episodes it needs. If that first pass missed a person, a shared convention, or an earlier thread, she can look again before she speaks. Your current words are the only current intent. Everything else — older chat, Episode accounts, preferences, goals, daily notes, mood — is context she may use, not a new instruction. Your newest correction wins over older memory. What she learned on her own sits lower than what you actually said.
 
 **Speaking and closing stay separate.** She may send a message, finish the work, or stay quiet, then settle the beat — her mood, what she is doing, and whether she is still waiting. Goals and heartbeats follow the same shape: the same person, a freshly assembled moment, then a decision to speak or not.
+
+### How memory works
+
+Most systems keep a log. Momoi keeps a life: a small set of facts she should treat as true, and a set of shared experiences she can return to.
+
+```mermaid
+flowchart TB
+  subgraph sit["Where a fact sits"]
+    direction LR
+    standing["Standing"]
+    current["Current"]
+    topic["Topic"]
+  end
+  episodes["Shared episodes"]
+  notes["Daily notes"]
+  moment["This moment"]
+  sit --> moment
+  episodes --> moment
+  notes --> moment
+  moment --> back["Only the matching pieces come back"]
+```
+
+A fact has a place, not a volume setting. Saying “remember this” does not make it stand in front of every conversation.
+
+| Place | Best for | How it returns |
+| --- | --- | --- |
+| Standing | How to address you, punctuation, never use emoji | Colors ordinary chat even when the topic is elsewhere |
+| Current | Tonight's plan, this package, where you are | Stays with her while it is still true, then fades |
+| Topic | Device playbooks, game rules, how-to she was asked to keep | Waits until that subject comes back |
+
+Shared conversation settles into **Episodes**. An Episode is one concrete experience — a discussion, a project stage, an emotional beat — not a permanent category such as “software” or “companionship”. She keeps a compact account of what happened and why it mattered. The original messages stay archived; she opens them only when the account is not enough, or when the exact wording, a correction, or an unfinished promise still matters.
+
+**Writing is a judgment, not a reflex.** Ordinary chat, venting, and a correction that only applies to this reply do not need a new write. A lasting fact needs something you actually said. Search results and her own inferences are not that evidence. If you later reverse it, narrow it, or replace the fact itself, the new wording wins; the stale version should not sit beside the correction. When she is on her own time, she still does not write a lasting fact unless it comes from something you actually said.
+
+**Recall is assembled, then checked.** Standing and current facts are already with her. After she privately understands this moment, matching topic facts, daily notes, and Episode accounts come back. That first pass is not proof that everything useful was found. If a recurring person, a shared convention, or an earlier thread is still missing, she can look again before she speaks. Daily notes are her own learning from the day that just ended — useful continuity, never stronger than what you said, the Soul, or a confirmed result.
+
+**The house keeps itself in the quiet hours.** Daily reflection reviews what happened and forms lower-authority learning without sending a message. Confirmed-memory maintenance then applies validated, atomic inventory changes. In the background, unbound conversation can still settle into Episodes, and existing accounts can be quietly refreshed so they stay faithful as a thread continues.
 
 ## Core experience
 
@@ -98,7 +135,7 @@ Momoi follows the rhythm of private chat instead of treating every message as an
 
 ### Context that survives
 
-Momoi carries recent conversation, shared history, stable preferences, ongoing commitments, mood, and activity across ordinary and autonomous moments. Shared experiences settle into lasting threads and come back only when they matter. Durable memory stays grounded in what the owner actually said.
+Momoi carries recent conversation, standing preferences, current situations, topic memories, ongoing commitments, mood, and activity across ordinary and autonomous moments. Shared experiences settle into Episodes and come back as compact accounts when they matter. Durable memory stays grounded in what the owner actually said; her own daily notes sit lower than that.
 
 ### Agentic task execution
 
@@ -116,7 +153,7 @@ Momoi separates different kinds of future behavior:
 | --- | --- | --- |
 | Goal | “Remind me to stretch in one hour” or “Every morning, check the weather” | Wakes at the next review, uses current context and tools when needed, and continues or finishes the task |
 | Heartbeat | Momoi's own activity and initiative | May use allowed tools, create her own Goal, share a useful result, or remain silent |
-| Reflection | Form durable learning each day | Reviews the day that just ended, keeps what should last, and does not send a message |
+| Reflection | Form durable learning each day | Reviews the day that just ended and forms private, lower-authority learning without sending a message |
 | Webhook | An external event happened | Handles the event in Momoi's normal voice, or stays silent when it would add nothing |
 
 Goal and Heartbeat notifications respect quiet hours, cooldowns, and pending owner messages. Silence is a valid decision; Heartbeat is not a scheduled “Are you there?” generator.
@@ -125,6 +162,7 @@ Goal and Heartbeat notifications respect quiet hours, cooldowns, and pending own
 
 - Hold one continuous private conversation across QQ and Weixin
 - Carry relevant context, memories, preferences, and commitments over time
+- Keep shared conversations as Episodes she can return to without rereading everything
 - Use connected tools and services to complete real tasks
 - Manage one-time, continuing, and recurring future work as Goals
 - Respond naturally to external events, or stay quiet when they add nothing
@@ -252,7 +290,7 @@ docker run -d --name momoi --restart unless-stopped \
   -e MOMOI_OWNER_QQ=your-qq-number \
   -v "$HOME/.momoi:/home/momoi/.momoi" \
   -p 8787:8787 -p 8788:8788 \
-  ricterz/momoi:0.3.0
+  ricterz/momoi:0.4.0
 ```
 
 The first start creates `~/.momoi` from the example workspace, points NapCat at `ws://host.docker.internal:3001`, binds webhooks on `0.0.0.0:8787`, and prints the dashboard and webhook tokens in `docker logs momoi`. Open `http://127.0.0.1:8788`. Send a private message from the owner QQ. Replies stay on the channel where the conversation started; proactive messages use `primary`.
@@ -278,7 +316,7 @@ Scan the iLink QR code in the same workspace, then set `MOMOI_PRIMARY=weixin` on
 ```bash
 docker run --rm -it \
   -v "$HOME/.momoi:/home/momoi/.momoi" \
-  ricterz/momoi:0.3.0 channel login weixin
+  ricterz/momoi:0.4.0 channel login weixin
 ```
 
 The login stays in the workspace. You can omit `MOMOI_OWNER_QQ` if you only use Weixin.
@@ -289,7 +327,7 @@ The login stays in the workspace. You can omit `MOMOI_OWNER_QQ` if you only use 
 docker build -t momoi .
 ```
 
-Then use the same `docker run` as above, replacing `ricterz/momoi:0.3.0` with `momoi`. The container home is `/home/momoi`, so keep the `~/.momoi` volume.
+Then use the same `docker run` as above, replacing `ricterz/momoi:0.4.0` with `momoi`. The container home is `/home/momoi`, so keep the `~/.momoi` volume.
 
 ## Personalize Momoi
 
@@ -335,6 +373,7 @@ The example workspace also includes a neutral `url-check-event` workflow that de
 | `/stop` | Cancel the current task |
 | `/heartbeat` | Trigger one autonomous heartbeat immediately |
 | `/reflect` | Trigger one daily reflection for the current local day |
+| `/tidy` | Trigger confirmed-memory maintenance immediately |
 | `/resolve <id> <result>` | Close an uncertain external action after checking the real result |
 | `/resume <id> <current state>` | Continue an uncertain external action from the confirmed state |
 

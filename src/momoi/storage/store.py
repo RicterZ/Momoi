@@ -47,6 +47,7 @@ from .episode_ranking import EpisodeRecallQuery, rank_episode_matches
 from .memory import (
     MemoryStore,
     estimate_tokens,
+    memory_snapshot_fingerprint,
     token_chunk,
     truncate_tokens,
 )
@@ -469,7 +470,21 @@ class Store(MemoryStore, DeliveryStore):
                  AND NOT EXISTS (
                      SELECT 1 FROM episode_turns AS archive_turn
                      WHERE archive_turn.episode_id=conversation_episodes.id
-                       AND archive_turn.turn_id GLOB 'webhook:*'
+                       AND (
+                           archive_turn.turn_id GLOB 'webhook:*'
+                           OR EXISTS (
+                               SELECT 1 FROM turns AS archive_source
+                               WHERE archive_source.id=archive_turn.turn_id
+                                 AND archive_source.kind='autonomous'
+                                 AND EXISTS (
+                                     SELECT 1
+                                     FROM json_each(
+                                         archive_source.source_ids_json
+                                     ) AS source_id
+                                     WHERE source_id.value GLOB 'heartbeat:*'
+                                 )
+                           )
+                       )
                  )""",
             (now, turn_id),
         )
@@ -704,6 +719,436 @@ class Store(MemoryStore, DeliveryStore):
                     (now, now, turn_id),
                 )
             return str(row["state"])
+
+    def queue_memory_maintenance_turn(
+        self, turn_id: str, source_id: str
+    ) -> bool:
+        now = time.time()
+        with self._db:
+            cursor = self._db.execute(
+                """INSERT OR IGNORE INTO turns
+                   (id, kind, source_ids_json, state, stage, started_at, updated_at)
+                   VALUES (?, 'autonomous', ?, 'running',
+                           'memory_maintenance_queued', ?, ?)""",
+                (turn_id, json.dumps([source_id]), now, now),
+            )
+        return cursor.rowcount == 1
+
+    def pending_memory_maintenance_turn(self) -> str | None:
+        row = self._db.execute(
+            """SELECT id FROM turns
+               WHERE state='running'
+                 AND stage IN (
+                   'memory_maintenance_queued',
+                   'memory_maintenance_running'
+                 )
+                 AND (
+                   failure_reason IS NULL
+                   OR updated_at<=?
+                 )
+               ORDER BY started_at, id LIMIT 1""",
+            (time.time() - 300,),
+        ).fetchone()
+        return str(row["id"]) if row is not None else None
+
+    def recover_memory_maintenance_turns(self) -> list[str]:
+        with self._db:
+            self._db.execute(
+                """UPDATE turns SET stage='memory_maintenance_queued',
+                   failure_reason=NULL, updated_at=?
+                   WHERE state='running'
+                     AND stage='memory_maintenance_running'""",
+                (time.time(),),
+            )
+            rows = self._db.execute(
+                """SELECT id FROM turns
+                   WHERE state='running'
+                     AND stage='memory_maintenance_queued'
+                   ORDER BY started_at, id"""
+            ).fetchall()
+        return [str(row["id"]) for row in rows]
+
+    def claim_memory_maintenance_turn(self, turn_id: str) -> bool:
+        with self._db:
+            cursor = self._db.execute(
+                """UPDATE turns SET stage='memory_maintenance_running',
+                   failure_reason=NULL, updated_at=?
+                   WHERE id=? AND state='running'
+                     AND stage='memory_maintenance_queued'""",
+                (time.time(), turn_id),
+            )
+        return cursor.rowcount == 1
+
+    def release_memory_maintenance_turn(
+        self, turn_id: str, reason: str
+    ) -> None:
+        with self._db:
+            self._db.execute(
+                """UPDATE turns SET stage='memory_maintenance_queued',
+                   failure_reason=?, updated_at=?
+                   WHERE id=? AND state='running'
+                     AND stage='memory_maintenance_running'""",
+                (reason[:500], time.time(), turn_id),
+            )
+
+    def memory_maintenance_source_ids(self, turn_id: str) -> list[str]:
+        row = self._db.execute(
+            "SELECT source_ids_json FROM turns WHERE id=?", (turn_id,)
+        ).fetchone()
+        if row is None:
+            return []
+        try:
+            value = json.loads(str(row["source_ids_json"]))
+        except (json.JSONDecodeError, TypeError):
+            return []
+        return [str(item) for item in value] if isinstance(value, list) else []
+
+    def memory_maintenance_journal(
+        self, turn_id: str
+    ) -> list[dict[str, object]]:
+        rows = self._db.execute(
+            """SELECT item_type, payload_json FROM turn_journal
+               WHERE turn_id=? AND item_type LIKE 'memory_maintenance_%'
+               ORDER BY sequence""",
+            (turn_id,),
+        ).fetchall()
+        items: list[dict[str, object]] = []
+        for row in rows:
+            try:
+                payload = json.loads(str(row["payload_json"]))
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if isinstance(payload, dict):
+                items.append({"item_type": str(row["item_type"]), **payload})
+        return items
+
+    def latest_memory_maintenance_completion(
+        self,
+    ) -> dict[str, object] | None:
+        rows = self._db.execute(
+            """SELECT j.payload_json FROM turn_journal AS j
+               JOIN turns AS t ON t.id=j.turn_id
+               WHERE j.item_type='memory_maintenance_complete'
+                 AND t.state='completed'
+               ORDER BY j.created_at DESC, j.sequence DESC"""
+        ).fetchall()
+        for row in rows:
+            try:
+                payload = json.loads(str(row["payload_json"]))
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if isinstance(payload, dict):
+                return payload
+        return None
+
+    def memory_maintenance_bootstrap_complete(self) -> bool:
+        row = self._db.execute(
+            """SELECT 1 FROM turn_journal AS j
+               JOIN turns AS t ON t.id=j.turn_id
+               WHERE j.item_type='memory_maintenance_complete'
+                 AND t.state='completed'
+                 AND json_extract(j.payload_json, '$.mode')='bootstrap'
+               LIMIT 1"""
+        ).fetchone()
+        return row is not None
+
+    def latest_owner_event_marker(
+        self, *, through: float | None = None
+    ) -> tuple[float, str]:
+        if through is None:
+            row = self._db.execute(
+                """SELECT received_at, id FROM events
+                   ORDER BY received_at DESC, id DESC LIMIT 1"""
+            ).fetchone()
+        else:
+            row = self._db.execute(
+                """SELECT received_at, id FROM events
+                   WHERE received_at<=?
+                   ORDER BY received_at DESC, id DESC LIMIT 1""",
+                (through,),
+            ).fetchone()
+        return (
+            (float(row["received_at"]), str(row["id"]))
+            if row is not None
+            else (0.0, "")
+        )
+
+    def memory_maintenance_owner_evidence(
+        self,
+        *,
+        after_at: float,
+        after_id: str,
+        through_at: float,
+        through_id: str,
+    ) -> list[dict[str, object]]:
+        rows = self._db.execute(
+            """SELECT id, content, occurred_at, received_at FROM events
+               WHERE (received_at>? OR (received_at=? AND id>?))
+                 AND (received_at<? OR (received_at=? AND id<=?))
+               ORDER BY received_at, id""",
+            (
+                after_at,
+                after_at,
+                after_id,
+                through_at,
+                through_at,
+                through_id,
+            ),
+        ).fetchall()
+        return [
+            {
+                "event_id": str(row["id"]),
+                "content": str(row["content"]),
+                "occurred_at": context_timestamp(row["occurred_at"]),
+                "received_at": float(row["received_at"]),
+            }
+            for row in rows
+        ]
+
+    def memory_maintenance_evidence_for_memories(
+        self, memory_ids: list[int]
+    ) -> list[dict[str, object]]:
+        if not memory_ids:
+            return []
+        placeholders = ",".join("?" for _ in memory_ids)
+        rows = self._db.execute(
+            f"""SELECT DISTINCT v.id, v.content, v.occurred_at, v.received_at
+                FROM memory_evidence AS e
+                JOIN events AS v ON v.id=e.source_event_id
+                WHERE e.memory_id IN ({placeholders})
+                ORDER BY v.received_at, v.id""",
+            memory_ids,
+        ).fetchall()
+        return [
+            {
+                "event_id": str(row["id"]),
+                "content": str(row["content"]),
+                "occurred_at": context_timestamp(row["occurred_at"]),
+                "received_at": float(row["received_at"]),
+            }
+            for row in rows
+        ]
+
+    def memory_maintenance_changed_ids(
+        self, *, after: float, through: float
+    ) -> set[int]:
+        rows = self._db.execute(
+            """SELECT id FROM memories AS m
+               WHERE m.updated_at>? AND m.updated_at<=?
+                 AND m.superseded_by IS NULL
+                 AND NOT EXISTS (
+                     SELECT 1 FROM memory_tombstones AS t
+                     WHERE t.kind=m.kind AND t.key=m.key
+                 )""",
+            (after, through),
+        ).fetchall()
+        return {int(row["id"]) for row in rows}
+
+    def apply_memory_maintenance_batch(
+        self,
+        turn_id: str,
+        decision: dict[str, object],
+        mutable_memories: dict[int, dict[str, object]],
+        *,
+        owner_marker: tuple[float, str],
+    ) -> None:
+        now = time.time()
+        with self._db:
+            if self.latest_owner_event_marker() != owner_marker:
+                raise ValueError("owner_evidence_changed")
+            current: dict[int, dict[str, object]] = {}
+            for memory_id, snapshot in mutable_memories.items():
+                row = self._db.execute(
+                    """SELECT id, kind, key, content, activation, authority,
+                              source_event_id, evidence_quote, importance,
+                              created_at, updated_at, expires_at, superseded_by
+                       FROM memories AS m
+                       WHERE m.id=? AND m.superseded_by IS NULL
+                         AND (m.expires_at IS NULL OR m.expires_at>?)
+                         AND NOT EXISTS (
+                           SELECT 1 FROM memory_tombstones AS t
+                           WHERE t.kind=m.kind AND t.key=m.key
+                         )""",
+                    (memory_id, now),
+                ).fetchone()
+                if row is None:
+                    raise ValueError("memory_snapshot_changed")
+                item = dict(row)
+                if memory_snapshot_fingerprint(item) != memory_snapshot_fingerprint(
+                    snapshot
+                ):
+                    raise ValueError("memory_snapshot_changed")
+                current[memory_id] = item
+
+            for change in decision.get("changes", []):
+                if not isinstance(change, dict):
+                    raise ValueError("invalid_memory_maintenance_change")
+                action = str(change["action"])
+                if action == "replace":
+                    memory_id = int(change["memory_id"])
+                    row = current[memory_id]
+                    activation = str(change["activation"])
+                    expires_at = change.get("expires_at")
+                    if row["activation"] != "always" and activation == "always":
+                        raise ValueError("memory_maintenance_promotes_always")
+                    if activation == "recent":
+                        if (
+                            isinstance(expires_at, bool)
+                            or not isinstance(expires_at, (int, float))
+                            or not now < float(expires_at) <= now + 7 * 86400
+                        ):
+                            raise ValueError("invalid_memory_maintenance_expiry")
+                    elif expires_at is not None:
+                        raise ValueError("invalid_memory_maintenance_expiry")
+                    evidence = change.get("evidence")
+                    if isinstance(evidence, dict):
+                        event_id = str(evidence["event_id"])
+                        quote = str(evidence["quote"])
+                        event = self._db.execute(
+                            "SELECT content, occurred_at FROM events WHERE id=?",
+                            (event_id,),
+                        ).fetchone()
+                        if event is None or quote not in str(event["content"]):
+                            raise ValueError("invalid_memory_maintenance_evidence")
+                        source_event_id = event_id
+                        evidence_quote = quote
+                        updated_at = float(event["occurred_at"])
+                    else:
+                        source_event_id = str(row["source_event_id"])
+                        evidence_quote = str(row["evidence_quote"])
+                        updated_at = float(row["updated_at"])
+                    self._db.execute(
+                        """UPDATE memories SET content=?, activation=?,
+                           expires_at=?, source_event_id=?, evidence_quote=?,
+                           updated_at=? WHERE id=? AND superseded_by IS NULL""",
+                        (
+                            str(change["content"]),
+                            activation,
+                            expires_at,
+                            source_event_id,
+                            evidence_quote,
+                            updated_at,
+                            memory_id,
+                        ),
+                    )
+                    if isinstance(evidence, dict):
+                        self._add_memory_evidence(
+                            memory_id, source_event_id, evidence_quote, updated_at
+                        )
+                elif action == "merge":
+                    survivor_id = int(change["survivor_id"])
+                    source_ids = [int(item) for item in change["source_ids"]]
+                    survivor = current[survivor_id]
+                    activation = str(change["activation"])
+                    expires_at = change.get("expires_at")
+                    if survivor["activation"] != "always" and activation == "always":
+                        raise ValueError("memory_maintenance_promotes_always")
+                    if activation == "recent":
+                        if (
+                            isinstance(expires_at, bool)
+                            or not isinstance(expires_at, (int, float))
+                            or not now < float(expires_at) <= now + 7 * 86400
+                        ):
+                            raise ValueError("invalid_memory_maintenance_expiry")
+                    elif expires_at is not None:
+                        raise ValueError("invalid_memory_maintenance_expiry")
+                    evidence_event_ids = [
+                        str(event_id) for event_id in change["evidence_event_ids"]
+                    ]
+                    placeholders = ",".join("?" for _ in evidence_event_ids)
+                    cited_events = self._db.execute(
+                        f"""SELECT id,content,occurred_at FROM events
+                            WHERE id IN ({placeholders})""",
+                        evidence_event_ids,
+                    ).fetchall()
+                    if len(cited_events) != len(evidence_event_ids):
+                        raise ValueError("invalid_memory_maintenance_evidence")
+                    newest_event = max(
+                        cited_events, key=lambda item: float(item["occurred_at"])
+                    )
+                    for source_id in source_ids:
+                        self._db.execute(
+                            """INSERT OR IGNORE INTO memory_evidence
+                               (memory_id, source_event_id, quote, created_at)
+                               SELECT ?, source_event_id, quote, created_at
+                               FROM memory_evidence WHERE memory_id=?""",
+                            (survivor_id, source_id),
+                        )
+                        self._db.execute(
+                            """UPDATE memories SET superseded_by=?
+                               WHERE id=? AND superseded_by IS NULL""",
+                            (survivor_id, source_id),
+                        )
+                    for event in cited_events:
+                        self._add_memory_evidence(
+                            survivor_id,
+                            str(event["id"]),
+                            str(event["content"]),
+                            float(event["occurred_at"]),
+                        )
+                    self._db.execute(
+                        """UPDATE memories SET content=?, activation=?, expires_at=?,
+                           source_event_id=?, evidence_quote=?, updated_at=?
+                           WHERE id=? AND superseded_by IS NULL""",
+                        (
+                            str(change["content"]),
+                            activation,
+                            expires_at,
+                            newest_event["id"],
+                            newest_event["content"],
+                            newest_event["occurred_at"],
+                            survivor_id,
+                        ),
+                    )
+                elif action == "retire":
+                    memory_id = int(change["memory_id"])
+                    row = current[memory_id]
+                    evidence = change["evidence"]
+                    assert isinstance(evidence, dict)
+                    event_id = str(evidence["event_id"])
+                    quote = str(evidence["quote"])
+                    event = self._db.execute(
+                        "SELECT content FROM events WHERE id=?", (event_id,)
+                    ).fetchone()
+                    if event is None or quote not in str(event["content"]):
+                        raise ValueError("invalid_memory_maintenance_evidence")
+                    sibling = self._db.execute(
+                        """SELECT 1 FROM memories
+                           WHERE kind=? AND key=? AND id<>?
+                             AND superseded_by IS NULL LIMIT 1""",
+                        (row["kind"], row["key"], memory_id),
+                    ).fetchone()
+                    if sibling is not None:
+                        raise ValueError("memory_maintenance_tombstone_conflict")
+                    self._db.execute(
+                        """INSERT INTO memory_tombstones
+                           (kind, key, source_event_id, evidence_quote, created_at)
+                           VALUES (?, ?, ?, ?, ?)
+                           ON CONFLICT(kind,key) DO UPDATE SET
+                             source_event_id=excluded.source_event_id,
+                             evidence_quote=excluded.evidence_quote,
+                             created_at=excluded.created_at""",
+                        (row["kind"], row["key"], event_id, quote, now),
+                    )
+                else:
+                    raise ValueError("invalid_memory_maintenance_change")
+
+            self._append_turn_journal(
+                turn_id,
+                "memory_maintenance_batch",
+                {
+                    "reviewed_ids": list(decision.get("reviewed_ids", [])),
+                    "completed_ids": list(decision.get("completed_ids", [])),
+                    "regroup_requests": list(
+                        decision.get("regroup_requests", [])
+                    ),
+                    "summary": str(decision.get("summary") or ""),
+                    "owner_marker": [owner_marker[0], owner_marker[1]],
+                },
+                visibility="internal",
+                trust="runtime",
+                created_at=now,
+            )
 
     def cancel_turn(
         self, turn_id: str, events: list[IncomingMessage] | None = None
@@ -1042,6 +1487,81 @@ class Store(MemoryStore, DeliveryStore):
                 (turn_id, revision),
             ).fetchone()
         return self._context_plan_dict(row) if row else None
+
+    def recall_reuse_candidates(self, turn_ids: list[str]) -> list[dict[str, object]]:
+        """Return recent recalled Turns with their effective search scope."""
+
+        ordered_ids = [turn_id for turn_id in dict.fromkeys(turn_ids) if turn_id]
+        if not ordered_ids:
+            return []
+        query_cache: dict[str, list[str]] = {}
+        resolving: set[str] = set()
+
+        def effective_queries(turn_id: str) -> list[str]:
+            cached = query_cache.get(turn_id)
+            if cached is not None:
+                return cached
+            if turn_id in resolving:
+                return []
+            resolving.add(turn_id)
+            record = self.context_plan(turn_id)
+            if record is None or record.get("state") != "recalled":
+                queries: list[str] = []
+            else:
+                retrieval = record.get("retrieval")
+                plan = record.get("plan")
+                if (
+                    not isinstance(retrieval, dict)
+                    or retrieval.get("version") != 4
+                    or not isinstance(plan, dict)
+                ):
+                    queries = []
+                else:
+                    query_recall = str(retrieval.get("query_recall") or "")
+                    stored = retrieval.get("effective_recall_queries")
+                    if isinstance(stored, list):
+                        queries = [
+                            " ".join(str(query).split())[:120]
+                            for query in stored
+                            if " ".join(str(query).split())
+                        ]
+                    elif "misses=" in query_recall:
+                        queries = []
+                    else:
+                        units = [
+                            unit
+                            for unit in plan.get("intent_units") or []
+                            if isinstance(unit, dict)
+                        ]
+                        queries = [
+                            " ".join(str(query).split())[:120]
+                            for unit in units
+                            for query in unit.get("recall_queries") or []
+                            if " ".join(str(query).split())
+                        ]
+                        for source_turn_id in dict.fromkeys(
+                            str(unit.get("recall_from_turn_id") or "")
+                            for unit in units
+                            if unit.get("recall_from_turn_id")
+                        ):
+                            queries.extend(effective_queries(source_turn_id))
+                    queries = list(dict.fromkeys(queries))
+            resolving.discard(turn_id)
+            query_cache[turn_id] = queries
+            return queries
+
+        candidates: list[dict[str, object]] = []
+        for turn_id in ordered_ids:
+            queries = effective_queries(turn_id)
+            if not queries:
+                continue
+            candidates.append(
+                {
+                    "turn_id": turn_id,
+                    "queries": queries,
+                }
+            )
+        return candidates
 
     def next_context_plan_revision(self, turn_id: str) -> int:
         row = self._db.execute(
@@ -1394,18 +1914,32 @@ class Store(MemoryStore, DeliveryStore):
         self._index_turn_episode_terms(turn_id)
         return episode_id
 
-    def _is_webhook_archive_episode(self, episode_id: str) -> bool:
-        """Return whether an Episode is the endpoint-owned Webhook day archive."""
-        return (
-            self._db.execute(
-                """SELECT 1 FROM episode_turns
-                   WHERE episode_id=? AND turn_id GLOB 'webhook:*'
-                   LIMIT 1""",
-                (episode_id,),
-            ).fetchone()
-            is not None
-        )
-
+    def _runtime_archive_kind(self, episode_id: str) -> str | None:
+        """Return the runtime owner of a Webhook or Heartbeat day archive."""
+        row = self._db.execute(
+            """SELECT CASE
+                     WHEN EXISTS (
+                         SELECT 1 FROM episode_turns AS archive_turn
+                         WHERE archive_turn.episode_id=?
+                           AND archive_turn.turn_id GLOB 'webhook:*'
+                     ) THEN 'webhook'
+                     WHEN EXISTS (
+                         SELECT 1 FROM episode_turns AS archive_turn
+                         JOIN turns AS archive_source
+                           ON archive_source.id=archive_turn.turn_id
+                         WHERE archive_turn.episode_id=?
+                           AND archive_source.kind='autonomous'
+                           AND EXISTS (
+                               SELECT 1
+                               FROM json_each(archive_source.source_ids_json)
+                                    AS source_id
+                               WHERE source_id.value GLOB 'heartbeat:*'
+                           )
+                     ) THEN 'heartbeat'
+                   END AS kind""",
+            (episode_id, episode_id),
+        ).fetchone()
+        return str(row["kind"]) if row is not None and row["kind"] else None
 
     def create_episode(
         self,
@@ -1472,7 +2006,11 @@ class Store(MemoryStore, DeliveryStore):
                WHERE t.state='completed' AND EXISTS (
                    SELECT 1 FROM messages AS m
                    WHERE m.turn_id=t.id
-                     AND (m.role IN ('user', 'event') OR m.delivery_state IN ('delivered', 'uncertain'))
+                     AND (
+                         m.role='user'
+                         OR m.role='assistant'
+                            AND m.delivery_state IN ('delivered', 'uncertain')
+                     )
                )
                  AND (? IS NULL OR t.updated_at < ?)
                ORDER BY t.updated_at DESC LIMIT ?""",
@@ -1557,10 +2095,8 @@ class Store(MemoryStore, DeliveryStore):
                      t.kind='owner' OR EXISTS (
                          SELECT 1 FROM messages AS m
                          WHERE m.turn_id=t.id
-                           AND (
-                               m.role IN ('user', 'event')
-                               OR m.delivery_state IN ('delivered', 'uncertain')
-                           )
+                           AND m.role='assistant'
+                           AND m.delivery_state IN ('delivered', 'uncertain')
                      )
                  )""",
             (before_timestamp, before_timestamp),
@@ -1582,10 +2118,8 @@ class Store(MemoryStore, DeliveryStore):
                      t.kind='owner' OR EXISTS (
                          SELECT 1 FROM messages AS m
                          WHERE m.turn_id=t.id
-                           AND (
-                               m.role IN ('user', 'event')
-                               OR m.delivery_state IN ('delivered', 'uncertain')
-                           )
+                           AND m.role='assistant'
+                           AND m.delivery_state IN ('delivered', 'uncertain')
                      )
                  )
                ORDER BY t.updated_at DESC LIMIT ?""",
@@ -1725,6 +2259,79 @@ class Store(MemoryStore, DeliveryStore):
             )
         return records
 
+    def recent_external_events(
+        self,
+        limit: int,
+        lookback_seconds: float,
+        before_timestamp: float | None = None,
+    ) -> list[dict[str, object]]:
+        """Return folded autonomous Events that never became shared dialogue."""
+
+        if limit <= 0 or lookback_seconds <= 0:
+            return []
+        upper = float(before_timestamp) if before_timestamp is not None else time.time()
+        rows = self._db.execute(
+            """SELECT m.content, m.created_at, t.id AS turn_id,
+                      t.source_ids_json, wr.workflow_id
+               FROM messages AS m
+               JOIN turns AS t ON t.id=m.turn_id
+               LEFT JOIN webhook_steps AS ws
+                 ON t.id=('webhook:' || ws.run_id || ':' || ws.step_index)
+               LEFT JOIN webhook_runs AS wr ON wr.id=ws.run_id
+               WHERE t.kind='autonomous'
+                 AND t.state<>'running'
+                 AND t.updated_at>=? AND t.updated_at<?
+                 AND m.role='event'
+                 AND m.created_at>=? AND m.created_at<?
+                 AND NOT EXISTS (
+                     SELECT 1 FROM messages AS visible
+                     WHERE visible.turn_id=t.id
+                       AND visible.role='assistant'
+                       AND visible.delivery_state IN ('delivered', 'uncertain')
+                 )
+               ORDER BY m.created_at""",
+            (
+                upper - float(lookback_seconds),
+                upper,
+                upper - float(lookback_seconds),
+                upper,
+            ),
+        ).fetchall()
+        folded: dict[tuple[str, str], dict[str, object]] = {}
+        for row in rows:
+            content = " ".join(str(row["content"] or "").split())
+            if not content:
+                continue
+            workflow_id = str(row["workflow_id"] or "").strip()
+            if workflow_id:
+                source = f"webhook:{workflow_id}"
+            else:
+                try:
+                    source_ids = json.loads(str(row["source_ids_json"] or "[]"))
+                except (TypeError, json.JSONDecodeError):
+                    source_ids = []
+                raw_source = str(source_ids[0]) if source_ids else str(row["turn_id"])
+                source = raw_source.split(":", 1)[0] or "autonomous"
+            key = (source, content)
+            seen_at = float(row["created_at"])
+            item = folded.get(key)
+            if item is None:
+                folded[key] = {
+                    "source": source,
+                    "event": content,
+                    "first_seen": seen_at,
+                    "last_seen": seen_at,
+                    "occurrences": 1,
+                }
+                continue
+            item["last_seen"] = seen_at
+            item["occurrences"] = int(item["occurrences"]) + 1
+        selected = sorted(
+            folded.values(),
+            key=lambda item: (float(item["last_seen"]), str(item["source"])),
+        )[-limit:]
+        return selected
+
     def list_episode_candidates(
         self, limit: int = 20, *, after: float | None = None
     ) -> list[dict[str, object]]:
@@ -1767,7 +2374,7 @@ class Store(MemoryStore, DeliveryStore):
         limit: int = 64,
         *,
         after: float | None = None,
-        exclude_webhook_archives: bool = False,
+        exclude_runtime_archives: bool = False,
     ) -> list[dict[str, object]]:
         if limit <= 0:
             return []
@@ -1786,7 +2393,21 @@ class Store(MemoryStore, DeliveryStore):
                AND (?=0 OR NOT EXISTS (
                    SELECT 1 FROM episode_turns AS archive_turn
                    WHERE archive_turn.episode_id=e.id
-                     AND archive_turn.turn_id GLOB 'webhook:*'
+                     AND (
+                         archive_turn.turn_id GLOB 'webhook:*'
+                         OR EXISTS (
+                             SELECT 1 FROM turns AS archive_source
+                             WHERE archive_source.id=archive_turn.turn_id
+                               AND archive_source.kind='autonomous'
+                               AND EXISTS (
+                                   SELECT 1
+                                   FROM json_each(
+                                       archive_source.source_ids_json
+                                   ) AS source_id
+                                   WHERE source_id.value GLOB 'heartbeat:*'
+                               )
+                         )
+                     )
                ))
                ORDER BY status='open' DESC, status='closing' DESC,
                         COALESCE((
@@ -1794,7 +2415,7 @@ class Store(MemoryStore, DeliveryStore):
                             JOIN turns AS t ON t.id=et.turn_id
                             WHERE et.episode_id=e.id
                         ), e.updated_at) DESC, salience DESC LIMIT ?""",
-            (after, after, int(exclude_webhook_archives), limit),
+            (after, after, int(exclude_runtime_archives), limit),
         ).fetchall()
         results = []
         for row in rows:
@@ -1836,7 +2457,7 @@ class Store(MemoryStore, DeliveryStore):
         return results
 
     def list_recent_episode_directory(
-        self, limit: int = 8, *, exclude_webhook_archives: bool = False
+        self, limit: int = 8, *, exclude_runtime_archives: bool = False
     ) -> list[dict[str, object]]:
         if limit <= 0:
             return []
@@ -1850,11 +2471,25 @@ class Store(MemoryStore, DeliveryStore):
                WHERE ?=0 OR NOT EXISTS (
                    SELECT 1 FROM episode_turns AS archive_turn
                    WHERE archive_turn.episode_id=e.id
-                     AND archive_turn.turn_id GLOB 'webhook:*'
+                     AND (
+                         archive_turn.turn_id GLOB 'webhook:*'
+                         OR EXISTS (
+                             SELECT 1 FROM turns AS archive_source
+                             WHERE archive_source.id=archive_turn.turn_id
+                               AND archive_source.kind='autonomous'
+                               AND EXISTS (
+                                   SELECT 1
+                                   FROM json_each(
+                                       archive_source.source_ids_json
+                                   ) AS source_id
+                                   WHERE source_id.value GLOB 'heartbeat:*'
+                               )
+                         )
+                     )
                )
                ORDER BY last_activity_at DESC, e.id DESC
                LIMIT ?""",
-            (int(exclude_webhook_archives), limit),
+            (int(exclude_runtime_archives), limit),
         ).fetchall()
         results = []
         for row in rows:
@@ -1893,7 +2528,21 @@ class Store(MemoryStore, DeliveryStore):
                  AND NOT EXISTS (
                      SELECT 1 FROM episode_turns AS archive_turn
                      WHERE archive_turn.episode_id=e.id
-                       AND archive_turn.turn_id GLOB 'webhook:*'
+                       AND (
+                           archive_turn.turn_id GLOB 'webhook:*'
+                           OR EXISTS (
+                               SELECT 1 FROM turns AS archive_source
+                               WHERE archive_source.id=archive_turn.turn_id
+                                 AND archive_source.kind='autonomous'
+                                 AND EXISTS (
+                                     SELECT 1
+                                     FROM json_each(
+                                         archive_source.source_ids_json
+                                     ) AS source_id
+                                     WHERE source_id.value GLOB 'heartbeat:*'
+                                 )
+                           )
+                       )
                  )
                ORDER BY e.status='open' DESC, last_activity_at DESC, e.updated_at DESC
                LIMIT ?""",
@@ -1947,7 +2596,7 @@ class Store(MemoryStore, DeliveryStore):
                    WHERE id=? AND status IN ('open', 'closing')""",
                 (episode_id,),
             ).fetchone()
-            if row is None or self._is_webhook_archive_episode(episode_id):
+            if row is None or self._runtime_archive_kind(episode_id):
                 continue
             self._db.execute(
                 """UPDATE conversation_episodes
@@ -2113,6 +2762,7 @@ class Store(MemoryStore, DeliveryStore):
         after: float | None = None,
         before: float | None = None,
         offset: int = 0,
+        minimum_confidence: float | None = None,
     ) -> list[dict[str, object]]:
         if max_results <= 0 or offset < 0 or not queries:
             return []
@@ -2130,6 +2780,11 @@ class Store(MemoryStore, DeliveryStore):
             documents,
             limit=max_results,
             offset=offset,
+            **(
+                {"minimum_confidence": minimum_confidence}
+                if minimum_confidence is not None
+                else {}
+            ),
         )
         results: list[dict[str, object]] = []
         for hit in hits:
@@ -2162,8 +2817,6 @@ class Store(MemoryStore, DeliveryStore):
             episode["keyword_match_count"] = len(hit.matched_keywords)
             episode["search_score"] = hit.score
             episode["semantic_score"] = hit.semantic_score
-            episode["context_score"] = hit.context_score
-            episode["context_coverage"] = hit.context_coverage
             episode["relevance_confidence"] = hit.relevance_confidence
             episode["matched_queries"] = [
                 {
@@ -2175,6 +2828,7 @@ class Store(MemoryStore, DeliveryStore):
                     "alternative_count": query.alternative_count,
                     "field_matches": list(query.field_matches),
                     "message_ids": list(query.message_ids),
+                    "scoped_message_ids": list(query.scoped_message_ids),
                     "turn_ids": list(query.turn_ids),
                 }
                 for query in hit.matched_queries
@@ -2212,11 +2866,12 @@ class Store(MemoryStore, DeliveryStore):
             return []
         if query.strip():
             return self._ranked_episode_results(
-                [EpisodeRecallQuery(query.strip(), context=query.strip())],
+                [EpisodeRecallQuery(query.strip())],
                 max_results,
                 after=after,
                 before=before,
                 offset=offset,
+                minimum_confidence=0.0,
             )
         rows = self._db.execute(
             """SELECT e.*, COALESCE((
@@ -2355,11 +3010,28 @@ class Store(MemoryStore, DeliveryStore):
     ) -> dict[str, object]:
         if relation not in {"primary", "related"}:
             raise ValueError("episode turn relation must be primary or related")
-        if (
-            not turn_id.startswith("webhook:")
-            and self._is_webhook_archive_episode(episode_id)
-        ):
-            raise ValueError("webhook archive does not accept non-webhook turns")
+        archive_kind = self._runtime_archive_kind(episode_id)
+        if archive_kind:
+            source_kind = "webhook" if turn_id.startswith("webhook:") else None
+            if source_kind is None:
+                source = self._db.execute(
+                    """SELECT 1 FROM turns AS archive_source
+                       WHERE archive_source.id=?
+                         AND archive_source.kind='autonomous'
+                         AND EXISTS (
+                             SELECT 1
+                             FROM json_each(archive_source.source_ids_json)
+                                  AS source_id
+                             WHERE source_id.value GLOB 'heartbeat:*'
+                         )""",
+                    (turn_id,),
+                ).fetchone()
+                source_kind = "heartbeat" if source is not None else None
+            if source_kind != archive_kind:
+                raise ValueError(
+                    f"{archive_kind} archive does not accept "
+                    f"{source_kind or 'owner'} turns"
+                )
         now = time.time()
         with self._db:
             inserted = False
@@ -2637,7 +3309,21 @@ class Store(MemoryStore, DeliveryStore):
                  AND NOT EXISTS (
                      SELECT 1 FROM episode_turns AS archive_turn
                      WHERE archive_turn.episode_id=et.episode_id
-                       AND archive_turn.turn_id GLOB 'webhook:*'
+                       AND (
+                           archive_turn.turn_id GLOB 'webhook:*'
+                           OR EXISTS (
+                               SELECT 1 FROM turns AS archive_source
+                               WHERE archive_source.id=archive_turn.turn_id
+                                 AND archive_source.kind='autonomous'
+                                 AND EXISTS (
+                                     SELECT 1
+                                     FROM json_each(
+                                         archive_source.source_ids_json
+                                     ) AS source_id
+                                     WHERE source_id.value GLOB 'heartbeat:*'
+                                 )
+                           )
+                       )
                  )
                ORDER BY t.updated_at
                LIMIT 12""",
@@ -2686,7 +3372,7 @@ class Store(MemoryStore, DeliveryStore):
             for episode in self.list_episode_directory(
                 12,
                 after=time.time() - EPISODE_CONSOLIDATION_LOOKBACK_SECONDS,
-                exclude_webhook_archives=True,
+                exclude_runtime_archives=True,
             )
         ]
         for episode in extra_episodes:
@@ -2811,9 +3497,10 @@ class Store(MemoryStore, DeliveryStore):
                         or self.episode(episode_id) is None
                     ):
                         raise ValueError("unknown consolidation episode")
-                    if self._is_webhook_archive_episode(episode_id):
+                    archive_kind = self._runtime_archive_kind(episode_id)
+                    if archive_kind:
                         raise ValueError(
-                            "webhook archive does not accept owner turns"
+                            f"{archive_kind} archive does not accept owner turns"
                         )
                 else:
                     key = str(decision["key"])
@@ -3504,7 +4191,12 @@ class Store(MemoryStore, DeliveryStore):
             existing = self._db.execute(
                 "SELECT * FROM conversation_episodes WHERE id=?", (episode_id,)
             ).fetchone()
-            if existing is not None and self._is_webhook_archive_episode(episode_id):
+            archive_kind = (
+                self._runtime_archive_kind(episode_id)
+                if existing is not None
+                else None
+            )
+            if archive_kind:
                 rejected.add(episode_id)
                 log_event(
                     logger,
@@ -3513,7 +4205,7 @@ class Store(MemoryStore, DeliveryStore):
                     stage="storage",
                     turn_id=turn_id,
                     episode_id=episode_id,
-                    reason="webhook_archive",
+                    reason=f"{archive_kind}_archive",
                 )
                 continue
             if existing is not None:
@@ -3595,7 +4287,21 @@ class Store(MemoryStore, DeliveryStore):
                       AND NOT EXISTS (
                           SELECT 1 FROM episode_turns AS archive_turn
                           WHERE archive_turn.episode_id=conversation_episodes.id
-                            AND archive_turn.turn_id GLOB 'webhook:*'
+                            AND (
+                                archive_turn.turn_id GLOB 'webhook:*'
+                                OR EXISTS (
+                                    SELECT 1 FROM turns AS archive_source
+                                    WHERE archive_source.id=archive_turn.turn_id
+                                      AND archive_source.kind='autonomous'
+                                      AND EXISTS (
+                                          SELECT 1
+                                          FROM json_each(
+                                              archive_source.source_ids_json
+                                          ) AS source_id
+                                          WHERE source_id.value GLOB 'heartbeat:*'
+                                      )
+                                )
+                            )
                       )
                       AND id IN (
                           SELECT et.episode_id FROM episode_turns AS et
@@ -3611,7 +4317,21 @@ class Store(MemoryStore, DeliveryStore):
                      AND NOT EXISTS (
                          SELECT 1 FROM episode_turns AS archive_turn
                          WHERE archive_turn.episode_id=conversation_episodes.id
-                           AND archive_turn.turn_id GLOB 'webhook:*'
+                           AND (
+                               archive_turn.turn_id GLOB 'webhook:*'
+                               OR EXISTS (
+                                   SELECT 1 FROM turns AS archive_source
+                                   WHERE archive_source.id=archive_turn.turn_id
+                                     AND archive_source.kind='autonomous'
+                                     AND EXISTS (
+                                         SELECT 1
+                                         FROM json_each(
+                                             archive_source.source_ids_json
+                                         ) AS source_id
+                                         WHERE source_id.value GLOB 'heartbeat:*'
+                                     )
+                               )
+                           )
                      )
                      AND id IN (
                        SELECT et.episode_id FROM episode_turns AS et
@@ -4153,7 +4873,7 @@ class Store(MemoryStore, DeliveryStore):
                         ).fetchall()
                     ]
                     for episode_id in episode_ids:
-                        if self._is_webhook_archive_episode(episode_id):
+                        if self._runtime_archive_kind(episode_id):
                             continue
                         self._db.execute(
                             """UPDATE conversation_episodes
@@ -4740,9 +5460,8 @@ class Store(MemoryStore, DeliveryStore):
         turn_id: str,
         summary: str,
         memories: list[dict[str, object]],
-        always_memory_actions: list[dict[str, object]] | None = None,
         conversation_actions: list[dict[str, object]] | None = None,
-        recent_memory_actions: list[dict[str, object]] | None = None,
+        maintenance_turn_id: str = "",
     ) -> None:
         reflection_id = f"reflection:{local_date}"
         now = time.time()
@@ -4785,15 +5504,21 @@ class Store(MemoryStore, DeliveryStore):
                         now,
                     ),
                 )
-            self.apply_always_memory_actions(
-                always_memory_actions or [],
-                source_id=reflection_id,
-                now=now,
-            )
-            self.apply_recent_memory_actions(
-                recent_memory_actions or [], source_id=reflection_id, now=now
-            )
             self.apply_conversation_actions(conversation_actions or [], now=now)
+            if maintenance_turn_id:
+                self._db.execute(
+                    """INSERT OR IGNORE INTO turns
+                       (id, kind, source_ids_json, state, stage,
+                        started_at, updated_at)
+                       VALUES (?, 'autonomous', ?, 'running',
+                               'memory_maintenance_queued', ?, ?)""",
+                    (
+                        maintenance_turn_id,
+                        json.dumps([reflection_id]),
+                        now,
+                        now,
+                    ),
+                )
             self._db.execute(
                 """UPDATE turns SET state='completed', stage='completed',
                    failure_reason=NULL, updated_at=? WHERE id=?""",

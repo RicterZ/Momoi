@@ -66,7 +66,6 @@ _EVENT_GROUPS = {
     "context_recall": "RECALL",
     "context_recall_memory_results": "RECALL",
     "context_recall_episode_results": "RECALL",
-    "context_recall_turn_results": "RECALL",
     "context_recall_state_results": "RECALL",
     "heartbeat_plan_complete": "PLAN",
     "heartbeat_plan_invalid": "PLAN",

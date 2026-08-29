@@ -49,12 +49,13 @@ def context_plan_response(messages: list[dict[str, Any]]) -> ProviderResponse:
             "references": [],
             "recall_mode": "search",
             "recall_queries": ["test owner intent"],
+            "recall_from_turn_id": "",
         }
         for index, message in enumerate(owner_messages, 1)
     ]
     episode_ref = candidate_ids[0] if candidate_ids else "new:test-thread"
     plan = {
-        "version": 4,
+        "version": 5,
         "intent_units": units,
         "episode_actions": [
             {
@@ -70,19 +71,14 @@ def context_plan_response(messages: list[dict[str, Any]]) -> ProviderResponse:
         ],
         "episode_links": [],
         "handoff": {
-            "context_status": "sufficient",
             "context_needs": [],
-            "context_reason": "Test context is sufficient.",
             "mcp_servers": mcp_server_ids,
-            "mcp_reason": "Load configured test MCP servers.",
-            "execution_mode": "work",
-            "execution_outline": ["Handle the test owner request."],
-            "execution_reason": "Exercise the Owner tool loop.",
-            "delivery_mode": "bubbles",
-            "delivery_plan": (
-                "Report the verified result and any material uncertainty after "
-                "the requested work."
-            ),
+            "strategy": [
+                "Handle the test owner request with the configured capabilities, "
+                "verify the result, and report material uncertainty."
+            ],
+            "completion_criteria": ["The requested outcome is verified."],
+            "response_mode": "visible",
         },
         "uncertainty": [],
     }
@@ -107,6 +103,7 @@ def heartbeat_plan_response(messages: list[dict[str, Any]]) -> ProviderResponse:
         "activity": {
             "intent": "spend time freely",
             "reason": "Continue the current activity for this test.",
+            "recall_mode": "search",
             "recall_queries": ["current activity"],
         },
         "heartbeat_handoff": {

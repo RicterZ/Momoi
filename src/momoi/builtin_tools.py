@@ -51,7 +51,10 @@ BUILTIN_TOOL_SPECS: list[dict[str, Any]] = [
     },
     {
         "name": "read_file",
-        "description": "Read a UTF-8 text file, optionally selecting a line range.",
+        "description": (
+            "Read a UTF-8 text file, optionally selecting a line range or "
+            "continuing from a returned character offset."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -60,6 +63,14 @@ BUILTIN_TOOL_SPECS: list[dict[str, Any]] = [
                     "description": "Absolute path or path relative to the Momoi workspace.",
                 },
                 "start_line": {"type": "integer", "minimum": 1, "default": 1},
+                "content_offset": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": (
+                        "Zero-based character offset returned by a previous read; "
+                        "when supplied, it takes precedence over start_line."
+                    ),
+                },
                 "max_lines": {
                     "type": "integer",
                     "minimum": 1,
@@ -231,16 +242,41 @@ next(
 
 
 class BuiltinTools:
-    def __init__(self, workspace: Path | None = None) -> None:
+    def __init__(
+        self,
+        workspace: Path | None = None,
+        *,
+        private_roots: tuple[Path, ...] = (),
+    ) -> None:
         self.workspace = (
             workspace.expanduser().resolve() if workspace is not None else Path.cwd()
+        )
+        self.private_roots = tuple(
+            path.expanduser().resolve() for path in private_roots
         )
 
     def resolve_path(self, value: object) -> Path:
         path = Path(str(value or "")).expanduser()
         if not path.is_absolute():
             path = self.workspace / path
-        return path.resolve()
+        path = path.resolve()
+        self._ensure_public_path(path)
+        return path
+
+    def _ensure_public_path(self, path: Path) -> None:
+        for root in self.private_roots:
+            try:
+                path.relative_to(root)
+            except ValueError:
+                continue
+            raise PermissionError("path is runtime-private")
+
+    def _is_public_path(self, path: Path) -> bool:
+        try:
+            self._ensure_public_path(path.resolve())
+        except PermissionError:
+            return False
+        return True
 
     @staticmethod
     def has_tool(name: str) -> bool:
@@ -335,20 +371,39 @@ class BuiltinTools:
             raise ValueError("file exceeds 2 MB read limit")
         content = path.read_text(encoding="utf-8")
         lines = content.splitlines(keepends=True)
-        start = max(1, int(arguments.get("start_line", 1)))
+        requested_offset = arguments.get("content_offset")
+        if requested_offset is None:
+            start = max(1, int(arguments.get("start_line", 1)))
+            content_offset = sum(len(line) for line in lines[: start - 1])
+        else:
+            content_offset = max(0, int(requested_offset))
+            if content_offset > len(content):
+                raise ValueError("content_offset exceeds file length")
+            start = content.count("\n", 0, content_offset) + 1
         limit = min(4000, max(1, int(arguments.get("max_lines", 1000))))
-        selected = "".join(lines[start - 1 : start - 1 + limit])
+        remaining_lines = content[content_offset:].splitlines(keepends=True)
+        selected = "".join(remaining_lines[:limit])
         char_truncated = len(selected) > 200_000
         selected = selected[:200_000]
+        next_content_offset = content_offset + len(selected)
+        has_more = next_content_offset < len(content)
+        if selected:
+            end_line = start + selected.count("\n")
+            if selected.endswith("\n"):
+                end_line -= 1
+        else:
+            end_line = start - 1
         return {
             "ok": True,
             "path": str(path),
-            "content": selected,
             "start_line": start,
-            "end_line": min(len(lines), start - 1 + limit),
+            "end_line": end_line,
             "total_lines": len(lines),
             "sha256": hashlib.sha256(content.encode()).hexdigest(),
-            "truncated": char_truncated or start - 1 + limit < len(lines),
+            "content_offset": content_offset,
+            "next_content_offset": next_content_offset if has_more else None,
+            "content": selected,
+            "truncated": char_truncated or has_more,
         }
 
     def _list_dir(self, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -363,6 +418,7 @@ class BuiltinTools:
             path.iterdir(),
             key=lambda item: (not item.is_dir(), item.name.casefold()),
         )
+        children = [item for item in children if self._is_public_path(item)]
         if not include_hidden:
             children = [item for item in children if not item.name.startswith(".")]
         truncated = len(children) > limit
@@ -521,6 +577,7 @@ class BuiltinTools:
             if not path.is_absolute():
                 path = cwd / path
             path = path.resolve()
+            self._ensure_public_path(path)
             content = path.read_text(encoding="utf-8")
             index += 1
             hunks: list[list[str]] = []

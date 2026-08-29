@@ -434,7 +434,7 @@ function previewUsageApi() {
           return;
         }
         if (req.method === "GET" && path === "/api/health") {
-          json(res, { ok: true, version: "0.3.0" });
+          json(res, { ok: true, version: "0.4.0" });
           return;
         }
         const records = previewRecords();

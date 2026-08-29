@@ -21,7 +21,10 @@ from momoi.models import (
 from momoi.runtime import (
     MomoiDaemon,
 )
-from momoi.runtime.context_assembler import assemble_recent_conversation
+from momoi.runtime.context_assembler import (
+    assemble_recent_conversation,
+    assemble_recent_external_events,
+)
 from momoi.storage import Store
 from momoi.webhooks import WebhookService, WorkflowError, bind_workflow, load_catalog
 
@@ -336,7 +339,8 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(reply.messages, [])
             self.assertEqual(provider.calls, 3)
             self.assertEqual(
-                provider.tool_names[0], ["send_message", "curl", "end_turn"]
+                provider.tool_names[0],
+                ["send_message", "curl", "read_tool_result", "end_turn"],
             )
             curl_spec = next(
                 tool for tool in provider.tools if tool["name"] == "curl"
@@ -583,14 +587,12 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(event[0]["content"], "没有变化时保持安静。")
             self.assertEqual(event[0]["delivery_state"], "delivered")
             recent = store.recent_conversation_messages(5, 2000)
-            self.assertEqual(
-                [(item["role"], item["content"]) for item in recent],
-                [("event", "没有变化时保持安静。")],
-            )
+            self.assertEqual(recent, [])
             rendered, _ = assemble_recent_conversation(store, 5, 2000)
-            self.assertIn("[EVENT channel=webhook ", rendered)
-            self.assertIn("没有变化时保持安静。", rendered)
-            self.assertNotIn("[USER ", rendered)
+            self.assertEqual(rendered, "")
+            external = assemble_recent_external_events(store)
+            self.assertIn("[webhook:event-message]", external)
+            self.assertIn("event: 没有变化时保持安静。", external)
             found = store.search_episodes("没有变化", 3)
             self.assertTrue(found)
             self.assertIn(
@@ -605,7 +607,7 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             searched = MemoryTools(store).execute(
                 ToolCall(
                     "search-webhook",
-                    "conversation_search",
+                    "episode_search",
                     {"query": "没有变化"},
                 ),
                 [],

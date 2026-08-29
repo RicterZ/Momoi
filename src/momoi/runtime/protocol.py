@@ -471,13 +471,40 @@ AUTONOMOUS_FINISH_SPEC: dict[str, Any] = {
     },
 }
 
+READ_TOOL_RESULT_SPEC: dict[str, Any] = {
+    "name": "read_tool_result",
+    "description": (
+        "Continue reading an exact private snapshot when a tool result returned "
+        "truncated=true, result_ref, and next_cursor. Pass result_ref unchanged "
+        "and the latest next_cursor; omit cursor only for the first chunk. This "
+        "does not call the original tool again and cannot read workspace files."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "result_ref": {
+                "type": "string",
+                "pattern": "^tr_[0-9a-f]{32}$",
+                "description": "Opaque result_ref returned by a truncated tool result.",
+            },
+            "cursor": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Opaque next_cursor from the preceding chunk.",
+            },
+        },
+        "required": ["result_ref"],
+        "additionalProperties": False,
+    },
+}
+
 REFLECTION_FINISH_SPEC: dict[str, Any] = {
     "name": "reflection_finish",
     "description": (
         "Required terminal result for the private daily retrospective. It stores the "
         "reflection record, promotes only durable evidence-backed learning, and "
-        "optionally housekeeps the supplied always-on owner-memory inventory and "
-        "open conversations."
+        "optionally closes finished conversations. Confirmed owner memory is read-only "
+        "in Reflection and is maintained by a separate runtime stage."
     ),
     "input_schema": {
         "type": "object",
@@ -494,73 +521,6 @@ REFLECTION_FINISH_SPEC: dict[str, Any] = {
                     "unresolved questions in coherent, elegant prose. Do not invent "
                     "facts or expose hidden chain-of-thought."
                 ),
-            },
-            "always_memory_actions": {
-                "type": "array",
-                "maxItems": 8,
-                "description": (
-                    "Optional housekeeping of `<always_memory_inventory>`. Empty is valid. "
-                    "Use memory_id from that inventory only."
-                ),
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "memory_id": {"type": "integer", "minimum": 1},
-                        "action": {
-                            "type": "string",
-                            "enum": [
-                                "demote_recent",
-                                "demote_recall",
-                                "merge",
-                                "forget",
-                            ],
-                        },
-                        "merge_into_id": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "description": "Required for merge; the surviving always memory.",
-                        },
-                        "content": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 2000,
-                            "description": (
-                                "Required for merge: one concise restatement of the "
-                                "surviving memory. Do not concatenate near-duplicates."
-                            ),
-                        },
-                        "reason": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 400,
-                        },
-                    },
-                    "required": ["memory_id", "action", "reason"],
-                    "additionalProperties": False,
-                },
-            },
-            "recent_memory_actions": {
-                "type": "array",
-                "maxItems": 8,
-                "description": (
-                    "Review active recent memories by memory_id. Use extend when the "
-                    "state remains active, promote_recall when it became durable, "
-                    "or forget when it is finished or stale."
-                ),
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "memory_id": {"type": "integer", "minimum": 1},
-                        "action": {
-                            "type": "string",
-                            "enum": ["extend", "promote_recall", "forget"],
-                        },
-                        "ttl_hours": {"type": "number", "minimum": 1, "maximum": 168},
-                        "reason": {"type": "string", "minLength": 1, "maxLength": 400},
-                    },
-                    "required": ["memory_id", "action", "reason"],
-                    "additionalProperties": False,
-                },
             },
             "conversation_actions": {
                 "type": "array",

@@ -29,6 +29,8 @@ from ..provider import AnthropicProvider, OpenAIProvider
 from ..storage import Store
 from ..webhooks import WebhookService
 from .jobs import AutonomousJob
+from .memory_maintenance import MEMORY_MAINTENANCE_RUN_VERSION
+from .tool_result_store import ToolResultStore
 from .turns import TurnRunner
 
 logger = logging.getLogger(__name__)
@@ -64,6 +66,10 @@ class MomoiDaemon(TurnRunner):
         self._loaded_workspace_prompts: dict[str, str] = {}
         self.daemon_policy = config.policies.daemon
         self._artifact_root().mkdir(parents=True, exist_ok=True)
+        self.tool_results = ToolResultStore(
+            self._tool_result_root(),
+            retention_days=config.tool_result_retention_days,
+        )
         self.store = Store(
             config.database,
             config.workspace,
@@ -97,7 +103,10 @@ class MomoiDaemon(TurnRunner):
         self.store.ensure_heartbeat(config.heartbeat)
         self.agenda_tools = AgendaTools(self.store)
         self.memory_tools = MemoryTools(self.store, config.policies.memory)
-        self.builtin_tools = BuiltinTools(config.workspace or config.database.parent)
+        self.builtin_tools = BuiltinTools(
+            config.workspace or config.database.parent,
+            private_roots=(self._tool_result_root(),),
+        )
         self.asr_provider = asr_provider if config.asr.enabled else None
         if config.asr.enabled and self.asr_provider is None:
             settings = dict(config.asr.settings or {})
@@ -157,6 +166,7 @@ class MomoiDaemon(TurnRunner):
         self._webhook_turn_active = False
         self._stop_requested = False
         self._manual_heartbeat_channel: str | None = None
+        self._queued_memory_maintenance: set[str] = set()
         self.webhooks = (
             WebhookService(
                 config.webhooks,
@@ -173,6 +183,8 @@ class MomoiDaemon(TurnRunner):
     async def run(self, stop: asyncio.Event) -> None:
         if self.config.episode_annealing.enabled:
             self.episode_annealing_requested.set()
+        for turn_id in self.store.recover_memory_maintenance_turns():
+            self._enqueue_memory_maintenance(turn_id)
         for event in self.store.pending_events():
             self.incoming.put_nowait(event)
         async with self.mcp, self.provider:
@@ -246,16 +258,28 @@ class MomoiDaemon(TurnRunner):
         values.update(self.channel.workflow_variables())
         return values
 
-    def _touch_owner_activity(self, channel_name: str) -> None:
+    def _touch_owner_activity(
+        self, channel_name: str, *, quiet_extension: float | None = None
+    ) -> None:
         channel = self._channel_for(channel_name)
         now = asyncio.get_running_loop().time()
         self._last_owner_activity_at = now
-        self._owner_quiet_until[channel.name] = now + channel.quiet_seconds
+        extension = (
+            channel.quiet_seconds if quiet_extension is None else quiet_extension
+        )
+        self._owner_quiet_until[channel.name] = max(
+            self._owner_quiet_until.get(channel.name, 0.0),
+            now + max(0.0, extension),
+        )
         self._owner_activity_changed.set()
 
     async def _receive(self, event: IncomingMessage | OwnerInputStatus) -> None:
         if isinstance(event, OwnerInputStatus):
-            self._touch_owner_activity(event.channel)
+            channel = self._channel_for(event.channel)
+            self._touch_owner_activity(
+                event.channel,
+                quiet_extension=channel.quiet_seconds / 2,
+            )
             log_event(logger, TRACE, "owner_input_status", channel=event.channel)
             return
         message = event
@@ -268,6 +292,12 @@ class MomoiDaemon(TurnRunner):
             content=safe_preview(message.text, 500),
         )
         if message.text.strip() == "/stop":
+            stop_channel = self._channel_for(message.channel).name
+            cancelled_outbox = self.store.cancel_pending_outbox(
+                stop_channel, "owner_stop"
+            )
+            if cancelled_outbox:
+                self.outbox_changed.set()
             active = self._active_turn
             if active is not None and not active.done():
                 self._stop_requested = True
@@ -280,6 +310,7 @@ class MomoiDaemon(TurnRunner):
                     channel=message.channel,
                     event_id=message.event_id,
                     command="stop",
+                    cancelled_outbox=cancelled_outbox,
                 )
                 await self.incoming.put(message)
             return
@@ -305,6 +336,32 @@ class MomoiDaemon(TurnRunner):
                     command="heartbeat",
                     reason="heartbeat_already_active",
                 )
+            return
+        if message.text.strip() == "/tidy":
+            turn_id = self.store.pending_memory_maintenance_turn()
+            if turn_id is None:
+                turn_id = self._turn_id(
+                    "memory-maintenance",
+                    MEMORY_MAINTENANCE_RUN_VERSION,
+                    "manual",
+                    message.event_id,
+                )
+                self.store.queue_memory_maintenance_turn(
+                    turn_id, f"manual:{message.event_id}"
+                )
+            annealing = self._active_annealing
+            if annealing is not None and not annealing.done():
+                annealing.cancel("memory_maintenance")
+            self._enqueue_memory_maintenance(turn_id)
+            log_event(
+                logger,
+                logging.INFO,
+                "owner_command_accepted",
+                channel=message.channel,
+                event_id=message.event_id,
+                command="tidy",
+                turn_id=turn_id,
+            )
             return
         if message.text.strip() == "/reflect":
             reflection = self.store.claim_manual_reflection(
@@ -384,6 +441,8 @@ class MomoiDaemon(TurnRunner):
                         work = self._complete_heartbeat_turn(stop, target_channel)
                     elif job.kind == "reflection":
                         work = self._complete_reflection_turn(job.id, stop)
+                    elif job.kind == "memory_maintenance":
+                        work = self._complete_memory_maintenance_turn(job.id, stop)
                     else:
                         work = self._complete_goal_turn(job.id, stop)
                     self._active_turn = asyncio.create_task(work)
@@ -416,6 +475,16 @@ class MomoiDaemon(TurnRunner):
                                 local_date=local_date,
                                 reason="owner_stop",
                             )
+                        elif job.kind == "memory_maintenance":
+                            self.store.cancel_turn(job.id)
+                            log_event(
+                                logger,
+                                logging.INFO,
+                                "turn_cancelled",
+                                stage="memory_maintenance",
+                                turn_id=job.id,
+                                reason="owner_stop",
+                            )
                         else:
                             self.store.release_goal_claim(job.id, defer_seconds=900)
                             log_event(
@@ -427,6 +496,8 @@ class MomoiDaemon(TurnRunner):
                                 reason="owner_stop",
                             )
                     finally:
+                        if job.kind == "memory_maintenance":
+                            self._queued_memory_maintenance.discard(job.id)
                         self._active_turn = None
                         self._stop_requested = False
                         self.agenda_changed.set()
@@ -563,15 +634,26 @@ class MomoiDaemon(TurnRunner):
     def _next_autonomous(self) -> AutonomousJob:
         return self._prioritize_autonomous(self.autonomous.get_nowait())
 
+    def _enqueue_memory_maintenance(self, turn_id: str) -> None:
+        if turn_id in self._queued_memory_maintenance:
+            return
+        self._queued_memory_maintenance.add(turn_id)
+        self.autonomous.put_nowait(
+            AutonomousJob.memory_maintenance(turn_id)
+        )
+
     def _prioritize_autonomous(self, current: AutonomousJob) -> AutonomousJob:
-        if self.autonomous.empty():
-            return current
-        next_job = self.autonomous.get_nowait()
-        if next_job.priority < current.priority:
-            self.autonomous.put_nowait(current)
-            return next_job
-        self.autonomous.put_nowait(next_job)
-        return current
+        candidates = [current]
+        while not self.autonomous.empty():
+            candidates.append(self.autonomous.get_nowait())
+        selected_index = min(
+            range(len(candidates)),
+            key=lambda index: (candidates[index].priority, index),
+        )
+        selected = candidates.pop(selected_index)
+        for item in candidates:
+            self.autonomous.put_nowait(item)
+        return selected
 
     async def _request_webhook_turn(
         self, prompt: str, turn_id: str
@@ -717,6 +799,13 @@ class MomoiDaemon(TurnRunner):
                 await self.autonomous.put(
                     AutonomousJob.reflection(str(reflection["local_date"]))
                 )
+                continue
+            maintenance_turn_id = self.store.pending_memory_maintenance_turn()
+            if (
+                maintenance_turn_id is not None
+                and maintenance_turn_id not in self._queued_memory_maintenance
+            ):
+                self._enqueue_memory_maintenance(maintenance_turn_id)
                 continue
             heartbeat = self.store.claim_due_heartbeat(
                 self.config.heartbeat, self.config.notifications

@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 
-JobKind = Literal["goal", "reflection", "heartbeat"]
+JobKind = Literal["goal", "reflection", "memory_maintenance", "heartbeat"]
 
 
 @dataclass(frozen=True)
@@ -15,7 +15,11 @@ class AutonomousJob:
 
     def __post_init__(self) -> None:
         object.__setattr__(
-            self, "priority", {"goal": 0, "reflection": 1, "heartbeat": 2}[self.kind]
+            self,
+            "priority",
+            {"goal": 0, "reflection": 1, "memory_maintenance": 2, "heartbeat": 3}[
+                self.kind
+            ],
         )
 
     @classmethod
@@ -25,6 +29,10 @@ class AutonomousJob:
     @classmethod
     def reflection(cls, local_date: str) -> "AutonomousJob":
         return cls("reflection", local_date)
+
+    @classmethod
+    def memory_maintenance(cls, turn_id: str) -> "AutonomousJob":
+        return cls("memory_maintenance", turn_id)
 
     @classmethod
     def heartbeat(cls) -> "AutonomousJob":

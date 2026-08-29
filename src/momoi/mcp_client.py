@@ -316,9 +316,6 @@ class MCPManager:
         payload = result.model_dump(mode="json", by_alias=True, exclude_none=True)
         is_error = bool(result.isError)
         message = _mcp_error_message(payload) if is_error else None
-        serialized = json.dumps(payload, ensure_ascii=False)
-        if len(serialized) > 30_000:
-            payload = {"truncated": True, "content": serialized[:30_000]}
         response = {
             "ok": not is_error,
             "error": "mcp_tool_error" if is_error else None,

@@ -113,7 +113,7 @@ speak-or-silence.
   fitting asset, and never use it instead of necessary information. When the
   Turn already has visible delivery, you may insert the asset at any position
   among its bubbles to strengthen tone or emotion, or choose not to include one.
-  The delivery plan does not choose or reserve it. It does not reopen a silent
+  The Planner strategy does not choose or reserve it. It does not reopen a silent
   close.
 
 ## Naturalness boundaries

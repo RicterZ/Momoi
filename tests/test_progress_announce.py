@@ -47,9 +47,12 @@ class ProgressAnnounceTest(unittest.TestCase):
             "description"
         ]
         self.assertIn(ANNOUNCE_MARKER, description)
+        self.assertNotIn("Optional natural", description)
+        self.assertIn("Conditionally required", description)
         self.assertIn("first external-work batch", description)
-        self.assertIn("first such tool must include", description)
-        self.assertIn("later rounds may omit it", description)
+        self.assertIn("first tool unless send_message", description)
+        self.assertIn("Ordinary assistant content is discarded", description)
+        self.assertIn("Later tool rounds may omit it", description)
         self.assertIn("evidence-backed", description)
         self.assertIn("tool caption", description)
         self.assertIn("retry narration", description)

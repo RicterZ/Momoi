@@ -177,7 +177,8 @@ class ConfigurationTest(unittest.TestCase):
 
             value["llm"]["tool_choice"] = False  # type: ignore[index]
             path.write_text(json.dumps(value))
-            self.assertFalse(load_config(path).llm.tool_choice)
+            configured = load_config(path)
+            self.assertFalse(configured.llm.tool_choice)
 
             value["channels"]["primary"] = "missing"  # type: ignore[index]
             path.write_text(json.dumps(value))
@@ -248,6 +249,7 @@ class ConfigurationTest(unittest.TestCase):
                         },
                         "channels": _napcat_channels(),
                         "context": {},
+                        "tools": {"result_retention_days": 14},
                         "autonomy": {
                             "allowed_tools": [
                                 "curl",
@@ -277,6 +279,8 @@ class ConfigurationTest(unittest.TestCase):
             self.assertFalse(hasattr(config.heartbeat, "reply_initial_interval_seconds"))
             self.assertFalse(hasattr(config.heartbeat, "reply_followup_interval_seconds"))
             self.assertEqual(config.dashboard.token, "")
+            self.assertEqual(config.tool_result_max_chars, 12000)
+            self.assertEqual(config.tool_result_retention_days, 14)
 
             (root / "prompts" / "HEARTBEAT.md").unlink()
             self.assertEqual(load_config(path).heartbeat_prompt, "")

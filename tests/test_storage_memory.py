@@ -213,6 +213,51 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertEqual(len(ranked), 1)
             self.assertEqual(ranked[0]["source"], "reflection")
             self.assertGreaterEqual(ranked[0]["search_score"], 0.35)
+            self.assertGreaterEqual(ranked[0]["eligibility_score"], 0.35)
+            store.close()
+
+    def test_memory_query_priority_changes_rank_not_eligibility(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            now = time.time()
+            with store._db:
+                store._db.execute(
+                    """INSERT INTO reflections
+                       (id, local_date, state, scheduled_at, created_at, completed_at)
+                       VALUES ('reflection:priority', '2030-01-01', 'completed',
+                               ?, ?, ?)""",
+                    (now, now, now),
+                )
+                store._db.execute(
+                    """INSERT INTO reflection_memories
+                       (kind, key, content, evidence, confidence,
+                        source_reflection_id, created_at, updated_at)
+                       VALUES ('practice', 'home.speaker.priority',
+                               '小爱音箱播报方法', 'evidence', 1.0,
+                               'reflection:priority', ?, ?)""",
+                    (now, now),
+                )
+
+            primary = store.rank_recalled_memories(
+                [MemoryRecallQuery("小爱音箱", ("home",), 0)],
+                6,
+                now=now,
+            )
+            tertiary = store.rank_recalled_memories(
+                [MemoryRecallQuery("小爱音箱", ("home",), 2)],
+                6,
+                now=now,
+            )
+
+            self.assertEqual(len(primary), 1)
+            self.assertEqual(len(tertiary), 1)
+            self.assertEqual(
+                primary[0]["eligibility_score"],
+                tertiary[0]["eligibility_score"],
+            )
+            self.assertGreater(
+                primary[0]["search_score"], tertiary[0]["search_score"]
+            )
             store.close()
 
     def test_context_read_indexes_are_installed(self) -> None:
@@ -420,7 +465,7 @@ class StorageMemoryTest(unittest.TestCase):
             searched = MemoryTools(store).execute(
                 ToolCall(
                     "search",
-                    "conversation_search",
+                    "episode_search",
                     {
                         "query": "七月旧暗号",
                         "time_range": {
@@ -440,7 +485,7 @@ class StorageMemoryTest(unittest.TestCase):
             listed = MemoryTools(store).execute(
                 ToolCall(
                     "browse",
-                    "conversation_search",
+                    "episode_search",
                     {
                         "query": "",
                         "time_range": {
@@ -458,7 +503,7 @@ class StorageMemoryTest(unittest.TestCase):
             )
             store.close()
 
-    def test_conversation_search_returns_compact_relevant_claims(self) -> None:
+    def test_episode_search_returns_compact_relevant_claims(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
             store.create_episode("长期项目", episode_id="project")
@@ -514,7 +559,7 @@ class StorageMemoryTest(unittest.TestCase):
             result = MemoryTools(store).execute(
                 ToolCall(
                     "search",
-                    "conversation_search",
+                    "episode_search",
                     {
                         "query": "紫罗兰钥匙",
                         "time_range": {"kind": "all"},
@@ -752,12 +797,12 @@ class StorageMemoryTest(unittest.TestCase):
             )
             store.close()
 
-    def test_webhook_archive_is_visible_but_not_owner_writable(self) -> None:
+    def test_runtime_archives_are_visible_but_not_owner_writable(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
             now = time.time()
             with store._db:
-                archive_id = store._ensure_autonomous_episode(
+                webhook_archive_id = store._ensure_autonomous_episode(
                     "webhook:event-message:day:2026-08-24",
                     "webhook:run:0",
                     "Webhook event-message 2026-08-24",
@@ -767,42 +812,57 @@ class StorageMemoryTest(unittest.TestCase):
                 store._db.execute(
                     "UPDATE turns SET state='completed' WHERE id='webhook:run:0'"
                 )
+                heartbeat_archive_id = store._ensure_autonomous_episode(
+                    "heartbeat:day:2026-08-25",
+                    "heartbeat:run:0",
+                    "Heartbeat 2026-08-25",
+                    now + 1,
+                    "休息一下",
+                )
+                store._db.execute(
+                    "UPDATE turns SET state='completed' WHERE id='heartbeat:run:0'"
+                )
             store.create_episode("普通话题", episode_id="ordinary")
 
-            self.assertIn(
-                archive_id,
+            archive_ids = {webhook_archive_id, heartbeat_archive_id}
+            self.assertLessEqual(
+                archive_ids,
                 {item["id"] for item in store.list_recent_episode_directory(8)},
             )
-            self.assertNotIn(
-                archive_id,
-                {
-                    item["id"]
-                    for item in store.list_recent_episode_directory(
-                        8, exclude_webhook_archives=True
-                    )
-                },
+            self.assertTrue(
+                archive_ids.isdisjoint(
+                    {
+                        item["id"]
+                        for item in store.list_recent_episode_directory(
+                            8, exclude_runtime_archives=True
+                        )
+                    }
+                )
             )
-            self.assertNotIn(
-                archive_id,
-                {
-                    item["id"]
-                    for item in store.list_episode_directory(
-                        8, exclude_webhook_archives=True
-                    )
-                },
+            self.assertTrue(
+                archive_ids.isdisjoint(
+                    {
+                        item["id"]
+                        for item in store.list_episode_directory(
+                            8, exclude_runtime_archives=True
+                        )
+                    }
+                )
             )
-            self.assertNotIn(
-                archive_id,
-                {item["id"] for item in store.open_conversation_inventory()},
+            self.assertTrue(
+                archive_ids.isdisjoint(
+                    {item["id"] for item in store.open_conversation_inventory()}
+                )
             )
 
-            store.apply_conversation_actions(
-                [{"action": "close", "episode_id": archive_id}], now=now + 1
-            )
-            self.assertEqual(store.episode(archive_id)["status"], "open")
+            for archive_id in archive_ids:
+                store.apply_conversation_actions(
+                    [{"action": "close", "episode_id": archive_id}], now=now + 2
+                )
+                self.assertEqual(store.episode(archive_id)["status"], "open")
 
             stale_event = IncomingMessage(
-                "stale", "stale", "旧计划误选归档", now + 2, now + 2
+                "stale", "stale", "旧计划误选归档", now + 3, now + 3
             )
             store.add_event(stale_event)
             store.begin_turn("stale-owner", "owner", [stale_event.event_id])
@@ -816,9 +876,9 @@ class StorageMemoryTest(unittest.TestCase):
                     "episode_actions": [
                         {
                             "action": "continue",
-                            "episode_id": archive_id,
+                            "episode_id": heartbeat_archive_id,
                             "is_new": False,
-                            "title": "Webhook event-message 2026-08-24",
+                            "title": "Heartbeat 2026-08-25",
                             "relation": "primary",
                             "unit_ids": ["u1"],
                             "topics": ["错误话题"],
@@ -844,15 +904,19 @@ class StorageMemoryTest(unittest.TestCase):
                 ).fetchone()[0],
                 0,
             )
-            self.assertNotIn("错误话题", store.episode(archive_id)["topics"])
+            self.assertNotIn("错误话题", store.episode(heartbeat_archive_id)["topics"])
 
             store.commit_turn(
                 [], "这条发展成新话题", AgentReply([]), turn_id="owner-pending"
             )
-            with self.assertRaisesRegex(
-                ValueError, "webhook archive does not accept non-webhook turns"
+            for archive_kind, archive_id in (
+                ("webhook", webhook_archive_id),
+                ("heartbeat", heartbeat_archive_id),
             ):
-                store.link_turn_to_episode(archive_id, "owner-pending")
+                with self.assertRaisesRegex(
+                    ValueError, f"{archive_kind} archive does not accept owner turns"
+                ):
+                    store.link_turn_to_episode(archive_id, "owner-pending")
 
             store.commit_turn(
                 [], "旧版本误绑的后续", AgentReply([]), turn_id="legacy-owner"
@@ -862,38 +926,46 @@ class StorageMemoryTest(unittest.TestCase):
                     """INSERT INTO episode_turns
                        (episode_id, turn_id, ordinal, relation, unit_ids_json)
                        VALUES (?, 'legacy-owner', 2, 'primary', '[]')""",
-                    (archive_id,),
+                    (heartbeat_archive_id,),
                 )
-                store._release_reply_episode_hold("legacy-owner", now + 3)
-                self.assertEqual(store.episode(archive_id)["status"], "open")
+                store._release_reply_episode_hold("legacy-owner", now + 4)
+                self.assertEqual(store.episode(heartbeat_archive_id)["status"], "open")
                 store._db.execute(
                     "UPDATE conversation_episodes SET status='closing' WHERE id=?",
-                    (archive_id,),
+                    (heartbeat_archive_id,),
                 )
-                store._apply_context_plan_episodes("unrelated", now + 4, "")
-                self.assertEqual(store.episode(archive_id)["status"], "closing")
+                store._apply_context_plan_episodes("unrelated", now + 5, "")
+                self.assertEqual(
+                    store.episode(heartbeat_archive_id)["status"], "closing"
+                )
 
             candidate = store.claim_episode_consolidation_candidate()
-            self.assertNotIn(
-                archive_id,
-                {item["id"] for item in candidate["candidate_episodes"]},
+            self.assertTrue(
+                archive_ids.isdisjoint(
+                    {item["id"] for item in candidate["candidate_episodes"]}
+                )
             )
             self.assertEqual(candidate["context_turns"], [])
-            decision = {
-                "action": "continue",
-                "episode_id": archive_id,
-                "turn_ids": ["owner-pending"],
-                "topics": [],
-                "entities": [],
-                "open_loops": [],
-                "salience": 0.5,
-            }
-            with self.assertRaisesRegex(
-                ValueError, "webhook archive does not accept owner turns"
+            for archive_kind, archive_id in (
+                ("webhook", webhook_archive_id),
+                ("heartbeat", heartbeat_archive_id),
             ):
-                store.apply_episode_consolidation(
-                    ["owner-pending"], [decision], [archive_id]
-                )
+                decision = {
+                    "action": "continue",
+                    "episode_id": archive_id,
+                    "turn_ids": ["owner-pending"],
+                    "topics": [],
+                    "entities": [],
+                    "open_loops": [],
+                    "salience": 0.5,
+                }
+                with self.assertRaisesRegex(
+                    ValueError,
+                    f"{archive_kind} archive does not accept owner turns",
+                ):
+                    store.apply_episode_consolidation(
+                        ["owner-pending"], [decision], [archive_id]
+                    )
             store.close()
 
     def test_latest_consolidation_turn_is_deferred_then_reconsidered(
@@ -1459,7 +1531,101 @@ class StorageMemoryTest(unittest.TestCase):
             )
             reopened.close()
 
-    def test_conversation_read_pages_back_through_a_long_episode(self) -> None:
+    def test_recall_reuse_candidates_flatten_effective_queries(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store.begin_turn("recalled-turn", "owner", ["event-1"])
+            store.begin_turn("planned-turn", "owner", ["event-2"])
+            store.begin_turn("missed-turn", "owner", ["event-3"])
+            store.begin_turn("reuse-turn", "owner", ["event-4"])
+            store.create_episode("摩旅计划", episode_id="trip")
+            recalled_plan = {
+                "intent_units": [
+                    {
+                        "id": "u1",
+                        "recall": {"mode": "search", "queries": ["长寿湖"]},
+                        "recall_queries": ["长寿湖"],
+                        "recall_from_turn_id": "",
+                    }
+                ]
+            }
+            store.save_context_plan(
+                "recalled-turn", 1, ["event-1"], recalled_plan
+            )
+            store.save_context_retrieval(
+                "recalled-turn",
+                1,
+                {
+                    "version": 4,
+                    "recall_memories": [],
+                    "reflection_memories": [],
+                    "query_recall": "queries=长寿湖\nhits=长寿湖",
+                },
+            )
+            store.link_turn_to_episode("trip", "recalled-turn", unit_ids=["u1"])
+            store.save_context_plan(
+                "planned-turn", 1, ["event-2"], recalled_plan
+            )
+            store.link_turn_to_episode("trip", "planned-turn", unit_ids=["u1"])
+            store.save_context_plan(
+                "missed-turn", 1, ["event-3"], recalled_plan
+            )
+            store.save_context_retrieval(
+                "missed-turn",
+                1,
+                {
+                    "version": 4,
+                    "recall_memories": [],
+                    "reflection_memories": [],
+                    "query_recall": "queries=长寿湖\nmisses=长寿湖",
+                },
+            )
+            store.link_turn_to_episode("trip", "missed-turn", unit_ids=["u1"])
+            reuse_plan = {
+                "intent_units": [
+                    {
+                        "id": "u1",
+                        "recall": {
+                            "mode": "reuse",
+                            "from_turn_id": "recalled-turn",
+                        },
+                        "recall_queries": [],
+                        "recall_from_turn_id": "recalled-turn",
+                    }
+                ]
+            }
+            store.save_context_plan("reuse-turn", 1, ["event-4"], reuse_plan)
+            store.save_context_retrieval(
+                "reuse-turn",
+                1,
+                {
+                    "version": 4,
+                    "recall_memories": [],
+                    "reflection_memories": [],
+                    "query_recall": "reused_from=recalled-turn units=u1",
+                },
+            )
+
+            candidates = store.recall_reuse_candidates(
+                [
+                    "reuse-turn",
+                    "recalled-turn",
+                    "planned-turn",
+                    "missed-turn",
+                    "missing-turn",
+                ]
+            )
+
+            self.assertEqual(len(candidates), 2)
+            self.assertEqual(candidates[0]["turn_id"], "reuse-turn")
+            self.assertEqual(candidates[0]["queries"], ["长寿湖"])
+            self.assertEqual(
+                candidates[1],
+                {"turn_id": "recalled-turn", "queries": ["长寿湖"]},
+            )
+            store.close()
+
+    def test_episode_read_pages_back_through_a_long_episode(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
             store.create_episode("很长的旧对话", episode_id="long-episode")
@@ -1478,7 +1644,7 @@ class StorageMemoryTest(unittest.TestCase):
             first = MemoryTools(store).execute(
                 ToolCall(
                     "read-newest",
-                    "conversation_read",
+                    "episode_read",
                     {"episode_id": "long-episode"},
                 ),
                 [],
@@ -1489,7 +1655,7 @@ class StorageMemoryTest(unittest.TestCase):
             second = MemoryTools(store).execute(
                 ToolCall(
                     "read-older",
-                    "conversation_read",
+                    "episode_read",
                     {
                         "episode_id": "long-episode",
                         "before_ordinal": first["next_before_ordinal"],
@@ -1505,7 +1671,7 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertIsNone(second["next_before_ordinal"])
             store.close()
 
-    def test_conversation_read_filters_raw_messages_by_exact_time_range(
+    def test_episode_read_filters_raw_messages_by_exact_time_range(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1531,7 +1697,7 @@ class StorageMemoryTest(unittest.TestCase):
             result = MemoryTools(store).execute(
                 ToolCall(
                     "read-window",
-                    "conversation_read",
+                    "episode_read",
                     {
                         "episode_id": "time-window",
                         "time_range": {
@@ -1563,17 +1729,19 @@ class StorageMemoryTest(unittest.TestCase):
             )
             store.close()
 
-    def test_conversation_read_schema_warns_against_broad_raw_windows(self) -> None:
+    def test_episode_read_schema_describes_episode_turn_messages(self) -> None:
         spec = next(
-            spec for spec in MEMORY_TOOL_SPECS if spec["name"] == "conversation_read"
+            spec for spec in MEMORY_TOOL_SPECS if spec["name"] == "episode_read"
         )
-        self.assertIn("flood the model context", spec["description"])
+        self.assertIn("Episode id", spec["description"])
+        self.assertIn("turn_id", spec["description"])
+        self.assertIn("Episode ordinal", spec["description"])
         self.assertIn(
             "must be used cautiously",
             spec["input_schema"]["properties"]["time_range"]["description"],
         )
 
-    def test_conversation_read_continues_inside_one_oversized_message(self) -> None:
+    def test_episode_read_continues_inside_one_oversized_message(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
             store.create_episode("单条超长消息", episode_id="oversized")
@@ -1590,7 +1758,7 @@ class StorageMemoryTest(unittest.TestCase):
             store.link_turn_to_episode("oversized", turn_id)
 
             first = MemoryTools(store).execute(
-                ToolCall("first", "conversation_read", {"episode_id": "oversized"}),
+                ToolCall("first", "episode_read", {"episode_id": "oversized"}),
                 [],
                 TurnDraft(),
             )["episode"]["messages"][0]
@@ -1598,7 +1766,7 @@ class StorageMemoryTest(unittest.TestCase):
             second = MemoryTools(store).execute(
                 ToolCall(
                     "second",
-                    "conversation_read",
+                    "episode_read",
                     {
                         "episode_id": "oversized",
                         "message_id": first["id"],

@@ -54,6 +54,41 @@ class BudgetCompatibilityTests(unittest.TestCase):
         self.assertGreater(parsed["original_chars"], 5000)
         self.assertEqual(ToolResultFitter().fit(value, 1000), rendered)
 
+    def test_tool_result_truncation_preserves_file_continuation_metadata(self):
+        value = json.dumps(
+            {
+                "ok": True,
+                "provenance": {"source": "builtin", "tool": "read_file"},
+                "path": "/workspace/article.txt",
+                "start_line": 10,
+                "end_line": 30,
+                "total_lines": 100,
+                "sha256": "abc",
+                "content_offset": 500,
+                "next_content_offset": 5000,
+                "content": "原文" * 5000,
+            },
+            ensure_ascii=False,
+        )
+        parsed = json.loads(truncate_tool_result_json(value, 1000))
+        for key in (
+            "path",
+            "start_line",
+            "total_lines",
+            "sha256",
+            "content_offset",
+        ):
+            self.assertEqual(parsed[key], json.loads(value)[key])
+        self.assertEqual(
+            parsed["next_content_offset"],
+            parsed["content_offset"] + len(parsed["content"]),
+        )
+        self.assertLess(parsed["next_content_offset"], 5000)
+        self.assertLessEqual(
+            len(json.dumps(parsed, ensure_ascii=False)),
+            1000,
+        )
+
     def test_section_allocator_keeps_round_robin_order(self):
         rows = [
             ("u1", [{"id": "a", "text": "aa"}, {"id": "c", "text": "cc"}]),

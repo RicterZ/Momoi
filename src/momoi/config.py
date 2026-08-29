@@ -126,7 +126,8 @@ class AppConfig:
     soul_prompt: str = ""
     mcp_config: Path | None = None
     notifications: NotificationConfig = NotificationConfig()
-    tool_result_max_chars: int = 30000
+    tool_result_max_chars: int = 12000
+    tool_result_retention_days: float = 30
     turn_max_seconds: float = 0
     turn_max_total_tokens: int = 0
     webhooks: WebhookConfig = WebhookConfig()
@@ -513,7 +514,11 @@ def load_config(path: str | Path) -> AppConfig:
             ),
         ),
         tool_result_max_chars=max(
-            1000, int(tools_raw.get("result_max_chars", 30000))
+            1000, int(tools_raw.get("result_max_chars", 12000))
+        ),
+        tool_result_retention_days=_nonnegative(
+            tools_raw.get("result_retention_days", 30),
+            "tools.result_retention_days",
         ),
         turn_max_seconds=_nonnegative(
             turn_raw.get("max_seconds", 0), "turn.max_seconds"

@@ -218,7 +218,7 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
         },
     },
     {
-        "name": "conversation_search",
+        "name": "episode_search",
         "description": (
             "Search archived conversation Episodes. Supports keyword search, "
             "time-range browsing with an empty query, and paginated results. "
@@ -274,13 +274,14 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
         },
     },
     {
-        "name": "conversation_read",
+        "name": "episode_read",
         "description": (
-            "Read raw archived messages from one Episode returned by "
-            "conversation_search. Narrow time_range to the smallest useful window: "
-            "raw messages are verbose, and a broad window can flood the model "
-            "context with irrelevant history. Read broader or older pages only "
-            "when the compact summary is insufficient or exact wording is needed."
+            "Given an Episode id, return a paginated raw message list for its linked "
+            "Turns. Each message includes turn_id, Episode ordinal, role, timestamp, "
+            "delivery state, and content. Use an id from automatic Episode recall or "
+            "episode_search. Narrow time_range to the smallest useful window: "
+            "raw messages are verbose. Read broader or older pages only when the "
+            "Episode summary is insufficient or exact wording is needed."
         ),
         "input_schema": {
             "type": "object",
@@ -289,6 +290,10 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 200,
+                    "description": (
+                        "Episode id returned by automatic recall or "
+                        "episode_search."
+                    ),
                 },
                 "before_ordinal": {
                     "type": "integer",
@@ -516,10 +521,10 @@ class MemoryTools:
                 return self.thinking.execute(call)
             if call.name == "memory_search":
                 return self._search(call.arguments, draft)
-            if call.name == "conversation_search":
-                return self._conversation_search(call.arguments)
-            if call.name == "conversation_read":
-                return self._conversation_read(call.arguments)
+            if call.name == "episode_search":
+                return self._episode_search(call.arguments)
+            if call.name == "episode_read":
+                return self._episode_read(call.arguments)
             if call.name == "memory_remember":
                 return self._remember(call.arguments, current_events, draft)
             if call.name == "memory_forget":
@@ -575,7 +580,7 @@ class MemoryTools:
                 )
         return {"ok": True, "count": len(results), "results": results}
 
-    def _conversation_search(self, arguments: dict[str, Any]) -> dict[str, Any]:
+    def _episode_search(self, arguments: dict[str, Any]) -> dict[str, Any]:
         query = str(arguments.get("query") or "").strip()
         try:
             limit = min(10, max(1, int(arguments.get("limit", 5))))
@@ -660,7 +665,7 @@ class MemoryTools:
             "results": compact,
         }
 
-    def _conversation_read(self, arguments: dict[str, Any]) -> dict[str, Any]:
+    def _episode_read(self, arguments: dict[str, Any]) -> dict[str, Any]:
         episode_id = arguments.get("episode_id")
         if not isinstance(episode_id, str) or not episode_id.strip():
             return _memory_error("invalid_episode_id")

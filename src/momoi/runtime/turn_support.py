@@ -18,6 +18,9 @@ HEARTBEAT_PROMPT_PATH = PROMPT_ROOT.joinpath("heartbeat.md")
 HEARTBEAT_PLANNER_PROMPT_PATH = PROMPT_ROOT.joinpath("heartbeat_planner.md")
 REPLY_WAIT_PROMPT_PATH = PROMPT_ROOT.joinpath("reply_wait.md")
 REFLECTION_PROMPT_PATH = PROMPT_ROOT.joinpath("reflection.md")
+MEMORY_MAINTENANCE_PROMPT_PATH = PROMPT_ROOT.joinpath(
+    "memory_maintenance.md"
+)
 CONTEXT_PLANNER_PROMPT_PATH = PROMPT_ROOT.joinpath("context_planner.md")
 EPISODE_SUMMARY_PROMPT_PATH = PROMPT_ROOT.joinpath("episode_summary.md")
 EPISODE_CONSOLIDATION_PROMPT_PATH = PROMPT_ROOT.joinpath(
@@ -31,16 +34,23 @@ HEARTBEAT_PLANNER_SYSTEM_PROMPT = HEARTBEAT_PLANNER_PROMPT_PATH.read_text(
 ).strip()
 REPLY_WAIT_SYSTEM_PROMPT = REPLY_WAIT_PROMPT_PATH.read_text(encoding="utf-8").strip()
 REFLECTION_SYSTEM_PROMPT = REFLECTION_PROMPT_PATH.read_text(encoding="utf-8").strip()
+MEMORY_MAINTENANCE_SYSTEM_PROMPT = MEMORY_MAINTENANCE_PROMPT_PATH.read_text(
+    encoding="utf-8"
+).strip()
 CONTEXT_PLANNER_PROTOCOL_PROMPT = CONTEXT_PLANNER_PROMPT_PATH.read_text(
     encoding="utf-8"
 ).strip()
 DOWNSTREAM_OWNER_CONTRACT_PROMPT = SYSTEM_PROMPT_PATH.read_text(
     encoding="utf-8"
 ).strip()
+PLANNER_STYLE_CARD_BOUNDARY = (
+    "[Owner-only Style Card omitted. The downstream Owner applies its wording, "
+    "tone, bubble shape, timing, and reaction guidance independently.]"
+)
 PLANNER_DOWNSTREAM_OWNER_CONTRACT_PROMPT = (
     DOWNSTREAM_OWNER_CONTRACT_PROMPT.replace(
         "{{STYLE_CARD}}",
-        STYLE_CARD_SYSTEM_PROMPT,
+        PLANNER_STYLE_CARD_BOUNDARY,
     )
 )
 CONTEXT_PLANNER_SYSTEM_PROMPT = (
@@ -49,8 +59,8 @@ CONTEXT_PLANNER_SYSTEM_PROMPT = (
     + "The following is the exact system contract for the downstream Owner "
     + "model. It is a trusted planning constraint, not your identity, tool "
     + "protocol, or permission to act. Interpret its second-person commands as "
-    + "requirements on the downstream Owner. The exact shared Style Card is "
-    + "resolved here because visible delivery shape is part of planning. "
+    + "requirements on the downstream Owner. Its Style Card body is omitted; "
+    + "wording, tone, bubble, timing, and reaction guidance is outside planning. "
     + "`{{SOUL}}` remains unresolved; do not infer identity, relationships, "
     + "persona, or persona-specific wording from it.\n\n"
     + "<downstream_owner_contract>\n"
@@ -119,13 +129,13 @@ USER_CONTEXT_SECTION_ORDER = (
     "interrupted_reply_expectation",
     "recent_turn_base",
     "recent_turn_append",
+    "recent_external_events",
     "recent_turns",
     "recent_conversation",
     "recall_memories",
     "recall_status",
     "reflection_memories",
     "episode_directory",
-    "recalled_turns",
     "webhook_activity",
     "open_conversations",
     "recent_topic_reference",
@@ -150,6 +160,12 @@ USER_CONTEXT_SECTION_ORDER = (
     "current_owner_messages",
 )
 
+OWNER_TURN_PROTOCOL_REMINDER = (
+    "[Trusted runtime Owner Turn delivery rule: every owner-visible bubble MUST "
+    "be sent by calling send_message with that bubble in messages. Never output "
+    "the bubble as ordinary assistant content.]"
+)
+
 
 def pack_user_context(*items: tuple[str, str]) -> str:
     """Render user context sections in prefix-cache order, skipping empties."""
@@ -164,6 +180,12 @@ def pack_user_context(*items: tuple[str, str]) -> str:
             if name in by_name
         )
     )
+
+
+def pack_owner_context(*items: tuple[str, str]) -> str:
+    """Render an Owner request with the fixed output protocol at the tail."""
+    context = pack_user_context(*items)
+    return f"{context}\n\n{OWNER_TURN_PROTOCOL_REMINDER}"
 
 
 def tool_result_block(call_id: str, result: dict[str, Any]) -> dict[str, Any]:
@@ -203,12 +225,10 @@ def conversation_guidance(plan: dict[str, object]) -> str:
     if isinstance(owner_handoff, dict):
         context = owner_handoff.get("context")
         if isinstance(context, dict):
-            lines.append("Context handoff")
-            lines.append(f"  status: {context.get('status') or 'sufficient'}")
-            lines.append(
-                f"  reason: {' '.join(str(context.get('reason') or '').split())}"
-            )
-            for need in context.get("needs") or []:
+            needs = context.get("needs") or []
+            if needs:
+                lines.append("Possible post-recall context needs")
+            for need in needs:
                 if not isinstance(need, dict):
                     continue
                 fields = " ".join(
@@ -221,49 +241,27 @@ def conversation_guidance(plan: dict[str, object]) -> str:
         mcp = owner_handoff.get("mcp")
         if isinstance(mcp, dict):
             servers = mcp.get("servers") or []
-            lines.append("MCP handoff")
-            lines.append(
-                "  servers: "
-                + (", ".join(str(server) for server in servers) if servers else "none")
-            )
-            lines.append(f"  reason: {' '.join(str(mcp.get('reason') or '').split())}")
+            if servers:
+                lines.append("Preloaded MCP groups")
+                lines.append("  " + ", ".join(str(server) for server in servers))
 
-        execution = owner_handoff.get("execution")
-        if isinstance(execution, dict):
-            lines.append("Execution handoff")
-            mode = str(execution.get("mode") or "message_only")
-            lines.append(f"  mode: {mode}")
-            if mode == "message_only":
-                lines.append("  work actions: none")
-            else:
-                for index, step in enumerate(
-                    execution.get("outline") or [], start=1
-                ):
-                    lines.append(f"  step {index}: {' '.join(str(step).split())}")
+        strategy = owner_handoff.get("strategy")
+        if isinstance(strategy, dict):
+            lines.append("Strategic handoff")
+            response_mode = str(strategy.get("response_mode") or "")
+            lines.append(f"  response mode: {response_mode or 'unspecified'}")
+            for index, item in enumerate(strategy.get("plan") or [], start=1):
+                lines.append(f"  step {index}: {' '.join(str(item).split())}")
+            for criterion in strategy.get("completion_criteria") or []:
+                lines.append(f"  complete when: {' '.join(str(criterion).split())}")
+            if response_mode == "silent":
+                lines.append("  terminal action: call end_turn alone")
+            elif response_mode == "visible":
                 lines.append(
-                    f"  reason: {' '.join(str(execution.get('reason') or '').split())}"
+                    "  delivery rule: every owner-visible bubble MUST be sent by "
+                    "calling send_message with that bubble in messages; never "
+                    "output the bubble as ordinary assistant content"
                 )
-            delivery = execution.get("delivery")
-            if isinstance(delivery, dict):
-                delivery_mode = str(delivery.get("mode") or "")
-                lines.append("Delivery handoff")
-                lines.append(f"  mode: {delivery_mode or 'unspecified'}")
-                if delivery_mode == "silent":
-                    lines.append(
-                        "  action: no owner-visible delivery; call end_turn alone"
-                    )
-                elif delivery_mode == "bubbles":
-                    lines.append(
-                        "  action: call send_message; plan and realize the concrete "
-                        "response through the Soul and Style Card"
-                    )
-                    lines.append(
-                        "  sequence: send_message with no assistant content; after "
-                        "its result, call end_turn alone in a later response"
-                    )
-                plan = " ".join(str(delivery.get("plan") or "").split())
-                if plan:
-                    lines.append(f"  plan: {plan}")
 
     for item in uncertainty or []:
         lines.append(f"Uncertainty: {' '.join(str(item).split())}")
@@ -278,6 +276,13 @@ def plan_log_units(plan: dict[str, object]) -> list[dict[str, object]]:
             "text": unit.get("text"),
             "intent": unit.get("intent"),
             "references": unit.get("references", []),
+            "recall_mode": (
+                unit.get("recall", {}).get("mode")
+                if isinstance(unit.get("recall"), dict)
+                else None
+            ),
+            "recall_queries": unit.get("recall_queries", []),
+            "recall_from_turn_id": unit.get("recall_from_turn_id", ""),
         }
         for unit in plan.get("intent_units", [])
         if isinstance(unit, dict)

@@ -14,6 +14,7 @@ from ..storage import estimate_tokens
 from .context_assembler import (
     assemble_main_context,
     assemble_planner_recent_turns,
+    assemble_recent_external_events,
     build_plan_retrieval,
     render_planner_recent_turn_focus,
     render_planner_recent_turns,
@@ -249,6 +250,7 @@ def _heartbeat_plan_lines(plan: dict[str, object]) -> str:
     lines = [
         f"activity: {str(activity.get('intent') or '').strip()}",
         f"reason: {str(activity.get('reason') or '').strip()}",
+        f"recall mode: {activity.get('recall_mode') or 'skip'}",
         f"context status: {context.get('status') or 'sufficient'}",
         f"context reason: {context.get('reason') or ''}",
     ]
@@ -319,6 +321,19 @@ def _reply_wait_message_lines(
     return "\n\n".join(blocks)
 
 
+def _planner_recall_context_lines(
+    values: list[dict[str, object]],
+) -> str:
+    lines: list[str] = []
+    for value in values:
+        turn_id = str(value.get("turn_id") or "")
+        queries = [str(item) for item in value.get("queries") or []]
+        if not turn_id or not queries:
+            continue
+        lines.append(f"turn={turn_id} queries=" + " ; ".join(queries))
+    return "\n".join(lines)
+
+
 def render_heartbeat_planner_request(
     *,
     internal_tools: list[dict[str, str]],
@@ -336,6 +351,7 @@ def render_heartbeat_planner_request(
     current_self_state: str,
     conversation_state: dict[str, object],
     current_time: str,
+    recent_external_events: str = "",
 ) -> str:
     previous_lines = "\n".join(
         f"{key}: {str(previous_activity.get(key) or '(none)').strip()}"
@@ -380,6 +396,7 @@ def render_heartbeat_planner_request(
                 )
             ),
         ),
+        ("recent_external_events", _planner_value(recent_external_events)),
         ("recent_topics", _planner_value(_heartbeat_topic_lines(recent_topics))),
         ("recent_heartbeat_activities", _planner_value(_heartbeat_activity_lines(recent_heartbeat_activities))),
         ("previous_activity", _planner_value(previous_lines)),
@@ -402,6 +419,8 @@ def render_context_planner_request(
     candidate_episodes: list[dict[str, object]],
     interrupted_reply_expectation: str,
     owner_messages: list[dict[str, object]],
+    recent_recall_contexts: list[dict[str, object]] | None = None,
+    recent_external_events: str = "",
 ) -> str:
     """Serialize the exact human-readable user prompt sent to Context Planner."""
     turns = recent_turns.get("turns")
@@ -454,6 +473,13 @@ def render_context_planner_request(
                 )
             ),
         ),
+        ("recent_external_events", _planner_value(recent_external_events)),
+        (
+            "recent_recall_context",
+            _planner_value(
+                _planner_recall_context_lines(recent_recall_contexts or [])
+            ),
+        ),
         (
             "candidate_episodes",
             _planner_value(_planner_episode_lines(candidate_episodes)),
@@ -502,8 +528,11 @@ class ContextService:
                 min(event.received_at for event in events),
             )
         )
+        recall_reuse_candidates = self.store.recall_reuse_candidates(
+            active_recent_turn_ids
+        )
         candidates = self.store.list_recent_episode_directory(
-            8, exclude_webhook_archives=True
+            8, exclude_runtime_archives=True
         )
         log_event(
             logger,
@@ -564,10 +593,15 @@ class ContextService:
                     recent_turns=planner_recent_turns,
                     recent_turn_base_count=recent_turn_base_count,
                     active_recent_turn_ids=active_recent_turn_ids,
+                    recent_external_events=assemble_recent_external_events(
+                        self.store,
+                        min(event.received_at for event in events),
+                    ),
                     candidate_goals=candidate_goals,
                     candidate_episodes=candidates,
                     interrupted_reply_expectation=interrupted_reply,
                     owner_messages=owner_messages,
+                    recent_recall_contexts=recall_reuse_candidates,
                 ),
             }
         ]
@@ -656,6 +690,7 @@ class ContextService:
                     turn_id,
                     revision,
                     available_mcp_servers,
+                    recall_reuse_candidates,
                 )
             except ContextPlanError as error:
                 last_error = str(error)
@@ -757,10 +792,9 @@ class ContextService:
         retrieval = record.get("retrieval")
         if (
             not isinstance(retrieval, dict)
-            or retrieval.get("version") != 3
+            or retrieval.get("version") != 4
             or not isinstance(retrieval.get("recall_memories"), list)
             or not isinstance(retrieval.get("reflection_memories"), list)
-            or not isinstance(retrieval.get("recalled_turns"), list)
         ):
             retrieval = build_plan_retrieval(self.store, plan, self.config)
             record = self.store.save_context_retrieval(
@@ -823,6 +857,9 @@ class ContextService:
                     recent_turns=planner_recent_turns,
                     recent_turn_base_count=recent_turn_base_count,
                     active_recent_turn_ids=active_recent_turn_ids,
+                    recent_external_events=assemble_recent_external_events(
+                        self.store
+                    ),
                     recent_topics=recent_topics,
                     recent_heartbeat_activities=self.store.recent_heartbeat_activities(),
                     previous_activity={

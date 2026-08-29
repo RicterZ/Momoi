@@ -496,6 +496,22 @@ class DeliveryStore:
             )
         return messages
 
+    def cancel_pending_outbox(self, channel: str, reason: str) -> int:
+        with self._db:
+            rows = self._db.execute(
+                """SELECT id FROM outbox
+                   WHERE target_channel=? AND state IN ('pending', 'ambiguous')""",
+                (channel,),
+            ).fetchall()
+            for row in rows:
+                outbox_id = int(row["id"])
+                self._db.execute(
+                    "UPDATE outbox SET state='superseded', last_error=? WHERE id=?",
+                    (reason, outbox_id),
+                )
+                self._sync_outbox_message(outbox_id, "superseded")
+        return len(rows)
+
     def mark_sending(self, outbox_id: int) -> bool:
         with self._db:
             cursor = self._db.execute(

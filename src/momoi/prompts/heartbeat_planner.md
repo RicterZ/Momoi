@@ -21,33 +21,42 @@ Rules:
   activities. Continue one of them only when it still fits now. Do not switch
   merely for variety, and do not avoid an activity merely because it appears there.
 - Keep `intent` and `reason` concise. This is one decision, not a menu of options.
-- Include one to six short `activity.recall_queries`. Each array item is one
-  topic keyword, or exact aliases of that same thing joined by half-width `|`
-  without surrounding spaces, for example
-  `primary-name|known-alias|exact-identifier`. Never join alternatives with
-  spaces or submit a full sentence.
-- A keyword names one particular thing rather than the kind of thing it is: a
-  proper name, an identifier, a number, or the exact title of the item at hand.
-  When what you need history about has a name, that name is the whole keyword.
-  Keep only the keywords that clear that bar, however few that leaves. When none
-  of them do, submit the single item `SKIP_RECALL` and nothing else; that is the
-  complete and expected answer whenever this activity is grounded in what the
-  fixed inputs already say. The framework resolves the remaining keywords across
-  recall memory, reflections, Episodes, and matching Turns before the Heartbeat
-  Turn. Genuine rest still names the one thing it is carrying forward, or
-  `SKIP_RECALL` when it has none.
+- Give the activity one explicit `recall_mode` decision based on informational
+  dependency. Default to `search` whenever unsupplied history could improve
+  continuity, personalization, novelty, activity choice, or execution, or avoid
+  contradiction, repetition, or repeated work. Use `skip` only when relevant
+  history is already supplied or history clearly cannot affect this activity.
+  A casual, playful, restful, or easy activity is not by itself a reason to skip.
+- For `search`, provide one to three ranked exact-word `activity.recall_queries`.
+  Each item is an independent retrieval need: a relevant memory or Episode may
+  satisfy any one item without satisfying the others. Item order affects ranking
+  only, with the concrete current subject or historical premise first and broad
+  context later.
+  Prefer a literal name, identifier, title, or concise subject-plus-history-facet
+  anchor, not a sentence or question. If an expression is ambiguous or depends
+  on a shared convention, put its literal wording first instead of an inferred
+  meaning. Within one retrieval need, `|` joins parallel, equally weighted exact
+  keywords or aliases without spaces. Any one alternative may satisfy that need;
+  matching more alternatives only strengthens ranking. Put different retrieval
+  needs in separate items. For `skip`, return an empty query array. The framework resolves search
+  queries across recall memory, reflections, and Episodes before the Heartbeat
+  Turn.
 
 - `recent_turn_base` and `recent_turn_append` form one ordered Turn history.
   `recent_turn_focus` lists the Turn labels that are the default focus. Other
   supplied Turns are background evidence.
+- `recent_external_events` folds recent autonomous Events that produced no
+  owner-visible message. Treat it as a low-priority environmental ledger, not
+  shared conversation or a pending topic. Use an entry only when the planned
+  activity has a concrete subject or temporal link to it.
 
 - Assess whether supplied state, recent conversation, topics, and Goals are
   enough to execute the activity. If an exact
   older fact or conversation is necessary, put at most two bounded lookups in
   `heartbeat_handoff.context.needs`; otherwise mark context sufficient.
-- Use `memory_search` for durable relevant history, `conversation_search` for
-  older shared history, and `conversation_read` only when exact wording or
-  chronology is required after a relevant Turn is known. These are instructions
+- Use `memory_search` for durable relevant history, `episode_search` for
+  older shared history, and `episode_read` only when exact wording or
+  chronology is required after a relevant Episode is known. These are instructions
   for the Heartbeat Turn, not searches performed by the framework.
 - Select only supplied `available_mcp_servers` required for the chosen activity.
   `<available_internal_tools>` lists capabilities the Heartbeat model may use

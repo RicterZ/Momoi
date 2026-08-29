@@ -21,7 +21,6 @@ SPEECH_ACTS = {
     "unknown",
 }
 CONTEXT_PLAN_TOOL_NAME = "submit_context_plan"
-SKIP_RECALL = "SKIP_RECALL"
 NEW_EPISODE_REF_FORMAT = "new:[a-z0-9][a-z0-9_-]{0,39}"
 
 
@@ -76,11 +75,20 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
     "input_schema": {
         "type": "object",
         "properties": {
-            "version": {"type": "integer", "enum": [4]},
+            "version": {"type": "integer", "enum": [5]},
             "intent_units": {
                 "type": "array",
                 "minItems": 1,
                 "maxItems": 12,
+                "description": (
+                    "One item per independent operative goal. Fold a typo, "
+                    "fragment, or corrected message into the final goal; never "
+                    "create an empty, filler, revoked, or duplicate unit. Repeat "
+                    "an event id across units only when that event genuinely "
+                    "contains multiple independent goals. Verification, result "
+                    "reporting, delivery, and failure handling for another goal "
+                    "belong in strategy or completion criteria, not another unit."
+                ),
                 "items": {
                     "type": "object",
                     "properties": {
@@ -88,10 +96,24 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                         "event_ids": {
                             "type": "array",
                             "minItems": 1,
+                            "uniqueItems": True,
                             "items": {"type": "string"},
                         },
-                        "text": {"type": "string"},
-                        "intent": {"type": "string"},
+                        "text": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 2000,
+                        },
+                        "intent": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200,
+                            "description": (
+                                "Concise operative intent or desired outcome, not "
+                                "a response outline, sequence, wording, style, or "
+                                "list of advice."
+                            ),
+                        },
                         "speech_act": {
                             "type": "string",
                             "enum": sorted(SPEECH_ACTS - {"unknown"}),
@@ -99,35 +121,58 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                         "references": {
                             "type": "array",
                             "maxItems": 8,
+                            "uniqueItems": True,
                             "items": {"type": "string"},
                         },
                         "recall_mode": {
                             "type": "string",
-                            "enum": ["search", "skip"],
+                            "enum": ["search", "reuse"],
                             "description": (
-                                "Prefer search whenever plausible unsupplied history "
-                                "could improve correctness, relevance, continuity, "
-                                "personalization, or novelty, or prevent contradiction, "
-                                "repetition, or repeated work. Skip only when all such "
-                                "history is supplied or history clearly cannot matter. "
-                                "A complete, answerable current request is not enough "
-                                "to skip."
+                                "Required; there is no skip. Decide recall before and "
+                                "independently of Episode action. Reuse only when a "
+                                "listed Turn's displayed queries explicitly cover the "
+                                "complete current historical retrieval scope. Conversation "
+                                "adjacency, a resolved immediate referent, the same scene, "
+                                "or the same Episode does not establish coverage. Search "
+                                "for every new, shifted, unresolved, missed, or degraded "
+                                "subject or historical facet."
                             ),
                         },
                         "recall_queries": {
                             "type": "array",
                             "maxItems": 3,
+                            "uniqueItems": True,
                             "items": {
                                 "type": "string",
                                 "minLength": 1,
                                 "maxLength": 120,
                             },
                             "description": (
-                                "Ranked narrow exact-word expressions for search: "
-                                "a concrete named anchor or a concise subject-plus-"
-                                "history-facet anchor. Empty only for skip. Join only "
-                                "genuine aliases or wording variants of one anchor "
-                                "with `|` without surrounding spaces."
+                                "Ranked exact-word expressions for search; empty for "
+                                "reuse. Emit the fewest distinct needs; one precise query "
+                                "is normal. Each item is a distinct retrieval need; order "
+                                "affects ranking only. Put the owner's explicit subject "
+                                "or historical premise first. Prefer literal names, "
+                                "genuine aliases, ambiguous owner wording, or a concise "
+                                "subject-plus-history-facet anchor. If an emotion or "
+                                "elliptical expression has no supplied cause or referent "
+                                "and prior continuity could resolve it, its literal "
+                                "wording is a valid query; if supplied context already "
+                                "resolves it, do not search analogous past expressions. "
+                                "Within one need, `|` joins only interchangeable, "
+                                "parallel, equally weighted exact keywords without "
+                                "spaces. Use separate items for distinct needs; do not "
+                                "use a sentence, question, interpretation, planned "
+                                "response, or overlapping query."
+                            ),
+                        },
+                        "recall_from_turn_id": {
+                            "type": "string",
+                            "maxLength": 64,
+                            "description": (
+                                "Exact eligible Turn id displayed in "
+                                "recent_recall_context when recall_mode is reuse; empty "
+                                "for search."
                             ),
                         },
                     },
@@ -140,6 +185,7 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                         "references",
                         "recall_mode",
                         "recall_queries",
+                        "recall_from_turn_id",
                     ],
                     "additionalProperties": False,
                 },
@@ -254,21 +300,20 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
             "handoff": {
                 "type": "object",
                 "description": (
-                    "Flat advisory handoff. Internal runtime code normalizes it "
-                    "for the downstream Owner."
+                    "Task-level advisory strategy for the downstream Owner. "
+                    "Use exactly the declared properties and do not add notes "
+                    "or alternate fields."
                 ),
                 "properties": {
-                    "context_status": {
-                        "type": "string",
-                        "enum": ["sufficient", "lookup_required"],
-                        "description": (
-                            "Use sufficient with no context_needs; use "
-                            "lookup_required with one or two context_needs."
-                        ),
-                    },
                     "context_needs": {
                         "type": "array",
                         "maxItems": 2,
+                        "description": (
+                            "Historical lookups that may still be required after "
+                            "the automatic recall results supplied to the Owner. "
+                            "Never repeat an intent recall query here; add a need "
+                            "only for a distinct post-recall search or read."
+                        ),
                         "items": {
                             "type": "object",
                             "properties": {
@@ -276,8 +321,8 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                                     "type": "string",
                                     "enum": [
                                         "memory_search",
-                                        "conversation_search",
-                                        "conversation_read",
+                                        "episode_search",
+                                        "episode_read",
                                         "thinking_search",
                                         "thinking_read",
                                     ],
@@ -303,84 +348,69 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                             "additionalProperties": False,
                         },
                     },
-                    "context_reason": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 300,
-                    },
                     "mcp_servers": {
                         "type": "array",
                         "maxItems": 32,
+                        "description": (
+                            "MCP server groups the Owner is expected to need. "
+                            "Unexpected later needs can use tool_enable."
+                        ),
                         "items": {
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 100,
                         },
                     },
-                    "mcp_reason": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 300,
-                    },
-                    "execution_mode": {
-                        "type": "string",
-                        "enum": ["message_only", "clarify", "work"],
-                        "description": (
-                            "Work-action mode. message_only means no non-delivery "
-                            "work action; delivery_mode still governs delivery."
-                        ),
-                    },
-                    "execution_outline": {
+                    "strategy": {
                         "type": "array",
                         "maxItems": 8,
+                        "description": (
+                            "Minimum ordered task-level decisions. Empty for a "
+                            "silent close; exactly one interaction objective with "
+                            "recall use and material factual boundaries for ordinary "
+                            "visible chat; expand only for genuinely multi-stage work "
+                            "or material branches. Do not duplicate the intent, "
+                            "mention absent tools, prescribe concrete advice, or plan "
+                            "wording, style, bubbles, timing, persona, or reaction "
+                            "assets. For social chat include only the interaction "
+                            "objective, recall use, and factual boundaries."
+                        ),
                         "items": {
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 300,
                         },
                     },
-                    "execution_reason": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 300,
+                    "completion_criteria": {
+                        "type": "array",
+                        "maxItems": 3,
                         "description": (
-                            "Reason for the work-action mode. For message_only use "
-                            "exactly owner-visible delivery only or silent close."
+                            "Only outcomes needed to distinguish completion from "
+                            "an intermediate action. Empty for silence and routine "
+                            "social response."
                         ),
+                        "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 300,
+                        },
                     },
-                    "delivery_mode": {
+                    "response_mode": {
                         "type": "string",
-                        "enum": ["silent", "bubbles"],
+                        "enum": ["silent", "visible"],
                         "description": (
-                            "silent when no owner-visible move remains; bubbles "
-                            "when an owner-visible response remains."
-                        ),
-                    },
-                    "delivery_plan": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 1200,
-                        "description": (
-                            "Outcome-level owner-visible delivery plan. Fully describe "
-                            "what the response should accomplish and which established "
-                            "facts or uncertainty it must handle. Do not prescribe "
-                            "wording, bubble count or order, timing, utterance form, "
-                            "boundaries, persona expression, or reaction assets. For "
-                            "silent mode, explain why no visible move remains."
+                            "silent only when no owner-visible move remains; visible "
+                            "when the Owner must react, answer, ask, report, or "
+                            "otherwise communicate."
                         ),
                     },
                 },
                 "required": [
-                    "context_status",
                     "context_needs",
-                    "context_reason",
                     "mcp_servers",
-                    "mcp_reason",
-                    "execution_mode",
-                    "execution_outline",
-                    "execution_reason",
-                    "delivery_mode",
-                    "delivery_plan",
+                    "strategy",
+                    "completion_criteria",
+                    "response_mode",
                 ],
                 "additionalProperties": False,
             },
@@ -420,27 +450,47 @@ HEARTBEAT_PLAN_TOOL_SPEC: dict[str, object] = {
                 "properties": {
                     "intent": {"type": "string", "maxLength": 300},
                     "reason": {"type": "string", "maxLength": 300},
+                    "recall_mode": {
+                        "type": "string",
+                        "enum": ["search", "skip"],
+                        "description": (
+                            "Prefer search whenever plausible unsupplied history "
+                            "could improve continuity, personalization, novelty, "
+                            "activity choice, or execution, or prevent contradiction, "
+                            "repetition, or repeated work. Skip only when all such "
+                            "history is supplied or history clearly cannot matter."
+                        ),
+                    },
                     "recall_queries": {
                         "type": "array",
-                        "minItems": 1,
-                        "maxItems": 6,
+                        "maxItems": 3,
+                        "uniqueItems": True,
                         "items": {
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 120,
                         },
                         "description": (
-                            "One topic keyword per item, or exact aliases of "
-                            "that same thing joined by `|` without surrounding "
-                            "spaces. Each keyword names one particular thing "
-                            "rather than the kind of thing it is: a proper "
-                            "name, an identifier, a number, or an exact title. "
-                            "Use the single item `SKIP_RECALL` when nothing "
-                            "here meets that bar."
+                            "For search, one to three ranked narrow exact-word "
+                            "expressions. Each item is an independent retrieval need; "
+                            "a result may satisfy any one item, and order affects "
+                            "ranking only. Put the concrete current subject first, "
+                            "then broader context. Use a concrete named anchor or concise "
+                            "subject-plus-history-facet anchor. Join parallel, "
+                            "equally weighted exact keywords or aliases with `|` "
+                            "without spaces; any one may satisfy the need and "
+                            "additional matches only strengthen ranking. Use "
+                            "separate items for different "
+                            "retrieval needs. Empty only for skip."
                         ),
                     },
                 },
-                "required": ["intent", "reason", "recall_queries"],
+                "required": [
+                    "intent",
+                    "reason",
+                    "recall_mode",
+                    "recall_queries",
+                ],
                 "additionalProperties": False,
             },
             "heartbeat_handoff": {
@@ -463,8 +513,8 @@ HEARTBEAT_PLAN_TOOL_SPEC: dict[str, object] = {
                                             "type": "string",
                                             "enum": [
                                                 "memory_search",
-                                                "conversation_search",
-                                                "conversation_read",
+                                                "episode_search",
+                                                "episode_read",
                                             ],
                                         },
                                         "query": {
@@ -602,10 +652,10 @@ def _recall_queries(
     minimum: int = 1,
     maximum: int = 3,
 ) -> list[str]:
-    """Normalize OR expressions, dropping the sentinel that stands for no recall."""
+    """Normalize parallel OR expressions."""
 
     return [
-        normalized
+        re.sub(r"\s*\|\s*", "|", query)
         for query in _strings(
             value,
             name,
@@ -613,7 +663,6 @@ def _recall_queries(
             maximum=maximum,
             max_length=120,
         )
-        if (normalized := re.sub(r"\s*\|\s*", "|", query)) != SKIP_RECALL
     ]
 
 
@@ -660,6 +709,30 @@ def _parse_context_block(
         or (status == "lookup_required" and not raw_needs)
     ):
         raise ContextPlanError(error)
+    needs = _parse_context_needs(
+        raw_needs,
+        tools=tools,
+        evidence=evidence,
+        error=need_error,
+        thinking_requires_past_reasoning=thinking_requires_past_reasoning,
+    )
+    return {
+        "status": status,
+        "needs": needs,
+        "reason": _text(raw["reason"], "context_reason", 300),
+    }
+
+
+def _parse_context_needs(
+    raw_needs: object,
+    *,
+    tools: set[str],
+    evidence: set[str],
+    error: str,
+    thinking_requires_past_reasoning: bool = False,
+) -> list[dict[str, str]]:
+    if not isinstance(raw_needs, list) or len(raw_needs) > 2:
+        raise ContextPlanError(error)
     needs: list[dict[str, str]] = []
     for raw_need in raw_needs:
         if not isinstance(raw_need, dict) or set(raw_need) != {
@@ -667,11 +740,11 @@ def _parse_context_block(
             "query",
             "evidence",
         }:
-            raise ContextPlanError(need_error)
+            raise ContextPlanError(error)
         tool = raw_need["tool"]
         need_evidence = raw_need["evidence"]
         if tool not in tools or need_evidence not in evidence:
-            raise ContextPlanError(need_error)
+            raise ContextPlanError(error)
         if (
             thinking_requires_past_reasoning
             and str(tool).startswith("thinking_")
@@ -685,11 +758,7 @@ def _parse_context_block(
                 "evidence": str(need_evidence),
             }
         )
-    return {
-        "status": status,
-        "needs": needs,
-        "reason": _text(raw["reason"], "context_reason", 300),
-    }
+    return needs
 
 
 def parse_context_plan(
@@ -699,6 +768,7 @@ def parse_context_plan(
     turn_id: str,
     revision: int,
     available_mcp_servers: set[str] | None = None,
+    recall_reuse_candidates: list[dict[str, object]] | None = None,
 ) -> ContextPlan:
     if isinstance(text, dict):
         value = text
@@ -709,7 +779,7 @@ def parse_context_plan(
             raise ContextPlanError("invalid_json") from error
     if not isinstance(value, dict):
         raise ContextPlanError("invalid_top_level")
-    if value.get("version") != 4:
+    if value.get("version") != 5:
         raise ContextPlanError("unsupported_version")
     if set(value) != {
         "version",
@@ -737,6 +807,7 @@ def parse_context_plan(
         "references",
         "recall_mode",
         "recall_queries",
+        "recall_from_turn_id",
     }
     for raw in raw_units:
         if not isinstance(raw, dict) or set(raw) != required_unit_keys:
@@ -760,20 +831,23 @@ def parse_context_plan(
             raise ContextPlanError("invalid_speech_act")
         recall_mode = raw["recall_mode"]
         recall_queries = _recall_queries(
-            raw["recall_queries"],
-            "unit_recall_queries",
-            minimum=0,
+            raw["recall_queries"], "unit_recall_queries", minimum=0
         )
+        if not isinstance(raw["recall_from_turn_id"], str):
+            raise ContextPlanError("invalid_recall_source")
+        recall_from_turn_id = raw["recall_from_turn_id"].strip()
+        if len(recall_from_turn_id) > 64:
+            raise ContextPlanError("invalid_recall_source")
         if recall_mode == "search":
-            if not recall_queries:
-                raise ContextPlanError("invalid_recall_decision")
+            if not recall_queries or recall_from_turn_id:
+                raise ContextPlanError("invalid_recall_search")
             recall = {"mode": "search", "queries": recall_queries}
-        elif recall_mode == "skip":
-            if recall_queries:
-                raise ContextPlanError("invalid_recall_skip")
+        elif recall_mode == "reuse":
+            if recall_queries or not recall_from_turn_id:
+                raise ContextPlanError("invalid_recall_reuse")
             recall = {
-                "mode": "skip",
-                "reason": "no_unsupplied_history_dependency",
+                "mode": "reuse",
+                "from_turn_id": recall_from_turn_id,
             }
         else:
             raise ContextPlanError("invalid_recall_decision")
@@ -791,6 +865,7 @@ def parse_context_plan(
             ),
             "recall": recall,
             "recall_queries": recall_queries,
+            "recall_from_turn_id": recall_from_turn_id,
         }
         units.append(unit)
     if covered_events != expected_events:
@@ -961,6 +1036,20 @@ def parse_context_plan(
     if bound_units != unit_ids:
         raise ContextPlanError("unbound_intent_units")
 
+    reuse_by_turn = {
+        str(item.get("turn_id") or ""): item
+        for item in recall_reuse_candidates or []
+        if isinstance(item, dict) and item.get("turn_id")
+    }
+    for unit in units:
+        recall = unit["recall"]
+        if not isinstance(recall, dict) or recall.get("mode") != "reuse":
+            continue
+        source_turn_id = str(recall.get("from_turn_id") or "")
+        candidate = reuse_by_turn.get(source_turn_id)
+        if candidate is None:
+            raise ContextPlanError("unknown_recall_reuse_source")
+
     ref_to_id = {episode_id: episode_id for episode_id in candidate_ids}
     ref_to_id.update(
         {
@@ -1019,29 +1108,20 @@ def parse_context_plan(
         binding.pop("_ref", None)
     raw_handoff = value["handoff"]
     required_handoff_keys = {
-        "context_status",
         "context_needs",
-        "context_reason",
         "mcp_servers",
-        "mcp_reason",
-        "execution_mode",
-        "execution_outline",
-        "execution_reason",
-        "delivery_mode",
-        "delivery_plan",
+        "strategy",
+        "completion_criteria",
+        "response_mode",
     }
     if not isinstance(raw_handoff, dict) or set(raw_handoff) != required_handoff_keys:
         raise ContextPlanError("invalid_owner_handoff")
-    context = _parse_context_block(
-        {
-            "status": raw_handoff["context_status"],
-            "needs": raw_handoff["context_needs"],
-            "reason": raw_handoff["context_reason"],
-        },
+    context_needs = _parse_context_needs(
+        raw_handoff["context_needs"],
         tools={
             "memory_search",
-            "conversation_search",
-            "conversation_read",
+            "episode_search",
+            "episode_read",
             "thinking_search",
             "thinking_read",
         },
@@ -1053,53 +1133,51 @@ def parse_context_plan(
             "relevant_history",
             "past_reasoning",
         },
-        error="invalid_context_handoff",
-        need_error="invalid_context_need",
+        error="invalid_context_need",
         thinking_requires_past_reasoning=True,
     )
-    mode = raw_handoff["execution_mode"]
-    if mode not in {"message_only", "clarify", "work"}:
-        raise ContextPlanError("invalid_execution_handoff")
-    if units and all(unit["recall"]["mode"] == "skip" for unit in units):
-        if context["status"] != "sufficient":
-            raise ContextPlanError("invalid_recall_skip")
-    delivery_mode = raw_handoff["delivery_mode"]
-    if delivery_mode not in {"silent", "bubbles"}:
-        raise ContextPlanError("invalid_delivery_handoff")
-    delivery = {
-        "mode": str(delivery_mode),
-        "plan": _text(raw_handoff["delivery_plan"], "delivery_plan", 1200),
-    }
-    execution: dict[str, object] = {
-        "mode": str(mode),
-        "outline": _strings(
-            raw_handoff["execution_outline"],
-            "execution_outline",
-            maximum=8,
-            max_length=300,
-        ),
-        "reason": _text(
-            raw_handoff["execution_reason"],
-            "execution_reason",
-            300,
-        ),
-        "delivery": delivery,
-    }
+    servers = _strings(
+        raw_handoff["mcp_servers"],
+        "mcp_servers",
+        maximum=32,
+        max_length=100,
+    )
+    if len(set(servers)) != len(servers):
+        raise ContextPlanError("duplicate_mcp_server")
+    if available_mcp_servers is not None and not set(servers) <= available_mcp_servers:
+        raise ContextPlanError("unknown_mcp_server")
+    response_mode = raw_handoff["response_mode"]
+    if response_mode not in {"silent", "visible"}:
+        raise ContextPlanError("invalid_response_mode")
+    strategy = _strings(
+        raw_handoff["strategy"],
+        "strategy",
+        maximum=8,
+        max_length=300,
+    )
+    criteria = _strings(
+        raw_handoff["completion_criteria"],
+        "completion_criteria",
+        maximum=3,
+        max_length=300,
+    )
+    if response_mode == "silent" and (strategy or criteria):
+        raise ContextPlanError("invalid_silent_strategy")
+    if response_mode == "visible" and not strategy:
+        raise ContextPlanError("missing_visible_strategy")
     return {
-        "version": 4,
+        "version": 5,
         "intent_units": units,
         "episode_actions": bindings,
         "episode_links": links,
         "owner_handoff": {
-            "context": context,
-            "mcp": _parse_mcp_route(
-                {
-                    "servers": raw_handoff["mcp_servers"],
-                    "reason": raw_handoff["mcp_reason"],
-                },
-                available_mcp_servers,
-            ),
-            "execution": execution,
+            "context": {"needs": context_needs},
+            "mcp": {"servers": servers},
+            "strategy": {
+                "plan": strategy,
+                "completion_criteria": criteria,
+                "response_mode": str(response_mode),
+            },
         },
         "uncertainty": _strings(
             value["uncertainty"],
@@ -1147,11 +1225,13 @@ def degraded_context_plan(
                 "intent": "degraded_message_segment",
                 "speech_act": "unknown",
                 "references": [],
-                "recall_queries": [],
+                "recall_mode": "search",
+                "recall_queries": [" ".join(part.split())[:120]],
+                "recall_from_turn_id": "",
             }
         )
     return {
-        "version": 4,
+        "version": 5,
         "intent_units": units,
         "episode_actions": [
             {"action": "none", "unit_ids": [str(unit["id"])]} for unit in units
@@ -1159,7 +1239,7 @@ def degraded_context_plan(
         "episode_links": [],
         "uncertainty": [
             f"Context planner protocol failed ({reason}); deterministic message "
-            "segmentation is used without automatic historical recall."
+            "segmentation and literal fallback recall are used."
         ],
     }
 
@@ -1183,6 +1263,7 @@ def parse_heartbeat_plan(
     if not isinstance(activity, dict) or set(activity) != {
         "intent",
         "reason",
+        "recall_mode",
         "recall_queries",
     }:
         raise ContextPlanError("invalid_heartbeat_activity")
@@ -1197,8 +1278,8 @@ def parse_heartbeat_plan(
         raw_handoff["context"],
         tools={
             "memory_search",
-            "conversation_search",
-            "conversation_read",
+            "episode_search",
+            "episode_read",
         },
         evidence={
             "exact_wording",
@@ -1241,14 +1322,26 @@ def parse_heartbeat_plan(
     ):
         raise ContextPlanError("invalid_heartbeat_execution")
 
+    recall_mode = activity["recall_mode"]
+    recall_queries = _recall_queries(
+        activity["recall_queries"],
+        "heartbeat_recall_queries",
+        minimum=0,
+        maximum=3,
+    )
+    if (
+        recall_mode == "search"
+        and not recall_queries
+        or recall_mode == "skip"
+        and recall_queries
+        or recall_mode not in {"search", "skip"}
+    ):
+        raise ContextPlanError("invalid_heartbeat_recall_decision")
     parsed_activity = {
         "intent": _text(activity["intent"], "heartbeat_intent", 300),
         "reason": _text(activity["reason"], "heartbeat_reason", 300),
-        "recall_queries": _recall_queries(
-            activity["recall_queries"],
-            "heartbeat_recall_queries",
-            maximum=6,
-        ),
+        "recall_mode": str(recall_mode),
+        "recall_queries": recall_queries,
     }
     return {
         "version": 2,
@@ -1281,7 +1374,8 @@ def degraded_heartbeat_plan(activity: str, reason: str) -> dict[str, object]:
         "activity": {
             "intent": activity.strip() or "spend time freely",
             "reason": f"Heartbeat planner failed ({reason}); continue current activity.",
-            "recall_queries": [(activity.strip() or "current activity")[:120]],
+            "recall_mode": "skip",
+            "recall_queries": [],
         },
         "heartbeat_handoff": {
             "context": {

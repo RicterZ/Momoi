@@ -105,6 +105,221 @@ class EpisodeSearchTest(unittest.TestCase):
         self.assertEqual(ranked[0].episode_id, "shared")
         self.assertEqual(len(ranked[0].matched_queries), 2)
 
+    def test_independent_query_evidence_is_not_vetoed_by_other_queries(self) -> None:
+        documents = [
+            document(
+                "current-banter",
+                title="红色礼盒玩笑",
+                message="签收礼物，交换卡片，确认约定",
+                role="user",
+                delivery="delivered",
+            ),
+            EpisodeSearchDocument(
+                episode_id="agent-limit",
+                fields=(
+                    EpisodeSearchField("topic", "联机模式"),
+                    EpisodeSearchField(
+                        "working_summary",
+                        "现在还不能进入联机模式，需要客户端能力升级",
+                    ),
+                ),
+                last_activity_at=0,
+                salience=0.5,
+                messages=tuple(
+                    EpisodeSearchMessage(
+                        id=index,
+                        turn_id=f"turn-{index}",
+                        ordinal=index,
+                        relation="primary",
+                        role="user",
+                        content="目前没法一起进入联机模式",
+                        created_at=0,
+                        delivery_state="delivered",
+                        timestamp="",
+                        searchable_text="目前没法一起进入联机模式",
+                    )
+                    for index in range(1, 5)
+                ),
+            ),
+        ]
+        queries = [
+            EpisodeRecallQuery("红色礼盒", ("u1",), 0),
+            EpisodeRecallQuery("联机模式", ("u1",), 1),
+            EpisodeRecallQuery(
+                "签收礼物|交换卡片|确认约定",
+                ("u1",),
+                2,
+            ),
+        ]
+        service = EpisodeQueryService(
+            StringEpisodeSearchBackend(StringSearchBackend())
+        )
+
+        ranked = rank_episode_matches(
+            queries,
+            service.match_many([query.expression for query in queries], documents),
+            documents,
+            limit=3,
+            now=100,
+        )
+
+        hits = {item.episode_id: item for item in ranked}
+        self.assertIn("agent-limit", hits)
+        self.assertGreaterEqual(hits["agent-limit"].relevance_confidence, 0.47)
+
+    def test_query_order_changes_rank_not_independent_eligibility(self) -> None:
+        documents = [document("history", topic="联机模式")]
+        service = EpisodeQueryService(
+            StringEpisodeSearchBackend(StringSearchBackend())
+        )
+
+        confidences = []
+        scores = []
+        for queries in (
+            [
+                EpisodeRecallQuery("联机模式", ("u1",), 0),
+                EpisodeRecallQuery("红色礼盒", ("u1",), 1),
+            ],
+            [
+                EpisodeRecallQuery("红色礼盒", ("u1",), 0),
+                EpisodeRecallQuery("联机模式", ("u1",), 1),
+            ],
+        ):
+            ranked = rank_episode_matches(
+                queries,
+                service.match_many(
+                    [query.expression for query in queries], documents
+                ),
+                documents,
+                limit=2,
+                now=100,
+            )
+            self.assertEqual([item.episode_id for item in ranked], ["history"])
+            confidences.append(ranked[0].relevance_confidence)
+            scores.append(ranked[0].score)
+
+        self.assertAlmostEqual(confidences[0], confidences[1])
+        self.assertGreater(scores[0], scores[1])
+
+    def test_parallel_aliases_are_or_for_eligibility_and_bonus_for_rank(self) -> None:
+        documents = [
+            document(
+                "one-alias",
+                title="服务异常",
+                topic="服务异常",
+                message="用户正在描述系统状态：服务异常",
+                role="user",
+                delivery="delivered",
+            ),
+            document(
+                "two-aliases",
+                title="连接超时和服务异常",
+                topic="连接超时和服务异常",
+                message="用户正在描述系统状态：连接超时和服务异常",
+                role="user",
+                delivery="delivered",
+            ),
+        ]
+        query = EpisodeRecallQuery(
+            "连接超时|服务异常",
+            ("u1",),
+            0,
+        )
+        service = EpisodeQueryService(
+            StringEpisodeSearchBackend(StringSearchBackend())
+        )
+
+        ranked = rank_episode_matches(
+            [query],
+            service.match_many([query.expression], documents),
+            documents,
+            limit=2,
+            now=100,
+        )
+
+        hits = {item.episode_id: item for item in ranked}
+        self.assertEqual(set(hits), {"one-alias", "two-aliases"})
+        self.assertGreaterEqual(hits["one-alias"].relevance_confidence, 0.47)
+        self.assertGreaterEqual(hits["two-aliases"].relevance_confidence, 0.47)
+        self.assertGreater(
+            hits["two-aliases"].score,
+            hits["one-alias"].score,
+        )
+
+    def test_incidental_internal_match_without_field_support_stays_filtered(
+        self,
+    ) -> None:
+        documents = [
+            document(
+                "incidental",
+                message="日志末尾顺便出现紫罗兰钥匙",
+                delivery="internal",
+            )
+        ]
+        queries = [
+            EpisodeRecallQuery(
+                "紫罗兰钥匙",
+                ("u1",),
+                2,
+            )
+        ]
+        service = EpisodeQueryService(
+            StringEpisodeSearchBackend(StringSearchBackend())
+        )
+
+        ranked = rank_episode_matches(
+            queries,
+            service.match_many([query.expression for query in queries], documents),
+            documents,
+            limit=2,
+            now=100,
+        )
+
+        self.assertEqual(ranked, [])
+
+    def test_short_prose_literal_needs_selective_or_repeated_support(self) -> None:
+        documents = [
+            EpisodeSearchDocument(
+                episode_id="summary-only",
+                fields=(
+                    EpisodeSearchField("narrative_summary", "原来的方案保持不变"),
+                    EpisodeSearchField("working_summary", "整体方向不变"),
+                ),
+                last_activity_at=0,
+                salience=0.5,
+                messages=tuple(
+                    EpisodeSearchMessage(
+                        id=index,
+                        turn_id=f"turn-{index}",
+                        ordinal=index,
+                        relation="primary",
+                        role="user",
+                        content="方案不变",
+                        created_at=0,
+                        delivery_state="delivered",
+                        timestamp="",
+                        searchable_text="方案不变",
+                    )
+                    for index in range(1, 3)
+                ),
+            ),
+            document("topic", topic="暗号", message="暗号"),
+        ]
+        queries = [EpisodeRecallQuery("不变"), EpisodeRecallQuery("暗号")]
+        service = EpisodeQueryService(
+            StringEpisodeSearchBackend(StringSearchBackend())
+        )
+
+        ranked = rank_episode_matches(
+            queries,
+            service.match_many([query.expression for query in queries], documents),
+            documents,
+            limit=2,
+            now=100,
+        )
+
+        self.assertEqual([item.episode_id for item in ranked], ["topic"])
+
     def test_title_match_beats_incidental_internal_message(self) -> None:
         documents = [
             document("title", title="紫罗兰钥匙", last_activity=10),
@@ -128,7 +343,7 @@ class EpisodeSearchTest(unittest.TestCase):
             now=100,
         )
 
-        self.assertEqual([item.episode_id for item in ranked], ["title", "internal"])
+        self.assertEqual([item.episode_id for item in ranked], ["title"])
 
     def test_ranked_query_priority_is_preserved(self) -> None:
         documents = [
@@ -230,7 +445,7 @@ class EpisodeSearchTest(unittest.TestCase):
         self.assertAlmostEqual(factors[1], 0.9)
         self.assertAlmostEqual(factors[2], 0.8, places=6)
 
-    def test_query_context_disambiguates_lexically_matching_episode(self) -> None:
+    def test_unscoped_prose_does_not_override_structured_exact_evidence(self) -> None:
         documents = [
             document("broad", title="双人合作"),
             document(
@@ -244,7 +459,6 @@ class EpisodeSearchTest(unittest.TestCase):
             "双人合作",
             ("u1",),
             0,
-            context="老师想找新的小游戏推荐",
         )
         service = EpisodeQueryService(
             StringEpisodeSearchBackend(StringSearchBackend())
@@ -260,16 +474,15 @@ class EpisodeSearchTest(unittest.TestCase):
 
         self.assertEqual(
             [item.episode_id for item in ranked],
-            ["aligned"],
+            ["broad"],
         )
-        self.assertGreater(ranked[0].context_score, 0)
 
     def test_ranker_defaults_to_eight_and_filters_before_paging(self) -> None:
         documents = [
             document(f"strong-{index}", title="紫罗兰钥匙")
             for index in range(9)
         ] + [document("weak", message="钥匙")]
-        query = EpisodeRecallQuery("钥匙|紫罗兰钥匙", context="紫罗兰钥匙")
+        query = EpisodeRecallQuery("钥匙|紫罗兰钥匙")
         service = EpisodeQueryService(
             StringEpisodeSearchBackend(StringSearchBackend())
         )
