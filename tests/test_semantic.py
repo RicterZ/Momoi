@@ -285,9 +285,9 @@ class SemanticRecallTest(unittest.TestCase):
             episodes={
                 query.expression: {
                     "long": DenseEpisodeHit(
-                        "long", summary_cosine=0.80, turn_cosine=0.80
+                        "long", summary_cosine=0.82, turn_cosine=0.82
                     ),
-                    "short": DenseEpisodeHit("short", summary_cosine=0.80),
+                    "short": DenseEpisodeHit("short", summary_cosine=0.82),
                 }
             },
         )

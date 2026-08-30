@@ -19,13 +19,14 @@ from .storage.episode_ranking import EpisodeRecallQuery
 logger = logging.getLogger(__name__)
 QUERY_INSTRUCTION = "为这个句子生成表示以用于检索相关文章："
 CALIBRATION_PROFILES: dict[str, dict[str, tuple[float, float, float]]] = {
-    # Initial conservative values. They are tied to the named model/profile and
-    # must be replaced by the private historical benchmark before rollout.
+    # Calibrated against the private historical benchmark for this model. The
+    # episode-only gate is intentionally stricter: generic episode summaries
+    # otherwise produce high cosine scores without sparse/topic corroboration.
     "bge-small-zh-v1.5-momoi-v1": {
         "confirmed_memory": (0.55, 0.72, 0.86),
         "reflection_memory": (0.58, 0.75, 0.87),
-        "episode_summary": (0.52, 0.70, 0.84),
-        "episode_turn": (0.56, 0.73, 0.86),
+        "episode_summary": (0.52, 0.81, 0.84),
+        "episode_turn": (0.56, 0.81, 0.86),
     }
 }
 
