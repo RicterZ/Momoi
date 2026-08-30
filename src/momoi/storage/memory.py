@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import hashlib
 import json
 import math
@@ -5,6 +7,7 @@ import sqlite3
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from ..context_time import context_timestamp
 from ..policies import MemoryPolicy
@@ -20,6 +23,9 @@ from ..models import (
     MemoryForgetCandidate,
 )
 from .episode_ranking import rank_recall_items
+
+if TYPE_CHECKING:
+    from ..semantic import DenseRecallEvidence
 
 
 MEMORY_KINDS = {
@@ -400,6 +406,7 @@ class MemoryStore:
         max_results: int,
         *,
         now: float | None = None,
+        dense_evidence: DenseRecallEvidence | None = None,
     ) -> list[dict[str, object]]:
         """Rank confirmed and reflection memory in independent bounded pools."""
 
@@ -468,6 +475,7 @@ class MemoryStore:
                 limit,
                 _CONFIRMED_MEMORY_SCORE_FLOOR,
                 stamp,
+                dense_evidence,
             ),
             *self._rank_memory_pool(
                 queries,
@@ -475,6 +483,7 @@ class MemoryStore:
                 limit,
                 _REFLECTION_MEMORY_SCORE_FLOOR,
                 stamp,
+                dense_evidence,
             ),
         ]
 
@@ -485,6 +494,7 @@ class MemoryStore:
         limit: int,
         score_floor: float,
         now: float,
+        dense_evidence: DenseRecallEvidence | None = None,
     ) -> list[dict[str, object]]:
         if not candidates or limit <= 0:
             return []
@@ -495,8 +505,12 @@ class MemoryStore:
             {
                 "unit_scores": {},
                 "eligibility_scores": [],
+                "evidence_signals": [],
                 "matched_queries": [],
                 "unit_ids": set(),
+                "channels": set(),
+                "dense_cosines": [],
+                "agreement_bonus": 0.0,
             }
             for _ in candidates
         ]
@@ -515,29 +529,63 @@ class MemoryStore:
                     self._search_backend,
                     weights=weights,
                 )
-                if match is None:
-                    continue
-                alias_scores = sorted(
-                    (
-                        float(weights.get(alternative, 1.0))
-                        for alternative in match.alternatives
-                    ),
-                    reverse=True,
+                document_type = (
+                    "confirmed_memory"
+                    if candidates[index]["source"] == "confirmed"
+                    else "reflection_memory"
                 )
-                evidence_score = alias_scores[0]
+                dense_hit = (
+                    dense_evidence.memory.get(query.expression, {}).get(
+                        (document_type, str(candidates[index]["id"]))
+                    )
+                    if dense_evidence is not None
+                    else None
+                )
+                if match is None and dense_hit is None:
+                    continue
+                alias_scores = (
+                    sorted(
+                        (
+                            float(weights.get(alternative, 1.0))
+                            for alternative in match.alternatives
+                        ),
+                        reverse=True,
+                    )
+                    if match is not None
+                    else []
+                )
+                sparse_score = alias_scores[0] if alias_scores else 0.0
                 if len(alias_scores) > 1:
-                    evidence_score += (
-                        _MEMORY_SECOND_ALIAS_WEIGHT * alias_scores[1]
-                    )
+                    sparse_score += _MEMORY_SECOND_ALIAS_WEIGHT * alias_scores[1]
                 if len(alias_scores) > 2:
-                    evidence_score += (
-                        _MEMORY_THIRD_ALIAS_WEIGHT * alias_scores[2]
-                    )
-                score = evidence_score * priority_weight
+                    sparse_score += _MEMORY_THIRD_ALIAS_WEIGHT * alias_scores[2]
+                cosine = float(dense_hit.cosine) if dense_hit is not None else None
+                thresholds = (
+                    dense_evidence.thresholds(document_type)
+                    if dense_evidence is not None
+                    else None
+                )
+                dense_score = (
+                    thresholds.calibrated(cosine)
+                    if thresholds is not None and cosine is not None
+                    else 0.0
+                )
+                normalized_sparse = 1.0 - math.exp(-sparse_score)
+                agreement = (
+                    min(normalized_sparse, dense_score)
+                    if sparse_score > 0 and dense_score > 0
+                    else 0.0
+                )
+                hybrid_score = sparse_score + 0.55 * dense_score + 0.20 * agreement
+                score = hybrid_score * priority_weight
                 state = states[index]
                 eligibility_scores = state["eligibility_scores"]
                 assert isinstance(eligibility_scores, list)
-                eligibility_scores.append(evidence_score)
+                if sparse_score > 0:
+                    eligibility_scores.append(sparse_score)
+                signals = state["evidence_signals"]
+                assert isinstance(signals, list)
+                signals.append((sparse_score, cosine, hybrid_score, thresholds))
                 unit_scores = state["unit_scores"]
                 assert isinstance(unit_scores, dict)
                 units = query.unit_ids or (f"query:{query.expression}",)
@@ -549,6 +597,16 @@ class MemoryStore:
                 unit_ids = state["unit_ids"]
                 assert isinstance(unit_ids, set)
                 unit_ids.update(query.unit_ids)
+                channels = state["channels"]
+                assert isinstance(channels, set)
+                if sparse_score > 0:
+                    channels.add("sparse")
+                if cosine is not None:
+                    channels.add("dense")
+                    dense_cosines = state["dense_cosines"]
+                    assert isinstance(dense_cosines, list)
+                    dense_cosines.append(cosine)
+                state["agreement_bonus"] = float(state["agreement_bonus"]) + 0.20 * agreement
 
         ranked_candidates: list[dict[str, object]] = []
         for candidate, state in zip(candidates, states, strict=True):
@@ -584,13 +642,45 @@ class MemoryStore:
             )
             eligibility_scores = state["eligibility_scores"]
             assert isinstance(eligibility_scores, list)
-            eligibility_score = (
+            sparse_eligibility = (
                 max(float(value) for value in eligibility_scores)
                 * recency_factor
                 + float(candidate["reliability_bonus"])
+                if eligibility_scores
+                else 0.0
             )
-            if eligibility_score < score_floor:
+            signals = state["evidence_signals"]
+            assert isinstance(signals, list)
+            dense_admitted = False
+            support_admitted = False
+            hybrid_eligibility = sparse_eligibility
+            for sparse_score, cosine, hybrid_score, thresholds in signals:
+                if cosine is None or thresholds is None:
+                    continue
+                if sparse_score <= 0 and cosine >= thresholds.only:
+                    dense_admitted = True
+                if (
+                    sparse_score > 0
+                    and cosine >= thresholds.support
+                    and hybrid_score * recency_factor
+                    + float(candidate["reliability_bonus"]) >= score_floor
+                ):
+                    support_admitted = True
+                hybrid_eligibility = max(
+                    hybrid_eligibility,
+                    hybrid_score * recency_factor
+                    + float(candidate["reliability_bonus"]),
+                )
+            if (
+                sparse_eligibility < score_floor
+                and not dense_admitted
+                and not support_admitted
+            ):
                 continue
+            channels = state["channels"]
+            assert isinstance(channels, set)
+            dense_cosines = state["dense_cosines"]
+            assert isinstance(dense_cosines, list)
             ranked_candidates.append(
                 {
                     **{
@@ -600,7 +690,7 @@ class MemoryStore:
                     },
                     "semantic_score": semantic_score,
                     "search_score": search_score,
-                    "eligibility_score": eligibility_score,
+                    "eligibility_score": hybrid_eligibility,
                     "score_floor": score_floor,
                     "last_activity_at": updated_at,
                     "salience": confidence,
@@ -608,6 +698,10 @@ class MemoryStore:
                         dict.fromkeys(str(value) for value in state["matched_queries"])
                     ),
                     "unit_ids": sorted(str(value) for value in state["unit_ids"]),
+                    "channels": sorted(str(value) for value in channels),
+                    "dense_cosine": max(dense_cosines) if dense_cosines else None,
+                    "agreement_bonus": float(state["agreement_bonus"]),
+                    "dense_only": dense_admitted and not eligibility_scores,
                 }
             )
         return rank_recall_items(ranked_candidates, now=now)[:limit]

@@ -1785,7 +1785,7 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn("GLOBAL RAW MUST NOT LEAK", provider.main_rendered)
             stored = daemon.store.context_plan(turn_id)
             self.assertEqual(stored["state"], "recalled")
-            self.assertEqual(stored["retrieval"]["version"], 4)
+            self.assertEqual(stored["retrieval"]["version"], 5)
             self.assertEqual(len(stored["plan"]["intent_units"]), 2)
             self.assertEqual(
                 daemon.store._db.execute(

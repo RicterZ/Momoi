@@ -20,8 +20,11 @@ from .storage import (
     MEMORY_ACTIVATIONS,
     MEMORY_KINDS,
     Store,
+    MemoryRecallQuery,
     truncate_tokens,
 )
+from .storage.episode_ranking import EpisodeRecallQuery
+from .semantic import DenseRecallEvidence, SemanticRecallService
 from .thinking_tools import THINKING_TOOL_SPECS, ThinkingTools
 
 logger = logging.getLogger(__name__)
@@ -202,8 +205,8 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
                 "query": {
                     "type": "string",
                     "description": (
-                        "Exact keyword or `|`-separated OR alternatives likely to "
-                        "occur verbatim in stored memory."
+                        "Concise subject or phrase to retrieve. Use `|`-separated "
+                        "parallel aliases when the same subject may be worded differently."
                     ),
                 },
                 "limit": {
@@ -230,7 +233,8 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
                 "query": {
                     "type": "string",
                     "description": (
-                        "Optional exact keyword or `|`-separated OR alternatives. "
+                        "Optional concise subject or phrase, with `|`-separated "
+                        "parallel aliases when useful. "
                         "Use an empty string to browse Episodes chronologically "
                         "within time_range."
                     ),
@@ -505,10 +509,68 @@ def _memory_error(code: str) -> dict[str, object]:
 
 
 class MemoryTools:
-    def __init__(self, store: Store, policy: MemoryPolicy = MemoryPolicy()) -> None:
+    def __init__(
+        self,
+        store: Store,
+        policy: MemoryPolicy = MemoryPolicy(),
+        semantic_recall: SemanticRecallService | None = None,
+    ) -> None:
         self.store = store
         self.policy = policy
         self.thinking = ThinkingTools(store)
+        self.semantic_recall = semantic_recall
+
+    async def execute_async(
+        self,
+        call: ToolCall,
+        current_events: list[IncomingMessage],
+        draft: TurnDraft,
+    ) -> dict[str, Any]:
+        try:
+            if call.name == "memory_search":
+                query = str(call.arguments.get("query") or "").strip()
+                dense = (
+                    await self.semantic_recall.prepare(
+                        [MemoryRecallQuery(query)],
+                        include_episode=False,
+                        output_limit=min(10, max(1, int(call.arguments.get("limit", 6)))),
+                    )
+                    if self.semantic_recall is not None and query
+                    else None
+                )
+                return self._search(call.arguments, draft, dense_evidence=dense)
+            if call.name == "episode_search":
+                query = str(call.arguments.get("query") or "").strip()
+                try:
+                    after, before, _window = _episode_time_range(
+                        call.arguments.get("time_range")
+                    )
+                except ValueError:
+                    return self._episode_search(call.arguments)
+                dense = (
+                    await self.semantic_recall.prepare(
+                        [EpisodeRecallQuery(query)],
+                        include_memory=False,
+                        episode_after=after,
+                        episode_before=before,
+                        output_limit=min(10, max(1, int(call.arguments.get("limit", 5)))),
+                    )
+                    if self.semantic_recall is not None and query
+                    else None
+                )
+                return self._episode_search(call.arguments, dense_evidence=dense)
+            return self.execute(call, current_events, draft)
+        except Exception as error:
+            log_event(
+                logger, logging.ERROR, "memory_tool_failure",
+                tool_name=call.name, error_type=type(error).__name__, exc_info=True,
+            )
+            return {
+                "ok": False,
+                "error": "memory_operation_failed",
+                "message": f"Memory operation failed: {type(error).__name__}.",
+                "upstream_error_type": type(error).__name__,
+            }
 
     def execute(
         self,
@@ -546,7 +608,13 @@ class MemoryTools:
                 "upstream_error_type": type(error).__name__,
             }
 
-    def _search(self, arguments: dict[str, Any], draft: TurnDraft) -> dict[str, Any]:
+    def _search(
+        self,
+        arguments: dict[str, Any],
+        draft: TurnDraft,
+        *,
+        dense_evidence: DenseRecallEvidence | None = None,
+    ) -> dict[str, Any]:
         query = str(arguments.get("query") or "").strip()
         if not query:
             return _memory_error("query_required")
@@ -554,7 +622,12 @@ class MemoryTools:
             limit = min(10, max(1, int(arguments.get("limit", 6))))
         except (TypeError, ValueError):
             limit = 6
-        results = self.store.search_memories(query, limit)
+        if dense_evidence is None:
+            results = self.store.search_memories(query, limit)
+        else:
+            results = self.store.rank_recalled_memories(
+                [MemoryRecallQuery(query)], limit, dense_evidence=dense_evidence
+            )
 
         committed_keys = {(str(item["kind"]), str(item["key"])) for item in results}
         for index, memory in enumerate(draft.memories):
@@ -580,7 +653,12 @@ class MemoryTools:
                 )
         return {"ok": True, "count": len(results), "results": results}
 
-    def _episode_search(self, arguments: dict[str, Any]) -> dict[str, Any]:
+    def _episode_search(
+        self,
+        arguments: dict[str, Any],
+        *,
+        dense_evidence: DenseRecallEvidence | None = None,
+    ) -> dict[str, Any]:
         query = str(arguments.get("query") or "").strip()
         try:
             limit = min(10, max(1, int(arguments.get("limit", 5))))
@@ -599,6 +677,7 @@ class MemoryTools:
             after=after,
             before=before,
             offset=cursor,
+            dense_evidence=dense_evidence,
         )
         has_more = len(results) > limit
         results = results[:limit]

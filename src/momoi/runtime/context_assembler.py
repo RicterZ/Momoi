@@ -1,8 +1,11 @@
+from __future__ import annotations
+
 import copy
 import json
 import logging
 import re
 import time
+from typing import TYPE_CHECKING
 
 from ..config import AppConfig
 from ..context_time import context_timestamp
@@ -18,6 +21,9 @@ from ..storage import (
 from ..storage.episode_ranking import EpisodeRecallQuery, rank_recall_items
 from .budget import SECTION_BUDGET_ALLOCATOR
 
+if TYPE_CHECKING:
+    from ..semantic import DenseRecallEvidence
+
 
 logger = logging.getLogger(__name__)
 RECENT_EPISODE_LIMIT = 6
@@ -25,6 +31,70 @@ PLAN_RECALL_QUERY_LIMIT = 6
 RECENT_EXTERNAL_EVENT_LIMIT = 6
 RECENT_EXTERNAL_EVENT_LOOKBACK_SECONDS = 6 * 3600
 RECENT_EXTERNAL_EVENT_TOKEN_BUDGET = 1200
+
+
+def select_plan_recall_queries(
+    plan: dict[str, object],
+) -> tuple[list[dict[str, object]], dict[str, list[str]], set[str], set[str]]:
+    """Apply the Planner query fan-out once, before sparse and dense retrieval."""
+    recall_units = list(plan.get("intent_units") or [])
+    activity = plan.get("activity")
+    if isinstance(activity, dict) and activity.get("recall_queries"):
+        recall_units.append(
+            {
+                "id": "heartbeat_activity",
+                "intent": activity.get("intent"),
+                "recall_queries": activity["recall_queries"],
+            }
+        )
+    reused_units_by_turn: dict[str, list[str]] = {}
+    unit_queries: list[tuple[str, list[str]]] = []
+    for unit in recall_units:
+        if not isinstance(unit, dict):
+            continue
+        unit_id = str(unit.get("id") or "")
+        recall = unit.get("recall")
+        if isinstance(recall, dict) and recall.get("mode") == "reuse":
+            source_turn_id = str(recall.get("from_turn_id") or "")
+            if source_turn_id and unit_id:
+                reused_units_by_turn.setdefault(source_turn_id, []).append(unit_id)
+            continue
+        queries: list[str] = []
+        for raw_query in unit.get("recall_queries") or []:
+            query = " ".join(str(raw_query).split())[:120]
+            if query and query not in queries:
+                queries.append(query)
+        if queries:
+            unit_queries.append((unit_id, queries))
+    emitted_queries = {query for _unit_id, queries in unit_queries for query in queries}
+    selected_by_query: dict[str, dict[str, object]] = {}
+    selected: list[dict[str, object]] = []
+    skipped_unit_ids: set[str] = set()
+    for query_rank in range(max((len(queries) for _, queries in unit_queries), default=0)):
+        for unit_id, queries in unit_queries:
+            if query_rank >= len(queries):
+                continue
+            query = queries[query_rank]
+            existing = selected_by_query.get(query)
+            if existing is not None:
+                unit_ids = existing["unit_ids"]
+                assert isinstance(unit_ids, list)
+                if unit_id and unit_id not in unit_ids:
+                    unit_ids.append(unit_id)
+                existing["priority"] = min(int(existing["priority"]), query_rank)
+                continue
+            if len(selected) >= PLAN_RECALL_QUERY_LIMIT:
+                if unit_id:
+                    skipped_unit_ids.add(unit_id)
+                continue
+            item = {
+                "expression": query,
+                "unit_ids": [unit_id] if unit_id else [],
+                "priority": query_rank,
+            }
+            selected_by_query[query] = item
+            selected.append(item)
+    return selected, reused_units_by_turn, emitted_queries, skipped_unit_ids
 
 
 def _recall_log_text(value: object, limit: int = 300) -> str:
@@ -68,6 +138,7 @@ def build_plan_retrieval(
     store: Store,
     plan: dict[str, object],
     config: AppConfig,
+    dense_evidence: DenseRecallEvidence | None = None,
 ) -> dict[str, object]:
     recent_episodes = (
         store.list_recent_episodes(
@@ -116,40 +187,13 @@ def build_plan_retrieval(
         ]
     ]
     # Every search-mode unit carries one or more recall expressions. Execute
-    # them fairly across units: take each unit's first expression before any
-    # unit's second, deduplicate shared expressions, then enforce the global
-    # fan-out.
-    recall_queries: list[dict[str, object]] = []
-    reused_units_by_turn: dict[str, list[str]] = {}
-    recall_units = list(plan.get("intent_units") or [])
-    activity = plan.get("activity")
-    if isinstance(activity, dict) and activity.get("recall_queries"):
-        recall_units.append(
-            {
-                "id": "heartbeat_activity",
-                "intent": activity.get("intent"),
-                "recall_queries": activity["recall_queries"],
-            }
-        )
-    unit_queries: list[tuple[str, list[str]]] = []
-    for unit in recall_units:
-        if not isinstance(unit, dict):
-            continue
-        unit_id = str(unit.get("id") or "")
-        recall = unit.get("recall")
-        if isinstance(recall, dict) and recall.get("mode") == "reuse":
-            source_turn_id = str(recall.get("from_turn_id") or "")
-            if source_turn_id and unit_id:
-                reused_units_by_turn.setdefault(source_turn_id, []).append(unit_id)
-            continue
-        queries: list[str] = []
-        for raw_query in unit.get("recall_queries") or []:
-            query = " ".join(str(raw_query).split())[:120]
-            if not query or query in queries:
-                continue
-            queries.append(query)
-        if queries:
-            unit_queries.append((unit_id, queries))
+    # them fairly across units and share the exact selection with dense recall.
+    (
+        recall_queries,
+        reused_units_by_turn,
+        emitted_queries,
+        skipped_unit_ids,
+    ) = select_plan_recall_queries(plan)
 
     inherited_memories: list[dict[str, object]] = []
     inherited_reflections: list[dict[str, object]] = []
@@ -168,7 +212,7 @@ def build_plan_retrieval(
         source_plan = record.get("plan")
         if (
             not isinstance(source_retrieval, dict)
-            or source_retrieval.get("version") != 4
+            or source_retrieval.get("version") not in {4, 5}
             or not isinstance(source_plan, dict)
         ):
             return
@@ -220,42 +264,6 @@ def build_plan_retrieval(
     for source_turn_id, unit_ids in reused_units_by_turn.items():
         inherit_recall(source_turn_id, list(dict.fromkeys(unit_ids)))
 
-    emitted_queries = {
-        query for _unit_id, queries in unit_queries for query in queries
-    }
-    selected_by_query: dict[str, dict[str, object]] = {}
-    skipped_unit_ids: set[str] = set()
-    max_query_rank = max(
-        (len(queries) for _, queries in unit_queries),
-        default=0,
-    )
-    for query_rank in range(max_query_rank):
-        for unit_id, queries in unit_queries:
-            if query_rank >= len(queries):
-                continue
-            query = queries[query_rank]
-            selected = selected_by_query.get(query)
-            if selected is not None:
-                selected_units = selected["unit_ids"]
-                assert isinstance(selected_units, list)
-                if unit_id and unit_id not in selected_units:
-                    selected_units.append(unit_id)
-                selected["priority"] = min(
-                    int(selected["priority"]), query_rank
-                )
-                continue
-            if len(recall_queries) >= PLAN_RECALL_QUERY_LIMIT:
-                if unit_id:
-                    skipped_unit_ids.add(unit_id)
-                continue
-            selected = {
-                "expression": query,
-                "unit_ids": [unit_id] if unit_id else [],
-                "priority": query_rank,
-            }
-            selected_by_query[query] = selected
-            recall_queries.append(selected)
-
     episode_queries = [
         EpisodeRecallQuery(
             expression=str(item["expression"]),
@@ -267,6 +275,7 @@ def build_plan_retrieval(
     episode_rows = store.search_episode_queries(
         episode_queries,
         max(0, config.summary_results),
+        dense_evidence=dense_evidence,
     )
     episode_hit_query_set = {
         str(query.get("expression") or "")
@@ -284,6 +293,7 @@ def build_plan_retrieval(
             for item in recall_queries
         ],
         max(0, config.memory_results),
+        dense_evidence=dense_evidence,
     )
     recall_memories = [
         {
@@ -486,7 +496,7 @@ def build_plan_retrieval(
         dict.fromkeys([*recall_hits, *inherited_queries])
     )
     retrieval = {
-        "version": 4,
+        "version": 5,
         "episodes": episodes,
         "long_term_memories": store.always_memory_context(),
         "recent_memories": store.recent_memory_context(
@@ -498,6 +508,14 @@ def build_plan_retrieval(
         "uncertainty": plan.get("uncertainty", []),
         "query_recall": "\n".join(recall_index),
         "effective_recall_queries": effective_recall_queries,
+        "semantic_recall": {
+            "space_id": dense_evidence.space_id if dense_evidence else "",
+            "profile": dense_evidence.calibration_profile if dense_evidence else "",
+            "query_batch_size": dense_evidence.query_batch_size if dense_evidence else 0,
+            "request_ms": dense_evidence.request_ms if dense_evidence else 0.0,
+            "search_ms": dense_evidence.search_ms if dense_evidence else 0.0,
+            "fallback_reason": dense_evidence.fallback_reason if dense_evidence else "disabled",
+        },
     }
     query_log = [
         {
@@ -515,6 +533,10 @@ def build_plan_retrieval(
             "score": round(float(row.get("search_score") or 0.0), 4),
             "floor": row.get("score_floor"),
             "queries": row.get("matched_queries"),
+            "channels": row.get("channels") or [],
+            "cosine": row.get("dense_cosine"),
+            "agreement_bonus": row.get("agreement_bonus"),
+            "dense_only": row.get("dense_only"),
             "content": _recall_log_text(row.get("content")),
         }
         for row in ranked_memories
@@ -530,6 +552,11 @@ def build_plan_retrieval(
                 if isinstance(item, dict)
             ],
             "matched_keywords": row.get("matched_keywords") or [],
+            "channels": row.get("channels") or [],
+            "cosine": row.get("dense_cosine"),
+            "agreement_bonus": row.get("agreement_bonus"),
+            "corroboration_bonus": row.get("corroboration_bonus"),
+            "dense_only": row.get("dense_only"),
             "evidence": _recall_log_matches(row.get("matches")),
         }
         for row in episode_rows
@@ -560,6 +587,12 @@ def build_plan_retrieval(
             "recall_reflection_hits": len(reflection_memories),
             "recall_episode_hits": len(ranked_recalled_episodes),
         },
+        embedding_space=dense_evidence.space_id if dense_evidence else "",
+        embedding_profile=dense_evidence.calibration_profile if dense_evidence else "",
+        embedding_query_batch_size=dense_evidence.query_batch_size if dense_evidence else 0,
+        embedding_request_ms=round(dense_evidence.request_ms, 2) if dense_evidence else 0,
+        embedding_search_ms=round(dense_evidence.search_ms, 2) if dense_evidence else 0,
+        embedding_fallback=dense_evidence.fallback_reason if dense_evidence else "disabled",
     )
     log_event(
         logger,

@@ -25,11 +25,14 @@ jobs:
             version="${{ inputs.tag }}"
           fi
           tags="ricterz/momoi:latest"
+          embedding_tags="ricterz/momoi-embedding:latest"
           if [ -n "$version" ]; then
             tags="$tags,ricterz/momoi:$version"
+            embedding_tags="$embedding_tags,ricterz/momoi-embedding:$version"
           fi
           echo "version=${version:-0.0.0}" >> "$GITHUB_OUTPUT"
           echo "tags=$tags" >> "$GITHUB_OUTPUT"
+          echo "embedding_tags=$embedding_tags" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
@@ -46,6 +49,14 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           build-args: |
             VERSION=${{ steps.meta.outputs.version }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.embedding
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.embedding_tags }}
 
       - uses: peter-evans/dockerhub-description@v4
         with:

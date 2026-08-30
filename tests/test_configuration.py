@@ -16,6 +16,7 @@ from momoi.config import (
     ASRConfig,
     ConfigError,
     DashboardConfig,
+    EmbeddingConfig,
     NotificationConfig,
     ThinkingConfig,
     UsageConfig,
@@ -39,6 +40,50 @@ def _napcat_channels() -> dict[str, object]:
 
 
 class ConfigurationTest(unittest.TestCase):
+    def test_loads_and_validates_embedding_configuration(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "prompts").mkdir()
+            (root / "prompts" / "SOUL.md").write_text("Test soul")
+            path = root / "config.json"
+            value = {
+                "llm": {
+                    "base_url": "https://example.com",
+                    "api_key": "key",
+                    "model": "model",
+                },
+                "channels": _napcat_channels(),
+                "context": {},
+                "storage": {"database": "momoi.sqlite3"},
+                "logging": {},
+            }
+            path.write_text(json.dumps(value))
+            self.assertEqual(load_config(path).embedding, EmbeddingConfig())
+
+            value["embedding"] = {
+                "enabled": True,
+                "endpoint": "http://localhost:8002/v1/embeddings/",
+                "model": "BAAI/bge-small-zh-v1.5",
+                "dimensions": 512,
+                "calibration_profile": "bge-small-zh-v1.5-momoi-v1",
+                "query_timeout_seconds": 0.25,
+                "document_timeout_seconds": 10,
+                "document_batch_size": 4,
+            }
+            path.write_text(json.dumps(value))
+            config = load_config(path)
+            self.assertTrue(config.embedding.enabled)
+            self.assertEqual(
+                config.embedding.endpoint,
+                "http://localhost:8002/v1/embeddings",
+            )
+            self.assertEqual(config.embedding.document_batch_size, 4)
+
+            value["embedding"]["dimensions"] = 0  # type: ignore[index]
+            path.write_text(json.dumps(value))
+            with self.assertRaisesRegex(ConfigError, "dimensions must be positive"):
+                load_config(path)
+
     def test_loads_stage_specific_thinking_effort(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

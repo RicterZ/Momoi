@@ -16,6 +16,7 @@ from ..models import AgentReply, IncomingMessage, ProviderResponse, TurnDraft
 from ..provider import ProviderError
 from ..reply_wait import REPLY_FOLLOWUP_RETRY_SECONDS
 from ..storage import (
+    MemoryRecallQuery,
     estimate_tokens,
     truncate_tokens,
 )
@@ -28,6 +29,7 @@ from .context_assembler import (
     assemble_recent_webhook_activity,
     assemble_recent_conversation,
     build_plan_retrieval,
+    select_plan_recall_queries,
     project_recent_turns_for_owner,
     recall_episode_context,
 )
@@ -1425,7 +1427,21 @@ class TurnOrchestrator:
             long_term_memories=long_term_memories,
             recent_memories=recent_memories,
         )
-        retrieval = build_plan_retrieval(self.store, plan, self.config)
+        selected, _reused, _emitted, _skipped = select_plan_recall_queries(plan)
+        dense_evidence = await self.semantic_recall.prepare(
+            [
+                MemoryRecallQuery(
+                    expression=str(item["expression"]),
+                    unit_ids=tuple(str(value) for value in item["unit_ids"]),
+                    priority=int(item["priority"]),
+                )
+                for item in selected
+            ],
+            output_limit=max(self.config.memory_results, self.config.summary_results),
+        )
+        retrieval = build_plan_retrieval(
+            self.store, plan, self.config, dense_evidence=dense_evidence
+        )
         recalled = assemble_main_context(
             self.store,
             retrieval,

@@ -105,6 +105,19 @@ class EpisodeAnnealingConfig:
 
 
 @dataclass(frozen=True)
+class EmbeddingConfig:
+    enabled: bool = False
+    endpoint: str = "http://embedding:8002/v1/embeddings"
+    api_key: str = ""
+    model: str = "BAAI/bge-small-zh-v1.5"
+    dimensions: int = 512
+    calibration_profile: str = "bge-small-zh-v1.5-momoi-v1"
+    query_timeout_seconds: float = 0.5
+    document_timeout_seconds: float = 30
+    document_batch_size: int = 8
+
+
+@dataclass(frozen=True)
 class AppConfig:
     llm: LLMConfig
     channel: object
@@ -145,6 +158,7 @@ class AppConfig:
     channels: tuple[object, ...] = ()
     policies: RuntimePolicies = RuntimePolicies()
     asr: ASRConfig = ASRConfig()
+    embedding: EmbeddingConfig = EmbeddingConfig()
 
     @property
     def channel_configs(self) -> tuple[object, ...]:
@@ -405,6 +419,28 @@ def load_config(path: str | Path) -> AppConfig:
     annealing_raw = _mapping(
         raw.get("episode_annealing", {}), "episode_annealing"
     )
+    embedding_raw = _mapping(raw.get("embedding", {}), "embedding")
+    embedding_enabled = _boolean(
+        embedding_raw.get("enabled", False), "embedding.enabled"
+    )
+    embedding_model = str(
+        embedding_raw.get("model", "BAAI/bge-small-zh-v1.5")
+    ).strip()
+    embedding_dimensions = int(embedding_raw.get("dimensions", 512))
+    embedding_profile = str(
+        embedding_raw.get(
+            "calibration_profile", "bge-small-zh-v1.5-momoi-v1"
+        )
+    ).strip()
+    if embedding_enabled and not embedding_model:
+        raise ConfigError("embedding.model is required when embedding is enabled")
+    if embedding_dimensions <= 0:
+        raise ConfigError("embedding.dimensions must be positive")
+    if not embedding_profile:
+        raise ConfigError("embedding.calibration_profile must not be empty")
+    document_batch_size = int(embedding_raw.get("document_batch_size", 8))
+    if document_batch_size <= 0:
+        raise ConfigError("embedding.document_batch_size must be positive")
     dashboard_token = str(dashboard_raw.get("token") or "")
     mcp_value = tools_raw.get("mcp_config", "mcp.json")
     mcp_config = (config_path.parent / str(mcp_value)).resolve() if mcp_value else None
@@ -586,5 +622,26 @@ def load_config(path: str | Path) -> AppConfig:
             timeout_seconds=asr_timeout,
             max_audio_bytes=asr_max_audio_bytes,
             settings=dict(asr_settings) or None,
+        ),
+        embedding=EmbeddingConfig(
+            enabled=embedding_enabled,
+            endpoint=str(
+                embedding_raw.get(
+                    "endpoint", "http://embedding:8002/v1/embeddings"
+                )
+            ).rstrip("/"),
+            api_key=str(embedding_raw.get("api_key") or ""),
+            model=embedding_model,
+            dimensions=embedding_dimensions,
+            calibration_profile=embedding_profile,
+            query_timeout_seconds=_positive(
+                embedding_raw.get("query_timeout_seconds", 0.5),
+                "embedding.query_timeout_seconds",
+            ),
+            document_timeout_seconds=_positive(
+                embedding_raw.get("document_timeout_seconds", 30),
+                "embedding.document_timeout_seconds",
+            ),
+            document_batch_size=document_batch_size,
         ),
     )

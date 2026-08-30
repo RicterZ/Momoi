@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import hashlib
 import json
 import logging
@@ -9,6 +11,7 @@ import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
+from typing import TYPE_CHECKING
 
 from ..channel import (
     ChannelMessage,
@@ -51,10 +54,14 @@ from .memory import (
     token_chunk,
     truncate_tokens,
 )
+from .semantic import SemanticStore
 from .scheduling import next_schedule_at, quiet_until
 from .thinking import ThinkingStore, month_bounds, parse_month
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from ..semantic import DenseRecallEvidence
 
 
 EPISODE_ANNEAL_MAX_FAILURES = 3
@@ -214,7 +221,7 @@ def _dashboard_unix(value: object) -> float | None:
     return stamp if stamp > 0 else None
 
 
-class Store(MemoryStore, DeliveryStore):
+class Store(MemoryStore, DeliveryStore, SemanticStore):
     def __init__(
         self,
         path: Path,
@@ -331,6 +338,7 @@ class Store(MemoryStore, DeliveryStore):
         self._db.execute(
             "UPDATE conversation_episodes SET summary_claimed_at=NULL"
         )
+        self.recover_semantic_encoding()
         self._db.commit()
 
     def _recover_outbox(self) -> None:
@@ -1512,7 +1520,7 @@ class Store(MemoryStore, DeliveryStore):
                 plan = record.get("plan")
                 if (
                     not isinstance(retrieval, dict)
-                    or retrieval.get("version") != 4
+                    or retrieval.get("version") not in {4, 5}
                     or not isinstance(plan, dict)
                 ):
                     queries = []
@@ -2763,6 +2771,7 @@ class Store(MemoryStore, DeliveryStore):
         before: float | None = None,
         offset: int = 0,
         minimum_confidence: float | None = None,
+        dense_evidence: DenseRecallEvidence | None = None,
     ) -> list[dict[str, object]]:
         if max_results <= 0 or offset < 0 or not queries:
             return []
@@ -2785,6 +2794,7 @@ class Store(MemoryStore, DeliveryStore):
                 if minimum_confidence is not None
                 else {}
             ),
+            dense_evidence=dense_evidence,
         )
         results: list[dict[str, object]] = []
         for hit in hits:
@@ -2818,6 +2828,11 @@ class Store(MemoryStore, DeliveryStore):
             episode["search_score"] = hit.score
             episode["semantic_score"] = hit.semantic_score
             episode["relevance_confidence"] = hit.relevance_confidence
+            episode["channels"] = list(hit.channels)
+            episode["dense_cosine"] = hit.dense_cosine
+            episode["agreement_bonus"] = hit.agreement_bonus
+            episode["corroboration_bonus"] = hit.corroboration_bonus
+            episode["dense_only"] = hit.dense_only
             episode["matched_queries"] = [
                 {
                     "expression": query.expression,
@@ -2844,6 +2859,7 @@ class Store(MemoryStore, DeliveryStore):
         after: float | None = None,
         before: float | None = None,
         offset: int = 0,
+        dense_evidence: DenseRecallEvidence | None = None,
     ) -> list[dict[str, object]]:
         return self._ranked_episode_results(
             queries,
@@ -2851,6 +2867,7 @@ class Store(MemoryStore, DeliveryStore):
             after=after,
             before=before,
             offset=offset,
+            dense_evidence=dense_evidence,
         )
 
     def search_episodes(
@@ -2861,6 +2878,7 @@ class Store(MemoryStore, DeliveryStore):
         after: float | None = None,
         before: float | None = None,
         offset: int = 0,
+        dense_evidence: DenseRecallEvidence | None = None,
     ) -> list[dict[str, object]]:
         if max_results <= 0 or offset < 0:
             return []
@@ -2872,6 +2890,7 @@ class Store(MemoryStore, DeliveryStore):
                 before=before,
                 offset=offset,
                 minimum_confidence=0.0,
+                dense_evidence=dense_evidence,
             )
         rows = self._db.execute(
             """SELECT e.*, COALESCE((

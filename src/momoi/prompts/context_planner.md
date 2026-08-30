@@ -77,7 +77,7 @@ clarification, failure handling, or a verifiable external outcome.
    short emotional message may correctly search or reuse depending on what is
    unresolved.
 
-   For search, emit the fewest ranked exact-word `recall_queries` that can
+   For search, emit the fewest ranked, concise `recall_queries` that can
    recover history material to substance, tone, continuity, or tool choice; one
    precise query is normal. Each item is a distinct retrieval need, and order
    affects ranking only: put the owner's explicit subject or historical premise
@@ -88,7 +88,7 @@ clarification, failure handling, or a verifiable external outcome.
    or history facet only when it could retrieve different useful evidence.
 
    Within one retrieval need, `|` joins interchangeable, parallel, equally
-   weighted exact keywords or aliases with no spaces. `连接超时|服务异常` and
+   weighted keywords, short phrases, or aliases. `连接超时|服务异常` and
    `发布计划|交付日期` are valid; `知识库|攻略` and `计划|什么时候发布` are not. Put distinct
    needs in separate items. Do not add overlapping queries for the same
    conversational beat or search a decontextualized generic word whose referent

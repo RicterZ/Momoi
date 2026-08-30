@@ -1,4 +1,9 @@
 services:
+  embedding:
+    image: ricterz/momoi-embedding:0.5.0
+    container_name: momoi-embedding
+    restart: unless-stopped
+
   napcat:
     image: mlikiowa/napcat-docker:latest
     container_name: napcat
@@ -13,11 +18,12 @@ services:
       - napcat-qq:/app/.config/QQ
 
   momoi:
-    image: ricterz/momoi:0.4.0
+    image: ricterz/momoi:0.5.0
     container_name: momoi
     restart: unless-stopped
     depends_on:
       - napcat
+      - embedding
     extra_hosts:
       - host.docker.internal:host-gateway
     environment:

@@ -1,9 +1,17 @@
 services:
+  embedding:
+    image: momoi-embedding
+    build:
+      context: .
+      dockerfile: Dockerfile.embedding
+    restart: unless-stopped
   momoi:
     image: momoi
     build:
       context: .
       target: release
+    depends_on:
+      - embedding
     restart: unless-stopped
     environment:
       BRAVE_API_KEY: ${BRAVE_API_KEY:-}

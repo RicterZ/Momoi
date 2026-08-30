@@ -2038,7 +2038,7 @@ class ContextAssemblerTest(unittest.TestCase):
                 plan("蓝色保温杯 | 第三个纸箱", "episode-old"),
                 config(directory),
             )
-            self.assertEqual(retrieval["version"], 4)
+            self.assertEqual(retrieval["version"], 5)
             self.assertIn("episode_hits=", retrieval["query_recall"])
             self.assertNotIn("turn_hits=", retrieval["query_recall"])
             selected = next(

@@ -26,6 +26,7 @@ from ..memory_tools import MemoryTools
 from ..mcp_client import MCPManager
 from ..models import AgentReply, IncomingMessage, OwnerInputStatus
 from ..provider import AnthropicProvider, OpenAIProvider
+from ..semantic import SemanticRecallService
 from ..storage import Store
 from ..webhooks import WebhookService
 from .jobs import AutonomousJob
@@ -76,6 +77,10 @@ class MomoiDaemon(TurnRunner):
             config.policies.memory,
             thinking=config.thinking,
         )
+        self.semantic_recall = SemanticRecallService(
+            self.store, config.embedding
+        )
+        self.semantic_recall.start()
         usage_plugin = None
         if config.usage.provider:
             usage_plugin = load_usage_plugin(
@@ -102,7 +107,9 @@ class MomoiDaemon(TurnRunner):
         )
         self.store.ensure_heartbeat(config.heartbeat)
         self.agenda_tools = AgendaTools(self.store)
-        self.memory_tools = MemoryTools(self.store, config.policies.memory)
+        self.memory_tools = MemoryTools(
+            self.store, config.policies.memory, self.semantic_recall
+        )
         self.builtin_tools = BuiltinTools(
             config.workspace or config.database.parent,
             private_roots=(self._tool_result_root(),),
@@ -201,6 +208,18 @@ class MomoiDaemon(TurnRunner):
                     tasks.append(
                         group.create_task(self._episode_annealing_worker(stop))
                     )
+                    tasks.append(
+                        group.create_task(
+                            self.semantic_recall.run_worker(
+                                stop,
+                                busy=lambda: (
+                                    self._active_turn is not None
+                                    or self._webhook_turn_active
+                                    or self._active_annealing is not None
+                                ),
+                            )
+                        )
+                    )
                     if self.dashboard is not None:
                         tasks.append(group.create_task(self.dashboard.run(stop)))
                     if self.webhooks is not None:
@@ -210,6 +229,7 @@ class MomoiDaemon(TurnRunner):
                     for task in tasks:
                         task.cancel()
             finally:
+                await self.semantic_recall.close()
                 self.store.close()
 
     async def _run_channel(self, channel: Channel, stop: asyncio.Event) -> None:

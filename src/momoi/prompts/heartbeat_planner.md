@@ -27,7 +27,7 @@ Rules:
   contradiction, repetition, or repeated work. Use `skip` only when relevant
   history is already supplied or history clearly cannot affect this activity.
   A casual, playful, restful, or easy activity is not by itself a reason to skip.
-- For `search`, provide one to three ranked exact-word `activity.recall_queries`.
+- For `search`, provide one to three ranked, concise `activity.recall_queries`.
   Each item is an independent retrieval need: a relevant memory or Episode may
   satisfy any one item without satisfying the others. Item order affects ranking
   only, with the concrete current subject or historical premise first and broad

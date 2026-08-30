@@ -1088,7 +1088,9 @@ class ToolExecutionService:
                         allow_notify=allow_notify,
                     )
                 else:
-                    result = self.memory_tools.execute(call, current_events, draft)
+                    result = await self.memory_tools.execute_async(
+                        call, current_events, draft
+                    )
                 if "provenance" not in result:
                     result = self._normalize_tool_result(call, result, source)
                 provenance = result.get("provenance")

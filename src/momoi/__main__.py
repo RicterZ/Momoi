@@ -1,7 +1,9 @@
 import argparse
 import asyncio
+import json
 import logging
 import signal
+from dataclasses import replace
 from datetime import datetime, timedelta
 from importlib.metadata import version
 from pathlib import Path
@@ -11,8 +13,9 @@ from .channel import login_channel
 from .config import ConfigError, load_config
 from .emotions import managed_emotion_path, remove_unreferenced_emotion_asset
 from .logging_context import configure_logging, log_event
-from .runtime import MomoiDaemon
 from .models import ToolCall, TurnDraft
+from .runtime import MomoiDaemon
+from .semantic import SemanticRecallService
 from .storage import Store
 
 
@@ -82,6 +85,24 @@ def parse_args() -> argparse.Namespace:
     goal_del = goal_commands.add_parser("del", help="cancel a goal")
     goal_del.add_argument("goal_id", help="full ID or unambiguous prefix")
     goal_del.add_argument("--reason", default="Cancelled from CLI")
+    embedding_parser = commands.add_parser(
+        "embedding", help="manage the local semantic recall index"
+    )
+    embedding_commands = embedding_parser.add_subparsers(
+        dest="embedding_command", required=True
+    )
+    embedding_commands.add_parser("status", help="show index and sidecar status")
+    embedding_commands.add_parser(
+        "reconcile", help="queue missing or stale semantic sources"
+    )
+    embedding_build = embedding_commands.add_parser(
+        "build", help="create and populate a building embedding space"
+    )
+    embedding_build.add_argument("--wait", action="store_true")
+    embedding_activate = embedding_commands.add_parser(
+        "activate", help="atomically activate a completed building space"
+    )
+    embedding_activate.add_argument("space_id", nargs="?")
     return parser.parse_args()
 
 
@@ -207,6 +228,64 @@ def goal(args: argparse.Namespace) -> None:
         store.close()
 
 
+async def embedding(args: argparse.Namespace) -> None:
+    config = load_config(args.workspace / "config.json")
+    embedding_config = replace(config.embedding, enabled=True)
+    store = Store(config.database, args.workspace, thinking=config.thinking)
+    service = SemanticRecallService(
+        store, embedding_config, auto_activate=False
+    )
+    try:
+        if args.embedding_command == "status":
+            status = store.semantic_status()
+            healthy, latency_ms, error = await service.client.health()
+            status["sidecar"] = {
+                "healthy": healthy,
+                "latency_ms": round(latency_ms, 2),
+                "error": error,
+            }
+            print(json.dumps(status, ensure_ascii=False, indent=2, default=str))
+            return
+        if args.embedding_command == "activate":
+            space_id = args.space_id
+            if not space_id:
+                building = store.semantic_space(state="building")
+                if building is None:
+                    raise ValueError("building semantic space not found")
+                space_id = str(building["id"])
+            store.activate_semantic_space(space_id)
+            print(f"activated\t{space_id}")
+            return
+        space = store.ensure_semantic_space(
+            model=embedding_config.model,
+            dimensions=embedding_config.dimensions,
+            calibration_profile=embedding_config.calibration_profile,
+        )
+        queued = store.reconcile_semantic_sources(str(space["id"]))
+        if args.embedding_command == "reconcile":
+            print(f"reconciled\t{space['id']}\tqueued={queued}")
+            return
+        if not args.wait:
+            print(f"building\t{space['id']}\tqueued={queued}")
+            return
+        while True:
+            await service.maintain_once()
+            status = store.semantic_status(str(space["id"]))
+            if (
+                status["eligible_source_coverage"] >= 1.0
+                and not status["pending"]
+                and not status["encoding"]
+                and not status["retry"]
+                and not status["dirty_sources"]
+            ):
+                print(json.dumps(status, ensure_ascii=False, indent=2, default=str))
+                return
+            await asyncio.sleep(0.05)
+    finally:
+        await service.close()
+        store.close()
+
+
 async def run(
     config_path: str | Path,
     *,
@@ -285,6 +364,8 @@ def main() -> None:
             emotion(args)
         elif args.command == "goal":
             goal(args)
+        elif args.command == "embedding":
+            asyncio.run(embedding(args))
     except (ConfigError, ValueError, OSError) as error:
         raise SystemExit(f"configuration error: {error}") from None
     except KeyboardInterrupt:

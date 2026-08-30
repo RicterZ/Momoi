@@ -206,6 +206,41 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
 
 将 `thinking` 设为 `null` 或空字符串时使用数据库目录。
 
+## Embedding 召回
+
+```json
+{
+  "embedding": {
+    "enabled": true,
+    "endpoint": "http://embedding:8002/v1/embeddings",
+    "api_key": "",
+    "model": "BAAI/bge-small-zh-v1.5",
+    "dimensions": 512,
+    "calibration_profile": "bge-small-zh-v1.5-momoi-v1",
+    "query_timeout_seconds": 0.5,
+    "document_timeout_seconds": 30,
+    "document_batch_size": 8
+  }
+}
+```
+
+| 字段 | 默认值 | 说明 |
+| --- | --- | --- |
+| `enabled` | `false` | 为记忆和 Episode 召回启用本地语义候选 |
+| `endpoint` | `http://embedding:8002/v1/embeddings` | OpenAI 兼容的 embedding 接口地址 |
+| `api_key` | 空 | 接口可选的 Bearer 凭证 |
+| `model` | `BAAI/bge-small-zh-v1.5` | Embedding 模型标识；内置 profile 支持此模型 |
+| `dimensions` | `512` | 正数向量维度；必须与接口输出一致 |
+| `calibration_profile` | `bge-small-zh-v1.5-momoi-v1` | 与模型和文档模板匹配的阈值配置 |
+| `query_timeout_seconds` | `0.5` | 单个 Turn 查询批次的正数超时时间 |
+| `document_timeout_seconds` | `30` | 单个后台文档批次的正数超时时间 |
+| `document_batch_size` | `8` | 每次后台请求编码的正数文档数量 |
+
+使用随项目提供的 Docker Compose 服务时保持默认 `endpoint`。使用其他 OpenAI
+兼容 embedding 服务时，`endpoint`、`model`、`dimensions` 和
+`calibration_profile` 必须使用受支持且相互匹配的一组值。接口不可用时自动退回
+关键词召回。
+
 ## 工具与 MCP
 
 ```json

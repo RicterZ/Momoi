@@ -11,11 +11,13 @@ from ..logging_context import TRACE, compact_log_value, log_context, log_event, 
 from ..memory_tools import MEMORY_TOOL_SPECS
 from ..models import IncomingMessage
 from ..storage import estimate_tokens
+from ..storage import MemoryRecallQuery
 from .context_assembler import (
     assemble_main_context,
     assemble_planner_recent_turns,
     assemble_recent_external_events,
     build_plan_retrieval,
+    select_plan_recall_queries,
     render_planner_recent_turn_focus,
     render_planner_recent_turns,
 )
@@ -792,11 +794,25 @@ class ContextService:
         retrieval = record.get("retrieval")
         if (
             not isinstance(retrieval, dict)
-            or retrieval.get("version") != 4
+            or retrieval.get("version") != 5
             or not isinstance(retrieval.get("recall_memories"), list)
             or not isinstance(retrieval.get("reflection_memories"), list)
         ):
-            retrieval = build_plan_retrieval(self.store, plan, self.config)
+            selected, _reused, _emitted, _skipped = select_plan_recall_queries(plan)
+            dense_evidence = await self.semantic_recall.prepare(
+                [
+                    MemoryRecallQuery(
+                        expression=str(item["expression"]),
+                        unit_ids=tuple(str(value) for value in item["unit_ids"]),
+                        priority=int(item["priority"]),
+                    )
+                    for item in selected
+                ],
+                output_limit=max(self.config.memory_results, self.config.summary_results),
+            )
+            retrieval = build_plan_retrieval(
+                self.store, plan, self.config, dense_evidence=dense_evidence
+            )
             record = self.store.save_context_retrieval(
                 turn_id,
                 int(record["revision"]),

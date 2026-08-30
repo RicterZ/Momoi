@@ -331,6 +331,236 @@ CREATE TABLE IF NOT EXISTS context_plans (
 );
 CREATE INDEX IF NOT EXISTS context_plans_latest
     ON context_plans(turn_id, revision DESC);
+
+-- Semantic recall is a derived, rebuildable index. Source triggers only enqueue
+-- identities; they never construct text or call the embedding service.
+CREATE TABLE IF NOT EXISTS semantic_spaces (
+    id TEXT PRIMARY KEY,
+    provider TEXT NOT NULL,
+    model TEXT NOT NULL,
+    dimensions INTEGER NOT NULL CHECK (dimensions > 0),
+    query_template_version INTEGER NOT NULL,
+    document_template_version INTEGER NOT NULL,
+    calibration_profile TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('building', 'active', 'retired')),
+    created_at REAL NOT NULL,
+    activated_at REAL,
+    UNIQUE (
+        provider, model, dimensions,
+        query_template_version, document_template_version,
+        calibration_profile
+    )
+);
+CREATE UNIQUE INDEX IF NOT EXISTS semantic_spaces_one_active
+    ON semantic_spaces(state) WHERE state='active';
+
+CREATE TABLE IF NOT EXISTS semantic_dirty_sources (
+    source_type TEXT NOT NULL CHECK (
+        source_type IN ('confirmed_memory', 'reflection_memory', 'episode')
+    ),
+    source_id TEXT NOT NULL,
+    changed_at REAL NOT NULL,
+    claimed_at REAL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    retry_at REAL,
+    last_error TEXT,
+    PRIMARY KEY (source_type, source_id)
+);
+CREATE INDEX IF NOT EXISTS semantic_dirty_sources_ready
+    ON semantic_dirty_sources(retry_at, changed_at);
+
+CREATE TABLE IF NOT EXISTS semantic_documents (
+    space_id TEXT NOT NULL,
+    document_type TEXT NOT NULL CHECK (
+        document_type IN (
+            'confirmed_memory', 'reflection_memory',
+            'episode_summary', 'episode_turn'
+        )
+    ),
+    source_id TEXT NOT NULL,
+    parent_id TEXT NOT NULL DEFAULT '',
+    chunk_index INTEGER NOT NULL DEFAULT 0,
+    content TEXT NOT NULL,
+    content_sha256 TEXT NOT NULL,
+    source_ids_json TEXT NOT NULL DEFAULT '[]',
+    starts_at REAL,
+    ends_at REAL,
+    state TEXT NOT NULL CHECK (
+        state IN ('pending', 'encoding', 'ready', 'retry', 'inactive')
+    ),
+    vector BLOB,
+    dimensions INTEGER,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    retry_at REAL,
+    last_error TEXT,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    embedded_at REAL,
+    PRIMARY KEY (space_id, document_type, source_id, chunk_index),
+    FOREIGN KEY (space_id) REFERENCES semantic_spaces(id) ON DELETE CASCADE,
+    CHECK (
+        state <> 'ready'
+        OR vector IS NOT NULL AND dimensions IS NOT NULL
+    )
+);
+CREATE INDEX IF NOT EXISTS semantic_documents_pending
+    ON semantic_documents(space_id, state, retry_at, updated_at);
+CREATE INDEX IF NOT EXISTS semantic_documents_parent
+    ON semantic_documents(space_id, document_type, parent_id);
+
+CREATE TRIGGER IF NOT EXISTS semantic_memories_insert
+AFTER INSERT ON memories BEGIN
+    INSERT INTO semantic_dirty_sources(source_type, source_id, changed_at)
+    VALUES ('confirmed_memory', CAST(NEW.id AS TEXT),
+            (julianday('now') - 2440587.5) * 86400.0)
+    ON CONFLICT(source_type, source_id) DO UPDATE SET
+        changed_at=excluded.changed_at, claimed_at=NULL, retry_at=NULL,
+        last_error=NULL;
+END;
+CREATE TRIGGER IF NOT EXISTS semantic_memories_update
+AFTER UPDATE OF kind, key, content, activation, expires_at, superseded_by
+ON memories BEGIN
+    INSERT INTO semantic_dirty_sources(source_type, source_id, changed_at)
+    VALUES ('confirmed_memory', CAST(NEW.id AS TEXT),
+            (julianday('now') - 2440587.5) * 86400.0)
+    ON CONFLICT(source_type, source_id) DO UPDATE SET
+        changed_at=excluded.changed_at, claimed_at=NULL, retry_at=NULL,
+        last_error=NULL;
+END;
+CREATE TRIGGER IF NOT EXISTS semantic_memories_delete
+AFTER DELETE ON memories BEGIN
+    INSERT INTO semantic_dirty_sources(source_type, source_id, changed_at)
+    VALUES ('confirmed_memory', CAST(OLD.id AS TEXT),
+            (julianday('now') - 2440587.5) * 86400.0)
+    ON CONFLICT(source_type, source_id) DO UPDATE SET
+        changed_at=excluded.changed_at, claimed_at=NULL, retry_at=NULL,
+        last_error=NULL;
+END;
+
+CREATE TRIGGER IF NOT EXISTS semantic_tombstones_insert
+AFTER INSERT ON memory_tombstones BEGIN
+    INSERT OR REPLACE INTO semantic_dirty_sources(source_type, source_id, changed_at)
+    SELECT 'confirmed_memory', CAST(id AS TEXT),
+           (julianday('now') - 2440587.5) * 86400.0
+    FROM memories WHERE kind=NEW.kind AND key=NEW.key;
+END;
+CREATE TRIGGER IF NOT EXISTS semantic_tombstones_update
+AFTER UPDATE OF kind, key ON memory_tombstones BEGIN
+    INSERT OR REPLACE INTO semantic_dirty_sources(source_type, source_id, changed_at)
+    SELECT 'confirmed_memory', CAST(id AS TEXT),
+           (julianday('now') - 2440587.5) * 86400.0
+    FROM memories
+    WHERE (kind=OLD.kind AND key=OLD.key) OR (kind=NEW.kind AND key=NEW.key);
+END;
+CREATE TRIGGER IF NOT EXISTS semantic_tombstones_delete
+AFTER DELETE ON memory_tombstones BEGIN
+    INSERT OR REPLACE INTO semantic_dirty_sources(source_type, source_id, changed_at)
+    SELECT 'confirmed_memory', CAST(id AS TEXT),
+           (julianday('now') - 2440587.5) * 86400.0
+    FROM memories WHERE kind=OLD.kind AND key=OLD.key;
+END;
+
+CREATE TRIGGER IF NOT EXISTS semantic_reflections_insert
+AFTER INSERT ON reflection_memories BEGIN
+    INSERT INTO semantic_dirty_sources(source_type, source_id, changed_at)
+    VALUES ('reflection_memory', CAST(NEW.id AS TEXT),
+            (julianday('now') - 2440587.5) * 86400.0)
+    ON CONFLICT(source_type, source_id) DO UPDATE SET
+        changed_at=excluded.changed_at, claimed_at=NULL, retry_at=NULL,
+        last_error=NULL;
+END;
+CREATE TRIGGER IF NOT EXISTS semantic_reflections_update
+AFTER UPDATE OF kind, key, content ON reflection_memories BEGIN
+    INSERT INTO semantic_dirty_sources(source_type, source_id, changed_at)
+    VALUES ('reflection_memory', CAST(NEW.id AS TEXT),
+            (julianday('now') - 2440587.5) * 86400.0)
+    ON CONFLICT(source_type, source_id) DO UPDATE SET
+        changed_at=excluded.changed_at, claimed_at=NULL, retry_at=NULL,
+        last_error=NULL;
+END;
+CREATE TRIGGER IF NOT EXISTS semantic_reflections_delete
+AFTER DELETE ON reflection_memories BEGIN
+    INSERT INTO semantic_dirty_sources(source_type, source_id, changed_at)
+    VALUES ('reflection_memory', CAST(OLD.id AS TEXT),
+            (julianday('now') - 2440587.5) * 86400.0)
+    ON CONFLICT(source_type, source_id) DO UPDATE SET
+        changed_at=excluded.changed_at, claimed_at=NULL, retry_at=NULL,
+        last_error=NULL;
+END;
+
+CREATE TRIGGER IF NOT EXISTS semantic_episodes_insert
+AFTER INSERT ON conversation_episodes BEGIN
+    INSERT INTO semantic_dirty_sources(source_type, source_id, changed_at)
+    VALUES ('episode', NEW.id, (julianday('now') - 2440587.5) * 86400.0)
+    ON CONFLICT(source_type, source_id) DO UPDATE SET
+        changed_at=excluded.changed_at, claimed_at=NULL, retry_at=NULL,
+        last_error=NULL;
+END;
+CREATE TRIGGER IF NOT EXISTS semantic_episodes_update
+AFTER UPDATE OF status, title, working_summary, narrative_summary,
+                outcomes_json, summarized_through_ordinal, summary_claimed_at,
+                topics_json, entities_json, open_loops_json
+ON conversation_episodes BEGIN
+    INSERT INTO semantic_dirty_sources(source_type, source_id, changed_at)
+    VALUES ('episode', NEW.id, (julianday('now') - 2440587.5) * 86400.0)
+    ON CONFLICT(source_type, source_id) DO UPDATE SET
+        changed_at=excluded.changed_at, claimed_at=NULL, retry_at=NULL,
+        last_error=NULL;
+END;
+CREATE TRIGGER IF NOT EXISTS semantic_episodes_delete
+AFTER DELETE ON conversation_episodes BEGIN
+    INSERT INTO semantic_dirty_sources(source_type, source_id, changed_at)
+    VALUES ('episode', OLD.id, (julianday('now') - 2440587.5) * 86400.0)
+    ON CONFLICT(source_type, source_id) DO UPDATE SET
+        changed_at=excluded.changed_at, claimed_at=NULL, retry_at=NULL,
+        last_error=NULL;
+END;
+
+CREATE TRIGGER IF NOT EXISTS semantic_episode_turns_insert
+AFTER INSERT ON episode_turns BEGIN
+    INSERT OR REPLACE INTO semantic_dirty_sources(source_type, source_id, changed_at)
+    VALUES ('episode', NEW.episode_id,
+            (julianday('now') - 2440587.5) * 86400.0);
+END;
+CREATE TRIGGER IF NOT EXISTS semantic_episode_turns_update
+AFTER UPDATE OF episode_id, turn_id, ordinal, relation, unit_ids_json
+ON episode_turns BEGIN
+    INSERT OR REPLACE INTO semantic_dirty_sources(source_type, source_id, changed_at)
+    VALUES ('episode', OLD.episode_id,
+            (julianday('now') - 2440587.5) * 86400.0);
+    INSERT OR REPLACE INTO semantic_dirty_sources(source_type, source_id, changed_at)
+    VALUES ('episode', NEW.episode_id,
+            (julianday('now') - 2440587.5) * 86400.0);
+END;
+CREATE TRIGGER IF NOT EXISTS semantic_episode_turns_delete
+AFTER DELETE ON episode_turns BEGIN
+    INSERT OR REPLACE INTO semantic_dirty_sources(source_type, source_id, changed_at)
+    VALUES ('episode', OLD.episode_id,
+            (julianday('now') - 2440587.5) * 86400.0);
+END;
+
+CREATE TRIGGER IF NOT EXISTS semantic_messages_insert
+AFTER INSERT ON messages BEGIN
+    INSERT OR REPLACE INTO semantic_dirty_sources(source_type, source_id, changed_at)
+    SELECT 'episode', episode_id,
+           (julianday('now') - 2440587.5) * 86400.0
+    FROM episode_turns WHERE turn_id=NEW.turn_id;
+END;
+CREATE TRIGGER IF NOT EXISTS semantic_messages_update
+AFTER UPDATE OF turn_id, role, content, created_at, delivery_state
+ON messages BEGIN
+    INSERT OR REPLACE INTO semantic_dirty_sources(source_type, source_id, changed_at)
+    SELECT 'episode', episode_id,
+           (julianday('now') - 2440587.5) * 86400.0
+    FROM episode_turns WHERE turn_id IN (OLD.turn_id, NEW.turn_id);
+END;
+CREATE TRIGGER IF NOT EXISTS semantic_messages_delete
+AFTER DELETE ON messages BEGIN
+    INSERT OR REPLACE INTO semantic_dirty_sources(source_type, source_id, changed_at)
+    SELECT 'episode', episode_id,
+           (julianday('now') - 2440587.5) * 86400.0
+    FROM episode_turns WHERE turn_id=OLD.turn_id;
+END;
 CREATE TABLE IF NOT EXISTS reconciliations (
     turn_id TEXT PRIMARY KEY,
     status TEXT NOT NULL CHECK (status IN ('open', 'resolved', 'resumed')),

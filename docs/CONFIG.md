@@ -210,6 +210,41 @@ actual context window.
 
 Set `thinking` to `null` or an empty string to use the database directory.
 
+## Embedding recall
+
+```json
+{
+  "embedding": {
+    "enabled": true,
+    "endpoint": "http://embedding:8002/v1/embeddings",
+    "api_key": "",
+    "model": "BAAI/bge-small-zh-v1.5",
+    "dimensions": 512,
+    "calibration_profile": "bge-small-zh-v1.5-momoi-v1",
+    "query_timeout_seconds": 0.5,
+    "document_timeout_seconds": 30,
+    "document_batch_size": 8
+  }
+}
+```
+
+| Field | Default | Description |
+| --- | --- | --- |
+| `enabled` | `false` | Enable local semantic candidates in memory and Episode recall |
+| `endpoint` | `http://embedding:8002/v1/embeddings` | OpenAI-compatible embedding endpoint |
+| `api_key` | empty | Optional bearer credential for the endpoint |
+| `model` | `BAAI/bge-small-zh-v1.5` | Embedding model identifier; the bundled profile supports this model |
+| `dimensions` | `512` | Positive vector dimension; must match the endpoint |
+| `calibration_profile` | `bge-small-zh-v1.5-momoi-v1` | Threshold profile matching the model and document templates |
+| `query_timeout_seconds` | `0.5` | Positive timeout for one Turn's query batch |
+| `document_timeout_seconds` | `30` | Positive timeout for one background document batch |
+| `document_batch_size` | `8` | Positive number of documents encoded per background request |
+
+The bundled Docker Compose service uses the default endpoint. For another
+OpenAI-compatible embedding server, set `endpoint`, `model`, `dimensions`, and
+`calibration_profile` to a supported matching set. An unavailable endpoint
+falls back to keyword recall.
+
 ## Tools and MCP
 
 ```json
