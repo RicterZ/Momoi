@@ -3,7 +3,7 @@ FROM python:3.12-slim AS model
 ARG MODEL_REVISION=46fbe35fd4374a00fee7de77dfddaeb6dd6a2c59
 ENV FASTEMBED_CACHE_PATH=/models
 RUN pip install --no-cache-dir fastembed==0.8.0 huggingface-hub==1.7.2 \
-    && python -c "from huggingface_hub import snapshot_download; snapshot_download('Qdrant/bge-small-zh-v1.5', revision='${MODEL_REVISION}', cache_dir='/models')" \
+    && python -c "from pathlib import Path; from huggingface_hub import snapshot_download; expected='${MODEL_REVISION}'; path=snapshot_download('Qdrant/bge-small-zh-v1.5', revision='main', cache_dir='/models'); assert Path(path).name == expected, f'unexpected model revision: {Path(path).name}'" \
     && HF_HUB_OFFLINE=1 python -c "from fastembed import TextEmbedding; TextEmbedding('BAAI/bge-small-zh-v1.5', cache_dir='/models', lazy_load=False)"
 
 FROM python:3.12-slim
