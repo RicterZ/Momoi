@@ -496,9 +496,10 @@ AFTER INSERT ON conversation_episodes BEGIN
         changed_at=excluded.changed_at, claimed_at=NULL, retry_at=NULL,
         last_error=NULL;
 END;
-CREATE TRIGGER IF NOT EXISTS semantic_episodes_update
+DROP TRIGGER IF EXISTS semantic_episodes_update;
+CREATE TRIGGER semantic_episodes_update
 AFTER UPDATE OF status, title, working_summary, narrative_summary,
-                outcomes_json, summarized_through_ordinal, summary_claimed_at,
+                outcomes_json, summarized_through_ordinal,
                 topics_json, entities_json, open_loops_json
 ON conversation_episodes BEGIN
     INSERT INTO semantic_dirty_sources(source_type, source_id, changed_at)

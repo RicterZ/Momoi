@@ -157,6 +157,32 @@ class SemanticRecallTest(unittest.TestCase):
             embedded_at,
         )
 
+    def test_restart_recovery_does_not_dirty_unchanged_episodes(self) -> None:
+        episode_id = "episode-1"
+        with self.store._db:
+            self.store._db.execute(
+                """INSERT INTO conversation_episodes
+                   (id, status, title, narrative_summary,
+                    summarized_through_ordinal, summary_claimed_at,
+                    created_at, updated_at, closed_at)
+                   VALUES (?, 'closed', 'topic', 'summary', 0, ?, ?, ?, ?)""",
+                (episode_id, self.now, self.now, self.now, self.now),
+            )
+        space = self.space()
+        self.store.reconcile_semantic_sources(str(space["id"]))
+        self.materialize_all()
+        self.assertEqual(
+            self.store.semantic_status(str(space["id"]))["dirty_sources"], 0
+        )
+
+        database = Path(self.directory.name) / "momoi.sqlite3"
+        self.store.close()
+        self.store = Store(database)
+
+        self.assertEqual(
+            self.store.semantic_status(str(space["id"]))["dirty_sources"], 0
+        )
+
     def test_dense_only_requires_absolute_threshold(self) -> None:
         memory_id = self.add_memory("unrelated literal", "stored paraphrase")
         query = MemoryRecallQuery("different wording")
