@@ -21,6 +21,7 @@ _SECOND_ALIAS_WEIGHT = 0.18
 _THIRD_ALIAS_WEIGHT = 0.08
 _SECOND_QUERY_WEIGHT = 0.55
 _THIRD_QUERY_WEIGHT = 0.2
+_SPARSE_SCORE_SATURATION = 2.0
 _RECENCY_FLOOR = 0.8
 _RECENCY_HALF_LIFE_SECONDS = 180 * 86400
 _RELEVANCE_CONFIDENCE_FLOOR = 0.47
@@ -143,6 +144,15 @@ def _priority_weight(priority: int) -> float:
     return _QUERY_PRIORITY_WEIGHTS[
         min(max(0, priority), len(_QUERY_PRIORITY_WEIGHTS) - 1)
     ]
+
+
+def _saturate_sparse_score(score: float) -> float:
+    """Keep stronger sparse evidence useful without letting it dominate rank."""
+    if score <= 0:
+        return 0.0
+    return -_SPARSE_SCORE_SATURATION * math.expm1(
+        -score / _SPARSE_SCORE_SATURATION
+    )
 
 
 def _query_score(
@@ -315,6 +325,7 @@ def rank_episode_matches(
             )
             dense_score = max(summary_dense, turn_dense)
             normalized_sparse = 1.0 - math.exp(-sparse_score)
+            sparse_component = _saturate_sparse_score(sparse_score)
             agreement = (
                 min(normalized_sparse, dense_score)
                 if sparse_score > 0 and dense_score > 0
@@ -326,7 +337,10 @@ def rank_episode_matches(
                 else 0.0
             )
             hybrid_score = (
-                sparse_score + 0.55 * dense_score + 0.20 * agreement + corroboration
+                sparse_component
+                + 0.55 * dense_score
+                + 0.20 * agreement
+                + corroboration
             ) * _priority_weight(query.priority)
             state = episodes.setdefault(
                 episode_id,

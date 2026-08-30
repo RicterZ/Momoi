@@ -1,7 +1,12 @@
+import math
 import unittest
 
 from momoi.search import StringSearchBackend
-from momoi.storage.episode_ranking import EpisodeRecallQuery, rank_episode_matches
+from momoi.storage.episode_ranking import (
+    EpisodeRecallQuery,
+    _saturate_sparse_score,
+    rank_episode_matches,
+)
 from momoi.storage.episode_search import (
     EpisodeQueryService,
     EpisodeSearchDocument,
@@ -62,6 +67,18 @@ class RecordingBackend:
 
 
 class EpisodeSearchTest(unittest.TestCase):
+    def test_sparse_score_saturation_is_monotonic_and_bounded(self) -> None:
+        raw_scores = (0.0, 0.5, 2.0, 8.0, 100.0)
+        saturated = tuple(_saturate_sparse_score(score) for score in raw_scores)
+
+        self.assertEqual(saturated[0], 0.0)
+        self.assertTrue(
+            all(left < right for left, right in zip(saturated, saturated[1:]))
+        )
+        self.assertAlmostEqual(saturated[2], 2.0 * (1.0 - math.exp(-1.0)))
+        self.assertTrue(all(score <= 2.0 for score in saturated[1:]))
+        self.assertAlmostEqual(saturated[-1], 2.0)
+
     def test_query_service_deduplicates_alternatives_without_ranking(self) -> None:
         backend = RecordingBackend()
         service = EpisodeQueryService(backend)
