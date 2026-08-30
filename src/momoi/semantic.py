@@ -12,7 +12,6 @@ import numpy as np
 
 from .config import EmbeddingConfig
 from .logging_context import log_event
-from .search import search_alternatives
 from .storage import MemoryRecallQuery, Store, decode_vector
 from .storage.episode_ranking import EpisodeRecallQuery
 
@@ -367,7 +366,9 @@ class SemanticRecallService:
     ) -> list[str]:
         return list(
             dict.fromkeys(
-                query.expression for query in queries if query.expression.strip()
+                query.dense_expression
+                for query in queries
+                if query.dense_expression
             )
         )
 
@@ -397,25 +398,11 @@ class SemanticRecallService:
                 calibration_profile=self.config.calibration_profile,
                 fallback_reason=self.degraded_reason or "disabled",
             )
-        aliases_by_expression = {
-            expression: search_alternatives(expression) for expression in expressions
-        }
-        aliases = list(
-            dict.fromkeys(
-                alias
-                for expression in expressions
-                for alias in aliases_by_expression[expression]
-            )
-        )
-        if not aliases:
-            return DenseRecallEvidence(
-                space_id=self.snapshot.space_id,
-                calibration_profile=self.config.calibration_profile,
-            )
         request_started = time.monotonic()
         try:
             vectors = await self.client.encode(
-                [QUERY_INSTRUCTION + alias for alias in aliases], query=True
+                [QUERY_INSTRUCTION + expression for expression in expressions],
+                query=True,
             )
         except Exception as error:
             reason = f"{type(error).__name__}: {str(error)[:160]}"
@@ -423,7 +410,7 @@ class SemanticRecallService:
             return DenseRecallEvidence(
                 space_id=self.snapshot.space_id,
                 calibration_profile=self.config.calibration_profile,
-                query_batch_size=len(aliases),
+                query_batch_size=len(expressions),
                 request_ms=(time.monotonic() - request_started) * 1000,
                 fallback_reason=reason,
             )
@@ -456,28 +443,25 @@ class SemanticRecallService:
                 )
                 for index, hits in per_pool.items():
                     episode_hits.setdefault(index, []).extend(hits)
-        alias_index = {alias: index for index, alias in enumerate(aliases)}
         memory: dict[str, dict[tuple[str, str], DenseMemoryHit]] = {}
         episodes: dict[str, dict[str, DenseEpisodeHit]] = {}
-        for expression in expressions:
+        for index, expression in enumerate(expressions):
             expression_memory: dict[tuple[str, str], DenseMemoryHit] = {}
             episode_values: dict[str, dict[str, float]] = {}
-            for alias in aliases_by_expression[expression]:
-                index = alias_index[alias]
-                for meta, cosine in memory_hits.get(index, []):
-                    key = (meta.document_type, meta.source_id)
-                    previous = expression_memory.get(key)
-                    if previous is None or cosine > previous.cosine:
-                        expression_memory[key] = DenseMemoryHit(meta.source_id, cosine)
-                for meta, cosine in episode_hits.get(index, []):
-                    episode_id = meta.parent_id or meta.source_id
-                    field_name = (
-                        "summary_cosine"
-                        if meta.document_type == "episode_summary"
-                        else "turn_cosine"
-                    )
-                    values = episode_values.setdefault(episode_id, {})
-                    values[field_name] = max(cosine, values.get(field_name, -1.0))
+            for meta, cosine in memory_hits.get(index, []):
+                key = (meta.document_type, meta.source_id)
+                previous = expression_memory.get(key)
+                if previous is None or cosine > previous.cosine:
+                    expression_memory[key] = DenseMemoryHit(meta.source_id, cosine)
+            for meta, cosine in episode_hits.get(index, []):
+                episode_id = meta.parent_id or meta.source_id
+                field_name = (
+                    "summary_cosine"
+                    if meta.document_type == "episode_summary"
+                    else "turn_cosine"
+                )
+                values = episode_values.setdefault(episode_id, {})
+                values[field_name] = max(cosine, values.get(field_name, -1.0))
             memory[expression] = expression_memory
             episodes[expression] = {
                 episode_id: DenseEpisodeHit(episode_id, **values)
@@ -488,7 +472,7 @@ class SemanticRecallService:
             calibration_profile=self.config.calibration_profile,
             memory=memory,
             episodes=episodes,
-            query_batch_size=len(aliases),
+            query_batch_size=len(expressions),
             request_ms=request_ms,
             search_ms=(time.monotonic() - search_started) * 1000,
         )

@@ -1434,6 +1434,7 @@ class TurnOrchestrator:
                     expression=str(item["expression"]),
                     unit_ids=tuple(str(value) for value in item["unit_ids"]),
                     priority=int(item["priority"]),
+                    semantic_expression=str(item["semantic_expression"]),
                 )
                 for item in selected
             ],

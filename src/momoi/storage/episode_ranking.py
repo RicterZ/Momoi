@@ -52,6 +52,11 @@ class EpisodeRecallQuery:
     expression: str
     unit_ids: tuple[str, ...] = ()
     priority: int = 0
+    semantic_expression: str = ""
+
+    @property
+    def dense_expression(self) -> str:
+        return self.semantic_expression.strip() or self.expression.strip()
 
 
 @dataclass(frozen=True)
@@ -273,7 +278,7 @@ def rank_episode_matches(
             len(documents),
         )
         dense_by_episode = (
-            dense_evidence.episodes.get(query.expression, {})
+            dense_evidence.episodes.get(query.dense_expression, {})
             if dense_evidence is not None
             else {}
         )
@@ -349,7 +354,7 @@ def rank_episode_matches(
                 dict.fromkeys(hit.alternative for hit in hits)
             )
             query_evidence = EpisodeRankedQuery(
-                expression=query.expression,
+                expression=query.dense_expression,
                 unit_ids=query.unit_ids,
                 priority=query.priority,
                 score=hybrid_score,

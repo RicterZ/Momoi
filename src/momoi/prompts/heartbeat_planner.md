@@ -27,20 +27,18 @@ Rules:
   contradiction, repetition, or repeated work. Use `skip` only when relevant
   history is already supplied or history clearly cannot affect this activity.
   A casual, playful, restful, or easy activity is not by itself a reason to skip.
-- For `search`, provide one to three ranked, concise `activity.recall_queries`.
-  Each item is an independent retrieval need: a relevant memory or Episode may
-  satisfy any one item without satisfying the others. Item order affects ranking
-  only, with the concrete current subject or historical premise first and broad
-  context later.
-  Prefer a literal name, identifier, title, or concise subject-plus-history-facet
-  anchor, not a sentence or question. If an expression is ambiguous or depends
-  on a shared convention, put its literal wording first instead of an inferred
-  meaning. Within one retrieval need, `|` joins parallel, equally weighted exact
-  keywords or aliases without spaces. Any one alternative may satisfy that need;
-  matching more alternatives only strengthens ranking. Put different retrieval
-  needs in separate items. For `skip`, return an empty query array. The framework resolves search
-  queries across recall memory, reflections, and Episodes before the Heartbeat
-  Turn.
+- For `search`, provide one to three ranked `activity.recall_queries`. Each item
+  is one independent historical evidence need with two representations:
+  `semantic` rewrites the unknown fact, relationship, preference, convention,
+  method, rationale, or prior event being sought as one concise, self-contained
+  declarative retrieval proposition, not a question; omit activity setup, response
+  use, speculative answers, and alternative lists. `keywords` lists only known
+  literal names, identifiers, titles, exact phrases, or genuine aliases for sparse
+  lookup. Do not copy the triggering wording into `semantic`, invent an answer, or
+  force generic terms into `keywords`; an empty keyword list is valid. Put different
+  evidence needs in separate items. For `skip`, return an empty query array. The
+  framework resolves search queries across recall memory, reflections, and Episodes
+  before the Heartbeat Turn.
 
 - `recent_turn_base` and `recent_turn_append` form one ordered Turn history.
   `recent_turn_focus` lists the Turn labels that are the default focus. Other

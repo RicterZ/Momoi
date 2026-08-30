@@ -20,6 +20,10 @@ def planner_sections(text: str) -> dict[str, str]:
     }
 
 
+def recall_need(semantic: str, *keywords: str) -> dict[str, object]:
+    return {"semantic": semantic, "keywords": list(keywords)}
+
+
 def context_plan_response(messages: list[dict[str, Any]]) -> ProviderResponse:
     payload = planner_sections(str(messages[0]["content"]))
     owner_messages = [
@@ -48,14 +52,14 @@ def context_plan_response(messages: list[dict[str, Any]]) -> ProviderResponse:
             "speech_act": "request",
             "references": [],
             "recall_mode": "search",
-            "recall_queries": ["test owner intent"],
+            "recall_queries": [recall_need("Retrieve history for the test owner intent", "test owner intent")],
             "recall_from_turn_id": "",
         }
         for index, message in enumerate(owner_messages, 1)
     ]
     episode_ref = candidate_ids[0] if candidate_ids else "new:test-thread"
     plan = {
-        "version": 5,
+        "version": 6,
         "intent_units": units,
         "episode_actions": [
             {
@@ -99,12 +103,12 @@ def context_plan_response(messages: list[dict[str, Any]]) -> ProviderResponse:
 def heartbeat_plan_response(messages: list[dict[str, Any]]) -> ProviderResponse:
     payload = planner_sections(str(messages[0]["content"]))
     plan = {
-        "version": 2,
+        "version": 3,
         "activity": {
             "intent": "spend time freely",
             "reason": "Continue the current activity for this test.",
             "recall_mode": "search",
-            "recall_queries": ["current activity"],
+            "recall_queries": [recall_need("History relevant to the current activity", "current activity")],
         },
         "heartbeat_handoff": {
             "context": {

@@ -73,27 +73,39 @@ clarification, failure handling, or a verifiable external outcome.
    immediate pronoun, joke, or referent does not prove that a newly invoked
    relationship, convention, interaction pattern, or task history was recalled.
    When the cause or referent is not supplied and prior continuity could resolve
-   it, search the owner's literal wording or its precise subject anchor. Thus a
-   short emotional message may correctly search or reuse depending on what is
-   unresolved.
+   it, search for that unresolved historical cause, referent, or convention.
+   Preserve the owner's exact wording only as a selective `keywords` anchor when
+   it genuinely narrows the corpus; the `semantic` field still states the
+   historical evidence being sought. Thus a short emotional message may correctly
+   search or reuse depending on what is unresolved.
 
-   For search, emit the fewest ranked, concise `recall_queries` that can
-   recover history material to substance, tone, continuity, or tool choice; one
-   precise query is normal. Each item is a distinct retrieval need, and order
-   affects ranking only: put the owner's explicit subject or historical premise
-   first. Prefer a literal name, identifier, title, genuine alias, ambiguous
-   owner wording, or concise subject-plus-facet anchor—not a sentence, question,
-   interpretation, or planned response. For a recurring person or character,
-   put the literal name and genuine aliases first; add a separate relationship
-   or history facet only when it could retrieve different useful evidence.
+   A stated limitation, correction, standing preference, agreement, or recurring
+   pattern may depend on its previously established rationale or terms. Include
+   that missing facet in the retrieval need; do not search only the nearest object
+   or activity when the historical premise itself affects the meaning.
 
-   Within one retrieval need, `|` joins interchangeable, parallel, equally
-   weighted keywords, short phrases, or aliases. `连接超时|服务异常` and
-   `发布计划|交付日期` are valid; `知识库|攻略` and `计划|什么时候发布` are not. Put distinct
-   needs in separate items. Do not add overlapping queries for the same
-   conversational beat or search a decontextualized generic word whose referent
-   is already supplied. An empty `context_needs` remains compatible with both
-   modes because automatic recall runs before the Owner.
+   For search, emit the fewest ranked `recall_queries` that can recover history
+   material to substance, tone, continuity, or tool choice; one retrieval need
+   is normal. Each need has two deliberately separate representations:
+
+   - `semantic`: rewrite what historical evidence is needed as one concise,
+     self-contained declarative retrieval proposition, not a question. Name the
+     resolved subject and missing fact, relationship, preference, convention,
+     method, rationale, or prior event. Omit conversational setup, why the response
+     needs it, nearby details that do not narrow the evidence, speculative answers,
+     and lists of possible meanings. Do not copy the owner's wording, prescribe the
+     response, or invent the answer.
+   - `keywords`: list only selective literal names, identifiers, titles, exact
+     phrases, or genuine aliases for sparse lookup. Each item is an independent OR
+     alternative. Leave it empty when no reliable literal anchor is known; never
+     force generic words or inferred answer terms into it.
+
+   Put distinct evidence needs in separate items: if one historical record could
+   satisfy one facet while leaving another unresolved, they are distinct. Do not
+   emit overlapping rewrites for the same conversational beat. Order affects
+   ranking only, with the owner's explicit subject or historical premise first. An
+   empty `context_needs` remains compatible with both modes because automatic recall
+   runs before the Owner.
 4. Select external MCP servers the strategy expects to need. Apply the downstream
    contract's internal-recall/private-name/public-search rules when routing an
    unfamiliar entity. For a material unfamiliar public entity not actually

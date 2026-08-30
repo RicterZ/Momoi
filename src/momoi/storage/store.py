@@ -66,6 +66,19 @@ if TYPE_CHECKING:
 
 EPISODE_ANNEAL_MAX_FAILURES = 3
 
+
+def _recall_query_texts(value: object) -> list[str]:
+    if not isinstance(value, dict):
+        text = " ".join(str(value or "").split())
+        return [text] if text else []
+    semantic = " ".join(str(value.get("semantic") or "").split())
+    keywords = [
+        " ".join(str(item).split())
+        for item in value.get("keywords") or []
+        if " ".join(str(item).split())
+    ]
+    return list(dict.fromkeys([semantic, *keywords])) if semantic else keywords
+
 BASELINE_MOOD_STATE = "calm"
 BASELINE_MOOD_INTENSITY = 0.35
 BASELINE_MOOD_CAUSE = "resting baseline"
@@ -1520,7 +1533,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                 plan = record.get("plan")
                 if (
                     not isinstance(retrieval, dict)
-                    or retrieval.get("version") not in {4, 5}
+                    or retrieval.get("version") not in {4, 5, 6}
                     or not isinstance(plan, dict)
                 ):
                     queries = []
@@ -1529,9 +1542,9 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                     stored = retrieval.get("effective_recall_queries")
                     if isinstance(stored, list):
                         queries = [
-                            " ".join(str(query).split())[:120]
+                            text[:240]
                             for query in stored
-                            if " ".join(str(query).split())
+                            for text in _recall_query_texts(query)[:1]
                         ]
                     elif "misses=" in query_recall:
                         queries = []
@@ -1542,10 +1555,10 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                             if isinstance(unit, dict)
                         ]
                         queries = [
-                            " ".join(str(query).split())[:120]
+                            text[:240]
                             for unit in units
                             for query in unit.get("recall_queries") or []
-                            if " ".join(str(query).split())
+                            for text in _recall_query_texts(query)[:1]
                         ]
                         for source_turn_id in dict.fromkeys(
                             str(unit.get("recall_from_turn_id") or "")
@@ -1757,7 +1770,11 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                         unit.get("text"),
                         unit.get("intent"),
                         unit.get("references"),
-                        unit.get("recall_queries"),
+                        [
+                            text
+                            for query in unit.get("recall_queries") or []
+                            for text in _recall_query_texts(query)
+                        ],
                     )
                 )
             )
@@ -2682,7 +2699,11 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                     unit.get("text"),
                     unit.get("intent"),
                     " ".join(str(item) for item in unit.get("references", [])),
-                    " ".join(str(item) for item in unit.get("recall_queries", [])),
+                    " ".join(
+                        text
+                        for item in unit.get("recall_queries", [])
+                        for text in _recall_query_texts(item)
+                    ),
                 )
                 if value
             )

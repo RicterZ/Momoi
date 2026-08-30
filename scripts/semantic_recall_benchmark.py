@@ -75,11 +75,17 @@ def recall_queries(
             expression=str(item["expression"]),
             unit_ids=tuple(str(value) for value in item["unit_ids"]),
             priority=int(item["priority"]),
+            semantic_expression=str(item["semantic_expression"]),
         )
         for item in selected
     ]
     episodes = [
-        EpisodeRecallQuery(query.expression, query.unit_ids, query.priority)
+        EpisodeRecallQuery(
+            query.expression,
+            query.unit_ids,
+            query.priority,
+            query.semantic_expression,
+        )
         for query in memory
     ]
     return memory, episodes

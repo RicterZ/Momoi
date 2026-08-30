@@ -250,6 +250,48 @@ class SemanticRecallTest(unittest.TestCase):
             [(row["id"], row["search_score"]) for row in fallback],
         )
 
+    def test_sparse_search_uses_only_literal_keywords(self) -> None:
+        semantic_only = self.add_memory(
+            "semantic phrase", "老师此前如何处理客厅设备"
+        )
+        keyword_hit = self.add_memory("device-42", "设备的真实编号")
+        query = MemoryRecallQuery(
+            "device-42",
+            semantic_expression="老师此前如何处理客厅设备",
+        )
+
+        selected = self.store.rank_recalled_memories([query], 6)
+
+        self.assertEqual([row["id"] for row in selected], [keyword_hit])
+        self.assertNotIn(semantic_only, [row["id"] for row in selected])
+
+    def test_empty_sparse_keywords_still_allow_dense_recall(self) -> None:
+        memory_id = self.add_memory("literal absent", "stored semantic answer")
+        query = MemoryRecallQuery(
+            "",
+            semantic_expression="老师对自动操作的长期偏好",
+        )
+        evidence = DenseRecallEvidence(
+            calibration_profile="bge-small-zh-v1.5-momoi-v1",
+            memory={
+                query.dense_expression: {
+                    ("confirmed_memory", str(memory_id)): DenseMemoryHit(
+                        str(memory_id), 0.80
+                    )
+                }
+            },
+        )
+
+        selected = self.store.rank_recalled_memories(
+            [query], 6, dense_evidence=evidence
+        )
+
+        self.assertEqual([row["id"] for row in selected], [memory_id])
+        self.assertEqual(selected[0]["channels"], ["dense"])
+        self.assertEqual(
+            selected[0]["matched_queries"], ["老师对自动操作的长期偏好"]
+        )
+
     def test_sparse_dense_agreement_adds_an_explainable_bonus(self) -> None:
         memory_id = self.add_memory("exact", "stored fact")
         query = MemoryRecallQuery("exact")
@@ -438,7 +480,7 @@ class SemanticRecallTest(unittest.TestCase):
         self.assertIsNone(hit.summary_cosine)
         self.assertAlmostEqual(hit.turn_cosine or 0, 0.0, places=5)
 
-    def test_alias_order_does_not_change_dense_max(self) -> None:
+    def test_dense_query_uses_semantic_rewrite_once_not_sparse_aliases(self) -> None:
         memory_id = self.add_memory("stored", "semantic")
         space = self.space(state="active")
         with self.store._db:
@@ -458,34 +500,38 @@ class SemanticRecallTest(unittest.TestCase):
         service = SemanticRecallService(self.store, EmbeddingConfig(enabled=True))
         service.start()
 
-        async def run() -> tuple[float, float]:
+        async def run() -> tuple[float, list[list[str]]]:
+            encoded_batches: list[list[str]] = []
+
             async def encode(texts: list[str], *, query: bool) -> list[list[float]]:
-                return [
-                    vector(1, 0) if text.endswith("alpha") else vector(0.8, 0.6)
-                    for text in texts
-                ]
+                encoded_batches.append(texts)
+                return [vector(0.8, 0.6) for _text in texts]
 
             service.client.encode = encode  # type: ignore[method-assign]
             try:
-                first = await service.prepare(
-                    [MemoryRecallQuery("alpha|beta")], include_episode=False
+                evidence = await service.prepare(
+                    [
+                        MemoryRecallQuery(
+                            "alpha|beta",
+                            semantic_expression="historical alpha and beta relationship",
+                        )
+                    ],
+                    include_episode=False,
                 )
-                second = await service.prepare(
-                    [MemoryRecallQuery("beta|alpha")], include_episode=False
-                )
-                return (
-                    first.memory["alpha|beta"][
-                        ("confirmed_memory", str(memory_id))
-                    ].cosine,
-                    second.memory["beta|alpha"][
-                        ("confirmed_memory", str(memory_id))
-                    ].cosine,
-                )
+                return evidence.memory["historical alpha and beta relationship"][
+                    ("confirmed_memory", str(memory_id))
+                ].cosine, encoded_batches
             finally:
                 await service.close()
 
-        first, second = asyncio.run(run())
-        self.assertAlmostEqual(first, second)
+        cosine, encoded_batches = asyncio.run(run())
+        self.assertAlmostEqual(cosine, 0.8)
+        self.assertEqual(len(encoded_batches), 1)
+        self.assertEqual(len(encoded_batches[0]), 1)
+        self.assertTrue(
+            encoded_batches[0][0].endswith("historical alpha and beta relationship")
+        )
+        self.assertNotIn("alpha|beta", encoded_batches[0][0])
 
 
 if __name__ == "__main__":

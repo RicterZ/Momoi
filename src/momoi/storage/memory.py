@@ -62,6 +62,11 @@ class MemoryRecallQuery:
     expression: str
     unit_ids: tuple[str, ...] = ()
     priority: int = 0
+    semantic_expression: str = ""
+
+    @property
+    def dense_expression(self) -> str:
+        return self.semantic_expression.strip() or self.expression.strip()
 
 
 def memory_snapshot_fingerprint(memory: Mapping[str, object]) -> str:
@@ -535,7 +540,7 @@ class MemoryStore:
                     else "reflection_memory"
                 )
                 dense_hit = (
-                    dense_evidence.memory.get(query.expression, {}).get(
+                    dense_evidence.memory.get(query.dense_expression, {}).get(
                         (document_type, str(candidates[index]["id"]))
                     )
                     if dense_evidence is not None
@@ -588,12 +593,12 @@ class MemoryStore:
                 signals.append((sparse_score, cosine, hybrid_score, thresholds))
                 unit_scores = state["unit_scores"]
                 assert isinstance(unit_scores, dict)
-                units = query.unit_ids or (f"query:{query.expression}",)
+                units = query.unit_ids or (f"query:{query.dense_expression}",)
                 for unit_id in units:
                     unit_scores.setdefault(unit_id, []).append(score)
                 matched_queries = state["matched_queries"]
                 assert isinstance(matched_queries, list)
-                matched_queries.append(query.expression)
+                matched_queries.append(query.dense_expression)
                 unit_ids = state["unit_ids"]
                 assert isinstance(unit_ids, set)
                 unit_ids.update(query.unit_ids)

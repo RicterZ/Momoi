@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from ..config import AppConfig
 from ..context_time import context_timestamp
 from ..logging_context import log_event, safe_preview
+from ..search import search_alternatives
 from ..storage import (
     REFLECTION_MEMORY_CAUTION,
     MemoryRecallQuery,
@@ -33,10 +34,16 @@ RECENT_EXTERNAL_EVENT_LOOKBACK_SECONDS = 6 * 3600
 RECENT_EXTERNAL_EVENT_TOKEN_BUDGET = 1200
 
 
+def recall_query_semantic(value: object) -> str:
+    if isinstance(value, dict):
+        value = value.get("semantic")
+    return " ".join(str(value or "").split())[:240]
+
+
 def select_plan_recall_queries(
     plan: dict[str, object],
 ) -> tuple[list[dict[str, object]], dict[str, list[str]], set[str], set[str]]:
-    """Apply the Planner query fan-out once, before sparse and dense retrieval."""
+    """Apply Planner fan-out while keeping sparse and dense inputs separate."""
     recall_units = list(plan.get("intent_units") or [])
     activity = plan.get("activity")
     if isinstance(activity, dict) and activity.get("recall_queries"):
@@ -48,7 +55,7 @@ def select_plan_recall_queries(
             }
         )
     reused_units_by_turn: dict[str, list[str]] = {}
-    unit_queries: list[tuple[str, list[str]]] = []
+    unit_queries: list[tuple[str, list[dict[str, object]]]] = []
     for unit in recall_units:
         if not isinstance(unit, dict):
             continue
@@ -59,14 +66,34 @@ def select_plan_recall_queries(
             if source_turn_id and unit_id:
                 reused_units_by_turn.setdefault(source_turn_id, []).append(unit_id)
             continue
-        queries: list[str] = []
+        queries: list[dict[str, object]] = []
         for raw_query in unit.get("recall_queries") or []:
-            query = " ".join(str(raw_query).split())[:120]
-            if query and query not in queries:
+            if isinstance(raw_query, dict):
+                semantic = " ".join(str(raw_query.get("semantic") or "").split())[:240]
+                raw_keywords = raw_query.get("keywords") or []
+                keywords = [
+                    " ".join(str(keyword).split())[:60]
+                    for keyword in raw_keywords
+                    if " ".join(str(keyword).split())
+                ]
+            else:
+                # Historical v5 plans stored one expression for both channels.
+                legacy = " ".join(str(raw_query).split())[:120]
+                semantic = legacy
+                keywords = list(search_alternatives(legacy))
+            query = {
+                "semantic": semantic,
+                "keywords": list(dict.fromkeys(keywords)),
+            }
+            if semantic and query not in queries:
                 queries.append(query)
         if queries:
             unit_queries.append((unit_id, queries))
-    emitted_queries = {query for _unit_id, queries in unit_queries for query in queries}
+    emitted_queries = {
+        str(query["semantic"])
+        for _unit_id, queries in unit_queries
+        for query in queries
+    }
     selected_by_query: dict[str, dict[str, object]] = {}
     selected: list[dict[str, object]] = []
     skipped_unit_ids: set[str] = set()
@@ -75,24 +102,34 @@ def select_plan_recall_queries(
             if query_rank >= len(queries):
                 continue
             query = queries[query_rank]
-            existing = selected_by_query.get(query)
+            semantic = str(query["semantic"])
+            keywords = list(query["keywords"])
+            existing = selected_by_query.get(semantic)
             if existing is not None:
                 unit_ids = existing["unit_ids"]
                 assert isinstance(unit_ids, list)
                 if unit_id and unit_id not in unit_ids:
                     unit_ids.append(unit_id)
                 existing["priority"] = min(int(existing["priority"]), query_rank)
+                existing_keywords = existing["keywords"]
+                assert isinstance(existing_keywords, list)
+                existing_keywords[:] = list(
+                    dict.fromkeys([*existing_keywords, *keywords])
+                )[:8]
+                existing["expression"] = "|".join(existing_keywords)
                 continue
             if len(selected) >= PLAN_RECALL_QUERY_LIMIT:
                 if unit_id:
                     skipped_unit_ids.add(unit_id)
                 continue
             item = {
-                "expression": query,
+                "expression": "|".join(keywords),
+                "semantic_expression": semantic,
+                "keywords": keywords,
                 "unit_ids": [unit_id] if unit_id else [],
                 "priority": query_rank,
             }
-            selected_by_query[query] = item
+            selected_by_query[semantic] = item
             selected.append(item)
     return selected, reused_units_by_turn, emitted_queries, skipped_unit_ids
 
@@ -212,26 +249,26 @@ def build_plan_retrieval(
         source_plan = record.get("plan")
         if (
             not isinstance(source_retrieval, dict)
-            or source_retrieval.get("version") not in {4, 5}
+            or source_retrieval.get("version") not in {4, 5, 6}
             or not isinstance(source_plan, dict)
         ):
             return
         stored_queries = source_retrieval.get("effective_recall_queries")
         if isinstance(stored_queries, list) and stored_queries:
             inherited_queries.extend(
-                " ".join(str(query).split())[:120]
+                recall_query_semantic(query)
                 for query in stored_queries
-                if " ".join(str(query).split())
+                if recall_query_semantic(query)
             )
         else:
             query_recall = str(source_retrieval.get("query_recall") or "")
             if "hits=" in query_recall and "misses=" not in query_recall:
                 inherited_queries.extend(
-                    " ".join(str(query).split())[:120]
+                    recall_query_semantic(query)
                     for source_unit in source_plan.get("intent_units") or []
                     if isinstance(source_unit, dict)
                     for query in source_unit.get("recall_queries") or []
-                    if " ".join(str(query).split())
+                    if recall_query_semantic(query)
                 )
         for item in source_retrieval.get("recall_memories") or []:
             if isinstance(item, dict):
@@ -269,6 +306,7 @@ def build_plan_retrieval(
             expression=str(item["expression"]),
             unit_ids=tuple(str(value) for value in item["unit_ids"]),
             priority=int(item["priority"]),
+            semantic_expression=str(item["semantic_expression"]),
         )
         for item in recall_queries
     ]
@@ -289,6 +327,7 @@ def build_plan_retrieval(
                 expression=str(item["expression"]),
                 unit_ids=tuple(str(value) for value in item["unit_ids"]),
                 priority=int(item["priority"]),
+                semantic_expression=str(item["semantic_expression"]),
             )
             for item in recall_queries
         ],
@@ -359,7 +398,7 @@ def build_plan_retrieval(
     reflection_hit_queries: list[str] = []
     episode_hit_queries: list[str] = []
     for recall_query in recall_queries:
-        query = str(recall_query["expression"])
+        query = str(recall_query["semantic_expression"])
         memory_hit = query in memory_hit_query_set
         reflection_hit = query in reflection_hit_query_set
         episode_hit = query in episode_hit_query_set
@@ -468,8 +507,18 @@ def build_plan_retrieval(
         )
     if recall_queries:
         recall_index.append(
-            "queries="
-            + " | ".join(str(item["expression"]) for item in recall_queries)
+            "semantic_queries="
+            + " | ".join(
+                str(item["semantic_expression"]) for item in recall_queries
+            )
+        )
+        recall_index.append(
+            "sparse_keywords="
+            + " ; ".join(
+                ",".join(str(keyword) for keyword in item["keywords"])
+                or "(none)"
+                for item in recall_queries
+            )
         )
         recall_index.append(
             f"query_count={len(recall_queries)}/{len(emitted_queries)}"
@@ -496,7 +545,7 @@ def build_plan_retrieval(
         dict.fromkeys([*recall_hits, *inherited_queries])
     )
     retrieval = {
-        "version": 5,
+        "version": 6,
         "episodes": episodes,
         "long_term_memories": store.always_memory_context(),
         "recent_memories": store.recent_memory_context(
@@ -520,6 +569,8 @@ def build_plan_retrieval(
     query_log = [
         {
             "expression": item["expression"],
+            "semantic_expression": item["semantic_expression"],
+            "keywords": item["keywords"],
             "priority": item["priority"],
             "unit_ids": item["unit_ids"],
         }

@@ -17,6 +17,7 @@ from .context_assembler import (
     assemble_planner_recent_turns,
     assemble_recent_external_events,
     build_plan_retrieval,
+    recall_query_semantic,
     select_plan_recall_queries,
     render_planner_recent_turn_focus,
     render_planner_recent_turns,
@@ -257,7 +258,13 @@ def _heartbeat_plan_lines(plan: dict[str, object]) -> str:
         f"context reason: {context.get('reason') or ''}",
     ]
     for query in activity.get("recall_queries") or []:
-        lines.append(f"recall query: {str(query).replace(chr(10), ' ')}")
+        if isinstance(query, dict):
+            semantic = recall_query_semantic(query)
+            keywords = ", ".join(str(item) for item in query.get("keywords") or [])
+            lines.append(f"recall semantic: {semantic}")
+            lines.append(f"recall keywords: {keywords or 'none'}")
+        else:
+            lines.append(f"recall query: {str(query).replace(chr(10), ' ')}")
     for need in context.get("needs") or []:
         if isinstance(need, dict):
             fields = [
@@ -794,7 +801,7 @@ class ContextService:
         retrieval = record.get("retrieval")
         if (
             not isinstance(retrieval, dict)
-            or retrieval.get("version") != 5
+            or retrieval.get("version") != 6
             or not isinstance(retrieval.get("recall_memories"), list)
             or not isinstance(retrieval.get("reflection_memories"), list)
         ):
@@ -805,6 +812,7 @@ class ContextService:
                         expression=str(item["expression"]),
                         unit_ids=tuple(str(value) for value in item["unit_ids"]),
                         priority=int(item["priority"]),
+                        semantic_expression=str(item["semantic_expression"]),
                     )
                     for item in selected
                 ],

@@ -2574,13 +2574,19 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "heartbeat-plan",
                             "submit_heartbeat_plan",
                             {
-                                "version": 2,
+                                "version": 3,
                                 "activity": {
                                     "intent": "浏览微博关注流",
                                     "reason": "看看最近感兴趣的动态",
                                     "recall_mode": "search",
                                     "recall_queries": [
-                                        "微博登录过期 | 刷微博遇到错误"
+                                        {
+                                            "semantic": "此前浏览微博时需要遵守的错误处理规则",
+                                            "keywords": [
+                                                "微博登录过期",
+                                                "刷微博遇到错误",
+                                            ],
+                                        }
                                     ],
                                 },
                                 "heartbeat_handoff": {

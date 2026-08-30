@@ -21,6 +21,7 @@ from momoi.runtime.context_assembler import (
     recall_episode_context,
     render_planner_recent_turn_focus,
     render_planner_recent_turns,
+    select_plan_recall_queries,
 )
 from momoi.runtime.turn_support import (
     OWNER_TURN_PROTOCOL_REMINDER,
@@ -86,6 +87,74 @@ def plan(query: str, episode_id: str = "episode-mail") -> dict[str, object]:
 
 
 class ContextAssemblerTest(unittest.TestCase):
+    def test_structured_recall_need_separates_sparse_and_dense_queries(self) -> None:
+        recall_plan = plan("legacy")
+        recall_plan["intent_units"] = [
+            {
+                "id": "first",
+                "recall_queries": [
+                    {
+                        "semantic": "老师此前如何处理客厅设备",
+                        "keywords": ["客厅设备", "device-42"],
+                    }
+                ],
+            },
+            {
+                "id": "second",
+                "recall_queries": [
+                    {
+                        "semantic": "老师此前如何处理客厅设备",
+                        "keywords": ["设备别名", "device-42"],
+                    },
+                    {
+                        "semantic": "老师对自动操作的长期偏好",
+                        "keywords": [],
+                    },
+                ],
+            },
+        ]
+
+        selected, reused, emitted, skipped = select_plan_recall_queries(recall_plan)
+
+        self.assertEqual(reused, {})
+        self.assertEqual(skipped, set())
+        self.assertEqual(
+            emitted,
+            {"老师此前如何处理客厅设备", "老师对自动操作的长期偏好"},
+        )
+        self.assertEqual(
+            selected,
+            [
+                {
+                    "expression": "客厅设备|device-42|设备别名",
+                    "semantic_expression": "老师此前如何处理客厅设备",
+                    "keywords": ["客厅设备", "device-42", "设备别名"],
+                    "unit_ids": ["first", "second"],
+                    "priority": 0,
+                },
+                {
+                    "expression": "",
+                    "semantic_expression": "老师对自动操作的长期偏好",
+                    "keywords": [],
+                    "unit_ids": ["second"],
+                    "priority": 1,
+                },
+            ],
+        )
+
+    def test_legacy_recall_expression_remains_readable(self) -> None:
+        legacy_plan = plan("设备名称 | device-42")
+
+        selected, _reused, _emitted, _skipped = select_plan_recall_queries(
+            legacy_plan
+        )
+
+        self.assertEqual(selected[0]["expression"], "设备名称|device-42")
+        self.assertEqual(
+            selected[0]["semantic_expression"], "设备名称 | device-42"
+        )
+        self.assertEqual(selected[0]["keywords"], ["设备名称", "device-42"])
+
     def test_plan_recall_reuse_does_not_repeat_search(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
@@ -2038,7 +2107,7 @@ class ContextAssemblerTest(unittest.TestCase):
                 plan("蓝色保温杯 | 第三个纸箱", "episode-old"),
                 config(directory),
             )
-            self.assertEqual(retrieval["version"], 5)
+            self.assertEqual(retrieval["version"], 6)
             self.assertIn("episode_hits=", retrieval["query_recall"])
             self.assertNotIn("turn_hits=", retrieval["query_recall"])
             selected = next(

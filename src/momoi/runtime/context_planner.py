@@ -22,6 +22,43 @@ SPEECH_ACTS = {
 }
 CONTEXT_PLAN_TOOL_NAME = "submit_context_plan"
 NEW_EPISODE_REF_FORMAT = "new:[a-z0-9][a-z0-9_-]{0,39}"
+RECALL_NEED_SCHEMA: dict[str, object] = {
+    "type": "object",
+    "properties": {
+        "semantic": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 180,
+            "description": (
+                "One concise, self-contained declarative proposition describing "
+                "the historical fact, relationship, preference, convention, method, "
+                "rationale, or prior event to retrieve for semantic search. Omit "
+                "conversational setup, response use, questions, speculative answers, "
+                "and alternative lists; do not copy the owner's utterance or "
+                "prescribe a response."
+            ),
+        },
+        "keywords": {
+            "type": "array",
+            "maxItems": 8,
+            "uniqueItems": True,
+            "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 60,
+            },
+            "description": (
+                "Zero or more literal names, identifiers, titles, exact phrases, or "
+                "genuine aliases for sparse search. Each item is one independent OR "
+                "alternative; do not put `|` inside an item and do not add generic or "
+                "inferred answer words. Empty is valid when no selective literal "
+                "anchor is known."
+            ),
+        },
+    },
+    "required": ["semantic", "keywords"],
+    "additionalProperties": False,
+}
 
 
 def context_plan_correction(reason: str) -> str:
@@ -75,7 +112,7 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
     "input_schema": {
         "type": "object",
         "properties": {
-            "version": {"type": "integer", "enum": [5]},
+            "version": {"type": "integer", "enum": [6]},
             "intent_units": {
                 "type": "array",
                 "minItems": 1,
@@ -142,28 +179,14 @@ CONTEXT_PLAN_TOOL_SPEC: dict[str, object] = {
                             "type": "array",
                             "maxItems": 3,
                             "uniqueItems": True,
-                            "items": {
-                                "type": "string",
-                                "minLength": 1,
-                                "maxLength": 120,
-                            },
+                            "items": RECALL_NEED_SCHEMA,
                             "description": (
-                                "Ranked exact-word expressions for search; empty for "
-                                "reuse. Emit the fewest distinct needs; one precise query "
-                                "is normal. Each item is a distinct retrieval need; order "
-                                "affects ranking only. Put the owner's explicit subject "
-                                "or historical premise first. Prefer literal names, "
-                                "genuine aliases, ambiguous owner wording, or a concise "
-                                "subject-plus-history-facet anchor. If an emotion or "
-                                "elliptical expression has no supplied cause or referent "
-                                "and prior continuity could resolve it, its literal "
-                                "wording is a valid query; if supplied context already "
-                                "resolves it, do not search analogous past expressions. "
-                                "Within one need, `|` joins only interchangeable, "
-                                "parallel, equally weighted exact keywords without "
-                                "spaces. Use separate items for distinct needs; do not "
-                                "use a sentence, question, interpretation, planned "
-                                "response, or overlapping query."
+                                "Ranked retrieval needs; empty for reuse. Emit the fewest "
+                                "distinct needs, normally one. `semantic` is the model's "
+                                "query rewrite for dense retrieval; `keywords` contains "
+                                "only literal sparse anchors. Two facets are distinct when "
+                                "one historical record could satisfy one while leaving the "
+                                "other unresolved. Order affects ranking only."
                             ),
                         },
                         "recall_from_turn_id": {
@@ -444,7 +467,7 @@ HEARTBEAT_PLAN_TOOL_SPEC: dict[str, object] = {
     "input_schema": {
         "type": "object",
         "properties": {
-            "version": {"type": "integer", "enum": [2]},
+            "version": {"type": "integer", "enum": [3]},
             "activity": {
                 "type": "object",
                 "properties": {
@@ -465,23 +488,13 @@ HEARTBEAT_PLAN_TOOL_SPEC: dict[str, object] = {
                         "type": "array",
                         "maxItems": 3,
                         "uniqueItems": True,
-                        "items": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 120,
-                        },
+                        "items": RECALL_NEED_SCHEMA,
                         "description": (
-                            "For search, one to three ranked narrow exact-word "
-                            "expressions. Each item is an independent retrieval need; "
-                            "a result may satisfy any one item, and order affects "
-                            "ranking only. Put the concrete current subject first, "
-                            "then broader context. Use a concrete named anchor or concise "
-                            "subject-plus-history-facet anchor. Join parallel, "
-                            "equally weighted exact keywords or aliases with `|` "
-                            "without spaces; any one may satisfy the need and "
-                            "additional matches only strengthen ranking. Use "
-                            "separate items for different "
-                            "retrieval needs. Empty only for skip."
+                            "For search, one to three ranked retrieval needs. `semantic` "
+                            "is a self-contained dense-query rewrite of the historical "
+                            "evidence sought; `keywords` contains only literal sparse "
+                            "anchors. Separate facets that historical records could "
+                            "satisfy independently. Empty only for skip."
                         ),
                     },
                 },
@@ -651,19 +664,34 @@ def _recall_queries(
     *,
     minimum: int = 1,
     maximum: int = 3,
-) -> list[str]:
-    """Normalize parallel OR expressions."""
+) -> list[dict[str, object]]:
+    """Validate semantic rewrites separately from literal sparse anchors."""
 
-    return [
-        re.sub(r"\s*\|\s*", "|", query)
-        for query in _strings(
-            value,
-            name,
-            minimum=minimum,
-            maximum=maximum,
-            max_length=120,
+    if not isinstance(value, list) or not minimum <= len(value) <= maximum:
+        raise ContextPlanError(f"invalid_{name}")
+    queries: list[dict[str, object]] = []
+    identities: set[tuple[str, tuple[str, ...]]] = set()
+    for raw in value:
+        if not isinstance(raw, dict) or set(raw) != {"semantic", "keywords"}:
+            raise ContextPlanError(f"invalid_{name}")
+        semantic = _text(raw["semantic"], f"{name}_semantic", 180)
+        keywords = _strings(
+            raw["keywords"],
+            f"{name}_keywords",
+            maximum=8,
+            max_length=60,
         )
-    ]
+        keywords = [" ".join(keyword.split()) for keyword in keywords]
+        if any("|" in keyword or "｜" in keyword for keyword in keywords):
+            raise ContextPlanError(f"invalid_{name}_keyword")
+        if len(set(keywords)) != len(keywords):
+            raise ContextPlanError(f"duplicate_{name}_keyword")
+        identity = (semantic, tuple(keywords))
+        if identity in identities:
+            raise ContextPlanError(f"duplicate_{name}")
+        identities.add(identity)
+        queries.append({"semantic": semantic, "keywords": keywords})
+    return queries
 
 
 def _parse_mcp_route(
@@ -779,7 +807,7 @@ def parse_context_plan(
             raise ContextPlanError("invalid_json") from error
     if not isinstance(value, dict):
         raise ContextPlanError("invalid_top_level")
-    if value.get("version") != 5:
+    if value.get("version") != 6:
         raise ContextPlanError("unsupported_version")
     if set(value) != {
         "version",
@@ -1166,7 +1194,7 @@ def parse_context_plan(
     if response_mode == "visible" and not strategy:
         raise ContextPlanError("missing_visible_strategy")
     return {
-        "version": 5,
+        "version": 6,
         "intent_units": units,
         "episode_actions": bindings,
         "episode_links": links,
@@ -1226,12 +1254,20 @@ def degraded_context_plan(
                 "speech_act": "unknown",
                 "references": [],
                 "recall_mode": "search",
-                "recall_queries": [" ".join(part.split())[:120]],
+                "recall_queries": [
+                    {
+                        "semantic": (
+                            "Retrieve history needed to interpret this owner message: "
+                            + " ".join(part.split())[:120]
+                        )[:180],
+                        "keywords": [" ".join(part.split())[:60]],
+                    }
+                ],
                 "recall_from_turn_id": "",
             }
         )
     return {
-        "version": 5,
+        "version": 6,
         "intent_units": units,
         "episode_actions": [
             {"action": "none", "unit_ids": [str(unit["id"])]} for unit in units
@@ -1256,7 +1292,7 @@ def parse_heartbeat_plan(
     if (
         not isinstance(value, dict)
         or set(value) != {"version", "activity", "heartbeat_handoff", "uncertainty"}
-        or value.get("version") != 2
+        or value.get("version") != 3
     ):
         raise ContextPlanError("invalid_heartbeat_plan")
     activity = value.get("activity")
@@ -1344,7 +1380,7 @@ def parse_heartbeat_plan(
         "recall_queries": recall_queries,
     }
     return {
-        "version": 2,
+        "version": 3,
         "activity": parsed_activity,
         "heartbeat_handoff": {
             "context": context,
@@ -1370,7 +1406,7 @@ def parse_heartbeat_plan(
 
 def degraded_heartbeat_plan(activity: str, reason: str) -> dict[str, object]:
     return {
-        "version": 2,
+        "version": 3,
         "activity": {
             "intent": activity.strip() or "spend time freely",
             "reason": f"Heartbeat planner failed ({reason}); continue current activity.",
