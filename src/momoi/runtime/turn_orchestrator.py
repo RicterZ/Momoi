@@ -39,8 +39,7 @@ from .context_service import (
     _heartbeat_plan_lines,
     _heartbeat_self_state_lines,
     _heartbeat_topic_lines,
-    _pending_owner_reply_lines,
-    _reply_wait_message_lines,
+    _reply_wait_timeline_lines,
 )
 from .memory_maintenance import (
     MEMORY_MAINTENANCE_RUN_VERSION,
@@ -1275,11 +1274,6 @@ class TurnOrchestrator:
             target_channel or str(pending.get("channel") or self.channel.name)
         )
         notification_key = "heartbeat.reply_followup"
-        contact_window = self.store.heartbeat_contact_window(
-            notification_key,
-            self.config.notifications,
-            apply_cooldown=False,
-        )
         current_input = _pack_user_context(
             ("long_term_memories", self.store.always_memory_context()),
             (
@@ -1288,31 +1282,13 @@ class TurnOrchestrator:
                     max(100, self.config.memory_tokens // 8)
                 ),
             ),
-            ("pending_owner_reply", _pending_owner_reply_lines(pending)),
-            (
-                "source_messages",
-                _reply_wait_message_lines(pending, owner_visible=False),
-            ),
-            (
-                "last_sent_messages",
-                _reply_wait_message_lines(pending, owner_visible=True),
-            ),
+            ("reply_timeline", _reply_wait_timeline_lines(pending)),
+            ("followup", str(pending.get("reason") or "").strip()),
             (
                 "runtime_state",
                 (
                     f"Current local time: {datetime.now().astimezone().isoformat(timespec='seconds')}\n"
                     f"{_heartbeat_self_state_lines(self.store.self_state_context())}"
-                ),
-            ),
-            (
-                "conversation_state",
-                _heartbeat_conversation_state_lines(
-                    {
-                        "owner_event_revision": owner_event_revision,
-                        "owner_turn_or_delivery_active": False,
-                        "owner_contact_allowed_now": contact_window["allowed"],
-                        "owner_contact_eligible_at": contact_window["eligible_at"],
-                    }
                 ),
             ),
         )

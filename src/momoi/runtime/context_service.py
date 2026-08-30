@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 import time
 from datetime import datetime
 from typing import Any
@@ -286,48 +287,28 @@ def _heartbeat_plan_lines(plan: dict[str, object]) -> str:
     return "\n".join(lines)
 
 
-def _pending_owner_reply_lines(value: dict[str, object]) -> str:
-    """Render reply-wait state without carrying a JSON metadata envelope."""
-    labels = (
-        ("source turn", ("source_turn", "pending_reply_turn_id")),
-        ("expected information", ("expected_information", "pending_reply_expectation")),
-        ("reason", ("reason", "pending_reply_last_reason")),
-        ("waiting since", ("waiting_since", "pending_reply_since")),
-        ("waiting_minutes", ("waiting_minutes",)),
-        ("delay_minutes", ("delay_minutes", "pending_reply_delay_minutes")),
-        ("deadline", ("deadline",)),
-        ("channel", ("channel", "pending_reply_channel")),
-        ("next check", ("next_check_at", "pending_reply_next_check_at")),
-    )
-    return "\n".join(
-        f"{label}: {next((value.get(key) for key in keys if value.get(key) not in (None, '')), 'none')}"
-        for label, keys in labels
-    )
-
-
-def _reply_wait_message_lines(
-    value: dict[str, object], *, owner_visible: bool
-) -> str:
-    """Render the source exchange as plain text without duplicating metadata."""
+def _reply_wait_timeline_lines(value: dict[str, object]) -> str:
+    """Render the completed exchange and an explicit continuation cursor."""
     messages = value.get("source_messages")
     if not isinstance(messages, list):
-        return ""
-    blocks: list[str] = []
+        messages = []
+    lines: list[str] = []
     for message in messages:
         if not isinstance(message, dict):
             continue
         role = str(message.get("role") or "message")
-        is_sent = role == "assistant"
-        if is_sent != owner_visible:
+        content = re.sub(
+            r"(?m)^\d{4}-\d{2}-\d{2}T\S+(?:\s+\[[^\]\n]+\])?\s*",
+            "",
+            str(message.get("content") or ""),
+        ).strip()
+        if not content:
             continue
-        label = "MOMOI" if is_sent else role.upper()
-        delivery = str(message.get("delivery_state") or "")
-        suffix = f" delivery={delivery}" if is_sent and delivery else ""
-        blocks.append(
-            f"[{label} at={message.get('timestamp') or '?'}{suffix}]\n"
-            f"{str(message.get('content') or '').strip()}"
-        )
-    return "\n\n".join(blocks)
+        label = {"assistant": "MOMOI", "user": "OWNER"}.get(role, role.upper())
+        lines.append(f"{label}: {content}")
+    waiting_minutes = max(0, int(value.get("waiting_minutes") or 0))
+    lines.append(f"--- CONTINUE HERE (silent {waiting_minutes}m) ---")
+    return "\n".join(lines)
 
 
 def _planner_recall_context_lines(

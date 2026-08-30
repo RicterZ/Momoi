@@ -232,7 +232,9 @@ REPLY_WAIT_DECISION_SCHEMA: dict[str, Any] = {
                     "minLength": 1,
                     "maxLength": 500,
                     "description": (
-                        "Private reason this beat should continue if it stays quiet."
+                        "Concrete direction for the one follow-up Momoi should add "
+                        "after her last sent message if the owner stays quiet; describe "
+                        "the new conversational move, not merely the reply being awaited."
                     ),
                 },
             },

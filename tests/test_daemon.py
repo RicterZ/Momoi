@@ -364,8 +364,10 @@ class DaemonTest(unittest.TestCase):
         self.assertIn("follow-up must be sent now", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertIn("reconsider contact", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertIn("Send exactly one", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("<source_messages>", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("<last_sent_messages>", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("<reply_timeline>", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("Continue strictly after its cursor", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("Never answer, confirm, or", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("<followup>", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertIn("After the `send_message` result", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertIn("alone in a later response", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertIn("`reply_wait.wait` to false", REPLY_WAIT_SYSTEM_PROMPT)
@@ -1318,12 +1320,16 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual([tool["name"] for tool in tools], ["send_message", "end_turn"])
             self.assertTrue(run.await_args.kwargs["reply_wait_turn"])
             request = json.dumps(run.await_args.args[:2], ensure_ascii=False)
-            self.assertIn("<pending_owner_reply>", request)
-            self.assertIn("waiting_minutes", request)
-            self.assertIn("expected information", request)
+            self.assertIn("<reply_timeline>", request)
+            self.assertIn("--- CONTINUE HERE (silent", request)
+            self.assertIn("<followup>", request)
             self.assertIn("<long_term_memories>", request)
             self.assertIn("<recent_memories>", request)
             self.assertIn("因为还想听老师回答", request)
+            self.assertNotIn("<pending_owner_reply>", request)
+            self.assertNotIn("expected information", request)
+            self.assertNotIn("deadline", request)
+            self.assertNotIn("channel", request)
             self.assertNotIn("<recent_conversation>", request)
             self.assertNotIn("<autonomous_heartbeat>", request)
             after = daemon.store.self_state()
@@ -1360,7 +1366,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 "source_messages": [
                     {
                         "role": "user",
-                        "content": "晚上一起选个游戏吧",
+                        "content": "2026-08-17T12:00:00+08:00 [napcat] 晚上一起选个游戏吧",
                         "delivery_state": "delivered",
                         "timestamp": "2026-08-17T12:00:00+08:00",
                     },
@@ -1405,10 +1411,23 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             request = json.dumps(run.await_args.args[:2], ensure_ascii=False)
             self.assertIn("这个问题需要老师决定", request)
-            self.assertIn("<source_messages>", request)
-            self.assertIn("晚上一起选个游戏吧", request)
-            self.assertIn("<last_sent_messages>", request)
-            self.assertIn("那老师想玩解谜还是动作呀", request)
+            self.assertIn("<reply_timeline>", request)
+            self.assertIn("OWNER: 晚上一起选个游戏吧", request)
+            self.assertIn("MOMOI: 那老师想玩解谜还是动作呀", request)
+            self.assertIn("--- CONTINUE HERE (silent 4m) ---", request)
+            self.assertIn("<followup>", request)
+            self.assertLess(
+                request.index("OWNER: 晚上一起选个游戏吧"),
+                request.index("MOMOI: 那老师想玩解谜还是动作呀"),
+            )
+            self.assertLess(
+                request.index("MOMOI: 那老师想玩解谜还是动作呀"),
+                request.index("--- CONTINUE HERE (silent 4m) ---"),
+            )
+            self.assertNotIn("2026-08-17T12:00:00+08:00", request)
+            self.assertNotIn("delivery=", request)
+            self.assertNotIn("<source_messages>", request)
+            self.assertNotIn("<last_sent_messages>", request)
             self.assertNotIn("continue_waiting", request)
             self.assertNotIn("later_check", request)
             daemon.store.close()

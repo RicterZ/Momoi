@@ -182,7 +182,8 @@ class ProvidersToolsTest(unittest.TestCase):
 
     def test_user_pack_puts_stable_identity_before_clock_and_task(self) -> None:
         rendered = pack_user_context(
-            ("pending_owner_reply", '{"waiting":true}'),
+            ("reply_timeline", "OWNER: hi\n--- CONTINUE HERE (silent 4m) ---"),
+            ("followup", "continue the thought"),
             ("runtime_state", "now"),
             ("conversation_state", '{"busy":false}'),
             ("long_term_memories", "喜欢短回复"),
@@ -203,7 +204,11 @@ class ProvidersToolsTest(unittest.TestCase):
         )
         self.assertLess(
             rendered.index("<runtime_state>"),
-            rendered.index("<pending_owner_reply>"),
+            rendered.index("<reply_timeline>"),
+        )
+        self.assertLess(
+            rendered.index("<reply_timeline>"),
+            rendered.index("<followup>"),
         )
 
     def test_user_pack_keeps_query_specific_recall_after_recent_turns(self) -> None:
