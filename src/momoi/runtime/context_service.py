@@ -414,7 +414,7 @@ class ContextService:
             if not isinstance(raw, dict):
                 continue
             unit_id = f"u{index}"
-            mode = str(raw.get("recall_mode") or "none")
+            mode = str(raw.get("recall_mode") or "search")
             queries = [
                 {
                     "semantic": " ".join(str(query.get("semantic") or "").split())[:240],
@@ -428,10 +428,8 @@ class ContextService:
                 if isinstance(query, dict) and str(query.get("semantic") or "").strip()
             ][:3]
             from_turn_id = str(raw.get("recall_from_turn_id") or "")
-            if mode == "search" and not queries:
-                mode = "none"
             if mode == "reuse" and not from_turn_id:
-                mode = "none"
+                mode = "search"
             units.append(
                 {
                     "id": unit_id,

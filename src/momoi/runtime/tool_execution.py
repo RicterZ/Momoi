@@ -54,9 +54,6 @@ logger = logging.getLogger("momoi.runtime.turns")
 MAX_TOOL_RESULT_TRUNCATION_ATTEMPTS = 16
 # Room for the reference field appended to every serialized tool result.
 _RESULT_REF_OVERHEAD = 64
-# A Turn that keeps skipping its recall decision proceeds without one rather
-# than looping; leaving the owner unanswered is the worse failure.
-MAX_CONTEXT_SUBMISSION_RETRIES = 2
 SIMILAR_SEND_MESSAGE_THRESHOLD = 0.75
 
 
@@ -340,7 +337,6 @@ class ToolExecutionService:
         failed_tool_rounds = 0
         history_messages = max(0, len(messages) - 1)
         context_submitted = authority != "owner"
-        context_rejections = 0
         visible_since_owner_update = False
         owner_work_acknowledged = False
         previous_tool_name: str | None = None
@@ -389,7 +385,6 @@ class ToolExecutionService:
                     delivery_channel,
                 )
                 context_submitted = authority != "owner"
-                context_rejections = 0
                 force_autonomous_finish = False
                 failed_tool_rounds = 0
             request_tools = (
@@ -468,7 +463,6 @@ class ToolExecutionService:
                     delivery_channel,
                 )
                 context_submitted = authority != "owner"
-                context_rejections = 0
                 force_autonomous_finish = False
                 failed_tool_rounds = 0
                 continue
@@ -536,7 +530,6 @@ class ToolExecutionService:
                     delivery_channel,
                 )
                 context_submitted = authority != "owner"
-                context_rejections = 0
                 force_autonomous_finish = False
                 failed_tool_rounds = 0
                 continue
@@ -612,11 +605,15 @@ class ToolExecutionService:
                 and len(response.tool_calls) == 1
                 and response.tool_calls[0].name == "end_turn"
                 and not context_submitted
-                and context_rejections < MAX_CONTEXT_SUBMISSION_RETRIES
             ):
                 # Ending in silence is still a decision about the owner's input,
                 # so it happens after the recall judgement, not instead of it.
-                context_rejections += 1
+                # Repeated refusals fall through to the shared tool-failure
+                # ceiling, which fails the Turn rather than quietly dropping
+                # recall.
+                failed_tool_rounds += 1
+                if failed_tool_rounds >= MAX_CONSECUTIVE_TOOL_FAILURES:
+                    raise ExternalToolTurnError("context_not_submitted")
                 messages.extend(
                     [
                         {"role": "assistant", "content": response.content},
@@ -896,16 +893,9 @@ class ToolExecutionService:
                         "reflection": recalled["reflection_memories"],
                         "episodes": recalled["episodes"],
                     }
-                elif (
-                    not context_submitted
-                    and authority == "owner"
-                    and context_rejections < MAX_CONTEXT_SUBMISSION_RETRIES
-                ):
+                elif not context_submitted and authority == "owner":
                     # The recall decision is what makes the rest of the Turn
-                    # accountable, so it cannot be skipped by acting first. A
-                    # model that keeps refusing is let through rather than
-                    # spun on, since an unanswered owner is the worse outcome.
-                    context_rejections += 1
+                    # accountable, so it cannot be skipped by acting first.
                     result = {
                         "ok": False,
                         "error": "context_not_submitted",
@@ -1251,7 +1241,6 @@ class ToolExecutionService:
                     delivery_channel,
                 )
                 context_submitted = authority != "owner"
-                context_rejections = 0
                 failed_tool_rounds = 0
                 continue
             if any(not block["is_error"] for block in results):
