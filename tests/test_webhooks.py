@@ -366,13 +366,17 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn("follows the shared Style Card", system_text)
             self.assertIn("<current_webhook_task>", context_text)
             self.assertIn("<runtime_state>", context_text)
-            self.assertIn("<recent_conversation>", context_text)
+            self.assertNotIn("<recent_conversation>", context_text)
+            self.assertNotIn("<recent_turns>", context_text)
             self.assertIn("<webhook_activity>", context_text)
             self.assertIn("<conversation_state>", context_text)
-            self.assertLess(
-                context_text.index("<recent_conversation>"),
-                context_text.index("<conversation_state>"),
+            historical = provider.conversations[0][1:3]
+            self.assertEqual(
+                [message["role"] for message in historical],
+                ["user", "assistant"],
             )
+            self.assertIn("以后回家时帮我留意快递", str(historical[0]["content"]))
+            self.assertIn("好，回家时我会留意", str(historical[1]["content"]))
             self.assertLess(
                 context_text.index("<conversation_state>"),
                 context_text.index("<runtime_state>"),
@@ -383,7 +387,7 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             self.assertNotIn("<owner_preferences>", context_text)
             self.assertIn("owner event revision:", context_text)
-            self.assertRegex(context_text, r"Turn \d{4}-\d{2}-\d{2}T")
+            self.assertRegex(context_text, r"\[\d{4}-\d{2}-\d{2}T")
             self.assertIn("以后回家时帮我留意快递", context_text)
             self.assertIn("好，回家时我会留意", context_text)
             daemon.store.close()

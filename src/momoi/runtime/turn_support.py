@@ -164,8 +164,10 @@ def pack_owner_context(*items: tuple[str, str]) -> str:
     return f"{context}\n\n{OWNER_TURN_PROTOCOL_REMINDER}"
 
 
-def owner_context_message(*items: tuple[str, str]) -> dict[str, Any] | None:
-    """Carry slow-changing context ahead of the conversation it applies to.
+def context_data_message(
+    *items: tuple[str, str], required: bool = False
+) -> dict[str, Any] | None:
+    """Carry non-dialogue data ahead of the conversation it applies to.
 
     Durable memory and Goal identities barely change between Turns, but a prefix
     cache only survives up to the first byte that differs, so anything placed
@@ -177,6 +179,12 @@ def owner_context_message(*items: tuple[str, str]) -> dict[str, Any] | None:
     """
 
     text = pack_user_context(*items)
+    if not text and required:
+        text = (
+            "<runtime_directives>\n"
+            "The following native messages are shared conversation evidence.\n"
+            "</runtime_directives>"
+        )
     if not text:
         return None
     return {
@@ -189,6 +197,12 @@ def owner_context_message(*items: tuple[str, str]) -> dict[str, Any] | None:
             }
         ],
     }
+
+
+def owner_context_message(*items: tuple[str, str]) -> dict[str, Any] | None:
+    """Carry slow-changing Owner context before its native transcript."""
+
+    return context_data_message(*items)
 
 
 def owner_content_blocks(

@@ -23,7 +23,6 @@ from ..storage import (
 from ..text_replacement import cyber_keyword_pre_hook
 from .context_assembler import (
     assemble_main_context,
-    assemble_compact_recent_conversation,
     assemble_recent_external_events,
     assemble_recent_turns,
     assemble_recent_webhook_activity,
@@ -33,7 +32,7 @@ from .context_assembler import (
     project_recent_turns_for_owner,
     recall_episode_context,
 )
-from .transcript import build_transcript
+from .transcript import build_transcript, render_messages
 from .context_service import (
     _heartbeat_activity_lines,
     _heartbeat_conversation_state_lines,
@@ -71,6 +70,7 @@ from .turn_support import (
     REFLECTION_SYSTEM_PROMPT,
     WEBHOOK_PROMPT_PATH,
     WEBHOOK_SYSTEM_PROMPT,
+    context_data_message as _context_data_message,
     live_prompt as _live_prompt,
     owner_content_blocks as _owner_content_blocks,
     owner_context_message as _owner_context_message,
@@ -272,24 +272,25 @@ class TurnOrchestrator:
             max(100, self.config.memory_tokens // 8)
         )
         long_term_memories = self.store.always_memory_context()
-        recent_conversation = assemble_compact_recent_conversation(
-            self.store,
-            4,
-            min(1600, max(400, self.config.recent_raw_tokens // 3)),
+        conversation_rows = self.store.recent_conversation_messages(
+            self.config.recent_turns * 2,
+            self.config.recent_raw_tokens,
         )
-        recent_turn_records, _ = assemble_recent_turns(
-            self.store,
-            self.config.recent_turns,
-            None,
+        tool_activity = self.store.turn_activity(
+            [str(row["turn_id"]) for row in conversation_rows]
         )
-        recent_turns = project_recent_turns_for_owner(
-            recent_turn_records,
-            None,
+        transcript = build_transcript(
+            conversation_rows,
+            tool_activity=tool_activity,
+        )
+        transcript_messages = render_messages(
+            [*transcript.orphaned, *transcript.groups],
+            tool_activity=tool_activity,
         )
         recent_turn_ids = {
-            str(item.get("turn_id") or "")
-            for item in recent_turn_records.get("turns") or []
-            if isinstance(item, dict) and item.get("turn_id")
+            turn_id
+            for group in (*transcript.orphaned, *transcript.groups)
+            for turn_id in group.turn_ids
         }
         episodes = recall_episode_context(
             self.store,
@@ -330,17 +331,10 @@ class TurnOrchestrator:
                 ),
             ),
             (
-                "recent_conversation",
-                recent_conversation,
-            ),
-            ("recent_turns", recent_turns),
-            (
                 "recent_external_events",
                 assemble_recent_external_events(self.store),
             ),
             ("episode_directory", episodes),
-            ("long_term_memories", long_term_memories),
-            ("recent_memories", recent_memories),
             ("recall_memories", memories),
             ("reflection_memories", learned),
             ("webhook_activity", assemble_recent_webhook_activity(self.store)),
@@ -353,7 +347,15 @@ class TurnOrchestrator:
                 "cache_control": {"type": "ephemeral"},
             },
         ]
+        context_message = _context_data_message(
+            ("long_term_memories", long_term_memories),
+            ("recent_memories", recent_memories),
+            required=True,
+        )
+        assert context_message is not None
         messages: list[dict[str, Any]] = [
+            context_message,
+            *transcript_messages,
             {
                 "role": "user",
                 "content": [
