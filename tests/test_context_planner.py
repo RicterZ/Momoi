@@ -1816,6 +1816,23 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                     self.assertGreater(len(messages), 1)
                     self.assertEqual(messages[0]["role"], "user")
                     self.assertEqual(messages[-1]["role"], "user")
+                    # Durable memory leads the request so it stays inside the
+                    # cached prefix instead of trailing the transcript.
+                    leading = messages[0]["content"]
+                    leading_text = "".join(
+                        str(block.get("text") or "")
+                        for block in leading
+                        if isinstance(block, dict)
+                    )
+                    self.assertIn("<long_term_memories>", leading_text)
+                    self.assertIn("喜欢简短回复", leading_text)
+                    self.assertIn("<recent_memories>", leading_text)
+                    self.assertNotIn("<runtime_state>", leading_text)
+                    self.assertEqual(
+                        leading[-1]["cache_control"], {"type": "ephemeral"}
+                    )
+                    self.assertIn("<runtime_state>", text)
+                    self.assertIn("<recall_status>", text)
                     call = ToolCall(
                         "end_turn",
                         "end_turn",

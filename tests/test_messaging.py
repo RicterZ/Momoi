@@ -1172,9 +1172,18 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             daemon.store.begin_turn(turn_id, "owner", [accepted[0].event_id])
             await daemon._complete_batch(accepted, turn_id)
             blocks = provider.messages[-1]["content"]
-            self.assertEqual(blocks[1]["type"], "image")  # type: ignore[index]
+            images = [
+                index
+                for index, block in enumerate(blocks)
+                if block.get("type") == "image"  # type: ignore[union-attr]
+            ]
+            self.assertEqual(len(images), 1)
+            # The attachment follows the text block of the message it arrived
+            # with, rather than being appended after the whole batch.
+            self.assertEqual(blocks[images[0] - 1]["type"], "text")  # type: ignore[index]
+            self.assertLess(images[0], len(blocks) - 1)
             self.assertEqual(
-                blocks[1]["source"]["url"],  # type: ignore[index]
+                blocks[images[0]]["source"]["url"],  # type: ignore[index]
                 "https://img.example/owner.jpg",
             )
             daemon.store.close()

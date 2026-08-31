@@ -125,6 +125,8 @@ def sections(*items: tuple[str, str]) -> str:
 USER_CONTEXT_SECTION_ORDER = (
     "long_term_memories",
     "recent_memories",
+    "goal_directory",
+    "goal_progress",
     "active_goals",
     "always_memory_inventory",
     "recent_memory_inventory",
@@ -189,8 +191,37 @@ def pack_owner_context(*items: tuple[str, str]) -> str:
     return f"{context}\n\n{OWNER_TURN_PROTOCOL_REMINDER}"
 
 
+def owner_context_message(*items: tuple[str, str]) -> dict[str, Any] | None:
+    """Carry slow-changing context ahead of the conversation it applies to.
+
+    Durable memory and Goal identities barely change between Turns, but a prefix
+    cache only survives up to the first byte that differs, so anything placed
+    after the transcript is reprocessed every Turn. Sitting before it, this
+    material stays cached. It remains in the data region rather than the system
+    contract because memory is written from conversation and tool observations,
+    and giving that text instruction authority is exactly what the contract
+    forbids.
+    """
+
+    text = pack_user_context(*items)
+    if not text:
+        return None
+    return {
+        "role": "user",
+        "content": [
+            {
+                "type": "text",
+                "text": text,
+                "cache_control": {"type": "ephemeral"},
+            }
+        ],
+    }
+
+
 def owner_content_blocks(
-    events: Sequence[Any], content_blocks: Callable[[Any], list[dict[str, Any]]]
+    events: Sequence[Any],
+    content_blocks: Callable[[Any], list[dict[str, Any]]],
+    runtime_text: str = "",
 ) -> list[dict[str, Any]]:
     """Lay out the current owner input with each attachment beside its words.
 
@@ -201,12 +232,16 @@ def owner_content_blocks(
     """
 
     blocks: list[dict[str, Any]] = []
+    if runtime_text:
+        # Blocks are concatenated without a separator on the wire, so the gap
+        # that keeps the sections readable has to be part of the text.
+        blocks.append({"type": "text", "text": f"{runtime_text}\n\n"})
     for index, event in enumerate(events):
         line = f"{context_timestamp(event.occurred_at)} {event.text}".strip()
         opening = "<current_owner_messages>\n" if index == 0 else ""
         blocks.append({"type": "text", "text": f"{opening}{escape(line)}"})
         blocks.extend(content_blocks(event.segments))
-    closing = "</current_owner_messages>" if blocks else ""
+    closing = "</current_owner_messages>" if events else ""
     blocks.append(
         {
             "type": "text",

@@ -3853,15 +3853,16 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn("你好", current_text)
         self.assertNotIn("Trusted runtime context", current_text)
-        # The last user message now carries authenticated owner speech only.
-        # Runtime state, memory and recall move back in as explicitly marked
-        # sections in a later change.
+        # The tail carries what moves with the Turn, ending in owner speech.
+        # Slow-changing memory sits ahead of the transcript instead.
         self.assertIn("<current_owner_messages>", current_text)
         self.assertIn("</current_owner_messages>", current_text)
-        self.assertNotIn("<runtime_state>", current_text)
+        self.assertIn("<runtime_state>", current_text)
+        self.assertLess(
+            current_text.index("<runtime_state>"),
+            current_text.index("<current_owner_messages>"),
+        )
         self.assertNotIn("<long_term_memories>", current_text)
-        self.assertNotIn("<recall_memories>", current_text)
-        self.assertNotIn("<episode_directory>", current_text)
         self.assertNotIn("<context_resolution>", current_text)
         self.assertNotIn(
             "Consecutive messages from the authenticated user",

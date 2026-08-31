@@ -74,6 +74,7 @@ from .turn_support import (
     conversation_guidance as _conversation_guidance,
     live_prompt as _live_prompt,
     owner_content_blocks as _owner_content_blocks,
+    owner_context_message as _owner_context_message,
     pack_owner_context as _pack_owner_context,
     pack_user_context as _pack_user_context,
     provider_failure_message as _provider_failure_message,
@@ -1153,8 +1154,18 @@ class TurnOrchestrator:
         channel: Channel | None = None,
     ) -> None:
         channel = channel or self._channel_for(batch[0].channel)
-        context_plan, _recalled = await self._prepare_owner_context(batch, turn_id)
-        self._apply_reconciliation_commands(batch)
+        context_plan, recalled = await self._prepare_owner_context(batch, turn_id)
+        reconciliation_control = self._apply_reconciliation_commands(batch)
+        directives: list[str] = []
+        if any(message.text.strip() == "/stop" for message in batch):
+            directives.append(
+                "The owner explicitly stopped the previous active task. The runtime has "
+                "cancelled it and discarded uncommitted work. Do not continue that task. "
+                "Acknowledge the stop naturally; already dispatched external actions are "
+                "not automatically undone."
+            )
+        if reconciliation_control:
+            directives.append(reconciliation_control)
         # The retired base/append split existed to keep a stable cached prefix
         # inside one large user message, which made the effective window swing
         # between recent_turns and twice that. Native history is append-only on
@@ -1171,9 +1182,39 @@ class TurnOrchestrator:
             ),
         )
         system = self._system()
-        current_content = _owner_content_blocks(batch, channel.content_blocks)
+        # Slow-changing material sits ahead of the transcript so it stays inside
+        # the cached prefix; everything that moves with the Turn stays in the
+        # tail, which is rebuilt anyway.
+        context_message = _owner_context_message(
+            ("long_term_memories", recalled["long_term_memories"]),
+            ("recent_memories", recalled["recent_memories"]),
+            ("goal_directory", recalled["goal_directory"]),
+        )
+        runtime_text = _pack_user_context(
+            (
+                "runtime_state",
+                "Current local time: "
+                f"{datetime.now().astimezone().isoformat(timespec='seconds')}\n"
+                f"{_heartbeat_self_state_lines(self.store.self_state_context())}",
+            ),
+            ("runtime_directives", "\n\n".join(directives)),
+            ("goal_progress", recalled["goal_progress"]),
+            ("recall_memories", recalled["recall_memories"]),
+            ("recall_status", recalled["query_recall"]),
+            ("reflection_memories", recalled["reflection_memories"]),
+            ("episode_directory", recalled["episodes"]),
+            ("recent_external_events", recalled["recent_external_events"]),
+            (
+                "interrupted_reply_expectation",
+                self.store.cooled_reply_expectation_context(),
+            ),
+        )
+        current_content = _owner_content_blocks(
+            batch, channel.content_blocks, runtime_text
+        )
         current_content[-1]["cache_control"] = {"type": "ephemeral"}
         messages: list[dict[str, Any]] = [
+            *([context_message] if context_message else []),
             *transcript.messages,
             {"role": "user", "content": current_content},
         ]

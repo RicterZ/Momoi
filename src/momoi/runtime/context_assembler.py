@@ -742,6 +742,44 @@ def _episode_search_text(episode: dict[str, object]) -> str:
     )
 
 
+_GOAL_PROGRESS_FIELDS = (
+    ("next_action", "next", 100),
+    ("waiting_for", "waiting", 80),
+    ("latest_result", "last", 100),
+    ("blocked_reason", "blocked", 80),
+)
+
+
+def _goal_directory_lines(items: object) -> str:
+    """Render the part of a Goal that survives its execution unchanged."""
+
+    if not isinstance(items, list):
+        return ""
+    return "\n".join(
+        f"- id={item['id']} title={truncate_tokens(str(item.get('title') or ''), 80)}"
+        for item in items
+        if isinstance(item, dict) and item.get("id")
+    )
+
+
+def _goal_progress_lines(items: object) -> str:
+    """Render the part of a Goal that changes as work happens."""
+
+    if not isinstance(items, list):
+        return ""
+    lines: list[str] = []
+    for item in items:
+        if not isinstance(item, dict) or not item.get("id"):
+            continue
+        fields = [f"id={item['id']}", f"status={item.get('status') or 'unknown'}"]
+        for key, label, limit in _GOAL_PROGRESS_FIELDS:
+            value = item.get(key)
+            if value not in (None, "", [], {}):
+                fields.append(f"{label}={truncate_tokens(str(value), limit)}")
+        lines.append("- " + " ".join(fields))
+    return "\n".join(lines)
+
+
 def _goal_lines(items: object) -> str:
     if not isinstance(items, list):
         return ""
@@ -2021,6 +2059,8 @@ def assemble_main_context(
             else ""
         ),
         "goals": _goal_lines(retrieval.get("goals")),
+        "goal_directory": _goal_directory_lines(retrieval.get("goals")),
+        "goal_progress": _goal_progress_lines(retrieval.get("goals")),
     }
 
 

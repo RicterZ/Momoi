@@ -18,11 +18,14 @@ import sys
 from pathlib import Path
 
 from momoi.provider import _merge_adjacent_roles, _openai_messages
+from momoi.runtime.context_assembler import assemble_main_context
 from momoi.runtime.transcript import build_transcript
 from momoi.runtime.turn_support import (
     STYLE_CARD_SYSTEM_PROMPT,
     owner_content_blocks,
+    owner_context_message,
     pack_owner_context,
+    pack_user_context,
     sections,
 )
 from momoi.storage import Store
@@ -114,13 +117,16 @@ def main() -> int:
     parser.add_argument("--offset", type=int, default=0, help="0 is the newest Owner Turn")
     parser.add_argument("--recent-turns", type=int, default=6)
     parser.add_argument("--recent-raw-tokens", type=int, default=32000)
+    parser.add_argument("--summary-tokens", type=int, default=6000)
     args = parser.parse_args()
 
     store = Store(args.database)
     connection = sqlite3.connect(args.database)
     connection.row_factory = sqlite3.Row
     subject = connection.execute(
-        """SELECT t.id AS turn_id, t.started_at AS started_at, m.content AS owner_text
+        """SELECT t.id AS turn_id, t.started_at AS started_at, m.content AS owner_text,
+                  (SELECT p.retrieval_json FROM context_plans AS p
+                   WHERE p.turn_id=t.id ORDER BY p.revision DESC LIMIT 1) AS retrieval
            FROM turns AS t
            JOIN messages AS m ON m.turn_id=t.id AND m.role='user'
            WHERE t.kind='owner' AND t.state='completed'
@@ -142,19 +148,43 @@ def main() -> int:
             [str(row["turn_id"]) for row in conversation_rows]
         ),
     )
+    recalled = assemble_main_context(
+        store,
+        json.loads(str(subject["retrieval"] or "{}")),
+        args.summary_tokens,
+        args.recent_raw_tokens,
+    )
+    context_message = owner_context_message(
+        ("long_term_memories", recalled["long_term_memories"]),
+        ("recent_memories", recalled["recent_memories"]),
+        ("goal_directory", recalled["goal_directory"]),
+    )
+    runtime_text = pack_user_context(
+        ("goal_progress", recalled["goal_progress"]),
+        ("recall_memories", recalled["recall_memories"]),
+        ("recall_status", recalled["query_recall"]),
+        ("reflection_memories", recalled["reflection_memories"]),
+        ("episode_directory", recalled["episodes"]),
+        ("recent_external_events", recalled["recent_external_events"]),
+    )
     tail = {
         "role": "user",
         "content": [
+            {"type": "text", "text": f"{runtime_text}\n\n" if runtime_text else ""},
             {
                 "type": "text",
                 "text": pack_owner_context(
                     ("current_owner_messages", str(subject["owner_text"]))
                 ),
                 "cache_control": {"type": "ephemeral"},
-            }
+            },
         ],
     }
-    logical = [*transcript.messages, tail]
+    logical = [
+        *([context_message] if context_message else []),
+        *transcript.messages,
+        tail,
+    ]
     system = system_blocks(store, args.soul)
     payload = {
         "turn_id": str(subject["turn_id"]),
