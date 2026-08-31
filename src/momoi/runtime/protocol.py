@@ -379,6 +379,79 @@ def heartbeat_end_turn_tool_spec() -> dict[str, Any]:
             "required": [*schema["required"], "heartbeat"],
         },
     }
+NEW_EPISODE_REF = "new:<slug>"
+
+RECALL_TOOL_SPEC: dict[str, Any] = {
+    "name": "recall",
+    "description": (
+        "Open every Owner Turn with this, before any other action. Decide what "
+        "history the current input depends on, and bind it to a conversation "
+        "Episode. The runtime then retrieves and returns confirmed memory, "
+        "dated reflection and Episode summaries."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "units": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 4,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "intent": {"type": "string", "maxLength": 160},
+                        "recall_mode": {
+                            "type": "string",
+                            "enum": ["search", "reuse", "none"],
+                        },
+                        "recall_queries": {
+                            "type": "array",
+                            "maxItems": 3,
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "semantic": {"type": "string", "maxLength": 240},
+                                    "keywords": {
+                                        "type": "array",
+                                        "maxItems": 6,
+                                        "items": {"type": "string", "maxLength": 60},
+                                    },
+                                },
+                                "required": ["semantic"],
+                                "additionalProperties": False,
+                            },
+                        },
+                        "recall_from_turn_id": {"type": "string"},
+                        "episode": {
+                            "type": "object",
+                            "properties": {
+                                "action": {
+                                    "type": "string",
+                                    "enum": ["none", "continue", "new"],
+                                },
+                                "ref": {
+                                    "type": "string",
+                                    "description": (
+                                        "Existing Episode id to continue, or "
+                                        f"{NEW_EPISODE_REF} to open one."
+                                    ),
+                                },
+                                "title": {"type": "string", "maxLength": 80},
+                            },
+                            "required": ["action"],
+                            "additionalProperties": False,
+                        },
+                    },
+                    "required": ["intent", "recall_mode"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        "required": ["units"],
+        "additionalProperties": False,
+    },
+}
+
 SEND_MESSAGE_TOOL_SPEC: dict[str, Any] = {
     "name": "send_message",
     "description": (

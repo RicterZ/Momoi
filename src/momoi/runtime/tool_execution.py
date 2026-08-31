@@ -35,6 +35,7 @@ from .parsing import parse_messages, parse_response, response_text
 from .protocol import (
     AUTONOMOUS_FINISH_SPEC,
     READ_TOOL_RESULT_SPEC,
+    RECALL_TOOL_SPEC,
     owner_end_turn_tool_spec,
     send_message_tool_spec,
     tool_enable_spec,
@@ -53,6 +54,9 @@ logger = logging.getLogger("momoi.runtime.turns")
 MAX_TOOL_RESULT_TRUNCATION_ATTEMPTS = 16
 # Room for the reference field appended to every serialized tool result.
 _RESULT_REF_OVERHEAD = 64
+# A Turn that keeps skipping its recall decision proceeds without one rather
+# than looping; leaving the owner unanswered is the worse failure.
+MAX_CONTEXT_SUBMISSION_RETRIES = 2
 SIMILAR_SEND_MESSAGE_THRESHOLD = 0.75
 
 
@@ -265,6 +269,7 @@ class ToolExecutionService:
             for group in mcp_groups
         }
         visible = [
+            RECALL_TOOL_SPEC,
             self._send_message_tool_spec(channel_name),
             *all_internal,
             tool_enable_spec(group_catalog),
@@ -272,6 +277,7 @@ class ToolExecutionService:
             owner_end_turn_tool_spec(),
         ]
         full = [
+            RECALL_TOOL_SPEC,
             self._send_message_tool_spec(channel_name),
             *all_internal,
             tool_enable_spec(group_catalog),
@@ -298,15 +304,10 @@ class ToolExecutionService:
         messages: list[dict[str, Any]],
         delivery_channel: Channel,
     ) -> tuple[list[dict[str, Any]], str]:
-        context_plan, recalled = await self._prepare_owner_context(
-            current_events, turn_id
-        )
-        if authority == "owner":
-            self._append_visible_tool_specs(
-                tools, self._owner_tool_specs(context_plan, delivery_channel.name)
-            )
         messages.append(
-            self._owner_update_message(updates, delivery_channel, recalled)
+            self._owner_update_message(
+                updates, delivery_channel, self.owner_context_baseline(current_events)
+            )
         )
         return tools, updates[-1].event_id
 
@@ -338,6 +339,8 @@ class ToolExecutionService:
         force_autonomous_finish = False
         failed_tool_rounds = 0
         history_messages = max(0, len(messages) - 1)
+        context_submitted = authority != "owner"
+        context_rejections = 0
         visible_since_owner_update = False
         owner_work_acknowledged = False
         previous_tool_name: str | None = None
@@ -385,6 +388,8 @@ class ToolExecutionService:
                     messages,
                     delivery_channel,
                 )
+                context_submitted = authority != "owner"
+                context_rejections = 0
                 force_autonomous_finish = False
                 failed_tool_rounds = 0
             request_tools = (
@@ -462,6 +467,8 @@ class ToolExecutionService:
                     messages,
                     delivery_channel,
                 )
+                context_submitted = authority != "owner"
+                context_rejections = 0
                 force_autonomous_finish = False
                 failed_tool_rounds = 0
                 continue
@@ -528,6 +535,8 @@ class ToolExecutionService:
                     messages,
                     delivery_channel,
                 )
+                context_submitted = authority != "owner"
+                context_rejections = 0
                 force_autonomous_finish = False
                 failed_tool_rounds = 0
                 continue
@@ -597,6 +606,31 @@ class ToolExecutionService:
                     ]
                 )
                 force_autonomous_finish = False
+                continue
+            if (
+                require_response
+                and len(response.tool_calls) == 1
+                and response.tool_calls[0].name == "end_turn"
+                and not context_submitted
+                and context_rejections < MAX_CONTEXT_SUBMISSION_RETRIES
+            ):
+                # Ending in silence is still a decision about the owner's input,
+                # so it happens after the recall judgement, not instead of it.
+                context_rejections += 1
+                messages.extend(
+                    [
+                        {"role": "assistant", "content": response.content},
+                        {
+                            "role": "user",
+                            "content": [
+                                _tool_error_block(
+                                    response.tool_calls[0].id,
+                                    "context_not_submitted",
+                                )
+                            ],
+                        },
+                    ]
+                )
                 continue
             if (
                 require_response
@@ -849,6 +883,37 @@ class ToolExecutionService:
                     }
                 elif call.name not in allowed_tool_names:
                     result = {"ok": False, "error": "tool_not_allowed"}
+                elif call.name == "recall":
+                    recalled = await self.submit_owner_context(
+                        current_events, turn_id, call.arguments
+                    )
+                    context_submitted = True
+                    result = {
+                        "ok": True,
+                        "state": "recalled",
+                        "memory": recalled["recall_memories"],
+                        "status": recalled["query_recall"],
+                        "reflection": recalled["reflection_memories"],
+                        "episodes": recalled["episodes"],
+                    }
+                elif (
+                    not context_submitted
+                    and authority == "owner"
+                    and context_rejections < MAX_CONTEXT_SUBMISSION_RETRIES
+                ):
+                    # The recall decision is what makes the rest of the Turn
+                    # accountable, so it cannot be skipped by acting first. A
+                    # model that keeps refusing is let through rather than
+                    # spun on, since an unanswered owner is the worse outcome.
+                    context_rejections += 1
+                    result = {
+                        "ok": False,
+                        "error": "context_not_submitted",
+                        "message": (
+                            "Call recall first to decide what history "
+                            "this input depends on."
+                        ),
+                    }
                 elif call.name == "end_turn":
                     result = {
                         "ok": False,
@@ -1185,6 +1250,8 @@ class ToolExecutionService:
                     messages,
                     delivery_channel,
                 )
+                context_submitted = authority != "owner"
+                context_rejections = 0
                 failed_tool_rounds = 0
                 continue
             if any(not block["is_error"] for block in results):

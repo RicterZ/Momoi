@@ -110,6 +110,43 @@ class ToolResultStoreTest(unittest.TestCase):
             self.assertEqual(json.loads(reread["content"])["body"], result["body"])
             daemon.store.close()
 
+    def test_an_inline_result_shrinks_by_reference_rather_than_truncation(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = ToolResultStore(Path(directory) / "tool-results")
+            body = json.dumps(
+                {"ok": True, "error": None, "items": ["x" * 200 for _ in range(20)]},
+                ensure_ascii=False,
+            )
+            result_ref = store.save(body)
+            inline = json.dumps(
+                {
+                    "ok": True,
+                    "error": None,
+                    "truncated": False,
+                    "provenance": {"source": "builtin", "tool": "curl"},
+                    "result_ref": result_ref,
+                    "body": body,
+                },
+                ensure_ascii=False,
+            )
+            refitted = store.refit(inline, max_chars=900)
+            self.assertIsNotNone(refitted)
+            shrunk = json.loads(str(refitted))
+            self.assertLessEqual(len(str(refitted)), 900)
+            self.assertEqual(shrunk["result_ref"], result_ref)
+            self.assertTrue(shrunk["truncated"])
+            self.assertTrue(shrunk["next_cursor"])
+            # The omitted part is recoverable, unlike a truncated body.
+            rest = store.read(
+                result_ref,
+                shrunk["next_cursor"],
+                max_chars=10000,
+                provenance={"source": "runtime", "tool": "read_tool_result"},
+            )
+            self.assertEqual(shrunk["content"] + rest["content"], body)
+
     def test_builtin_file_tools_cannot_see_private_store(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

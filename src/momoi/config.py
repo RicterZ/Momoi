@@ -129,10 +129,6 @@ class AppConfig:
     database: Path
     log_level: str
     max_input_tokens: int = 96000
-    planner_recent_base_turns: int = 0
-    planner_recent_append_turns: int = 0
-    planner_active_recent_turns: int = 0
-    planner_recent_tokens: int = 0
     summary_results: int = 8
     summary_tokens: int = 6000
     recent_episode_hours: float = 6
@@ -481,14 +477,6 @@ def load_config(path: str | Path) -> AppConfig:
         1000, int(context_raw.get("max_input_tokens", 96000))
     )
     recent_turns = max(1, int(context_raw.get("recent_turns", 6)))
-    planner_recent_tokens = context_raw.get("planner_recent_tokens")
-    if planner_recent_tokens is None:
-        planner_recent_tokens = min(
-            88000,
-            max(1000, int(max_input_tokens * 0.55)),
-        )
-    else:
-        planner_recent_tokens = max(1000, int(planner_recent_tokens))
 
     return AppConfig(
         llm=LLMConfig(
@@ -515,16 +503,6 @@ def load_config(path: str | Path) -> AppConfig:
         database=database,
         log_level=str(logging_raw.get("level", "DEBUG")).upper(),
         max_input_tokens=max_input_tokens,
-        planner_recent_base_turns=max(
-            1, int(context_raw.get("planner_recent_base_turns", recent_turns))
-        ),
-        planner_recent_append_turns=max(
-            1, int(context_raw.get("planner_recent_append_turns", recent_turns))
-        ),
-        planner_active_recent_turns=max(
-            1, int(context_raw.get("planner_active_recent_turns", recent_turns))
-        ),
-        planner_recent_tokens=planner_recent_tokens,
         summary_results=min(
             12, max(0, int(context_raw.get("summary_results", 8)))
         ),

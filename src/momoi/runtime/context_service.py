@@ -3,15 +3,12 @@ import logging
 import re
 import time
 from datetime import datetime
-from typing import Any
 
 from ..agenda_tools import AGENDA_TOOL_SPECS
 from ..builtin_tools import BUILTIN_TOOL_SPECS
-from ..context_time import context_timestamp
-from ..logging_context import TRACE, compact_log_value, log_context, log_event, new_trace_id, safe_preview
+from ..logging_context import log_context, log_event, new_trace_id
 from ..memory_tools import MEMORY_TOOL_SPECS
 from ..models import IncomingMessage
-from ..storage import estimate_tokens
 from ..storage import MemoryRecallQuery
 from .context_assembler import (
     assemble_main_context,
@@ -24,28 +21,21 @@ from .context_assembler import (
     render_planner_recent_turns,
 )
 from .context_planner import (
-    CONTEXT_PLAN_TOOL_NAME,
-    CONTEXT_PLAN_TOOL_SPEC,
     HEARTBEAT_PLAN_TOOL_NAME,
     HEARTBEAT_PLAN_TOOL_SPEC,
     ContextPlanError,
-    context_plan_correction,
-    degraded_context_plan,
     degraded_heartbeat_plan,
-    parse_context_plan,
     parse_heartbeat_plan,
 )
 from .turn_support import (
-    CONTEXT_PLANNER_SYSTEM_PROMPT,
     HEARTBEAT_PLANNER_SYSTEM_PROMPT,
-    OwnerMessagesChanged,
     sections as _sections,
-    plan_log_episodes as _plan_log_episodes,
-    plan_log_units as _plan_log_units,
     tool_error_block as _tool_error_block,
 )
 
 logger = logging.getLogger("momoi.runtime.turns")
+# Episode reference syntax the runtime already stores.
+_NEW_EPISODE_SLUG = re.compile(r"new:[a-z0-9][a-z0-9_-]{0,39}")
 
 PLANNER_INTERNAL_TOOLS = [
     {
@@ -396,89 +386,6 @@ def render_heartbeat_planner_request(
     )
 
 
-def render_context_planner_request(
-    *,
-    internal_tools: list[dict[str, str]],
-    mcp_servers: list[dict[str, object]],
-    long_term_memories: str,
-    recent_memories: str,
-    recent_turns: dict[str, object],
-    recent_turn_base_count: int,
-    active_recent_turn_ids: list[str],
-    candidate_goals: list[dict[str, object]],
-    candidate_episodes: list[dict[str, object]],
-    interrupted_reply_expectation: str,
-    owner_messages: list[dict[str, object]],
-    recent_recall_contexts: list[dict[str, object]] | None = None,
-    recent_external_events: str = "",
-) -> str:
-    """Serialize the exact human-readable user prompt sent to Context Planner."""
-    turns = recent_turns.get("turns")
-    turn_items = turns if isinstance(turns, list) else []
-    base_count = max(0, min(int(recent_turn_base_count), len(turn_items)))
-    return _sections(
-        (
-            "available_internal_tools",
-            _planner_value(_planner_internal_tool_lines(internal_tools)),
-        ),
-        (
-            "available_mcp_servers",
-            _planner_value(_planner_mcp_lines(mcp_servers)),
-        ),
-        ("long_term_memories", _planner_value(long_term_memories)),
-        ("recent_memories", _planner_value(recent_memories)),
-        (
-            "candidate_goals",
-            _planner_value(_planner_state_lines(candidate_goals)),
-        ),
-        (
-            "interrupted_reply_expectation",
-            _planner_value(
-                _planner_interrupted_reply_lines(interrupted_reply_expectation)
-            ),
-        ),
-        (
-            "recent_turn_base",
-            _planner_value(
-                render_planner_recent_turns(
-                    {"version": 1, "turns": turn_items[:base_count]}
-                )
-            ),
-        ),
-        (
-            "recent_turn_append",
-            _planner_value(
-                render_planner_recent_turns(
-                    {"version": 1, "turns": turn_items[base_count:]},
-                    start_index=base_count + 1,
-                )
-            ),
-        ),
-        (
-            "recent_turn_focus",
-            _planner_value(
-                render_planner_recent_turn_focus(
-                    recent_turns,
-                    active_recent_turn_ids,
-                )
-            ),
-        ),
-        ("recent_external_events", _planner_value(recent_external_events)),
-        (
-            "recent_recall_context",
-            _planner_value(
-                _planner_recall_context_lines(recent_recall_contexts or [])
-            ),
-        ),
-        (
-            "candidate_episodes",
-            _planner_value(_planner_episode_lines(candidate_episodes)),
-        ),
-        (
-            "owner_messages",
-            _planner_value(_planner_owner_lines(owner_messages)),
-        ),
-    )
 
 
 class ContextService:
@@ -489,331 +396,166 @@ class ContextService:
             raise RuntimeError("stored context plan is not an object")
         return plan
 
-    async def _plan_owner_context(
+    def _plan_from_submission(
+        self, events: list[IncomingMessage], arguments: dict[str, object]
+    ) -> dict[str, object]:
+        """Shape an Owner context submission like a stored plan.
+
+        The retrieval path already knows how to turn recall dispositions and
+        Episode actions into evidence; only its source moves, from a separate
+        planning model to the Owner's own first action.
+        """
+
+        event_ids = [event.event_id for event in events]
+        units: list[dict[str, object]] = []
+        episodes: list[dict[str, object]] = []
+        raw_units = arguments.get("units")
+        for index, raw in enumerate(raw_units if isinstance(raw_units, list) else [], 1):
+            if not isinstance(raw, dict):
+                continue
+            unit_id = f"u{index}"
+            mode = str(raw.get("recall_mode") or "none")
+            queries = [
+                {
+                    "semantic": " ".join(str(query.get("semantic") or "").split())[:240],
+                    "keywords": [
+                        " ".join(str(keyword).split())[:60]
+                        for keyword in (query.get("keywords") or [])
+                        if " ".join(str(keyword).split())
+                    ],
+                }
+                for query in (raw.get("recall_queries") or [])
+                if isinstance(query, dict) and str(query.get("semantic") or "").strip()
+            ][:3]
+            from_turn_id = str(raw.get("recall_from_turn_id") or "")
+            if mode == "search" and not queries:
+                mode = "none"
+            if mode == "reuse" and not from_turn_id:
+                mode = "none"
+            units.append(
+                {
+                    "id": unit_id,
+                    "event_ids": event_ids,
+                    "intent": " ".join(str(raw.get("intent") or "").split())[:160],
+                    "recall_mode": mode,
+                    "recall_queries": queries if mode == "search" else [],
+                    "recall_from_turn_id": from_turn_id if mode == "reuse" else "",
+                    "recall": {
+                        "mode": mode,
+                        "from_turn_id": from_turn_id if mode == "reuse" else "",
+                        "queries": queries if mode == "search" else [],
+                    },
+                }
+            )
+            episode = raw.get("episode")
+            action = (
+                str(episode.get("action") or "none")
+                if isinstance(episode, dict)
+                else "none"
+            )
+            if action == "none":
+                continue
+            binding: dict[str, object] = {"action": action, "unit_ids": [unit_id]}
+            reference = str(episode.get("ref") or "") if isinstance(episode, dict) else ""
+            title = str(episode.get("title") or "") if isinstance(episode, dict) else ""
+            if action == "continue" and reference:
+                binding["episode_id"] = reference
+                binding["episode_ref"] = reference
+            elif action == "new" and title and _NEW_EPISODE_SLUG.fullmatch(reference):
+                binding["title"] = title[:80]
+                binding["episode_ref"] = reference
+            else:
+                continue
+            episodes.append(binding)
+        return {
+            "version": 7,
+            "intent_units": units,
+            "episode_actions": episodes,
+            "episode_links": [],
+            "uncertainty": [],
+        }
+
+    def owner_context_baseline(
+        self, events: list[IncomingMessage]
+    ) -> dict[str, str]:
+        """Assemble the context that holds before any recall decision is made.
+
+        The fixed memory baseline, Goals and folded external events do not
+        depend on what this input turns out to need, so they are available
+        before the Owner decides anything. Query-driven evidence arrives later,
+        as the result of that decision.
+        """
+
+        retrieval = build_plan_retrieval(
+            self.store,
+            {"version": 7, "intent_units": [], "episode_actions": []},
+            self.config,
+        )
+        return assemble_main_context(
+            self.store,
+            retrieval,
+            self.config.summary_tokens,
+            self.config.recent_raw_tokens,
+            self.config.recent_turns,
+            min(event.received_at for event in events),
+        )
+
+    def owner_context_candidates(self, turn_ids: list[str]) -> dict[str, str]:
+        """Give the Owner the two catalogs its context decision depends on.
+
+        Continuing an Episode requires seeing which ones are open, and reusing a
+        previous recall requires seeing what that recall actually searched for.
+        Both were previously visible only to the planning model, which is why
+        that model appeared to know something the Owner could not.
+        """
+
+        return {
+            "candidate_episodes": _planner_episode_lines(
+                self.store.list_recent_episode_directory(
+                    8, exclude_runtime_archives=True
+                )
+            ),
+            "recent_recall_context": _planner_recall_context_lines(
+                self.store.recall_reuse_candidates(turn_ids)
+            ),
+        }
+
+    async def submit_owner_context(
         self,
         events: list[IncomingMessage],
         turn_id: str,
-    ) -> dict[str, object]:
-        event_ids = [event.event_id for event in events]
-        active = self.store.context_plan(turn_id)
-        if active is not None and active["source_event_ids"] == event_ids:
-            return self._stored_context_plan(active)
+        arguments: dict[str, object],
+    ) -> dict[str, str]:
+        """Persist the Owner's context decision and return the evidence it asked for."""
 
-        revision = self.store.next_context_plan_revision(turn_id)
-        mcp_server_catalog = self._mcp_server_catalog()
-        available_mcp_servers = {
-            str(group["id"]) for group in mcp_server_catalog
-        }
-        planner_recent_turns, active_recent_turn_ids, recent_turn_base_count = (
-            assemble_planner_recent_turns(
-                self.store,
-                self.config.planner_recent_base_turns or self.config.recent_turns,
-                self.config.planner_recent_append_turns or self.config.recent_turns,
-                self.config.planner_active_recent_turns or self.config.recent_turns,
-                self.config.planner_recent_tokens
-                or min(
-                    88000,
-                    max(1000, int(self.config.max_input_tokens * 0.55)),
-                ),
-                min(event.received_at for event in events),
-            )
-        )
-        recall_reuse_candidates = self.store.recall_reuse_candidates(
-            active_recent_turn_ids
-        )
-        candidates = self.store.list_recent_episode_directory(
-            8, exclude_runtime_archives=True
-        )
-        log_event(
-            logger,
-            TRACE,
-            "episode_candidates_ranked",
-            stage="context_plan",
-            turn_id=turn_id,
-            revision=revision,
-            candidates=[
-                {
-                    "id": candidate["id"],
-                    "title": candidate["title"],
-                    "status": candidate["status"],
-                    "last_activity": candidate.get("last_activity_timestamp"),
-                }
-                for candidate in candidates
-            ],
-        )
-        owner_messages = [
-            {
-                "event_id": event.event_id,
-                "timestamp": context_timestamp(event.occurred_at),
-                "text": event.text,
-            }
-            for event in events
-        ]
-        candidate_goals = [
-            {
-                name: goal.get(name)
-                for name in (
-                    "id",
-                    "status",
-                    "title",
-                    "next_action",
-                    "waiting_for",
-                    "latest_result",
-                    "next_review_timestamp",
-                )
-            }
-            for goal in self.store.list_goals()[
-                : self.config.policies.context.max_visible_goals
-            ]
-        ]
-        interrupted_reply = self.store.cooled_reply_expectation_context()
-        # Prefix-cache order: fixed memory and agenda fields precede append-only
-        # conversation evidence; query-specific episodes and the owner message
-        # remain at the tail.
-        request: list[dict[str, Any]] = [
-            {
-                "role": "user",
-                "content": render_context_planner_request(
-                    internal_tools=PLANNER_INTERNAL_TOOLS,
-                    mcp_servers=mcp_server_catalog,
-                    long_term_memories=self.store.always_memory_context(),
-                    recent_memories=self.store.recent_memory_context(
-                        max(100, self.config.memory_tokens // 8)
-                    ),
-                    recent_turns=planner_recent_turns,
-                    recent_turn_base_count=recent_turn_base_count,
-                    active_recent_turn_ids=active_recent_turn_ids,
-                    recent_external_events=assemble_recent_external_events(
-                        self.store,
-                        min(event.received_at for event in events),
-                    ),
-                    candidate_goals=candidate_goals,
-                    candidate_episodes=candidates,
-                    interrupted_reply_expectation=interrupted_reply,
-                    owner_messages=owner_messages,
-                    recent_recall_contexts=recall_reuse_candidates,
-                ),
-            }
-        ]
-        last_error = "invalid_context_plan"
-        planner_tools = [CONTEXT_PLAN_TOOL_SPEC]
-        for attempt in range(2):
-            raw_plan: object = None
-            call_started = time.monotonic()
-            call_id = new_trace_id()
-            with log_context(
-                stage="context_plan",
-                turn_id=turn_id,
-                call_id=call_id,
-                round=attempt + 1,
-            ):
-                self._check_turn_budget(
-                    turn_id,
-                    CONTEXT_PLANNER_SYSTEM_PROMPT,
-                    request,
-                    planner_tools,
-                )
-                response = await self._complete_with_owner_interrupt(
-                    CONTEXT_PLANNER_SYSTEM_PROMPT,
-                    request,
-                    planner_tools,
-                    require_tool=True,
-                    current_events=events,
-                    channel_name=self._channel_for(events[0].channel).name,
-                )
-            metrics = response.usage or {}
-            self.store.record_turn_usage(
-                turn_id,
-                int(
-                    metrics.get(
-                        "input",
-                        estimate_tokens(
-                            json.dumps(
-                                {
-                                    "system": CONTEXT_PLANNER_SYSTEM_PROMPT,
-                                    "messages": request,
-                                    "tools": planner_tools,
-                                },
-                                ensure_ascii=False,
-                            )
-                        ),
-                    )
-                ),
-                int(
-                    metrics.get(
-                        "output",
-                        estimate_tokens(
-                            json.dumps(response.content, ensure_ascii=False)
-                        ),
-                    )
-                ),
-            )
-            try:
-                if (
-                    len(response.tool_calls) != 1
-                    or response.tool_calls[0].name != CONTEXT_PLAN_TOOL_NAME
-                ):
-                    raise ContextPlanError("context_plan_tool_required")
-                raw_plan = response.tool_calls[0].arguments
-                log_event(
-                    logger,
-                    logging.DEBUG,
-                    "context_plan_received",
-                    stage="context_plan",
-                    turn_id=turn_id,
-                    call_id=call_id,
-                    round=attempt + 1,
-                    revision=revision,
-                    tool_call_id=response.tool_calls[0].id,
-                    version=raw_plan.get("version"),
-                    intent_units=safe_preview(raw_plan.get("intent_units"), 900),
-                    episode_actions=safe_preview(
-                        raw_plan.get("episode_actions"),
-                        900,
-                    ),
-                    raw_plan=compact_log_value(raw_plan, string_limit=300),
-                )
-                plan = parse_context_plan(
-                    raw_plan,
-                    event_ids,
-                    candidates,
-                    turn_id,
-                    revision,
-                    available_mcp_servers,
-                    recall_reuse_candidates,
-                )
-            except ContextPlanError as error:
-                last_error = str(error)
-                correction_reason = context_plan_correction(last_error)
-                log_event(
-                    logger,
-                    logging.WARNING,
-                    "context_plan_invalid",
-                    stage="context_plan",
-                    turn_id=turn_id,
-                    call_id=call_id,
-                    round=attempt + 1,
-                    revision=revision,
-                    reason=last_error,
-                    tool_calls=[
-                        {"name": call.name, "arguments": call.arguments}
-                        for call in response.tool_calls
-                    ],
-                    raw_plan=raw_plan,
-                    duration_ms=int((time.monotonic() - call_started) * 1000),
-                )
-                if attempt == 0:
-                    correction = (
-                        "[Trusted protocol correction: the previous context plan "
-                        f"failed validation: {correction_reason}. Call "
-                        f"{CONTEXT_PLAN_TOOL_NAME} exactly once with corrected arguments.]"
-                    )
-                    correction_content = [
-                        *[
-                            _tool_error_block(call.id, correction_reason)
-                            for call in response.tool_calls
-                        ],
-                        {"type": "text", "text": correction},
-                    ]
-                    request.extend(
-                        [
-                            {"role": "assistant", "content": response.content},
-                            {
-                                "role": "user",
-                                "content": correction_content,
-                            },
-                        ]
-                    )
-                    continue
-                plan = degraded_context_plan(owner_messages, last_error)
-                log_event(
-                    logger,
-                    logging.WARNING,
-                    "context_plan_degraded",
-                    stage="context_plan",
-                    turn_id=turn_id,
-                    call_id=call_id,
-                    round=attempt + 1,
-                    revision=revision,
-                    reason=last_error,
-                    duration_ms=int((time.monotonic() - call_started) * 1000),
-                )
-                saved = self.store.save_context_plan(
-                    turn_id, revision, event_ids, plan, state="degraded"
-                )
-                return self._stored_context_plan(saved)
-            saved = self.store.save_context_plan(turn_id, revision, event_ids, plan)
-            units = plan.get("intent_units")
-            bindings = plan.get("episode_actions")
-            log_event(
-                logger,
-                logging.INFO,
-                "context_plan_complete",
-                stage="context_plan",
-                turn_id=turn_id,
-                call_id=call_id,
-                round=attempt + 1,
-                revision=revision,
-                units=len(units) if isinstance(units, list) else 0,
-                episodes=len(bindings) if isinstance(bindings, list) else 0,
-                plan_units=_plan_log_units(plan),
-                episode_actions=_plan_log_episodes(plan),
-                uncertainty=plan.get("uncertainty", []),
-                owner_handoff=plan.get("owner_handoff"),
-                duration_ms=int((time.monotonic() - call_started) * 1000),
-            )
-            return self._stored_context_plan(saved)
-        raise RuntimeError("context planner retry loop ended unexpectedly")
-
-    async def _prepare_owner_context(
-        self, events: list[IncomingMessage], turn_id: str
-    ) -> tuple[dict[str, object], dict[str, str]]:
-        while True:
-            try:
-                plan = await self._plan_owner_context(events, turn_id)
-                break
-            except OwnerMessagesChanged:
-                await self._settle_owner_updates(
-                    events, self._channel_for(events[0].channel).name
-                )
+        plan = self._plan_from_submission(events, arguments)
         record = self.store.context_plan(turn_id)
-        if record is None:
-            raise RuntimeError("active context plan was not saved")
-        retrieval = record.get("retrieval")
-        if (
-            not isinstance(retrieval, dict)
-            or retrieval.get("version") != 6
-            or not isinstance(retrieval.get("recall_memories"), list)
-            or not isinstance(retrieval.get("reflection_memories"), list)
-        ):
-            selected, _reused, _emitted, _skipped = select_plan_recall_queries(plan)
-            dense_evidence = await self.semantic_recall.prepare(
-                [
-                    MemoryRecallQuery(
-                        expression=str(item["expression"]),
-                        unit_ids=tuple(str(value) for value in item["unit_ids"]),
-                        priority=int(item["priority"]),
-                        semantic_expression=str(item["semantic_expression"]),
-                    )
-                    for item in selected
-                ],
-                output_limit=max(self.config.memory_results, self.config.summary_results),
-            )
-            retrieval = build_plan_retrieval(
-                self.store, plan, self.config, dense_evidence=dense_evidence
-            )
-            record = self.store.save_context_retrieval(
-                turn_id,
-                int(record["revision"]),
-                retrieval,
-                state=("degraded" if record["state"] == "degraded" else "recalled"),
-            )
-            retrieval = record["retrieval"]
-        if not isinstance(retrieval, dict):
-            raise RuntimeError("stored context retrieval is not an object")
-        return plan, assemble_main_context(
+        revision = int(record["revision"]) + 1 if record is not None else 1
+        saved = self.store.save_context_plan(
+            turn_id, revision, [event.event_id for event in events], plan
+        )
+        selected, _reused, _emitted, _skipped = select_plan_recall_queries(plan)
+        dense_evidence = await self.semantic_recall.prepare(
+            [
+                MemoryRecallQuery(
+                    expression=str(item["expression"]),
+                    unit_ids=tuple(str(value) for value in item["unit_ids"]),
+                    priority=int(item["priority"]),
+                    semantic_expression=str(item["semantic_expression"]),
+                )
+                for item in selected
+            ],
+            output_limit=max(self.config.memory_results, self.config.summary_results),
+        )
+        retrieval = build_plan_retrieval(
+            self.store, plan, self.config, dense_evidence=dense_evidence
+        )
+        stored = self.store.save_context_retrieval(
+            turn_id, int(saved["revision"]), retrieval, state="recalled"
+        )
+        return assemble_main_context(
             self.store,
-            retrieval,
+            stored["retrieval"],
             self.config.summary_tokens,
             self.config.recent_raw_tokens,
             self.config.recent_turns,
@@ -839,11 +581,10 @@ class ContextService:
         planner_recent_turns, active_recent_turn_ids, recent_turn_base_count = (
             assemble_planner_recent_turns(
                 self.store,
-                self.config.planner_recent_base_turns or self.config.recent_turns,
-                self.config.planner_recent_append_turns or self.config.recent_turns,
-                self.config.planner_active_recent_turns or self.config.recent_turns,
-                self.config.planner_recent_tokens
-                or min(
+                self.config.recent_turns,
+                self.config.recent_turns,
+                self.config.recent_turns,
+                min(
                     88000,
                     max(1000, int(self.config.max_input_tokens * 0.55)),
                 ),

@@ -23,7 +23,6 @@ REFLECTION_PROMPT_PATH = PROMPT_ROOT.joinpath("reflection.md")
 MEMORY_MAINTENANCE_PROMPT_PATH = PROMPT_ROOT.joinpath(
     "memory_maintenance.md"
 )
-CONTEXT_PLANNER_PROMPT_PATH = PROMPT_ROOT.joinpath("context_planner.md")
 EPISODE_SUMMARY_PROMPT_PATH = PROMPT_ROOT.joinpath("episode_summary.md")
 EPISODE_CONSOLIDATION_PROMPT_PATH = PROMPT_ROOT.joinpath(
     "episode_consolidation.md"
@@ -39,39 +38,6 @@ REFLECTION_SYSTEM_PROMPT = REFLECTION_PROMPT_PATH.read_text(encoding="utf-8").st
 MEMORY_MAINTENANCE_SYSTEM_PROMPT = MEMORY_MAINTENANCE_PROMPT_PATH.read_text(
     encoding="utf-8"
 ).strip()
-CONTEXT_PLANNER_PROTOCOL_PROMPT = CONTEXT_PLANNER_PROMPT_PATH.read_text(
-    encoding="utf-8"
-).strip()
-DOWNSTREAM_OWNER_CONTRACT_PROMPT = SYSTEM_PROMPT_PATH.read_text(
-    encoding="utf-8"
-).strip()
-PLANNER_STYLE_CARD_BOUNDARY = (
-    "[Owner-only Style Card omitted. The downstream Owner applies its wording, "
-    "tone, bubble shape, timing, and reaction guidance independently.]"
-)
-PLANNER_DOWNSTREAM_OWNER_CONTRACT_PROMPT = (
-    DOWNSTREAM_OWNER_CONTRACT_PROMPT.replace(
-        "{{STYLE_CARD}}",
-        PLANNER_STYLE_CARD_BOUNDARY,
-    )
-)
-CONTEXT_PLANNER_SYSTEM_PROMPT = (
-    CONTEXT_PLANNER_PROTOCOL_PROMPT
-    + "\n\n# Downstream Owner contract\n\n"
-    + "The following is the exact system contract for the downstream Owner "
-    + "model. It is a trusted planning constraint, not your identity, tool "
-    + "protocol, or permission to act. Interpret its second-person commands as "
-    + "requirements on the downstream Owner. Its Style Card body is omitted; "
-    + "wording, tone, bubble, timing, and reaction guidance is outside planning. "
-    + "`{{SOUL}}` remains unresolved; do not infer identity, relationships, "
-    + "persona, or persona-specific wording from it.\n\n"
-    + "<downstream_owner_contract>\n"
-    + PLANNER_DOWNSTREAM_OWNER_CONTRACT_PROMPT
-    + "\n</downstream_owner_contract>\n\n"
-    + "# Planner boundary reminder\n\nThe downstream contract ends above. "
-    + "Continue to follow the Context planning protocol: do not answer, send "
-    + "messages, or execute work; submit exactly one `submit_context_plan` call."
-)
 EPISODE_SUMMARY_SYSTEM_PROMPT = EPISODE_SUMMARY_PROMPT_PATH.read_text(
     encoding="utf-8"
 ).strip()
@@ -132,6 +98,8 @@ USER_CONTEXT_SECTION_ORDER = (
     "recent_turn_base",
     "recent_turn_append",
     "recent_external_events",
+    "candidate_episodes",
+    "recent_recall_context",
     "recent_turns",
     "recent_conversation",
     "recall_memories",

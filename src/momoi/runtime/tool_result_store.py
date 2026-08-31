@@ -135,16 +135,21 @@ class ToolResultStore:
             parsed = json.loads(value)
         except (json.JSONDecodeError, TypeError):
             return None
+        # A result returned inline carries its reference but no chunk bounds,
+        # because nothing was omitted. It can still be shrunk the same way: the
+        # snapshot is complete, so reading it back from the start yields a
+        # smaller chunk plus a cursor instead of a truncated, unrecoverable body.
+        start = parsed.get("chunk_start", 0) if isinstance(parsed, dict) else None
         if (
             not isinstance(parsed, dict)
             or not _RESULT_REF.fullmatch(str(parsed.get("result_ref") or ""))
-            or not isinstance(parsed.get("chunk_start"), int)
-            or isinstance(parsed.get("chunk_start"), bool)
+            or not isinstance(start, int)
+            or isinstance(start, bool)
             or not isinstance(parsed.get("provenance"), dict)
         ):
             return None
         result_ref = str(parsed["result_ref"])
-        offset = int(parsed["chunk_start"])
+        offset = int(start)
         cursor = None if offset == 0 else self._encode_cursor(result_ref, offset)
         result = self.read(
             result_ref,

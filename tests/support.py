@@ -7,6 +7,7 @@ from momoi.runtime.context_planner import (
     CONTEXT_PLAN_TOOL_NAME,
     HEARTBEAT_PLAN_TOOL_NAME,
 )
+from momoi.runtime.protocol import RECALL_TOOL_SPEC
 from momoi.runtime.turn_support import (
     CONTEXT_PLANNER_SYSTEM_PROMPT,
     HEARTBEAT_PLANNER_SYSTEM_PROMPT,
@@ -144,6 +145,71 @@ def heartbeat_plan_response(messages: list[dict[str, Any]]) -> ProviderResponse:
     )
 
 
+def recall_response(units: int = 1) -> ProviderResponse:
+    call = ToolCall(
+        "submit-context",
+        RECALL_TOOL_SPEC["name"],
+        {
+            "units": [
+                {
+                    "intent": "test owner intent",
+                    "recall_mode": "search",
+                    "recall_queries": [
+                        {
+                            "semantic": "Retrieve history for the test owner intent",
+                            "keywords": ["test owner intent"],
+                        }
+                    ],
+                }
+                for _index in range(max(1, units))
+            ]
+        },
+    )
+    return ProviderResponse(
+        [
+            {
+                "type": "tool_use",
+                "id": call.id,
+                "name": call.name,
+                "input": call.arguments,
+            }
+        ],
+        [call],
+    )
+
+
+class ContextAwareProvider:
+    """Answer the Owner Turn's opening context decision, then delegate.
+
+    Owner Turns must submit a recall decision before acting, so a fake provider
+    that goes straight to send_message would spend its first rounds being
+    refused. This keeps that protocol out of every individual test.
+    """
+
+    def __init__(self, delegate: object) -> None:
+        self.delegate = delegate
+        self.submitted = False
+
+    async def complete(
+        self,
+        system: object,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        **kwargs: object,
+    ) -> ProviderResponse:
+        names = {str(spec.get("name") or "") for spec in tools or []}
+        if RECALL_TOOL_SPEC["name"] in names and not self.submitted:
+            self.submitted = True
+            return recall_response()
+        return await self.delegate.complete(  # type: ignore[attr-defined,no-any-return]
+            system, messages, tools, **kwargs
+        )
+
+
+def with_owner_context(provider: object) -> ContextAwareProvider:
+    return ContextAwareProvider(provider)
+
+
 class PlannerAwareProvider:
     def __init__(self, delegate: object) -> None:
         self.delegate = delegate
@@ -164,5 +230,5 @@ class PlannerAwareProvider:
         )
 
 
-def with_context_planner(provider: object) -> PlannerAwareProvider:
-    return PlannerAwareProvider(provider)
+def with_context_planner(provider: object) -> ContextAwareProvider:
+    return ContextAwareProvider(PlannerAwareProvider(provider))

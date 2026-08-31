@@ -1147,7 +1147,7 @@ class TurnOrchestrator:
         channel: Channel | None = None,
     ) -> None:
         channel = channel or self._channel_for(batch[0].channel)
-        context_plan, recalled = await self._prepare_owner_context(batch, turn_id)
+        recalled = self.owner_context_baseline(batch)
         reconciliation_control = self._apply_reconciliation_commands(batch)
         directives: list[str] = []
         if any(message.text.strip() == "/stop" for message in batch):
@@ -1174,6 +1174,9 @@ class TurnOrchestrator:
                 [str(row["turn_id"]) for row in conversation_rows]
             ),
         )
+        candidates = self.owner_context_candidates(
+            [turn for group in transcript.groups for turn in group.turn_ids]
+        )
         system = self._system()
         # Slow-changing material sits ahead of the transcript so it stays inside
         # the cached prefix; everything that moves with the Turn stays in the
@@ -1192,10 +1195,8 @@ class TurnOrchestrator:
             ),
             ("runtime_directives", "\n\n".join(directives)),
             ("goal_progress", recalled["goal_progress"]),
-            ("recall_memories", recalled["recall_memories"]),
-            ("recall_status", recalled["query_recall"]),
-            ("reflection_memories", recalled["reflection_memories"]),
-            ("episode_directory", recalled["episodes"]),
+            ("candidate_episodes", candidates["candidate_episodes"]),
+            ("recent_recall_context", candidates["recent_recall_context"]),
             ("recent_external_events", recalled["recent_external_events"]),
             (
                 "interrupted_reply_expectation",
@@ -1224,7 +1225,7 @@ class TurnOrchestrator:
                 bubbles=sum(len(group.parts) for group in transcript.orphaned),
             )
         draft = TurnDraft()
-        tools = self._owner_tool_specs(context_plan, channel.name)
+        tools = self._owner_tool_specs({}, channel.name)
         reply = await self._run_tool_loop(
             system,
             messages,
