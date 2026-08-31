@@ -1437,6 +1437,13 @@ class ToolExecutionService:
             messages.pop(0)
             history_messages -= 1
             dropped += 1
+            # A reply left at the head would answer a message that is no longer
+            # present, and the Anthropic Messages API rejects a leading
+            # assistant message outright.
+            while history_messages and str(messages[0].get("role")) == "assistant":
+                messages.pop(0)
+                history_messages -= 1
+                dropped += 1
             estimated = size()
         if estimated > self.config.max_input_tokens:
             for message in messages:

@@ -33,6 +33,7 @@ from .context_assembler import (
     project_recent_turns_for_owner,
     recall_episode_context,
 )
+from .transcript import build_transcript
 from .context_service import (
     _heartbeat_activity_lines,
     _heartbeat_conversation_state_lines,
@@ -72,6 +73,7 @@ from .turn_support import (
     WEBHOOK_SYSTEM_PROMPT,
     conversation_guidance as _conversation_guidance,
     live_prompt as _live_prompt,
+    owner_content_blocks as _owner_content_blocks,
     pack_owner_context as _pack_owner_context,
     pack_user_context as _pack_user_context,
     provider_failure_message as _provider_failure_message,
@@ -1151,60 +1153,42 @@ class TurnOrchestrator:
         channel: Channel | None = None,
     ) -> None:
         channel = channel or self._channel_for(batch[0].channel)
-        context_plan, recalled = await self._prepare_owner_context(batch, turn_id)
-        user_text = self._render_batch(batch)
-        reconciliation_control = self._apply_reconciliation_commands(batch)
-        self_state = self.store.self_state_context()
-        runtime = datetime.now().astimezone().isoformat(timespec="seconds")
-        runtime_state = (
-            f"Current local time: {runtime}\n"
-            f"{_heartbeat_self_state_lines(self_state)}"
+        context_plan, _recalled = await self._prepare_owner_context(batch, turn_id)
+        self._apply_reconciliation_commands(batch)
+        # The retired base/append split existed to keep a stable cached prefix
+        # inside one large user message, which made the effective window swing
+        # between recent_turns and twice that. Native history is append-only on
+        # its own, so the window is simply held at the old upper bound.
+        conversation_rows = self.store.recent_conversation_messages(
+            self.config.recent_turns * 2,
+            self.config.recent_raw_tokens,
+            min(event.received_at for event in batch),
         )
-        directives: list[str] = []
-        if any(message.text.strip() == "/stop" for message in batch):
-            directives.append(
-                "The owner explicitly stopped the previous active task. The runtime has "
-                "cancelled it and discarded uncommitted work. Do not continue that task. "
-                "Acknowledge the stop naturally; already dispatched external actions are "
-                "not automatically undone."
-            )
-        if reconciliation_control:
-            directives.append(reconciliation_control)
-        current_text = _pack_owner_context(
-            ("long_term_memories", recalled["long_term_memories"]),
-            ("recent_memories", recalled["recent_memories"]),
-            ("recall_memories", recalled["recall_memories"]),
-            ("recall_status", recalled["query_recall"]),
-            ("reflection_memories", recalled["reflection_memories"]),
-            ("active_goals", recalled["goals"]),
-            ("recent_turn_base", recalled["recent_turn_base"]),
-            ("recent_turn_append", recalled["recent_turn_append"]),
-            ("recent_external_events", recalled["recent_external_events"]),
-            ("episode_directory", recalled["episodes"]),
-            (
-                "interrupted_reply_expectation",
-                self.store.cooled_reply_expectation_context(),
+        transcript = build_transcript(
+            conversation_rows,
+            tool_activity=self.store.turn_activity(
+                [str(row["turn_id"]) for row in conversation_rows]
             ),
-            ("runtime_state", runtime_state),
-            ("runtime_directives", "\n\n".join(directives)),
-            (
-                "context_resolution",
-                _conversation_guidance(context_plan),
-            ),
-            ("current_owner_messages", user_text),
         )
         system = self._system()
-
-        current_content: list[dict[str, Any]] = [
-            {
-                "type": "text",
-                "text": current_text,
-                "cache_control": {"type": "ephemeral"},
-            }
+        current_content = _owner_content_blocks(batch, channel.content_blocks)
+        current_content[-1]["cache_control"] = {"type": "ephemeral"}
+        messages: list[dict[str, Any]] = [
+            *transcript.messages,
+            {"role": "user", "content": current_content},
         ]
-        for event in batch:
-            current_content.extend(channel.content_blocks(event.segments))
-        messages: list[dict[str, Any]] = [{"role": "user", "content": current_content}]
+        if transcript.orphaned:
+            # Proactive Heartbeat/Goal speech that opens the window has no owner
+            # message to follow, so it cannot enter native history yet. Tracked
+            # separately with the autonomous Turn migration.
+            log_event(
+                logger,
+                logging.INFO,
+                "transcript_orphaned_proactive_speech",
+                turn_id=turn_id,
+                groups=len(transcript.orphaned),
+                bubbles=sum(len(group.parts) for group in transcript.orphaned),
+            )
         draft = TurnDraft()
         tools = self._owner_tool_specs(context_plan, channel.name)
         reply = await self._run_tool_loop(

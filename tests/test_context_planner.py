@@ -1787,7 +1787,7 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                         self.assertNotIn("id=goal-0", payload["candidate_goals"])
                         return tool_plan_response(response_plan())
                     provider_self.calls.append("main")
-                    content = messages[0]["content"]
+                    content = messages[-1]["content"]
                     if isinstance(content, list):
                         text = "\n".join(
                             str(block.get("text") or "")
@@ -1797,32 +1797,25 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
                     else:
                         text = str(content)
                     provider_self.main_rendered = text
-                    self.assertIn("<context_resolution>", text)
-                    self.assertIn("<recent_turn_base>", text)
-                    self.assertIn("<recent_turn_append>", text)
-                    self.assertNotIn("<recent_conversation>", text)
-                    self.assertIn("<recall_status>", text)
-                    self.assertIn(
-                        "semantic_queries=老师此前与微博浏览相关的历史 | "
-                        "老师此前等待中的邮件及其进展",
-                        text,
+                    provider_self.main_transcript = "\n".join(
+                        f"{message['role']}: {message['content']}"
+                        for message in messages[:-1]
                     )
-                    self.assertIn("sparse_keywords=微博 ; 等待中的邮件", text)
-                    self.assertIn("<long_term_memories>", text)
-                    self.assertIn("喜欢简短回复", text)
-                    self.assertIn("<recent_memories>", text)
-                    self.assertIn("正在等待邮件", text)
-                    self.assertIn("speech act: casual_share", text)
-                    resolution = text.split("<context_resolution>\n", 1)[1].split(
-                        "\n</context_resolution>", 1
-                    )[0]
-                    self.assertFalse(resolution.lstrip().startswith("{"))
+                    # The Owner request now carries native dialogue plus an
+                    # owner-speech-only tail. Planner output still drives recall
+                    # and Episode binding, but no longer reaches the Owner.
+                    self.assertIn("<current_owner_messages>", text)
+                    self.assertNotIn("<context_resolution>", text)
+                    self.assertNotIn("<recent_turn_base>", text)
+                    self.assertNotIn("<recent_turn_append>", text)
+                    self.assertNotIn("<recent_conversation>", text)
+                    self.assertNotIn("<recall_status>", text)
+                    self.assertNotIn("<long_term_memories>", text)
                     self.assertNotIn("<context_plan>", text)
-                    self.assertIn("browse social feed", text)
-                    self.assertNotIn('"salience"', text)
-                    self.assertIn("RECENT CONTEXT 2", text)
-                    self.assertIn("GLOBAL RAW MUST NOT LEAK", text)
-                    self.assertEqual(len(messages), 1)
+                    self.assertNotIn("RECENT CONTEXT 2", text)
+                    self.assertGreater(len(messages), 1)
+                    self.assertEqual(messages[0]["role"], "user")
+                    self.assertEqual(messages[-1]["role"], "user")
                     call = ToolCall(
                         "end_turn",
                         "end_turn",
@@ -1849,10 +1842,19 @@ class ContextPlannerAsyncTest(unittest.IsolatedAsyncioTestCase):
             await daemon._complete_batch_turn([event], asyncio.Event(), turn_id)
 
             self.assertEqual(provider.calls, ["planner", "main"])
+            # A failed assertion inside the fake provider surfaces only as a
+            # failed Turn, so the Turn state is what proves the request shape
+            # assertions above actually ran.
+            self.assertEqual(
+                daemon.store._db.execute(
+                    "SELECT state FROM turns WHERE id=?", (turn_id,)
+                ).fetchone()[0],
+                "completed",
+            )
             self.assertIn("RECENT CONTEXT 1", provider.planner_recent)
-            self.assertIn("RECENT CONTEXT 2", provider.main_rendered)
-            self.assertIn("2286-11-21T", provider.main_rendered)
-            self.assertIn("GLOBAL RAW MUST NOT LEAK", provider.main_rendered)
+            self.assertIn("RECENT CONTEXT 1", provider.main_transcript)
+            self.assertIn("RECENT CONTEXT 2", provider.main_transcript)
+            self.assertIn("GLOBAL RAW MUST NOT LEAK", provider.main_transcript)
             stored = daemon.store.context_plan(turn_id)
             self.assertEqual(stored["state"], "recalled")
             self.assertEqual(stored["retrieval"]["version"], 6)

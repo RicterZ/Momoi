@@ -508,7 +508,7 @@ class AnthropicProvider:
         payload: dict[str, Any] = {
             "model": self.config.model,
             "system": system,
-            "messages": messages,
+            "messages": _merge_adjacent_roles(messages),
             "max_tokens": self.config.max_tokens,
             "temperature": self.config.temperature,
         }
@@ -646,6 +646,34 @@ def _text(content: Any, separator: str = "\n") -> str:
     return ""
 
 
+def _merge_adjacent_roles(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Combine neighbouring same-role messages for strictly alternating APIs.
+
+    The transcript keeps one assistant message per ``send_message`` call because
+    that is what Momoi actually did, and a Turn can send several. The Anthropic
+    Messages API rejects any two adjacent messages sharing a role, so the split
+    is preserved logically and collapsed only here, on the wire. Rendered time
+    markers survive the merge, so a later spontaneous message stays
+    distinguishable from the reply it follows.
+    """
+
+    merged: list[dict[str, Any]] = []
+    for message in messages:
+        previous = merged[-1] if merged else None
+        if previous is None or previous.get("role") != message.get("role"):
+            merged.append(dict(message))
+            continue
+        before, after = previous.get("content"), message.get("content")
+        if isinstance(before, str) and isinstance(after, str):
+            previous["content"] = f"{before}\n{after}"
+            continue
+        previous["content"] = [
+            *(before if isinstance(before, list) else [{"type": "text", "text": before}]),
+            *(after if isinstance(after, list) else [{"type": "text", "text": after}]),
+        ]
+    return merged
+
+
 def _openai_messages(
     system: str | list[dict[str, Any]], messages: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
@@ -698,9 +726,23 @@ def _openai_messages(
             for block in content
             if isinstance(block, dict) and block.get("type") == "tool_result"
         )
-        image_parts: list[dict[str, Any]] = []
+        # Keep attachments where they were written. Collecting them after the
+        # text would leave the model unable to tell which message a picture
+        # belongs to when the owner sends one between two sentences.
+        parts: list[dict[str, Any]] = []
         for block in content:
-            if not isinstance(block, dict) or block.get("type") != "image":
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "text":
+                value = str(block.get("text") or "")
+                if not value:
+                    continue
+                if parts and parts[-1].get("type") == "text":
+                    parts[-1]["text"] = f"{parts[-1]['text']}\n{value}"
+                else:
+                    parts.append({"type": "text", "text": value})
+                continue
+            if block.get("type") != "image":
                 continue
             source = block.get("source")
             if not isinstance(source, dict):
@@ -711,9 +753,8 @@ def _openai_messages(
                 url = f"data:{source.get('media_type') or 'image/jpeg'};base64,{source['data']}"
             else:
                 continue
-            image_parts.append({"type": "image_url", "image_url": {"url": url}})
-        if image_parts:
-            parts = ([{"type": "text", "text": text}] if text else []) + image_parts
+            parts.append({"type": "image_url", "image_url": {"url": url}})
+        if any(part.get("type") == "image_url" for part in parts):
             wire.append({"role": role, "content": parts})
         elif text:
             wire.append({"role": role, "content": text})

@@ -1,9 +1,11 @@
 import json
 import logging
+from collections.abc import Callable, Sequence
 from importlib.resources import files
 from typing import Any
 from xml.sax.saxutils import escape
 
+from ..context_time import context_timestamp
 from ..logging_context import log_event, safe_preview
 from ..models import TurnDraft
 from ..provider import ProviderError
@@ -185,6 +187,33 @@ def pack_owner_context(*items: tuple[str, str]) -> str:
     """Render an Owner request with the fixed output protocol at the tail."""
     context = pack_user_context(*items)
     return f"{context}\n\n{OWNER_TURN_PROTOCOL_REMINDER}"
+
+
+def owner_content_blocks(
+    events: Sequence[Any], content_blocks: Callable[[Any], list[dict[str, Any]]]
+) -> list[dict[str, Any]]:
+    """Lay out the current owner input with each attachment beside its words.
+
+    Collecting every attachment at the end leaves the model unable to tell which
+    message an image belongs to, which matters as soon as the owner sends a
+    picture between two sentences. Text blocks concatenate on the wire, so the
+    section tags still enclose the whole input exactly as before.
+    """
+
+    blocks: list[dict[str, Any]] = []
+    for index, event in enumerate(events):
+        line = f"{context_timestamp(event.occurred_at)} {event.text}".strip()
+        opening = "<current_owner_messages>\n" if index == 0 else ""
+        blocks.append({"type": "text", "text": f"{opening}{escape(line)}"})
+        blocks.extend(content_blocks(event.segments))
+    closing = "</current_owner_messages>" if blocks else ""
+    blocks.append(
+        {
+            "type": "text",
+            "text": f"{closing}\n\n{OWNER_TURN_PROTOCOL_REMINDER}".lstrip(),
+        }
+    )
+    return blocks
 
 
 def tool_result_block(call_id: str, result: dict[str, Any]) -> dict[str, Any]:

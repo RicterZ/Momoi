@@ -28,6 +28,8 @@ from momoi.logging_context import TRACE, log_context
 from momoi.provider import (
     AnthropicProvider,
     OpenAIProvider,
+    _merge_adjacent_roles,
+    _openai_messages,
     ProviderError,
     _compact_response_text,
     _log_tool_schema,
@@ -55,6 +57,66 @@ def _provider_trace_logs():
         yield
     finally:
         logger.setLevel(previous)
+
+
+MIXED_OWNER_MESSAGE = [
+    {
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "<current_owner_messages>\n看这个"},
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": "image/png",
+                    "data": "AAAA",
+                },
+            },
+            {"type": "text", "text": "怎么样"},
+        ],
+    }
+]
+
+
+class OwnerAttachmentOrderTest(unittest.TestCase):
+    """An attachment must stay beside the message that carried it."""
+
+    def test_openai_keeps_each_attachment_in_place(self) -> None:
+        parts = _openai_messages("", MIXED_OWNER_MESSAGE)[0]["content"]
+        self.assertEqual(
+            [part["type"] for part in parts],
+            ["text", "image_url", "text"],
+        )
+        self.assertTrue(parts[0]["text"].endswith("看这个"))
+        self.assertEqual(parts[2]["text"], "怎么样")
+        self.assertTrue(
+            parts[1]["image_url"]["url"].startswith("data:image/png;base64,")
+        )
+
+    def test_anthropic_keeps_each_attachment_in_place(self) -> None:
+        blocks = _merge_adjacent_roles(MIXED_OWNER_MESSAGE)[0]["content"]
+        self.assertEqual(
+            [block["type"] for block in blocks], ["text", "image", "text"]
+        )
+
+    def test_merging_same_role_messages_preserves_block_order(self) -> None:
+        merged = _merge_adjacent_roles(
+            [
+                MIXED_OWNER_MESSAGE[0],
+                {"role": "user", "content": [{"type": "text", "text": "还有这个"}]},
+            ]
+        )
+        self.assertEqual(len(merged), 1)
+        self.assertEqual(
+            [block["type"] for block in merged[0]["content"]],
+            ["text", "image", "text", "text"],
+        )
+
+    def test_a_message_without_attachments_stays_plain_text(self) -> None:
+        wire = _openai_messages(
+            "", [{"role": "user", "content": [{"type": "text", "text": "在吗"}]}]
+        )
+        self.assertEqual(wire[0]["content"], "在吗")
 
 
 class ProvidersToolsTest(unittest.TestCase):

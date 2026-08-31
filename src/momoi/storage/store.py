@@ -85,6 +85,45 @@ BASELINE_MOOD_INTENSITY = 0.35
 BASELINE_MOOD_CAUSE = "resting baseline"
 DEFAULT_ACTIVITY = "spending time freely"
 RECENT_HEARTBEAT_LIMIT = 6
+# Delivery and turn-control calls are protocol, not work worth recalling.
+TRANSCRIPT_PROTOCOL_TOOLS = frozenset(
+    {
+        "send_message",
+        "end_turn",
+        "autonomous_finish",
+        "heartbeat_end_turn",
+        "tool_enable",
+        "read_tool_result",
+    }
+)
+# Argument names that usually identify what a call was actually about.
+_TOOL_SUBJECT_KEYS = (
+    "query",
+    "q",
+    "expression",
+    "url",
+    "path",
+    "title",
+    "name",
+    "key",
+    "keyword",
+    "command",
+)
+
+
+def _tool_call_subject(arguments: object, limit: int = 48) -> str:
+    """Pick the argument that identifies what a call was about."""
+
+    if not isinstance(arguments, dict):
+        return ""
+    for key in _TOOL_SUBJECT_KEYS:
+        value = arguments.get(key)
+        if isinstance(value, str) and value.strip():
+            return truncate_tokens(" ".join(value.split()), limit)
+    for value in arguments.values():
+        if isinstance(value, str) and value.strip():
+            return truncate_tokens(" ".join(value.split()), limit)
+    return ""
 EPISODE_CONSOLIDATION_LOOKBACK_SECONDS = 30 * 24 * 60 * 60
 _HEARTBEAT_RECORD_ACTIVITY = re.compile(
     r"^Activity: (.*)$", re.MULTILINE
@@ -2077,6 +2116,73 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             selected.append(group)
             used += size
         return [item for group in reversed(selected) for item in group]
+
+    def turn_activity(self, turn_ids: list[str]) -> dict[str, list[dict[str, object]]]:
+        """Return each Turn's work in the order it happened.
+
+        Historical tool results are far too large to replay, but dropping them
+        entirely leaves Momoi claiming actions with nothing behind them: a reply
+        saying it checked a subscription reads identically whether the check
+        succeeded, failed or never ran. Keeping the call, its subject, its
+        outcome and any stored result reference preserves that accountability
+        and still lets the exact payload be reread on demand.
+
+        Records carry their timestamp so the caller can interleave them with the
+        bubbles the same Turn delivered, which is what makes a reply readable as
+        "said this, then did that, then reported the result".
+        """
+
+        ordered_ids = [str(turn_id) for turn_id in dict.fromkeys(turn_ids) if turn_id]
+        if not ordered_ids:
+            return {}
+        placeholders = ",".join("?" for _ in ordered_ids)
+        rows = self._db.execute(
+            f"""SELECT turn_id, sequence, created_at, item_type, payload_json
+                FROM turn_journal
+                WHERE turn_id IN ({placeholders})
+                  AND item_type IN ('tool_call', 'tool_result')
+                ORDER BY turn_id, sequence""",
+            tuple(ordered_ids),
+        ).fetchall()
+        outcomes: dict[str, dict[str, object]] = {}
+        calls: dict[str, list[dict[str, object]]] = {}
+        for row in rows:
+            try:
+                payload = json.loads(str(row["payload_json"]))
+            except ValueError:
+                continue
+            if not isinstance(payload, dict):
+                continue
+            call_id = str(payload.get("tool_call_id") or "")
+            if str(row["item_type"]) == "tool_result":
+                result = payload.get("result")
+                outcomes[call_id] = {
+                    "ok": bool(payload.get("ok")),
+                    "error": " ".join(str(payload.get("error") or "").split())[:80],
+                    "ref": str(result.get("result_ref") or "")
+                    if isinstance(result, dict)
+                    else "",
+                }
+                continue
+            name = str(payload.get("name") or "")
+            if not name or name in TRANSCRIPT_PROTOCOL_TOOLS:
+                continue
+            calls.setdefault(str(row["turn_id"]), []).append(
+                {
+                    "at": float(row["created_at"]),
+                    "call_id": call_id,
+                    "name": name,
+                    "subject": _tool_call_subject(payload.get("arguments")),
+                }
+            )
+        for records in calls.values():
+            for record in records:
+                record.update(
+                    outcomes.get(
+                        str(record.pop("call_id")), {"ok": True, "error": "", "ref": ""}
+                    )
+                )
+        return calls
 
     def conversation_messages_for_turns(
         self, turn_ids: list[str]

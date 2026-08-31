@@ -3842,21 +3842,27 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(llm_requests[1]["messages"][-1]["role"], "user")
         current_content = llm_requests[1]["messages"][-1]["content"]
-        self.assertEqual(current_content[0]["cache_control"], {"type": "ephemeral"})
-        current_text = current_content[0]["text"]
+        # Owner text and its attachments are now separate blocks, so the cache
+        # breakpoint sits at the end of the whole tail rather than on a single
+        # combined block.
+        self.assertEqual(current_content[-1]["cache_control"], {"type": "ephemeral"})
+        current_text = "".join(
+            str(block.get("text") or "")
+            for block in current_content
+            if isinstance(block, dict)
+        )
         self.assertIn("你好", current_text)
         self.assertNotIn("Trusted runtime context", current_text)
-        self.assertLess(
-            current_text.index("<runtime_state>"),
-            current_text.index("<current_owner_messages>"),
-        )
-        if "<long_term_memories>" in current_text:
-            self.assertLess(
-                current_text.index("<long_term_memories>"),
-                current_text.index("<runtime_state>"),
-            )
+        # The last user message now carries authenticated owner speech only.
+        # Runtime state, memory and recall move back in as explicitly marked
+        # sections in a later change.
+        self.assertIn("<current_owner_messages>", current_text)
         self.assertIn("</current_owner_messages>", current_text)
-        self.assertIn("</runtime_state>", current_text)
+        self.assertNotIn("<runtime_state>", current_text)
+        self.assertNotIn("<long_term_memories>", current_text)
+        self.assertNotIn("<recall_memories>", current_text)
+        self.assertNotIn("<episode_directory>", current_text)
+        self.assertNotIn("<context_resolution>", current_text)
         self.assertNotIn(
             "Consecutive messages from the authenticated user",
             current_text,
