@@ -5,7 +5,7 @@
 > 一个常驻在私聊中的、只属于一位主人的个人 Agent。
 
 Momoi 把对话、记忆、工具、定时工作、外部事件、情绪和自主时间放进同一个持续运行的
-系统。目前可通过 NapCat/QQ 和腾讯微信 iLink 交流，支持兼容 Anthropic Messages 或
+系统。目前可通过 QQ（NapCat）、WeChat 交流，支持兼容 Anthropic Messages 或
 OpenAI Chat Completions 的模型，并可通过 MCP 扩展能力。
 
 Momoi 的重点不只是给 LLM 加一个角色。`SOUL.md` 定义 Momoi 是谁；运行时则保存围绕
@@ -38,7 +38,7 @@ Momoi 的重点不只是给 LLM 加一个角色。`SOUL.md` 定义 Momoi 是谁�
 flowchart TB
   subgraph triggers["渠道与触发源"]
     direction LR
-    chat["QQ / 微信"]
+    chat["QQ（NapCat）/ WeChat"]
     webhook["Webhook 事件"]
     clock["Goal / Heartbeat"]
     chat ~~~ webhook ~~~ clock
@@ -201,7 +201,7 @@ Always/Recent memory、正在进行的近期 Turn、Goal、情绪与活动、思
 
 | 领域 | 当前行为 |
 | --- | --- |
-| 私聊渠道 | 一个主人可以同时使用 NapCat/QQ 与腾讯微信 iLink；回复返回发起对话的渠道，主动消息发往配置的 primary |
+| 私聊渠道 | 一个主人可以同时使用 QQ（NapCat）与 WeChat；回复返回发起对话的渠道，主动消息发往配置的 primary |
 | 对话 | 消息合并、引用与转发、媒体处理、自然的多气泡投递、可选图片反应，以及合法沉默 |
 | 上下文 | Planner 生成意图与召回策略、近期因果时间线、Episode 路由、运行时二次搜索和有上限的模型输入 |
 | 工具 | 内置文件/HTTP 工具、动态发现的 MCP Server，以及按 Server 配置的工具白名单 |
@@ -239,13 +239,13 @@ QQ 用户打开 `http://127.0.0.1:6099/webui`，从 `docker logs napcat` 获取 
 token，完成登录并启用 OneBot WebSocket。Dashboard 默认位于
 `http://127.0.0.1:8788`。
 
-微信渠道只需在同一 workspace 中认证一次：
+WeChat 渠道只需在同一 workspace 中认证一次（`weixin` 是内部渠道标识）：
 
 ```bash
 docker compose -f docker-compose.yml run --rm momoi channel login weixin
 ```
 
-如果希望主动消息发送到微信，下次 `up` 时设置 `MOMOI_PRIMARY=weixin`。只启用一个渠道
+如果希望主动消息发送到 WeChat，下次 `up` 时设置 `MOMOI_PRIMARY=weixin`。只启用一个渠道
 即可，也可以让两个渠道同时在线。
 
 ### 从源码运行

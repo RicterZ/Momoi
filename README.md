@@ -6,7 +6,7 @@ EN | [中文](./README.zh-CN.md)
 
 Momoi brings conversation, memory, tools, scheduled work, external events, mood,
 and autonomous time into one continuous runtime. It currently connects through
-NapCat/QQ and Tencent Weixin iLink, uses Anthropic Messages-compatible or OpenAI
+QQ (NapCat) and WeChat, uses Anthropic Messages-compatible or OpenAI
 Chat Completions-compatible models, and can extend its abilities through MCP.
 
 Momoi's focus is not merely giving an LLM a character. `SOUL.md` defines who
@@ -48,7 +48,7 @@ uses the same database but stays outside the latency-sensitive response path.
 flowchart TB
   subgraph triggers["Channels and triggers"]
     direction LR
-    chat["QQ / Weixin"]
+    chat["QQ (NapCat) / WeChat"]
     webhook["Webhook events"]
     clock["Goals / Heartbeats"]
     chat ~~~ webhook ~~~ clock
@@ -228,7 +228,7 @@ incrementally without blocking owner conversation.
 
 | Area | Current behavior |
 | --- | --- |
-| Private chat | One owner across NapCat/QQ and Tencent Weixin iLink; replies return to the originating channel and proactive messages use the configured primary channel |
+| Private chat | One owner across QQ (NapCat) and WeChat; replies return to the originating channel and proactive messages use the configured primary channel |
 | Conversation | Message batching, quoted/forwarded content, media handling, natural multi-bubble delivery, optional image reactions, and valid silence |
 | Context | Planner-generated intent and recall strategy, recent causal timeline, Episode routing, runtime re-search, and bounded model input |
 | Tools | Built-in file/HTTP tools plus dynamically discovered MCP servers and per-server tool allowlists |
@@ -269,13 +269,14 @@ For QQ, open `http://127.0.0.1:6099/webui`, get the NapCat login token from
 `docker logs napcat`, sign in, and enable its OneBot WebSocket service. The
 dashboard is at `http://127.0.0.1:8788`.
 
-For Weixin, authenticate the configured channel once:
+For WeChat, authenticate the configured channel once (`weixin` is the internal
+channel identifier):
 
 ```bash
 docker compose -f docker-compose.yml run --rm momoi channel login weixin
 ```
 
-Set `MOMOI_PRIMARY=weixin` on the next `up` when Weixin should receive proactive
+Set `MOMOI_PRIMARY=weixin` on the next `up` when WeChat should receive proactive
 messages. One channel is enough; both may stay enabled.
 
 ### Run from source
