@@ -1213,80 +1213,6 @@ def _owner_history_line(item: dict[str, object], call_names: dict[str, str]) -> 
     return ""
 
 
-def project_recent_turns_for_owner(
-    document: dict[str, object],
-    token_budget: int | None,
-    *,
-    start_index: int = 1,
-) -> str:
-    """Render recent history as a causal, owner-facing text projection.
-
-    Planner history remains structured JSON because it needs machine-readable
-    intent and tool references. Owner Turns need evidence and continuity, not a
-    replay of the runtime journal, so tool payloads are reduced to one line.
-    """
-    turns = document.get("turns")
-    if not isinstance(turns, list) or (
-        token_budget is not None and token_budget <= 0
-    ):
-        return ""
-    blocks: list[str] = []
-    for index, raw_turn in enumerate(turns[-6:], start=start_index):
-        if not isinstance(raw_turn, dict):
-            continue
-        at = raw_turn.get("started_at") or raw_turn.get("completed_at") or raw_turn.get("at")
-        kind = str(raw_turn.get("kind") or "owner")
-        header = f"T-{index}"
-        if at:
-            header += f" {str(at)[:16]}"
-        if kind != "owner":
-            header += f" [{kind}]"
-        lines = [header]
-        call_names: dict[str, str] = {}
-        for item in raw_turn.get("timeline") or []:
-            if not isinstance(item, dict):
-                continue
-            line = _owner_history_line(item, call_names)
-            if line:
-                lines.append(f"  {line}")
-        final = raw_turn.get("final")
-        if isinstance(final, dict):
-            if final.get("failure"):
-                lines.append(f"  final: failure={truncate_tokens(str(final['failure']), 96)}")
-            mutations = final.get("mutations")
-            if isinstance(mutations, dict):
-                changed = [key for key, value in mutations.items() if value not in (None, "", [], {})]
-                if changed:
-                    lines.append("  final: changed=" + ",".join(changed))
-            if final.get("external_effect"):
-                lines.append("  final: external_effect=true")
-            mutations = final.get("mutations")
-            if isinstance(mutations, dict):
-                for mutation_name in ("memories", "forgotten_memories", "goals"):
-                    entries = mutations.get(mutation_name)
-                    if not isinstance(entries, list) or not entries:
-                        continue
-                    labels: list[str] = []
-                    for entry in entries[:4]:
-                        if not isinstance(entry, dict):
-                            continue
-                        if mutation_name in {"memories", "forgotten_memories"}:
-                            label = f"{entry.get('kind', '')}:{entry.get('key', '')}"
-                        else:
-                            label = str(entry.get("id") or entry.get("goal_id") or "")
-                        if label.strip(":"):
-                            labels.append(truncate_tokens(label, 64))
-                    if labels:
-                        lines.append(f"  final: {mutation_name}=" + ",".join(labels))
-        blocks.append("\n".join(lines))
-    rendered = "\n\n".join(blocks)
-    return (
-        rendered
-        if token_budget is None
-        else truncate_tokens(rendered, token_budget)
-    )
-
-
 def assemble_recent_turns(
     store: Store,
     turn_limit: int,
@@ -1895,39 +1821,9 @@ def assemble_main_context(
     store: Store,
     retrieval: dict[str, object],
     summary_token_budget: int,
-    raw_token_budget: int,
-    recent_turns: int = 0,
     recent_before_timestamp: float | None = None,
 ) -> dict[str, str]:
-    if recent_turns > 0:
-        raw_recent_turns, recent_turn_base_count = (
-            _recent_turn_cache_block_records(
-                store,
-                recent_turns,
-                recent_turns,
-                recent_before_timestamp,
-            )
-        )
-    else:
-        raw_recent_turns, recent_turn_base_count = [], 0
-    recent_turn_base = project_recent_turns_for_owner(
-        {
-            "version": 1,
-            "turns": raw_recent_turns[:recent_turn_base_count],
-        },
-        None,
-    )
-    recent_turn_append = project_recent_turns_for_owner(
-        {
-            "version": 1,
-            "turns": raw_recent_turns[recent_turn_base_count:],
-        },
-        None,
-        start_index=recent_turn_base_count + 1,
-    )
     return {
-        "recent_turn_base": recent_turn_base,
-        "recent_turn_append": recent_turn_append,
         "recent_external_events": assemble_recent_external_events(
             store,
             recent_before_timestamp,

@@ -95,8 +95,6 @@ USER_CONTEXT_SECTION_ORDER = (
     "goal_progress",
     "active_goals",
     "interrupted_reply_expectation",
-    "recent_turn_base",
-    "recent_turn_append",
     "recent_external_events",
     "candidate_episodes",
     "recent_recall_context",

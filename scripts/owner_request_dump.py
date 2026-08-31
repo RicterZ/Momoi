@@ -152,7 +152,6 @@ def main() -> int:
         store,
         json.loads(str(subject["retrieval"] or "{}")),
         args.summary_tokens,
-        args.recent_raw_tokens,
     )
     context_message = owner_context_message(
         ("long_term_memories", recalled["long_term_memories"]),

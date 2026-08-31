@@ -522,9 +522,7 @@ class ContextService:
             self.store,
             retrieval,
             self.config.summary_tokens,
-            self.config.recent_raw_tokens,
-            self.config.recent_turns,
-            min(event.received_at for event in events),
+            recent_before_timestamp=min(event.received_at for event in events),
         )
 
     def owner_context_candidates(self, turn_ids: list[str]) -> dict[str, str]:
@@ -589,9 +587,7 @@ class ContextService:
             self.store,
             stored["retrieval"],
             self.config.summary_tokens,
-            self.config.recent_raw_tokens,
-            self.config.recent_turns,
-            min(event.received_at for event in events),
+            recent_before_timestamp=min(event.received_at for event in events),
         )
 
     async def _plan_heartbeat_context(
