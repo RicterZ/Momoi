@@ -1223,7 +1223,7 @@ class TurnOrchestrator:
                 bubbles=sum(len(group.parts) for group in transcript.orphaned),
             )
         draft = TurnDraft()
-        tools = self._owner_tool_specs({}, channel.name)
+        tools = self._owner_tool_specs(channel.name)
         reply = await self._run_tool_loop(
             system,
             messages,

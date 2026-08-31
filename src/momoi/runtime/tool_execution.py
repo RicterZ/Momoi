@@ -240,26 +240,9 @@ class ToolExecutionService:
         return [*internal, *mcp_specs, tool_enable_spec(group_catalog)]
 
     def _owner_tool_specs(
-        self, plan: dict[str, object], channel_name: str | None = None
+        self, channel_name: str | None = None
     ) -> list[dict[str, Any]]:
         mcp_groups = self._mcp_server_groups()
-        handoff = plan.get("owner_handoff")
-        route = handoff.get("mcp") if isinstance(handoff, dict) else None
-        raw_selected = route.get("servers") if isinstance(route, dict) else []
-        selected = (
-            [
-                str(group)
-                for group in raw_selected
-                if str(group) in mcp_groups
-            ]
-            if isinstance(raw_selected, list)
-            else []
-        )
-        optional = [
-            spec
-            for group in selected
-            for spec in mcp_groups.get(group, [])
-        ]
         all_internal = self._owner_internal_tool_surface()
         group_catalog = {
             group: self._mcp_group_description(group)
@@ -270,7 +253,6 @@ class ToolExecutionService:
             self._send_message_tool_spec(channel_name),
             *all_internal,
             tool_enable_spec(group_catalog),
-            *optional,
             owner_end_turn_tool_spec(),
         ]
         full = [

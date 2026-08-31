@@ -180,7 +180,7 @@ class ProvidersToolsTest(unittest.TestCase):
                         {
                             "type": "tool_use",
                             "id": "plan-1",
-                            "name": "submit_context_plan",
+                            "name": "recall",
                             "input": {},
                         }
                     ],

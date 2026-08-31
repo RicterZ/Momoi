@@ -1375,7 +1375,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             reply = await daemon._run_tool_loop(
                 daemon._system(),
                 [{"role": "user", "content": "读文件"}],
-                daemon._owner_tool_specs({}, "napcat"),
+                daemon._owner_tool_specs("napcat"),
                 [event],
                 TurnDraft(),
                 authority="owner",
@@ -1475,7 +1475,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             reply = await daemon._run_tool_loop(
                 daemon._system(),
                 [{"role": "user", "content": "读文件"}],
-                daemon._owner_tool_specs({}, "napcat"),
+                daemon._owner_tool_specs("napcat"),
                 [event],
                 TurnDraft(),
                 authority="owner",
@@ -2413,7 +2413,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             reply = await daemon._run_tool_loop(
                 daemon._system(),
                 [{"role": "user", "content": event.text}],
-                daemon._owner_tool_specs({}),
+                daemon._owner_tool_specs(),
                 [event],
                 TurnDraft(),
                 authority="owner",
@@ -2551,7 +2551,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             reply = await daemon._run_tool_loop(
                 daemon._system(),
                 [{"role": "user", "content": event.text}],
-                daemon._owner_tool_specs({}),
+                daemon._owner_tool_specs(),
                 [event],
                 TurnDraft(),
                 authority="owner",
@@ -2728,7 +2728,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             reply = await daemon._run_tool_loop(
                 daemon._system(),
                 [{"role": "user", "content": event.text}],
-                daemon._owner_tool_specs({}),
+                daemon._owner_tool_specs(),
                 [event],
                 TurnDraft(),
                 authority="owner",

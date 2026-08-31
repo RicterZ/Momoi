@@ -206,23 +206,18 @@ class ProgressAnnounceTest(unittest.TestCase):
         daemon.config = SimpleNamespace(autonomy=SimpleNamespace(allowed_tools=["curl"]))
         owner = {
             spec["name"]: spec
-            for spec in daemon._owner_tool_specs(
-                {
-                    "owner_handoff": {
-                        "mcp": {
-                            "servers": ["brave-search"],
-                            "reason": "test external search",
-                        }
-                    }
-                }
-            )
+            for spec in daemon._owner_tool_specs()
+        }
+        mcp = {
+            spec["name"]: spec
+            for spec in daemon._mcp_server_groups()["brave-search"]
         }
         heartbeat = {spec["name"]: spec for spec in daemon._self_directed_tool_specs()}
         self.assertEqual(announce_field(owner["curl"]), ANNOUNCE_FIELD)
         self.assertEqual(announce_field(owner["goal_create"]), ANNOUNCE_FIELD)
         self.assertEqual(announce_field(owner["goal_cancel"]), ANNOUNCE_FIELD)
         self.assertEqual(
-            announce_field(owner["mcp__brave-search__brave_web_search"]),
+            announce_field(mcp["mcp__brave-search__brave_web_search"]),
             ANNOUNCE_FIELD,
         )
         self.assertIsNone(announce_field(owner["goal_update"]))
