@@ -2124,6 +2124,18 @@ function RecallDetail({ recall }) {
           ))}
         </article>
       ))}
+      {!!recall.episode_actions?.length && (
+        <div className="tags">
+          {recall.episode_actions.map((action, index) => (
+            <span className="tag" key={`${action.action}:${index}`}>
+              Episode {action.action}
+              {action.episode_ref || action.episode_id
+                ? ` · ${action.episode_ref || action.episode_id}`
+                : ""}
+            </span>
+          ))}
+        </div>
+      )}
       {!!evidence.length && (
         <div className="recall-evidence">
           {evidence.map((item) => (
@@ -2139,6 +2151,11 @@ function RecallDetail({ recall }) {
       )}
       {recall.status ? (
         <pre className="recall-status">{recall.status}</pre>
+      ) : null}
+      {recall.semantic?.fallback_reason ? (
+        <p className="secondary">
+          向量召回降级：{recall.semantic.fallback_reason}
+        </p>
       ) : null}
     </section>
   );

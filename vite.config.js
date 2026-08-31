@@ -11,15 +11,15 @@ function previewThinkingCalls() {
       turn_id: "9d5db6937f765921b2d6cbe0773e5111",
       call_id: "216921a1df9e4da7",
       created_at: at(0),
-      stage: "context_plan",
+      stage: "owner",
       round: 1,
       model: "deepseek-v4-flash",
-      tools: ["submit_context_plan"],
+      tools: ["recall"],
       reasoning_chars: 2995,
       excerpt:
-        "主人在问为什么衣服洗好了却没提醒。近期对话里有 webhook 事件，先按洗衣和提醒召回 Episode。",
+        "主人在问为什么衣服洗好了却没提醒，先召回这次 Webhook 的历史证据。",
       reasoning:
-        "主人问的是「为什么衣服洗好了没提醒」。这不是新的洗衣任务，而是在追问上一次 webhook 的处理。\n\n近期对话里已经有 EVENT channel=webhook：衣服洗好了。先用「洗衣|衣服|提醒」召回相关 Episode，不要把「事件已写入时间线」当成已经送达。\n\nintent：解释刚才为什么没有发提醒。speech_act：question。Episode 继续当天的洗衣事件，而不是新开一个元讨论。\n\n再核对一遍时间线：webhook 到了，outbox 是空的，老师现在是在追问，不是布置新任务。如果只回「已经记下来了」，老师还是会觉得没被提醒。\n\n接下来只做一件事：把当时为什么静默说清楚，并问要不要补一条提醒。不要把旧 Episode 笔记里的「烘干结束不必提醒」直接当成这轮的禁令。",
+        "当前意图依赖刚才 Webhook 的处理记录。提交洗衣完成、提醒和静默处理的历史 scope；Episode 继续当天的洗衣事件。",
     },
     {
       turn_id: "9d5db6937f765921b2d6cbe0773e5111",
@@ -87,7 +87,7 @@ function previewThinkingCalls() {
       excerpt:
         "衣服洗好了。旧 Episode 写过烘干结束不必提醒，所以这次也先静默。",
       reasoning:
-        "Webhook 任务：衣服洗好了。\n\n对照 recent_conversation，老师没有正在等这条。旧 Episode 笔记写过「烘干结束提醒并非老师要求」。webhook 合同说：如果只是重复已知状态，可以静默。\n\n决定：不发 send_message，直接 end_turn。",
+        "Webhook 任务：衣服洗好了。\n\n对照 native transcript，老师没有正在等这条。旧 Episode 笔记写过「烘干结束提醒并非老师要求」。webhook 合同说：如果只是重复已知状态，可以静默。\n\n决定：不发 send_message，直接 end_turn。",
     },
     {
       turn_id: "july-quest-note",
@@ -105,16 +105,16 @@ function previewThinkingCalls() {
       turn_id: "june-sticker-plan",
       call_id: "june-sticker-1",
       created_at: at(-70 * 24 * 60),
-      stage: "context_plan",
+      stage: "owner",
       round: 1,
       model: "deepseek-v4-flash",
-      tools: ["submit_context_plan"],
+      tools: ["recall"],
       reasoning_chars: 880,
       excerpt: "六月在想表情包分类，先按老师最近用过的召回。",
       reasoning: "老师在问表情包。先召回最近用过的贴纸，不要把分类方案一次倒完。",
     },
     ...Array.from({ length: 22 }, (_, index) => {
-      const stages = ["owner", "heartbeat", "webhook", "context_plan", "reflection"];
+      const stages = ["owner", "heartbeat", "webhook", "reply_followup", "reflection"];
       const stage = stages[index % stages.length];
       const reasoning = [
         `预览思考 ${index + 1}。用来把左侧列表和右侧详情都撑出滚动条。`,
@@ -137,6 +137,49 @@ function previewThinkingCalls() {
       };
     }),
   ];
+}
+
+function previewRecall(turnId) {
+  if (turnId !== "9d5db6937f765921b2d6cbe0773e5111") return null;
+  return {
+    revision: 1,
+    state: "recalled",
+    units: [
+      {
+        id: "u1",
+        intent: "解释刚才为什么没有提醒",
+        mode: "search",
+        queries: [
+          {
+            semantic: "衣服洗完后的提醒约定与刚才 Webhook 的处理记录",
+            keywords: ["洗衣", "提醒", "Webhook"],
+          },
+        ],
+        reused_from: "",
+      },
+    ],
+    episode_actions: [
+      { action: "continue", episode_id: "laundry", unit_ids: ["u1"] },
+    ],
+    status: "semantic_queries=衣服洗完后的提醒约定与刚才 Webhook 的处理记录\nhits=洗衣提醒",
+    memories: [
+      {
+        kind: "shared",
+        key: "laundry.notification",
+        content: "洗衣完成是否提醒应根据当前对话判断。",
+      },
+    ],
+    reflections: [],
+    episodes: [
+      {
+        id: "laundry",
+        title: "洗衣完成后的提醒",
+        relation: "recalled",
+        summary: "Webhook 报告洗衣完成，Momoi 当时选择了静默。",
+      },
+    ],
+    semantic: { fallback_reason: "", query_batch_size: 1 },
+  };
 }
 
 function previewMonthKey(timestamp) {
@@ -508,7 +551,12 @@ function previewUsageApi() {
             json(res, { error: "thinking not found" }, 404);
             return;
           }
-          json(res, { ok: true, items, count: items.length });
+          json(res, {
+            ok: true,
+            items,
+            count: items.length,
+            ...(previewRecall(turnId) ? { recall: previewRecall(turnId) } : {}),
+          });
           return;
         }
         if (req.method === "GET" && path === "/api/conversations") {
