@@ -780,18 +780,6 @@ def _goal_progress_lines(items: object) -> str:
     return "\n".join(lines)
 
 
-def _message_role(message: dict[str, object]) -> str:
-    role = str(message.get("role") or "").upper()
-    state = str(message.get("delivery_state") or "")
-    if role == "EVENT":
-        return "EVENT channel=webhook"
-    if state == "uncertain":
-        return f"{role} delivery=uncertain"
-    if state == "internal":
-        return f"{role} visibility=internal"
-    return role
-
-
 def _episode_summary(episode: dict[str, object]) -> tuple[str, str]:
     narrative = str(episode.get("narrative_summary") or "")
     if narrative:
@@ -874,68 +862,6 @@ def _episode_context(
         summary_quality=quality_counts,
     )
     return rendered
-
-
-def assemble_recent_conversation(
-    store: Store,
-    turn_limit: int,
-    token_budget: int,
-    before_timestamp: float | None = None,
-) -> tuple[str, set[int]]:
-    recent_messages = store.recent_conversation_messages(
-        turn_limit, token_budget, before_timestamp
-    )
-    recent = "\n".join(
-        f"[{_message_role(message)} "
-        f"timestamp={message.get('timestamp') or context_timestamp(message['created_at'])} "
-        f"turn={message['turn_id']}] "
-        f"{str(message['content'] or '')}"
-        for message in recent_messages
-    )
-    return recent, {int(message["id"]) for message in recent_messages}
-
-
-def assemble_compact_recent_conversation(
-    store: Store,
-    turn_limit: int = 2,
-    token_budget: int = 1600,
-    before_timestamp: float | None = None,
-) -> str:
-    """Render the latest shared Turns as compact continuity evidence.
-
-    This groups messages by Turn and keeps one timestamp plus role-labelled
-    lines. It is intentionally
-    bounded because it is shared by Planner and Heartbeat inputs.
-    """
-    if turn_limit <= 0:
-        return "(none)"
-    messages = store.recent_conversation_messages(
-        turn_limit, max(1, token_budget), before_timestamp
-    )
-    if not messages:
-        return "(none)"
-    blocks: list[str] = []
-    current_id = ""
-    lines: list[str] = []
-    for message in messages:
-        turn_id = str(message.get("turn_id") or "")
-        if turn_id != current_id:
-            if lines:
-                blocks.append("\n".join(lines))
-            current_id = turn_id
-            timestamp = message.get("timestamp") or context_timestamp(message["created_at"])
-            lines = [f"Turn {timestamp}"]
-        role = str(message.get("role") or "message").lower()
-        if role == "event":
-            role = "event"
-        elif role not in {"user", "assistant"}:
-            role = "message"
-        content = str(message.get("content") or "")
-        lines.append(f"  {role}: {truncate_tokens(' '.join(content.split()), 220)}")
-    if lines:
-        blocks.append("\n".join(lines))
-    rendered = "\n\n".join(blocks)
-    return truncate_tokens(rendered, max(1, token_budget)) if rendered else "(none)"
 
 
 def assemble_recent_external_events(

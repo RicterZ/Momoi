@@ -100,8 +100,6 @@ USER_CONTEXT_SECTION_ORDER = (
     "recent_external_events",
     "candidate_episodes",
     "recent_recall_context",
-    "recent_turns",
-    "recent_conversation",
     "recall_memories",
     "recall_status",
     "reflection_memories",
