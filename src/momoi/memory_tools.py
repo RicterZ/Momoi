@@ -179,11 +179,12 @@ Scope `content` to what they pointed at. 这个 / 这条 / this one names a
 specific object—write that object. Do not promote it into a general policy
 about all similar cases, and do not add a second `always` memory "just in
 case". One stated fact → one `memory_remember`. If they later correct
-polarity, duration, scope, or factual content, inspect matching committed
-mutations in `<recent_turns>` and repair the wrong row in this Turn. Reuse its
-kind/key with `replace_confirmed=true` when the owner supplies the replacement;
-forget it when the owner only disconfirms it. Do not leave the stale row active
-beside the correction.
+polarity, duration, scope, or factual content, locate the committed memory with
+the supplied memory context or `memory_search`; use native transcript tool
+annotations and result references when its mutation history matters. Repair the
+wrong row in this Turn. Reuse its kind/key with `replace_confirmed=true` when the
+owner supplies the replacement; forget it when the owner only disconfirms it.
+Do not leave the stale row active beside the correction.
 
 `evidence` is an exact quote. `content` must keep the same polarity and
 conditions as that quote (taken vs not taken; only when already picked up).
