@@ -400,11 +400,6 @@ class ContextAssemblerTest(unittest.TestCase):
             self.assertEqual(six["recent_turn_append"], "")
             self.assertIn("T-7", seven["recent_turn_append"])
             self.assertIn("第7轮", seven["recent_turn_append"])
-            self.assertEqual(
-                seven["recent_turns"],
-                seven["recent_turn_base"] + "\n\n" + seven["recent_turn_append"],
-            )
-
             for index in range(8, 12):
                 add(index)
             eleven = assemble_main_context(store, {}, 2000, 2000, recent_turns=6)
@@ -474,7 +469,6 @@ class ContextAssemblerTest(unittest.TestCase):
 
     def test_owner_turn_protocol_is_after_authenticated_owner_input(self) -> None:
         rendered = pack_owner_context(
-            ("context_resolution", "response mode: visible"),
             ("runtime_state", "now"),
             ("current_owner_messages", "在吗"),
         )
@@ -2061,7 +2055,7 @@ class ContextAssemblerTest(unittest.TestCase):
                 store, retrieval, 2000, 2000, recent_turns=1
             )
 
-            self.assertIn("蓝绿发布", assembled["recent_turns"])
+            self.assertIn("蓝绿发布", assembled["recent_turn_base"])
             self.assertIn("Sakana", assembled["long_term_memories"])
             store.close()
 

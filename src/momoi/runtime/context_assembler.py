@@ -780,31 +780,6 @@ def _goal_progress_lines(items: object) -> str:
     return "\n".join(lines)
 
 
-def _goal_lines(items: object) -> str:
-    if not isinstance(items, list):
-        return ""
-    lines: list[str] = []
-    for item in items:
-        if not isinstance(item, dict) or not item.get("id"):
-            continue
-        fields = [
-            f"id={item['id']}",
-            f"status={item.get('status') or 'unknown'}",
-            f"title={truncate_tokens(str(item.get('title') or ''), 80)}",
-        ]
-        for key, label, limit in (
-            ("next_action", "next", 100),
-            ("waiting_for", "waiting", 80),
-            ("latest_result", "last", 100),
-            ("blocked_reason", "blocked", 80),
-        ):
-            value = item.get(key)
-            if value not in (None, "", [], {}):
-                fields.append(f"{label}={truncate_tokens(str(value), limit)}")
-        lines.append("- " + " ".join(fields))
-    return "\n".join(lines)
-
-
 def _message_role(message: dict[str, object]) -> str:
     role = str(message.get("role") or "").upper()
     state = str(message.get("delivery_state") or "")
@@ -2024,15 +1999,6 @@ def assemble_main_context(
         None,
         start_index=recent_turn_base_count + 1,
     )
-    compact_recent_turns = "\n\n".join(
-        value for value in (recent_turn_base, recent_turn_append) if value
-    )
-    compact_recent_conversation = assemble_compact_recent_conversation(
-        store,
-        min(4, recent_turns),
-        min(1600, max(400, raw_token_budget // 3)),
-        recent_before_timestamp,
-    )
     return {
         "recent_turn_base": recent_turn_base,
         "recent_turn_append": recent_turn_append,
@@ -2040,8 +2006,6 @@ def assemble_main_context(
             store,
             recent_before_timestamp,
         ),
-        "recent_turns": compact_recent_turns,
-        "recent_conversation": compact_recent_conversation,
         "episodes": _episode_context(
             store,
             retrieval.get("episodes"),
@@ -2058,7 +2022,6 @@ def assemble_main_context(
             if retrieval.get("reflection_memories")
             else ""
         ),
-        "goals": _goal_lines(retrieval.get("goals")),
         "goal_directory": _goal_directory_lines(retrieval.get("goals")),
         "goal_progress": _goal_progress_lines(retrieval.get("goals")),
     }
