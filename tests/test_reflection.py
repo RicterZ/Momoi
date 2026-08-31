@@ -47,8 +47,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                    VALUES ('user', ?, ?, '[]')""",
                 (
                     (
-                        "# Current owner messages\n我不吃香菜，今天看了项目资料。"
-                        "回答直接说结论就好。"
+                        "我不吃香菜，今天看了项目资料。回答直接说结论就好。"
                     ),
                     occurred,
                 ),
@@ -116,16 +115,11 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                     assert (
                         "state=completed ok=true capability=read" in request
                     )
-                    assert "own diary" in json.dumps(_system, ensure_ascii=False)
-                    assert "reusable knowledge about a specific tool" in json.dumps(
-                        _system, ensure_ascii=False
-                    )
-                    assert "reusable methodology" in json.dumps(
-                        _system, ensure_ascii=False
-                    )
-                    assert "open_conversations" in json.dumps(
-                        _system, ensure_ascii=False
-                    )
+                    schema = json.dumps(tools, ensure_ascii=False)
+                    assert "grounded, thoughtful Chinese diary" in schema
+                    assert "Use tool_skill" in schema
+                    assert "Use practice" in schema
+                    assert "open_conversations" in schema
                     call = ToolCall(
                         "finish-reflection",
                         "reflection_finish",
