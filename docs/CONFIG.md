@@ -49,11 +49,12 @@ Absolute paths are accepted for every path field. `config.json` does not expand
 | `max_retries` | No | `3` | Retry count for transient errors |
 | `tool_choice` | No | `true` | Require tool use in OpenAI-format requests; set `false` for endpoints that reject `tool_choice` |
 | `thinking.effort` | No | provider default | Default reasoning effort: `low`, `high`, or `max` |
-| `thinking.stages` | No | `{}` | Reasoning-effort overrides keyed by runtime stage |
+| `thinking.stages` | No | `{}` | Reasoning-effort overrides keyed by runtime stage; each value is `low`, `high`, or `max` |
 
 Known stage names are `context_plan`, `owner`, `heartbeat_plan`, `heartbeat`,
 `reply_followup`, `goal`, `webhook`, `reflection`, `memory_maintenance`, `episode_anneal`, and
-`episode_consolidate`. Unknown stages use `thinking.effort`.
+`episode_consolidate`. A stage omitted from `thinking.stages` uses
+`thinking.effort`.
 
 ## Inbound speech recognition
 
@@ -81,10 +82,12 @@ Known stage names are `context_plan`, `owner`, `heartbeat_plan`, `heartbeat`,
 | `timeout_seconds` | `30` | Positive timeout for one transcription |
 | `max_audio_bytes` | `3145728` | Positive maximum input size in bytes |
 | `settings` | `{}` | Provider constructor arguments |
+| `settings.secret_id` | — | Tencent API secret ID; required for enabled Tencent ASR |
+| `settings.secret_key` | — | Tencent API secret key; required for enabled Tencent ASR |
+| `settings.region` | empty | Optional Tencent region |
+| `settings.engine` | `16k_zh` | Tencent recognition engine |
 
-Tencent ASR requires non-empty `settings.secret_id` and
-`settings.secret_key` when enabled. `settings.region` may be empty, and
-`settings.engine` defaults to `16k_zh`.
+Other ASR providers may define different `settings` fields.
 
 ## Channels
 
@@ -116,8 +119,10 @@ Tencent ASR requires non-empty `settings.secret_id` and
 }
 ```
 
-`primary` is required and must name an entry in `enabled`. Every entry in
-`enabled` is loaded as a Channel plugin.
+| Field | Required | Default | Description |
+| --- | --- | --- | --- |
+| `primary` | Yes | — | Channel name selected for outbound delivery |
+| `enabled` | Yes | — | Non-empty object of Channel names and their settings; must contain `primary` |
 
 ### NapCat
 
@@ -263,12 +268,14 @@ falls back to keyword recall.
 | `result_max_chars` | `12000` | Maximum model-visible tool-result chunk size; minimum `1000` characters |
 | `result_retention_days` | `30` | Days to retain private large-result snapshots; `0` disables age-based cleanup |
 
-An MCP server entry in `mcp.json` uses either `command` plus optional `args`,
-`cwd`, and `env`, or a remote `url` plus optional `headers`. The optional fields
-below control discovery and routing.
-
 | MCP field | Default | Description |
 | --- | --- | --- |
+| `command` | — | Executable for a stdio server; required when `url` is omitted |
+| `args` | `[]` | Arguments passed to `command` |
+| `cwd` | process directory | Working directory for `command` |
+| `env` | `{}` | Environment values added for `command` |
+| `url` | — | Streamable HTTP endpoint; required when `command` is omitted |
+| `headers` | `{}` | Headers sent to `url` |
 | `description` | generated from server id | Optional capability summary, 1–500 characters when set |
 | `enabled_tools` | `["*"]` | Raw or fully qualified tool names to register; `[]` registers none |
 | `readOnlyTools` | `[]` | Raw names of tools that should be treated as read-only |
@@ -293,8 +300,7 @@ Unlike `config.json`, MCP environment values, URLs, and headers expand
 | `max_seconds` | `0` | Per-Turn wall-time limit; `0` disables it |
 | `max_total_tokens` | `0` | Accumulated raw input/output token limit; `0` disables it |
 
-Both values must be non-negative. The starter file omits this section so the
-limits remain disabled.
+Both values must be non-negative.
 
 ## Notifications
 
@@ -353,9 +359,9 @@ omitted. Overnight windows are supported.
 }
 ```
 
-`allowed_tools` is an array of non-empty strings. The default is `curl`,
-`read_file`, `write_file`, and `list_dir`. MCP tools must use their full
-`mcp__<server>__<tool>` names.
+| Field | Default | Description |
+| --- | --- | --- |
+| `allowed_tools` | `curl`, `read_file`, `write_file`, `list_dir` | Non-empty tool names available to autonomous Turns; MCP tools use full `mcp__<server>__<tool>` names |
 
 ## Reflection
 
@@ -450,11 +456,12 @@ Dashboard bind address and port are CLI options, not `config.json` fields.
 | --- | --- | --- |
 | `provider` | empty | Dotted name of a `UsagePlugin` class |
 | `api_key` | empty | Plugin constructor's `api_key` argument |
+| `base_url` | `https://api.deepseek.com` | API root for the bundled DeepSeek plugin |
+| `timeout_seconds` | `10` | Request timeout for the bundled DeepSeek plugin, clamped to `1`–`20` seconds |
 | other fields | — | Additional plugin constructor keyword arguments |
 
-The bundled DeepSeek plugin accepts optional `base_url` and
-`timeout_seconds` fields. Leave `provider` empty to record token counts without
-provider pricing or balance lookup.
+Leave `provider` empty to record token counts without provider pricing or
+balance lookup.
 
 ## Logging
 

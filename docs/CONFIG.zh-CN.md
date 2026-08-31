@@ -47,11 +47,12 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
 | `max_retries` | 否 | `3` | 瞬时错误的重试次数 |
 | `tool_choice` | 否 | `true` | OpenAI 格式请求要求使用工具；拒绝 `tool_choice` 的端点应设为 `false` |
 | `thinking.effort` | 否 | Provider 默认值 | 默认推理强度：`low`、`high` 或 `max` |
-| `thinking.stages` | 否 | `{}` | 按运行阶段覆盖推理强度 |
+| `thinking.stages` | 否 | `{}` | 按运行阶段覆盖推理强度；每个值只能是 `low`、`high` 或 `max` |
 
 已知阶段名称为 `context_plan`、`owner`、`heartbeat_plan`、`heartbeat`、
 `reply_followup`、`goal`、`webhook`、`reflection`、`memory_maintenance`、`episode_anneal` 和
-`episode_consolidate`。未单独配置的阶段使用 `thinking.effort`。
+`episode_consolidate`。未写入 `thinking.stages` 的阶段使用
+`thinking.effort`。
 
 ## 入站语音识别
 
@@ -79,9 +80,12 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
 | `timeout_seconds` | `30` | 单次转写的正数超时时间 |
 | `max_audio_bytes` | `3145728` | 输入大小上限，单位为字节且必须为正数 |
 | `settings` | `{}` | Provider 构造参数 |
+| `settings.secret_id` | — | 腾讯 API Secret ID；启用腾讯 ASR 时必填 |
+| `settings.secret_key` | — | 腾讯 API Secret Key；启用腾讯 ASR 时必填 |
+| `settings.region` | 空 | 可选的腾讯地域 |
+| `settings.engine` | `16k_zh` | 腾讯识别引擎 |
 
-启用腾讯 ASR 时，`settings.secret_id` 和 `settings.secret_key` 必须非空。
-`settings.region` 可以为空，`settings.engine` 默认为 `16k_zh`。
+其他 ASR Provider 可以定义不同的 `settings` 字段。
 
 ## 渠道
 
@@ -113,8 +117,10 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
 }
 ```
 
-`primary` 为必填项，且必须指向 `enabled` 中的一个条目。`enabled` 中的每个
-条目都会作为 Channel 插件加载。
+| 字段 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `primary` | 是 | — | 用于出站投递的渠道名称 |
+| `enabled` | 是 | — | 非空的渠道名称与配置对象；必须包含 `primary` |
 
 ### NapCat
 
@@ -259,12 +265,14 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
 | `result_max_chars` | `12000` | 模型可见的单个工具结果分段最大长度；最小值为 `1000` 个字符 |
 | `result_retention_days` | `30` | 大结果私有快照的保留天数；`0` 关闭按时间清理 |
 
-`mcp.json` 中的 MCP 服务器条目可以使用 `command`，以及可选的 `args`、
-`cwd` 和 `env`；也可以使用远程 `url`，以及可选的 `headers`。下列可选字段
-控制发现和路由。
-
 | MCP 字段 | 默认值 | 说明 |
 | --- | --- | --- |
+| `command` | — | stdio 服务器的可执行文件；未设置 `url` 时必填 |
+| `args` | `[]` | 传给 `command` 的参数 |
+| `cwd` | 进程目录 | `command` 的工作目录 |
+| `env` | `{}` | 为 `command` 增加的环境变量 |
+| `url` | — | Streamable HTTP 接口；未设置 `command` 时必填 |
+| `headers` | `{}` | 发送给 `url` 的 Header |
 | `description` | 根据服务器 ID 生成 | 可选的能力摘要；设置时长度为 1–500 个字符 |
 | `enabled_tools` | `["*"]` | 要注册的原始或完整限定工具名；`[]` 表示不注册工具 |
 | `readOnlyTools` | `[]` | 应视为只读工具的原始名称 |
@@ -289,7 +297,7 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
 | `max_seconds` | `0` | 单个 Turn 的运行时间上限；`0` 表示不限制 |
 | `max_total_tokens` | `0` | 累计原始输入/输出 token 上限；`0` 表示不限制 |
 
-两个值都必须为非负数。起始配置省略此节，因此默认不限制。
+两个值都必须为非负数。
 
 ## 通知
 
@@ -348,9 +356,9 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
 }
 ```
 
-`allowed_tools` 是非空字符串数组。默认值为 `curl`、`read_file`、
-`write_file` 和 `list_dir`。MCP 工具必须使用完整的
-`mcp__<server>__<tool>` 名称。
+| 字段 | 默认值 | 说明 |
+| --- | --- | --- |
+| `allowed_tools` | `curl`、`read_file`、`write_file`、`list_dir` | 自主 Turn 可用的非空工具名；MCP 工具使用完整的 `mcp__<server>__<tool>` 名称 |
 
 ## 复盘
 
@@ -445,10 +453,11 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
 | --- | --- | --- |
 | `provider` | 空 | `UsagePlugin` 类的点分名称 |
 | `api_key` | 空 | 传给插件构造函数的 `api_key` 参数 |
+| `base_url` | `https://api.deepseek.com` | 内置 DeepSeek 插件使用的 API 根地址 |
+| `timeout_seconds` | `10` | 内置 DeepSeek 插件的请求超时，限制在 `1`–`20` 秒 |
 | 其他字段 | — | 传给插件构造函数的其他关键字参数 |
 
-内置 DeepSeek 插件接受可选的 `base_url` 和 `timeout_seconds` 字段。将
-`provider` 留空时仍会记录 token 数量，但不查询 Provider 价格或余额。
+将 `provider` 留空时仍会记录 token 数量，但不查询 Provider 价格或余额。
 
 ## 日志
 

@@ -70,7 +70,8 @@
     "recent_episode_hours": 6
   },
   "storage": {
-    "database": "data/momoi.sqlite3"
+    "database": "data/momoi.sqlite3",
+    "thinking": null
   },
   "embedding": {
     "enabled": false,
@@ -87,6 +88,10 @@
     "mcp_config": "mcp.json",
     "result_max_chars": 12000,
     "result_retention_days": 30
+  },
+  "turn": {
+    "max_seconds": 0,
+    "max_total_tokens": 0
   },
   "notifications": {
     "timezone": "UTC",
@@ -132,7 +137,9 @@
   },
   "usage": {
     "provider": "momoi.extensions.deepseek.DeepSeekPlugin",
-    "api_key": "replace-me"
+    "api_key": "replace-me",
+    "base_url": "https://api.deepseek.com",
+    "timeout_seconds": 10
   },
   "logging": {
     "level": "INFO"
