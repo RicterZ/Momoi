@@ -1840,7 +1840,13 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 allow_notify=False,
             )
             goal_id = str(created["goal"]["id"])
-            daemon.store.commit_turn([event], event.text, AgentReply(["好"]), draft)
+            owner_turn_id = daemon.store.commit_turn(
+                [event], event.text, AgentReply(["好"]), draft
+            )
+            owner_outbox_id = daemon.store._db.execute(
+                "SELECT id FROM outbox WHERE turn_id=?", (owner_turn_id,)
+            ).fetchone()["id"]
+            daemon.store.mark_sent(int(owner_outbox_id))
             daemon.mcp.tool_specs = [
                 {
                     "name": "mcp__test__read",
@@ -1880,8 +1886,20 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         if (
                             "<due_goal>" not in request
                             or "<runtime_state>" not in request
-                            or "<recent_conversation>" not in request
                             or "<conversation_state>" not in request
+                        ):
+                            raise AssertionError(messages)
+                        if (
+                            "<recent_conversation>" in request
+                            or "<recent_turns>" in request
+                        ):
+                            raise AssertionError(request)
+                        roles = [message["role"] for message in messages]
+                        if roles != ["user", "user", "assistant", "user"]:
+                            raise AssertionError(roles)
+                        if (
+                            "继续检查" not in str(messages[1]["content"])
+                            or "好" not in str(messages[2]["content"])
                         ):
                             raise AssertionError(messages)
                         if (
