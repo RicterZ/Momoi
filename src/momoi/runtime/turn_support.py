@@ -128,10 +128,21 @@ USER_CONTEXT_SECTION_ORDER = (
     "current_owner_messages",
 )
 
+# These three rules sit in the last position of the request because that is
+# where compliance actually holds. The delivery rule has been obeyed without
+# exception here, while the same instructions stated mid-contract were followed
+# in a minority of Turns.
 OWNER_TURN_PROTOCOL_REMINDER = (
-    "[Trusted runtime Owner Turn delivery rule: every owner-visible bubble MUST "
-    "be sent by calling send_message with that bubble in messages. Never output "
-    "the bubble as ordinary assistant content.]"
+    "[Trusted runtime Owner Turn protocol. "
+    "1. Call recall first, before any other tool. Acting first is refused and "
+    "costs a wasted round. Decide briefly: search when history could change the "
+    "reply, reuse when an earlier recall already covers it, none when the input "
+    "stands alone. "
+    "2. Every owner-visible bubble MUST be sent by calling send_message with "
+    "that bubble in messages. Never output the bubble as ordinary assistant "
+    "content. "
+    "3. When a tool call will take a noticeable moment, put the short line the "
+    "owner should see meanwhile in its say_to_owner field.]"
 )
 
 
