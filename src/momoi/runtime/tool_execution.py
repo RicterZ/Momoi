@@ -881,18 +881,26 @@ class ToolExecutionService:
                 elif call.name not in allowed_tool_names:
                     result = {"ok": False, "error": "tool_not_allowed"}
                 elif call.name == "recall":
-                    recalled = await self.submit_owner_context(
-                        current_events, turn_id, call.arguments
-                    )
-                    context_submitted = True
-                    result = {
-                        "ok": True,
-                        "state": "recalled",
-                        "memory": recalled["recall_memories"],
-                        "status": recalled["query_recall"],
-                        "reflection": recalled["reflection_memories"],
-                        "episodes": recalled["episodes"],
-                    }
+                    try:
+                        recalled = await self.submit_owner_context(
+                            current_events, turn_id, call.arguments
+                        )
+                    except ValueError as error:
+                        result = {
+                            "ok": False,
+                            "error": "invalid_recall",
+                            "message": str(error),
+                        }
+                    else:
+                        context_submitted = True
+                        result = {
+                            "ok": True,
+                            "state": "recalled",
+                            "memory": recalled["recall_memories"],
+                            "status": recalled["query_recall"],
+                            "reflection": recalled["reflection_memories"],
+                            "episodes": recalled["episodes"],
+                        }
                 elif not context_submitted and authority == "owner":
                     # The recall decision is what makes the rest of the Turn
                     # accountable, so it cannot be skipped by acting first.

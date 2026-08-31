@@ -2,6 +2,7 @@ import json
 import logging
 import re
 import time
+import uuid
 from datetime import datetime
 
 from ..agenda_tools import AGENDA_TOOL_SPECS
@@ -397,7 +398,12 @@ class ContextService:
         return plan
 
     def _plan_from_submission(
-        self, events: list[IncomingMessage], arguments: dict[str, object]
+        self,
+        events: list[IncomingMessage],
+        arguments: dict[str, object],
+        *,
+        turn_id: str,
+        revision: int,
     ) -> dict[str, object]:
         """Shape an Owner context submission like a stored plan.
 
@@ -410,9 +416,18 @@ class ContextService:
         units: list[dict[str, object]] = []
         episodes: list[dict[str, object]] = []
         raw_units = arguments.get("units")
+        if not isinstance(raw_units, list) or not raw_units:
+            raise ValueError("recall requires at least one intent unit")
+        candidate_ids = {
+            str(item["id"])
+            for item in self.store.list_recent_episode_directory(
+                8, exclude_runtime_archives=True
+            )
+            if item.get("id")
+        }
         for index, raw in enumerate(raw_units if isinstance(raw_units, list) else [], 1):
             if not isinstance(raw, dict):
-                continue
+                raise ValueError("each recall unit must be an object")
             unit_id = f"u{index}"
             mode = str(raw.get("recall_mode") or "search")
             queries = [
@@ -428,8 +443,16 @@ class ContextService:
                 if isinstance(query, dict) and str(query.get("semantic") or "").strip()
             ][:3]
             from_turn_id = str(raw.get("recall_from_turn_id") or "")
-            if mode == "reuse" and not from_turn_id:
-                mode = "search"
+            if mode not in {"search", "reuse"}:
+                raise ValueError("recall_mode must be search or reuse")
+            if mode == "search":
+                if not queries:
+                    raise ValueError("search recall requires at least one query")
+                from_turn_id = ""
+            elif not from_turn_id or not self.store.recall_reuse_candidates(
+                [from_turn_id]
+            ):
+                raise ValueError("reuse requires a displayed recalled Turn")
             units.append(
                 {
                     "id": unit_id,
@@ -451,19 +474,25 @@ class ContextService:
                 if isinstance(episode, dict)
                 else "none"
             )
+            if action not in {"none", "continue", "new"}:
+                raise ValueError("episode action must be none, continue, or new")
             if action == "none":
                 continue
             binding: dict[str, object] = {"action": action, "unit_ids": [unit_id]}
             reference = str(episode.get("ref") or "") if isinstance(episode, dict) else ""
             title = str(episode.get("title") or "") if isinstance(episode, dict) else ""
-            if action == "continue" and reference:
+            if action == "continue" and reference in candidate_ids:
                 binding["episode_id"] = reference
                 binding["episode_ref"] = reference
             elif action == "new" and title and _NEW_EPISODE_SLUG.fullmatch(reference):
+                binding["episode_id"] = uuid.uuid5(
+                    uuid.NAMESPACE_URL,
+                    f"momoi:episode:{turn_id}:{revision}:{reference}",
+                ).hex
                 binding["title"] = title[:80]
                 binding["episode_ref"] = reference
             else:
-                continue
+                raise ValueError("episode reference does not match its action")
             episodes.append(binding)
         return {
             "version": 7,
@@ -526,9 +555,14 @@ class ContextService:
     ) -> dict[str, str]:
         """Persist the Owner's context decision and return the evidence it asked for."""
 
-        plan = self._plan_from_submission(events, arguments)
         record = self.store.context_plan(turn_id)
         revision = int(record["revision"]) + 1 if record is not None else 1
+        plan = self._plan_from_submission(
+            events,
+            arguments,
+            turn_id=turn_id,
+            revision=revision,
+        )
         saved = self.store.save_context_plan(
             turn_id, revision, [event.event_id for event in events], plan
         )
