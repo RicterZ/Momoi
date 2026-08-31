@@ -160,10 +160,6 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
     "heartbeat_prompt": "prompts/HEARTBEAT.md",
     "recent_raw_tokens": 32000,
     "recent_turns": 6,
-    "planner_recent_base_turns": 6,
-    "planner_recent_append_turns": 6,
-    "planner_active_recent_turns": 6,
-    "planner_recent_tokens": 52800,
     "memory_results": 6,
     "memory_tokens": 8000,
     "max_input_tokens": 96000,
@@ -178,12 +174,8 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
 | --- | --- | --- |
 | `soul_prompt` | `prompts/SOUL.md` | 必需且非空的人格文件 |
 | `heartbeat_prompt` | `prompts/HEARTBEAT.md` | 可选的心跳指导文件 |
-| `recent_raw_tokens` | `32000` | 近期 Turn 的 token 预算；最小值为 `1` |
-| `recent_turns` | `6` | 近期 Turn 数量；最小值为 `1` |
-| `planner_recent_base_turns` | `recent_turns` | Planner 稳定基础区的 Turn 数量；最小值为 `1` |
-| `planner_recent_append_turns` | `recent_turns` | Planner 追加区的 Turn 数量；最小值为 `1` |
-| `planner_active_recent_turns` | `recent_turns` | Planner 关注区的 Turn 数量；最小值为 `1` |
-| `planner_recent_tokens` | 自动 | Planner 近期日志预算；最小值为 `1000` |
+| `recent_raw_tokens` | `32000` | 原生 transcript 的 token 预算，同时用于 Episode 维护的原始证据预算；最小值为 `1` |
+| `recent_turns` | `6` | 近期 Turn 基数；活跃 Momoi 工作流最多读取其两倍进入原生 transcript，Episode 维护则保留这么多个原始尾部 Turn；最小值为 `1` |
 | `memory_results` | `6` | 已确认召回记忆与复盘记忆各自的 top-k；范围为 `0`–`6`，设为 `0` 时关闭两者（合计最多 `12` 条） |
 | `memory_tokens` | `8000` | 持久记忆上下文预算；最小值为 `0` |
 | `max_input_tokens` | `96000` | 完整模型输入的目标上限；最小值为 `1000` |
@@ -191,8 +183,7 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
 | `summary_tokens` | `6000` | 合并后 Episode 摘要的 token 预算；`0` 关闭该层 |
 | `recent_episode_hours` | `6` | 近期 Episode 时间窗口，单位为小时；`0` 关闭该层 |
 
-省略 `planner_recent_tokens` 时，其值取 `max_input_tokens` 的 55% 与 `88000`
-中的较小值。`max_input_tokens` 应低于 Provider 的实际上下文窗口。
+`max_input_tokens` 应低于 Provider 的实际上下文窗口。
 
 ## 存储
 

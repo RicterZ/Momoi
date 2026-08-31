@@ -18,8 +18,8 @@ Momoi 的重点不只是给 LLM 加一个角色。`SOUL.md` 定义 Momoi 是谁�
 
 - **跨时间、跨入口的同一个身份。** 主人消息、Goal、Heartbeat 和 Webhook 都进入同一
   运行时，共享历史、关系、状态与投递规则。
-- **为此刻选择上下文。** Context Planner 把当前意图与历史证据分开，决定 Episode
-  归属，并在行动模型开口前说明需要召回什么。
+- **由正在行动的 Momoi 选择上下文。** 每个 Owner Turn 都必须先调用 `recall`；
+  Momoi 自己决定搜索新 scope 或复用已有 scope，运行时负责检索记忆并绑定 Episode。
 - **有来源、有权威差异的记忆。** 近期对话、主人确认的事实、共同 Episode 和低置信度
   的复盘学习拥有不同生命周期，不会被当成同一种证据。
 - **真正执行并明确投递。** Momoi 可以调用内置工具或 MCP、发送多条聊天气泡、汇报有
@@ -31,8 +31,9 @@ Momoi 的重点不只是给 LLM 加一个角色。`SOUL.md` 定义 Momoi 是谁�
 
 ## 架构
 
-每个触发都会形成一个 Turn。主链先规划上下文、组装证据，再运行对应 Agent，最后提交
-状态与投递。维护任务使用同一数据库，但不阻塞对响应时间敏感的对话主链。
+每个触发都会形成一个 Turn。活跃工作流共享同一份原生 transcript，并组装各自的作用域
+证据，再运行对应 Agent，最后提交状态与投递。维护任务使用同一数据库，但不阻塞对响应
+时间敏感的对话主链。
 
 ```mermaid
 flowchart TB
@@ -47,11 +48,11 @@ flowchart TB
   subgraph active["Momoi · 当前 Turn"]
     direction LR
     intake["调度与<br/>消息合并"]
-    planner["Context Planner<br/>意图 · 路由 · 召回"]
-    context["上下文<br/>组装"]
+    transcript["原生对话<br/>user · assistant"]
+    context["召回<br/>search · reuse"]
     agent["Owner / 自主<br/>Agent"]
     delivery["提交与<br/>投递"]
-    intake --> planner --> context --> agent --> delivery
+    intake --> transcript --> context --> agent --> delivery
   end
 
   subgraph continuity["Momoi · 连续性服务"]
@@ -96,10 +97,11 @@ Momoi 的三层共同构成持续运行的系统：当前 Turn 通过连续性�
 ### 一个 Owner Turn 怎样运行
 
 1. 入站消息按时间线合并成一个连贯批次。
-2. Context Planner 识别意图单元、指代、Episode 连续性、历史召回需求和高层执行策略。
-3. 上下文组装把近期 Turn、当前状态、活动 Goal、相关 Episode 和排序后的记忆放到一起；
-   主人此刻的话始终是唯一的当前指令。
-4. Owner Agent 应用 Momoi 的 Soul 与 Style Card，按需使用工具，并通过渠道投递协议发送
+2. 最近已送达的主人与 Momoi 发言以原生 `user` / `assistant` 消息进入请求；运行时状态
+   和记忆仍是明确标记的数据，主人此刻的话始终是唯一的当前主人权限。
+3. Owner 模型先调用 `recall`，搜索新的历史 scope 或复用明确覆盖当前需求的旧 scope，
+   并独立选择 Episode 归属。运行时执行相同的关键词与可选向量检索，返回有上限的证据。
+4. 同一个模型应用 Momoi 的 Soul 与 Style Card，按需使用工具，并通过渠道投递协议发送
    主人可见的气泡。
 5. Turn 把消息、记忆与 Goal 变更、情绪与活动、工具证据、投递状态和待处理追问一起提交
    为可恢复记录。
@@ -113,7 +115,7 @@ Momoi 不把所有内容塞进一个笼统的“记忆”桶。每一层回答�
 
 | 层级 | 事实来源 | 怎样进入上下文 | 生命周期 |
 | --- | --- | --- | --- |
-| 工作上下文 | 近期 Turn、当前消息、情绪、活动、进行中的 Goal 和未完成工作 | 按时间与当前相关性直接带入 | 随正在进行的对话移动，不会自动晋升为长期事实 |
+| 工作上下文 | 原生近期 user/assistant 消息、当前输入、情绪、活动、进行中的 Goal 和未完成工作 | 按时间线与当前相关性直接带入 | 随正在进行的对话移动，不会自动晋升为长期事实 |
 | Confirmed memory | 来自已认证主人消息的事实、偏好、关系、习惯和可复用方法 | `always` 持续可见；`recent` 在有限时间内可见；`recall` 按话题检索 | 主人的新更正可以替换、收窄、过期或退役旧事实 |
 | Episode | 有原始 Turn 与消息作为证据的具体共同经历 | 近期 Episode 直接可见；更早的 Episode 通过摘要或原始 Turn 证据召回 | 开放对话按真实主题归组，随后归档，并在话题继续发展时更新 |
 | Reflection memory | 每日复盘产生的、带日期的体会、方法、工具经验和关系学习 | 独立召回，置信度更低，并明确提示可能过时 | 可以被修订或失去适用性，永远不能压过当前证据或 Confirmed memory |
@@ -132,8 +134,9 @@ Episode 是一次具体经历，而不是一个永久分类。它用紧凑摘要
 
 ### 召回与可选语义检索
 
-召回先被规划，再被排序。模型把所需历史改写成语义查询，同时给出姓名、标题、ID 或
-准确短语等字面锚点；检索层分别评估两类证据。
+每个 Owner Turn 都先调用 `recall`。正在行动的模型把最小完整历史 scope 写成语义查询，
+并给出姓名、标题、ID 或准确短语等字面锚点；只有旧查询明确覆盖当前需求时才能复用。
+检索层随后分别评估两类证据。
 
 ```mermaid
 flowchart TB
@@ -203,12 +206,12 @@ Always/Recent memory、正在进行的近期 Turn、Goal、情绪与活动、思
 | --- | --- |
 | 私聊渠道 | 一个主人可以同时使用 QQ（NapCat）与 WeChat；回复返回发起对话的渠道，主动消息发往配置的 primary |
 | 对话 | 消息合并、引用与转发、媒体处理、自然的多气泡投递、可选图片反应，以及合法沉默 |
-| 上下文 | Planner 生成意图与召回策略、近期因果时间线、Episode 路由、运行时二次搜索和有上限的模型输入 |
+| 上下文 | 原生共享对话、Owner 强制 search/reuse 召回、Episode 路由、运行时二次搜索和有上限的模型输入 |
 | 工具 | 内置文件/HTTP 工具、动态发现的 MCP Server，以及按 Server 配置的工具白名单 |
 | 长任务 | 工具循环、进度消息、中断、token/时间预算、大结果快照和不确定外部操作恢复 |
 | 时间与主动性 | 持久 Goal、每日多个触发时间、Heartbeat、静默时段、冷却和待处理主人消息保护 |
 | 记忆维护 | 每日 Reflection、Confirmed memory 整理、Episode annealing、增量语义索引和关键词降级 |
-| 可观测性 | 本地 Dashboard 可查看对话、复盘、记忆、Goal、图片反应、token 用量和每个 Turn 的思考记录 |
+| 可观测性 | 本地 Dashboard 可查看对话、每个 Turn 的召回决策与证据、复盘、记忆、Goal、图片反应、token 用量和思考记录 |
 | 外部事件 | 带认证的 Webhook、YAML 工作流和预定义命令执行器 |
 
 ## 快速开始
@@ -348,8 +351,9 @@ docker compose -f docker-compose.yml exec momoi momoi embedding status
 momoi run --dashboard
 ```
 
-打开 `http://127.0.0.1:8788`。Dashboard 可以查看对话、复盘、记忆、Goal、图片反应、
-用量和思考记录，也可以编辑记忆、Goal 与图片反应。请只在本机或可信网络中开放。
+打开 `http://127.0.0.1:8788`。Dashboard 可以查看对话、每个 Turn 的召回 scope 与选中
+证据、复盘、记忆、Goal、图片反应、用量和思考记录，也可以编辑记忆、Goal 与图片反应。
+请只在本机或可信网络中开放。
 
 ### Webhook
 
@@ -363,7 +367,8 @@ curl -X POST http://127.0.0.1:8787/webhooks/event-message \
   --data '{"event_prompt":"The watched page changed. Explain what is new if it matters."}'
 ```
 
-Webhook Turn 共享近期对话和记忆；如果事件没有增加有用信息，也可以安静结束。
+Webhook Turn 与其他 Momoi 工作流共享同一份原生对话和记忆；如果事件没有增加有用信息，
+也可以安静结束。
 
 ## 主人控制
 

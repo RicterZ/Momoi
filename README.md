@@ -22,9 +22,9 @@ confirmed, what remains unfinished, and which parts of the past matter now.
 - **One identity across time and entry points.** Owner messages, Goals,
   Heartbeats, and Webhooks enter the same runtime and share the same history,
   relationship, state, and delivery rules.
-- **Context selected for the present moment.** A Context Planner separates
-  current intent from historical evidence, routes conversation into Episodes,
-  and describes what memory should be recalled before the acting model responds.
+- **Context selected by the acting Momoi.** Every Owner Turn opens with a
+  mandatory `recall` action. Momoi chooses a new search or reuses an exact prior
+  scope, while the runtime retrieves memory and binds the Turn to an Episode.
 - **Memory with provenance and authority.** Recent conversation, confirmed
   owner facts, shared Episodes, and lower-confidence reflection learning have
   different lifetimes and are never treated as interchangeable.
@@ -40,9 +40,10 @@ confirmed, what remains unfinished, and which parts of the past matter now.
 
 ## Architecture
 
-Every trigger becomes a Turn. The main path plans context, assembles evidence,
-runs the appropriate agent, then commits state and delivery. Maintenance work
-uses the same database but stays outside the latency-sensitive response path.
+Every trigger becomes a Turn. Active workflows project one shared native
+transcript, assemble scoped evidence, run the appropriate agent, then commit
+state and delivery. Maintenance work uses the same database but stays outside
+the latency-sensitive response path.
 
 ```mermaid
 flowchart TB
@@ -57,11 +58,11 @@ flowchart TB
   subgraph active["Momoi · Active Turn"]
     direction LR
     intake["Scheduling<br/>and batching"]
-    planner["Context Planner<br/>intent · routing · recall"]
-    context["Context<br/>assembly"]
+    transcript["Native transcript<br/>user · assistant"]
+    context["Recall<br/>search · reuse"]
     agent["Owner / autonomous<br/>agent"]
     delivery["Commit<br/>and delivery"]
-    intake --> planner --> context --> agent --> delivery
+    intake --> transcript --> context --> agent --> delivery
   end
 
   subgraph continuity["Momoi · Continuity services"]
@@ -108,12 +109,14 @@ in-process snapshot performs vector search.
 
 1. Incoming messages are grouped into a coherent batch while preserving their
    timeline.
-2. The Context Planner identifies intent units, references, Episode continuity,
-   historical recall needs, and a high-level execution strategy.
-3. Context assembly combines recent Turns, current state, active Goals, relevant
-   Episodes, and ranked memory. Current owner text remains the only current
-   instruction.
-4. The Owner agent applies Momoi's Soul and Style Card, uses tools when needed,
+2. Recent delivered owner and Momoi speech is projected as native `user` and
+   `assistant` messages. Runtime state and memory remain explicitly marked data;
+   current owner text remains the only current owner authority.
+3. The Owner model first calls `recall`. It either searches a new historical
+   scope or reuses a displayed prior scope, and independently chooses the
+   Episode binding. The runtime performs the same keyword and optional vector
+   retrieval and returns bounded evidence.
+4. The same model applies Momoi's Soul and Style Card, uses tools when needed,
    and sends owner-visible bubbles through the channel delivery protocol.
 5. The Turn commits messages, memory and Goal mutations, mood/activity state,
    tool evidence, delivery state, and any pending follow-up as one recoverable
@@ -130,7 +133,7 @@ different questions and carry different authority.
 
 | Layer | Source of truth | How it enters context | Lifecycle |
 | --- | --- | --- | --- |
-| Working context | Recent Turns, current messages, mood, activity, active Goals, and unresolved work | Included directly by recency and current relevance | Moves with the live conversation; it is not automatically promoted to long-term fact |
+| Working context | Native recent user/assistant messages, current input, mood, activity, active Goals, and unresolved work | Included directly by chronology and current relevance | Moves with the live conversation; it is not automatically promoted to long-term fact |
 | Confirmed memory | Facts, preferences, relationships, routines, and reusable methods grounded in authenticated owner messages | `always` facts are continuously available; `recent` facts are available for a bounded time; `recall` facts are retrieved by topic | New owner corrections can replace, narrow, expire, or retire older facts |
 | Episodes | Concrete shared experiences backed by the original Turns and messages | Recent Episodes are available directly; older Episodes are recalled by their summary or original Turn evidence | Open conversation is grouped by subject, then archived and refreshed as the subject develops |
 | Reflection memory | Dated impressions, methods, tool-use lessons, and relationship learning produced by daily reflection | Recalled separately with lower confidence and an explicit stale-information warning | May be revised or become inapplicable; it never outranks current evidence or confirmed memory |
@@ -151,9 +154,11 @@ promoted into an owner-confirmed fact.
 
 ### Recall and optional semantic search
 
-Recall is planned before it is ranked. The model rewrites the historical need
-into a semantic query and supplies literal anchors such as names, titles, IDs,
-or exact phrases. The retrieval layer then evaluates both kinds of evidence.
+Every Owner Turn starts with `recall`. The acting model submits the smallest
+complete historical scope as a semantic query plus literal anchors such as
+names, titles, IDs, or exact phrases. It may reuse an earlier scope only when
+the displayed queries already cover the current need. The retrieval layer then
+evaluates both kinds of evidence.
 
 ```mermaid
 flowchart TB
@@ -230,12 +235,12 @@ incrementally without blocking owner conversation.
 | --- | --- |
 | Private chat | One owner across QQ (NapCat) and WeChat; replies return to the originating channel and proactive messages use the configured primary channel |
 | Conversation | Message batching, quoted/forwarded content, media handling, natural multi-bubble delivery, optional image reactions, and valid silence |
-| Context | Planner-generated intent and recall strategy, recent causal timeline, Episode routing, runtime re-search, and bounded model input |
+| Context | Native shared transcript, mandatory Owner search/reuse recall, Episode routing, runtime re-search, and bounded model input |
 | Tools | Built-in file/HTTP tools plus dynamically discovered MCP servers and per-server tool allowlists |
 | Long-running work | Tool loops, progress messages, interruption, token/time budgets, large-result snapshots, and recovery for uncertain external effects |
 | Time and initiative | Persistent Goals, multiple daily trigger times, Heartbeats, quiet hours, cooldowns, and pending-owner delivery protection |
 | Memory maintenance | Daily Reflection, confirmed-memory reconciliation, Episode annealing, incremental semantic indexing, and keyword fallback |
-| Observability | Local dashboard for conversations, reflections, memories, Goals, image reactions, token usage, and per-Turn thinking records |
+| Observability | Local dashboard for conversations, recall decisions and evidence, reflections, memories, Goals, image reactions, token usage, and per-Turn thinking records |
 | External events | Authenticated Webhooks with YAML workflows and predefined command executors |
 
 ## Quick start
@@ -387,9 +392,9 @@ momoi run --dashboard
 ```
 
 Open `http://127.0.0.1:8788`. The dashboard can inspect conversations,
-reflections, memories, Goals, image reactions, usage, and thinking records; it
-can also edit memories, Goals, and reaction assets. Keep it on localhost or a
-trusted network.
+per-Turn recall scopes and selected evidence, reflections, memories, Goals,
+image reactions, usage, and thinking records; it can also edit memories, Goals,
+and reaction assets. Keep it on localhost or a trusted network.
 
 ### Webhooks
 
@@ -403,8 +408,9 @@ curl -X POST http://127.0.0.1:8787/webhooks/event-message \
   --data '{"event_prompt":"The watched page changed. Explain what is new if it matters."}'
 ```
 
-Webhook Turns share recent conversation and memory, but they may finish silently
-when the event adds nothing useful.
+Webhook Turns receive the same native shared transcript and memory as Momoi's
+other active workflows, but they may finish silently when the event adds
+nothing useful.
 
 ## Owner controls
 

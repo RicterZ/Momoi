@@ -162,10 +162,6 @@ All fields must be positive.
     "heartbeat_prompt": "prompts/HEARTBEAT.md",
     "recent_raw_tokens": 32000,
     "recent_turns": 6,
-    "planner_recent_base_turns": 6,
-    "planner_recent_append_turns": 6,
-    "planner_active_recent_turns": 6,
-    "planner_recent_tokens": 52800,
     "memory_results": 6,
     "memory_tokens": 8000,
     "max_input_tokens": 96000,
@@ -180,12 +176,8 @@ All fields must be positive.
 | --- | --- | --- |
 | `soul_prompt` | `prompts/SOUL.md` | Required, non-empty persona file |
 | `heartbeat_prompt` | `prompts/HEARTBEAT.md` | Optional heartbeat guidance file |
-| `recent_raw_tokens` | `32000` | Recent Turn token budget; minimum `1` |
-| `recent_turns` | `6` | Recent Turn count; minimum `1` |
-| `planner_recent_base_turns` | `recent_turns` | Planner stable-base Turn count; minimum `1` |
-| `planner_recent_append_turns` | `recent_turns` | Planner append Turn count; minimum `1` |
-| `planner_active_recent_turns` | `recent_turns` | Planner focus Turn count; minimum `1` |
-| `planner_recent_tokens` | automatic | Planner recent-log budget; minimum `1000` |
+| `recent_raw_tokens` | `32000` | Native transcript token budget and Episode-maintenance raw-evidence budget; minimum `1` |
+| `recent_turns` | `6` | Base recent-Turn count; active Momoi workflows read up to twice this many Turns into the native transcript, while Episode maintenance retains this many raw tail Turns; minimum `1` |
 | `memory_results` | `6` | Per-category top-k for confirmed recall memory and reflection memory; range `0`–`6`, and `0` disables both (combined maximum `12`) |
 | `memory_tokens` | `8000` | Durable-memory context budget; minimum `0` |
 | `max_input_tokens` | `96000` | Target ceiling for complete model input; minimum `1000` |
@@ -193,9 +185,7 @@ All fields must be positive.
 | `summary_tokens` | `6000` | Merged Episode-summary token budget; `0` disables this layer |
 | `recent_episode_hours` | `6` | Recent-Episode window in hours; `0` disables it |
 
-When omitted, `planner_recent_tokens` is the smaller of 55% of
-`max_input_tokens` and `88000`. Set `max_input_tokens` below the provider's
-actual context window.
+`max_input_tokens` should remain below the provider's actual context window.
 
 ## Storage
 
