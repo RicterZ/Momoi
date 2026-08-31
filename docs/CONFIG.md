@@ -221,7 +221,7 @@ Set `thinking` to `null` or an empty string to use the database directory.
     "model": "BAAI/bge-small-zh-v1.5",
     "dimensions": 512,
     "calibration_profile": "bge-small-zh-v1.5-momoi-v1",
-    "query_timeout_seconds": 0.5,
+    "query_timeout_seconds": 5,
     "document_timeout_seconds": 30,
     "document_batch_size": 8
   }
@@ -236,7 +236,7 @@ Set `thinking` to `null` or an empty string to use the database directory.
 | `model` | `BAAI/bge-small-zh-v1.5` | Embedding model identifier; the bundled profile supports this model |
 | `dimensions` | `512` | Positive vector dimension; must match the endpoint |
 | `calibration_profile` | `bge-small-zh-v1.5-momoi-v1` | Threshold profile matching the model and document templates |
-| `query_timeout_seconds` | `0.5` | Positive timeout for one Turn's query batch |
+| `query_timeout_seconds` | `5` | Positive timeout for one Turn's query batch |
 | `document_timeout_seconds` | `30` | Positive timeout for one background document batch |
 | `document_batch_size` | `8` | Positive number of documents encoded per background request |
 

@@ -112,7 +112,7 @@ class EmbeddingConfig:
     model: str = "BAAI/bge-small-zh-v1.5"
     dimensions: int = 512
     calibration_profile: str = "bge-small-zh-v1.5-momoi-v1"
-    query_timeout_seconds: float = 0.5
+    query_timeout_seconds: float = 5
     document_timeout_seconds: float = 30
     document_batch_size: int = 8
 
@@ -635,7 +635,7 @@ def load_config(path: str | Path) -> AppConfig:
             dimensions=embedding_dimensions,
             calibration_profile=embedding_profile,
             query_timeout_seconds=_positive(
-                embedding_raw.get("query_timeout_seconds", 0.5),
+                embedding_raw.get("query_timeout_seconds", 5),
                 "embedding.query_timeout_seconds",
             ),
             document_timeout_seconds=_positive(

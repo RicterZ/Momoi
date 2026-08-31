@@ -58,7 +58,9 @@ class ConfigurationTest(unittest.TestCase):
                 "logging": {},
             }
             path.write_text(json.dumps(value))
-            self.assertEqual(load_config(path).embedding, EmbeddingConfig())
+            default_embedding = load_config(path).embedding
+            self.assertEqual(default_embedding, EmbeddingConfig())
+            self.assertEqual(default_embedding.query_timeout_seconds, 5)
 
             value["embedding"] = {
                 "enabled": True,

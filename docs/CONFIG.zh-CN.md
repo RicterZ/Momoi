@@ -217,7 +217,7 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
     "model": "BAAI/bge-small-zh-v1.5",
     "dimensions": 512,
     "calibration_profile": "bge-small-zh-v1.5-momoi-v1",
-    "query_timeout_seconds": 0.5,
+    "query_timeout_seconds": 5,
     "document_timeout_seconds": 30,
     "document_batch_size": 8
   }
@@ -232,7 +232,7 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
 | `model` | `BAAI/bge-small-zh-v1.5` | Embedding 模型标识；内置 profile 支持此模型 |
 | `dimensions` | `512` | 正数向量维度；必须与接口输出一致 |
 | `calibration_profile` | `bge-small-zh-v1.5-momoi-v1` | 与模型和文档模板匹配的阈值配置 |
-| `query_timeout_seconds` | `0.5` | 单个 Turn 查询批次的正数超时时间 |
+| `query_timeout_seconds` | `5` | 单个 Turn 查询批次的正数超时时间 |
 | `document_timeout_seconds` | `30` | 单个后台文档批次的正数超时时间 |
 | `document_batch_size` | `8` | 每次后台请求编码的正数文档数量 |
 

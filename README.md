@@ -92,26 +92,36 @@ flowchart TB
 
 ### How memory works
 
-Most systems keep a log. Momoi keeps a life: a small set of facts she should treat as true, and a set of shared experiences she can return to.
+Most systems keep a log. Momoi keeps a layered account of her life with the owner. Each layer has a different job, lifetime, and degree of trust; not everything that happened should become a permanent fact, and not every old fact should appear in every conversation.
 
 ```mermaid
 flowchart TB
-  subgraph sit["Where a fact sits"]
-    direction LR
-    standing["Standing"]
-    current["Current"]
-    topic["Topic"]
+  now["Working context<br/>this conversation, current state, open work"]
+  subgraph durable["What can outlive the moment"]
+    confirmed["Confirmed memory<br/>facts, preferences, relationships, methods"]
+    episodes["Episodes<br/>shared experiences and their original conversation"]
+    reflection["Reflection memory<br/>Momoi's lower-confidence learning"]
   end
-  episodes["Shared episodes"]
-  notes["Daily notes"]
-  moment["This moment"]
-  sit --> moment
-  episodes --> moment
-  notes --> moment
-  moment --> back["Only the matching pieces come back"]
+  confirmed --> recall["Recall only what this moment needs"]
+  episodes --> recall
+  reflection --> recall
+  recall --> now
+  now --> next["The next response or action"]
+  next -->|"experience settles"| episodes
+  next -->|"owner-grounded fact"| confirmed
+  episodes -->|"quiet review"| reflection
 ```
 
-A fact has a place, not a volume setting. Saying “remember this” does not make it stand in front of every conversation.
+A fact has a place, not a volume setting. Saying “remember this” does not make it stand in front of every conversation. Momoi's layers are deliberately unequal:
+
+| Layer | What it preserves | How it behaves |
+| --- | --- | --- |
+| Working context | The current exchange, recent Turns, mood, activity, open work, and immediate references | Keeps the present coherent without pretending that every passing detail is permanent |
+| Confirmed memory | Owner-grounded facts, preferences, relationships, routines, and reusable methods | Carries the most authority; a newer correction narrows, replaces, or retires an older fact |
+| Episodes | Concrete shared experiences such as a discussion, project stage, emotional beat, or completed task | Keeps both a compact account and the original conversation, so continuity does not depend on rereading the whole chat log |
+| Reflection memory | Momoi's impressions, lessons, tool practice, and methods learned during quiet review | Broadens continuity and skill, but remains fallible, date-sensitive, and weaker than current evidence or confirmed memory |
+
+Confirmed memory itself has three placements. This controls when a durable fact returns, rather than how loudly it is repeated.
 
 | Place | Best for | How it returns |
 | --- | --- | --- |
@@ -119,13 +129,13 @@ A fact has a place, not a volume setting. Saying “remember this” does not ma
 | Current | Tonight's plan, this package, where you are | Stays with her while it is still true, then fades |
 | Topic | Device playbooks, game rules, how-to she was asked to keep | Waits until that subject comes back |
 
-Shared conversation settles into **Episodes**. An Episode is one concrete experience — a discussion, a project stage, an emotional beat — not a permanent category such as “software” or “companionship”. She keeps a compact account of what happened and why it mattered. The original messages stay archived; she opens them only when the account is not enough, or when the exact wording, a correction, or an unfinished promise still matters.
+An Episode is one concrete experience, not a permanent category such as “software” or “companionship”. Its compact account makes broad continuity cheap; its original Turns preserve the evidence needed for an exact phrase, correction, decision, or unfinished promise. As a conversation develops, it may continue the same Episode or begin a new one when the actual subject changes.
 
 **Writing is a judgment, not a reflex.** Ordinary chat, venting, and a correction that only applies to this reply do not need a new write. A lasting fact needs something you actually said. Search results and her own inferences are not that evidence. If you later reverse it, narrow it, or replace the fact itself, the new wording wins; the stale version should not sit beside the correction. When she is on her own time, she still does not write a lasting fact unless it comes from something you actually said.
 
-**Recall is assembled, then checked.** Standing and current facts are already with her. After she privately understands this moment, matching topic facts, daily notes, and Episode accounts come back. That first pass is not proof that everything useful was found. If a recurring person, a shared convention, or an earlier thread is still missing, she can look again before she speaks. Daily notes are her own learning from the day that just ended — useful continuity, never stronger than what you said, the Soul, or a confirmed result.
+**Recall is assembled, then checked.** Standing and current facts are already with her. She first identifies what historical evidence the moment may depend on, then recalls matching confirmed memory, reflection memory, and Episodes by both meaning and precise anchors such as names or titles. Relevance decides what returns; authority decides how much it may be trusted. That first pass is not proof that everything useful was found, so she can search again when a person, convention, method, or earlier thread is still unresolved.
 
-**The house keeps itself in the quiet hours.** Daily reflection reviews what happened and forms lower-authority learning without sending a message. Confirmed-memory maintenance then applies validated, atomic inventory changes. In the background, unbound conversation can still settle into Episodes, and existing accounts can be quietly refreshed so they stay faithful as a thread continues.
+**The house keeps itself in the quiet hours.** Daily reflection reviews what happened and forms lower-authority learning without sending a message. Confirmed-memory maintenance separately applies validated, atomic changes, so an impression cannot silently promote itself into owner-grounded truth. In the background, unbound conversation can settle into Episodes, existing accounts can be refreshed, and obsolete derived recall data can be rebuilt from its sources.
 
 ## Core experience
 
