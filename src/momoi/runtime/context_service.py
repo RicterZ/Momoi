@@ -21,10 +21,10 @@ from .context_assembler import (
     render_planner_recent_turn_focus,
     render_planner_recent_turns,
 )
-from .context_planner import (
+from .heartbeat_planner import (
     HEARTBEAT_PLAN_TOOL_NAME,
     HEARTBEAT_PLAN_TOOL_SPEC,
-    ContextPlanError,
+    HeartbeatPlanError,
     degraded_heartbeat_plan,
     parse_heartbeat_plan,
 )
@@ -366,13 +366,6 @@ def render_heartbeat_planner_request(
 
 
 class ContextService:
-    @staticmethod
-    def _stored_context_plan(record: dict[str, object]) -> dict[str, object]:
-        plan = record.get("plan")
-        if not isinstance(plan, dict):
-            raise RuntimeError("stored context plan is not an object")
-        return plan
-
     def _plan_from_submission(
         self,
         events: list[IncomingMessage],
@@ -655,12 +648,12 @@ class ContextService:
                     len(response.tool_calls) != 1
                     or response.tool_calls[0].name != HEARTBEAT_PLAN_TOOL_NAME
                 ):
-                    raise ContextPlanError("heartbeat_plan_tool_required")
+                    raise HeartbeatPlanError("heartbeat_plan_tool_required")
                 plan = parse_heartbeat_plan(
                     response.tool_calls[0].arguments,
                     available_mcp_servers,
                 )
-            except ContextPlanError as error:
+            except HeartbeatPlanError as error:
                 last_error = str(error)
                 log_event(
                     logger,

@@ -33,7 +33,6 @@ from momoi.provider import (
     ProviderError,
     _compact_response_text,
     _log_tool_schema,
-    _openai_messages,
     _redact_dump_media,
     usage_metrics,
 )
@@ -45,7 +44,7 @@ from momoi.runtime.turn_support import (
     sections,
     truncate_tool_result_json,
 )
-from tests.support import with_context_planner
+from tests.support import with_owner_and_heartbeat_planner
 
 
 @contextmanager
@@ -244,42 +243,28 @@ class ProvidersToolsTest(unittest.TestCase):
 
     def test_user_pack_puts_stable_identity_before_clock_and_task(self) -> None:
         rendered = pack_user_context(
-            ("reply_timeline", "OWNER: hi\n--- CONTINUE HERE (silent 4m) ---"),
             ("followup", "continue the thought"),
             ("runtime_state", "now"),
             ("conversation_state", '{"busy":false}'),
             ("long_term_memories", "喜欢短回复"),
-            ("recent_conversation", "user: hi"),
         )
         self.assertNotIn("<emotion_catalog>", rendered)
         self.assertLess(
             rendered.index("<long_term_memories>"),
-            rendered.index("<recent_conversation>"),
-        )
-        self.assertLess(
-            rendered.index("<recent_conversation>"),
             rendered.index("<conversation_state>"),
         )
         self.assertLess(
             rendered.index("<conversation_state>"),
             rendered.index("<runtime_state>"),
         )
-        self.assertLess(
-            rendered.index("<runtime_state>"),
-            rendered.index("<reply_timeline>"),
-        )
-        self.assertLess(
-            rendered.index("<reply_timeline>"),
-            rendered.index("<followup>"),
-        )
+        self.assertLess(rendered.index("<runtime_state>"), rendered.index("<followup>"))
 
-    def test_user_pack_keeps_query_specific_recall_after_recent_turns(self) -> None:
+    def test_user_pack_keeps_query_specific_recall_before_current_input(self) -> None:
         rendered = pack_user_context(
             ("recall_memories", "召回的事实"),
             ("recall_status", "queries=棕榈\nmisses=棕榈"),
             ("reflection_memories", "今日学习"),
             ("episode_directory", "旧话题"),
-            ("recent_turns", '{"version":1,"turns":[]}'),
             ("long_term_memories", "喜欢短回复"),
             ("active_goals", "喝水"),
             ("current_owner_messages", "在吗"),
@@ -290,26 +275,14 @@ class ProvidersToolsTest(unittest.TestCase):
         )
         self.assertLess(
             rendered.index("<active_goals>"),
-            rendered.index("<recent_turns>"),
-        )
-        self.assertLess(
-            rendered.index("<recent_turns>"),
             rendered.index("<episode_directory>"),
-        )
-        self.assertLess(
-            rendered.index("<recent_turns>"),
-            rendered.index("<recall_memories>"),
         )
         self.assertLess(
             rendered.index("<recall_memories>"),
             rendered.index("<recall_status>"),
         )
         self.assertLess(
-            rendered.index("<recent_turns>"),
             rendered.index("<reflection_memories>"),
-        )
-        self.assertLess(
-            rendered.index("<recent_turns>"),
             rendered.index("<current_owner_messages>"),
         )
         with self.assertRaisesRegex(ValueError, "unknown user context section"):
@@ -1265,7 +1238,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                     )
 
             fake = FakeProvider()
-            daemon.provider = with_context_planner(fake)  # type: ignore[assignment]
+            daemon.provider = with_owner_and_heartbeat_planner(fake)  # type: ignore[assignment]
             event = IncomingMessage(
                 "qq:1:ignored-choice", "ignored-choice", "测试", 1, 1
             )
@@ -1358,7 +1331,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
 
             self_test = self
             fake = FakeProvider()
-            daemon.provider = with_context_planner(fake)  # type: ignore[assignment]
+            daemon.provider = with_owner_and_heartbeat_planner(fake)  # type: ignore[assignment]
             event = IncomingMessage("qq:1:bad-json", "bad-json", "测试", 1, 1)
             daemon.store.add_event(event)
             await daemon._complete_batch_turn(

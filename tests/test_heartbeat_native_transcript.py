@@ -7,7 +7,7 @@ from momoi.channel.napcat import NapCatConfig
 from momoi.config import AppConfig, LLMConfig
 from momoi.models import AgentReply, IncomingMessage, ProviderResponse, ToolCall
 from momoi.runtime import MomoiDaemon
-from momoi.runtime.context_planner import degraded_heartbeat_plan
+from momoi.runtime.heartbeat_planner import degraded_heartbeat_plan
 
 
 class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):

@@ -1427,8 +1427,8 @@ class StorageMemoryTest(unittest.TestCase):
             "never persist a more specific claim than the exact owner quote entails",
             MEMORY_TOOL_POLICY,
         )
-        self.assertIn("inspect matching committed", MEMORY_TOOL_POLICY)
-        self.assertIn("mutations in `<recent_turns>`", MEMORY_TOOL_POLICY)
+        self.assertIn("locate the committed memory", MEMORY_TOOL_POLICY)
+        self.assertIn("native transcript tool", MEMORY_TOOL_POLICY)
         self.assertIn("replace_confirmed=true", MEMORY_TOOL_POLICY)
         self.assertIn("this is `recent`, never", MEMORY_TOOL_POLICY)
         self.assertIn("A procedure you are afraid of forgetting is not `always`", MEMORY_TOOL_POLICY)

@@ -3,15 +3,9 @@ from html import unescape
 from typing import Any
 
 from momoi.models import ProviderResponse, ToolCall
-from momoi.runtime.context_planner import (
-    CONTEXT_PLAN_TOOL_NAME,
-    HEARTBEAT_PLAN_TOOL_NAME,
-)
+from momoi.runtime.heartbeat_planner import HEARTBEAT_PLAN_TOOL_NAME
 from momoi.runtime.protocol import RECALL_TOOL_SPEC
-from momoi.runtime.turn_support import (
-    CONTEXT_PLANNER_SYSTEM_PROMPT,
-    HEARTBEAT_PLANNER_SYSTEM_PROMPT,
-)
+from momoi.runtime.turn_support import HEARTBEAT_PLANNER_SYSTEM_PROMPT
 
 
 def planner_sections(text: str) -> dict[str, str]:
@@ -23,82 +17,6 @@ def planner_sections(text: str) -> dict[str, str]:
 
 def recall_need(semantic: str, *keywords: str) -> dict[str, object]:
     return {"semantic": semantic, "keywords": list(keywords)}
-
-
-def context_plan_response(messages: list[dict[str, Any]]) -> ProviderResponse:
-    payload = planner_sections(str(messages[0]["content"]))
-    owner_messages = [
-        {
-            "event_id": match.group(1),
-            "text": match.group(2),
-        }
-        for match in re.finditer(
-            r"\[event id=([^\s]+)[^]]*\]\n(.*?)(?=\n\n\[event |\Z)",
-            payload["owner_messages"],
-            re.DOTALL,
-        )
-    ]
-    candidate_ids = re.findall(
-        r"(?m)^- id=([^\s]+)", payload.get("candidate_episodes", "")
-    )
-    mcp_server_ids = re.findall(
-        r"(?m)^- id=([^\s]+)", payload.get("available_mcp_servers", "")
-    )
-    units = [
-        {
-            "id": f"u{index}",
-            "event_ids": [message["event_id"]],
-            "text": message["text"],
-            "intent": "test owner intent",
-            "speech_act": "request",
-            "references": [],
-            "recall_mode": "search",
-            "recall_queries": [recall_need("Retrieve history for the test owner intent", "test owner intent")],
-            "recall_from_turn_id": "",
-        }
-        for index, message in enumerate(owner_messages, 1)
-    ]
-    episode_ref = candidate_ids[0] if candidate_ids else "new:test-thread"
-    plan = {
-        "version": 6,
-        "intent_units": units,
-        "episode_actions": [
-            {
-                "action": "continue" if candidate_ids else "new",
-                "episode_ref": episode_ref,
-                "unit_ids": [unit["id"] for unit in units],
-                "topics": ["test"],
-                "entities": [],
-                "open_loops": [],
-                "salience": 0.5,
-                **({"title": "Test conversation"} if not candidate_ids else {}),
-            }
-        ],
-        "episode_links": [],
-        "handoff": {
-            "context_needs": [],
-            "mcp_servers": mcp_server_ids,
-            "strategy": [
-                "Handle the test owner request with the configured capabilities, "
-                "verify the result, and report material uncertainty."
-            ],
-            "completion_criteria": ["The requested outcome is verified."],
-            "response_mode": "visible",
-        },
-        "uncertainty": [],
-    }
-    call = ToolCall("context-plan", CONTEXT_PLAN_TOOL_NAME, plan)
-    return ProviderResponse(
-        [
-            {
-                "type": "tool_use",
-                "id": call.id,
-                "name": call.name,
-                "input": call.arguments,
-            }
-        ],
-        [call],
-    )
 
 
 def heartbeat_plan_response(messages: list[dict[str, Any]]) -> ProviderResponse:
@@ -160,6 +78,8 @@ def recall_response(units: int = 1) -> ProviderResponse:
                             "keywords": ["test owner intent"],
                         }
                     ],
+                    "recall_from_turn_id": "",
+                    "episode": {"action": "none", "ref": "", "title": ""},
                 }
                 for _index in range(max(1, units))
             ]
@@ -188,7 +108,6 @@ class ContextAwareProvider:
 
     def __init__(self, delegate: object) -> None:
         self.delegate = delegate
-        self.submitted = False
 
     async def complete(
         self,
@@ -198,8 +117,29 @@ class ContextAwareProvider:
         **kwargs: object,
     ) -> ProviderResponse:
         names = {str(spec.get("name") or "") for spec in tools or []}
-        if RECALL_TOOL_SPEC["name"] in names and not self.submitted:
-            self.submitted = True
+        last_recall = -1
+        last_current_input = -1
+        for index, message in enumerate(messages):
+            content = (
+                message.get("content")
+                if isinstance(message.get("content"), list)
+                else []
+            )
+            if any(
+                isinstance(block, dict)
+                and block.get("type") == "tool_use"
+                and block.get("name") == RECALL_TOOL_SPEC["name"]
+                for block in content
+            ):
+                last_recall = index
+            if any(
+                isinstance(block, dict)
+                and "<current_owner_messages>" in str(block.get("text") or "")
+                for block in content
+            ):
+                last_current_input = index
+        submitted = last_recall > last_current_input
+        if RECALL_TOOL_SPEC["name"] in names and not submitted:
             return recall_response()
         return await self.delegate.complete(  # type: ignore[attr-defined,no-any-return]
             system, messages, tools, **kwargs
@@ -210,7 +150,7 @@ def with_owner_context(provider: object) -> ContextAwareProvider:
     return ContextAwareProvider(provider)
 
 
-class PlannerAwareProvider:
+class HeartbeatPlannerAwareProvider:
     def __init__(self, delegate: object) -> None:
         self.delegate = delegate
 
@@ -221,8 +161,6 @@ class PlannerAwareProvider:
         tools: list[dict[str, Any]] | None = None,
         **kwargs: object,
     ) -> ProviderResponse:
-        if system == CONTEXT_PLANNER_SYSTEM_PROMPT:
-            return context_plan_response(messages)
         if system == HEARTBEAT_PLANNER_SYSTEM_PROMPT:
             return heartbeat_plan_response(messages)
         return await self.delegate.complete(  # type: ignore[attr-defined,no-any-return]
@@ -230,5 +168,9 @@ class PlannerAwareProvider:
         )
 
 
-def with_context_planner(provider: object) -> ContextAwareProvider:
-    return ContextAwareProvider(PlannerAwareProvider(provider))
+def with_heartbeat_planner(provider: object) -> HeartbeatPlannerAwareProvider:
+    return HeartbeatPlannerAwareProvider(provider)
+
+
+def with_owner_and_heartbeat_planner(provider: object) -> ContextAwareProvider:
+    return ContextAwareProvider(HeartbeatPlannerAwareProvider(provider))

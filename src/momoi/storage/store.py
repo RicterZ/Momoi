@@ -1624,13 +1624,6 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             )
         return candidates
 
-    def next_context_plan_revision(self, turn_id: str) -> int:
-        row = self._db.execute(
-            "SELECT COALESCE(MAX(revision), 0) + 1 FROM context_plans WHERE turn_id=?",
-            (turn_id,),
-        ).fetchone()
-        return int(row[0])
-
     def save_context_retrieval(
         self,
         turn_id: str,

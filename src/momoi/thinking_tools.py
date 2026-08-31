@@ -67,7 +67,7 @@ THINKING_TOOL_SPECS: list[dict[str, Any]] = [
                     "type": "string",
                     "description": (
                         "Optional call stage such as owner, webhook, "
-                        "context_plan, or heartbeat."
+                        "heartbeat_plan, or heartbeat."
                     ),
                 },
                 "limit": {

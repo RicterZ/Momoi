@@ -7,26 +7,19 @@ from pathlib import Path
 from momoi.channel.napcat import NapCatConfig
 from momoi.config import AppConfig, LLMConfig
 from momoi.context_time import context_timestamp
-from momoi.models import AgentReply, IncomingMessage, MemoryCandidate, TurnDraft
+from momoi.models import AgentReply, IncomingMessage
 from momoi.runtime.context_assembler import (
     _episode_header,
     _planner_final,
     assemble_main_context,
     assemble_planner_recent_turns,
     assemble_recent_external_events,
-    assemble_recent_turns,
     build_plan_retrieval,
     project_recent_turns_for_planner,
-    project_recent_turns_for_owner,
     recall_episode_context,
     render_planner_recent_turn_focus,
     render_planner_recent_turns,
     select_plan_recall_queries,
-)
-from momoi.runtime.turn_support import (
-    OWNER_TURN_PROTOCOL_REMINDER,
-    pack_owner_context,
-    pack_user_context,
 )
 from momoi.storage import Store, estimate_tokens
 from momoi.storage.episode_ranking import rank_recall_items
@@ -341,149 +334,10 @@ class ContextAssemblerTest(unittest.TestCase):
             ["older-strong", "recent-weak", "recent-only"],
         )
 
-    def test_recent_turns_keep_six_turns_without_token_pruning(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            store = Store(Path(directory) / "momoi.sqlite3")
-            for index in range(8):
-                event = IncomingMessage(
-                    f"recent-full-{index}",
-                    f"recent-full-{index}",
-                    f"第{index}轮 " + "包含较长内容" * 500,
-                    index + 1,
-                    index + 1,
-                )
-                store.add_event(event)
-                store.commit_turn(
-                    [event],
-                    event.text,
-                    AgentReply([]),
-                    turn_id=f"recent-full-turn-{index}",
-                )
 
-            document, _ = assemble_recent_turns(store, 6, None)
-            rendered = project_recent_turns_for_owner(document, None)
 
-            self.assertEqual(len(document["turns"]), 6)
-            self.assertEqual(rendered.count("\n\nT-") + 1, 6)
-            self.assertIn("第2轮", rendered)
-            self.assertIn("第7轮", rendered)
-            store.close()
 
-    def test_main_recent_turns_keep_stable_base_and_dynamic_append(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            store = Store(Path(directory) / "momoi.sqlite3")
 
-            def add(index: int) -> None:
-                event = IncomingMessage(
-                    f"event-{index}",
-                    f"event-{index}",
-                    f"第{index}轮",
-                    index,
-                    index,
-                )
-                store.add_event(event)
-                store.commit_turn(
-                    [event],
-                    event.text,
-                    AgentReply([f"回复{index}"]),
-                    turn_id=f"turn-{index}",
-                )
-
-            for index in range(1, 7):
-                add(index)
-            six = assemble_main_context(store, {}, 2000, 2000, recent_turns=6)
-
-            add(7)
-            seven = assemble_main_context(store, {}, 2000, 2000, recent_turns=6)
-
-            self.assertEqual(six["recent_turn_base"], seven["recent_turn_base"])
-            self.assertEqual(six["recent_turn_append"], "")
-            self.assertIn("T-7", seven["recent_turn_append"])
-            self.assertIn("第7轮", seven["recent_turn_append"])
-            for index in range(8, 12):
-                add(index)
-            eleven = assemble_main_context(store, {}, 2000, 2000, recent_turns=6)
-            self.assertEqual(eleven["recent_turn_base"], six["recent_turn_base"])
-            self.assertEqual(eleven["recent_turn_append"].count("\n\nT-") + 1, 5)
-            self.assertIn("第11轮", eleven["recent_turn_append"])
-
-            add(12)
-            twelve = assemble_main_context(store, {}, 2000, 2000, recent_turns=6)
-            self.assertEqual(twelve["recent_turn_append"], "")
-            self.assertNotEqual(twelve["recent_turn_base"], six["recent_turn_base"])
-            self.assertNotIn("第6轮", twelve["recent_turn_base"])
-            self.assertIn("第7轮", twelve["recent_turn_base"])
-            self.assertIn("第12轮", twelve["recent_turn_base"])
-
-            add(13)
-            thirteen = assemble_main_context(store, {}, 2000, 2000, recent_turns=6)
-            self.assertEqual(thirteen["recent_turn_base"], twelve["recent_turn_base"])
-            self.assertIn("T-7", thirteen["recent_turn_append"])
-            self.assertIn("第13轮", thirteen["recent_turn_append"])
-            store.close()
-
-    def test_owner_projection_removes_legacy_channel_prefixes(self) -> None:
-        rendered = project_recent_turns_for_owner(
-            {
-                "turns": [
-                    {
-                        "timeline": [
-                            {
-                                "type": "owner_message",
-                                "text": "2026-08-23T22:50:28+08:00 [napcat] 在干嘛",
-                            },
-                            {
-                                "type": "owner_message",
-                                "text": "2026-08-23T22:51:28+08:00 [weixin] 回我一下",
-                            },
-                        ]
-                    }
-                ]
-            },
-            None,
-        )
-
-        self.assertIn("owner: 2026-08-23T22:50:28+08:00 在干嘛", rendered)
-        self.assertIn("owner: 2026-08-23T22:51:28+08:00 回我一下", rendered)
-        self.assertNotIn("[napcat]", rendered)
-        self.assertNotIn("[weixin]", rendered)
-
-    def test_owner_context_puts_fixed_memory_and_agenda_state_first(self) -> None:
-        rendered = pack_user_context(
-            ("recent_turn_append", "appended history"),
-            ("recent_turn_base", "stable history"),
-            ("recent_memories", "recent"),
-            ("active_goals", "goals"),
-            ("long_term_memories", "long term"),
-            ("recall_memories", "recalled"),
-            ("episode_directory", "episodes"),
-            ("interrupted_reply_expectation", "interrupted"),
-        )
-        self.assertLess(rendered.index("<long_term_memories>"), rendered.index("<recent_memories>"))
-        self.assertLess(rendered.index("<recent_memories>"), rendered.index("<active_goals>"))
-        self.assertLess(rendered.index("<active_goals>"), rendered.index("<interrupted_reply_expectation>"))
-        self.assertLess(rendered.index("<interrupted_reply_expectation>"), rendered.index("<recent_turn_base>"))
-        self.assertLess(rendered.index("<recent_turn_base>"), rendered.index("<recent_turn_append>"))
-        self.assertLess(rendered.index("<recent_turn_append>"), rendered.index("<recall_memories>"))
-        self.assertLess(rendered.index("<recall_memories>"), rendered.index("<episode_directory>"))
-
-    def test_owner_turn_protocol_is_after_authenticated_owner_input(self) -> None:
-        rendered = pack_owner_context(
-            ("runtime_state", "now"),
-            ("current_owner_messages", "在吗"),
-        )
-
-        self.assertTrue(rendered.endswith(OWNER_TURN_PROTOCOL_REMINDER))
-        self.assertLess(
-            rendered.index("</current_owner_messages>"),
-            rendered.index(OWNER_TURN_PROTOCOL_REMINDER),
-        )
-        self.assertIn(
-            "every owner-visible bubble MUST be sent by calling send_message with "
-            "that bubble in messages. Never output the bubble as ordinary "
-            "assistant content",
-            rendered,
-        )
 
     def test_retrieval_keeps_fixed_and_dynamic_memory_layers_distinct(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -543,7 +397,7 @@ class ContextAssemblerTest(unittest.TestCase):
                     for item in retrieval["reflection_memories"]
                 )
             )
-            assembled = assemble_main_context(store, retrieval, 2000, 2000)
+            assembled = assemble_main_context(store, retrieval, 2000)
             self.assertIn(
                 "may be outdated or no longer applicable",
                 assembled["reflection_memories"],
@@ -727,46 +581,6 @@ class ContextAssemblerTest(unittest.TestCase):
             self.assertEqual(retrieval["reflection_memories"], [])
             store.close()
 
-    def test_owner_history_keeps_action_ledger_for_memory_and_external_tools(self) -> None:
-        rendered = project_recent_turns_for_owner(
-            {
-                "turns": [
-                    {
-                        "started_at": "2026-08-20T10:00:00+08:00",
-                        "timeline": [
-                            {
-                                "type": "tool_call",
-                                "tool_call_id": "call-12345678",
-                                "name": "memory_remember",
-                                "arguments": {"kind": "shared", "key": "games", "content": "共同游玩"},
-                            },
-                            {
-                                "type": "tool_result",
-                                "tool_call_id": "call-12345678",
-                                "result": {"state": "staged", "memory": {"kind": "shared", "key": "games", "activation": "recall"}},
-                            },
-                            {
-                                "type": "tool_call",
-                                "tool_call_id": "call-87654321",
-                                "name": "mcp__social__feed",
-                                "arguments": {"query": "游戏"},
-                            },
-                            {
-                                "type": "tool_result",
-                                "tool_call_id": "call-87654321",
-                                "result": {"result": "feed fetched: 3 relevant posts"},
-                            },
-                        ],
-                        "final": {"mutations": {"memories": [{"kind": "shared", "key": "games"}]}},
-                    }
-                ]
-            },
-            500,
-        )
-        self.assertIn("memory_remember", rendered)
-        self.assertIn("shared:games", rendered)
-        self.assertIn("feed fetched", rendered)
-        self.assertIn("final: memories=shared:games", rendered)
 
     def test_planner_recent_turns_mark_internal_records_apart_from_speech(
         self,
@@ -1087,179 +901,6 @@ class ContextAssemblerTest(unittest.TestCase):
             self.assertEqual(base_count, 0)
             store.close()
 
-    def test_recent_turns_keep_messages_tools_and_committed_mutations_together(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            store = Store(Path(directory) / "momoi.sqlite3")
-            event = IncomingMessage(
-                "owner-correction",
-                "owner-correction",
-                "这是个双关",
-                1,
-                1,
-            )
-            store.add_event(event)
-            store.begin_turn("turn-correction", "owner", [event.event_id])
-            store.save_context_plan(
-                "turn-correction",
-                1,
-                [event.event_id],
-                {
-                    "version": 2,
-                    "intent_units": [
-                        {
-                            "id": "u1",
-                            "event_ids": [event.event_id],
-                            "text": event.text,
-                            "intent": "纠正网络梗理解",
-                            "speech_act": "correction",
-                            "references": [],
-                            "recall_queries": [],
-                        }
-                    ],
-                    "episode_actions": [
-                        {"action": "none", "unit_ids": ["u1"]}
-                    ],
-                    "episode_links": [],
-                    "uncertainty": [],
-                },
-            )
-            store.append_turn_journal(
-                "turn-correction",
-                "tool_call",
-                {
-                    "tool_call_id": "remember",
-                    "name": "memory_remember",
-                    "source": "memory",
-                    "arguments": {
-                        "kind": "shared",
-                        "key": "meme.example",
-                        "content": "一个待更正的解释",
-                        "evidence": "这是个双关",
-                    },
-                },
-            )
-            store.append_turn_journal(
-                "turn-correction",
-                "tool_result",
-                {
-                    "tool_call_id": "remember",
-                    "name": "memory_remember",
-                    "ok": True,
-                    "error": None,
-                    "result": {"ok": True, "state": "staged"},
-                },
-            )
-            draft = TurnDraft(
-                memories=[
-                    MemoryCandidate(
-                        "shared",
-                        "meme.example",
-                        "一个待更正的解释",
-                        "这是个双关",
-                        activation="recall",
-                    )
-                ]
-            )
-            store.commit_turn(
-                [event],
-                event.text,
-                AgentReply(["我先这样理解"]),
-                draft,
-                turn_id="turn-correction",
-            )
-
-            document, rendered = assemble_recent_turns(store, 2, 4000)
-
-            records = document["turns"]
-            self.assertEqual(len(records), 1)
-            record = records[0]
-            self.assertEqual(record["turn_id"], "turn-correction")
-            self.assertEqual(
-                record["interpretation"]["intents"][0]["speech_act"],
-                "correction",
-            )
-            types = [item["type"] for item in record["timeline"]]
-            self.assertIn("owner_message", types)
-            self.assertIn("tool_call", types)
-            self.assertIn("tool_result", types)
-            self.assertIn("assistant_message", types)
-            self.assertEqual(
-                record["final"]["mutations"]["memories"][0]["key"],
-                "meme.example",
-            )
-            parsed = json.loads(rendered)
-            self.assertEqual(parsed["version"], 1)
-            self.assertEqual(parsed["turns"][0]["turn_id"], "turn-correction")
-            self.assertIn("meme.example", rendered)
-
-            projected = project_recent_turns_for_planner(document)
-            projected_record = projected["turns"][0]
-            projected_timeline = projected_record["timeline"]
-            tool_call = next(
-                item for item in projected_timeline if item["type"] == "tool_call"
-            )
-            tool_result = next(
-                item for item in projected_timeline if item["type"] == "tool_result"
-            )
-            self.assertEqual(tool_call["call"], "t1")
-            self.assertEqual(tool_result["call"], "t1")
-            self.assertEqual(tool_call["name"], "memory_remember")
-            self.assertEqual(
-                tool_call["arguments"],
-                {
-                    "kind": "shared",
-                    "key": "meme.example",
-                    "content": "一个待更正的解释",
-                    "evidence": "这是个双关",
-                },
-            )
-            self.assertEqual(tool_result["result"], {"state": "staged"})
-            self.assertNotIn("ok", tool_result)
-            self.assertNotIn("error", tool_result)
-            self.assertNotIn("name", tool_result)
-            self.assertNotIn("visibility", tool_result)
-            self.assertNotIn("timestamp", tool_result)
-            self.assertNotIn("tool_call_id", tool_call)
-            self.assertNotIn("source", tool_call)
-            self.assertNotIn("trust", tool_result)
-            self.assertNotIn("llm", projected_record["final"])
-            self.assertNotIn("kind", projected_record)
-            self.assertNotIn("state", projected_record)
-            self.assertNotIn("completed_at", projected_record)
-            self.assertIn("at", projected_record)
-            projected_intent = projected_record["interpretation"]["intents"][0]
-            self.assertNotIn("id", projected_intent)
-            self.assertNotIn("text", projected_intent)
-            self.assertEqual(projected_intent["speech_act"], "correction")
-            self.assertEqual(
-                projected_record["interpretation"]["episode_actions"][0][
-                    "intent_indexes"
-                ],
-                [0],
-            )
-            self.assertNotIn(
-                "uncertainty", projected_record["interpretation"]
-            )
-            owner_message = next(
-                item
-                for item in projected_timeline
-                if item["type"] == "owner_message"
-            )
-            self.assertEqual(owner_message["text"], "这是个双关")
-            self.assertNotIn("trust", owner_message)
-            self.assertNotIn("delivery", owner_message)
-            self.assertNotIn("timestamp", owner_message)
-            self.assertEqual(
-                next(
-                    item
-                    for item in document["turns"][0]["timeline"]
-                    if item["type"] == "tool_call"
-                )["tool_call_id"],
-                "remember",
-            )
-            store.close()
 
     def test_planner_projection_omits_defaults_but_keeps_exceptions(self) -> None:
         projected = project_recent_turns_for_planner(
@@ -1632,7 +1273,7 @@ class ContextAssemblerTest(unittest.TestCase):
             self.assertTrue(
                 all(item["unit_ids"] == [] for item in retrieval["episodes"])
             )
-            assembled = assemble_main_context(store, retrieval, 2000, 2000)
+            assembled = assemble_main_context(store, retrieval, 2000)
             self.assertIn("最近六小时话题 05", assembled["episodes"])
             self.assertNotIn("最近六小时话题 06", assembled["episodes"])
             self.assertNotIn("六小时前旧话题", assembled["episodes"])
@@ -1883,7 +1524,7 @@ class ContextAssemblerTest(unittest.TestCase):
                 "old-secret",
                 {item["episode_id"] for item in retrieval["episodes"]},
             )
-            assembled = assemble_main_context(store, retrieval, 2000, 2000)
+            assembled = assemble_main_context(store, retrieval, 2000)
             self.assertIn("title: 旧暗号", assembled["episodes"])
             self.assertNotIn("朱红钥匙藏在温室花盆下面", assembled["episodes"])
             store.close()
@@ -2010,54 +1651,6 @@ class ContextAssemblerTest(unittest.TestCase):
             )
             reopened.close()
 
-    def test_recent_turn_and_core_identity_survive_unrelated_degraded_recall(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            store = Store(Path(directory) / "momoi.sqlite3")
-            previous = IncomingMessage(
-                "previous", "previous", "把部署方式切换成蓝绿发布", 1, 1
-            )
-            store.add_event(previous)
-            store.commit_turn(
-                [previous],
-                previous.text,
-                AgentReply(["好，我接下来就按蓝绿发布处理"]),
-                turn_id="previous",
-            )
-            with store._db:
-                store._db.execute(
-                    """INSERT INTO memories
-                       (kind, key, content, activation, authority, source_event_id,
-                        evidence_quote, importance, created_at, updated_at)
-                       VALUES ('profile', 'owner.name', '主人的名字是 Sakana',
-                               'always', 'owner', 'owner-name', '我叫 Sakana', 1, 1, 1)"""
-                )
-            degraded = {
-                "version": 1,
-                "intent_units": [
-                    {
-                        "id": "u1",
-                        "event_ids": ["current"],
-                        "text": "好，就这么做",
-                        "intent": "degraded_message_segment",
-                        "references": [],
-                        "recall_queries": ["好，就这么做"],
-                    }
-                ],
-                "episode_actions": [],
-                "episode_links": [],
-                "uncertainty": ["planner failed"],
-            }
-
-            retrieval = build_plan_retrieval(store, degraded, config(directory))
-            assembled = assemble_main_context(
-                store, retrieval, 2000, 2000, recent_turns=1
-            )
-
-            self.assertIn("蓝绿发布", assembled["recent_turn_base"])
-            self.assertIn("Sakana", assembled["long_term_memories"])
-            store.close()
 
     def test_turn_keywords_rank_episode_without_injecting_turn_evidence(
         self,
@@ -2122,8 +1715,6 @@ class ContextAssemblerTest(unittest.TestCase):
                 store,
                 retrieval,
                 1000,
-                2000,
-                recent_turns=0,
             )
             self.assertNotIn(
                 "蓝色保温杯藏在阁楼第三个纸箱里",
@@ -2293,7 +1884,7 @@ class ContextAssemblerTest(unittest.TestCase):
                 retrieval = build_plan_retrieval(
                     store, plan("项目邮件"), config(directory)
                 )
-            assembled = assemble_main_context(store, retrieval, 2000, 2000)
+            assembled = assemble_main_context(store, retrieval, 2000)
 
             recall_logs = {
                 record.momoi_event: record.momoi_fields

@@ -1213,53 +1213,6 @@ def _owner_history_line(item: dict[str, object], call_names: dict[str, str]) -> 
     return ""
 
 
-def assemble_recent_turns(
-    store: Store,
-    turn_limit: int,
-    token_budget: int | None,
-    before_timestamp: float | None = None,
-) -> tuple[dict[str, object], str]:
-    if turn_limit <= 0 or (
-        token_budget is not None and token_budget <= 0
-    ):
-        empty: dict[str, object] = {"version": 1, "turns": []}
-        return empty, json.dumps(empty, separators=(",", ":"))
-    records = store.recent_turn_records(turn_limit, before_timestamp)
-    selected: list[dict[str, object]] = []
-    used = 0
-    for record in reversed(records):
-        rendered = json.dumps(
-            record,
-            ensure_ascii=False,
-            separators=(",", ":"),
-            default=str,
-        )
-        size = estimate_tokens(rendered)
-        candidate = record
-        if token_budget is not None and not selected and size > token_budget:
-            candidate = _compact_turn_record(record, token_budget)
-            rendered = json.dumps(
-                candidate,
-                ensure_ascii=False,
-                separators=(",", ":"),
-                default=str,
-            )
-            size = estimate_tokens(rendered)
-        if token_budget is not None and selected and used + size > token_budget:
-            break
-        selected.append(candidate)
-        used += size
-    selected.reverse()
-    document: dict[str, object] = {"version": 1, "turns": selected}
-    rendered = json.dumps(
-        document,
-        ensure_ascii=False,
-        separators=(",", ":"),
-        default=str,
-    )
-    return document, rendered
-
-
 def _owner_message_text(value: object) -> str:
     text = str(value or "")
     return re.sub(

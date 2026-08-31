@@ -1,8 +1,14 @@
+"""Legacy Heartbeat planning protocol.
+
+Deprecated: retained temporarily while Heartbeat activity selection is redesigned.
+Owner context routing no longer uses a separate planner.
+"""
+
 import json
 
 
 
-class ContextPlanError(ValueError):
+class HeartbeatPlanError(ValueError):
     pass
 
 
@@ -243,7 +249,7 @@ def _strings(
             for item in value
         )
     ):
-        raise ContextPlanError(f"invalid_{name}")
+        raise HeartbeatPlanError(f"invalid_{name}")
     return [str(item).strip() for item in value]
 
 
@@ -253,7 +259,7 @@ def _text(value: object, name: str, max_length: int) -> str:
         or not value.strip()
         or len(value.strip()) > max_length
     ):
-        raise ContextPlanError(f"invalid_{name}")
+        raise HeartbeatPlanError(f"invalid_{name}")
     return value.strip()
 
 
@@ -267,12 +273,12 @@ def _recall_queries(
     """Validate semantic rewrites separately from literal sparse anchors."""
 
     if not isinstance(value, list) or not minimum <= len(value) <= maximum:
-        raise ContextPlanError(f"invalid_{name}")
+        raise HeartbeatPlanError(f"invalid_{name}")
     queries: list[dict[str, object]] = []
     identities: set[tuple[str, tuple[str, ...]]] = set()
     for raw in value:
         if not isinstance(raw, dict) or set(raw) != {"semantic", "keywords"}:
-            raise ContextPlanError(f"invalid_{name}")
+            raise HeartbeatPlanError(f"invalid_{name}")
         semantic = _text(raw["semantic"], f"{name}_semantic", 180)
         keywords = _strings(
             raw["keywords"],
@@ -282,12 +288,12 @@ def _recall_queries(
         )
         keywords = [" ".join(keyword.split()) for keyword in keywords]
         if any("|" in keyword or "｜" in keyword for keyword in keywords):
-            raise ContextPlanError(f"invalid_{name}_keyword")
+            raise HeartbeatPlanError(f"invalid_{name}_keyword")
         if len(set(keywords)) != len(keywords):
-            raise ContextPlanError(f"duplicate_{name}_keyword")
+            raise HeartbeatPlanError(f"duplicate_{name}_keyword")
         identity = (semantic, tuple(keywords))
         if identity in identities:
-            raise ContextPlanError(f"duplicate_{name}")
+            raise HeartbeatPlanError(f"duplicate_{name}")
         identities.add(identity)
         queries.append({"semantic": semantic, "keywords": keywords})
     return queries
@@ -298,7 +304,7 @@ def _parse_mcp_route(
     available_mcp_servers: set[str] | None,
 ) -> dict[str, object]:
     if not isinstance(raw, dict) or set(raw) != {"servers", "reason"}:
-        raise ContextPlanError("invalid_mcp_route")
+        raise HeartbeatPlanError("invalid_mcp_route")
     servers = _strings(
         raw["servers"],
         "mcp_servers",
@@ -306,9 +312,9 @@ def _parse_mcp_route(
         max_length=100,
     )
     if len(set(servers)) != len(servers):
-        raise ContextPlanError("duplicate_mcp_server")
+        raise HeartbeatPlanError("duplicate_mcp_server")
     if available_mcp_servers is not None and not set(servers) <= available_mcp_servers:
-        raise ContextPlanError("unknown_mcp_server")
+        raise HeartbeatPlanError("unknown_mcp_server")
     return {
         "servers": servers,
         "reason": _text(raw["reason"], "mcp_reason", 300),
@@ -324,7 +330,7 @@ def _parse_context_needs(
     thinking_requires_past_reasoning: bool = False,
 ) -> list[dict[str, str]]:
     if not isinstance(raw_needs, list) or len(raw_needs) > 2:
-        raise ContextPlanError(error)
+        raise HeartbeatPlanError(error)
     needs: list[dict[str, str]] = []
     for raw_need in raw_needs:
         if not isinstance(raw_need, dict) or set(raw_need) != {
@@ -332,17 +338,17 @@ def _parse_context_needs(
             "query",
             "evidence",
         }:
-            raise ContextPlanError(error)
+            raise HeartbeatPlanError(error)
         tool = raw_need["tool"]
         need_evidence = raw_need["evidence"]
         if tool not in tools or need_evidence not in evidence:
-            raise ContextPlanError(error)
+            raise HeartbeatPlanError(error)
         if (
             thinking_requires_past_reasoning
             and str(tool).startswith("thinking_")
             and need_evidence != "past_reasoning"
         ):
-            raise ContextPlanError("invalid_thinking_context_need")
+            raise HeartbeatPlanError("invalid_thinking_context_need")
         needs.append(
             {
                 "tool": str(tool),
@@ -363,7 +369,7 @@ def _parse_context_block(
     thinking_requires_past_reasoning: bool = False,
 ) -> dict[str, object]:
     if not isinstance(raw, dict) or set(raw) != {"status", "needs", "reason"}:
-        raise ContextPlanError(error)
+        raise HeartbeatPlanError(error)
     status = raw["status"]
     raw_needs = raw["needs"]
     if (
@@ -373,7 +379,7 @@ def _parse_context_block(
         or (status == "sufficient" and raw_needs)
         or (status == "lookup_required" and not raw_needs)
     ):
-        raise ContextPlanError(error)
+        raise HeartbeatPlanError(error)
     needs = _parse_context_needs(
         raw_needs,
         tools=tools,
@@ -396,13 +402,13 @@ def parse_heartbeat_plan(
         try:
             value = json.loads(value)
         except (json.JSONDecodeError, TypeError) as error:
-            raise ContextPlanError("invalid_json") from error
+            raise HeartbeatPlanError("invalid_json") from error
     if (
         not isinstance(value, dict)
         or set(value) != {"version", "activity", "heartbeat_handoff", "uncertainty"}
         or value.get("version") != 3
     ):
-        raise ContextPlanError("invalid_heartbeat_plan")
+        raise HeartbeatPlanError("invalid_heartbeat_plan")
     activity = value.get("activity")
     if not isinstance(activity, dict) or set(activity) != {
         "intent",
@@ -410,14 +416,14 @@ def parse_heartbeat_plan(
         "recall_mode",
         "recall_queries",
     }:
-        raise ContextPlanError("invalid_heartbeat_activity")
+        raise HeartbeatPlanError("invalid_heartbeat_activity")
     raw_handoff = value.get("heartbeat_handoff")
     if not isinstance(raw_handoff, dict) or set(raw_handoff) != {
         "context",
         "mcp",
         "execution",
     }:
-        raise ContextPlanError("invalid_heartbeat_handoff")
+        raise HeartbeatPlanError("invalid_heartbeat_handoff")
     context = _parse_context_block(
         raw_handoff["context"],
         tools={
@@ -442,7 +448,7 @@ def parse_heartbeat_plan(
         "outline",
         "reason",
     }:
-        raise ContextPlanError("invalid_heartbeat_execution")
+        raise HeartbeatPlanError("invalid_heartbeat_execution")
     mode = raw_execution["mode"]
     outline = _strings(
         raw_execution["outline"],
@@ -464,7 +470,7 @@ def parse_heartbeat_plan(
         )
         or (mode == "work" and not outline)
     ):
-        raise ContextPlanError("invalid_heartbeat_execution")
+        raise HeartbeatPlanError("invalid_heartbeat_execution")
 
     recall_mode = activity["recall_mode"]
     recall_queries = _recall_queries(
@@ -480,7 +486,7 @@ def parse_heartbeat_plan(
         and recall_queries
         or recall_mode not in {"search", "skip"}
     ):
-        raise ContextPlanError("invalid_heartbeat_recall_decision")
+        raise HeartbeatPlanError("invalid_heartbeat_recall_decision")
     parsed_activity = {
         "intent": _text(activity["intent"], "heartbeat_intent", 300),
         "reason": _text(activity["reason"], "heartbeat_reason", 300),

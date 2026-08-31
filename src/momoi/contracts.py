@@ -1,26 +1,4 @@
-from typing import Literal, NotRequired, TypedDict
-
-
-class EpisodeBinding(TypedDict):
-    action: str
-    unit_ids: list[str]
-    episode_ref: NotRequired[str]
-    episode_id: NotRequired[str]
-    relation: NotRequired[str]
-    title: NotRequired[str]
-    topics: NotRequired[list[str]]
-    entities: NotRequired[list[str]]
-    open_loops: NotRequired[list[str]]
-    salience: NotRequired[float]
-
-
-class ContextPlan(TypedDict):
-    version: int
-    intent_units: list[dict[str, object]]
-    episode_actions: list[EpisodeBinding]
-    episode_links: list[dict[str, object]]
-    owner_handoff: NotRequired[dict[str, object]]
-    uncertainty: list[str]
+from typing import Literal, TypedDict
 
 
 class GoalMutation(TypedDict):

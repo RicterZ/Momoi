@@ -16,6 +16,7 @@ import json
 import sqlite3
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 from momoi.provider import _merge_adjacent_roles, _openai_messages
 from momoi.runtime.context_assembler import assemble_main_context
@@ -24,7 +25,6 @@ from momoi.runtime.turn_support import (
     STYLE_CARD_SYSTEM_PROMPT,
     owner_content_blocks,
     owner_context_message,
-    pack_owner_context,
     pack_user_context,
     sections,
 )
@@ -166,19 +166,19 @@ def main() -> int:
         ("episode_directory", recalled["episodes"]),
         ("recent_external_events", recalled["recent_external_events"]),
     )
-    tail = {
-        "role": "user",
-        "content": [
-            {"type": "text", "text": f"{runtime_text}\n\n" if runtime_text else ""},
-            {
-                "type": "text",
-                "text": pack_owner_context(
-                    ("current_owner_messages", str(subject["owner_text"]))
-                ),
-                "cache_control": {"type": "ephemeral"},
-            },
+    tail_content = owner_content_blocks(
+        [
+            SimpleNamespace(
+                occurred_at=float(subject["started_at"]),
+                text=str(subject["owner_text"]),
+                segments=(),
+            )
         ],
-    }
+        lambda _segments: [],
+        runtime_text,
+    )
+    tail_content[-1]["cache_control"] = {"type": "ephemeral"}
+    tail = {"role": "user", "content": tail_content}
     logical = [
         *([context_message] if context_message else []),
         *transcript.messages,

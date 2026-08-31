@@ -418,7 +418,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                     }
                 ]
             }
-            context = assemble_main_context(daemon.store, retrieval, 10000, 10000)[
+            context = assemble_main_context(daemon.store, retrieval, 10000)[
                 "episodes"
             ]
             self.assertIn("source OWNER turn=turn-1 ordinal=1", context)

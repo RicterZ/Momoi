@@ -153,12 +153,6 @@ def pack_user_context(*items: tuple[str, str]) -> str:
     )
 
 
-def pack_owner_context(*items: tuple[str, str]) -> str:
-    """Render an Owner request with the fixed output protocol at the tail."""
-    context = pack_user_context(*items)
-    return f"{context}\n\n{OWNER_TURN_PROTOCOL_REMINDER}"
-
-
 def context_data_message(
     *items: tuple[str, str], required: bool = False
 ) -> dict[str, Any] | None:
@@ -248,104 +242,6 @@ def tool_error_block(call_id: str, error: object) -> dict[str, Any]:
 
 def truncate_tool_result_json(value: str, limit: int) -> str:
     return TOOL_RESULT_FITTER.fit(value, limit)
-
-
-def conversation_guidance(plan: dict[str, object]) -> str:
-    intent_units = [
-        unit for unit in plan.get("intent_units", []) if isinstance(unit, dict)
-    ]
-    uncertainty = plan.get("uncertainty", [])
-    owner_handoff = plan.get("owner_handoff")
-    if not intent_units and not uncertainty and not owner_handoff:
-        return ""
-    lines: list[str] = []
-    for index, unit in enumerate(intent_units, start=1):
-        lines.append(f"Owner intent {index}")
-        lines.append(f"  owner text: {' '.join(str(unit.get('text') or '').split())}")
-        lines.append(f"  intent: {' '.join(str(unit.get('intent') or '').split())}")
-        lines.append(f"  speech act: {unit.get('speech_act') or 'unknown'}")
-        for reference in unit.get("references") or []:
-            lines.append(f"  reference: {' '.join(str(reference).split())}")
-
-    if isinstance(owner_handoff, dict):
-        context = owner_handoff.get("context")
-        if isinstance(context, dict):
-            needs = context.get("needs") or []
-            if needs:
-                lines.append("Possible post-recall context needs")
-            for need in needs:
-                if not isinstance(need, dict):
-                    continue
-                fields = " ".join(
-                    f"{key}={' '.join(str(need.get(key) or '').split())}"
-                    for key in ("tool", "query", "evidence")
-                    if need.get(key) not in (None, "", [], {})
-                )
-                lines.append(f"  need: {fields}")
-
-        mcp = owner_handoff.get("mcp")
-        if isinstance(mcp, dict):
-            servers = mcp.get("servers") or []
-            if servers:
-                lines.append("Preloaded MCP groups")
-                lines.append("  " + ", ".join(str(server) for server in servers))
-
-        strategy = owner_handoff.get("strategy")
-        if isinstance(strategy, dict):
-            lines.append("Strategic handoff")
-            response_mode = str(strategy.get("response_mode") or "")
-            lines.append(f"  response mode: {response_mode or 'unspecified'}")
-            for index, item in enumerate(strategy.get("plan") or [], start=1):
-                lines.append(f"  step {index}: {' '.join(str(item).split())}")
-            for criterion in strategy.get("completion_criteria") or []:
-                lines.append(f"  complete when: {' '.join(str(criterion).split())}")
-            if response_mode == "silent":
-                lines.append("  terminal action: call end_turn alone")
-            elif response_mode == "visible":
-                lines.append(
-                    "  delivery rule: every owner-visible bubble MUST be sent by "
-                    "calling send_message with that bubble in messages; never "
-                    "output the bubble as ordinary assistant content"
-                )
-
-    for item in uncertainty or []:
-        lines.append(f"Uncertainty: {' '.join(str(item).split())}")
-    return "\n".join(lines)
-
-
-def plan_log_units(plan: dict[str, object]) -> list[dict[str, object]]:
-    return [
-        {
-            "id": unit.get("id"),
-            "act": unit.get("speech_act"),
-            "text": unit.get("text"),
-            "intent": unit.get("intent"),
-            "references": unit.get("references", []),
-            "recall_mode": (
-                unit.get("recall", {}).get("mode")
-                if isinstance(unit.get("recall"), dict)
-                else None
-            ),
-            "recall_queries": unit.get("recall_queries", []),
-            "recall_from_turn_id": unit.get("recall_from_turn_id", ""),
-        }
-        for unit in plan.get("intent_units", [])
-        if isinstance(unit, dict)
-    ]
-
-
-def plan_log_episodes(plan: dict[str, object]) -> list[dict[str, object]]:
-    actions = plan.get("episode_actions", [])
-    return [
-        {
-            "action": action.get("action"),
-            "episode": action.get("episode_ref", action.get("episode_id")),
-            "units": action.get("unit_ids", []),
-            **({"title": action.get("title")} if action.get("title") else {}),
-        }
-        for action in actions
-        if isinstance(action, dict)
-    ]
 
 
 def turn_tool_names(draft: TurnDraft) -> list[str]:

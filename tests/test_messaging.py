@@ -43,7 +43,7 @@ from momoi.runtime.parsing import (
     parse_response,
 )
 from momoi.storage import Store
-from tests.support import with_context_planner
+from tests.support import with_owner_and_heartbeat_planner
 
 
 class MessagingTest(unittest.TestCase):
@@ -844,7 +844,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                     return ProviderResponse([], [call])
 
             provider = Provider()
-            daemon.provider = with_context_planner(provider)  # type: ignore[assignment]
+            daemon.provider = with_owner_and_heartbeat_planner(provider)  # type: ignore[assignment]
             event = IncomingMessage("qq:similar", "similar", "吃完饭啦", 1, 1)
             daemon.store.add_event(event)
             turn_id = daemon._turn_id(event.event_id)
@@ -958,7 +958,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                     return ProviderResponse([], [call])
 
             provider = Provider()
-            daemon.provider = with_context_planner(provider)  # type: ignore[assignment]
+            daemon.provider = with_owner_and_heartbeat_planner(provider)  # type: ignore[assignment]
             event = IncomingMessage("qq:silent-close", "silent-close", "[表情]", 1, 1)
             daemon.store.add_event(event)
             await daemon._complete_batch_turn(
@@ -1035,7 +1035,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                         ],
                     )
 
-            daemon.provider = with_context_planner(Provider())  # type: ignore[assignment]
+            daemon.provider = with_owner_and_heartbeat_planner(Provider())  # type: ignore[assignment]
             event = IncomingMessage(
                 "owner-live-question", "owner-live-question", "你觉得选哪个", 1, 1
             )
@@ -1166,12 +1166,24 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                     )
 
             provider = Provider()
-            daemon.provider = with_context_planner(provider)  # type: ignore[assignment]
+            daemon.provider = with_owner_and_heartbeat_planner(provider)  # type: ignore[assignment]
             daemon.store.add_event(accepted[0])
             turn_id = daemon._turn_id(accepted[0].event_id)
             daemon.store.begin_turn(turn_id, "owner", [accepted[0].event_id])
             await daemon._complete_batch(accepted, turn_id)
-            blocks = provider.messages[-1]["content"]
+            owner_message = next(
+                message
+                for message in provider.messages
+                if any(
+                    isinstance(block, dict) and block.get("type") == "image"
+                    for block in (
+                        message["content"]
+                        if isinstance(message.get("content"), list)
+                        else []
+                    )
+                )
+            )
+            blocks = owner_message["content"]
             images = [
                 index
                 for index, block in enumerate(blocks)
@@ -1267,7 +1279,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                     )
 
             provider = Provider()
-            daemon.provider = with_context_planner(provider)  # type: ignore[assignment]
+            daemon.provider = with_owner_and_heartbeat_planner(provider)  # type: ignore[assignment]
             event = IncomingMessage("qq:1:emotion", "emotion", "好消息", 1, 1)
             daemon.store.add_event(event)
             turn_id = daemon._turn_id(event.event_id)
@@ -1359,7 +1371,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                     )
 
             provider = Provider()
-            daemon.provider = with_context_planner(provider)  # type: ignore[assignment]
+            daemon.provider = with_owner_and_heartbeat_planner(provider)  # type: ignore[assignment]
             event = IncomingMessage("qq:1:emotion-fix", "emotion-fix", "回我", 1, 1)
             daemon.store.add_event(event)
             turn_id = daemon._turn_id(event.event_id)
@@ -1589,7 +1601,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                         ],
                     )
 
-            daemon.provider = with_context_planner(Provider())  # type: ignore[assignment]
+            daemon.provider = with_owner_and_heartbeat_planner(Provider())  # type: ignore[assignment]
             now = time.time()
             for event in (
                 IncomingMessage(

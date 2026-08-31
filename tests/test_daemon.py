@@ -15,14 +15,12 @@ from aiohttp.test_utils import TestServer
 from momoi.channel.napcat import NapCatConfig
 from momoi.config import (
     AppConfig,
-    AutonomyConfig,
     EpisodeAnnealingConfig,
     HeartbeatConfig,
     LLMConfig,
     NotificationConfig,
 )
 from momoi.runtime import (
-    AUTONOMOUS_FINISH_SPEC,
     END_TURN_TOOL_SPEC,
     SEND_MESSAGE_TOOL_SPEC,
     heartbeat_end_turn_tool_spec,
@@ -47,22 +45,19 @@ from momoi.models import (
 from momoi.provider import (
     ProviderError,
 )
-from momoi.runtime.context_planner import CONTEXT_PLAN_TOOL_NAME
 from momoi.runtime.turn_support import (
-    CONTEXT_PLANNER_SYSTEM_PROMPT,
     HEARTBEAT_PLANNER_SYSTEM_PROMPT,
     STYLE_CARD_SYSTEM_PROMPT,
 )
-from momoi.runtime.context_planner import degraded_context_plan
 from momoi.runtime.parsing import parse_mood_decision, parse_mood_update
 from momoi.runtime.daemon import _message_gap_bounds
 from momoi.runtime.turn_support import REPLY_WAIT_SYSTEM_PROMPT
 from momoi.storage import estimate_tokens
 from tests.support import (
-    context_plan_response,
     heartbeat_plan_response,
     planner_sections,
-    with_context_planner,
+    recall_response,
+    with_owner_and_heartbeat_planner,
 )
 
 
@@ -297,57 +292,6 @@ class DaemonTest(unittest.TestCase):
             STYLE_CARD_SYSTEM_PROMPT,
         )
 
-    def test_system_prompt_treats_non_propositional_speech_as_first_class(self) -> None:
-        system = (
-            Path(__file__).resolve().parents[1]
-            / "src"
-            / "momoi"
-            / "prompts"
-            / "system.md"
-        ).read_text(encoding="utf-8")
-        self.assertIn("immediate non-propositional expression", system)
-        self.assertIn("own `send_message` item", system)
-        self.assertIn("without explanation or new information", system)
-        self.assertIn("Decide separately whether", system)
-        self.assertIn("merely to justify it with informational value", system)
-        self.assertIn("one non-empty private-chat bubble", system)
-        self.assertIn("holding one short utterance", system)
-        self.assertIn("give each its own item in spoken order", system)
-        self.assertIn("timing, impulse, and conversational rhythm", system)
-        self.assertIn("fragment, a partial thought", system)
-        self.assertIn("You own every concrete response choice", system)
-        self.assertIn("wording, number and order of bubbles", system)
-        self.assertIn("optional catalog reaction assets", system)
-        self.assertNotIn("one complete non-empty message", system)
-        self.assertIn(
-            "`<recent_turn_base>` followed by `<recent_turn_append>`",
-            system,
-        )
-        self.assertIn("actually persisted", system)
-        self.assertIn("owner-relevant update", system)
-        self.assertIn("A task need not be complete", system)
-        self.assertIn("exploratory misses", system)
-        self.assertIn("Emotion may be dramatic", system)
-        self.assertIn("Soul alone defines identity", system)
-        self.assertNotIn("You are Momoi", system)
-        self.assertNotIn("personal maid/agent", system)
-        self.assertNotIn("<query_recall>", system)
-        self.assertIn(
-            "injected recall memory, Episode, and Recent Turn evidence", system
-        )
-        self.assertIn("recall-then-public-web fallback", system)
-        self.assertIn("apparently private nickname", system)
-        self.assertIn("A name matters when", system)
-        self.assertIn("model prior knowledge", system)
-        self.assertIn("Social tone does not waive", system)
-        self.assertIn("`<recall_status>` reports", system)
-        self.assertIn("routing metadata, not factual evidence", system)
-        self.assertIn("Automatic recall is only the first retrieval pass", system)
-        self.assertIn("requiring `episode_search` unless", system)
-        self.assertIn("missing durable facts or preferences", system)
-        self.assertIn("A same-name or weakly related hit", system)
-        self.assertNotIn("Reply closure — CRITICAL", system)
-
     def test_reply_wait_prompt_explains_the_current_state_machine(self) -> None:
         system = (
             Path(__file__).resolve().parents[1]
@@ -360,13 +304,14 @@ class DaemonTest(unittest.TestCase):
         self.assertIn("genuinely expected", wait_schema["description"])
         self.assertIn("exactly one follow-up", wait_schema["description"])
         self.assertIn("<interrupted_reply_expectation>", system)
-        self.assertIn("timer is already cancelled", system)
+        self.assertIn("describes a cancelled wait", system)
         self.assertIn("follow-up must be sent now", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertIn("reconsider contact", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertIn("Send exactly one", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("<reply_timeline>", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("Continue strictly after its cursor", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("Never answer, confirm, or", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("native transcript", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertNotIn("<reply_timeline>", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("Continue strictly after its", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("never answer, confirm, or", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertIn("<followup>", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertIn("After the `send_message` result", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertIn("alone in a later response", REPLY_WAIT_SYSTEM_PROMPT)
@@ -419,9 +364,6 @@ class DaemonTest(unittest.TestCase):
         )
         self.assertIn("mood", END_TURN_TOOL_SPEC["input_schema"]["required"])
         self.assertIn("reply_wait", END_TURN_TOOL_SPEC["input_schema"]["required"])
-        mood_schema = END_TURN_TOOL_SPEC["input_schema"]["properties"]["mood"]
-        self.assertIn("Reassess the Current self state mood", mood_schema["description"])
-        self.assertIn("do not otherwise favor unchanged over updated", mood_schema["description"])
         self.assertNotIn("continuity", END_TURN_TOOL_SPEC["input_schema"]["properties"])
         self.assertNotIn("delivery", END_TURN_TOOL_SPEC["input_schema"]["properties"])
         self.assertNotIn("expects_reply", END_TURN_TOOL_SPEC["input_schema"]["properties"])
@@ -506,18 +448,6 @@ class DaemonTest(unittest.TestCase):
         self.assertIn("is not a conflict", owner_description)
         self.assertIn("without a conflict, leave both unchanged", owner_description)
         self.assertNotIn("Momoi", owner_description)
-        system = (
-            Path(__file__).resolve().parents[1]
-            / "src"
-            / "momoi"
-            / "prompts"
-            / "system.md"
-        ).read_text(encoding="utf-8")
-        self.assertIn("Work actions are optional", system)
-        self.assertIn("each chat bubble is one item in `messages`", system)
-        self.assertNotIn("Ordinary assistant content is discarded", system)
-        self.assertNotIn("Correct it only when", system)
-        self.assertNotIn("activity or outcome does not replace", system)
 
     def test_context_budget_drops_old_history_and_truncates_tool_results(self) -> None:
         daemon = object.__new__(MomoiDaemon)
@@ -830,7 +760,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     )
 
             provider = Provider()
-            daemon.provider = with_context_planner(provider)  # type: ignore[assignment]
+            daemon.provider = with_owner_and_heartbeat_planner(provider)  # type: ignore[assignment]
             first = IncomingMessage(
                 "napcat:first", "first", "第一条", 1, 1, channel="napcat"
             )
@@ -950,7 +880,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     )
 
             provider = Provider()
-            daemon.provider = with_context_planner(provider)  # type: ignore[assignment]
+            daemon.provider = with_owner_and_heartbeat_planner(provider)  # type: ignore[assignment]
             initial = IncomingMessage("qq:turn:1", "1", "查旧地址天气", 1, 1)
             first_update = IncomingMessage("qq:turn:2", "2", "地址改成上海", 2, 2)
             second_update = IncomingMessage(
@@ -999,18 +929,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 [(row["revision"], row["state"]) for row in plans],
                 [(1, "superseded"), (2, "superseded"), (3, "recalled")],
-            )
-            self.assertEqual(
-                daemon.store._db.execute(
-                    "SELECT COUNT(*) FROM episode_turns WHERE turn_id=?", (turn_id,)
-                ).fetchone()[0],
-                1,
-            )
-            self.assertEqual(
-                daemon.store._db.execute(
-                    "SELECT COUNT(*) FROM conversation_episodes"
-                ).fetchone()[0],
-                1,
             )
             self.assertEqual(daemon.store.pending_events(), [])
             daemon.store.close()
@@ -1261,176 +1179,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             daemon.store.close()
 
-    async def test_reply_followup_is_mandatory_and_preserves_heartbeat(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            daemon = MomoiDaemon(
-                AppConfig(
-                    llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
-                    channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
-                    system_prompt="test",
-                    recent_raw_tokens=1000,
-                    recent_turns=2,
-                    memory_results=2,
-                    memory_tokens=1000,
-                    database=Path(directory) / "momoi.sqlite3",
-                    log_level="INFO",
-                )
-            )
-            daemon.store._db.execute(
-                """UPDATE self_state SET activity='看小说', activity_result='读到第三章',
-                   last_heartbeat_at=900, next_heartbeat_at=1660,
-                   pending_reply_turn_id='question',
-                   pending_reply_expectation='主人是否愿意继续聊',
-                   pending_reply_since=1000,
-                   pending_reply_last_reason='因为还想听老师回答',
-                   pending_reply_delay_minutes=1,
-                   pending_reply_next_check_at=1060
-                   WHERE id=1"""
-            )
-            now = time.time()
-            daemon.store._db.executemany(
-                """INSERT INTO memories
-                   (kind, key, content, activation, authority, source_event_id,
-                    evidence_quote, importance, created_at, updated_at)
-                   VALUES ('profile', ?, ?, ?, 'owner', 'source', 'evidence',
-                           0.8, ?, ?)""",
-                [
-                    ("style", "老师喜欢自然聊天", "always", now, now),
-                    ("current.topic", "刚才在聊小说", "recent", now, now),
-                ],
-            )
-            daemon.store.begin_turn(
-                "reply-followup-turn", "autonomous", ["reply-followup:1060"]
-            )
-            before = daemon.store.self_state()
-            terminal = AgentReply(
-                [],
-                reply_wait={"wait": False},
-            )
-            with patch.object(
-                daemon, "_run_tool_loop", new_callable=AsyncMock, return_value=terminal
-            ) as run:
-                await daemon._complete_reply_wait(
-                    "reply-followup-turn", "napcat", owner_event_revision=0
-                )
 
-            tools = run.await_args.args[2]
-            self.assertEqual([tool["name"] for tool in tools], ["send_message", "end_turn"])
-            self.assertTrue(run.await_args.kwargs["reply_wait_turn"])
-            request = json.dumps(run.await_args.args[:2], ensure_ascii=False)
-            self.assertIn("<reply_timeline>", request)
-            self.assertIn("--- CONTINUE HERE (silent", request)
-            self.assertIn("<followup>", request)
-            self.assertIn("<long_term_memories>", request)
-            self.assertIn("<recent_memories>", request)
-            self.assertIn("因为还想听老师回答", request)
-            self.assertNotIn("<pending_owner_reply>", request)
-            self.assertNotIn("expected information", request)
-            self.assertNotIn("deadline", request)
-            self.assertNotIn("channel", request)
-            self.assertNotIn("<recent_conversation>", request)
-            self.assertNotIn("<autonomous_heartbeat>", request)
-            after = daemon.store.self_state()
-            for key in (
-                "activity",
-                "activity_result",
-                "last_heartbeat_at",
-                "next_heartbeat_at",
-            ):
-                self.assertEqual(after[key], before[key])
-            self.assertIsNotNone(daemon.store.pending_owner_reply())
-            self.assertIsNone(daemon.store.next_heartbeat_due_at(False))
-            daemon.store.close()
-
-    async def test_reply_followup_uses_stored_reason_without_rechecking(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            daemon = MomoiDaemon(
-                AppConfig(
-                    llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
-                    channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
-                    system_prompt="test",
-                    recent_raw_tokens=1000,
-                    recent_turns=2,
-                    memory_results=2,
-                    memory_tokens=1000,
-                    database=Path(directory) / "momoi.sqlite3",
-                    log_level="INFO",
-                )
-            )
-            pending = {
-                "source_turn": "question",
-                "source_messages": [
-                    {
-                        "role": "user",
-                        "content": "2026-08-17T12:00:00+08:00 [napcat] 晚上一起选个游戏吧",
-                        "delivery_state": "delivered",
-                        "timestamp": "2026-08-17T12:00:00+08:00",
-                    },
-                    {
-                        "role": "assistant",
-                        "content": "那老师想玩解谜还是动作呀",
-                        "delivery_state": "delivered",
-                        "timestamp": "2026-08-17T12:00:01+08:00",
-                    },
-                ],
-                "expected_information": "主人对问题的回答",
-                "reason": "这个问题需要老师决定",
-                "waiting_since": "2026-08-17T12:00:00+08:00",
-                "waiting_minutes": 4,
-                "delay_minutes": 4,
-                "deadline": "2026-08-17T12:04:00+08:00",
-                "channel": "napcat",
-            }
-            terminal = AgentReply(
-                [],
-                reply_wait={"wait": False},
-            )
-            with (
-                patch.object(
-                    daemon.store, "pending_owner_reply", return_value=pending
-                ),
-                patch.object(
-                    daemon,
-                    "_run_tool_loop",
-                    new_callable=AsyncMock,
-                    return_value=terminal,
-                ) as run,
-                patch.object(daemon, "_commit_reply_followup_state"),
-            ):
-                await daemon._complete_reply_wait(
-                    "reply-wait-second", "napcat", owner_event_revision=0
-                )
-
-            tools = run.await_args.args[2]
-            self.assertEqual(
-                [tool["name"] for tool in tools], ["send_message", "end_turn"]
-            )
-            request = json.dumps(run.await_args.args[:2], ensure_ascii=False)
-            self.assertIn("这个问题需要老师决定", request)
-            self.assertIn("<reply_timeline>", request)
-            self.assertIn("OWNER: 晚上一起选个游戏吧", request)
-            self.assertIn("MOMOI: 那老师想玩解谜还是动作呀", request)
-            self.assertIn("--- CONTINUE HERE (silent 4m) ---", request)
-            self.assertIn("<followup>", request)
-            self.assertLess(
-                request.index("OWNER: 晚上一起选个游戏吧"),
-                request.index("MOMOI: 那老师想玩解谜还是动作呀"),
-            )
-            self.assertLess(
-                request.index("MOMOI: 那老师想玩解谜还是动作呀"),
-                request.index("--- CONTINUE HERE (silent 4m) ---"),
-            )
-            self.assertNotIn("2026-08-17T12:00:00+08:00", request)
-            self.assertNotIn("delivery=", request)
-            self.assertNotIn("<source_messages>", request)
-            self.assertNotIn("<last_sent_messages>", request)
-            self.assertNotIn("continue_waiting", request)
-            self.assertNotIn("later_check", request)
-            daemon.store.close()
 
     async def test_reply_followup_requires_message_and_cannot_rearm(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1531,7 +1280,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(daemon.store.pending_owner_reply())
             daemon.store.close()
 
-    async def test_owner_can_enable_a_planner_omitted_tool_group(self) -> None:
+    async def test_owner_can_enable_a_dynamic_tool_group(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             daemon = MomoiDaemon(
@@ -1573,7 +1322,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
 
                 @staticmethod
                 async def call(_name: str, _arguments: object) -> dict[str, object]:
-                    return {"ok": True, "value": "planner fallback works"}
+                    return {"ok": True, "value": "dynamic tool works"}
 
             daemon.mcp = MCP()  # type: ignore[assignment]
             event = IncomingMessage("owner-enable", "owner-enable", "读文件", 1, 1)
@@ -1609,7 +1358,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             {"say_to_owner": "我看看这个值"},
                         )
                     else:
-                        self.assertIn("planner fallback works", json.dumps(messages))
+                        self.assertIn("dynamic tool works", json.dumps(messages))
                         call = ToolCall(
                             "finish",
                             "end_turn",
@@ -1622,21 +1371,11 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     return ProviderResponse([], [call])
 
             provider = Provider()
-            daemon.provider = provider  # type: ignore[assignment]
+            daemon.provider = with_owner_and_heartbeat_planner(provider)  # type: ignore[assignment]
             reply = await daemon._run_tool_loop(
                 daemon._system(),
                 [{"role": "user", "content": "读文件"}],
-                daemon._owner_tool_specs(
-                    {
-                        "owner_handoff": {
-                            "mcp": {
-                                "servers": [],
-                                "reason": "Planner omitted demo",
-                            }
-                        }
-                    },
-                    "napcat",
-                ),
+                daemon._owner_tool_specs({}, "napcat"),
                 [event],
                 TurnDraft(),
                 authority="owner",
@@ -1650,7 +1389,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(provider.calls, 3)
             daemon.store.close()
 
-    async def test_owner_message_only_mode_keeps_internal_tools(self) -> None:
+    async def test_owner_keeps_resident_internal_tools(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "note.txt").write_text("workspace group loaded")
@@ -1732,29 +1471,11 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     return ProviderResponse([], [call])
 
             provider = Provider()
-            daemon.provider = provider  # type: ignore[assignment]
-            plan = {
-                "owner_handoff": {
-                    "context": {
-                        "status": "sufficient",
-                        "needs": [],
-                        "reason": "上下文足够",
-                    },
-                    "mcp": {
-                        "servers": [],
-                        "reason": "不需要外部服务",
-                    },
-                    "execution": {
-                        "mode": "message_only",
-                        "outline": ["回复"],
-                        "reason": "普通回应",
-                    },
-                }
-            }
+            daemon.provider = with_owner_and_heartbeat_planner(provider)  # type: ignore[assignment]
             reply = await daemon._run_tool_loop(
                 daemon._system(),
                 [{"role": "user", "content": "读文件"}],
-                daemon._owner_tool_specs(plan, "napcat"),
+                daemon._owner_tool_specs({}, "napcat"),
                 [event],
                 TurnDraft(),
                 authority="owner",
@@ -1798,199 +1519,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(daemon.store.self_state()["heartbeat_claimed_at"])
             daemon.store.close()
 
-    async def test_goal_commits_only_after_explicit_autonomous_finish(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            daemon = MomoiDaemon(
-                AppConfig(
-                    llm=LLMConfig(
-                        "http://127.0.0.1", "test", "test", 100, 0, 1, 0, "openai"
-                    ),
-                    channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
-                    system_prompt="test",
-                    recent_raw_tokens=1000,
-                    recent_turns=2,
-                    memory_results=2,
-                    memory_tokens=1000,
-                    database=Path(directory) / "momoi.sqlite3",
-                    log_level="INFO",
-                    autonomy=AutonomyConfig(
-                        ("curl", "read_file", "write_file", "mcp__test__read")
-                    ),
-                )
-            )
-            event = IncomingMessage("qq:goal-finish", "goal-finish", "继续检查", 1, 1)
-            daemon.store.add_event(event)
-            draft = TurnDraft()
-            created = daemon.agenda_tools.execute(
-                ToolCall(
-                    "create",
-                    "goal_create",
-                    {
-                        "title": "检查任务",
-                        "success_criteria": "记录检查结果",
-                        "next_action": "执行检查",
-                        "next_review_at": (
-                            datetime.now().astimezone() + timedelta(milliseconds=20)
-                        ).isoformat(),
-                    },
-                ),
-                draft,
-                authority="agent",
-                source_event_id=event.event_id,
-                allow_notify=False,
-            )
-            goal_id = str(created["goal"]["id"])
-            owner_turn_id = daemon.store.commit_turn(
-                [event], event.text, AgentReply(["好"]), draft
-            )
-            owner_outbox_id = daemon.store._db.execute(
-                "SELECT id FROM outbox WHERE turn_id=?", (owner_turn_id,)
-            ).fetchone()["id"]
-            daemon.store.mark_sent(int(owner_outbox_id))
-            daemon.mcp.tool_specs = [
-                {
-                    "name": "mcp__test__read",
-                    "description": "read",
-                    "input_schema": {"type": "object"},
-                },
-                {
-                    "name": "mcp__test__write",
-                    "description": "write",
-                    "input_schema": {"type": "object"},
-                },
-            ]
-            daemon.mcp._capabilities = {
-                "mcp__test__read": "read",
-                "mcp__test__write": "external_effect",
-            }
-            await asyncio.sleep(0.03)
-            daemon.store.claim_due_goal()
-
-            class Provider:
-                calls = 0
-
-                async def complete(
-                    self,
-                    _: object,
-                    messages: object,
-                    tools: list[dict[str, object]],
-                    **kwargs: object,
-                ) -> ProviderResponse:
-                    self.calls += 1
-                    if not kwargs.get("require_tool"):
-                        raise AssertionError(
-                            "autonomous turns must require a terminal tool"
-                        )
-                    if self.calls == 1:
-                        request = json.dumps(messages, ensure_ascii=False)
-                        if (
-                            "<due_goal>" not in request
-                            or "<runtime_state>" not in request
-                            or "<conversation_state>" not in request
-                        ):
-                            raise AssertionError(messages)
-                        if (
-                            "<recent_conversation>" in request
-                            or "<recent_turns>" in request
-                        ):
-                            raise AssertionError(request)
-                        roles = [message["role"] for message in messages]
-                        if roles != ["user", "user", "assistant", "user"]:
-                            raise AssertionError(roles)
-                        if (
-                            "继续检查" not in str(messages[1]["content"])
-                            or "好" not in str(messages[2]["content"])
-                        ):
-                            raise AssertionError(messages)
-                        if (
-                            "Turn identity: Goal review" not in request
-                            or "not an ordinary heartbeat" not in request
-                            or "Missing or imprecise current context alone is not a reason to skip"
-                            not in request
-                            or "overrides a stored plan step" not in request
-                        ):
-                            raise AssertionError(request)
-                        names = {str(tool["name"]) for tool in tools}
-                        if (
-                            "mcp__test__read" not in names
-                            or {
-                                "mcp__test__write",
-                            }
-                            & names
-                        ):
-                            raise AssertionError(names)
-                        if "write_file" not in names:
-                            raise AssertionError(names)
-                        call = ToolCall(
-                            "outside-artifact",
-                            "write_file",
-                            {"path": "/tmp/not-allowed", "content": "no"},
-                        )
-                    elif self.calls == 2:
-                        if "path_outside_autonomous_artifacts" not in json.dumps(
-                            messages
-                        ):
-                            raise AssertionError(messages)
-                        call = ToolCall(
-                            "update",
-                            "goal_update",
-                            {
-                                "goal_id": goal_id,
-                                "status": "waiting",
-                                "waiting_for": "下一次检查",
-                                "latest_result": "本次检查正常",
-                                "next_review_at": (
-                                    datetime.now().astimezone() + timedelta(hours=1)
-                                ).isoformat(),
-                            },
-                        )
-                    elif self.calls == 3:
-                        call = ToolCall(
-                            "notify",
-                            "owner_notify",
-                            {
-                                "messages": ["检查完成，目前正常"],
-                                "reason": "任务阶段结果",
-                                "key": "service.check",
-                            },
-                        )
-                    else:
-                        if [tool["name"] for tool in tools] == ["end_turn"]:
-                            raise AssertionError("goal must not use owner end_turn")
-                        call = ToolCall("finish", "autonomous_finish", {})
-                    return ProviderResponse(
-                        [
-                            {
-                                "type": "tool_use",
-                                "id": call.id,
-                                "name": call.name,
-                                "input": call.arguments,
-                            }
-                        ],
-                        [call],
-                    )
-
-            provider = Provider()
-            daemon.provider = with_context_planner(provider)  # type: ignore[assignment]
-            await daemon._complete_goal_turn(goal_id, asyncio.Event())
-
-            self.assertEqual(provider.calls, 4)
-            self.assertEqual(
-                daemon.store.goal(goal_id)["latest_result"], "本次检查正常"
-            )
-            notification = daemon.store._db.execute(
-                "SELECT state, messages_json FROM notifications WHERE goal_id=?",
-                (goal_id,),
-            ).fetchone()
-            self.assertEqual(notification["state"], "pending")
-            self.assertIn("检查完成", notification["messages_json"])
-            turn = daemon.store._db.execute(
-                "SELECT state FROM turns WHERE source_ids_json=?",
-                (json.dumps([f"goal:{goal_id}"]),),
-            ).fetchone()
-            self.assertEqual(turn["state"], "completed")
-            self.assertEqual(AUTONOMOUS_FINISH_SPEC["name"], "autonomous_finish")
-            daemon.store.close()
 
     async def test_repeated_invalid_tools_force_a_visible_failure_response(
         self,
@@ -2077,7 +1605,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         raise AssertionError(tools)
 
             provider = Provider()
-            daemon.provider = with_context_planner(provider)  # type: ignore[assignment]
+            daemon.provider = with_owner_and_heartbeat_planner(provider)  # type: ignore[assignment]
             event = IncomingMessage("qq:bad-goal", "bad-goal", "创建任务", 1, 1)
             daemon.store.add_event(event)
             with self.assertLogs("momoi.runtime.turns", level="DEBUG") as logs:
@@ -2293,10 +1821,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             or "<runtime_state>" not in request
                             or "<recent_topic_reference>" not in request
                             or "<recent_heartbeat_activities>" not in request
-                            or (
-                                "<recent_turn_base>" not in request
-                                and "<recent_turn_append>" not in request
-                            )
+                            or "<recent_turn_base>" in request
+                            or "<recent_turn_append>" in request
                             or "最近的聊天话题" not in request
                             or "天气 Goal 已触发并成功送达" not in request
                             or "<pending_owner_reply>" in request
@@ -2392,7 +1918,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     )
 
             provider = Provider()
-            daemon.provider = with_context_planner(provider)  # type: ignore[assignment]
+            daemon.provider = with_owner_and_heartbeat_planner(provider)  # type: ignore[assignment]
 
             async def read_news(_: ToolCall) -> dict[str, object]:
                 return {"ok": True, "status": 200, "body": "新玩法公开"}
@@ -2764,7 +2290,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     raise AssertionError("provider must not be called beyond budget")
 
             provider = Provider()
-            daemon.provider = with_context_planner(provider)  # type: ignore[assignment]
+            daemon.provider = with_owner_and_heartbeat_planner(provider)  # type: ignore[assignment]
             event = IncomingMessage("qq:budget", "budget", "继续一个很长的任务", 1, 1)
             daemon.store.add_event(event)
             turn_id = daemon._turn_id(event.event_id)
@@ -2882,25 +2408,12 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             daemon.store.add_event(event)
             turn_id = daemon._turn_id(event.event_id)
-            plan = degraded_context_plan(
-                [
-                    {
-                        "event_id": event.event_id,
-                        "channel": event.channel,
-                        "text": event.text,
-                    }
-                ],
-                "test",
-            )
             daemon.store.begin_turn(turn_id, "owner", [event.event_id])
-            daemon.store.save_context_plan(
-                turn_id, 1, [event.event_id], plan
-            )
-            daemon.provider = provider  # type: ignore[assignment]
+            daemon.provider = with_owner_and_heartbeat_planner(provider)  # type: ignore[assignment]
             reply = await daemon._run_tool_loop(
                 daemon._system(),
                 [{"role": "user", "content": event.text}],
-                daemon._owner_tool_specs(plan),
+                daemon._owner_tool_specs({}),
                 [event],
                 TurnDraft(),
                 authority="owner",
@@ -3033,25 +2546,12 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             daemon.store.add_event(event)
             turn_id = daemon._turn_id(event.event_id)
-            plan = degraded_context_plan(
-                [
-                    {
-                        "event_id": event.event_id,
-                        "channel": event.channel,
-                        "text": event.text,
-                    }
-                ],
-                "test",
-            )
             daemon.store.begin_turn(turn_id, "owner", [event.event_id])
-            daemon.store.save_context_plan(
-                turn_id, 1, [event.event_id], plan
-            )
-            daemon.provider = provider  # type: ignore[assignment]
+            daemon.provider = with_owner_and_heartbeat_planner(provider)  # type: ignore[assignment]
             reply = await daemon._run_tool_loop(
                 daemon._system(),
                 [{"role": "user", "content": event.text}],
-                daemon._owner_tool_specs(plan),
+                daemon._owner_tool_specs({}),
                 [event],
                 TurnDraft(),
                 authority="owner",
@@ -3117,20 +2617,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             daemon.store.add_event(event)
             turn_id = daemon._turn_id(event.event_id)
-            plan = degraded_context_plan(
-                [
-                    {
-                        "event_id": event.event_id,
-                        "channel": event.channel,
-                        "text": event.text,
-                    }
-                ],
-                "test",
-            )
             daemon.store.begin_turn(turn_id, "owner", [event.event_id])
-            daemon.store.save_context_plan(
-                turn_id, 1, [event.event_id], plan
-            )
             execute = AsyncMock(
                 side_effect=[
                     {"ok": True, "value": "first-result"},
@@ -3237,11 +2724,11 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     )
 
             provider = Provider()
-            daemon.provider = provider  # type: ignore[assignment]
+            daemon.provider = with_owner_and_heartbeat_planner(provider)  # type: ignore[assignment]
             reply = await daemon._run_tool_loop(
                 daemon._system(),
                 [{"role": "user", "content": event.text}],
-                daemon._owner_tool_specs(plan),
+                daemon._owner_tool_specs({}),
                 [event],
                 TurnDraft(),
                 authority="owner",
@@ -3310,7 +2797,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     raise ProviderError("model engine error")
 
             provider = Provider()
-            daemon.provider = with_context_planner(provider)  # type: ignore[assignment]
+            daemon.provider = with_owner_and_heartbeat_planner(provider)  # type: ignore[assignment]
             event = IncomingMessage("qq:provider-error", "provider-error", "测试", 1, 1)
             daemon.store.add_event(event)
             turn_id = daemon._turn_id(event.event_id)
@@ -3534,7 +3021,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     )
 
             provider = Provider()
-            daemon.provider = with_context_planner(provider)  # type: ignore[assignment]
+            daemon.provider = with_owner_and_heartbeat_planner(provider)  # type: ignore[assignment]
             daemon.autonomous.put_nowait(AutonomousJob.goal(goal_id))
             worker = asyncio.create_task(daemon._agent_worker(asyncio.Event()))
             try:
@@ -3620,7 +3107,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         [call],
                     )
 
-            daemon.provider = with_context_planner(Provider())  # type: ignore[assignment]
+            daemon.provider = with_owner_and_heartbeat_planner(Provider())  # type: ignore[assignment]
             stop = asyncio.Event()
             worker = asyncio.create_task(daemon._agent_worker(stop))
             original = IncomingMessage("qq:1:tool-stop", "tool-stop", "等一会儿", 1, 1)
@@ -3673,15 +3160,13 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         async def llm(request: web.Request) -> web.Response:
             payload = await request.json()
             llm_requests.append(payload)
-            if payload.get("system") == CONTEXT_PLANNER_SYSTEM_PROMPT:
-                planned = context_plan_response(payload["messages"])
-                return web.json_response({"content": planned.content})
-            main_call = sum(
-                "tools" in item
-                and item.get("system") != CONTEXT_PLANNER_SYSTEM_PROMPT
-                for item in llm_requests
-            )
+            main_call = len(llm_requests)
             if main_call == 1:
+                recalled = recall_response()
+                return web.json_response(
+                    {"stop_reason": "tool_use", "content": recalled.content}
+                )
+            if main_call == 2:
                 return web.json_response(
                     {
                         "stop_reason": "tool_use",
@@ -3697,7 +3182,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         ],
                     }
                 )
-            if main_call <= 4:
+            if main_call <= 5:
                 return web.json_response(
                     {
                         "stop_reason": "tool_use",
@@ -3711,11 +3196,11 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         ],
                     }
                 )
-            if main_call == 5:
+            if main_call == 6:
                 return web.json_response(
                     {"content": [{"type": "text", "text": "这段 raw text 不应发送"}]}
                 )
-            if main_call == 6:
+            if main_call == 7:
                 return web.json_response(
                     {
                         "stop_reason": "tool_use",
@@ -3822,15 +3307,14 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(sent, ["我先处理一下", "测试回复一", "测试回复二"])
         self.assertEqual(len(llm_requests), 8)
-        self.assertEqual(
-            [tool["name"] for tool in llm_requests[0]["tools"]],
-            [CONTEXT_PLAN_TOOL_NAME],
-        )
-        self.assertEqual(llm_requests[0]["tool_choice"], {"type": "any"})
-        self.assertIn("Context planning protocol", llm_requests[0]["system"])
-        self.assertIn("tools", llm_requests[1])
+        initial_tools = [tool["name"] for tool in llm_requests[0]["tools"]]
+        self.assertEqual(initial_tools[0], "recall")
+        self.assertIn("send_message", initial_tools)
+        self.assertIn("end_turn", initial_tools)
+        self.assertNotIn("tool_choice", llm_requests[0])
+        self.assertNotIn("Context planning protocol", str(llm_requests[0]["system"]))
         self.assertIn(
-            "send_message", [tool["name"] for tool in llm_requests[1]["tools"]]
+            "send_message", [tool["name"] for tool in llm_requests[0]["tools"]]
         )
         final_tools = [tool["name"] for tool in llm_requests[7]["tools"]]
         self.assertIn("send_message", final_tools)
@@ -3838,28 +3322,28 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("memory_search", final_tools)
         self.assertNotIn("tool_choice", llm_requests[7])
         self.assertEqual(
-            llm_requests[1]["system"][0]["cache_control"], {"type": "ephemeral"}
+            llm_requests[0]["system"][0]["cache_control"], {"type": "ephemeral"}
         )
-        self.assertIn("You are Momoi.", llm_requests[1]["system"][0]["text"])
+        self.assertIn("You are Momoi.", llm_requests[0]["system"][0]["text"])
         self.assertTrue(
-            llm_requests[1]["system"][0]["text"].rstrip().endswith("You are Momoi.")
+            llm_requests[0]["system"][0]["text"].rstrip().endswith("You are Momoi.")
         )
-        self.assertEqual(len(llm_requests[1]["system"]), 2)
-        self.assertIn("Memory tools", llm_requests[1]["system"][1]["text"])
+        self.assertEqual(len(llm_requests[0]["system"]), 2)
+        self.assertIn("Memory tools", llm_requests[0]["system"][1]["text"])
         self.assertEqual(len(llm_requests[7]["system"]), 2)
         self.assertEqual(
-            llm_requests[1]["system"][1]["text"],
+            llm_requests[0]["system"][1]["text"],
             llm_requests[7]["system"][1]["text"],
         )
         self.assertEqual(
-            llm_requests[1]["system"][0]["text"],
+            llm_requests[0]["system"][0]["text"],
             llm_requests[7]["system"][0]["text"],
         )
         self.assertEqual(
-            llm_requests[2]["messages"][-1]["content"][0]["type"], "tool_result"
+            llm_requests[1]["messages"][-1]["content"][0]["type"], "tool_result"
         )
-        self.assertEqual(llm_requests[1]["messages"][-1]["role"], "user")
-        current_content = llm_requests[1]["messages"][-1]["content"]
+        self.assertEqual(llm_requests[0]["messages"][-1]["role"], "user")
+        current_content = llm_requests[0]["messages"][-1]["content"]
         # Owner text and its attachments are now separate blocks, so the cache
         # breakpoint sits at the end of the whole tail rather than on a single
         # combined block.
