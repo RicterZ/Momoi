@@ -384,7 +384,14 @@ class ProvidersToolsTest(unittest.TestCase):
                 },
                 "builtin",
             )
-            self.assertEqual(result, repeated)
+            # Every result is snapshotted, so two identical calls agree on all
+            # visible fields while each keeps its own reference to reread.
+            self.assertRegex(str(result["result_ref"]), r"^tr_[0-9a-f]{32}$")
+            self.assertNotEqual(result["result_ref"], repeated["result_ref"])
+            self.assertEqual(
+                {key: value for key, value in result.items() if key != "result_ref"},
+                {key: value for key, value in repeated.items() if key != "result_ref"},
+            )
             failed = daemon._normalize_tool_result(
                 call,
                 {

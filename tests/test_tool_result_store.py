@@ -5,6 +5,10 @@ import unittest
 from pathlib import Path
 
 from momoi.builtin_tools import BuiltinTools
+from momoi.channel.napcat import NapCatConfig
+from momoi.config import AppConfig, LLMConfig
+from momoi.models import ToolCall
+from momoi.runtime import MomoiDaemon
 from momoi.runtime.tool_result_store import ToolResultStore
 
 
@@ -74,6 +78,37 @@ class ToolResultStoreTest(unittest.TestCase):
             self.assertEqual(store.cleanup(now=2 * 24 * 60 * 60), 1)
             self.assertFalse(old_path.exists())
             self.assertTrue((store.root / f"{current_ref}.json").exists())
+
+    def test_a_small_result_is_returned_inline_and_stays_rereadable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            config = AppConfig(
+                llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
+                channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                system_prompt="You are Momoi.",
+                recent_raw_tokens=1000,
+                recent_turns=2,
+                memory_results=2,
+                memory_tokens=1000,
+                database=Path(directory) / "momoi.sqlite3",
+                log_level="INFO",
+            )
+            daemon = MomoiDaemon(config)
+            result = daemon._normalize_tool_result(
+                ToolCall("small", "curl", {"url": "http://x"}),
+                {"ok": True, "status": 200, "body": "{\"pending\": []}"},
+                "builtin",
+            )
+            self.assertFalse(result["truncated"])
+            self.assertEqual(result["body"], "{\"pending\": []}")
+            reread = daemon.tool_results.read(
+                result["result_ref"],
+                None,
+                max_chars=10000,
+                provenance={"source": "runtime", "tool": "read_tool_result"},
+            )
+            self.assertTrue(reread["ok"])
+            self.assertEqual(json.loads(reread["content"])["body"], result["body"])
+            daemon.store.close()
 
     def test_builtin_file_tools_cannot_see_private_store(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

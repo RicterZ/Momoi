@@ -51,6 +51,8 @@ from .turn_support import (
 
 logger = logging.getLogger("momoi.runtime.turns")
 MAX_TOOL_RESULT_TRUNCATION_ATTEMPTS = 16
+# Room for the reference field appended to every serialized tool result.
+_RESULT_REF_OVERHEAD = 64
 SIMILAR_SEND_MESSAGE_THRESHOLD = 0.75
 
 
@@ -1302,19 +1304,23 @@ class ToolExecutionService:
             **payload,
         }
         serialized = json.dumps(envelope, ensure_ascii=False, default=str)
-        if len(serialized) <= self.config.tool_result_max_chars:
-            return envelope
+        # Snapshot every result, not only the ones too large to return inline.
+        # A reference is what lets a later Turn reread what a call actually
+        # returned; without one, a modest result is gone from history the moment
+        # its Turn ends, leaving the reply that quoted it unverifiable.
+        result_ref = self.tool_results.save(serialized)
+        budget = self.config.tool_result_max_chars - _RESULT_REF_OVERHEAD
+        if len(serialized) <= budget:
+            return {**envelope, "result_ref": result_ref}
         if (
             call.name == "read_file"
             and ok
             and isinstance(payload.get("content"), str)
         ):
-            return json.loads(
-                _truncate_tool_result_json(
-                    serialized, self.config.tool_result_max_chars
-                )
-            )
-        result_ref = self.tool_results.save(serialized)
+            return {
+                **json.loads(_truncate_tool_result_json(serialized, budget)),
+                "result_ref": result_ref,
+            }
         status: dict[str, object] = {"ok": ok, "error": error}
         if raw.get("message") is not None:
             status["message"] = safe_preview(raw["message"], 1000)
