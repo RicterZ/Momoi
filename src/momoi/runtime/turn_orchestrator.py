@@ -218,49 +218,44 @@ class TurnOrchestrator:
         self,
         updates: list[IncomingMessage],
         channel: Channel,
-        context_plan: dict[str, object],
         recalled: dict[str, str],
     ) -> dict[str, Any]:
-        content: list[dict[str, Any]] = [
-            {
-                "type": "text",
-                "text": _pack_owner_context(
-                    ("long_term_memories", recalled["long_term_memories"]),
-                    ("recent_memories", recalled["recent_memories"]),
-                    ("recall_memories", recalled["recall_memories"]),
-                    ("recall_status", recalled["query_recall"]),
-                    ("reflection_memories", recalled["reflection_memories"]),
-                    ("active_goals", recalled["goals"]),
-                    ("recent_turn_base", recalled["recent_turn_base"]),
-                    ("recent_turn_append", recalled["recent_turn_append"]),
-                    (
-                        "recent_external_events",
-                        recalled["recent_external_events"],
-                    ),
-                    ("episode_directory", recalled["episodes"]),
-                    (
-                        "interrupted_reply_expectation",
-                        self.store.cooled_reply_expectation_context(),
-                    ),
-                    (
-                        "runtime_directives",
-                        (
-                            "[Trusted runtime update received while the previous operation was "
-                            "running. Re-evaluate the next action and any planned reply using "
-                            "the owner's latest intent.]"
-                        ),
-                    ),
-                    (
-                        "context_resolution",
-                        _conversation_guidance(context_plan),
-                    ),
-                    ("current_owner_messages", self._render_batch(updates)),
-                ),
-                "cache_control": {"type": "ephemeral"},
-            }
-        ]
-        for event in updates:
-            content.extend(channel.content_blocks(event.segments))
+        """Carry only what the interruption actually changed.
+
+        The conversation so far is already present as native messages and as
+        this Turn's own tool exchanges, and durable memory has not moved, so
+        repeating either would duplicate context mid-Turn. What is new is the
+        evidence recalled for the revised input, the state that advanced while
+        the Turn ran, and the owner's latest words.
+        """
+
+        runtime_text = _pack_user_context(
+            (
+                "runtime_directives",
+                "[Trusted runtime update received while the previous operation was "
+                "running. Re-evaluate the next action and any planned reply using "
+                "the owner's latest intent.]",
+            ),
+            (
+                "runtime_state",
+                "Current local time: "
+                f"{datetime.now().astimezone().isoformat(timespec='seconds')}",
+            ),
+            ("goal_progress", recalled["goal_progress"]),
+            ("recall_memories", recalled["recall_memories"]),
+            ("recall_status", recalled["query_recall"]),
+            ("reflection_memories", recalled["reflection_memories"]),
+            ("episode_directory", recalled["episodes"]),
+            ("recent_external_events", recalled["recent_external_events"]),
+            (
+                "interrupted_reply_expectation",
+                self.store.cooled_reply_expectation_context(),
+            ),
+        )
+        content = _owner_content_blocks(
+            updates, channel.content_blocks, runtime_text
+        )
+        content[-1]["cache_control"] = {"type": "ephemeral"}
         return {"role": "user", "content": content}
 
     async def _complete_webhook_turn(

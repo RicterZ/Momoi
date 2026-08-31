@@ -306,9 +306,7 @@ class ToolExecutionService:
                 tools, self._owner_tool_specs(context_plan, delivery_channel.name)
             )
         messages.append(
-            self._owner_update_message(
-                updates, delivery_channel, context_plan, recalled
-            )
+            self._owner_update_message(updates, delivery_channel, recalled)
         )
         return tools, updates[-1].event_id
 
