@@ -3780,7 +3780,7 @@ class StorageMemoryTest(unittest.TestCase):
                     "invalid_ttl",
                 ),
                 (
-                    {**valid, "activation": "recent", "ttl_hours": 200},
+                    {**valid, "activation": "recent", "ttl_hours": 721},
                     "invalid_ttl",
                 ),
             ]

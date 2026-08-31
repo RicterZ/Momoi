@@ -399,10 +399,10 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
                 "ttl_hours": {
                     "type": "number",
                     "minimum": 0,
-                    "maximum": 168,
+                    "maximum": 720,
                     "description": (
                         "Required. For recent, hours this state should stay active "
-                        "(1 to 168), read from the content: a few days is about 72-96. "
+                        "(1 to 720), read from the content: a few days is about 72-96. "
                         "For always or recall, send 0; the value is ignored."
                     ),
                 },

@@ -49,6 +49,7 @@ from .episode_search import (
 from .episode_ranking import EpisodeRecallQuery, rank_episode_matches
 from .memory import (
     MemoryStore,
+    RECENT_MEMORY_WINDOW_SECONDS,
     estimate_tokens,
     memory_snapshot_fingerprint,
     token_chunk,
@@ -5708,7 +5709,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                         END,
                         m.updated_at DESC, m.id DESC
                LIMIT ?""",
-            (now, now - 7 * 24 * 60 * 60, limit),
+            (now, now - RECENT_MEMORY_WINDOW_SECONDS, limit),
         ).fetchall()
         results: list[dict[str, object]] = []
         for row in rows:

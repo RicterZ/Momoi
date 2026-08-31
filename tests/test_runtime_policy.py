@@ -32,7 +32,7 @@ class RuntimePolicyDefaultsTests(unittest.TestCase):
     def test_default_memory_ttl_policy_is_applied(self):
         now = 100.0
         self.assertEqual(memory_expires_at("recent", 0, now), now + 3600)
-        self.assertEqual(memory_expires_at("recent", 999, now), now + 168 * 3600)
+        self.assertEqual(memory_expires_at("recent", 999, now), now + 720 * 3600)
 
     def test_injected_memory_policy_is_used_end_to_end(self):
         policy = MemoryPolicy(2, 12, 0.5)

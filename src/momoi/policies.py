@@ -23,7 +23,7 @@ class ContextPolicy:
 @dataclass(frozen=True)
 class MemoryPolicy:
     recent_min_ttl_hours: float = 1.0
-    recent_max_ttl_hours: float = 7 * 24
+    recent_max_ttl_hours: float = 30 * 24
     lexical_overlap_floor: float = 0.1
 
 
