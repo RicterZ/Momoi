@@ -86,6 +86,70 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
                 (now + 3600, now, now),
             )
         self.store.link_turn_to_episode("episode-one", "turn-one")
+        self.store.save_context_plan(
+            "turn-one",
+            1,
+            ["event-one"],
+            {
+                "version": 7,
+                "intent_units": [
+                    {
+                        "id": "u1",
+                        "intent": "延续测试聊天",
+                        "recall_mode": "search",
+                        "recall_queries": [
+                            {
+                                "semantic": "此前测试聊天的约定",
+                                "keywords": ["测试聊天"],
+                            }
+                        ],
+                        "recall_from_turn_id": "",
+                    }
+                ],
+                "episode_actions": [
+                    {
+                        "action": "continue",
+                        "episode_id": "episode-one",
+                        "episode_ref": "episode-one",
+                        "unit_ids": ["u1"],
+                    }
+                ],
+                "episode_links": [],
+                "uncertainty": [],
+            },
+        )
+        self.store.save_context_retrieval(
+            "turn-one",
+            1,
+            {
+                "version": 6,
+                "episodes": [
+                    {
+                        "episode_id": "episode-one",
+                        "relation": "recalled",
+                    }
+                ],
+                "recall_memories": [
+                    {
+                        "kind": "shared",
+                        "key": "game.ba",
+                        "content": "一起补剧情。",
+                        "unit_ids": ["u1"],
+                    }
+                ],
+                "reflection_memories": [],
+                "query_recall": (
+                    "semantic_queries=此前测试聊天的约定\n"
+                    "sparse_keywords=测试聊天\n"
+                    "hits=此前测试聊天的约定"
+                ),
+                "semantic_recall": {
+                    "fallback_reason": "",
+                    "query_batch_size": 1,
+                },
+            },
+            state="recalled",
+        )
         with self.store._db:
             self.store._db.executemany(
                 """INSERT INTO memories
@@ -363,6 +427,20 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             )
         ).json()
         self.assertEqual(detail["items"][0]["reasoning"], "决定先说明为什么没有提醒。")
+        self.assertEqual(detail["recall"]["revision"], 1)
+        self.assertEqual(detail["recall"]["units"][0]["mode"], "search")
+        self.assertEqual(
+            detail["recall"]["units"][0]["queries"][0]["semantic"],
+            "此前测试聊天的约定",
+        )
+        self.assertEqual(
+            detail["recall"]["memories"][0]["key"],
+            "game.ba",
+        )
+        self.assertEqual(
+            detail["recall"]["episodes"][0]["title"],
+            "一次测试聊天",
+        )
         call = await (
             await self.client.get(
                 "/api/thinking/calls/call-think", headers=self._auth()

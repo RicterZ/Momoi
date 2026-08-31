@@ -29,7 +29,6 @@ const navItems = [
 const thinkingStageLabels = {
   owner: "主人对话",
   webhook: "Webhook",
-  context_plan: "上下文规划",
   heartbeat: "心跳",
   heartbeat_plan: "心跳规划",
   reflection: "复盘",
@@ -1822,7 +1821,6 @@ function thinkingStageCode(stage) {
     {
       owner: "MOMOI",
       webhook: "HOOK",
-      context_plan: "PLAN",
       heartbeat: "BEAT",
       heartbeat_plan: "HPLAN",
       reflection: "NOTE",
@@ -2063,6 +2061,7 @@ function ThinkingLayout({
           <ThinkingDetail
             item={active}
             calls={detail.data.items || (detail.data.item ? [detail.data.item] : [])}
+            recall={detail.data.recall}
           />
         )}
       </div>
@@ -2070,7 +2069,82 @@ function ThinkingLayout({
   );
 }
 
-function ThinkingDetail({ item, calls }) {
+function RecallDetail({ recall }) {
+  if (!recall) return null;
+  const units = recall.units || [];
+  const evidence = [
+    ...(recall.memories || []).map((item) => ({
+      key: `memory:${item.kind}:${item.key}`,
+      label: item.kind || "memory",
+      title: item.key,
+      content: item.content,
+    })),
+    ...(recall.reflections || []).map((item) => ({
+      key: `reflection:${item.kind}:${item.key}`,
+      label: item.kind || "reflection",
+      title: item.key,
+      content: item.content,
+    })),
+    ...(recall.episodes || []).map((item) => ({
+      key: `episode:${item.id}`,
+      label: item.relation || "episode",
+      title: item.title || item.id,
+      content: item.summary,
+    })),
+  ];
+  return (
+    <section className="recall-panel">
+      <div className="card-head">
+        <div>
+          <span className="panel-label">CONTEXT // RECALL</span>
+          <h3>上下文召回</h3>
+        </div>
+        <span className="status">{recall.state || "unknown"}</span>
+      </div>
+      {units.map((unit) => (
+        <article className="recall-unit" key={unit.id}>
+          <div className="memory-head">
+            <span className="memory-kind">{unit.mode}</span>
+            <strong>{unit.intent || unit.id}</strong>
+          </div>
+          {unit.reused_from ? (
+            <p className="secondary">复用 Turn：{unit.reused_from}</p>
+          ) : null}
+          {(unit.queries || []).map((query, index) => (
+            <div className="recall-query" key={`${unit.id}:${index}`}>
+              <p>{query.semantic}</p>
+              {!!query.keywords?.length && (
+                <div className="tags">
+                  {query.keywords.map((keyword) => (
+                    <span className="tag" key={keyword}>{keyword}</span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </article>
+      ))}
+      {!!evidence.length && (
+        <div className="recall-evidence">
+          {evidence.map((item) => (
+            <article className="memory" key={item.key}>
+              <div className="memory-head">
+                <span className="memory-kind">{item.label}</span>
+                <strong>{item.title}</strong>
+              </div>
+              {item.content ? <p className="secondary">{item.content}</p> : null}
+            </article>
+          ))}
+        </div>
+      )}
+      {recall.status ? (
+        <pre className="recall-status">{recall.status}</pre>
+      ) : null}
+    </section>
+  );
+}
+
+function ThinkingDetail({ item, calls, recall }) {
   const flow = [...calls].sort((left, right) => {
     const time = Number(left.created_at || 0) - Number(right.created_at || 0);
     return time !== 0 ? time : Number(left.round || 0) - Number(right.round || 0);
@@ -2091,6 +2165,7 @@ function ThinkingDetail({ item, calls }) {
           </a>
         ) : null}
       </header>
+      <RecallDetail recall={recall} />
       <div className="messages">
         {flow.map((call) => (
           <article className="message" key={call.call_id}>

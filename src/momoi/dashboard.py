@@ -192,6 +192,86 @@ def _public_emotion(item: dict[str, object]) -> dict[str, object]:
     return public
 
 
+def _dashboard_recall(store: Store, turn_id: str) -> dict[str, object] | None:
+    record = store.context_plan(turn_id)
+    if record is None:
+        return None
+    plan = record.get("plan")
+    retrieval = record.get("retrieval")
+    if (
+        not isinstance(plan, dict)
+        or plan.get("version") != 7
+        or not isinstance(retrieval, dict)
+    ):
+        return None
+    units = [
+        {
+            "id": str(unit.get("id") or ""),
+            "intent": str(unit.get("intent") or ""),
+            "mode": str(unit.get("recall_mode") or ""),
+            "queries": [
+                {
+                    "semantic": str(query.get("semantic") or ""),
+                    "keywords": [
+                        str(keyword) for keyword in query.get("keywords") or []
+                    ],
+                }
+                for query in unit.get("recall_queries") or []
+                if isinstance(query, dict)
+            ],
+            "reused_from": str(unit.get("recall_from_turn_id") or ""),
+        }
+        for unit in plan.get("intent_units") or []
+        if isinstance(unit, dict)
+    ]
+    episodes: list[dict[str, object]] = []
+    seen_episodes: set[str] = set()
+    for selected in retrieval.get("episodes") or []:
+        if not isinstance(selected, dict):
+            continue
+        episode_id = str(selected.get("episode_id") or "")
+        if not episode_id or episode_id in seen_episodes:
+            continue
+        seen_episodes.add(episode_id)
+        episode = store.episode(episode_id) or {}
+        episodes.append(
+            {
+                "id": episode_id,
+                "title": str(episode.get("title") or ""),
+                "relation": str(selected.get("relation") or ""),
+                "summary": str(
+                    episode.get("narrative_summary")
+                    or episode.get("working_summary")
+                    or ""
+                ),
+            }
+        )
+    semantic = retrieval.get("semantic_recall")
+    return {
+        "revision": int(record.get("revision") or 0),
+        "state": str(record.get("state") or ""),
+        "units": units,
+        "episode_actions": [
+            action
+            for action in plan.get("episode_actions") or []
+            if isinstance(action, dict)
+        ],
+        "status": str(retrieval.get("query_recall") or ""),
+        "memories": [
+            item
+            for item in retrieval.get("recall_memories") or []
+            if isinstance(item, dict)
+        ],
+        "reflections": [
+            item
+            for item in retrieval.get("reflection_memories") or []
+            if isinstance(item, dict)
+        ],
+        "episodes": episodes,
+        "semantic": semantic if isinstance(semantic, dict) else {},
+    }
+
+
 @web.middleware
 async def _auth(
     request: web.Request, handler: web.RequestHandler
@@ -332,6 +412,9 @@ def create_dashboard_app(
         episode = store.episodes_for_turns([turn_id]).get(turn_id)
         if episode:
             payload.update(episode)
+        recall = _dashboard_recall(store, turn_id)
+        if recall is not None:
+            payload["recall"] = recall
         return web.json_response(payload)
 
     async def thinking_call(request: web.Request) -> web.Response:
