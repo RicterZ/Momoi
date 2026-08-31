@@ -146,10 +146,6 @@ class ContextAwareProvider:
         )
 
 
-def with_owner_context(provider: object) -> ContextAwareProvider:
-    return ContextAwareProvider(provider)
-
-
 class HeartbeatPlannerAwareProvider:
     def __init__(self, delegate: object) -> None:
         self.delegate = delegate
@@ -166,10 +162,6 @@ class HeartbeatPlannerAwareProvider:
         return await self.delegate.complete(  # type: ignore[attr-defined,no-any-return]
             system, messages, tools, **kwargs
         )
-
-
-def with_heartbeat_planner(provider: object) -> HeartbeatPlannerAwareProvider:
-    return HeartbeatPlannerAwareProvider(provider)
 
 
 def with_owner_and_heartbeat_planner(provider: object) -> ContextAwareProvider:

@@ -47,27 +47,6 @@ PLANNER_INTERNAL_TOOLS = [
 ]
 
 
-def _planner_state_lines(items: list[dict[str, object]]) -> str:
-    lines: list[str] = []
-    for item in items:
-        if not isinstance(item, dict) or not item.get("id"):
-            continue
-        fields = [
-            f"id={item['id']}",
-            f"status={item.get('status') or 'unknown'}",
-            f"title={str(item.get('title') or '')[:100]}",
-        ]
-        for key, label, limit in (
-            ("next_action", "next", 120),
-            ("waiting_for", "waiting", 100),
-            ("latest_result", "last", 160),
-        ):
-            if item.get(key) not in (None, "", [], {}):
-                fields.append(f"{label}={str(item[key])[:limit]}")
-        lines.append("- " + " ".join(fields))
-    return "\n".join(lines)
-
-
 def _planner_mcp_lines(items: list[dict[str, object]]) -> str:
     return "\n".join(
         f"- id={item.get('id')} description={str(item.get('description') or '')[:240]}"
@@ -82,18 +61,6 @@ def _planner_internal_tool_lines(items: list[dict[str, str]]) -> str:
         f"{' '.join(item['description'].split())[:240]}"
         for item in items
     )
-
-
-def _planner_owner_lines(items: list[dict[str, object]]) -> str:
-    blocks: list[str] = []
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        blocks.append(
-            f"[event id={item.get('event_id')} at={item.get('timestamp')}]\n"
-            f"{item.get('text') or ''}"
-        )
-    return "\n\n".join(blocks)
 
 
 def _planner_episode_lines(items: list[dict[str, object]]) -> str:
@@ -121,43 +88,6 @@ def _planner_episode_lines(items: list[dict[str, object]]) -> str:
             )
         blocks.append("- " + " ".join(fields))
     return "\n".join(blocks)
-
-
-def _planner_interrupted_reply_lines(value: str) -> str:
-    if not value:
-        return ""
-    try:
-        item = json.loads(value)
-    except (TypeError, ValueError):
-        return str(value)
-    if not isinstance(item, dict):
-        return str(value)
-    lines = [f"state: {item.get('state') or 'unknown'}"]
-    for key, label in (
-        ("expected_information", "expected"),
-        ("reason", "reason"),
-        ("source_turn", "source turn"),
-        ("waiting_since", "waiting since"),
-        ("interrupted_at", "interrupted at"),
-        ("deadline", "deadline"),
-        ("delay_minutes", "delay minutes"),
-        ("elapsed_minutes", "elapsed minutes"),
-    ):
-        if item.get(key) not in (None, "", [], {}):
-            lines.append(f"{label}: {item[key]}")
-    messages = item.get("source_messages")
-    if isinstance(messages, list) and messages:
-        lines.append("source messages:")
-        for message in messages:
-            if not isinstance(message, dict):
-                continue
-            lines.append(
-                f"- {message.get('role') or 'message'} at={message.get('timestamp') or '?'} "
-                f"delivery={message.get('delivery_state') or 'unknown'}"
-            )
-            if message.get("content"):
-                lines.append(f"  {message['content']}")
-    return "\n".join(lines)
 
 
 def _planner_value(value: str) -> str:

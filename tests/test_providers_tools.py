@@ -613,7 +613,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                     api_format="openai",
                     thinking=ThinkingConfig(
                         effort="high",
-                        stages={"context_plan": "low"},
+                        stages={"heartbeat_plan": "low"},
                     ),
                 ),
                 dump_dir,
@@ -621,7 +621,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
             try:
                 async with provider:
                     with _provider_trace_logs():
-                        with log_context(stage="context_plan"):
+                        with log_context(stage="heartbeat_plan"):
                             await provider.complete(
                                 "system",
                                 [{"role": "user", "content": "测试"}],
