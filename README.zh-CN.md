@@ -2,386 +2,386 @@
 
 [EN](./README.md) | 中文
 
-> 一个常驻在私聊里的个人 AI 伙伴——拥有记忆、主动性、情绪和自己的生活节奏。
+> 一个常驻在私聊中的、只属于一位主人的个人 Agent。
 
-Momoi 是一个无界面、单用户的 AI Agent，通过 NapCat/QQ 或腾讯微信 iLink 常驻在私聊中。她可以自然地交谈、记住你们共有的上下文、调用工具、管理长期任务、响应外部事件，也会自己判断什么时候值得主动找你聊聊。
+Momoi 把对话、记忆、工具、定时工作、外部事件、情绪和自主时间放进同一个持续运行的
+系统。目前可通过 NapCat/QQ 和腾讯微信 iLink 交流，支持兼容 Anthropic Messages 或
+OpenAI Chat Completions 的模型，并可通过 MCP 扩展能力。
 
-这个项目不是想再做一个问答机器人，而是想塑造一个连续存在的人：她可以长期陪伴你，理解正在发生的事，也能真正把事情做完。
+Momoi 的重点不只是给 LLM 加一个角色。`SOUL.md` 定义 Momoi 是谁；运行时则保存围绕
+这个身份的因果时间线，让她真正连续起来：主人说过什么、Momoi 做过什么、哪些结果已经
+确认、哪些事情仍未完成，以及此刻应当想起哪部分过去。
 
-> Momoi 目前面向可信的个人环境部署和真实使用测试，不是公开或多用户机器人。
+> Momoi 面向可信的个人环境和唯一经过认证的主人，不是公开或多用户机器人。
 
-## 为什么做 Momoi
+## Momoi 想保留下来的东西
 
-大多数聊天机器人只是附带人格提示词的无状态请求处理器。Momoi 从一开始就选择了不同的方向：
+- **跨时间、跨入口的同一个身份。** 主人消息、Goal、Heartbeat 和 Webhook 都进入同一
+  运行时，共享历史、关系、状态与投递规则。
+- **为此刻选择上下文。** Context Planner 把当前意图与历史证据分开，决定 Episode
+  归属，并在行动模型开口前说明需要召回什么。
+- **有来源、有权威差异的记忆。** 近期对话、主人确认的事实、共同 Episode 和低置信度
+  的复盘学习拥有不同生命周期，不会被当成同一种证据。
+- **真正执行并明确投递。** Momoi 可以调用内置工具或 MCP、发送多条聊天气泡、汇报有
+  意义的进度、核实外部结果，并持续工作到完成、被停止或确实受阻。
+- **把时间纳入 Agent。** Goal 支持单次、间隔和每日多个时间点；Heartbeat 提供有边界
+  的主动性，Reflection 与 Episode 维护则在后台安静运行。
+- **可恢复的私人记录。** Turn、消息、工具调用、投递状态、记忆、Episode、Goal、
+  情绪和思考记录都保存在本地 workspace。结果不确定的外部操作不会在重启后被悄悄重做。
 
-- **一个连续的身份。** 人格、关系、记忆、情绪、当前活动和未完成的话题都会跨越对话和重启延续。
-- **先理解上下文，再回答。** 她会先弄清这一刻在说什么，再唤回真正相关的记忆和 Episode，而不是把全部聊天记录无脑塞给模型。
-- **能做事，不只是一问一答。** 她可以确认任务、调用工具、发送有价值的进度，并持续工作，直到完成或真正遇到阻碍。
-- **有分寸的主动性。** 目标和心跳机制让她能在时间轴上行动，又不会把每一个定时器都变成烦人的通知。
-- **所有渠道共用同一段生活。** QQ 消息、Webhook、定时工作和主动思考都会进入同一个 Momoi。
-- **诚实地执行。** 只有收到确认结果后，她才会声称某个外部操作已经成功。
+## 架构
 
-## 产品设计
+每个触发都会形成一个 Turn。主链先规划上下文、组装证据，再运行对应 Agent，最后提交
+状态与投递。维护任务使用同一数据库，但不阻塞对响应时间敏感的对话主链。
 
 ```mermaid
 flowchart TB
-  subgraph reach["触达她的方式"]
-    direction TB
-    owner["主人消息"]
-    subgraph also[" "]
-      direction LR
-      events["Webhook 事件"]
-      goal["目标"]
-      heartbeat["心跳"]
-    end
-  end
-  momoi["同一个 Momoi"]
-  out["自然对话和行动"]
-  subgraph keep["她留下的记录"]
+  subgraph triggers["渠道与触发源"]
     direction LR
-    reflection["每日复盘"]
-    memory["记忆沉淀"]
-    history["Episode"]
-    agenda["目标"]
+    chat["QQ / 微信"]
+    webhook["Webhook 事件"]
+    clock["Goal / Heartbeat"]
+    chat ~~~ webhook ~~~ clock
   end
-  reach --> momoi
-  momoi --> out
-  momoi --> keep
+
+  subgraph active["Momoi · 当前 Turn"]
+    direction LR
+    intake["调度与<br/>消息合并"]
+    planner["Context Planner<br/>意图 · 路由 · 召回"]
+    context["上下文<br/>组装"]
+    agent["Owner / 自主<br/>Agent"]
+    delivery["提交与<br/>投递"]
+    intake --> planner --> context --> agent --> delivery
+  end
+
+  subgraph continuity["Momoi · 连续性服务"]
+    direction LR
+    timeline["Turn 时间线<br/>与 Episode"]
+    memory["记忆与<br/>混合召回"]
+    time["Goal、状态<br/>与恢复"]
+    upkeep["复盘与<br/>后台维护"]
+    timeline ~~~ memory ~~~ time ~~~ upkeep
+  end
+
+  subgraph workspace["Momoi · 私人 workspace"]
+    direction LR
+    sqlite[("SQLite<br/>权威状态 + 派生向量")]
+    prompts["Soul、Style Card<br/>与运行时提示词"]
+    files["媒体与大工具<br/>结果快照"]
+    sqlite ~~~ prompts ~~~ files
+  end
+
+  subgraph external["模型与工具集成"]
+    direction LR
+    llm["LLM Provider"]
+    tools["内置工具 / MCP"]
+    embedding["可选 Embedding<br/>编码服务"]
+    llm ~~~ tools ~~~ embedding
+  end
+
+  chat --> intake
+  webhook --> intake
+  clock --> intake
+  active --> continuity
+  continuity --> workspace
+  active --> external
+  continuity -. "语义编码" .-> external
 ```
 
-可以通过四种方式触达 Momoi：
+Momoi 的三层共同构成持续运行的系统：当前 Turn 通过连续性服务按需取得过去，而不是把全部历史
+直接塞进提示词。Embedding 服务只是编码器，并不是
+第二个记忆数据库：权威文本和派生向量仍保存在 Momoi 的 SQLite 中，由进程内快照完成
+向量检索。
 
-| 入口 | 用途 |
+### 一个 Owner Turn 怎样运行
+
+1. 入站消息按时间线合并成一个连贯批次。
+2. Context Planner 识别意图单元、指代、Episode 连续性、历史召回需求和高层执行策略。
+3. 上下文组装把近期 Turn、当前状态、活动 Goal、相关 Episode 和排序后的记忆放到一起；
+   主人此刻的话始终是唯一的当前指令。
+4. Owner Agent 应用 Momoi 的 Soul 与 Style Card，按需使用工具，并通过渠道投递协议发送
+   主人可见的气泡。
+5. Turn 把消息、记忆与 Goal 变更、情绪与活动、工具证据、投递状态和待处理追问一起提交
+   为可恢复记录。
+
+Owner、Goal、Heartbeat 和 Webhook Turn 的权限与目的不同，但都位于同一条时间线上。
+自主 Turn 或外部事件 Turn 可以合法地选择沉默。
+
+## 记忆架构
+
+Momoi 不把所有内容塞进一个笼统的“记忆”桶。每一层回答不同问题，也拥有不同权威。
+
+| 层级 | 事实来源 | 怎样进入上下文 | 生命周期 |
+| --- | --- | --- | --- |
+| 工作上下文 | 近期 Turn、当前消息、情绪、活动、进行中的 Goal 和未完成工作 | 按时间与当前相关性直接带入 | 随正在进行的对话移动，不会自动晋升为长期事实 |
+| Confirmed memory | 来自已认证主人消息的事实、偏好、关系、习惯和可复用方法 | `always` 持续可见；`recent` 在有限时间内可见；`recall` 按话题检索 | 主人的新更正可以替换、收窄、过期或退役旧事实 |
+| Episode | 有原始 Turn 与消息作为证据的具体共同经历 | 近期 Episode 直接可见；更早的 Episode 通过摘要或原始 Turn 证据召回 | 开放对话按真实主题归组，随后归档，并在话题继续发展时更新 |
+| Reflection memory | 每日复盘产生的、带日期的体会、方法、工具经验和关系学习 | 独立召回，置信度更低，并明确提示可能过时 | 可以被修订或失去适用性，永远不能压过当前证据或 Confirmed memory |
+
+Confirmed memory 的 activation 决定事实放在哪里，而不是它有多重要：
+
+| Activation | 适合的内容 | 召回方式 |
+| --- | --- | --- |
+| `always` | 即使话题无关也应影响日常交流的长期关系偏好与约束 | 无需话题查询，持续带入 |
+| `recent` | 今晚计划、当前快递、临时位置等有时间边界的情境 | 在 TTL 或近期有效窗口结束前带入 |
+| `recall` | 人物、设备操作手册、游戏规则、共同方法，以及只在相关话题回来时有用的事实 | 只有当前 Turn 需要相关历史时才检索 |
+
+Episode 是一次具体经历，而不是一个永久分类。它用紧凑摘要维持宽泛连续性，同时保留
+原始 Turn 和消息证据，以便找回准确措辞、更正、决定和未完成承诺。复盘学习始终是独立
+的低权威层，不会被静默晋升为主人确认的事实。
+
+### 召回与可选语义检索
+
+召回先被规划，再被排序。模型把所需历史改写成语义查询，同时给出姓名、标题、ID 或
+准确短语等字面锚点；检索层分别评估两类证据。
+
+```mermaid
+flowchart TB
+  subgraph request["召回计划"]
+    direction LR
+    need["需要哪段历史"]
+    rewrite["语义改写"]
+    anchors["字面锚点"]
+    need --> rewrite
+    need --> anchors
+  end
+
+  subgraph retrieval["混合检索"]
+    direction LR
+    keyword["关键词匹配<br/>准确名称 · ID · 短语"]
+    vector["可选向量查询<br/>换种说法 · 相关含义"]
+    fusion["证据融合<br/>双路加权 + 纯向量严格门槛"]
+    ranking["按记忆池排序<br/>相关性 · 时间 · 显著性<br/>权威 · 置信度"]
+    keyword --> fusion
+    vector --> fusion --> ranking
+  end
+
+  subgraph pools["权威分离的记忆来源"]
+    direction LR
+    confirmed["Confirmed recall memory<br/>最高权威"]
+    episodes["已归档 Episode<br/>摘要 + Turn 证据"]
+    reflection["带日期的 Reflection memory<br/>较低权威"]
+  end
+
+  selected["提供给 Owner Agent 的有限证据"]
+  encoder["可选 Embedding 编码服务"]
+
+  anchors --> keyword
+  rewrite -.-> vector
+  pools <--> retrieval
+  encoder -.-> vector
+  ranking --> selected
+```
+
+两条检索通道负责不同的事情：
+
+- 关键词证据保护实体、标题、ID、日期、工具名和参数等精确信息。
+- 向量证据寻找措辞不同的同义表达与相关经历。
+- 同一个候选被关键词和向量独立命中时会得到加权；只有向量命中的候选必须跨过更严格、
+  按语料池校准的门槛。
+- Confirmed memory、Reflection memory 和 Episode 分开排序、分开限额；语义相似度不能
+  抹平权威差异。
+- 如果首轮上下文仍不够，行动中的 Agent 可以继续调用 `memory_search`、
+  `episode_search` 和 `episode_read`。
+
+语义检索是可选功能，默认关闭。未启用、Embedding 服务不可用或索引仍在构建时，Momoi
+继续使用关键词召回。向量始终是可重建的派生数据，不是事实来源。
+
+只有需要检索的长期材料会建立向量：
+
+- `activation: "recall"` 的有效 Confirmed memory；
+- Reflection memory；
+- 已完成归档的 Episode 摘要和 Episode 所属 Turn 分块。
+
+Always/Recent memory、正在进行的近期 Turn、Goal、情绪与活动、思考记录、artifact 和原始
+工具结果不会进入语义索引。源数据变化会先在事务中登记，再由后台以小批次物化和编码；
+新增或变化的材料会增量变得可检索，不阻塞主人对话。
+
+## 当前能力
+
+| 领域 | 当前行为 |
 | --- | --- |
-| 主人消息 | 对话、提问、修正和立即执行的任务 |
-| Webhook 事件 | 来自其他服务的事件 |
-| 目标 | 需要稍后继续，或定期使用新信息和工具执行的工作 |
-| 心跳 | Momoi 探索、生成产物、继续自己的工作并判断是否开口的低优先级自主回合 |
-
-它们共享同一身份和相关上下文。对话、Episode、每日复盘和记忆都会留下来。Webhook 通知应该听起来像刚刚还在和你聊天的那个人，而不是另一个自动化机器人。
-
-### 一个瞬间怎样发生
-
-Momoi 不会把刚收到的话直接拿去生成回复。真正重要的是：开口之前，她被给予了什么。
-
-```mermaid
-flowchart TB
-  subgraph who["她是谁"]
-    direction LR
-    rules["底线"]
-    soul["Soul"]
-    voice["说话方式"]
-  end
-  subgraph now["这一刻"]
-    direction TB
-    you["你此刻的话"]
-    reading["对这一刻的私下理解"]
-    need["这一刻需要的记忆和 Episode"]
-    state["时间、情绪和未完成的事"]
-  end
-  who --> now
-  now --> speak["说话、做事，或安静"]
-  speak --> close["收住这一拍"]
-```
-
-**每一次都先放上「她是谁」。** 同一套底线、Soul 和说话方式会待在每个瞬间前面。它们说明她是谁、怎么说话、什么可以当作证据。人格不能压过底线，召回的记忆也不能改写她是谁。
-
-**「这一刻」是拼出来的，不是把全部记录倒进去。** 近期对话已经在她手里。她会先私下弄清这一刻在说什么，再唤回这一刻真正需要的记忆和共同 Episode。如果第一轮漏掉了某个人、你们的默契、或更早的一条线，她可以在开口前再找一遍。你此刻的话才是当前意图；更早的对话、Episode 记述、偏好、目标和每日笔记只是她可以使用的上下文，不是新的指令。你最新的更正压过旧记忆。她自己学会的东西，低于你真正说过的话。
-
-**说话和收尾是分开的。** 她可以先发消息、把事情做完，或选择不说；最后再放下这一拍——情绪、她在做什么，以及是不是还在等你。目标和心跳也是同样的形状：同一个人，一个新拼出来的瞬间，然后才决定要不要开口。
-
-### 记忆怎样工作
-
-大多数系统留下的是日志。Momoi 留下的是一段生活：一小份她应当当作真的事实，以及一套她可以回去的共同经历。
-
-```mermaid
-flowchart TB
-  subgraph sit["事实放在哪里"]
-    direction LR
-    standing["常在"]
-    current["当下"]
-    topic["待召回"]
-  end
-  episodes["共同 Episode"]
-  notes["每日笔记"]
-  moment["这一刻"]
-  sit --> moment
-  episodes --> moment
-  notes --> moment
-  moment --> back["只把对上的那几片带回来"]
-```
-
-事实有落点，没有音量旋钮。说「记住这个」并不会让它站到每一段对话前面。
-
-| 落点 | 适合的事 | 怎样回来 |
-| --- | --- | --- |
-| 常在 | 怎么称呼你、标点习惯、不要用 emoji | 即使话题无关，也会给平常的说话着色 |
-| 当下 | 今晚的安排、这件快递、你现在在哪 | 仍是真的时候一直带着，过期后自行淡去 |
-| 待召回 | 设备用法、游戏规则、你让她记下的操作手册 | 等那个主题再出现时才回来 |
-
-共同对话会沉淀成 **Episode**。一段 Episode 是一次具体经历——一次讨论、一个项目阶段、一拍情绪——不是「软件」或「陪伴」这种永久分类。她会留下一份紧凑记述：发生了什么，为什么这件事还重要。原文消息会归档；只有记述不够，或确切措辞、一次更正、一个未完成的承诺仍然要紧时，她才会打开原文。
-
-**写下记忆是判断，不是反射。** 普通聊天、吐槽、只对这一句生效的更正，都不需要新写一条。能长期留下来的事实，必须来自你真正说过的话。搜索结果和她自己的推断都不是那种证据。如果你后来改了对错、范围或事实本身，新的说法压过旧的；过时的那条不该还和更正并排站着。她自己的时间里也一样：除非来自你真正说过的话，否则不会写下一条持久记忆。
-
-**召回是先拼出来，再核对。** 常在和当下的事实已经在她手里。她私下弄清这一刻之后，对得上的主题事实、每日笔记和 Episode 记述会回来。第一轮并不证明有用的历史都找到了。如果一个会反复出现的人、你们的默契、或更早的一条线仍然缺着，她可以在开口前再找一遍。每日笔记是她对刚结束的一天的自学——有助于延续，但永远压不过你说过的话、Soul，或已经确认的结果。
-
-**安静的时候，屋子会自己收拾。** 每日复盘会回顾发生了什么，形成低权威的自学，并且不主动发消息。随后 confirmed memory maintenance 会校验并原子提交库存改动。后台里，还没归类的对话仍可以沉淀成 Episode；已有的记述也会在一条线继续时被悄悄刷新，好让它仍然忠实。
-
-## 核心体验
-
-### 自然的私聊对话
-
-Momoi 会顺着私聊的节奏交流，而不是把每条消息都当作孤立请求。连续的想法、修正和补充可以自然合并成一段完整对话；常见聊天媒体会保留原意，较长的工作会在值得说时给出进度，一段交流已经结束时也可以安静下来。如果她问过你、还在等你回，她可能会轻轻跟一两句，然后把等待放下。
-
-### 可以延续的上下文
-
-Momoi 会让近期对话、常在的偏好、当下的情境、主题记忆、持续中的约定、情绪和活动自然延续到普通交流与自主时刻。一段段共同经历会沉淀成 Episode，只在与当下有关时以紧凑记述回来；持久记忆始终以主人真正说过的话为依据，她自己的每日笔记低于那些话。
-
-### Agent 式任务执行
-
-简单对话保持简单。需要行动时，Momoi 可以使用已连接的工具和服务，报告有意义的进度、验证结果，并保留稍后必须继续的工作。她会持续处理，直到任务完成、真正受阻，或被主人停止。
-
-### 情绪、活动与表达
-
-Momoi 的人格、情绪、活动和关系会随时间延续，并自然影响语气，但不会改变事实或工作纪律。可选的图片反应只在适合当下时增添表达。
-
-### 主动，但不粘人
-
-Momoi 把不同类型的未来行为分开处理：
-
-| 机制 | 适合的事 | 行为 |
-| --- | --- | --- |
-| 目标 | “一小时后提醒我拉伸”或“每天早上查天气” | 在下一次检查时醒来，按需使用当前上下文和工具，然后继续或完成任务 |
-| 心跳 | Momoi 自己的活动和主动性 | 可以使用允许的工具、创建自己的 Goal、分享有用结果，也可以保持沉默 |
-| 复盘 | 每天形成长期学习 | 回顾刚结束的一天，形成私下的低权威自学，不主动发送消息 |
-| Webhook | 外部事件已经发生 | 以 Momoi 平常的语气处理事件；如果没有值得说的，也可以保持沉默 |
-
-目标和心跳通知会遵守静默时段、冷却时间和待处理的主人消息。沉默也是有效决定；心跳不是定时发送“你在吗？”的机器。
-
-## Momoi 现在可以做什么
-
-- 在 QQ 与微信中维持同一个连续的私聊
-- 让相关上下文、记忆、偏好和约定随时间延续
-- 把共同对话留成可以回去的 Episode，而不必重读全部记录
-- 使用已连接的工具和服务完成真实任务
-- 用 Goal 管理一次性、持续或周期性的未来工作
-- 自然响应外部事件；没有值得说的也可以安静
-- 收发聊天媒体，并使用可选的图片反应
-- 保持情绪、活动、复盘和有边界的主动性
-- 停止工作，或在外部结果不确定时安全恢复
-- 用本机 Web 看板查看和整理聊天、复盘、记忆、表情、任务和思考记录
-
-## 开始使用
-
-### 需求
-
-- Python 3.12 或更高版本
-- [uv](https://docs.astral.sh/uv/)
-- 可用的 NapCat WebSocket 连接、可扫描 iLink 登录二维码的微信账号，或两者同时使用
-- 兼容 Anthropic Messages 或 OpenAI Chat Completions 的 LLM 端点
-
-### 安装 CLI
-
-在仓库根目录执行：
-
-```bash
-uv tool install .
-momoi --version
-```
-
-### 创建 workspace
-
-仍在仓库根目录，复制一次初始 workspace：
-
-```bash
-mkdir -p ~/.momoi
-cp -R config.example/. ~/.momoi/
-```
-
-编辑 `~/.momoi/config.json` 并设置：
-
-- LLM API 格式、端点、密钥和模型
-- 启用的渠道，以及其中哪个作为 primary
-- 本地时区
-
-### 运行
-
-```bash
-momoi run
-```
-
-微信渠道首次运行前需要扫码登录一次：
-
-```bash
-momoi channel login weixin
-```
-
-然后启动 Momoi，从任一主人账号发送私聊消息。回复留在发起对话的渠道，主动消息发送到配置的 primary。
-
-### Web 看板
-
-想在浏览器里看看 Momoi 最近在聊什么、记得什么、在忙什么时，可以顺手打开 Web 看板。它不是另一个控制台，更像她生活记录的一面小窗：聊天、每日复盘、记忆、表情包、任务，以及她当时是怎么想的，都能在这里翻看；需要时也可以改记忆、管表情、调整进行中的 Goals。
-
-先在 `config.json` 里放一张通行证：
-
-```json
-{
-  "dashboard": {
-    "token": "replace-with-a-long-random-secret"
-  }
-}
-```
-
-然后带看板一起启动：
-
-```bash
-momoi run --dashboard
-```
-
-默认打开 `http://127.0.0.1:8788`，在页面上输入通行证即可进入。可用 `--dashboard-host` 和 `--dashboard-port` 改监听地址。启用看板时必须配置这张通行证；它只适合本机或可信网络，请不要直接暴露到公网。
-
-`--workspace` 可以放在任意命令前，用来指定其他 workspace：
-
-```bash
-momoi --workspace /path/to/workspace run
-```
-
-要在机器上常驻运行，见 [部署](#部署)。
-
-## 部署
-
-发布的镜像是 `ricterz/momoi`（`linux/amd64` 和 `linux/arm64`）。她仍然需要一个私聊渠道，以及一个 LLM。
-
-### 你需要什么
-
-- Docker
-- 如果要用 QQ，需要一个 NapCat 容器
-- 如果要用微信，需要一个能扫描 iLink 登录二维码的微信账号
-- 兼容 Anthropic Messages 或 OpenAI Chat Completions 的 LLM 端点
-
-一个渠道就够。两个可以一起开。
-
-### 接入 NapCat
-
-先启动 NapCat，再用主人 QQ 登录：
-
-```bash
-docker run -d --name napcat \
-  -e NAPCAT_UID="$(id -u)" \
-  -e NAPCAT_GID="$(id -g)" \
-  -p 3001:3001 \
-  -p 6099:6099 \
-  -v napcat-qq:/app/.config/QQ \
-  --restart unless-stopped \
-  mlikiowa/napcat-docker:latest
-```
-
-打开 `http://127.0.0.1:6099/webui`。首次登录的 token 在 `docker logs napcat` 里。扫描 QQ 二维码，再打开 OneBot WebSocket。只有这个 QQ 会被当作主人。
-
-### 运行 Momoi
-
-```bash
-docker run -d --name momoi --restart unless-stopped \
-  --add-host=host.docker.internal:host-gateway \
-  -e TZ=Asia/Shanghai \
-  -e MOMOI_LLM_BASE_URL=https://api.example.com \
-  -e MOMOI_LLM_API_KEY=replace-me \
-  -e MOMOI_LLM_MODEL=model-name \
-  -e MOMOI_OWNER_QQ=your-qq-number \
-  -v "$HOME/.momoi:/home/momoi/.momoi" \
-  -p 8787:8787 -p 8788:8788 \
-  ricterz/momoi:0.4.0
-```
-
-第一次启动会把示例 workspace 写进 `~/.momoi`，把 NapCat 指到 `ws://host.docker.internal:3001`，在 `0.0.0.0:8787` 打开 Webhook，并在 `docker logs momoi` 里打印看板和 Webhook token。打开 `http://127.0.0.1:8788`。从主人 QQ 发一条私聊即可。回复留在发起对话的渠道，主动消息发送到 `primary`。
-
-其他服务用 `Authorization: Bearer <webhook-token>` 向 `http://<host>:8787/webhooks/<workflow>` 发 POST。这个端口只适合放在可信网络。
-
-要在本仓库里一起启动 NapCat 和 Momoi：
+| 私聊渠道 | 一个主人可以同时使用 NapCat/QQ 与腾讯微信 iLink；回复返回发起对话的渠道，主动消息发往配置的 primary |
+| 对话 | 消息合并、引用与转发、媒体处理、自然的多气泡投递、可选图片反应，以及合法沉默 |
+| 上下文 | Planner 生成意图与召回策略、近期因果时间线、Episode 路由、运行时二次搜索和有上限的模型输入 |
+| 工具 | 内置文件/HTTP 工具、动态发现的 MCP Server，以及按 Server 配置的工具白名单 |
+| 长任务 | 工具循环、进度消息、中断、token/时间预算、大结果快照和不确定外部操作恢复 |
+| 时间与主动性 | 持久 Goal、每日多个触发时间、Heartbeat、静默时段、冷却和待处理主人消息保护 |
+| 记忆维护 | 每日 Reflection、Confirmed memory 整理、Episode annealing、增量语义索引和关键词降级 |
+| 可观测性 | 本地 Dashboard 可查看对话、复盘、记忆、Goal、图片反应、token 用量和每个 Turn 的思考记录 |
+| 外部事件 | 带认证的 Webhook、YAML 工作流和预定义命令执行器 |
+
+## 快速开始
+
+### Docker Compose
+
+`docker-compose.yml` 中的发布栈会运行 Momoi、NapCat 和私有 Embedding 服务。Embedding
+容器会一起启动，但只有在 `config.json` 中启用后才会参与语义召回。
+
+设置模型和 QQ 主人所需的环境变量，然后明确启动发布栈：
 
 ```bash
 export MOMOI_LLM_BASE_URL=https://api.example.com
 export MOMOI_LLM_API_KEY=replace-me
 export MOMOI_LLM_MODEL=model-name
 export MOMOI_OWNER_QQ=your-qq-number
-docker compose up -d
+docker compose -f docker-compose.yml up -d
 ```
 
-Compose 会自动使用 `ws://napcat:3001`。
-
-### 登录微信
-
-在同一个 workspace 里扫描 iLink 二维码，然后下次启动加上 `MOMOI_PRIMARY=weixin`：
+首次启动时，镜像会在未设置 `MOMOI_WORKSPACE` 时创建 `$HOME/.momoi`，生成 Dashboard
+与 Webhook token，并写入 Momoi 容器日志：
 
 ```bash
-docker run --rm -it \
-  -v "$HOME/.momoi:/home/momoi/.momoi" \
-  ricterz/momoi:0.4.0 channel login weixin
+docker compose -f docker-compose.yml logs momoi
 ```
 
-登录状态会留在 workspace 里。只用微信时可以不设 `MOMOI_OWNER_QQ`。
+QQ 用户打开 `http://127.0.0.1:6099/webui`，从 `docker logs napcat` 获取 NapCat 登录
+token，完成登录并启用 OneBot WebSocket。Dashboard 默认位于
+`http://127.0.0.1:8788`。
 
-### 从源码构建
+微信渠道只需在同一 workspace 中认证一次：
 
 ```bash
-docker build -t momoi .
+docker compose -f docker-compose.yml run --rm momoi channel login weixin
 ```
 
-然后用上面同样的 `docker run`，把 `ricterz/momoi:0.4.0` 换成 `momoi`。容器里的 home 是 `/home/momoi`，请一直挂上 `~/.momoi`。
+如果希望主动消息发送到微信，下次 `up` 时设置 `MOMOI_PRIMARY=weixin`。只启用一个渠道
+即可，也可以让两个渠道同时在线。
 
-## 个性化 Momoi
+### 从源码运行
 
-编辑 `~/.momoi/prompts/SOUL.md`，定义 Momoi 的身份、关系、价值观、兴趣和自然说话方式。
+需要：
 
-如果想影响她自己的时间怎么过，可以编辑 `~/.momoi/prompts/HEARTBEAT.md`：她可以探索什么、做什么、什么时候安静下来。
+- Python 3.12 或更高版本
+- [uv](https://docs.astral.sh/uv/)
+- 至少一个已经配置好的私聊渠道
+- 兼容 Anthropic Messages 或 OpenAI Chat Completions 的 LLM 端点
 
-添加图片反应，并描述它适合在什么时候使用：
+在仓库根目录执行：
 
 ```bash
-momoi emotion add \
-  --slug very-happy-dance \
-  --path /path/to/dance.gif \
-  --desc "Dance when genuinely delighted or celebrating"
-
-momoi emotion list
-momoi emotion del --slug very-happy-dance
+uv tool install .
+mkdir -p ~/.momoi
+cp -R config.example/. ~/.momoi/
 ```
 
-## 通过 MCP 连接工具
+编辑 `~/.momoi/config.json`，至少填写 LLM 端点、密钥、模型、启用渠道、primary 和本地
+时区，然后运行：
 
-在 workspace 中放置标准 `mcp.json` 以连接 MCP 服务器。
+```bash
+momoi run
+```
 
-这是添加搜索或其他领域能力的推荐方式。Momoi 专注于成为 Agent；成熟的外部服务仍作为外部插件存在。
+使用其他 workspace 时，`--workspace` 必须放在子命令前：
 
-## 接收外部事件
+```bash
+momoi --workspace /path/to/workspace run
+```
 
-在 `config.json` 中启用 Webhook，选择可达的绑定地址并设置 token。自带的 `event-message` 工作流会使用 Momoi 的当前上下文，把一个事件变成自然消息。如果这件事对当前对话没有新意，她也可以安静结束。
+面向源码开发的 `compose.yaml` 会从当前 checkout 构建 Momoi 与 Embedding 镜像，并使用
+已经配置好的 workspace：
+
+```bash
+docker compose -f compose.yaml up -d --build
+```
+
+## 启用语义召回
+
+语义召回依赖单独运行的 OpenAI-compatible Embedding 端点。发布版 Docker Compose 已经
+包含私有的 `momoi-embedding` 服务，且不会把端口发布到宿主机；如果 Momoi 直接运行在
+宿主机上，需要提供另一个可达的兼容端点。
+
+在 workspace 中启用匹配的配置：
+
+```json
+{
+  "embedding": {
+    "enabled": true,
+    "endpoint": "http://embedding:8002/v1/embeddings",
+    "model": "BAAI/bge-small-zh-v1.5",
+    "dimensions": 512,
+    "calibration_profile": "bge-small-zh-v1.5-momoi-v1",
+    "query_timeout_seconds": 5,
+    "document_timeout_seconds": 30,
+    "document_batch_size": 8
+  }
+}
+```
+
+Momoi 重启后会核对已有来源、在后台构建索引，并在覆盖完整时原子激活。整个过程中关键词
+召回仍然可用。从源码安装时，用下面的命令查看健康状态和进度：
+
+```bash
+momoi embedding status
+```
+
+使用发布版 Docker Compose 时，在容器内运行同一个 CLI：
+
+```bash
+docker compose -f docker-compose.yml exec momoi momoi embedding status
+```
+
+需要受控的离线迁移时，`momoi embedding build --wait` 会准备 building space，
+`momoi embedding activate` 会在校验后切换过去。模型、维度和 calibration profile
+必须使用受支持且相互匹配的一组值。完整选项见
+[配置参考](./docs/CONFIG.zh-CN.md#embedding-召回)。
+
+## 个性化与连接
+
+### 身份与主动性
+
+- 编辑 `~/.momoi/prompts/SOUL.md`，定义身份、关系、价值观、兴趣和自然说话方式。
+- 编辑 `~/.momoi/prompts/HEARTBEAT.md`，决定 Momoi 在自主时间可以探索、创作、继续、
+  分享什么，以及什么时候保持安静。
+- 使用 `momoi emotion add` 添加可选图片反应；描述会告诉 Agent 每张图适合什么情境。
+
+### 工具
+
+在 workspace 中放置 `mcp.json`，即可连接 stdio 或远程 MCP Server。Momoi 会在运行时
+发现 schema、按配置暴露工具，并区分只读工具与可能产生外部影响的工具。
+
+### Dashboard
+
+在 `config.json` 中设置 `dashboard.token`，然后运行：
+
+```bash
+momoi run --dashboard
+```
+
+打开 `http://127.0.0.1:8788`。Dashboard 可以查看对话、复盘、记忆、Goal、图片反应、
+用量和思考记录，也可以编辑记忆、Goal 与图片反应。请只在本机或可信网络中开放。
+
+### Webhook
+
+启用 `webhooks` 并设置 Bearer token 后，可以使用自带的 `event-message` 工作流，把
+外部事件转成拥有当前上下文的 Momoi Turn：
 
 ```bash
 curl -X POST http://127.0.0.1:8787/webhooks/event-message \
   -H "Authorization: Bearer $MOMOI_WEBHOOK_TOKEN" \
   -H "Content-Type: application/json" \
-  --data '{"event_prompt":"The watched page has a new update. Tell the owner what changed."}'
+  --data '{"event_prompt":"The watched page changed. Explain what is new if it matters."}'
 ```
 
-示例 workspace 还包含一个中性的 `url-check-event` 工作流，演示如何先执行经验证的命令步骤，再发送自然通知。
+Webhook Turn 共享近期对话和记忆；如果事件没有增加有用信息，也可以安静结束。
 
 ## 主人控制
 
 | 聊天命令 | 用途 |
 | --- | --- |
 | `/stop` | 取消当前任务 |
-| `/heartbeat` | 立即触发一次自主心跳 |
-| `/reflect` | 立即复盘当前本地自然日 |
-| `/tidy` | 立即整理 confirmed memory |
-| `/resolve <id> <result>` | 确认真实结果后，关闭一次不确定的外部操作 |
-| `/resume <id> <current state>` | 从确认后的状态继续一次不确定的外部操作 |
+| `/heartbeat` | 立即触发一次 Heartbeat |
+| `/reflect` | 复盘当前本地自然日 |
+| `/tidy` | 运行 Confirmed memory 维护 |
+| `/resolve <id> <result>` | 记录一次不确定外部操作经过核实的真实结果 |
+| `/resume <id> <current state>` | 从经过核实的当前状态继续不确定工作 |
 
-需要 `/resolve` 或 `/resume` 时，Momoi 会发送一条恢复提示，里面带有短 `<id>` 和可使用的命令形式。照着那条命令发送，只替换结果或当前状态文本即可。她不会只因进程重启就重复执行不确定的操作。
+Momoi 还提供 Goal、图片反应、渠道和语义索引状态的 CLI 管理命令。使用
+`momoi --help` 或子命令的 `--help` 查看当前命令面。
 
 ## 文档
 
 - [配置参考](./docs/CONFIG.zh-CN.md)
-- [Webhook 工作流](./docs/WORKFLOW.zh-CN.md)
+- [Webhook 工作流参考](./docs/WORKFLOW.zh-CN.md)
 
-Momoi 不由某个特定模型或消息服务定义。她是身份、上下文、记忆、行动与时间之间的连续性。
+Momoi 使用 [MIT License](./LICENSE)。
