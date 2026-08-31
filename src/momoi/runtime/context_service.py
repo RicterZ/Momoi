@@ -278,30 +278,6 @@ def _heartbeat_plan_lines(plan: dict[str, object]) -> str:
     return "\n".join(lines)
 
 
-def _reply_wait_timeline_lines(value: dict[str, object]) -> str:
-    """Render the completed exchange and an explicit continuation cursor."""
-    messages = value.get("source_messages")
-    if not isinstance(messages, list):
-        messages = []
-    lines: list[str] = []
-    for message in messages:
-        if not isinstance(message, dict):
-            continue
-        role = str(message.get("role") or "message")
-        content = re.sub(
-            r"(?m)^\d{4}-\d{2}-\d{2}T\S+(?:\s+\[[^\]\n]+\])?\s*",
-            "",
-            str(message.get("content") or ""),
-        ).strip()
-        if not content:
-            continue
-        label = {"assistant": "MOMOI", "user": "OWNER"}.get(role, role.upper())
-        lines.append(f"{label}: {content}")
-    waiting_minutes = max(0, int(value.get("waiting_minutes") or 0))
-    lines.append(f"--- CONTINUE HERE (silent {waiting_minutes}m) ---")
-    return "\n".join(lines)
-
-
 def _planner_recall_context_lines(
     values: list[dict[str, object]],
 ) -> str:

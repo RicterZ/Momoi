@@ -110,7 +110,6 @@ USER_CONTEXT_SECTION_ORDER = (
     "runtime_directives",
     "conversation_state",
     "runtime_state",
-    "reply_timeline",
     "followup",
     "due_goal",
     "reflection_scope",

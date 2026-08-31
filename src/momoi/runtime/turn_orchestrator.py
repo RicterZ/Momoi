@@ -36,7 +36,6 @@ from .context_service import (
     _heartbeat_plan_lines,
     _heartbeat_self_state_lines,
     _heartbeat_topic_lines,
-    _reply_wait_timeline_lines,
 )
 from .memory_maintenance import (
     MEMORY_MAINTENANCE_RUN_VERSION,
@@ -1292,16 +1291,31 @@ class TurnOrchestrator:
             target_channel or str(pending.get("channel") or self.channel.name)
         )
         notification_key = "heartbeat.reply_followup"
+        long_term_memories = self.store.always_memory_context()
+        recent_memories = self.store.recent_memory_context(
+            max(100, self.config.memory_tokens // 8)
+        )
+        conversation_rows = self.store.recent_conversation_messages(
+            self.config.recent_turns * 2,
+            self.config.recent_raw_tokens,
+        )
+        tool_activity = self.store.turn_activity(
+            [str(row["turn_id"]) for row in conversation_rows]
+        )
+        transcript = build_transcript(
+            conversation_rows,
+            tool_activity=tool_activity,
+        )
+        transcript_messages = render_messages(
+            [*transcript.orphaned, *transcript.groups],
+            tool_activity=tool_activity,
+        )
         current_input = _pack_user_context(
-            ("long_term_memories", self.store.always_memory_context()),
             (
-                "recent_memories",
-                self.store.recent_memory_context(
-                    max(100, self.config.memory_tokens // 8)
-                ),
+                "followup",
+                f"reason: {str(pending.get('reason') or '').strip()}\n"
+                f"silent_minutes: {max(0, int(pending.get('waiting_minutes') or 0))}",
             ),
-            ("reply_timeline", _reply_wait_timeline_lines(pending)),
-            ("followup", str(pending.get("reason") or "").strip()),
             (
                 "runtime_state",
                 (
@@ -1318,7 +1332,15 @@ class TurnOrchestrator:
                 "cache_control": {"type": "ephemeral"},
             },
         ]
+        context_message = _context_data_message(
+            ("long_term_memories", long_term_memories),
+            ("recent_memories", recent_memories),
+            required=True,
+        )
+        assert context_message is not None
         messages: list[dict[str, Any]] = [
+            context_message,
+            *transcript_messages,
             {
                 "role": "user",
                 "content": [
