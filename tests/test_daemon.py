@@ -45,7 +45,9 @@ from momoi.provider import (
     ProviderError,
 )
 from momoi.runtime.turn_support import (
+    OWNER_PROMPT_PATH,
     OWNER_TURN_PROTOCOL_REMINDER,
+    SYSTEM_PROMPT_PATH,
     STYLE_CARD_SYSTEM_PROMPT,
 )
 from momoi.runtime.tool_execution import (
@@ -63,6 +65,22 @@ from tests.support import (
 
 
 class DaemonTest(unittest.TestCase):
+    def test_system_contract_allows_only_native_tool_calls_globally(self) -> None:
+        contract = SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")
+
+        self.assertIn("Across every Turn and workflow", contract)
+        self.assertIn("never emit assistant text", contract)
+        self.assertIn("DSML", contract)
+        self.assertNotIn("Owner Turn state machine", contract)
+        self.assertNotIn("recall first", contract)
+
+    def test_owner_contract_owns_recall_state_machine(self) -> None:
+        contract = OWNER_PROMPT_PATH.read_text(encoding="utf-8")
+
+        self.assertIn("# Owner Turn contract", contract)
+        self.assertIn("Call `recall` first and alone", contract)
+        self.assertIn("call `end_turn` alone", contract)
+
     def test_owner_request_bubble_reminder_is_wire_only(self) -> None:
         messages = [
             {
@@ -2244,6 +2262,110 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             daemon.store.close()
 
+    async def test_plain_text_before_recall_is_corrected_to_native_recall(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(
+                AppConfig(
+                    llm=LLMConfig(
+                        "http://127.0.0.1", "test", "test", 100, 0, 1, 0
+                    ),
+                    channel=NapCatConfig(
+                        "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
+                    ),
+                    system_prompt="test",
+                    transcript_turns_min=4,
+                    transcript_turns_max=4,
+                    episode_raw_tail_turns=2,
+                    memory_results=2,
+                    database=Path(directory) / "momoi.sqlite3",
+                    log_level="INFO",
+                )
+            )
+
+            class Provider:
+                calls = 0
+
+                async def complete(
+                    provider_self,
+                    _system: object,
+                    messages: list[dict[str, object]],
+                    _tools: list[dict[str, object]],
+                    **_: object,
+                ) -> ProviderResponse:
+                    provider_self.calls += 1
+                    latest = json.dumps(messages[-1], ensure_ascii=False)
+                    if provider_self.calls == 1:
+                        return ProviderResponse(
+                            [{"type": "text", "text": "[tool_call] recall(...)"}],
+                            [],
+                        )
+                    if provider_self.calls == 2:
+                        self.assertIn("Call recall first and alone", latest)
+                        self.assertIn("native tool call", latest)
+                        self.assertNotIn(OWNER_BUBBLE_REQUEST_REMINDER, latest)
+                        return recall_response()
+                    if provider_self.calls == 3:
+                        self.assertIn(OWNER_BUBBLE_REQUEST_REMINDER, latest)
+                        call = ToolCall(
+                            "send-after-recall",
+                            "send_bubbles",
+                            {"bubbles": ["我在呢"]},
+                        )
+                    else:
+                        self.assertNotIn(OWNER_BUBBLE_REQUEST_REMINDER, latest)
+                        call = ToolCall(
+                            "finish-after-recall",
+                            "end_turn",
+                            {
+                                "reply_wait": {"wait": False},
+                                "mood": {"decision": "unchanged"},
+                                "activity": {"decision": "unchanged"},
+                            },
+                        )
+                    return ProviderResponse(
+                        [
+                            {
+                                "type": "tool_use",
+                                "id": call.id,
+                                "name": call.name,
+                                "input": call.arguments,
+                            }
+                        ],
+                        [call],
+                    )
+
+            event = IncomingMessage("owner-sigh", "owner-sigh", "唉", 1, 1)
+            daemon.store.add_event(event)
+            turn_id = daemon._turn_id(event.event_id)
+            daemon.store.begin_turn(turn_id, "owner", [event.event_id])
+            provider = Provider()
+            daemon.provider = provider  # type: ignore[assignment]
+            canonical_messages = [{"role": "user", "content": event.text}]
+
+            reply = await daemon._run_tool_loop(
+                daemon._system(),
+                canonical_messages,
+                daemon._owner_tool_specs(),
+                [event],
+                TurnDraft(),
+                authority="owner",
+                source_event_id=event.event_id,
+                allow_notify=False,
+                turn_id=turn_id,
+                require_response=True,
+                delivery_channel=daemon.channel,
+            )
+
+            self.assertEqual(provider.calls, 4)
+            self.assertIsInstance(reply, AgentReply)
+            self.assertNotIn(
+                OWNER_BUBBLE_REQUEST_REMINDER,
+                json.dumps(canonical_messages, ensure_ascii=False),
+            )
+            daemon.store.close()
+
     async def test_plain_text_with_invalid_mood_is_retried_through_send_bubbles(
         self,
     ) -> None:
@@ -3165,6 +3287,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         # Slow-changing memory sits ahead of the transcript instead.
         self.assertIn("<current_owner_bubbles>", current_text)
         self.assertIn("</current_owner_bubbles>", current_text)
+        self.assertIn("<workflow_contract>", current_text)
+        self.assertIn("# Owner Turn contract", current_text)
         self.assertIn(OWNER_TURN_PROTOCOL_REMINDER, current_text)
         self.assertNotIn("Every response in this Turn", current_text)
         self.assertIn("<runtime_state>", current_text)

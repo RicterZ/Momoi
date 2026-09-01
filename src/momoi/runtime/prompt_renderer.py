@@ -11,6 +11,8 @@ from .turn_support import (
     HEARTBEAT_PROMPT_PATH,
     HEARTBEAT_SYSTEM_PROMPT,
     MEMORY_POLICY_TOOLS,
+    OWNER_PROMPT_PATH,
+    OWNER_SYSTEM_PROMPT,
     THINKING_POLICY_TOOLS,
     REPLY_WAIT_PROMPT_PATH,
     REPLY_WAIT_SYSTEM_PROMPT,
@@ -141,6 +143,9 @@ class PromptRenderer:
         if workspace_prompt:
             prompt += "\n\n# Workspace heartbeat guidance\n\n" + workspace_prompt
         return prompt
+
+    def _owner_system_prompt(self) -> str:
+        return _live_prompt(OWNER_PROMPT_PATH, OWNER_SYSTEM_PROMPT)
 
     def _reply_wait_system_prompt(self) -> str:
         return _live_prompt(REPLY_WAIT_PROMPT_PATH, REPLY_WAIT_SYSTEM_PROMPT)

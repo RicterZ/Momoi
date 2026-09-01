@@ -14,6 +14,7 @@ from .budget import TOOL_RESULT_FITTER
 logger = logging.getLogger(__name__)
 PROMPT_ROOT = files("momoi").joinpath("prompts")
 SYSTEM_PROMPT_PATH = PROMPT_ROOT.joinpath("system.md")
+OWNER_PROMPT_PATH = PROMPT_ROOT.joinpath("owner.md")
 STYLE_CARD_PROMPT_PATH = PROMPT_ROOT.joinpath("style_card.md")
 WEBHOOK_PROMPT_PATH = PROMPT_ROOT.joinpath("webhook.md")
 HEARTBEAT_PROMPT_PATH = PROMPT_ROOT.joinpath("heartbeat.md")
@@ -28,6 +29,7 @@ EPISODE_CONSOLIDATION_PROMPT_PATH = PROMPT_ROOT.joinpath(
     "episode_consolidation.md"
 )
 STYLE_CARD_SYSTEM_PROMPT = STYLE_CARD_PROMPT_PATH.read_text(encoding="utf-8").strip()
+OWNER_SYSTEM_PROMPT = OWNER_PROMPT_PATH.read_text(encoding="utf-8").strip()
 WEBHOOK_SYSTEM_PROMPT = WEBHOOK_PROMPT_PATH.read_text(encoding="utf-8").strip()
 HEARTBEAT_SYSTEM_PROMPT = HEARTBEAT_PROMPT_PATH.read_text(encoding="utf-8").strip()
 GOAL_SYSTEM_PROMPT = GOAL_PROMPT_PATH.read_text(encoding="utf-8").strip()

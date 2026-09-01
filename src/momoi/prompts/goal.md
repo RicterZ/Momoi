@@ -21,4 +21,4 @@ Do not perform free-form Heartbeat activity or unrelated work.
 - Finishing silently is valid when the result is already covered, stale or not
   useful.
 - Send visible bubbles only through `send_bubbles`. After the required Goal update
-  and any delivery, call `end_turn` alone on the next step.
+  and any delivery, call `autonomous_finish` alone on the next step.

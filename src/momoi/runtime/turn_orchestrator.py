@@ -240,6 +240,7 @@ class TurnOrchestrator:
         """
 
         runtime_text = _pack_user_context(
+            ("workflow_contract", self._owner_system_prompt()),
             (
                 "runtime_directives",
                 "[Trusted runtime update received while the previous operation was "
@@ -1156,6 +1157,7 @@ class TurnOrchestrator:
             ("goal_directory", recalled["goal_directory"]),
         )
         runtime_text = _pack_user_context(
+            ("workflow_contract", self._owner_system_prompt()),
             (
                 "runtime_state",
                 "Current local time: "

@@ -23,7 +23,7 @@ from ..logging_context import TRACE, compact_log_value, log_context, log_event, 
 from ..memory_tools import MEMORY_TOOL_SPECS
 from ..models import AgentReply, IncomingMessage, ToolCall, TurnDraft
 from ..storage import estimate_tokens
-from .agent_workflow import AgentWorkflow, WorkflowProtocolError
+from .agent_workflow import AgentWorkflow, TurnHarness, WorkflowProtocolError
 from .parsing import parse_bubbles, parse_response, response_text
 from .progress_announce import (
     announce_field,
@@ -342,8 +342,6 @@ class ToolExecutionService:
         failed_tool_rounds = 0
         last_tool_error = ""
         history_messages = max(0, len(messages) - 1)
-        context_submitted = authority != "owner"
-        heartbeat_started = not heartbeat_turn
         visible_since_owner_update = False
         owner_work_acknowledged = False
         previous_tool_name: str | None = None
@@ -369,6 +367,8 @@ class ToolExecutionService:
                 else ("goal" if autonomous_goal_id else authority)
             )
         )
+        harness = TurnHarness.for_stage(stage)
+        harness.validate_surface({str(tool["name"]) for tool in tools})
         while True:
             if reply_wait_turn and self.store.pending_owner_reply() is None:
                 return None
@@ -392,7 +392,7 @@ class ToolExecutionService:
                     messages,
                     delivery_channel,
                 )
-                context_submitted = authority != "owner"
+                harness.reset()
                 force_autonomous_finish = False
                 failed_tool_rounds = 0
                 remind_owner_bubbles = False
@@ -419,7 +419,8 @@ class ToolExecutionService:
                 )
                 request_messages = (
                     _owner_request_messages(
-                        messages, remind_bubbles=remind_owner_bubbles
+                        messages,
+                        remind_bubbles=remind_owner_bubbles and harness.started,
                     )
                     if authority == "owner"
                     else messages
@@ -478,7 +479,7 @@ class ToolExecutionService:
                     messages,
                     delivery_channel,
                 )
-                context_submitted = authority != "owner"
+                harness.reset()
                 force_autonomous_finish = False
                 failed_tool_rounds = 0
                 remind_owner_bubbles = False
@@ -549,7 +550,7 @@ class ToolExecutionService:
                     messages,
                     delivery_channel,
                 )
-                context_submitted = authority != "owner"
+                harness.reset()
                 force_autonomous_finish = False
                 failed_tool_rounds = 0
                 remind_owner_bubbles = False
@@ -577,7 +578,7 @@ class ToolExecutionService:
                         ]
                     )
                     continue
-                if heartbeat_turn and not heartbeat_started:
+                if heartbeat_turn and not harness.started:
                     failed_tool_rounds += 1
                     if failed_tool_rounds >= MAX_CONSECUTIVE_TOOL_FAILURES:
                         raise ExternalToolTurnError("heartbeat_not_started")
@@ -628,35 +629,73 @@ class ToolExecutionService:
                         {
                             "role": "user",
                             "content": (
-                                "[Trusted runtime protocol error. The previous text was not "
-                                "delivered. Call send_bubbles with the owner-visible "
-                                "bubbles, without end_turn. After its result, call "
-                                "end_turn alone on the next step.]"
+                                "[Trusted runtime protocol error. The previous text was "
+                                "not delivered. Call recall first and alone as a native "
+                                "tool call; never write or imitate tool syntax in text.]"
+                                if authority == "owner" and not harness.started
+                                else (
+                                    "[Trusted runtime protocol error. The previous text "
+                                    "was not delivered. Call send_bubbles with the "
+                                    "owner-visible bubbles, without end_turn. After its "
+                                    "result, call end_turn alone on the next step.]"
+                                )
                             ),
                         },
                     ]
                 )
                 continue
-            if heartbeat_turn and not heartbeat_started and (
-                len(response.tool_calls) != 1
-                or response.tool_calls[0].name != "heartbeat_begin"
-            ):
+            harness_error = harness.validate(
+                response.tool_calls,
+                has_assistant_text=bool(response_text(response.content)),
+            )
+            if harness_error is not None:
                 failed_tool_rounds += 1
                 if failed_tool_rounds >= MAX_CONSECUTIVE_TOOL_FAILURES:
-                    raise ExternalToolTurnError("heartbeat_not_started")
+                    error_type = (
+                        WorkflowProtocolError
+                        if workflow is not None
+                        else (
+                            ExternalToolTurnError if require_response else RuntimeError
+                        )
+                    )
+                    raise error_type(harness_error)
+                correction: list[dict[str, Any]] = [
+                    _tool_error_block(call.id, harness_error)
+                    for call in response.tool_calls
+                ]
+                if harness_error == "assistant_text_forbidden":
+                    if (
+                        require_response
+                        and len(response.tool_calls) == 1
+                        and response.tool_calls[0].name == "end_turn"
+                    ):
+                        correction.append(
+                            {
+                                "type": "text",
+                                "text": (
+                                    "[Trusted runtime protocol correction: plain "
+                                    "assistant text is not delivered. Call send_bubbles "
+                                    "with the owner-visible bubbles, without end_turn. "
+                                    "After its result, call end_turn alone on the next "
+                                    "step.]"
+                                ),
+                            }
+                        )
+                    else:
+                        correction.append(
+                            {
+                                "type": "text",
+                                "text": (
+                                    "[Trusted runtime protocol correction: assistant "
+                                    "text is forbidden. Repeat the intended action using "
+                                    "native tool calls only.]"
+                                ),
+                            }
+                        )
                 messages.extend(
                     [
                         {"role": "assistant", "content": response.content},
-                        {
-                            "role": "user",
-                            "content": [
-                                _tool_error_block(
-                                    call.id,
-                                    "heartbeat_begin_must_be_first_and_alone",
-                                )
-                                for call in response.tool_calls
-                            ],
-                        },
+                        {"role": "user", "content": correction},
                     ]
                 )
                 continue
@@ -687,37 +726,7 @@ class ToolExecutionService:
                 require_response
                 and len(response.tool_calls) == 1
                 and response.tool_calls[0].name == "end_turn"
-                and not context_submitted
             ):
-                # Ending in silence is still a decision about the owner's input,
-                # so it happens after the recall judgement, not instead of it.
-                # Repeated refusals fall through to the shared tool-failure
-                # ceiling, which fails the Turn rather than quietly dropping
-                # recall.
-                failed_tool_rounds += 1
-                if failed_tool_rounds >= MAX_CONSECUTIVE_TOOL_FAILURES:
-                    raise ExternalToolTurnError("context_not_submitted")
-                messages.extend(
-                    [
-                        {"role": "assistant", "content": response.content},
-                        {
-                            "role": "user",
-                            "content": [
-                                _tool_error_block(
-                                    response.tool_calls[0].id,
-                                    "context_not_submitted",
-                                )
-                            ],
-                        },
-                    ]
-                )
-                continue
-            if (
-                require_response
-                and len(response.tool_calls) == 1
-                and response.tool_calls[0].name == "end_turn"
-            ):
-                plain_text = response_text(response.content)
                 log_event(
                     logger,
                     TRACE,
@@ -734,9 +743,6 @@ class ToolExecutionService:
                     require_heartbeat=heartbeat_turn,
                     allow_activity_update=authority == "owner",
                 )
-                if plain_text:
-                    reply = None
-                    error = "plain_text_with_end_turn"
                 if reply is not None and heartbeat_turn and reply.heartbeat:
                     minutes = int(reply.heartbeat["next_check_minutes"])
                     seconds = minutes * 60
@@ -802,29 +808,9 @@ class ToolExecutionService:
                         {"role": "assistant", "content": response.content},
                         {
                             "role": "user",
-                            "content": (
-                                [
-                                    _tool_error_block(
-                                        response.tool_calls[0].id, error
-                                    ),
-                                    {
-                                        "type": "text",
-                                        "text": (
-                                            "[Trusted runtime protocol correction: "
-                                            "plain assistant text is not delivered. "
-                                            "Call send_bubbles with the owner-visible "
-                                            "bubbles, without end_turn. After its result, "
-                                            "call end_turn alone on the next step.]"
-                                        ),
-                                    },
-                                ]
-                                if error == "plain_text_with_end_turn"
-                                else [
-                                    _tool_error_block(
-                                        response.tool_calls[0].id, error
-                                    )
-                                ]
-                            ),
+                            "content": [
+                                _tool_error_block(response.tool_calls[0].id, error)
+                            ],
                         },
                     ]
                 )
@@ -976,7 +962,7 @@ class ToolExecutionService:
                     requested = call.arguments.get("tool_groups")
                     if (
                         not heartbeat_turn
-                        or heartbeat_started
+                        or harness.started
                         or not isinstance(requested, list)
                         or any(
                             not isinstance(group, str)
@@ -1010,7 +996,6 @@ class ToolExecutionService:
                             )
                             recalled = prepared["context"]
                             assert isinstance(recalled, dict)
-                            heartbeat_started = True
                             result = {
                                 "ok": True,
                                 "state": "started",
@@ -1035,7 +1020,6 @@ class ToolExecutionService:
                             "message": str(error),
                         }
                     else:
-                        context_submitted = True
                         result = {
                             "ok": True,
                             "state": "recalled",
@@ -1044,7 +1028,7 @@ class ToolExecutionService:
                             "reflection": recalled["reflection_memories"],
                             "episodes": recalled["episodes"],
                         }
-                elif not context_submitted and authority == "owner":
+                elif not harness.started and authority == "owner":
                     # The recall decision is what makes the rest of the Turn
                     # accountable, so it cannot be skipped by acting first.
                     result = {
@@ -1311,6 +1295,7 @@ class ToolExecutionService:
                 if "provenance" not in result:
                     result = self._normalize_tool_result(call, result, source)
                 if result.get("ok"):
+                    harness.accept(call.name)
                     last_tool_error = ""
                 else:
                     last_tool_error = str(
@@ -1416,7 +1401,7 @@ class ToolExecutionService:
                     messages,
                     delivery_channel,
                 )
-                context_submitted = authority != "owner"
+                harness.reset()
                 failed_tool_rounds = 0
                 continue
             if workflow is not None and workflow.is_complete():
