@@ -249,40 +249,6 @@ REPLY_WAIT_DECISION_SCHEMA: dict[str, Any] = {
     ]
 }
 
-PLAN_ADJUSTMENT_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "description": (
-        "Include only when current owner intent or verified tool evidence "
-        "materially overturns the Planner handoff. Omit it when the handoff was "
-        "adequate; do not manufacture feedback merely because this field exists."
-    ),
-    "properties": {
-        "reason": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 300,
-            "description": "Why the supplied handoff was materially wrong.",
-        },
-        "corrected_direction": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 500,
-            "description": "The corrected execution or delivery direction.",
-        },
-        "resolved_context_needs": {
-            "type": "array",
-            "maxItems": 4,
-            "items": {"type": "string", "minLength": 1, "maxLength": 100},
-            "description": (
-                "Planner context needs that current evidence or tool results "
-                "resolved despite the adjustment."
-            ),
-        },
-    },
-    "required": ["reason", "corrected_direction", "resolved_context_needs"],
-    "additionalProperties": False,
-}
-
 END_TURN_TOOL_SPEC: dict[str, Any] = {
     "name": "end_turn",
     "description": (
@@ -299,7 +265,6 @@ END_TURN_TOOL_SPEC: dict[str, Any] = {
         ),
         "properties": {
             "reply_wait": REPLY_WAIT_DECISION_SCHEMA,
-            "plan_adjustment": PLAN_ADJUSTMENT_SCHEMA,
             "mood": MOOD_DECISION_SCHEMA,
         },
         "required": [
@@ -522,6 +487,114 @@ RECALL_TOOL_SPEC: dict[str, Any] = {
         "additionalProperties": False,
     },
 }
+
+
+def heartbeat_begin_spec(group_descriptions: dict[str, str]) -> dict[str, Any]:
+    groups = {
+        group: str(description).strip()
+        for group, description in sorted(group_descriptions.items())
+    }
+    group_ids = list(groups)
+    return {
+        "name": "heartbeat_begin",
+        "description": (
+            "Mandatory first action of an autonomous Heartbeat execution. Choose "
+            "the real activity, its historical scope, the MCP groups needed for "
+            "that activity, and a short evidence-dependent execution strategy. "
+            "The runtime returns recalled evidence and enables selected tools."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "activity": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 300,
+                    "description": (
+                        "What Momoi will genuinely do or experience in this Heartbeat."
+                    ),
+                },
+                "mode": {
+                    "type": "string",
+                    "enum": ["work", "rest"],
+                },
+                "recall_mode": {
+                    "type": "string",
+                    "enum": ["search", "skip"],
+                    "description": (
+                        "Search only when history can change activity choice or "
+                        "execution; skip when it cannot."
+                    ),
+                },
+                "recall_queries": {
+                    "type": "array",
+                    "minItems": 0,
+                    "maxItems": 2,
+                    "description": (
+                        "One or two non-overlapping historical needs for search; "
+                        "empty for skip."
+                    ),
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "semantic": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 240,
+                            },
+                            "keywords": {
+                                "type": "array",
+                                "maxItems": 6,
+                                "items": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 60,
+                                },
+                            },
+                        },
+                        "required": ["semantic", "keywords"],
+                        "additionalProperties": False,
+                    },
+                },
+                "tool_groups": {
+                    "type": "array",
+                    "maxItems": len(group_ids),
+                    "uniqueItems": True,
+                    "items": {"type": "string", "enum": group_ids},
+                    "description": (
+                        "MCP groups required by the chosen activity. "
+                        + "; ".join(
+                            f"{group}: {description}"
+                            for group, description in groups.items()
+                        )
+                    ),
+                },
+                "strategy": {
+                    "type": "array",
+                    "maxItems": 4,
+                    "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 300,
+                    },
+                    "description": (
+                        "For work, the minimum ordered checks, result branches and "
+                        "completion or continuation condition. Empty for rest."
+                    ),
+                },
+            },
+            "required": [
+                "activity",
+                "mode",
+                "recall_mode",
+                "recall_queries",
+                "tool_groups",
+                "strategy",
+            ],
+            "additionalProperties": False,
+        },
+    }
+
 
 SEND_MESSAGE_TOOL_SPEC: dict[str, Any] = {
     "name": "send_message",

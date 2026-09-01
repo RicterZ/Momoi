@@ -44,7 +44,7 @@ from momoi.runtime.turn_support import (
     sections,
     truncate_tool_result_json,
 )
-from tests.support import with_owner_and_heartbeat_planner
+from tests.support import with_owner_recall
 
 
 @contextmanager
@@ -613,7 +613,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                     api_format="openai",
                     thinking=ThinkingConfig(
                         effort="high",
-                        stages={"heartbeat_plan": "low"},
+                        stages={"heartbeat": "low"},
                     ),
                 ),
                 dump_dir,
@@ -621,7 +621,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
             try:
                 async with provider:
                     with _provider_trace_logs():
-                        with log_context(stage="heartbeat_plan"):
+                        with log_context(stage="heartbeat"):
                             await provider.complete(
                                 "system",
                                 [{"role": "user", "content": "测试"}],
@@ -785,13 +785,13 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                 max_retries=1,
                 thinking=ThinkingConfig(
                     effort="high",
-                    stages={"heartbeat_plan": "low"},
+                    stages={"heartbeat": "low"},
                 ),
             )
         )
         try:
             async with provider:
-                with log_context(stage="heartbeat_plan"):
+                with log_context(stage="heartbeat"):
                     response = await provider.complete(
                         "system",
                         [
@@ -1238,7 +1238,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                     )
 
             fake = FakeProvider()
-            daemon.provider = with_owner_and_heartbeat_planner(fake)  # type: ignore[assignment]
+            daemon.provider = with_owner_recall(fake)  # type: ignore[assignment]
             event = IncomingMessage(
                 "qq:1:ignored-choice", "ignored-choice", "测试", 1, 1
             )
@@ -1331,7 +1331,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
 
             self_test = self
             fake = FakeProvider()
-            daemon.provider = with_owner_and_heartbeat_planner(fake)  # type: ignore[assignment]
+            daemon.provider = with_owner_recall(fake)  # type: ignore[assignment]
             event = IncomingMessage("qq:1:bad-json", "bad-json", "测试", 1, 1)
             daemon.store.add_event(event)
             await daemon._complete_batch_turn(

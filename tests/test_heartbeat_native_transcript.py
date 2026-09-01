@@ -4,10 +4,9 @@ import unittest
 from pathlib import Path
 
 from momoi.channel.napcat import NapCatConfig
-from momoi.config import AppConfig, LLMConfig
+from momoi.config import AppConfig, AutonomyConfig, LLMConfig
 from momoi.models import AgentReply, IncomingMessage, ProviderResponse, ToolCall
 from momoi.runtime import MomoiDaemon
-from momoi.runtime.heartbeat_planner import degraded_heartbeat_plan
 
 
 class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
@@ -40,12 +39,11 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             ).fetchone()["id"]
             daemon.store.mark_sent(int(outbox_id))
 
-            async def plan(*_args: object, **_kwargs: object) -> dict[str, object]:
-                return degraded_heartbeat_plan("resting", "test")
-
             class Provider:
+                calls = 0
                 first_system: object = None
                 first_messages: list[dict[str, object]] = []
+                first_tools: list[str] = []
 
                 async def complete(
                     self,
@@ -54,23 +52,39 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                     _tools: list[dict[str, object]],
                     **_kwargs: object,
                 ) -> ProviderResponse:
-                    self.first_system = copy.deepcopy(_system)
-                    self.first_messages = copy.deepcopy(messages)
-                    call = ToolCall(
-                        "finish",
-                        "end_turn",
-                        {
-                            "expects_reply": False,
-                            "reply_expectation": "",
-                            "mood": {"decision": "unchanged"},
-                            "heartbeat": {
+                    self.calls += 1
+                    if self.calls == 1:
+                        self.first_system = copy.deepcopy(_system)
+                        self.first_messages = copy.deepcopy(messages)
+                        self.first_tools = [str(tool["name"]) for tool in _tools]
+                        call = ToolCall(
+                            "begin",
+                            "heartbeat_begin",
+                            {
                                 "activity": "resting",
-                                "result": "",
-                                "next_check_minutes": 30,
-                                "reason": "No activity was needed.",
+                                "mode": "rest",
+                                "recall_mode": "skip",
+                                "recall_queries": [],
+                                "tool_groups": [],
+                                "strategy": [],
                             },
-                        },
-                    )
+                        )
+                    else:
+                        call = ToolCall(
+                            "finish",
+                            "end_turn",
+                            {
+                                "expects_reply": False,
+                                "reply_expectation": "",
+                                "mood": {"decision": "unchanged"},
+                                "heartbeat": {
+                                    "activity": "resting",
+                                    "result": "",
+                                    "next_check_minutes": 30,
+                                    "reason": "No activity was needed.",
+                                },
+                            },
+                        )
                     return ProviderResponse(
                         [
                             {
@@ -83,7 +97,6 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                         [call],
                     )
 
-            daemon._plan_heartbeat_context = plan  # type: ignore[method-assign]
             provider = Provider()
             daemon.provider = provider  # type: ignore[assignment]
             turn_id = daemon._turn_id("heartbeat-native")
@@ -104,12 +117,130 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("<recent_turn_base>", rendered)
             self.assertNotIn("<recent_turn_append>", rendered)
             self.assertIn("<autonomous_heartbeat>", rendered)
+            self.assertNotIn("<heartbeat_plan>", rendered)
+            self.assertIn("heartbeat_begin", provider.first_tools)
+            self.assertEqual(provider.calls, 2)
             self.assertEqual(
                 [message["role"] for message in provider.first_messages],
                 ["user", "user", "assistant", "user"],
             )
             self.assertIn("我到家了", str(provider.first_messages[1]["content"]))
             self.assertIn("终于回来了", str(provider.first_messages[2]["content"]))
+            daemon.store.close()
+
+    async def test_begin_loads_selected_mcp_group_for_the_next_round(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(
+                AppConfig(
+                    llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
+                    channel=NapCatConfig(
+                        "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
+                    ),
+                    system_prompt="test",
+                    recent_raw_tokens=1000,
+                    recent_turns=2,
+                    memory_results=2,
+                    memory_tokens=1000,
+                    database=Path(directory) / "momoi.sqlite3",
+                    log_level="INFO",
+                    autonomy=AutonomyConfig(("mcp__demo__read",)),
+                )
+            )
+
+            class MCP:
+                tool_specs = [
+                    {
+                        "name": "mcp__demo__read",
+                        "description": "Read demo state.",
+                        "input_schema": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": False,
+                        },
+                    }
+                ]
+                configs = {"demo": {"description": "Demo tools."}}
+
+            daemon.mcp = MCP()  # type: ignore[assignment]
+            case = self
+
+            class Provider:
+                calls = 0
+
+                async def complete(
+                    self,
+                    _system: object,
+                    messages: list[dict[str, object]],
+                    tools: list[dict[str, object]],
+                    **_kwargs: object,
+                ) -> ProviderResponse:
+                    self.calls += 1
+                    names = [str(tool["name"]) for tool in tools]
+                    if self.calls == 1:
+                        case.assertNotIn("mcp__demo__read", names)
+                        begin = next(
+                            tool for tool in tools if tool["name"] == "heartbeat_begin"
+                        )
+                        groups = begin["input_schema"]["properties"]["tool_groups"]
+                        case.assertEqual(groups["items"]["enum"], ["demo"])
+                        call = ToolCall(
+                            "begin",
+                            "heartbeat_begin",
+                            {
+                                "activity": "inspect demo state",
+                                "mode": "work",
+                                "recall_mode": "search",
+                                "recall_queries": [
+                                    {
+                                        "semantic": "Previous demo state observations",
+                                        "keywords": ["demo"],
+                                    }
+                                ],
+                                "tool_groups": ["demo"],
+                                "strategy": [
+                                    "Read current state",
+                                    "Record the verified outcome",
+                                ],
+                            },
+                        )
+                    else:
+                        case.assertIn("mcp__demo__read", names)
+                        case.assertIn('"state": "started"', str(messages[-1]))
+                        call = ToolCall(
+                            "finish",
+                            "end_turn",
+                            {
+                                "reply_wait": {"wait": False},
+                                "mood": {"decision": "unchanged"},
+                                "heartbeat": {
+                                    "activity": "inspect demo state",
+                                    "result": "planning complete",
+                                    "next_check_minutes": 30,
+                                    "reason": "test",
+                                },
+                            },
+                        )
+                    return ProviderResponse(
+                        [
+                            {
+                                "type": "tool_use",
+                                "id": call.id,
+                                "name": call.name,
+                                "input": call.arguments,
+                            }
+                        ],
+                        [call],
+                    )
+
+            provider = Provider()
+            daemon.provider = provider  # type: ignore[assignment]
+            turn_id = daemon._turn_id("heartbeat-groups")
+            daemon.store.begin_turn(turn_id, "autonomous", [f"heartbeat:{turn_id}"])
+            await daemon._complete_heartbeat(
+                turn_id,
+                owner_event_revision=0,
+            )
+            self.assertEqual(provider.calls, 2)
             daemon.store.close()
 
 

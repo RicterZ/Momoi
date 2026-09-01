@@ -17,7 +17,6 @@ SYSTEM_PROMPT_PATH = PROMPT_ROOT.joinpath("system.md")
 STYLE_CARD_PROMPT_PATH = PROMPT_ROOT.joinpath("style_card.md")
 WEBHOOK_PROMPT_PATH = PROMPT_ROOT.joinpath("webhook.md")
 HEARTBEAT_PROMPT_PATH = PROMPT_ROOT.joinpath("heartbeat.md")
-HEARTBEAT_PLANNER_PROMPT_PATH = PROMPT_ROOT.joinpath("heartbeat_planner.md")
 GOAL_PROMPT_PATH = PROMPT_ROOT.joinpath("goal.md")
 REPLY_WAIT_PROMPT_PATH = PROMPT_ROOT.joinpath("reply_wait.md")
 REFLECTION_PROMPT_PATH = PROMPT_ROOT.joinpath("reflection.md")
@@ -31,9 +30,6 @@ EPISODE_CONSOLIDATION_PROMPT_PATH = PROMPT_ROOT.joinpath(
 STYLE_CARD_SYSTEM_PROMPT = STYLE_CARD_PROMPT_PATH.read_text(encoding="utf-8").strip()
 WEBHOOK_SYSTEM_PROMPT = WEBHOOK_PROMPT_PATH.read_text(encoding="utf-8").strip()
 HEARTBEAT_SYSTEM_PROMPT = HEARTBEAT_PROMPT_PATH.read_text(encoding="utf-8").strip()
-HEARTBEAT_PLANNER_SYSTEM_PROMPT = HEARTBEAT_PLANNER_PROMPT_PATH.read_text(
-    encoding="utf-8"
-).strip()
 GOAL_SYSTEM_PROMPT = GOAL_PROMPT_PATH.read_text(encoding="utf-8").strip()
 REPLY_WAIT_SYSTEM_PROMPT = REPLY_WAIT_PROMPT_PATH.read_text(encoding="utf-8").strip()
 REFLECTION_SYSTEM_PROMPT = REFLECTION_PROMPT_PATH.read_text(encoding="utf-8").strip()
@@ -108,7 +104,6 @@ USER_CONTEXT_SECTION_ORDER = (
     "open_conversations",
     "recent_topic_reference",
     "recent_heartbeat_activities",
-    "heartbeat_plan",
     "runtime_directives",
     "conversation_state",
     "runtime_state",

@@ -58,7 +58,6 @@ class AgentReply:
     mood_update: dict[str, Any] | None = None
     heartbeat: dict[str, Any] | None = None
     reply_wait: dict[str, Any] | None = None
-    plan_adjustment: dict[str, Any] | None = None
     activity_update: dict[str, Any] | None = None
 
     @property

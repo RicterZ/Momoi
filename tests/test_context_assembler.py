@@ -1,4 +1,3 @@
-import json
 import tempfile
 import time
 import unittest
@@ -10,17 +9,13 @@ from momoi.context_time import context_timestamp
 from momoi.models import AgentReply, IncomingMessage
 from momoi.runtime.context_assembler import (
     _episode_header,
-    _planner_final,
     assemble_main_context,
-    assemble_planner_recent_turns,
     assemble_recent_external_events,
     build_plan_retrieval,
-    project_recent_turns_for_planner,
     recall_episode_context,
-    render_planner_recent_turn_focus,
-    render_planner_recent_turns,
     select_plan_recall_queries,
 )
+from momoi.runtime.transcript import build_transcript
 from momoi.storage import Store, estimate_tokens
 from momoi.storage.episode_ranking import rank_recall_items
 
@@ -582,177 +577,6 @@ class ContextAssemblerTest(unittest.TestCase):
             store.close()
 
 
-    def test_planner_recent_turns_mark_internal_records_apart_from_speech(
-        self,
-    ) -> None:
-        rendered = render_planner_recent_turns(
-            {
-                "version": 1,
-                "turns": [
-                    {
-                        "at": "2026-08-23T07:30:00+08:00",
-                        "kind": "autonomous",
-                        "timeline": [
-                            {
-                                "type": "assistant_message",
-                                "text": "[AUTONOMOUS GOAL REVIEW RECORD]\nLatest result: 已发送建议",
-                                "delivery": "internal",
-                            },
-                            {
-                                "type": "assistant_message",
-                                "text": "周日早安！南岸今天多云",
-                            },
-                        ],
-                    }
-                ],
-            }
-        )
-        self.assertIn("momoi [internal]: [AUTONOMOUS GOAL REVIEW RECORD]", rendered)
-        self.assertIn("momoi: 周日早安！南岸今天多云", rendered)
-
-    def test_planner_projection_preserves_owner_plan_adjustment(self) -> None:
-        adjustment = {
-            "reason": "工具证据推翻旧引用",
-            "corrected_direction": "改为处理当前任务",
-            "resolved_context_needs": ["episode_search"],
-        }
-        self.assertEqual(
-            _planner_final({"plan_adjustment": adjustment}),
-            {"plan_adjustment": adjustment},
-        )
-
-    def test_planner_recent_turns_use_six_plus_six_cache_blocks(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            store = Store(Path(directory) / "momoi.sqlite3")
-
-            def add(index: int) -> None:
-                event = IncomingMessage(
-                    f"event-{index}",
-                    f"event-{index}",
-                    f"owner-{index}",
-                    index,
-                    index,
-                )
-                store.add_event(event)
-                store.begin_turn(f"turn-{index}", "owner", [event.event_id])
-                if index == 1:
-                    store.append_turn_journal(
-                        f"turn-{index}",
-                        "tool_call",
-                        {
-                            "tool_call_id": "gmail",
-                            "name": "mcp__gog__gmail_search",
-                            "arguments": {"query": "newer_than:1d"},
-                        },
-                    )
-                    store.append_turn_journal(
-                        f"turn-{index}",
-                        "tool_result",
-                        {
-                            "tool_call_id": "gmail",
-                            "name": "mcp__gog__gmail_search",
-                            "ok": True,
-                            "error": None,
-                            "result": {
-                                "ok": True,
-                                "result": {
-                                    "content": [
-                                        {
-                                            "type": "text",
-                                            "text": "邮件结果" * 2000,
-                                        }
-                                    ]
-                                },
-                            },
-                        },
-                    )
-                store.commit_turn(
-                    [event],
-                    event.text,
-                    AgentReply([f"assistant-{index}"]),
-                    turn_id=f"turn-{index}",
-                )
-                outbox_id = store._db.execute(
-                    "SELECT id FROM outbox WHERE turn_id=?",
-                    (f"turn-{index}",),
-                ).fetchone()["id"]
-                store.mark_sent(int(outbox_id))
-
-            for index in range(1, 7):
-                add(index)
-            six, active, base_count = assemble_planner_recent_turns(
-                store, 6, 6, 6, 88000
-            )
-            self.assertEqual(
-                [turn["turn_id"] for turn in six["turns"]],
-                [f"turn-{index}" for index in range(1, 7)],
-            )
-            self.assertEqual(active, [f"turn-{index}" for index in range(1, 7)])
-            self.assertEqual(base_count, 6)
-            first_result = next(
-                item
-                for item in six["turns"][0]["timeline"]
-                if item["type"] == "tool_result"
-            )
-            self.assertTrue(first_result["result"]["result"]["truncated"])
-
-            add(7)
-            seven, active, base_count = assemble_planner_recent_turns(
-                store, 6, 6, 6, 88000
-            )
-            self.assertEqual(
-                [turn["turn_id"] for turn in seven["turns"]],
-                [f"turn-{index}" for index in range(1, 8)],
-            )
-            self.assertEqual(active, [f"turn-{index}" for index in range(2, 8)])
-            self.assertEqual(base_count, 6)
-            six_base = render_planner_recent_turns(
-                {"version": 1, "turns": six["turns"][:6]}
-            )
-            seven_base = render_planner_recent_turns(
-                {"version": 1, "turns": seven["turns"][:base_count]}
-            )
-            self.assertEqual(six_base, seven_base)
-            self.assertNotIn(" active ", seven_base)
-            self.assertNotIn(" background ", seven_base)
-            self.assertEqual(
-                render_planner_recent_turn_focus(seven, active),
-                "T-2, T-3, T-4, T-5, T-6, T-7",
-            )
-            six_prefix = json.dumps(
-                six, ensure_ascii=False, separators=(",", ":")
-            )[:-2]
-            self.assertTrue(
-                json.dumps(
-                    seven, ensure_ascii=False, separators=(",", ":")
-                ).startswith(six_prefix)
-            )
-
-            for index in range(8, 12):
-                add(index)
-            eleven, active, base_count = assemble_planner_recent_turns(
-                store, 6, 6, 6, 88000
-            )
-            self.assertEqual(len(eleven["turns"]), 11)
-            self.assertEqual(active, [f"turn-{index}" for index in range(6, 12)])
-            self.assertEqual(base_count, 6)
-            self.assertTrue(
-                json.dumps(
-                    eleven, ensure_ascii=False, separators=(",", ":")
-                ).startswith(six_prefix)
-            )
-
-            add(12)
-            twelve, active, base_count = assemble_planner_recent_turns(
-                store, 6, 6, 6, 88000
-            )
-            self.assertEqual(
-                [turn["turn_id"] for turn in twelve["turns"]],
-                [f"turn-{index}" for index in range(7, 13)],
-            )
-            self.assertEqual(active, [f"turn-{index}" for index in range(7, 13)])
-            self.assertEqual(base_count, 6)
-            store.close()
 
     def test_silent_external_events_fold_without_displacing_shared_turns(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -780,9 +604,7 @@ class ContextAssemblerTest(unittest.TestCase):
                 ).fetchone()["id"]
                 store.mark_sent(int(outbox_id))
 
-            baseline, baseline_active, baseline_base_count = (
-                assemble_planner_recent_turns(store, 6, 6, 6, 88000, 100)
-            )
+            baseline = store.recent_conversation_messages(6, 88000, 100)
             for index in range(12):
                 turn_id = f"webhook:silent-{index}:0"
                 observed_at = 20 + index
@@ -801,12 +623,8 @@ class ContextAssemblerTest(unittest.TestCase):
                         (observed_at, turn_id),
                     )
 
-            selected, active, base_count = assemble_planner_recent_turns(
-                store, 6, 6, 6, 88000, 100
-            )
+            selected = store.recent_conversation_messages(6, 88000, 100)
             self.assertEqual(selected, baseline)
-            self.assertEqual(active, baseline_active)
-            self.assertEqual(base_count, baseline_base_count)
 
             external = assemble_recent_external_events(
                 store,
@@ -840,16 +658,13 @@ class ContextAssemblerTest(unittest.TestCase):
                     (turn_id,),
                 )
 
-            recent, _, _ = assemble_planner_recent_turns(
-                store, 6, 6, 6, 88000, 20
-            )
+            recent = store.recent_conversation_messages(6, 88000, 20)
+            transcript = build_transcript(recent)
+            self.assertEqual(transcript.messages, [])
             self.assertEqual(
-                [turn["turn_id"] for turn in recent["turns"]],
-                [turn_id],
+                [part for group in transcript.orphaned for part in group.parts],
+                ["老师看一下门锁"],
             )
-            rendered = render_planner_recent_turns(recent)
-            self.assertIn("event: 门锁超时未关", rendered)
-            self.assertIn("momoi: 老师看一下门锁", rendered)
             self.assertEqual(
                 assemble_recent_external_events(
                     store,
@@ -860,128 +675,8 @@ class ContextAssemblerTest(unittest.TestCase):
             )
             store.close()
 
-    def test_planner_recent_turns_drop_previous_block_at_token_limit(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            store = Store(Path(directory) / "momoi.sqlite3")
-            for index in range(1, 8):
-                event = IncomingMessage(
-                    f"event-{index}",
-                    f"event-{index}",
-                    f"owner-{index}-" + ("x" * 1000),
-                    index,
-                    index,
-                )
-                store.add_event(event)
-                store.begin_turn(f"turn-{index}", "owner", [event.event_id])
-                store.commit_turn(
-                    [event],
-                    event.text,
-                    AgentReply([f"assistant-{index}"]),
-                    turn_id=f"turn-{index}",
-                )
-
-            one, _, _ = assemble_planner_recent_turns(
-                store, 1, 1, 1, 88000
-            )
-            one_size = estimate_tokens(
-                json.dumps(one, ensure_ascii=False, separators=(",", ":"))
-            )
-            selected, active, base_count = assemble_planner_recent_turns(
-                store,
-                6,
-                6,
-                6,
-                one_size + 10,
-            )
-            self.assertEqual(
-                [turn["turn_id"] for turn in selected["turns"]],
-                ["turn-7"],
-            )
-            self.assertEqual(active, ["turn-7"])
-            self.assertEqual(base_count, 0)
-            store.close()
 
 
-    def test_planner_projection_omits_defaults_but_keeps_exceptions(self) -> None:
-        projected = project_recent_turns_for_planner(
-            {
-                "version": 1,
-                "turns": [
-                    {
-                        "turn_id": "turn-1",
-                        "kind": "owner",
-                        "state": "completed",
-                        "channel": "napcat",
-                        "started_at": "2026-08-19T07:34:03+08:00",
-                        "completed_at": "2026-08-19T07:34:37+08:00",
-                        "interpretation": {
-                            "intents": [],
-                            "episode_actions": [],
-                            "uncertainty": [],
-                        },
-                        "final": {
-                            "external_effect": False,
-                            "failure": "",
-                            "reply_wait": {"wait": False},
-                            "mood_change": None,
-                            "mutations": {
-                                "memories": [],
-                                "goals": [],
-                            },
-                        },
-                        "timeline": [
-                            {
-                                "type": "owner_message",
-                                "timestamp": "2026-08-19T07:34:03+08:00",
-                                "text": (
-                                    "2026-08-19T07:34:03+08:00 "
-                                    "[napcat] 抱抱"
-                                ),
-                                "delivery": "delivered",
-                                "trust": "owner",
-                            },
-                            {
-                                "type": "assistant_message",
-                                "timestamp": "2026-08-19T07:34:37+08:00",
-                                "text": "抱紧啦",
-                                "delivery": "uncertain",
-                                "trust": "context_data",
-                            },
-                            {
-                                "type": "tool_result",
-                                "call": "t1",
-                                "name": "example",
-                                "ok": True,
-                                "error": None,
-                                "result": {"value": 1},
-                                "timestamp": "2026-08-19T07:34:20+08:00",
-                                "visibility": "internal",
-                            },
-                        ],
-                    }
-                ],
-            }
-        )
-        turn = projected["turns"][0]
-        self.assertEqual(turn["at"], "2026-08-19T07:34:03+08:00")
-        self.assertNotIn("channel", turn)
-        self.assertNotIn("final", turn)
-        self.assertNotIn("interpretation", turn)
-        self.assertEqual(
-            turn["timeline"][0],
-            {"type": "owner_message", "text": "抱抱"},
-        )
-        self.assertEqual(
-            turn["timeline"][1],
-            {
-                "type": "assistant_message",
-                "text": "抱紧啦",
-                "delivery": "uncertain",
-            },
-        )
-        self.assertEqual(turn["timeline"][2]["result"], {"value": 1})
-        self.assertNotIn("visibility", turn["timeline"][2])
-        self.assertNotIn("timestamp", turn["timeline"][2])
 
     def test_episode_header_omits_directory_defaults(self) -> None:
         episode = {
@@ -1002,225 +697,7 @@ class ContextAssemblerTest(unittest.TestCase):
             "[episode id=ep-1 units=unit-1 relation=recalled status=closed]",
         )
 
-    def test_planner_projection_compacts_historical_tool_results_uniformly(
-        self,
-    ) -> None:
-        large_content = "结果内容" * 1200
-        entries = [f"file-{index}.txt" for index in range(100)]
-        document = {
-            "version": 1,
-            "turns": [
-                {
-                    "turn_id": "background",
-                    "timeline": [
-                        {
-                            "type": "tool_call",
-                            "tool_call_id": "read",
-                            "name": "read_file",
-                            "arguments": {"path": "/tmp/example.txt"},
-                        },
-                        {
-                            "type": "tool_result",
-                            "tool_call_id": "read",
-                            "name": "read_file",
-                            "ok": True,
-                            "error": None,
-                            "result": {
-                                "ok": True,
-                                "error": None,
-                                "truncated": False,
-                                "provenance": {
-                                    "source": "builtin",
-                                    "tool": "read_file",
-                                },
-                                "path": "/tmp/example.txt",
-                                "content": large_content,
-                            },
-                        },
-                        {
-                            "type": "tool_call",
-                            "tool_call_id": "list",
-                            "name": "list_dir",
-                            "arguments": {"path": "/tmp"},
-                        },
-                        {
-                            "type": "tool_result",
-                            "tool_call_id": "list",
-                            "name": "list_dir",
-                            "ok": True,
-                            "error": None,
-                            "result": {
-                                "ok": True,
-                                "error": None,
-                                "truncated": False,
-                                "provenance": {
-                                    "source": "builtin",
-                                    "tool": "list_dir",
-                                },
-                                "count": len(entries),
-                                "entries": entries,
-                            },
-                        },
-                        {
-                            "type": "tool_call",
-                            "tool_call_id": "goal",
-                            "name": "goal_update",
-                            "arguments": {
-                                "goal_id": "goal-1",
-                                "status": "waiting",
-                                "waiting_for": "老师回复",
-                            },
-                        },
-                        {
-                            "type": "tool_result",
-                            "tool_call_id": "goal",
-                            "name": "goal_update",
-                            "ok": True,
-                            "error": None,
-                            "result": {
-                                "ok": True,
-                                "state": "staged",
-                                "goal": {
-                                    "id": "goal-1",
-                                    "title": "测试目标",
-                                    "status": "waiting",
-                                    "success_criteria": "不需要重复给Planner",
-                                    "authority": "owner",
-                                    "source_event_id": "event",
-                                    "plan": ["第一步", "第二步"],
-                                    "waiting_for": "老师回复",
-                                    "next_action": "等待",
-                                },
-                            },
-                        },
-                        {
-                            "type": "tool_call",
-                            "tool_call_id": "failed",
-                            "name": "curl",
-                            "arguments": {"url": "https://example.com"},
-                        },
-                        {
-                            "type": "tool_result",
-                            "tool_call_id": "failed",
-                            "name": "curl",
-                            "ok": False,
-                            "error": "timeout",
-                            "result": {"ok": False, "error": "timeout"},
-                        },
-                    ],
-                },
-                {
-                    "turn_id": "active",
-                    "timeline": [
-                        {
-                            "type": "tool_call",
-                            "tool_call_id": "active-read",
-                            "name": "read_file",
-                            "arguments": {"path": "/tmp/active.txt"},
-                        },
-                        {
-                            "type": "tool_result",
-                            "tool_call_id": "active-read",
-                            "name": "read_file",
-                            "ok": True,
-                            "error": None,
-                            "result": {
-                                "ok": True,
-                                "error": None,
-                                "content": large_content,
-                            },
-                        },
-                    ],
-                },
-            ],
-        }
-        full = project_recent_turns_for_planner(document)
-        projected = project_recent_turns_for_planner(
-            document,
-            compact_tool_results=True,
-        )
-        compact_results = [
-            item
-            for item in projected["turns"][0]["timeline"]
-            if item["type"] == "tool_result"
-        ]
-        self.assertTrue(
-            compact_results[0]["result"]["content"]["truncated"]
-        )
-        self.assertEqual(
-            compact_results[1]["result"]["entries"]["original_items"],
-            100,
-        )
-        compact_goal = compact_results[2]["result"]["goal"]
-        self.assertEqual(compact_goal["id"], "goal-1")
-        self.assertEqual(compact_goal["waiting_for"], "老师回复")
-        self.assertNotIn("success_criteria", compact_goal)
-        self.assertNotIn("plan", compact_goal)
-        self.assertEqual(compact_results[3]["error"], "timeout")
 
-        active_result = projected["turns"][1]["timeline"][1]["result"]
-        self.assertTrue(active_result["content"]["truncated"])
-        full_active_result = full["turns"][1]["timeline"][1]["result"]
-        self.assertEqual(full_active_result["content"], large_content)
-
-    def test_planner_projection_caps_unknown_large_result_shapes(self) -> None:
-        document = {
-            "version": 1,
-            "turns": [
-                {
-                    "turn_id": "turn-1",
-                    "timeline": [
-                        {
-                            "type": "tool_call",
-                            "tool_call_id": "large",
-                            "name": "future_tool",
-                            "arguments": {},
-                        },
-                        {
-                            "type": "tool_result",
-                            "tool_call_id": "large",
-                            "name": "future_tool",
-                            "ok": True,
-                            "result": {
-                                "payload": {
-                                    "unknown_shape": "大结果" * 2000,
-                                }
-                            },
-                        },
-                        {
-                            "type": "tool_call",
-                            "tool_call_id": "small",
-                            "name": "future_tool",
-                            "arguments": {},
-                        },
-                        {
-                            "type": "tool_result",
-                            "tool_call_id": "small",
-                            "name": "future_tool",
-                            "ok": True,
-                            "result": {"value": 1},
-                        },
-                    ],
-                }
-            ],
-        }
-
-        projected = project_recent_turns_for_planner(
-            document,
-            compact_tool_results=True,
-        )
-        results = [
-            item["result"]
-            for item in projected["turns"][0]["timeline"]
-            if item["type"] == "tool_result"
-        ]
-
-        self.assertTrue(results[0]["truncated"])
-        self.assertGreater(results[0]["original_tokens"], 768)
-        self.assertEqual(results[0]["shown_tokens"], 512)
-        self.assertIn("head", results[0])
-        self.assertIn("tail", results[0])
-        self.assertEqual(results[1], {"value": 1})
 
     def test_recent_episode_window_is_injected_without_keyword_recall(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

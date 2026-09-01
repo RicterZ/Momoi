@@ -6513,11 +6513,6 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                 {
                     "channel": target_channel,
                     "reply_wait": reply.reply_wait,
-                    **(
-                        {"plan_adjustment": reply.plan_adjustment}
-                        if reply.plan_adjustment
-                        else {}
-                    ),
                     "mood_change": reply.mood_update,
                     **(
                         {"activity_change": reply.activity_update}

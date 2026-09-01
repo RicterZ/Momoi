@@ -15,25 +15,17 @@ from ..memory_tools import MEMORY_TOOL_SPECS
 from ..models import AgentReply, IncomingMessage, ProviderResponse, TurnDraft
 from ..provider import ProviderError
 from ..reply_wait import REPLY_FOLLOWUP_RETRY_SECONDS
-from ..storage import (
-    MemoryRecallQuery,
-    estimate_tokens,
-    truncate_tokens,
-)
+from ..storage import estimate_tokens, truncate_tokens
 from ..text_replacement import cyber_keyword_pre_hook
 from .context_assembler import (
-    assemble_main_context,
     assemble_recent_external_events,
     assemble_recent_webhook_activity,
-    build_plan_retrieval,
-    select_plan_recall_queries,
     recall_episode_context,
 )
 from .transcript import build_transcript, render_messages
 from .context_service import (
     _heartbeat_activity_lines,
     _heartbeat_conversation_state_lines,
-    _heartbeat_plan_lines,
     _heartbeat_self_state_lines,
     _heartbeat_topic_lines,
 )
@@ -1390,7 +1382,6 @@ class TurnOrchestrator:
         owner_event_revision: int,
     ) -> None:
         delivery_channel = self._channel_for(target_channel or self.channel.name)
-        state = self.store.self_state()
         self_context = self.store.self_state_context()
         notification_key = "heartbeat.chat"
         contact_window = self.store.heartbeat_contact_window(
@@ -1425,38 +1416,6 @@ class TurnOrchestrator:
             max(100, self.config.memory_tokens // 8)
         )
         long_term_memories = self.store.always_memory_context()
-        conversation = self.store.heartbeat_conversation_snapshot()
-        plan = await self._plan_heartbeat_context(
-            turn_id,
-            state=state,
-            self_context=self_context,
-            conversation=conversation,
-            recent_topics=recent_topics,
-            goals=goals,
-            long_term_memories=long_term_memories,
-            recent_memories=recent_memories,
-        )
-        selected, _reused, _emitted, _skipped = select_plan_recall_queries(plan)
-        dense_evidence = await self.semantic_recall.prepare(
-            [
-                MemoryRecallQuery(
-                    expression=str(item["expression"]),
-                    unit_ids=tuple(str(value) for value in item["unit_ids"]),
-                    priority=int(item["priority"]),
-                    semantic_expression=str(item["semantic_expression"]),
-                )
-                for item in selected
-            ],
-            output_limit=max(self.config.memory_results, self.config.summary_results),
-        )
-        retrieval = build_plan_retrieval(
-            self.store, plan, self.config, dense_evidence=dense_evidence
-        )
-        recalled = assemble_main_context(
-            self.store,
-            retrieval,
-            self.config.summary_tokens,
-        )
         conversation_rows = self.store.recent_conversation_messages(
             self.config.recent_turns * 2,
             self.config.recent_raw_tokens,
@@ -1504,10 +1463,6 @@ class TurnOrchestrator:
                     }
                 ),
             ),
-            (
-                "heartbeat_plan",
-                _heartbeat_plan_lines(plan),
-            ),
             ("active_goals", goals),
             (
                 "recent_topic_reference",
@@ -1517,15 +1472,15 @@ class TurnOrchestrator:
                 "recent_heartbeat_activities",
                 _heartbeat_activity_lines(self.store.recent_heartbeat_activities()),
             ),
-            ("recent_external_events", recalled["recent_external_events"]),
-            ("episode_directory", recalled["episodes"]),
-            ("recall_memories", recalled["recall_memories"]),
-            ("reflection_memories", recalled["reflection_memories"]),
+            (
+                "recent_external_events",
+                assemble_recent_external_events(self.store),
+            ),
         )
         system = self._system()
         context_message = _context_data_message(
-            ("long_term_memories", recalled["long_term_memories"]),
-            ("recent_memories", recalled["recent_memories"]),
+            ("long_term_memories", long_term_memories),
+            ("recent_memories", recent_memories),
             required=True,
         )
         assert context_message is not None
@@ -1546,7 +1501,7 @@ class TurnOrchestrator:
         tools = [
             *MEMORY_TOOL_SPECS,
             *AGENDA_TOOL_SPECS,
-            *self._heartbeat_external_tool_specs(plan),
+            *self._heartbeat_external_tool_specs(),
             self._send_message_tool_spec(delivery_channel.name),
             heartbeat_end_turn_tool_spec(),
         ]

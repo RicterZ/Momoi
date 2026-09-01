@@ -100,7 +100,7 @@ class ConfigurationTest(unittest.TestCase):
                     "thinking": {
                         "effort": "high",
                         "stages": {
-                            "heartbeat_plan": "low",
+                            "heartbeat": "low",
                             "reply_followup": "low",
                         },
                     },
@@ -119,14 +119,14 @@ class ConfigurationTest(unittest.TestCase):
                 ThinkingConfig(
                     effort="high",
                     stages={
-                        "heartbeat_plan": "low",
+                        "heartbeat": "low",
                         "reply_followup": "low",
                     },
                 ),
             )
             self.assertEqual(config.llm.thinking.for_stage("owner"), "high")
             self.assertEqual(
-                config.llm.thinking.for_stage("heartbeat_plan"),
+                config.llm.thinking.for_stage("heartbeat"),
                 "low",
             )
 

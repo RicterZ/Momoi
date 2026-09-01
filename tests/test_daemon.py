@@ -36,7 +36,6 @@ from momoi.runtime.protocol import (
 from momoi.models import (
     AgentReply,
     IncomingMessage,
-    MemoryCandidate,
     OwnerInputStatus,
     ProviderResponse,
     ToolCall,
@@ -46,7 +45,6 @@ from momoi.provider import (
     ProviderError,
 )
 from momoi.runtime.turn_support import (
-    HEARTBEAT_PLANNER_SYSTEM_PROMPT,
     STYLE_CARD_SYSTEM_PROMPT,
 )
 from momoi.runtime.parsing import parse_mood_decision, parse_mood_update
@@ -54,10 +52,8 @@ from momoi.runtime.daemon import _message_gap_bounds
 from momoi.runtime.turn_support import REPLY_WAIT_SYSTEM_PROMPT
 from momoi.storage import estimate_tokens
 from tests.support import (
-    heartbeat_plan_response,
-    planner_sections,
     recall_response,
-    with_owner_and_heartbeat_planner,
+    with_owner_recall,
 )
 
 
@@ -176,11 +172,11 @@ class DaemonTest(unittest.TestCase):
             rendered = daemon._heartbeat_system_prompt()
             self.assertIn("New heartbeat", rendered)
             self.assertLess(
-                rendered.index("<heartbeat_plan>"),
+                rendered.index("Call `heartbeat_begin` first"),
                 rendered.index("# Workspace heartbeat guidance"),
             )
-            self.assertIn("advisory `heartbeat_handoff`", rendered)
-            self.assertIn("A `rest` plan is complete", rendered)
+            self.assertNotIn("heartbeat_handoff", rendered)
+            self.assertIn("A `rest` activity is complete", rendered)
             self.assertIn("follows the shared Style Card", rendered)
             self.assertNotIn("<recalled_turns>", rendered)
             heartbeat.unlink()
@@ -397,14 +393,6 @@ class DaemonTest(unittest.TestCase):
         wait_schema = END_TURN_TOOL_SPEC["input_schema"]["properties"]["reply_wait"]
         self.assertIn("another scheduler owns the work", wait_schema["description"])
         self.assertIn("exactly one follow-up", wait_schema["description"])
-        adjustment_schema = END_TURN_TOOL_SPEC["input_schema"]["properties"][
-            "plan_adjustment"
-        ]
-        self.assertIn("materially overturns", adjustment_schema["description"])
-        self.assertIn(
-            "Omit it when the handoff was adequate",
-            adjustment_schema["description"],
-        )
         self.assertEqual(
             [shape["properties"]["wait"]["enum"][0] for shape in wait_shapes],
             [False, True],
@@ -760,7 +748,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     )
 
             provider = Provider()
-            daemon.provider = with_owner_and_heartbeat_planner(provider)  # type: ignore[assignment]
+            daemon.provider = with_owner_recall(provider)  # type: ignore[assignment]
             first = IncomingMessage(
                 "napcat:first", "first", "第一条", 1, 1, channel="napcat"
             )
@@ -880,7 +868,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     )
 
             provider = Provider()
-            daemon.provider = with_owner_and_heartbeat_planner(provider)  # type: ignore[assignment]
+            daemon.provider = with_owner_recall(provider)  # type: ignore[assignment]
             initial = IncomingMessage("qq:turn:1", "1", "查旧地址天气", 1, 1)
             first_update = IncomingMessage("qq:turn:2", "2", "地址改成上海", 2, 2)
             second_update = IncomingMessage(
@@ -1371,7 +1359,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     return ProviderResponse([], [call])
 
             provider = Provider()
-            daemon.provider = with_owner_and_heartbeat_planner(provider)  # type: ignore[assignment]
+            daemon.provider = with_owner_recall(provider)  # type: ignore[assignment]
             reply = await daemon._run_tool_loop(
                 daemon._system(),
                 [{"role": "user", "content": "读文件"}],
@@ -1471,7 +1459,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     return ProviderResponse([], [call])
 
             provider = Provider()
-            daemon.provider = with_owner_and_heartbeat_planner(provider)  # type: ignore[assignment]
+            daemon.provider = with_owner_recall(provider)  # type: ignore[assignment]
             reply = await daemon._run_tool_loop(
                 daemon._system(),
                 [{"role": "user", "content": "读文件"}],
@@ -1605,7 +1593,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         raise AssertionError(tools)
 
             provider = Provider()
-            daemon.provider = with_owner_and_heartbeat_planner(provider)  # type: ignore[assignment]
+            daemon.provider = with_owner_recall(provider)  # type: ignore[assignment]
             event = IncomingMessage("qq:bad-goal", "bad-goal", "创建任务", 1, 1)
             daemon.store.add_event(event)
             with self.assertLogs("momoi.runtime.turns", level="DEBUG") as logs:
@@ -1819,7 +1807,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "<workflow_contract>" not in request
                             or "偶尔看看最近有什么有趣的新游戏。" not in request
                             or "<autonomous_heartbeat>" not in request
-                            or "<heartbeat_plan>" not in request
                             or "<runtime_state>" not in request
                             or "<recent_topic_reference>" not in request
                             or "<recent_heartbeat_activities>" not in request
@@ -1832,6 +1819,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         ):
                             raise AssertionError(__)
                         expected = {
+                            "heartbeat_begin",
                             "memory_search",
                             "episode_search",
                             "episode_read",
@@ -1855,11 +1843,63 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         if names != expected:
                             raise AssertionError(names)
                         call = ToolCall(
+                            "heartbeat-begin-one",
+                            "heartbeat_begin",
+                            {
+                                "activity": "整理小游戏关卡灵感",
+                                "mode": "work",
+                                "recall_mode": "search",
+                                "recall_queries": [
+                                    {
+                                        "semantic": "近期小游戏关卡灵感与未完成创作",
+                                        "keywords": ["小游戏", "关卡"],
+                                    }
+                                ],
+                                "tool_groups": [],
+                                "strategy": [
+                                    "读取一条玩法资讯",
+                                    "有可复用灵感就记录，否则安静结束",
+                                ],
+                            },
+                        )
+                    elif self.calls == 2:
+                        call = ToolCall(
                             "heartbeat-news",
                             "curl",
                             {"url": "https://news.example/today"},
                         )
                     elif self.calls == 3:
+                        call = ToolCall(
+                            "heartbeat-first-finish",
+                            "end_turn",
+                            {
+                                "reply_wait": {"wait": False},
+                                "mood": {"decision": "unchanged"},
+                                "heartbeat": {
+                                    "activity": "整理小游戏关卡灵感",
+                                    "result": "读完一条游戏新闻并记下玩法联想",
+                                    "next_check_minutes": 2,
+                                    "reason": "完成本次灵感整理",
+                                },
+                            },
+                        )
+                    elif self.calls == 4:
+                        call = ToolCall(
+                            "heartbeat-begin-two",
+                            "heartbeat_begin",
+                            {
+                                "activity": "把关卡灵感安排成后续草案",
+                                "mode": "work",
+                                "recall_mode": "skip",
+                                "recall_queries": [],
+                                "tool_groups": [],
+                                "strategy": [
+                                    "创建后续 Goal",
+                                    "把新点子分享给老师后结束",
+                                ],
+                            },
+                        )
+                    elif self.calls == 5:
                         call = ToolCall(
                             "heartbeat-goal",
                             "goal_create",
@@ -1872,36 +1912,27 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 ).isoformat(),
                             },
                         )
-                    elif self.calls == 4:
+                    elif self.calls == 6:
                         call = ToolCall(
                             "heartbeat-live",
                             "send_message",
                             {"messages": ["刚想到一个关卡点子！"]},
                         )
                     else:
-                        expects_reply = self.calls == 5
                         call = ToolCall(
                             f"heartbeat-{self.calls}",
                             "end_turn",
                             {
-                                "reply_wait": (
-                                    {
-                                        "wait": True,
-                                        "delay_minutes": 4,
-                                        "expected_information": "主人对关卡点子的回应",
-                                        "reason": "想听老师对新关卡点子的看法",
-                                    }
-                                    if expects_reply
-                                    else {"wait": False}
-                                ),
+                                "reply_wait": {
+                                    "wait": True,
+                                    "delay_minutes": 4,
+                                    "expected_information": "主人对关卡点子的回应",
+                                    "reason": "想听老师对新关卡点子的看法",
+                                },
                                 "mood": {"decision": "unchanged"},
                                 "heartbeat": {
                                     "activity": "整理小游戏关卡灵感",
-                                    "result": (
-                                        "读完一条游戏新闻并记下玩法联想"
-                                        if self.calls == 2
-                                        else "已建立自己的关卡草案任务继续整理"
-                                    ),
+                                    "result": "已建立自己的关卡草案任务继续整理",
                                     "next_check_minutes": 2,
                                     "reason": "有具体的新点子才分享",
                                 },
@@ -1920,7 +1951,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     )
 
             provider = Provider()
-            daemon.provider = with_owner_and_heartbeat_planner(provider)  # type: ignore[assignment]
+            daemon.provider = with_owner_recall(provider)  # type: ignore[assignment]
 
             async def read_news(_: ToolCall) -> dict[str, object]:
                 return {"ok": True, "status": 200, "body": "新玩法公开"}
@@ -1962,311 +1993,10 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             goal = daemon.store.list_goals()[0]
             self.assertEqual(goal["authority"], "agent")
             self.assertEqual(goal["title"], "继续整理关卡点子")
-            self.assertEqual(provider.calls, 5)
+            self.assertEqual(provider.calls, 7)
             daemon.store.close()
 
-    async def test_heartbeat_injects_recent_activities(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            config = AppConfig(
-                llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
-                channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
-                system_prompt="test",
-                recent_raw_tokens=1000,
-                recent_turns=2,
-                memory_results=2,
-                memory_tokens=1000,
-                database=Path(directory) / "momoi.sqlite3",
-                log_level="INFO",
-                heartbeat=HeartbeatConfig(
-                    enabled=True,
-                    initial_delay_seconds=60,
-                    min_interval_seconds=60,
-                    max_interval_seconds=600,
-                ),
-            )
-            daemon = MomoiDaemon(config)
-            now = time.time()
-            for index, activity in enumerate(["刷微博", "整理笔记"], start=1):
-                turn_id = f"seed-{index}"
-                with patch("momoi.storage.store.time.time", return_value=now + index):
-                    daemon.store.begin_turn(
-                        turn_id, "autonomous", [f"heartbeat:{index}"]
-                    )
-                    daemon.store.commit_heartbeat(
-                        turn_id,
-                        owner_event_revision=0,
-                        notification_config=config.notifications,
-                        activity=activity,
-                        result="ok",
-                        next_heartbeat_at=now + 60,
-                        mood_update=None,
-                        messages=[],
-                        reason="seed",
-                    )
 
-            class Provider:
-                calls = 0
-                planner_payload: dict[str, object] | None = None
-                turn_request = ""
-
-                async def complete(
-                    self,
-                    system: object,
-                    messages: list[dict[str, object]],
-                    tools: list[dict[str, object]],
-                    **_: object,
-                ) -> ProviderResponse:
-                    self.calls += 1
-                    if system == HEARTBEAT_PLANNER_SYSTEM_PROMPT:
-                        self.planner_payload = planner_sections(str(messages[0]["content"]))
-                        return heartbeat_plan_response(messages)
-                    self.turn_request = json.dumps(messages, ensure_ascii=False)
-                    call = ToolCall(
-                        "heartbeat-done",
-                        "end_turn",
-                        {
-                            "expects_reply": False,
-                            "reply_expectation": "",
-                            "mood": {"decision": "unchanged"},
-                            "heartbeat": {
-                                "activity": "休息",
-                                "result": "",
-                                "next_check_minutes": 2,
-                                "reason": "test",
-                            },
-                        },
-                    )
-                    return ProviderResponse(
-                        [
-                            {
-                                "type": "tool_use",
-                                "id": call.id,
-                                "name": call.name,
-                                "input": call.arguments,
-                            }
-                        ],
-                        [call],
-                    )
-
-            provider = Provider()
-            daemon.provider = provider  # type: ignore[assignment]
-            daemon.store._db.execute(
-                "UPDATE self_state SET next_heartbeat_at=? WHERE id=1",
-                (time.time() - 1,),
-            )
-            daemon.store._db.commit()
-            self.assertIsNotNone(
-                daemon.store.claim_due_heartbeat(
-                    config.heartbeat, config.notifications
-                )
-            )
-            await daemon._complete_heartbeat_turn(asyncio.Event())
-            payload = provider.planner_payload
-            self.assertIsNotNone(payload)
-            assert payload is not None
-            activities = payload["recent_heartbeat_activities"]
-            self.assertIn("activity=刷微博", activities)
-            self.assertIn("activity=整理笔记", activities)
-            self.assertIn("<recent_heartbeat_activities>", provider.turn_request)
-            self.assertIn("刷微博", provider.turn_request)
-            self.assertIn("整理笔记", provider.turn_request)
-            daemon.store.close()
-
-    async def test_heartbeat_handoff_lookup_is_satisfied_by_harness_recall(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            config = AppConfig(
-                llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
-                channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
-                system_prompt="test",
-                recent_raw_tokens=1000,
-                recent_turns=2,
-                memory_results=4,
-                memory_tokens=1000,
-                database=Path(directory) / "momoi.sqlite3",
-                log_level="INFO",
-                notifications=NotificationConfig(
-                    timezone="Asia/Shanghai",
-                    cooldown_seconds=0,
-                    pending_owner_delay_seconds=0,
-                ),
-                heartbeat=HeartbeatConfig(
-                    enabled=True,
-                    initial_delay_seconds=60,
-                    min_interval_seconds=60,
-                    max_interval_seconds=600,
-                ),
-                heartbeat_prompt="按自己的兴趣安排这次心跳。",
-            )
-            daemon = MomoiDaemon(config)
-            memory_event = IncomingMessage(
-                "test-memory",
-                "test-memory",
-                "刷微博遇到错误时直接说",
-                time.time(),
-                time.time(),
-            )
-            daemon.store.add_event(memory_event)
-            daemon.store._remember(
-                MemoryCandidate(
-                    "shared",
-                    "shared.weibo.login_expired_notify",
-                    "微博登录过期时主动提醒；刷微博遇到错误时直接说",
-                    "刷微博遇到错误时直接说",
-                    activation="recall",
-                ),
-                [memory_event],
-                time.time(),
-            )
-            daemon.store._db.execute(
-                "UPDATE events SET processed=1 WHERE id=?", (memory_event.event_id,)
-            )
-            daemon.store._db.commit()
-
-            class Provider:
-                calls = 0
-
-                async def complete(
-                    self,
-                    system: object,
-                    messages: list[dict[str, object]],
-                    tools: list[dict[str, object]],
-                    **_: object,
-                ) -> ProviderResponse:
-                    self.calls += 1
-                    if self.calls == 1:
-                        self.assert_planner(system, messages, tools)
-                        call = ToolCall(
-                            "heartbeat-plan",
-                            "submit_heartbeat_plan",
-                            {
-                                "version": 3,
-                                "activity": {
-                                    "intent": "浏览微博关注流",
-                                    "reason": "看看最近感兴趣的动态",
-                                    "recall_mode": "search",
-                                    "recall_queries": [
-                                        {
-                                            "semantic": "此前浏览微博时需要遵守的错误处理规则",
-                                            "keywords": [
-                                                "微博登录过期",
-                                                "刷微博遇到错误",
-                                            ],
-                                        }
-                                    ],
-                                },
-                                "heartbeat_handoff": {
-                                    "context": {
-                                        "status": "lookup_required",
-                                        "needs": [
-                                            {
-                                                "tool": "memory_search",
-                                                "query": "微博登录过期 | 刷微博遇到错误",
-                                                "evidence": "relevant_history",
-                                            }
-                                        ],
-                                        "reason": "浏览前需要已知错误规则",
-                                    },
-                                    "mcp": {
-                                        "servers": [],
-                                        "reason": "测试只需内部工具",
-                                    },
-                                    "execution": {
-                                        "mode": "work",
-                                        "outline": [
-                                            "查询已知微博规则",
-                                            "根据结果决定浏览方式",
-                                        ],
-                                        "reason": "需要执行一次有依据的活动",
-                                    },
-                                },
-                                "uncertainty": [],
-                            },
-                        )
-                    elif self.calls == 2:
-                        request = json.dumps(messages, ensure_ascii=False)
-                        names = {str(tool["name"]) for tool in tools}
-                        if (
-                            system == HEARTBEAT_PLANNER_SYSTEM_PROMPT
-                            or "<heartbeat_plan>" not in request
-                            or "浏览微博关注流" not in request
-                            or "微博登录过期 | 刷微博遇到错误" not in request
-                            or "shared.weibo.login_expired_notify" not in request
-                            or "微博登录过期时主动提醒" not in request
-                            or "memory_search" not in names
-                            or "memory_remember" not in names
-                            or "goal_update" not in names
-                        ):
-                            raise AssertionError((system, request, names))
-                        call = ToolCall(
-                            "heartbeat-done",
-                            "end_turn",
-                            {
-                                "expects_reply": False,
-                                "reply_expectation": "",
-                                "mood": {"decision": "unchanged"},
-                                "heartbeat": {
-                                    "activity": "浏览微博关注流",
-                                    "result": "已准备按已知规则浏览",
-                                    "next_check_minutes": 2,
-                                    "reason": "本次无需联系主人",
-                                },
-                            },
-                        )
-                    return ProviderResponse(
-                        [
-                            {
-                                "type": "tool_use",
-                                "id": call.id,
-                                "name": call.name,
-                                "input": call.arguments,
-                            }
-                        ],
-                        [call],
-                    )
-
-                @staticmethod
-                def assert_planner(
-                    system: object,
-                    messages: list[dict[str, object]],
-                    tools: list[dict[str, object]],
-                ) -> None:
-                    if (
-                        system != HEARTBEAT_PLANNER_SYSTEM_PROMPT
-                        or [tool["name"] for tool in tools]
-                        != ["submit_heartbeat_plan"]
-                        or "按自己的兴趣安排这次心跳。"
-                        not in json.dumps(messages, ensure_ascii=False)
-                    ):
-                        raise AssertionError((system, messages, tools))
-                    payload = planner_sections(str(messages[0]["content"]))
-                    if (
-                        "recent_heartbeat_activities" not in payload
-                        or (
-                            "recent_turn_base" not in payload
-                            and "recent_turn_append" not in payload
-                        )
-                        or "recent_conversation" in payload
-                    ):
-                        raise AssertionError(payload)
-
-            provider = Provider()
-            daemon.provider = provider  # type: ignore[assignment]
-            daemon.store._db.execute(
-                "UPDATE self_state SET next_heartbeat_at=? WHERE id=1",
-                (time.time() - 1,),
-            )
-            daemon.store._db.commit()
-            self.assertIsNotNone(
-                daemon.store.claim_due_heartbeat(
-                    config.heartbeat, config.notifications
-                )
-            )
-            await daemon._complete_heartbeat_turn(asyncio.Event())
-            self.assertEqual(provider.calls, 2)
-            self.assertEqual(
-                daemon.store.self_state()["activity"], "浏览微博关注流"
-            )
-            daemon.store.close()
 
     async def test_owner_turn_stops_cleanly_at_configured_token_budget(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -2292,7 +2022,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     raise AssertionError("provider must not be called beyond budget")
 
             provider = Provider()
-            daemon.provider = with_owner_and_heartbeat_planner(provider)  # type: ignore[assignment]
+            daemon.provider = with_owner_recall(provider)  # type: ignore[assignment]
             event = IncomingMessage("qq:budget", "budget", "继续一个很长的任务", 1, 1)
             daemon.store.add_event(event)
             turn_id = daemon._turn_id(event.event_id)
@@ -2411,7 +2141,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             daemon.store.add_event(event)
             turn_id = daemon._turn_id(event.event_id)
             daemon.store.begin_turn(turn_id, "owner", [event.event_id])
-            daemon.provider = with_owner_and_heartbeat_planner(provider)  # type: ignore[assignment]
+            daemon.provider = with_owner_recall(provider)  # type: ignore[assignment]
             reply = await daemon._run_tool_loop(
                 daemon._system(),
                 [{"role": "user", "content": event.text}],
@@ -2549,7 +2279,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             daemon.store.add_event(event)
             turn_id = daemon._turn_id(event.event_id)
             daemon.store.begin_turn(turn_id, "owner", [event.event_id])
-            daemon.provider = with_owner_and_heartbeat_planner(provider)  # type: ignore[assignment]
+            daemon.provider = with_owner_recall(provider)  # type: ignore[assignment]
             reply = await daemon._run_tool_loop(
                 daemon._system(),
                 [{"role": "user", "content": event.text}],
@@ -2726,7 +2456,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     )
 
             provider = Provider()
-            daemon.provider = with_owner_and_heartbeat_planner(provider)  # type: ignore[assignment]
+            daemon.provider = with_owner_recall(provider)  # type: ignore[assignment]
             reply = await daemon._run_tool_loop(
                 daemon._system(),
                 [{"role": "user", "content": event.text}],
@@ -2799,7 +2529,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     raise ProviderError("model engine error")
 
             provider = Provider()
-            daemon.provider = with_owner_and_heartbeat_planner(provider)  # type: ignore[assignment]
+            daemon.provider = with_owner_recall(provider)  # type: ignore[assignment]
             event = IncomingMessage("qq:provider-error", "provider-error", "测试", 1, 1)
             daemon.store.add_event(event)
             turn_id = daemon._turn_id(event.event_id)
@@ -3023,7 +2753,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     )
 
             provider = Provider()
-            daemon.provider = with_owner_and_heartbeat_planner(provider)  # type: ignore[assignment]
+            daemon.provider = with_owner_recall(provider)  # type: ignore[assignment]
             daemon.autonomous.put_nowait(AutonomousJob.goal(goal_id))
             worker = asyncio.create_task(daemon._agent_worker(asyncio.Event()))
             try:
@@ -3109,7 +2839,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         [call],
                     )
 
-            daemon.provider = with_owner_and_heartbeat_planner(Provider())  # type: ignore[assignment]
+            daemon.provider = with_owner_recall(Provider())  # type: ignore[assignment]
             stop = asyncio.Event()
             worker = asyncio.create_task(daemon._agent_worker(stop))
             original = IncomingMessage("qq:1:tool-stop", "tool-stop", "等一会儿", 1, 1)

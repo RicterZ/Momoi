@@ -36,6 +36,7 @@ from .protocol import (
     AUTONOMOUS_FINISH_SPEC,
     READ_TOOL_RESULT_SPEC,
     RECALL_TOOL_SPEC,
+    heartbeat_begin_spec,
     owner_end_turn_tool_spec,
     send_message_tool_spec,
     tool_enable_spec,
@@ -198,19 +199,7 @@ class ToolExecutionService:
             groups.setdefault(server, []).append(spec)
         return dict(sorted(groups.items()))
 
-    def _heartbeat_mcp_server_catalog(self) -> list[dict[str, object]]:
-        return [
-            {
-                "id": server,
-                "description": self._mcp_group_description(server),
-            }
-            for server in self._self_directed_mcp_server_groups()
-        ]
-
-    def _heartbeat_external_tool_specs(
-        self,
-        plan: dict[str, object],
-    ) -> list[dict[str, Any]]:
+    def _heartbeat_external_tool_specs(self) -> list[dict[str, Any]]:
         patterns = self.config.autonomy.allowed_tools
         internal = [
             READ_TOOL_RESULT_SPEC,
@@ -224,20 +213,15 @@ class ToolExecutionService:
             ],
         ]
         groups = self._self_directed_mcp_server_groups()
-        handoff = plan.get("heartbeat_handoff")
-        route = handoff.get("mcp") if isinstance(handoff, dict) else None
-        selected = route.get("servers") if isinstance(route, dict) else []
-        selected_servers = selected if isinstance(selected, list) else []
-        mcp_specs = [
-            spec
-            for server in selected_servers
-            for spec in groups.get(str(server), [])
-        ]
         group_catalog = {
             server: self._mcp_group_description(server)
             for server in groups
         }
-        return [*internal, *mcp_specs, tool_enable_spec(group_catalog)]
+        return [
+            heartbeat_begin_spec(group_catalog),
+            *internal,
+            tool_enable_spec(group_catalog),
+        ]
 
     def _owner_tool_specs(
         self, channel_name: str | None = None
@@ -319,6 +303,7 @@ class ToolExecutionService:
         failed_tool_rounds = 0
         history_messages = max(0, len(messages) - 1)
         context_submitted = authority != "owner"
+        heartbeat_started = not heartbeat_turn
         visible_since_owner_update = False
         owner_work_acknowledged = False
         previous_tool_name: str | None = None
@@ -516,6 +501,24 @@ class ToolExecutionService:
                 failed_tool_rounds = 0
                 continue
             if not response.tool_calls:
+                if heartbeat_turn and not heartbeat_started:
+                    failed_tool_rounds += 1
+                    if failed_tool_rounds >= MAX_CONSECUTIVE_TOOL_FAILURES:
+                        raise ExternalToolTurnError("heartbeat_not_started")
+                    messages.extend(
+                        [
+                            {"role": "assistant", "content": response.content},
+                            {
+                                "role": "user",
+                                "content": (
+                                    "[Trusted runtime protocol error. The previous "
+                                    "text was not delivered. Call heartbeat_begin "
+                                    "alone before any other Heartbeat action.]"
+                                ),
+                            },
+                        ]
+                    )
+                    continue
                 if autonomous_goal_id:
                     messages.extend(
                         [
@@ -555,6 +558,29 @@ class ToolExecutionService:
                                 "end_turn. After the send_message result, call end_turn "
                                 "alone in a later response.]"
                             ),
+                        },
+                    ]
+                )
+                continue
+            if heartbeat_turn and not heartbeat_started and (
+                len(response.tool_calls) != 1
+                or response.tool_calls[0].name != "heartbeat_begin"
+            ):
+                failed_tool_rounds += 1
+                if failed_tool_rounds >= MAX_CONSECUTIVE_TOOL_FAILURES:
+                    raise ExternalToolTurnError("heartbeat_not_started")
+                messages.extend(
+                    [
+                        {"role": "assistant", "content": response.content},
+                        {
+                            "role": "user",
+                            "content": [
+                                _tool_error_block(
+                                    call.id,
+                                    "heartbeat_begin_must_be_first_and_alone",
+                                )
+                                for call in response.tool_calls
+                            ],
                         },
                     ]
                 )
@@ -862,6 +888,57 @@ class ToolExecutionService:
                     }
                 elif call.name not in allowed_tool_names:
                     result = {"ok": False, "error": "tool_not_allowed"}
+                elif call.name == "heartbeat_begin":
+                    requested = call.arguments.get("tool_groups")
+                    if (
+                        not heartbeat_turn
+                        or heartbeat_started
+                        or not isinstance(requested, list)
+                        or any(
+                            not isinstance(group, str)
+                            or group not in enable_tool_groups
+                            for group in requested
+                        )
+                    ):
+                        result = {
+                            "ok": False,
+                            "error": "invalid_heartbeat_begin",
+                        }
+                    else:
+                        try:
+                            prepared = await self.prepare_heartbeat_context(
+                                call.arguments
+                            )
+                        except ValueError as error:
+                            result = {
+                                "ok": False,
+                                "error": "invalid_heartbeat_begin",
+                                "message": str(error),
+                            }
+                        else:
+                            enabled_tools = self._append_visible_tool_specs(
+                                tools,
+                                [
+                                    spec
+                                    for group in dict.fromkeys(requested)
+                                    for spec in enable_tool_groups[group]
+                                ],
+                            )
+                            recalled = prepared["context"]
+                            assert isinstance(recalled, dict)
+                            heartbeat_started = True
+                            result = {
+                                "ok": True,
+                                "state": "started",
+                                "activity": call.arguments.get("activity"),
+                                "mode": call.arguments.get("mode"),
+                                "strategy": call.arguments.get("strategy"),
+                                "memory": recalled["recall_memories"],
+                                "status": recalled["query_recall"],
+                                "reflection": recalled["reflection_memories"],
+                                "episodes": recalled["episodes"],
+                                "enabled_tools": enabled_tools,
+                            }
                 elif call.name == "recall":
                     try:
                         recalled = await self.submit_owner_context(
@@ -1316,6 +1393,7 @@ class ToolExecutionService:
             "tool_enable",
             "read_tool_result",
             "autonomous_finish",
+            "heartbeat_begin",
         }:
             return "runtime"
         if self.mcp.has_tool(name):

@@ -51,10 +51,10 @@ function previewThinkingCalls() {
       turn_id: "ef8c470b3ea15ca2a0a77d02cfcb33d9",
       call_id: "d434890f538b4d10",
       created_at: at(1, 35),
-      stage: "heartbeat_plan",
+      stage: "heartbeat",
       round: 1,
       model: "deepseek-v4-flash",
-      tools: ["submit_heartbeat_plan"],
+      tools: ["heartbeat_begin"],
       reasoning_chars: 4558,
       excerpt:
         "老师这会儿不在。最近在聊小游戏关卡，心跳可以继续整理点子，不必主动打扰。",

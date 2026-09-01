@@ -1,69 +1,21 @@
 import json
 import logging
 import re
-import time
 import uuid
-from datetime import datetime
 
-from ..agenda_tools import AGENDA_TOOL_SPECS
-from ..builtin_tools import BUILTIN_TOOL_SPECS
-from ..logging_context import log_context, log_event, new_trace_id
-from ..memory_tools import MEMORY_TOOL_SPECS
 from ..models import IncomingMessage
 from ..storage import MemoryRecallQuery
 from .context_assembler import (
     assemble_main_context,
-    assemble_planner_recent_turns,
-    assemble_recent_external_events,
     build_plan_retrieval,
-    recall_query_semantic,
     select_plan_recall_queries,
-    render_planner_recent_turn_focus,
-    render_planner_recent_turns,
-)
-from .heartbeat_planner import (
-    HEARTBEAT_PLAN_TOOL_NAME,
-    HEARTBEAT_PLAN_TOOL_SPEC,
-    HeartbeatPlanError,
-    degraded_heartbeat_plan,
-    parse_heartbeat_plan,
-)
-from .turn_support import (
-    HEARTBEAT_PLANNER_SYSTEM_PROMPT,
-    sections as _sections,
-    tool_error_block as _tool_error_block,
 )
 
 logger = logging.getLogger("momoi.runtime.turns")
 # Episode reference syntax the runtime already stores.
 _NEW_EPISODE_SLUG = re.compile(r"new:[a-z0-9][a-z0-9_-]{0,39}")
 
-PLANNER_INTERNAL_TOOLS = [
-    {
-        "id": str(spec["name"]),
-        "description": str(spec.get("description") or ""),
-    }
-    for spec in (*MEMORY_TOOL_SPECS, *AGENDA_TOOL_SPECS, *BUILTIN_TOOL_SPECS)
-]
-
-
-def _planner_mcp_lines(items: list[dict[str, object]]) -> str:
-    return "\n".join(
-        f"- id={item.get('id')} description={str(item.get('description') or '')[:240]}"
-        for item in items
-        if isinstance(item, dict) and item.get("id")
-    )
-
-
-def _planner_internal_tool_lines(items: list[dict[str, str]]) -> str:
-    return "\n".join(
-        f"- id={item['id']} description="
-        f"{' '.join(item['description'].split())[:240]}"
-        for item in items
-    )
-
-
-def _planner_episode_lines(items: list[dict[str, object]]) -> str:
+def _episode_candidate_lines(items: list[dict[str, object]]) -> str:
     blocks: list[str] = []
     for episode in items:
         fields = [
@@ -88,10 +40,6 @@ def _planner_episode_lines(items: list[dict[str, object]]) -> str:
             )
         blocks.append("- " + " ".join(fields))
     return "\n".join(blocks)
-
-
-def _planner_value(value: str) -> str:
-    return value if value.strip() else "(none)"
 
 
 def _heartbeat_topic_lines(items: list[dict[str, object]]) -> str:
@@ -166,49 +114,9 @@ def _heartbeat_conversation_state_lines(state: dict[str, object]) -> str:
     return "\n".join(fields)
 
 
-def _heartbeat_plan_lines(plan: dict[str, object]) -> str:
-    activity = plan.get("activity") if isinstance(plan, dict) else {}
-    handoff = plan.get("heartbeat_handoff") if isinstance(plan, dict) else {}
-    context = handoff.get("context") if isinstance(handoff, dict) else {}
-    mcp = handoff.get("mcp") if isinstance(handoff, dict) else {}
-    execution = handoff.get("execution") if isinstance(handoff, dict) else {}
-    lines = [
-        f"activity: {str(activity.get('intent') or '').strip()}",
-        f"reason: {str(activity.get('reason') or '').strip()}",
-        f"recall mode: {activity.get('recall_mode') or 'skip'}",
-        f"context status: {context.get('status') or 'sufficient'}",
-        f"context reason: {context.get('reason') or ''}",
-    ]
-    for query in activity.get("recall_queries") or []:
-        if isinstance(query, dict):
-            semantic = recall_query_semantic(query)
-            keywords = ", ".join(str(item) for item in query.get("keywords") or [])
-            lines.append(f"recall semantic: {semantic}")
-            lines.append(f"recall keywords: {keywords or 'none'}")
-        else:
-            lines.append(f"recall query: {str(query).replace(chr(10), ' ')}")
-    for need in context.get("needs") or []:
-        if isinstance(need, dict):
-            fields = [
-                f"{key}={str(need.get(key) or '').replace(chr(10), ' ')}"
-                for key in ("tool", "query", "evidence")
-                if need.get(key) not in (None, "", [], {})
-            ]
-            lines.append("context need: " + " ".join(fields))
-    servers = mcp.get("servers") if isinstance(mcp, dict) else []
-    lines.append("mcp servers: " + (", ".join(str(item) for item in servers) if servers else "none"))
-    lines.append(f"mcp reason: {mcp.get('reason') if isinstance(mcp, dict) else ''}")
-    lines.append(f"execution mode: {execution.get('mode') if isinstance(execution, dict) else 'work'}")
-    for index, step in enumerate(execution.get("outline") or [], start=1):
-        lines.append(f"step {index}: {step}")
-    if isinstance(execution, dict) and execution.get("reason"):
-        lines.append(f"execution reason: {execution['reason']}")
-    for item in plan.get("uncertainty") or []:
-        lines.append(f"uncertainty: {item}")
-    return "\n".join(lines)
 
 
-def _planner_recall_context_lines(
+def _recall_context_lines(
     values: list[dict[str, object]],
 ) -> str:
     lines: list[str] = []
@@ -221,76 +129,6 @@ def _planner_recall_context_lines(
     return "\n".join(lines)
 
 
-def render_heartbeat_planner_request(
-    *,
-    internal_tools: list[dict[str, str]],
-    mcp_servers: list[dict[str, object]],
-    workspace_guidance: str,
-    long_term_memories: str,
-    recent_memories: str,
-    active_goals: str,
-    recent_topics: list[dict[str, object]],
-    recent_turns: dict[str, object],
-    recent_turn_base_count: int,
-    active_recent_turn_ids: list[str],
-    recent_heartbeat_activities: list[dict[str, str]],
-    previous_activity: dict[str, object],
-    current_self_state: str,
-    conversation_state: dict[str, object],
-    current_time: str,
-    recent_external_events: str = "",
-) -> str:
-    previous_lines = "\n".join(
-        f"{key}: {str(previous_activity.get(key) or '(none)').strip()}"
-        for key in ("activity", "result")
-    )
-    turns = recent_turns.get("turns")
-    turn_items = turns if isinstance(turns, list) else []
-    base_count = max(0, min(int(recent_turn_base_count), len(turn_items)))
-    return _sections(
-        (
-            "available_internal_tools",
-            _planner_value(_planner_internal_tool_lines(internal_tools)),
-        ),
-        ("available_mcp_servers", _planner_value(_planner_mcp_lines(mcp_servers))),
-        ("workspace_heartbeat_guidance", _planner_value(workspace_guidance)),
-        ("long_term_memories", _planner_value(long_term_memories)),
-        ("recent_memories", _planner_value(recent_memories)),
-        ("active_goals", _planner_value(active_goals)),
-        (
-            "recent_turn_base",
-            _planner_value(
-                render_planner_recent_turns(
-                    {"version": 1, "turns": turn_items[:base_count]}
-                )
-            ),
-        ),
-        (
-            "recent_turn_append",
-            _planner_value(
-                render_planner_recent_turns(
-                    {"version": 1, "turns": turn_items[base_count:]},
-                    start_index=base_count + 1,
-                )
-            ),
-        ),
-        (
-            "recent_turn_focus",
-            _planner_value(
-                render_planner_recent_turn_focus(
-                    recent_turns,
-                    active_recent_turn_ids,
-                )
-            ),
-        ),
-        ("recent_external_events", _planner_value(recent_external_events)),
-        ("recent_topics", _planner_value(_heartbeat_topic_lines(recent_topics))),
-        ("recent_heartbeat_activities", _planner_value(_heartbeat_activity_lines(recent_heartbeat_activities))),
-        ("previous_activity", _planner_value(previous_lines)),
-        ("current_self_state", _planner_value(_heartbeat_self_state_lines(current_self_state))),
-        ("conversation_state", _planner_value(_heartbeat_conversation_state_lines(conversation_state))),
-        ("current_time", _planner_value(current_time)),
-    )
 
 
 
@@ -434,12 +272,12 @@ class ContextService:
         """
 
         return {
-            "candidate_episodes": _planner_episode_lines(
+            "candidate_episodes": _episode_candidate_lines(
                 self.store.list_recent_episode_directory(
                     8, exclude_runtime_archives=True
                 )
             ),
-            "recent_recall_context": _planner_recall_context_lines(
+            "recent_recall_context": _recall_context_lines(
                 self.store.recall_reuse_candidates(turn_ids)
             ),
         }
@@ -489,158 +327,73 @@ class ContextService:
             recent_before_timestamp=min(event.received_at for event in events),
         )
 
-    async def _plan_heartbeat_context(
-        self,
-        turn_id: str,
-        *,
-        state: dict[str, object],
-        self_context: str,
-        conversation: dict[str, object],
-        recent_topics: list[dict[str, object]],
-        goals: str,
-        long_term_memories: str,
-        recent_memories: str,
+    async def prepare_heartbeat_context(
+        self, arguments: dict[str, object]
     ) -> dict[str, object]:
-        mcp_server_catalog = self._heartbeat_mcp_server_catalog()
-        available_mcp_servers = {
-            str(server["id"]) for server in mcp_server_catalog
-        }
-        planner_recent_turns, active_recent_turn_ids, recent_turn_base_count = (
-            assemble_planner_recent_turns(
-                self.store,
-                self.config.recent_turns,
-                self.config.recent_turns,
-                self.config.recent_turns,
-                min(
-                    88000,
-                    max(1000, int(self.config.max_input_tokens * 0.55)),
-                ),
-            )
-        )
-        request = [
+        activity = " ".join(str(arguments.get("activity") or "").split())[:300]
+        mode = str(arguments.get("mode") or "")
+        recall_mode = str(arguments.get("recall_mode") or "")
+        strategy = [
+            " ".join(str(item).split())[:300]
+            for item in (arguments.get("strategy") or [])
+            if str(item).strip()
+        ][:4]
+        raw_queries = arguments.get("recall_queries")
+        queries = [
             {
-                "role": "user",
-                "content": render_heartbeat_planner_request(
-                    internal_tools=PLANNER_INTERNAL_TOOLS,
-                    mcp_servers=mcp_server_catalog,
-                    workspace_guidance=self._workspace_heartbeat_guidance(),
-                    long_term_memories=long_term_memories,
-                    recent_memories=recent_memories,
-                    active_goals=goals,
-                    recent_turns=planner_recent_turns,
-                    recent_turn_base_count=recent_turn_base_count,
-                    active_recent_turn_ids=active_recent_turn_ids,
-                    recent_external_events=assemble_recent_external_events(
-                        self.store
-                    ),
-                    recent_topics=recent_topics,
-                    recent_heartbeat_activities=self.store.recent_heartbeat_activities(),
-                    previous_activity={
-                        "activity": state.get("activity"),
-                        "result": state.get("activity_result"),
-                    },
-                    current_self_state=self_context,
-                    conversation_state=conversation,
-                    current_time=datetime.now().astimezone().isoformat(timespec="seconds"),
-                ),
+                "semantic": " ".join(str(query.get("semantic") or "").split())[:240],
+                "keywords": [
+                    " ".join(str(keyword).split())[:60]
+                    for keyword in (query.get("keywords") or [])
+                    if " ".join(str(keyword).split())
+                ][:6],
             }
-        ]
-        last_error = "invalid_heartbeat_plan"
-        for attempt in range(2):
-            call_id = new_trace_id()
-            started = time.monotonic()
-            with log_context(
-                stage="heartbeat_plan",
-                turn_id=turn_id,
-                call_id=call_id,
-                round=attempt + 1,
-            ):
-                self._check_turn_budget(
-                    turn_id,
-                    HEARTBEAT_PLANNER_SYSTEM_PROMPT,
-                    request,
-                    [HEARTBEAT_PLAN_TOOL_SPEC],
+            for query in (raw_queries if isinstance(raw_queries, list) else [])
+            if isinstance(query, dict) and str(query.get("semantic") or "").strip()
+        ][:2]
+        if not activity or mode not in {"work", "rest"}:
+            raise ValueError("heartbeat_begin requires an activity and work/rest mode")
+        if recall_mode not in {"search", "skip"}:
+            raise ValueError("heartbeat recall_mode must be search or skip")
+        if recall_mode == "search" and not queries:
+            raise ValueError("heartbeat search requires at least one recall query")
+        if recall_mode == "skip" and queries:
+            raise ValueError("heartbeat skip requires empty recall_queries")
+        if mode == "rest" and strategy:
+            raise ValueError("heartbeat rest requires an empty strategy")
+        if mode == "work" and not strategy:
+            raise ValueError("heartbeat work requires an execution strategy")
+        plan = {
+            "version": 4,
+            "activity": {
+                "intent": activity,
+                "recall_mode": recall_mode,
+                "recall_queries": queries if recall_mode == "search" else [],
+            },
+            "strategy": strategy,
+        }
+        selected, _reused, _emitted, _skipped = select_plan_recall_queries(plan)
+        dense_evidence = await self.semantic_recall.prepare(
+            [
+                MemoryRecallQuery(
+                    expression=str(item["expression"]),
+                    unit_ids=tuple(str(value) for value in item["unit_ids"]),
+                    priority=int(item["priority"]),
+                    semantic_expression=str(item["semantic_expression"]),
                 )
-                response = await self.provider.complete(
-                    HEARTBEAT_PLANNER_SYSTEM_PROMPT,
-                    request,
-                    [HEARTBEAT_PLAN_TOOL_SPEC],
-                    require_tool=True,
-                )
-            metrics = response.usage or {}
-            self.store.record_turn_usage(
-                turn_id,
-                int(metrics.get("input", 0)),
-                int(metrics.get("output", 0)),
-            )
-            try:
-                if (
-                    len(response.tool_calls) != 1
-                    or response.tool_calls[0].name != HEARTBEAT_PLAN_TOOL_NAME
-                ):
-                    raise HeartbeatPlanError("heartbeat_plan_tool_required")
-                plan = parse_heartbeat_plan(
-                    response.tool_calls[0].arguments,
-                    available_mcp_servers,
-                )
-            except HeartbeatPlanError as error:
-                last_error = str(error)
-                log_event(
-                    logger,
-                    logging.WARNING,
-                    "heartbeat_plan_invalid",
-                    stage="heartbeat_plan",
-                    turn_id=turn_id,
-                    call_id=call_id,
-                    round=attempt + 1,
-                    reason=last_error,
-                    duration_ms=int((time.monotonic() - started) * 1000),
-                )
-                if attempt == 0:
-                    request.extend(
-                        [
-                            {"role": "assistant", "content": response.content},
-                            {
-                                "role": "user",
-                                "content": [
-                                    *[
-                                        _tool_error_block(call.id, last_error)
-                                        for call in response.tool_calls
-                                    ],
-                                    {
-                                        "type": "text",
-                                        "text": (
-                                            "[Trusted protocol correction: call "
-                                            f"{HEARTBEAT_PLAN_TOOL_NAME} exactly once "
-                                            "with corrected arguments.]"
-                                        ),
-                                    },
-                                ],
-                            },
-                        ]
-                    )
-                    continue
-                break
-            log_event(
-                logger,
-                logging.INFO,
-                "heartbeat_plan_complete",
-                stage="heartbeat_plan",
-                turn_id=turn_id,
-                call_id=call_id,
-                round=attempt + 1,
-                intent=plan["activity"]["intent"],
-                heartbeat_handoff=plan["heartbeat_handoff"],
-                duration_ms=int((time.monotonic() - started) * 1000),
-            )
-            return plan
-        plan = degraded_heartbeat_plan(str(state.get("activity") or ""), last_error)
-        log_event(
-            logger,
-            logging.WARNING,
-            "heartbeat_plan_degraded",
-            stage="heartbeat_plan",
-            turn_id=turn_id,
-            reason=last_error,
+                for item in selected
+            ],
+            output_limit=max(self.config.memory_results, self.config.summary_results),
         )
-        return plan
+        retrieval = build_plan_retrieval(
+            self.store, plan, self.config, dense_evidence=dense_evidence
+        )
+        return {
+            "plan": plan,
+            "context": assemble_main_context(
+                self.store,
+                retrieval,
+                self.config.summary_tokens,
+            ),
+        }
+

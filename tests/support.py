@@ -1,66 +1,7 @@
-import re
-from html import unescape
 from typing import Any
 
 from momoi.models import ProviderResponse, ToolCall
-from momoi.runtime.heartbeat_planner import HEARTBEAT_PLAN_TOOL_NAME
 from momoi.runtime.protocol import RECALL_TOOL_SPEC
-from momoi.runtime.turn_support import HEARTBEAT_PLANNER_SYSTEM_PROMPT
-
-
-def planner_sections(text: str) -> dict[str, str]:
-    return {
-        match.group(1): unescape(match.group(2))
-        for match in re.finditer(r"<([a-z_]+)>\n(.*?)\n</\1>", text, re.DOTALL)
-    }
-
-
-def recall_need(semantic: str, *keywords: str) -> dict[str, object]:
-    return {"semantic": semantic, "keywords": list(keywords)}
-
-
-def heartbeat_plan_response(messages: list[dict[str, Any]]) -> ProviderResponse:
-    payload = planner_sections(str(messages[0]["content"]))
-    plan = {
-        "version": 3,
-        "activity": {
-            "intent": "spend time freely",
-            "reason": "Continue the current activity for this test.",
-            "recall_mode": "search",
-            "recall_queries": [recall_need("History relevant to the current activity", "current activity")],
-        },
-        "heartbeat_handoff": {
-            "context": {
-                "status": "sufficient",
-                "needs": [],
-                "reason": "Test context is sufficient.",
-            },
-            "mcp": {
-                "servers": re.findall(
-                    r"(?m)^- id=([^\s]+)", payload.get("available_mcp_servers", "")
-                ),
-                "reason": "Load configured test MCP servers.",
-            },
-            "execution": {
-                "mode": "work",
-                "outline": ["Continue the selected test activity."],
-                "reason": "Exercise the Heartbeat Turn.",
-            },
-        },
-        "uncertainty": [],
-    }
-    call = ToolCall("heartbeat-plan", HEARTBEAT_PLAN_TOOL_NAME, plan)
-    return ProviderResponse(
-        [
-            {
-                "type": "tool_use",
-                "id": call.id,
-                "name": call.name,
-                "input": call.arguments,
-            }
-        ],
-        [call],
-    )
 
 
 def recall_response(units: int = 1) -> ProviderResponse:
@@ -146,23 +87,5 @@ class ContextAwareProvider:
         )
 
 
-class HeartbeatPlannerAwareProvider:
-    def __init__(self, delegate: object) -> None:
-        self.delegate = delegate
-
-    async def complete(
-        self,
-        system: object,
-        messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]] | None = None,
-        **kwargs: object,
-    ) -> ProviderResponse:
-        if system == HEARTBEAT_PLANNER_SYSTEM_PROMPT:
-            return heartbeat_plan_response(messages)
-        return await self.delegate.complete(  # type: ignore[attr-defined,no-any-return]
-            system, messages, tools, **kwargs
-        )
-
-
-def with_owner_and_heartbeat_planner(provider: object) -> ContextAwareProvider:
-    return ContextAwareProvider(HeartbeatPlannerAwareProvider(provider))
+def with_owner_recall(provider: object) -> ContextAwareProvider:
+    return ContextAwareProvider(provider)

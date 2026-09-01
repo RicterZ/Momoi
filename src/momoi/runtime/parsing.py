@@ -123,40 +123,6 @@ def parse_response(
     reply_wait, error = parse_reply_wait_decision(raw_reply_wait)
     if reply_wait is None:
         return None, error
-    raw_adjustment = arguments.get("plan_adjustment")
-    plan_adjustment = None
-    if raw_adjustment is not None:
-        if not isinstance(raw_adjustment, dict) or set(raw_adjustment) != {
-            "reason",
-            "corrected_direction",
-            "resolved_context_needs",
-        }:
-            return None, "invalid_plan_adjustment"
-        reason = raw_adjustment.get("reason")
-        direction = raw_adjustment.get("corrected_direction")
-        resolved = raw_adjustment.get("resolved_context_needs")
-        if (
-            not isinstance(reason, str)
-            or not reason.strip()
-            or len(reason) > 300
-            or not isinstance(direction, str)
-            or not direction.strip()
-            or len(direction) > 500
-            or not isinstance(resolved, list)
-            or len(resolved) > 4
-            or any(
-                not isinstance(item, str)
-                or not item.strip()
-                or len(item) > 100
-                for item in resolved
-            )
-        ):
-            return None, "invalid_plan_adjustment"
-        plan_adjustment = {
-            "reason": reason.strip(),
-            "corrected_direction": direction.strip(),
-            "resolved_context_needs": [item.strip() for item in resolved],
-        }
     heartbeat = arguments.get("heartbeat")
     if require_heartbeat:
         if not isinstance(heartbeat, dict):
@@ -196,7 +162,6 @@ def parse_response(
         activity_update=activity_update,
         heartbeat=heartbeat if require_heartbeat else None,
         reply_wait=reply_wait,
-        plan_adjustment=plan_adjustment,
     ), None
 
 
