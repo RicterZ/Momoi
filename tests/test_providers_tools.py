@@ -804,6 +804,14 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 ],
                             }
                         ],
+                        [
+                            {
+                                "name": "lookup",
+                                "description": "Look up a record.",
+                                "input_schema": {"type": "object"},
+                                "x-momoi-owner-progress-hook": "say_to_owner",
+                            }
+                        ],
                     )
                 self.assertEqual(response.content[0]["text"], "ok")
                 with self.assertRaisesRegex(ProviderError, "invalid request"):
@@ -818,6 +826,16 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
             {"effort": "low"},
         )
         self.assertNotIn("temperature", requests[0])
+        self.assertEqual(
+            requests[0]["tools"],
+            [
+                {
+                    "name": "lookup",
+                    "description": "Look up a record.",
+                    "input_schema": {"type": "object"},
+                }
+            ],
+        )
         self.assertEqual(
             requests[0]["messages"][0]["content"][0]["text"],  # type: ignore[index]
             "看图，测试入口",

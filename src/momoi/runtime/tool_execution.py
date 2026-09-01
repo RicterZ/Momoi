@@ -30,8 +30,8 @@ from .progress_announce import (
     apply_tool_announce,
     decorate_tool_spec,
     initial_announce_error_message,
-    should_announce,
-    should_deliver_announce,
+    public_tool_spec,
+    requests_owner_progress,
 )
 from .protocol import (
     AUTONOMOUS_FINISH_SPEC,
@@ -139,12 +139,11 @@ class ToolExecutionService:
 
     def _mcp_server_groups(self) -> dict[str, list[dict[str, Any]]]:
         groups: dict[str, list[dict[str, Any]]] = {}
-        for spec in self._announced_tool_specs(
+        for spec in self._owner_progress_tool_specs(
             sorted(
                 self.mcp.tool_specs,
                 key=lambda item: str(item.get("name") or ""),
-            ),
-            mcp=True,
+            )
         ):
             group = self._mcp_tool_group(str(spec.get("name") or ""))
             groups.setdefault(group, []).append(spec)
@@ -164,8 +163,8 @@ class ToolExecutionService:
         return [
             READ_TOOL_RESULT_SPEC,
             *copy.deepcopy(MEMORY_TOOL_SPECS),
-            *self._announced_tool_specs(AGENDA_TOOL_SPECS, mcp=False),
-            *self._announced_tool_specs(BUILTIN_TOOL_SPECS, mcp=False),
+            *self._owner_progress_tool_specs(AGENDA_TOOL_SPECS),
+            *self._owner_progress_tool_specs(BUILTIN_TOOL_SPECS),
         ]
 
     def _owner_enable_tool_groups(self) -> dict[str, list[dict[str, Any]]]:
@@ -822,7 +821,6 @@ class ToolExecutionService:
                 response.tool_calls,
                 request_tools,
                 owner_work_acknowledged=owner_work_acknowledged,
-                deliver=should_deliver_announce(authority=authority),
             )
             if missing_announce is not None:
                 missing_call_id, field = missing_announce
@@ -1201,12 +1199,12 @@ class ToolExecutionService:
                             None,
                         )
                         if announce:
-                            text, _ = apply_tool_announce(
+                            text = apply_tool_announce(
                                 call.arguments,
                                 announce,
-                                deliver=should_deliver_announce(authority=authority)
-                                and not announce_delivered_in_batch,
                             )
+                            if announce_delivered_in_batch:
+                                text = None
                             history_arguments = history_tool_inputs.get(call.id)
                             if isinstance(history_arguments, dict):
                                 if text is None:
@@ -1455,9 +1453,8 @@ class ToolExecutionService:
         request_tools: list[dict[str, Any]],
         *,
         owner_work_acknowledged: bool,
-        deliver: bool,
     ) -> tuple[str, str] | None:
-        if owner_work_acknowledged or not deliver:
+        if owner_work_acknowledged:
             return None
         announce_fields = {
             str(spec.get("name") or ""): announce_field(spec)
@@ -1583,13 +1580,14 @@ class ToolExecutionService:
         except (OSError, ValueError):
             return False
 
-    def _announced_tool_specs(
-        self, specs: list[dict[str, Any]], *, mcp: bool
+    @staticmethod
+    def _owner_progress_tool_specs(
+        specs: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
         return [
             decorate_tool_spec(spec)
-            if should_announce(str(spec.get("name") or ""), mcp=mcp)
-            else spec
+            if requests_owner_progress(spec)
+            else public_tool_spec(spec)
             for spec in specs
         ]
 

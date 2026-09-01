@@ -1,41 +1,38 @@
 import copy
 from typing import Any
 
+from ..contracts import OWNER_PROGRESS_BEFORE_FIRST_CALL, OWNER_PROGRESS_FIELD
 
-ANNOUNCE_LOCAL_TOOLS = frozenset(
-    {
-        "curl",
-        "goal_create",
-        "goal_cancel",
-    }
-)
 ANNOUNCE_FIELD = "say_to_owner"
-ANNOUNCE_MARKER = "Delivered on the primary channel before this tool runs."
+ANNOUNCE_DELIVERY_NOTE = "Delivered on the primary channel before this tool runs."
+OWNER_PROGRESS_HOOK_FIELD = "x-momoi-owner-progress-hook"
 
 
-def should_announce(name: str, *, mcp: bool) -> bool:
-    return mcp or name in ANNOUNCE_LOCAL_TOOLS
+def requests_owner_progress(spec: dict[str, Any]) -> bool:
+    return spec.get(OWNER_PROGRESS_FIELD) == OWNER_PROGRESS_BEFORE_FIRST_CALL
 
 
-def should_deliver_announce(
-    *,
-    authority: str,
-) -> bool:
-    return authority == "owner"
+def public_tool_spec(spec: dict[str, Any]) -> dict[str, Any]:
+    public = copy.deepcopy(spec)
+    public.pop(OWNER_PROGRESS_FIELD, None)
+    public.pop(OWNER_PROGRESS_HOOK_FIELD, None)
+    return public
 
 
 def announce_field(spec: dict[str, Any]) -> str | None:
+    if spec.get(OWNER_PROGRESS_HOOK_FIELD) != ANNOUNCE_FIELD:
+        return None
     properties = (spec.get("input_schema") or {}).get("properties") or {}
     if not isinstance(properties, dict):
         return None
-    description = str((properties.get(ANNOUNCE_FIELD) or {}).get("description") or "")
-    if ANNOUNCE_MARKER in description:
+    if ANNOUNCE_FIELD in properties:
         return ANNOUNCE_FIELD
     return None
 
 
 def decorate_tool_spec(spec: dict[str, Any]) -> dict[str, Any]:
-    decorated = copy.deepcopy(spec)
+    decorated = public_tool_spec(spec)
+    decorated[OWNER_PROGRESS_HOOK_FIELD] = ANNOUNCE_FIELD
     schema = decorated.setdefault("input_schema", {"type": "object"})
     if not isinstance(schema, dict):
         return spec
@@ -55,7 +52,7 @@ def decorate_tool_spec(spec: dict[str, Any]) -> dict[str, Any]:
             "reaction, result, "
             "progress, failure, or route change—not a tool caption, retry narration, "
             "request recap, or promise of success. "
-            f"{ANNOUNCE_MARKER} Do not also send_bubbles for the same action."
+            f"{ANNOUNCE_DELIVERY_NOTE} Do not also send_bubbles for the same action."
         ),
     }
     return decorated
@@ -72,23 +69,18 @@ def initial_announce_error_message(field: str) -> str:
 
 def take_announce_message(
     arguments: dict[str, Any], field: str
-) -> tuple[str | None, str | None]:
+) -> str | None:
     raw = arguments.pop(field, None)
     text = str(raw or "").strip()
     if not text:
-        return None, None
-    return text, None
+        return None
+    return text
 
 
 def apply_tool_announce(
     arguments: dict[str, Any],
     field: str | None,
-    *,
-    deliver: bool,
-) -> tuple[str | None, str | None]:
+) -> str | None:
     if not field:
-        return None, None
-    if not deliver:
-        arguments.pop(field, None)
-        return None, None
+        return None
     return take_announce_message(arguments, field)

@@ -517,7 +517,14 @@ class AnthropicProvider:
             payload.pop("temperature", None)
             payload["output_config"] = {"effort": thinking_effort}
         if tools:
-            payload["tools"] = tools
+            payload["tools"] = [
+                {
+                    "name": tool["name"],
+                    "description": tool.get("description", ""),
+                    "input_schema": tool["input_schema"],
+                }
+                for tool in tools
+            ]
             if require_tool:
                 payload["tool_choice"] = {"type": "any"}
         payload = cyber_keyword_pre_hook.replace_strings(payload)

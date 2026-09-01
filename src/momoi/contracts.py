@@ -1,6 +1,10 @@
 from typing import Literal, TypedDict
 
 
+OWNER_PROGRESS_FIELD = "x-momoi-owner-progress"
+OWNER_PROGRESS_BEFORE_FIRST_CALL = "before_first_call"
+
+
 class GoalMutation(TypedDict):
     id: str
     title: str

@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
+from .contracts import OWNER_PROGRESS_BEFORE_FIRST_CALL, OWNER_PROGRESS_FIELD
 from .emotions import EMOTION_PREFIX, emotion_slug
 from .logging_context import log_event
 from .models import ToolCall, TurnDraft
@@ -89,6 +90,7 @@ def _schedule_schema(description: str | None = None) -> dict[str, Any]:
 AGENDA_TOOL_SPECS: list[dict[str, Any]] = [
     {
         "name": "goal_create",
+        OWNER_PROGRESS_FIELD: OWNER_PROGRESS_BEFORE_FIRST_CALL,
         "description": "Persist work that must continue in a future Turn.",
         "input_schema": {
             "type": "object",
@@ -157,6 +159,7 @@ AGENDA_TOOL_SPECS: list[dict[str, Any]] = [
     },
     {
         "name": "goal_cancel",
+        OWNER_PROGRESS_FIELD: OWNER_PROGRESS_BEFORE_FIRST_CALL,
         "description": (
             "Permanently close a goal without success because it is abandoned, "
             "obsolete, or explicitly stopped."

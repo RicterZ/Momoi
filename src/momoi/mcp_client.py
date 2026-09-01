@@ -14,6 +14,7 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamable_http_client
 
+from .contracts import OWNER_PROGRESS_BEFORE_FIRST_CALL, OWNER_PROGRESS_FIELD
 from .logging_context import (
     TRACE,
     captured_log_context,
@@ -421,6 +422,7 @@ class MCPManager:
                     tool.name,
                     {
                         "name": wire_name,
+                        OWNER_PROGRESS_FIELD: OWNER_PROGRESS_BEFORE_FIRST_CALL,
                         "description": f"[MCP:{name}] {tool.description or tool.name}",
                         "input_schema": tool.inputSchema,
                     },

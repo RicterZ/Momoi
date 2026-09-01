@@ -3,19 +3,20 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
+from momoi.agenda_tools import AGENDA_TOOL_SPECS
 from momoi.builtin_tools import BUILTIN_TOOL_SPECS
+from momoi.contracts import OWNER_PROGRESS_BEFORE_FIRST_CALL, OWNER_PROGRESS_FIELD
 from momoi.mcp_client import MCP_TOOL_POLICY
 from momoi.models import ToolCall
 from momoi.runtime import MomoiDaemon
 from momoi.runtime.progress_announce import (
     ANNOUNCE_FIELD,
-    ANNOUNCE_MARKER,
+    ANNOUNCE_DELIVERY_NOTE,
     announce_field,
     apply_tool_announce,
     decorate_tool_spec,
     initial_announce_error_message,
-    should_announce,
-    should_deliver_announce,
+    requests_owner_progress,
     take_announce_message,
 )
 from momoi.runtime.protocol import send_bubbles_tool_spec, tool_enable_spec
@@ -23,19 +24,25 @@ from momoi.storage import estimate_tokens
 
 
 class ProgressAnnounceTest(unittest.TestCase):
-    def test_schema_policy_covers_sparse_owner_visible_locals(self) -> None:
-        self.assertTrue(should_announce("curl", mcp=False))
-        self.assertTrue(should_announce("goal_create", mcp=False))
-        self.assertTrue(should_announce("goal_cancel", mcp=False))
-        self.assertFalse(should_announce("goal_update", mcp=False))
-        self.assertFalse(should_announce("goal_finish", mcp=False))
-        self.assertFalse(should_announce("sleep", mcp=False))
-        self.assertFalse(should_announce("read_file", mcp=False))
-        self.assertFalse(should_announce("write_file", mcp=False))
-        self.assertFalse(should_announce("list_dir", mcp=False))
-        self.assertTrue(should_announce("mcp__brave-search__brave_web_search", mcp=True))
-        self.assertTrue(should_announce("mcp__homeassistant__GetLiveContext", mcp=True))
-        self.assertTrue(should_announce("mcp__homeassistant__HassTurnOn", mcp=True))
+    def test_tools_declare_owner_progress_without_a_name_registry(self) -> None:
+        builtins = {spec["name"]: spec for spec in BUILTIN_TOOL_SPECS}
+        agenda = {spec["name"]: spec for spec in AGENDA_TOOL_SPECS}
+        self.assertTrue(requests_owner_progress(builtins["curl"]))
+        self.assertTrue(requests_owner_progress(agenda["goal_create"]))
+        self.assertTrue(requests_owner_progress(agenda["goal_cancel"]))
+        self.assertFalse(requests_owner_progress(agenda["goal_update"]))
+        self.assertFalse(requests_owner_progress(agenda["goal_finish"]))
+        self.assertFalse(requests_owner_progress(builtins["sleep"]))
+        self.assertFalse(requests_owner_progress(builtins["read_file"]))
+        self.assertTrue(
+            requests_owner_progress(
+                {
+                    "name": "mcp__demo__lookup",
+                    OWNER_PROGRESS_FIELD: OWNER_PROGRESS_BEFORE_FIRST_CALL,
+                    "input_schema": {"type": "object"},
+                }
+            )
+        )
 
     def test_adds_say_to_owner_to_curl_schema(self) -> None:
         curl = next(spec for spec in BUILTIN_TOOL_SPECS if spec["name"] == "curl")
@@ -46,7 +53,7 @@ class ProgressAnnounceTest(unittest.TestCase):
         description = decorated["input_schema"]["properties"][ANNOUNCE_FIELD][
             "description"
         ]
-        self.assertIn(ANNOUNCE_MARKER, description)
+        self.assertIn(ANNOUNCE_DELIVERY_NOTE, description)
         self.assertNotIn("Optional natural", description)
         self.assertIn("Conditionally required", description)
         self.assertIn("first external-work batch", description)
@@ -108,7 +115,6 @@ class ProgressAnnounceTest(unittest.TestCase):
             [ToolCall("first", "curl", {"url": "https://example.com"})],
             tools,
             owner_work_acknowledged=False,
-            deliver=True,
         )
         self.assertEqual(missing, ("first", ANNOUNCE_FIELD))
 
@@ -125,7 +131,6 @@ class ProgressAnnounceTest(unittest.TestCase):
             ],
             tools,
             owner_work_acknowledged=False,
-            deliver=True,
         )
         self.assertIsNone(announced)
 
@@ -133,7 +138,6 @@ class ProgressAnnounceTest(unittest.TestCase):
             [ToolCall("later", "curl", {"url": "https://example.com"})],
             tools,
             owner_work_acknowledged=True,
-            deliver=True,
         )
         self.assertIsNone(later_silent)
 
@@ -144,7 +148,6 @@ class ProgressAnnounceTest(unittest.TestCase):
             ],
             tools,
             owner_work_acknowledged=False,
-            deliver=True,
         )
         self.assertIsNone(message_then_tool)
 
@@ -168,22 +171,19 @@ class ProgressAnnounceTest(unittest.TestCase):
 
     def test_take_announce_message_strips_field(self) -> None:
         arguments = {"url": "https://example.com", ANNOUNCE_FIELD: "我去查一下快递"}
-        text, error = take_announce_message(arguments, ANNOUNCE_FIELD)
+        text = take_announce_message(arguments, ANNOUNCE_FIELD)
         self.assertEqual(text, "我去查一下快递")
-        self.assertIsNone(error)
         self.assertEqual(arguments, {"url": "https://example.com"})
 
     def test_take_announce_message_allows_silence(self) -> None:
         arguments = {"url": "https://example.com", ANNOUNCE_FIELD: "  "}
-        text, error = take_announce_message(arguments, ANNOUNCE_FIELD)
+        text = take_announce_message(arguments, ANNOUNCE_FIELD)
         self.assertIsNone(text)
-        self.assertIsNone(error)
         self.assertNotIn(ANNOUNCE_FIELD, arguments)
 
         arguments = {"url": "https://example.com"}
-        text, error = take_announce_message(arguments, ANNOUNCE_FIELD)
+        text = take_announce_message(arguments, ANNOUNCE_FIELD)
         self.assertIsNone(text)
-        self.assertIsNone(error)
         self.assertEqual(arguments, {"url": "https://example.com"})
 
     def test_only_owner_specs_advertise_say_to_owner(self) -> None:
@@ -194,6 +194,7 @@ class ProgressAnnounceTest(unittest.TestCase):
             tool_specs=[
                 {
                     "name": "mcp__brave-search__brave_web_search",
+                    OWNER_PROGRESS_FIELD: OWNER_PROGRESS_BEFORE_FIRST_CALL,
                     "description": "search",
                     "input_schema": {
                         "type": "object",
@@ -225,41 +226,13 @@ class ProgressAnnounceTest(unittest.TestCase):
         self.assertIsNone(announce_field(owner["read_file"]))
         self.assertIsNone(announce_field(heartbeat["curl"]))
 
-    def test_harness_delivers_only_for_owner_authority(self) -> None:
-        self.assertTrue(should_deliver_announce(authority="owner"))
-        for authority in (
-            "webhook",
-            "agent",
-            "heartbeat",
-            "reply_followup",
-            "reflection",
-            "memory_maintenance",
-            "episode_consolidation",
-            "episode_anneal",
-        ):
-            with self.subTest(authority=authority):
-                self.assertFalse(should_deliver_announce(authority=authority))
-
-    def test_heartbeat_strips_say_to_owner_without_delivering(self) -> None:
+    def test_announce_hook_extracts_owner_progress(self) -> None:
         arguments = {"url": "https://example.com", ANNOUNCE_FIELD: "我去搜一下"}
-        text, error = apply_tool_announce(
+        text = apply_tool_announce(
             arguments,
             ANNOUNCE_FIELD,
-            deliver=should_deliver_announce(authority="agent"),
-        )
-        self.assertIsNone(text)
-        self.assertIsNone(error)
-        self.assertEqual(arguments, {"url": "https://example.com"})
-
-    def test_owner_turn_returns_optional_say_to_owner(self) -> None:
-        arguments = {"url": "https://example.com", ANNOUNCE_FIELD: "我去搜一下"}
-        text, error = apply_tool_announce(
-            arguments,
-            ANNOUNCE_FIELD,
-            deliver=should_deliver_announce(authority="owner"),
         )
         self.assertEqual(text, "我去搜一下")
-        self.assertIsNone(error)
         self.assertEqual(arguments, {"url": "https://example.com"})
 
     def test_prompts_do_not_teach_announce_field(self) -> None:
