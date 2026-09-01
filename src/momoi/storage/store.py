@@ -1550,7 +1550,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         return self._context_plan_dict(row) if row else None
 
     def recall_reuse_candidates(self, turn_ids: list[str]) -> list[dict[str, object]]:
-        """Return recent recalled Turns with their effective search scope."""
+        """Return only the latest recalled Turn and its effective search scope."""
 
         ordered_ids = [turn_id for turn_id in dict.fromkeys(turn_ids) if turn_id]
         if not ordered_ids:
@@ -1611,18 +1611,12 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             query_cache[turn_id] = queries
             return queries
 
-        candidates: list[dict[str, object]] = []
-        for turn_id in ordered_ids:
+        for turn_id in reversed(ordered_ids):
             queries = effective_queries(turn_id)
             if not queries:
                 continue
-            candidates.append(
-                {
-                    "turn_id": turn_id,
-                    "queries": queries,
-                }
-            )
-        return candidates
+            return [{"turn_id": turn_id, "queries": queries}]
+        return []
 
     def save_context_retrieval(
         self,

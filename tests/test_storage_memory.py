@@ -1531,7 +1531,7 @@ class StorageMemoryTest(unittest.TestCase):
             )
             reopened.close()
 
-    def test_recall_reuse_candidates_flatten_effective_queries(self) -> None:
+    def test_recall_reuse_candidate_is_only_the_latest_effective_scope(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
             store.begin_turn("recalled-turn", "owner", ["event-1"])
@@ -1608,20 +1608,17 @@ class StorageMemoryTest(unittest.TestCase):
 
             candidates = store.recall_reuse_candidates(
                 [
-                    "reuse-turn",
                     "recalled-turn",
                     "planned-turn",
                     "missed-turn",
                     "missing-turn",
+                    "reuse-turn",
                 ]
             )
 
-            self.assertEqual(len(candidates), 2)
-            self.assertEqual(candidates[0]["turn_id"], "reuse-turn")
-            self.assertEqual(candidates[0]["queries"], ["长寿湖"])
             self.assertEqual(
-                candidates[1],
-                {"turn_id": "recalled-turn", "queries": ["长寿湖"]},
+                candidates,
+                [{"turn_id": "reuse-turn", "queries": ["长寿湖"]}],
             )
             store.close()
 
