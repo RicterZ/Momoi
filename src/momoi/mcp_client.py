@@ -65,14 +65,16 @@ def _expand(value: str) -> str:
 
 
 def load_mcp_servers(path: Path | None) -> dict[str, dict[str, Any]]:
-    if path is None or not path.exists():
+    if path is None:
+        return {}
+    if not path.exists():
         log_event(
             logger,
-            logging.INFO,
+            logging.ERROR,
             "mcp_config_missing",
-            path=str(path) if path is not None else "",
+            path=str(path),
         )
-        return {}
+        raise FileNotFoundError(f"MCP configuration file does not exist: {path}")
     raw = json.loads(path.read_text(encoding="utf-8"))
     servers = raw.get("mcpServers") if isinstance(raw, dict) else None
     if not isinstance(servers, dict):
