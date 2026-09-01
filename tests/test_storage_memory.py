@@ -816,6 +816,10 @@ class StorageMemoryTest(unittest.TestCase):
 
             archive_ids = {webhook_archive_id, heartbeat_archive_id, goal_archive_id}
             self.assertEqual(store._runtime_archive_kind(goal_archive_id), "goal")
+            self.assertEqual(store.episode(goal_archive_id)["archive_kind"], "goal")
+            self.assertEqual(store.episode(goal_archive_id)["archive_day"], "2026-08-26")
+            self.assertEqual(store.episode(webhook_archive_id)["archive_kind"], "webhook")
+            self.assertEqual(store.episode(heartbeat_archive_id)["archive_day"], "2026-08-25")
             heartbeat_title = store.episode(heartbeat_archive_id)["title"]
             self.assertEqual(heartbeat_title, "心跳 · 2026-08-25")
             dashboard = {
