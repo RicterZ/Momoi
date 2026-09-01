@@ -68,8 +68,9 @@ class DaemonTest(unittest.TestCase):
     def test_system_contract_allows_only_native_tool_calls_globally(self) -> None:
         contract = SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")
 
-        self.assertIn("Across every Turn and workflow", contract)
-        self.assertIn("never emit assistant text", contract)
+        self.assertIn("The assistant has no text output channel", contract)
+        self.assertIn("Every Turn advances only through", contract)
+        self.assertIn("call it with the exact bubbles", contract)
         self.assertIn("DSML", contract)
         self.assertNotIn("Owner Turn state machine", contract)
         self.assertNotIn("recall first", contract)
@@ -79,6 +80,8 @@ class DaemonTest(unittest.TestCase):
 
         self.assertIn("# Owner Turn contract", contract)
         self.assertIn("Call `recall` first and alone", contract)
+        self.assertIn("If owner-visible bubbles are warranted", contract)
+        self.assertIn("otherwise do not call it", contract)
         self.assertIn("call `end_turn` alone", contract)
 
     def test_owner_request_bubble_reminder_is_wire_only(self) -> None:
@@ -101,6 +104,9 @@ class DaemonTest(unittest.TestCase):
             request[0]["content"][-1]["text"],
             f"last\n\n{OWNER_BUBBLE_REQUEST_REMINDER}",
         )
+        self.assertFalse(OWNER_BUBBLE_REQUEST_REMINDER.startswith("["))
+        self.assertFalse(OWNER_BUBBLE_REQUEST_REMINDER.endswith("]"))
+        self.assertIn("call send_bubbles with them", OWNER_BUBBLE_REQUEST_REMINDER)
 
     def test_owner_request_bubble_reminder_follows_tool_results(self) -> None:
         messages = [
@@ -291,24 +297,32 @@ class DaemonTest(unittest.TestCase):
 
     def test_style_card_allows_standalone_non_propositional_speech(self) -> None:
         self.assertIn(
+            "items passed to\n`send_bubbles.bubbles`", STYLE_CARD_SYSTEM_PROMPT
+        )
+        self.assertIn("never creates a text output path", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn(
             "standalone sticker or reaction image", STYLE_CARD_SYSTEM_PROMPT
         )
         self.assertIn("quiet end", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn(
-            "Do not reply merely to prove it was noticed", STYLE_CARD_SYSTEM_PROMPT
+            "Do not add a bubble merely to prove it was noticed",
+            STYLE_CARD_SYSTEM_PROMPT,
         )
         self.assertIn(
             "only accepts or closes a beat that already landed",
             STYLE_CARD_SYSTEM_PROMPT,
         )
         self.assertIn(
-            "merely plausible\n  or warm extra reply",
+            "merely plausible\n  or warm extra bubble",
             STYLE_CARD_SYSTEM_PROMPT,
         )
-        self.assertIn("ordinary social chat that", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("ordinary social chat", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("one short utterance", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("its own bubble, in\n  the order it comes", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("begin by simply speaking", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn(
+            "begin with the immediate conversational beat",
+            STYLE_CARD_SYSTEM_PROMPT,
+        )
         self.assertIn("Form describes the whole bubble", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("consists only of affect", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("starts a thought", STYLE_CARD_SYSTEM_PROMPT)
@@ -430,7 +444,11 @@ class DaemonTest(unittest.TestCase):
         )
         self.assertIn("non-empty", SEND_BUBBLES_TOOL_SPEC["description"])
         self.assertIn("owner-visible", SEND_BUBBLES_TOOL_SPEC["description"])
-        self.assertIn("only way", SEND_BUBBLES_TOOL_SPEC["description"])
+        self.assertIn("native tool", SEND_BUBBLES_TOOL_SPEC["description"])
+        self.assertIn(
+            "assistant text is not a delivery path",
+            SEND_BUBBLES_TOOL_SPEC["description"],
+        )
         self.assertIn(
             "each non-empty chat bubble", SEND_BUBBLES_TOOL_SPEC["description"]
         )

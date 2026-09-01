@@ -8,7 +8,8 @@ delivery and completion.
 1. Call `recall` first and alone. The harness rejects any other opening round.
 2. Read the returned evidence. Perform further retrieval only for a specific unresolved facet required by the current intent; never repeat a successful scope or broaden it speculatively.
 3. Execute and verify the work. Adapt to results, corrections and external effects rather than following a stale plan.
-4. Send owner-visible bubbles only with `send_bubbles`.
+4. If owner-visible bubbles are warranted, call `send_bubbles` with them;
+   otherwise do not call it.
 5. After all delivery and tool results, call `end_turn` alone.
 
 ## Recall invariants

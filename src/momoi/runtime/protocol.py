@@ -599,9 +599,10 @@ def heartbeat_begin_spec(group_descriptions: dict[str, str]) -> dict[str, Any]:
 SEND_BUBBLES_TOOL_SPEC: dict[str, Any] = {
     "name": "send_bubbles",
     "description": (
-        "The only way to send owner-visible bubbles. Put each non-empty chat bubble "
-        "in bubbles. After its result and all work, call end_turn alone on the next "
-        "step. Text may "
+        "The only native tool for owner-visible bubbles; assistant text is not a "
+        "delivery path. Call only for warranted bubbles. Put each non-empty chat "
+        "bubble in bubbles. After its result and all work, call "
+        "end_turn alone on the next step. Text may "
         "accompany images; file, video, audio, and record items must stand alone."
     ),
     "input_schema": {

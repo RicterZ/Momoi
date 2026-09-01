@@ -58,7 +58,8 @@ MAX_TOOL_RESULT_TRUNCATION_ATTEMPTS = 16
 _RESULT_REF_OVERHEAD = 64
 SIMILAR_SEND_BUBBLES_THRESHOLD = 0.75
 OWNER_BUBBLE_REQUEST_REMINDER = (
-    "[Call send_bubbles to send bubbles. Never output assistant text.]"
+    "Native tool calls only: if bubbles are warranted, call send_bubbles with "
+    "them; otherwise call the next work or terminal tool."
 )
 
 
