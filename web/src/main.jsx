@@ -2112,7 +2112,6 @@ function RecallDetail({ recall }) {
                 <span className={`recall-mode ${unit.mode === "reuse" ? "is-reuse" : "is-search"}`}>
                   {unit.mode === "reuse" ? "沿用" : unit.mode === "search" ? "检索" : "召回"}
                 </span>
-                <h4>{unit.intent || "未命名意图"}</h4>
               </div>
               {unit.reused_from ? (
                 <div className="recall-source">

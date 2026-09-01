@@ -1520,13 +1520,6 @@ a.tag:hover {
   gap: 10px;
 }
 
-.recall-unit-head h4 {
-  min-width: 0;
-  margin: 1px 0 0;
-  font-size: 14px;
-  line-height: 1.55;
-}
-
 .recall-mode {
   flex: 0 0 auto;
   padding: 4px 7px;
