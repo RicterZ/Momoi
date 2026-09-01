@@ -33,9 +33,10 @@ CHANNEL_BUBBLE_SCHEMA: dict[str, Any] = {
             "type": "string",
             "minLength": 1,
             "description": (
-                "One non-empty private-chat bubble; put blank lines in separate "
-                "items. With <emotion_catalog>, exact emotion://<listed-slug> sends "
-                "that standalone reaction image."
+                "A bubble is one item in send_bubbles.bubbles; producing it means "
+                "calling send_bubbles. It must be non-empty; split blank lines into "
+                "items. Exact emotion://<listed-slug> from <emotion_catalog> sends "
+                "a standalone reaction image."
             ),
         },
         {
@@ -599,10 +600,9 @@ def heartbeat_begin_spec(group_descriptions: dict[str, str]) -> dict[str, Any]:
 SEND_BUBBLES_TOOL_SPEC: dict[str, Any] = {
     "name": "send_bubbles",
     "description": (
-        "The only native tool for owner-visible bubbles; assistant text is not a "
-        "delivery path. Call only for warranted bubbles. Put each non-empty chat "
-        "bubble in bubbles. After its result and all work, call "
-        "end_turn alone on the next step. Text may "
+        "Produces owner-visible bubbles; assistant text delivers none. Call only "
+        "when warranted. After its result and all work, call end_turn alone on the "
+        "next step. Text may "
         "accompany images; file, video, audio, and record items must stand alone."
     ),
     "input_schema": {

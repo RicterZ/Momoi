@@ -299,6 +299,10 @@ class DaemonTest(unittest.TestCase):
         self.assertIn(
             "items passed to\n`send_bubbles.bubbles`", STYLE_CARD_SYSTEM_PROMPT
         )
+        self.assertIn(
+            "producing\nbubbles means calling `send_bubbles`",
+            STYLE_CARD_SYSTEM_PROMPT,
+        )
         self.assertIn("never creates a text output path", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn(
             "standalone sticker or reaction image", STYLE_CARD_SYSTEM_PROMPT
@@ -442,24 +446,20 @@ class DaemonTest(unittest.TestCase):
         self.assertNotIn(
             "delivery", SEND_BUBBLES_TOOL_SPEC["input_schema"]["properties"]
         )
-        self.assertIn("non-empty", SEND_BUBBLES_TOOL_SPEC["description"])
         self.assertIn("owner-visible", SEND_BUBBLES_TOOL_SPEC["description"])
-        self.assertIn("native tool", SEND_BUBBLES_TOOL_SPEC["description"])
         self.assertIn(
-            "assistant text is not a delivery path",
-            SEND_BUBBLES_TOOL_SPEC["description"],
+            "Produces owner-visible bubbles", SEND_BUBBLES_TOOL_SPEC["description"]
         )
         self.assertIn(
-            "each non-empty chat bubble", SEND_BUBBLES_TOOL_SPEC["description"]
-        )
-        self.assertIn(
-            "in bubbles",
+            "assistant text delivers none",
             SEND_BUBBLES_TOOL_SPEC["description"],
         )
         self.assertIn("next step", SEND_BUBBLES_TOOL_SPEC["description"])
         self.assertIn("must stand alone", SEND_BUBBLES_TOOL_SPEC["description"])
         bubble_description = CHANNEL_BUBBLE_SCHEMA["oneOf"][0]["description"]
-        self.assertIn("private-chat bubble", bubble_description)
+        self.assertIn("item in send_bubbles.bubbles", bubble_description)
+        self.assertIn("means calling send_bubbles", bubble_description)
+        self.assertIn("non-empty", bubble_description)
         self.assertIn("blank lines", bubble_description)
         self.assertIn("emotion://<listed-slug>", bubble_description)
         self.assertIn("standalone reaction image", bubble_description)

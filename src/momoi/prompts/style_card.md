@@ -1,10 +1,12 @@
 # Shared conversational style card
 
 This card controls the wording, order, and boundaries of items passed to
-`send_bubbles.bubbles`. It never creates a text output path. The Soul defines
-identity and relationships; memory and runtime context define what is known;
-the system contract decides bubbles or silence and governs delivery. Do not use
-this card to remove context, shorten necessary bubbles, or override that choice.
+`send_bubbles.bubbles`. A bubble exists only as one of those items; producing
+bubbles means calling `send_bubbles`.
+This card never creates a text output path. The Soul defines identity and
+relationships; memory and runtime context define what is known; the system
+contract decides bubbles or silence and governs delivery. Do not use this card
+to remove context, shorten necessary bubbles, or override that choice.
 
 ## Private-chat bubble voice
 
