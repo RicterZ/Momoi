@@ -46,10 +46,28 @@ class TurnRunner(
         self, *, allow_partial_consolidation: bool = False
     ) -> bool:
         minimum = 1 if allow_partial_consolidation else 6
+        pending_count = self.store.episode_consolidation_pending_count()
+        log_event(
+            logger,
+            logging.DEBUG,
+            "episode_maintenance_selection",
+            stage="episode_anneal",
+            allow_partial_consolidation=allow_partial_consolidation,
+            consolidation_minimum=minimum,
+            consolidation_pending=pending_count,
+        )
         consolidation = self.store.claim_episode_consolidation_candidate(
             minimum=minimum
         )
         if consolidation is not None:
+            log_event(
+                logger,
+                logging.DEBUG,
+                "episode_consolidation_selected",
+                stage="episode_consolidate",
+                turns=len(consolidation.get("turns") or []),
+                context_turns=len(consolidation.get("context_turns") or []),
+            )
             archived = await self._consolidate_episode_turns(consolidation)
             remaining = self.store.claim_episode_consolidation_candidate(
                 minimum=minimum
@@ -60,10 +78,25 @@ class TurnRunner(
             self.config.episode_raw_tail_turns, self._episode_raw_token_budget()
         )
         if candidate is None:
+            log_event(
+                logger,
+                logging.DEBUG,
+                "episode_maintenance_no_candidate",
+                stage="episode_anneal",
+                consolidation_pending=self.store.episode_consolidation_pending_count(),
+            )
             return False
         episode = candidate["episode"]
         episode_id = str(episode["id"])
         through_ordinal = int(candidate["through_ordinal"])
+        log_event(
+            logger,
+            logging.DEBUG,
+            "episode_anneal_selected",
+            stage="episode_anneal",
+            episode_id=episode_id,
+            through_ordinal=through_ordinal,
+        )
         turn_id = self._turn_id(
             "episode-anneal", episode_id, through_ordinal
         )
