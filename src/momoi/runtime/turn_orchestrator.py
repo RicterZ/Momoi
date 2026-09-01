@@ -1690,6 +1690,10 @@ class TurnOrchestrator:
             "purpose: review the whole day, understand what changed, and extract durable meaning"
         )
         current_input = _pack_user_context(
+            (
+                "workflow_contract",
+                _live_prompt(REFLECTION_PROMPT_PATH, REFLECTION_SYSTEM_PROMPT),
+            ),
             ("daily_reflection_record", reflection_record),
             (
                 "runtime_state",
@@ -1707,14 +1711,7 @@ class TurnOrchestrator:
             ("tool_timeline", tool_timeline),
         )
         current_input = cyber_keyword_pre_hook(current_input)
-        system = [
-            *self._system(),
-            {
-                "type": "text",
-                "text": _live_prompt(REFLECTION_PROMPT_PATH, REFLECTION_SYSTEM_PROMPT),
-                "cache_control": {"type": "ephemeral"},
-            },
-        ]
+        system = self._system()
         messages: list[dict[str, Any]] = [
             {
                 "role": "user",

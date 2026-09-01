@@ -102,6 +102,11 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                 ) -> ProviderResponse:
                     assert tools == [REFLECTION_FINISH_SPEC]
                     request = json.dumps(_messages, ensure_ascii=False)
+                    assert "Daily reflection contract" not in json.dumps(
+                        _system, ensure_ascii=False
+                    )
+                    assert "<workflow_contract>" in request
+                    assert "Daily reflection contract" in request
                     assert "<daily_reflection_record>" in request
                     assert "<tool_timeline>" in request
                     assert "arguments=" in request
