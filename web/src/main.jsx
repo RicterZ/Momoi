@@ -861,7 +861,7 @@ function ConversationLayout({ items, activeId, detail, token, onSelect, setDetai
           >
             <h3>{item.title}</h3>
             <p>
-              {item.working_summary ||
+              {item.narrative_summary ||
                 item.summary ||
                 item.topics?.join(" · ") ||
                 "暂无摘要"}
