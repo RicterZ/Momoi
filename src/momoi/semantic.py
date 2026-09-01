@@ -403,8 +403,16 @@ class SemanticRecallService:
                 query=True,
             )
         except Exception as error:
-            reason = f"{type(error).__name__}: {str(error)[:160]}"
-            log_event(logger, logging.WARNING, "semantic_query_fallback", reason=reason)
+            error_type = type(error).__name__
+            reason = f"{error_type}: {str(error)[:160]}"
+            log_event(
+                logger,
+                logging.WARNING,
+                "semantic_query_fallback",
+                reason=reason,
+                error_type=error_type,
+                query_batch_size=len(expressions),
+            )
             return DenseRecallEvidence(
                 space_id=self.snapshot.space_id,
                 calibration_profile=self.config.calibration_profile,
