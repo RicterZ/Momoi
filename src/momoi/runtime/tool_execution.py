@@ -57,7 +57,9 @@ MAX_TOOL_RESULT_TRUNCATION_ATTEMPTS = 16
 # Room for the reference field appended to every serialized tool result.
 _RESULT_REF_OVERHEAD = 64
 SIMILAR_SEND_BUBBLES_THRESHOLD = 0.75
-OWNER_BUBBLE_REQUEST_REMINDER = "[Only send_bubbles sends bubbles.]"
+OWNER_BUBBLE_REQUEST_REMINDER = (
+    "[Call send_bubbles to send bubbles. Never output assistant text.]"
+)
 
 
 def _owner_request_messages(
@@ -621,7 +623,7 @@ class ToolExecutionService:
                     turn_id=turn_id,
                     call_id=call_id,
                     round=llm_round,
-                    reason="end_turn_tool_required",
+                    reason="native_tool_call_required",
                 )
                 messages.extend(
                     [
