@@ -2084,6 +2084,33 @@ function ThinkingLayout({
   );
 }
 
+function RecallEvidenceGroup({ title, items, renderItem }) {
+  const [showAll, setShowAll] = useState(false);
+  const visibleItems = showAll ? items : items.slice(0, 4);
+  const hiddenCount = items.length - visibleItems.length;
+  return (
+    <section className="recall-evidence-group">
+      <div className="recall-evidence-group-head">
+        <h4>{title}</h4>
+        <span>{items.length} 条</span>
+      </div>
+      <ul>
+        {visibleItems.map(renderItem)}
+      </ul>
+      {hiddenCount > 0 ? (
+        <button
+          className="recall-evidence-more"
+          type="button"
+          onClick={() => setShowAll(true)}
+        >
+          查看其余 {hiddenCount} 条
+          <span aria-hidden="true">＋</span>
+        </button>
+      ) : null}
+    </section>
+  );
+}
+
 function RecallDetail({ recall }) {
   if (!recall) return null;
   const units = recall.units || [];
@@ -2093,83 +2120,95 @@ function RecallDetail({ recall }) {
   ];
   const episodes = recall.episodes || [];
   const evidenceCount = memories.length + episodes.length;
+  const searchCount = units.filter((unit) => unit.mode === "search").length;
+  const reuseCount = units.filter((unit) => unit.mode === "reuse").length;
   return (
-    <section className="recall-panel">
-      <div className="recall-panel-head">
-        <div>
-          <span className="panel-label">CONTEXT // RECALL</span>
-          <h3>上下文召回</h3>
+    <details className="recall-panel">
+      <summary className="recall-panel-head">
+        <div className="recall-panel-title">
+          <span className="panel-label">MOMOI // MEMORY LOAD</span>
+          <h3>本轮载入的记忆</h3>
+          <p>已为这轮思考准备好相关上下文</p>
         </div>
-      </div>
-      <div className="recall-units">
-        {units.map((unit, unitIndex) => (
-          <article className="recall-unit" key={unit.id}>
-            <div className="recall-unit-index" aria-hidden="true">
-              {String(unitIndex + 1).padStart(2, "0")}
-            </div>
-            <div className="recall-unit-body">
-              <div className="recall-unit-head">
+        <div className="recall-panel-summary" aria-label="召回摘要">
+          {searchCount ? <span>{searchCount} 个检索</span> : null}
+          {reuseCount ? <span>{reuseCount} 个沿用</span> : null}
+          {evidenceCount ? <span>{evidenceCount} 条依据</span> : null}
+        </div>
+        <span className="recall-panel-toggle" aria-hidden="true" />
+      </summary>
+      <div className="recall-panel-body">
+        <div className="recall-units">
+          {units.map((unit, unitIndex) => (
+            <article className="recall-unit" key={unit.id}>
+              <header className="recall-unit-head">
+                <span className="recall-unit-index" aria-hidden="true">
+                  SLOT {String(unitIndex + 1).padStart(2, "0")}
+                </span>
                 <span className={`recall-mode ${unit.mode === "reuse" ? "is-reuse" : "is-search"}`}>
                   {unit.mode === "reuse" ? "沿用" : unit.mode === "search" ? "检索" : "召回"}
                 </span>
+              </header>
+              <div className="recall-unit-body">
+                {unit.reused_from ? (
+                  <div className="recall-source">
+                    <span>沿用上一轮已经确认的召回范围</span>
+                    <a href={`#thinking/${encodeURIComponent(unit.reused_from)}`}>
+                      查看来源思考 <span aria-hidden="true">↗</span>
+                    </a>
+                  </div>
+                ) : null}
+                {!!unit.queries?.length && (
+                  <div className="recall-queries">
+                    {unit.queries.map((query, index) => (
+                      <div className="recall-query" key={`${unit.id}:${index}`}>
+                        <p>{query.semantic}</p>
+                        {!!query.keywords?.length && (
+                          <ul className="recall-keywords" aria-label="检索关键词">
+                            {query.keywords.map((keyword) => (
+                              <li key={keyword}>{keyword}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-              {unit.reused_from ? (
-                <div className="recall-source">
-                  <span>沿用上一轮已经确认的召回范围</span>
-                  <a href={`#thinking/${encodeURIComponent(unit.reused_from)}`}>
-                    查看来源思考 <span aria-hidden="true">↗</span>
-                  </a>
-                </div>
-              ) : null}
-              {!!unit.queries?.length && (
-                <div className="recall-queries">
-                  {unit.queries.map((query, index) => (
-                    <div className="recall-query" key={`${unit.id}:${index}`}>
-                      <p>{query.semantic}</p>
-                      {!!query.keywords?.length && (
-                        <ul className="recall-keywords" aria-label="检索关键词">
-                          {query.keywords.map((keyword) => (
-                            <li key={keyword}>{keyword}</li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </article>
-        ))}
-      </div>
-      {!!recall.episode_actions?.length && (
-        <section className="recall-archive" aria-labelledby="recall-archive-title">
-          <span className="recall-section-label" id="recall-archive-title">对话归档</span>
-          {recall.episode_actions.map((action, index) => (
-            <div className="recall-episode-action" key={`${action.action}:${action.episode_id || index}`}>
-              <span>{action.action === "continue" ? "继续记录" : action.action === "new" ? "新建记录" : "关联记录"}</span>
-              {action.episode_id ? (
-                <a href={`#conversations/${encodeURIComponent(action.episode_id)}`}>
-                  {action.title || "查看聊天记录"} <span aria-hidden="true">↗</span>
-                </a>
-              ) : (
-                <strong>{action.title || "未命名聊天记录"}</strong>
-              )}
-            </div>
+            </article>
           ))}
-        </section>
-      )}
-      {!!evidenceCount && (
-        <details className="recall-evidence">
-          <summary>
-            <span>召回依据</span>
-            <span>{evidenceCount} 条</span>
-          </summary>
-          <div className="recall-evidence-body">
-            {!!memories.length && (
-              <section className="recall-evidence-group">
-                <h4>记忆与复盘 <span>{memories.length}</span></h4>
-                <ul>
-                  {memories.map((item, index) => (
+        </div>
+        {!!recall.episode_actions?.length && (
+          <section className="recall-archive" aria-labelledby="recall-archive-title">
+            <div className="recall-archive-head">
+              <span className="recall-section-label" id="recall-archive-title">SAVE DATA // 对话归档</span>
+            </div>
+            {recall.episode_actions.map((action, index) => (
+              <div className="recall-episode-action" key={`${action.action}:${action.episode_id || index}`}>
+                <span>{action.action === "continue" ? "继续记录" : action.action === "new" ? "新建记录" : "关联记录"}</span>
+                {action.episode_id ? (
+                  <a href={`#conversations/${encodeURIComponent(action.episode_id)}`}>
+                    {action.title || "查看聊天记录"} <span aria-hidden="true">↗</span>
+                  </a>
+                ) : (
+                  <strong>{action.title || "未命名聊天记录"}</strong>
+                )}
+              </div>
+            ))}
+          </section>
+        )}
+        {!!evidenceCount && (
+          <details className="recall-evidence">
+            <summary>
+              <span className="recall-evidence-kicker">ARCHIVE // 召回依据</span>
+              <span>{evidenceCount} 条资料</span>
+            </summary>
+            <div className="recall-evidence-body">
+              {!!memories.length && (
+                <RecallEvidenceGroup
+                  title="记忆与复盘"
+                  items={memories}
+                  renderItem={(item, index) => (
                     <li key={`${item.source}:${item.kind}:${item.key || index}`}>
                       <div className="recall-evidence-meta">
                         <span>{memoryKindLabel(item.kind)}</span>
@@ -2177,34 +2216,33 @@ function RecallDetail({ recall }) {
                       </div>
                       <p>{item.content || "这条记录没有正文。"}</p>
                     </li>
-                  ))}
-                </ul>
-              </section>
-            )}
-            {!!episodes.length && (
-              <section className="recall-evidence-group">
-                <h4>相关聊天 <span>{episodes.length}</span></h4>
-                <ul>
-                  {episodes.map((item) => (
+                  )}
+                />
+              )}
+              {!!episodes.length && (
+                <RecallEvidenceGroup
+                  title="相关聊天"
+                  items={episodes}
+                  renderItem={(item) => (
                     <li key={item.id}>
                       <a className="recall-evidence-link" href={`#conversations/${encodeURIComponent(item.id)}`}>
                         {item.title || "未命名聊天记录"} <span aria-hidden="true">↗</span>
                       </a>
                       {item.summary ? <p>{item.summary}</p> : null}
                     </li>
-                  ))}
-                </ul>
-              </section>
-            )}
-          </div>
-        </details>
-      )}
-      {recall.semantic?.fallback_reason ? (
-        <p className="recall-warning">
-          向量召回降级：{recall.semantic.fallback_reason}
-        </p>
-      ) : null}
-    </section>
+                  )}
+                />
+              )}
+            </div>
+          </details>
+        )}
+        {recall.semantic?.fallback_reason ? (
+          <p className="recall-warning">
+            向量召回降级：{recall.semantic.fallback_reason}
+          </p>
+        ) : null}
+      </div>
+    </details>
   );
 }
 
