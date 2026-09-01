@@ -1108,7 +1108,7 @@ class ContextAssemblerTest(unittest.TestCase):
             reopened.close()
 
 
-    def test_turn_keywords_rank_episode_without_injecting_turn_evidence(
+    def test_turn_keywords_rank_episode_and_inject_matched_evidence(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1144,7 +1144,8 @@ class ContextAssemblerTest(unittest.TestCase):
             )
             self.assertIn("summary_quality: empty", recalled)
             self.assertNotIn("聊过家中物品的位置", recalled)
-            self.assertNotIn("蓝色保温杯藏在阁楼第三个纸箱里", recalled)
+            self.assertIn("matched_evidence:", recalled)
+            self.assertIn("蓝色保温杯藏在阁楼第三个纸箱里", recalled)
             retrieval = build_plan_retrieval(
                 store,
                 plan("蓝色保温杯 | 第三个纸箱", "episode-old"),
@@ -1172,7 +1173,7 @@ class ContextAssemblerTest(unittest.TestCase):
                 retrieval,
                 1000,
             )
-            self.assertNotIn(
+            self.assertIn(
                 "蓝色保温杯藏在阁楼第三个纸箱里",
                 "\n".join(assembled.values()),
             )

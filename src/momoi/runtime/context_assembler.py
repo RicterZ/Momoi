@@ -778,12 +778,45 @@ def _episode_header(episode: dict[str, object], selected: dict[str, object]) -> 
     return f"[episode {' '.join(parts)}]"
 
 
+def _episode_match_lines(
+    selected: dict[str, object],
+    token_budget: int,
+    exclude_message_ids: set[int],
+) -> list[str]:
+    matches = [
+        match
+        for match in selected.get("matches") or []
+        if isinstance(match, dict)
+        and match.get("id") not in exclude_message_ids
+        and str(match.get("content") or "").strip()
+    ][:3]
+    if not matches or token_budget <= 0:
+        return []
+    per_match = max(1, token_budget // len(matches))
+    lines = ["matched_evidence:"]
+    for match in matches:
+        role = str(match.get("role") or "")
+        delivery = str(match.get("delivery_state") or "")
+        if role == "user":
+            source = "OWNER"
+        elif role == "assistant":
+            source = f"MOMOI delivery={delivery or 'unknown'}"
+        else:
+            source = role.upper() or "UNKNOWN"
+        lines.append(
+            f"- [{source} timestamp={match.get('timestamp') or '?'} "
+            f"turn={match.get('turn_id') or '?'}] "
+            f"{truncate_tokens(str(match['content']), per_match)}"
+        )
+    return lines
+
+
 def _episode_context(
     store: Store,
     episodes: object,
     summary_token_budget: int,
-    _raw_token_budget: int = 0,
-    _exclude_message_ids: set[int] | None = None,
+    raw_token_budget: int = 0,
+    exclude_message_ids: set[int] | None = None,
     skip_empty_webhook: bool = False,
 ) -> str:
     if not isinstance(episodes, list):
@@ -796,6 +829,15 @@ def _episode_context(
     if not existing or summary_token_budget <= 0:
         return ""
     per_summary = max(1, summary_token_budget // len(existing))
+    per_raw = max(
+        1,
+        min(
+            per_summary,
+            (raw_token_budget or summary_token_budget) // len(existing),
+        )
+        // 2,
+    )
+    excluded = exclude_message_ids or set()
     sections: list[str] = []
     quality_counts: dict[str, int] = {}
     for selected in existing:
@@ -815,15 +857,18 @@ def _episode_context(
         summary, quality = _episode_summary(episode)
         quality_counts[quality] = quality_counts.get(quality, 0) + 1
         lines.append(f"summary_quality: {quality}")
+        lines.extend(_episode_match_lines(selected, per_raw, excluded))
         if summary:
-            lines.append(f"summary: {truncate_tokens(summary, per_summary)}")
+            lines.append(
+                f"summary: {truncate_tokens(summary, max(1, per_summary - per_raw))}"
+            )
         if episode["topics"]:
             lines.append(f"topics: {json.dumps(episode['topics'], ensure_ascii=False)}")
         if episode["open_loops"]:
             lines.append(
                 f"open_loops: {json.dumps(episode['open_loops'], ensure_ascii=False)}"
             )
-        sections.append("\n".join(lines))
+        sections.append(truncate_tokens("\n".join(lines), per_summary))
     rendered = "\n\n".join(sections)
     log_event(
         logger,
