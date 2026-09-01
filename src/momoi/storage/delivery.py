@@ -154,12 +154,12 @@ class DeliveryStore:
     @staticmethod
     def _webhook_day_episode(when: float, workflow_id: str) -> tuple[str, str]:
         day = datetime.fromtimestamp(when).astimezone().date().isoformat()
-        return f"webhook:{workflow_id}:day:{day}", f"Webhook {workflow_id} {day}"
+        return f"webhook:{workflow_id}:day:{day}", f"Webhook {workflow_id}"
 
     @staticmethod
     def _heartbeat_day_episode(when: float) -> tuple[str, str]:
         day = datetime.fromtimestamp(when).astimezone().date().isoformat()
-        return f"heartbeat:day:{day}", f"Heartbeat {day}"
+        return f"heartbeat:day:{day}", "心跳"
 
     def _heartbeat_turn_time(self, turn_id: str, fallback: float) -> float:
         row = self._db.execute(

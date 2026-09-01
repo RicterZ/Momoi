@@ -795,7 +795,7 @@ class StorageMemoryTest(unittest.TestCase):
                 heartbeat_archive_id = store._ensure_autonomous_episode(
                     "heartbeat:day:2026-08-25",
                     "heartbeat:run:0",
-                    "Heartbeat 2026-08-25",
+                    "心跳",
                     now + 1,
                     "休息一下",
                 )
@@ -817,7 +817,7 @@ class StorageMemoryTest(unittest.TestCase):
             archive_ids = {webhook_archive_id, heartbeat_archive_id, goal_archive_id}
             self.assertEqual(store._runtime_archive_kind(goal_archive_id), "goal")
             heartbeat_title = store.episode(heartbeat_archive_id)["title"]
-            self.assertEqual(heartbeat_title, "Heartbeat 2026-08-25")
+            self.assertEqual(heartbeat_title, "心跳 · 2026-08-25")
             dashboard = {
                 item["id"]: item["title"]
                 for item in store.list_dashboard_conversations(8)
