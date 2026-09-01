@@ -447,13 +447,11 @@ RECALL_TOOL_SPEC: dict[str, Any] = {
                                     "type": "string",
                                     "enum": ["none", "continue", "new"],
                                     "description": (
-                                        "Episode continuity is not conversational "
-                                        "continuity. Use none by default for ordinary "
-                                        "chat, banter, reactions and transient moments. "
-                                        "continue only when this Turn directly advances "
-                                        "the same concrete experience represented by the "
-                                        "Episode; new only for a distinct experience "
-                                        "already worth retaining."
+                                        "none by default; continue only when this Turn "
+                                        "directly advances the same concrete experience; "
+                                        "new only for a distinct experience worth retaining. "
+                                        "Conversation proximity, shared mood, time or "
+                                        "setting do not establish continuity."
                                     ),
                                 },
                                 "ref": {
