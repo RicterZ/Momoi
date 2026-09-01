@@ -110,6 +110,7 @@ USER_CONTEXT_SECTION_ORDER = (
     "runtime_directives",
     "conversation_state",
     "runtime_state",
+    "workflow_contract",
     "followup",
     "due_goal",
     "reflection_scope",
