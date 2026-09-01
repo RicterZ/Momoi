@@ -164,7 +164,7 @@ class ContextService:
                 self.config.transcript_turns_min,
                 self.config.transcript_turns_max,
             ),
-            self.config.recent_raw_tokens,
+            self._context_compaction_tokens(),
             min(event.received_at for event in events),
         )
         candidate_ids = {
@@ -413,4 +413,3 @@ class ContextService:
                 self.config.summary_tokens,
             ),
         }
-

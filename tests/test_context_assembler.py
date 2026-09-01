@@ -29,7 +29,6 @@ def config(
         llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
         channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
         system_prompt="test",
-        recent_raw_tokens=2000,
         transcript_turns_min=4,
         transcript_turns_max=4,
         episode_raw_tail_turns=2,
@@ -1015,7 +1014,7 @@ class ContextAssemblerTest(unittest.TestCase):
             )
             store._db.commit()
 
-            recalled = recall_episode_context(store, secret, 3, 1000, 1000)
+            recalled = recall_episode_context(store, secret, 3, 1000)
 
             self.assertIn("summary_quality: empty", recalled)
             self.assertNotIn("曾经谈过一个暗号", recalled)
@@ -1140,7 +1139,7 @@ class ContextAssemblerTest(unittest.TestCase):
             )
 
             recalled = recall_episode_context(
-                store, "蓝色保温杯 | 第三个纸箱", 3, 1000, 1000
+                store, "蓝色保温杯 | 第三个纸箱", 3, 1000
             )
             self.assertIn("summary_quality: empty", recalled)
             self.assertNotIn("聊过家中物品的位置", recalled)
@@ -1205,12 +1204,12 @@ class ContextAssemblerTest(unittest.TestCase):
             self.assertEqual(candidate["turns"][0]["turn_id"], "fallback")
             self.assertNotIn(
                 "这轮仍然会归档",
-                recall_episode_context(store, "规划器失败 归档", 3, 1000, 1000),
+                recall_episode_context(store, "规划器失败 归档", 3, 1000),
             )
             store.mark_ambiguous(int(outbox_id), 1, "timeout")
             self.assertNotIn(
                 "这轮仍然会归档",
-                recall_episode_context(store, "规划器失败 归档", 3, 1000, 1000),
+                recall_episode_context(store, "规划器失败 归档", 3, 1000),
             )
             store.mark_sent(int(outbox_id))
             self.assertEqual(
@@ -1385,7 +1384,7 @@ class ContextAssemblerTest(unittest.TestCase):
             self.assertIn("项目邮件关系到当前合作", rendered)
             self.assertIn("goal-mail", rendered)
             self.assertIn("goal-social", rendered)
-            autonomous = recall_episode_context(store, "项目邮件", 3, 2000, 2000)
+            autonomous = recall_episode_context(store, "项目邮件", 3, 2000)
             self.assertNotIn("较早的项目邮件仍在等待", autonomous)
             self.assertIn("summary_quality: empty", autonomous)
             self.assertNotIn("最近聊过微博上的猫", autonomous)

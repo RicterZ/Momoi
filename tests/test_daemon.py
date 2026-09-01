@@ -473,6 +473,24 @@ class DaemonTest(unittest.TestCase):
         self.assertEqual(messages[0]["content"], "当前消息")
         self.assertLessEqual(estimated, 5000)
 
+    def test_context_budget_compacts_at_configured_ratio(self) -> None:
+        daemon = object.__new__(MomoiDaemon)
+        daemon.config = SimpleNamespace(
+            max_input_tokens=10000,
+            context_compaction_ratio=0.5,
+        )
+        messages = [
+            {"role": "user", "content": "旧历史" * 2000},
+            {"role": "user", "content": "当前消息"},
+        ]
+
+        remaining = daemon._fit_context(
+            [{"type": "text", "text": "system"}], messages, [], 1
+        )
+
+        self.assertEqual(remaining, 0)
+        self.assertEqual(messages, [{"role": "user", "content": "当前消息"}])
+
     def test_context_budget_breaks_expanding_compression_and_keeps_going(
         self,
     ) -> None:
@@ -634,7 +652,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
                     channel=NapCatConfig("ws://127.0.0.1", "20000", 0.1, 1, 30, 30, 20),
                     system_prompt="test",
-                    recent_raw_tokens=1000,
                     transcript_turns_min=4,
                     transcript_turns_max=4,
                     episode_raw_tail_turns=2,
@@ -684,7 +701,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         "ws://127.0.0.1", "20000", 0.05, 1, 30, 30, 20
                     ),
                     system_prompt="test",
-                    recent_raw_tokens=1000,
                     transcript_turns_min=4,
                     transcript_turns_max=4,
                     episode_raw_tail_turns=2,
@@ -788,7 +804,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
                     channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                     system_prompt="test",
-                    recent_raw_tokens=1000,
                     transcript_turns_min=4,
                     transcript_turns_max=4,
                     episode_raw_tail_turns=2,
@@ -938,7 +953,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         "ws://127.0.0.1", "20000", 0.01, 1, 30, 30, 20
                     ),
                     system_prompt="test",
-                    recent_raw_tokens=1000,
                     transcript_turns_min=4,
                     transcript_turns_max=4,
                     episode_raw_tail_turns=2,
@@ -1005,7 +1019,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
                     channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                     system_prompt="test",
-                    recent_raw_tokens=1000,
                     transcript_turns_min=4,
                     transcript_turns_max=4,
                     episode_raw_tail_turns=2,
@@ -1042,7 +1055,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
                     channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                     system_prompt="test",
-                    recent_raw_tokens=1000,
                     transcript_turns_min=4,
                     transcript_turns_max=4,
                     episode_raw_tail_turns=2,
@@ -1104,7 +1116,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
                     ),
                     system_prompt="test",
-                    recent_raw_tokens=1000,
                     transcript_turns_min=4,
                     transcript_turns_max=4,
                     episode_raw_tail_turns=2,
@@ -1148,7 +1159,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
                     channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                     system_prompt="test",
-                    recent_raw_tokens=1000,
                     transcript_turns_min=4,
                     transcript_turns_max=4,
                     episode_raw_tail_turns=2,
@@ -1194,7 +1204,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
                     ),
                     system_prompt="test",
-                    recent_raw_tokens=1000,
                     transcript_turns_min=4,
                     transcript_turns_max=4,
                     episode_raw_tail_turns=2,
@@ -1296,7 +1305,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
                     ),
                     system_prompt="test",
-                    recent_raw_tokens=1000,
                     transcript_turns_min=4,
                     transcript_turns_max=4,
                     episode_raw_tail_turns=2,
@@ -1422,7 +1430,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         20,
                     ),
                     system_prompt="test",
-                    recent_raw_tokens=1000,
                     transcript_turns_min=4,
                     transcript_turns_max=4,
                     episode_raw_tail_turns=2,
@@ -1507,7 +1514,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
                     channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                     system_prompt="test",
-                    recent_raw_tokens=1000,
                     transcript_turns_min=4,
                     transcript_turns_max=4,
                     episode_raw_tail_turns=2,
@@ -1541,7 +1547,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
                     channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                     system_prompt="test",
-                    recent_raw_tokens=1000,
                     transcript_turns_min=4,
                     transcript_turns_max=4,
                     episode_raw_tail_turns=2,
@@ -1664,7 +1669,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
                     channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                     system_prompt="test",
-                    recent_raw_tokens=1000,
                     transcript_turns_min=4,
                     transcript_turns_max=4,
                     episode_raw_tail_turns=2,
@@ -1691,7 +1695,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
                     channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                     system_prompt="test",
-                    recent_raw_tokens=1000,
                     transcript_turns_min=4,
                     transcript_turns_max=4,
                     episode_raw_tail_turns=2,
@@ -1770,7 +1773,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
                 channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="test",
-                recent_raw_tokens=1000,
                 transcript_turns_min=4,
                 transcript_turns_max=4,
                 episode_raw_tail_turns=2,
@@ -2036,7 +2038,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
                 channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
-                recent_raw_tokens=1000,
                 transcript_turns_min=4,
                 transcript_turns_max=4,
                 episode_raw_tail_turns=2,
@@ -2084,7 +2085,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
                     ),
                     system_prompt="test",
-                    recent_raw_tokens=1000,
                     transcript_turns_min=4,
                     transcript_turns_max=4,
                     episode_raw_tail_turns=2,
@@ -2219,7 +2219,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
                     ),
                     system_prompt="test",
-                    recent_raw_tokens=1000,
                     transcript_turns_min=4,
                     transcript_turns_max=4,
                     episode_raw_tail_turns=2,
@@ -2374,7 +2373,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
                     ),
                     system_prompt="test",
-                    recent_raw_tokens=1000,
                     transcript_turns_min=4,
                     transcript_turns_max=4,
                     episode_raw_tail_turns=2,
@@ -2552,7 +2550,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
                 channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
-                recent_raw_tokens=1000,
                 transcript_turns_min=4,
                 transcript_turns_max=4,
                 episode_raw_tail_turns=2,
@@ -2602,7 +2599,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
                 channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
-                recent_raw_tokens=1000,
                 transcript_turns_min=4,
                 transcript_turns_max=4,
                 episode_raw_tail_turns=2,
@@ -2642,7 +2638,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
                 channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
-                recent_raw_tokens=1000,
                 transcript_turns_min=4,
                 transcript_turns_max=4,
                 episode_raw_tail_turns=2,
@@ -2684,7 +2679,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
                 channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
-                recent_raw_tokens=1000,
                 transcript_turns_min=12,
                 transcript_turns_max=12,
                 episode_raw_tail_turns=6,
@@ -2723,7 +2717,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
                 channel=NapCatConfig("ws://127.0.0.1", "20000", 0.01, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
-                recent_raw_tokens=1000,
                 transcript_turns_min=4,
                 transcript_turns_max=4,
                 episode_raw_tail_turns=2,
@@ -2832,7 +2825,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
                 channel=NapCatConfig("ws://127.0.0.1", "20000", 0.01, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
-                recent_raw_tokens=1000,
                 transcript_turns_min=4,
                 transcript_turns_max=4,
                 episode_raw_tail_turns=2,
@@ -3076,7 +3068,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         send_timeout_seconds=1,
                     ),
                     system_prompt="You are Momoi.",
-                    recent_raw_tokens=1000,
                     transcript_turns_min=12,
                     transcript_turns_max=12,
                     episode_raw_tail_turns=6,

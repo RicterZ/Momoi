@@ -1636,12 +1636,14 @@ class ToolExecutionService:
                 )
             )
 
+        hard_limit = self.config.max_input_tokens
+        compaction_limit = min(hard_limit, self._context_compaction_tokens())
         estimated = size()
         dropped = 0
         truncated = 0
         compression_breakers = 0
         # ponytail: repeated estimation is fine at single-user scale; profile before optimizing.
-        while estimated > self.config.max_input_tokens and history_messages:
+        while estimated > compaction_limit and history_messages:
             messages.pop(0)
             history_messages -= 1
             dropped += 1
@@ -1653,14 +1655,14 @@ class ToolExecutionService:
                 history_messages -= 1
                 dropped += 1
             estimated = size()
-        if estimated > self.config.max_input_tokens:
+        if estimated > compaction_limit:
             for message in messages:
                 content = message.get("content")
                 if not isinstance(content, list):
                     continue
                 for block in content:
                     if (
-                        estimated <= self.config.max_input_tokens
+                        estimated <= compaction_limit
                         or not isinstance(block, dict)
                         or block.get("type") != "tool_result"
                     ):
@@ -1670,7 +1672,7 @@ class ToolExecutionService:
                     while (
                         isinstance(result, str)
                         and len(result) > 1000
-                        and estimated > self.config.max_input_tokens
+                        and estimated > compaction_limit
                     ):
                         if attempts >= MAX_TOOL_RESULT_TRUNCATION_ATTEMPTS:
                             compression_breakers += 1
@@ -1682,7 +1684,7 @@ class ToolExecutionService:
                                 attempts=attempts,
                                 result_chars=len(result),
                                 estimated_input=estimated,
-                                input_limit=self.config.max_input_tokens,
+                                input_limit=compaction_limit,
                             )
                             break
                         attempts += 1
@@ -1704,7 +1706,7 @@ class ToolExecutionService:
                                 before_chars=len(result),
                                 after_chars=len(candidate),
                                 estimated_input=estimated,
-                                input_limit=self.config.max_input_tokens,
+                                input_limit=compaction_limit,
                             )
                             break
                         before_estimated = estimated
@@ -1723,7 +1725,7 @@ class ToolExecutionService:
                                 after_chars=len(candidate),
                                 before_estimated=before_estimated,
                                 after_estimated=candidate_estimated,
-                                input_limit=self.config.max_input_tokens,
+                                input_limit=compaction_limit,
                             )
                             break
                         result = candidate
@@ -1734,18 +1736,19 @@ class ToolExecutionService:
             TRACE,
             "llm_context_fit",
             estimated_input=estimated,
-            input_limit=self.config.max_input_tokens,
+            compaction_limit=compaction_limit,
+            input_limit=hard_limit,
             history_dropped=dropped,
             tool_results_truncated=truncated,
             compression_breakers=compression_breakers,
         )
-        if estimated > self.config.max_input_tokens:
+        if estimated > hard_limit:
             log_event(
                 logger,
                 logging.WARNING,
                 "llm_context_oversize",
                 estimated_input=estimated,
-                input_limit=self.config.max_input_tokens,
+                input_limit=hard_limit,
                 single_turn_context=history_messages == 0,
                 proceeding=True,
                 history_dropped=dropped,

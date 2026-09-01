@@ -20,7 +20,6 @@ class AutonomousQueueTests(unittest.IsolatedAsyncioTestCase):
                         "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
                     ),
                     system_prompt="test",
-                    recent_raw_tokens=1000,
                     transcript_turns_min=4,
                     transcript_turns_max=4,
                     episode_raw_tail_turns=2,

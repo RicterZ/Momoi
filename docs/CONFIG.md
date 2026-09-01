@@ -160,13 +160,13 @@ All fields must be positive.
   "context": {
     "soul_prompt": "prompts/SOUL.md",
     "heartbeat_prompt": "prompts/HEARTBEAT.md",
-    "recent_raw_tokens": 32000,
     "transcript_turns_min": 48,
     "transcript_turns_max": 96,
     "episode_raw_tail_turns": 6,
     "memory_results": 6,
     "memory_tokens": 8000,
-    "max_input_tokens": 96000,
+    "max_input_tokens": 142222,
+    "context_compaction_ratio": 0.9,
     "summary_results": 8,
     "summary_tokens": 6000
   }
@@ -177,17 +177,20 @@ All fields must be positive.
 | --- | --- | --- |
 | `soul_prompt` | `prompts/SOUL.md` | Required, non-empty persona file |
 | `heartbeat_prompt` | `prompts/HEARTBEAT.md` | Optional heartbeat guidance file |
-| `recent_raw_tokens` | `32000` | Native transcript token budget and Episode-maintenance raw-evidence budget; minimum `1` |
 | `transcript_turns_min` | `48` | Recent completed Turns retained after the transcript window slides; minimum `1` |
 | `transcript_turns_max` | `96` | High watermark at which the transcript window slides back to `transcript_turns_min`; cannot be lower than the minimum |
 | `episode_raw_tail_turns` | `6` | Raw tail Turns retained outside the summary for an open Episode; its normal annealing threshold is twice this value; minimum `1` |
 | `memory_results` | `6` | Per-category top-k for confirmed recall memory and reflection memory; range `0`–`6`, and `0` disables both (combined maximum `12`) |
 | `memory_tokens` | `8000` | Durable-memory context budget; minimum `0` |
-| `max_input_tokens` | `96000` | Target ceiling for complete model input; minimum `1000` |
+| `max_input_tokens` | `142222` | Upper budget for the complete model input; minimum `1000` |
+| `context_compaction_ratio` | `0.9` | Fraction of `max_input_tokens` at which old transcript and current-Turn tool results begin compacting; range `(0, 1]`. The defaults compact at 128,000 tokens. |
 | `summary_results` | `8` | Maximum query-recalled Episodes, configurable up to `12`; `0` disables query recall |
 | `summary_tokens` | `6000` | Merged Episode-summary token budget; `0` disables this layer |
 
-`max_input_tokens` should remain below the provider's actual context window.
+`max_input_tokens` should remain below the provider's actual context window. The
+48–96 Turn transcript watermark and the complete-request token watermark are
+independent safeguards. Episode raw evidence uses a budget derived from the same
+compaction watermark; it has no separate token setting.
 
 ## Storage
 

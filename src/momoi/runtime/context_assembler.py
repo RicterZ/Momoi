@@ -999,7 +999,6 @@ def recall_episode_context(
     query: str,
     max_results: int,
     summary_token_budget: int,
-    raw_token_budget: int,
     *,
     skip_empty_webhook: bool = False,
     exclude_turn_ids: set[str] | None = None,
@@ -1039,6 +1038,6 @@ def recall_episode_context(
         store,
         episodes,
         summary_token_budget,
-        raw_token_budget,
+        summary_token_budget,
         skip_empty_webhook=skip_empty_webhook,
     )

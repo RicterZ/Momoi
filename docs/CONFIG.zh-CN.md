@@ -158,13 +158,13 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
   "context": {
     "soul_prompt": "prompts/SOUL.md",
     "heartbeat_prompt": "prompts/HEARTBEAT.md",
-    "recent_raw_tokens": 32000,
     "transcript_turns_min": 48,
     "transcript_turns_max": 96,
     "episode_raw_tail_turns": 6,
     "memory_results": 6,
     "memory_tokens": 8000,
-    "max_input_tokens": 96000,
+    "max_input_tokens": 142222,
+    "context_compaction_ratio": 0.9,
     "summary_results": 8,
     "summary_tokens": 6000
   }
@@ -175,17 +175,19 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
 | --- | --- | --- |
 | `soul_prompt` | `prompts/SOUL.md` | 必需且非空的人格文件 |
 | `heartbeat_prompt` | `prompts/HEARTBEAT.md` | 可选的心跳指导文件 |
-| `recent_raw_tokens` | `32000` | 原生 transcript 的 token 预算，同时用于 Episode 维护的原始证据预算；最小值为 `1` |
 | `transcript_turns_min` | `48` | transcript 滑动后保留的最近已完成 Turn 数；最小值为 `1` |
 | `transcript_turns_max` | `96` | transcript 增长到此水位时滑回 `transcript_turns_min`；不得小于最小水位 |
 | `episode_raw_tail_turns` | `6` | 开放 Episode 在摘要之外保留的原始尾部 Turn 数；其常规退火阈值为该值的两倍；最小值为 `1` |
 | `memory_results` | `6` | 已确认召回记忆与复盘记忆各自的 top-k；范围为 `0`–`6`，设为 `0` 时关闭两者（合计最多 `12` 条） |
 | `memory_tokens` | `8000` | 持久记忆上下文预算；最小值为 `0` |
-| `max_input_tokens` | `96000` | 完整模型输入的目标上限；最小值为 `1000` |
+| `max_input_tokens` | `142222` | 完整模型输入的上限预算；最小值为 `1000` |
+| `context_compaction_ratio` | `0.9` | 达到 `max_input_tokens` 此比例时开始压缩旧 transcript 和当前 Turn 工具结果；范围为 `(0, 1]`。默认在 128,000 tokens 开始压缩。 |
 | `summary_results` | `8` | 查询召回的 Episode 上限，最多可配置为 `12`；`0` 关闭查询召回 |
 | `summary_tokens` | `6000` | 合并后 Episode 摘要的 token 预算；`0` 关闭该层 |
 
-`max_input_tokens` 应低于 Provider 的实际上下文窗口。
+`max_input_tokens` 应低于 Provider 的实际上下文窗口。48–96 Turn transcript
+水位与完整请求 token 水位是两道相互独立的保护。Episode 原始证据额度也从同一
+压缩水位派生，不再单独配置 token 预算。
 
 ## 存储
 

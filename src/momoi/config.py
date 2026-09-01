@@ -122,7 +122,6 @@ class AppConfig:
     llm: LLMConfig
     channel: object
     system_prompt: str
-    recent_raw_tokens: int
     transcript_turns_min: int
     transcript_turns_max: int
     episode_raw_tail_turns: int
@@ -130,7 +129,8 @@ class AppConfig:
     memory_tokens: int
     database: Path
     log_level: str
-    max_input_tokens: int = 96000
+    max_input_tokens: int = 142222
+    context_compaction_ratio: float = 0.9
     summary_results: int = 8
     summary_tokens: int = 6000
     soul_prompt: str = ""
@@ -160,6 +160,11 @@ class AppConfig:
     @property
     def channel_configs(self) -> tuple[object, ...]:
         return self.channels or (self.channel,)
+
+    @property
+    def context_compaction_tokens(self) -> int:
+        return max(1, round(self.max_input_tokens * self.context_compaction_ratio))
+
 
 def _mapping(value: Any, name: str) -> dict[str, Any]:
     if not isinstance(value, dict):
@@ -475,8 +480,13 @@ def load_config(path: str | Path) -> AppConfig:
     ):
         raise ConfigError("autonomy.allowed_tools must be an array of tool names")
     max_input_tokens = max(
-        1000, int(context_raw.get("max_input_tokens", 96000))
+        1000, int(context_raw.get("max_input_tokens", 142222))
     )
+    context_compaction_ratio = float(
+        context_raw.get("context_compaction_ratio", 0.9)
+    )
+    if not 0 < context_compaction_ratio <= 1:
+        raise ConfigError("context.context_compaction_ratio must be between 0 and 1")
     transcript_turns_min = max(1, int(context_raw.get("transcript_turns_min", 48)))
     transcript_turns_max = max(
         transcript_turns_min,
@@ -504,7 +514,6 @@ def load_config(path: str | Path) -> AppConfig:
         ),
         channel=channel_config,
         system_prompt=system_prompt,
-        recent_raw_tokens=max(1, int(context_raw.get("recent_raw_tokens", 32000))),
         transcript_turns_min=transcript_turns_min,
         transcript_turns_max=transcript_turns_max,
         episode_raw_tail_turns=episode_raw_tail_turns,
@@ -513,6 +522,7 @@ def load_config(path: str | Path) -> AppConfig:
         database=database,
         log_level=str(logging_raw.get("level", "DEBUG")).upper(),
         max_input_tokens=max_input_tokens,
+        context_compaction_ratio=context_compaction_ratio,
         summary_results=min(
             12, max(0, int(context_raw.get("summary_results", 8)))
         ),

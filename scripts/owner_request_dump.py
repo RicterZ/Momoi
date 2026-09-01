@@ -117,7 +117,8 @@ def main() -> int:
     parser.add_argument("--offset", type=int, default=0, help="0 is the newest Owner Turn")
     parser.add_argument("--transcript-turns-min", type=int, default=48)
     parser.add_argument("--transcript-turns-max", type=int, default=96)
-    parser.add_argument("--recent-raw-tokens", type=int, default=32000)
+    parser.add_argument("--max-input-tokens", type=int, default=142222)
+    parser.add_argument("--context-compaction-ratio", type=float, default=0.9)
     parser.add_argument("--summary-tokens", type=int, default=6000)
     args = parser.parse_args()
 
@@ -144,7 +145,7 @@ def main() -> int:
     )
     conversation_rows = store.recent_conversation_messages(
         turn_limit,
-        args.recent_raw_tokens,
+        round(args.max_input_tokens * args.context_compaction_ratio),
         float(subject["started_at"]),
     )
     transcript = build_transcript(

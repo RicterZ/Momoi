@@ -190,7 +190,6 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                 llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
                 channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="contract\n{{SOUL}}\n{{CAPABILITY_POLICIES}}",
-                recent_raw_tokens=1000,
                 transcript_turns_min=4,
                 transcript_turns_max=4,
                 episode_raw_tail_turns=2,
