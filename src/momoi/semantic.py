@@ -16,6 +16,11 @@ from .storage import MemoryRecallQuery, Store, decode_vector
 from .storage.episode_ranking import EpisodeRecallQuery
 
 logger = logging.getLogger(__name__)
+
+
+def semantic_error_category(error: BaseException) -> str:
+    """Classify embedding failures without changing the fallback payload."""
+    return "timeout" if isinstance(error, TimeoutError) else "error"
 QUERY_INSTRUCTION = "为这个句子生成表示以用于检索相关文章："
 CALIBRATION_PROFILES: dict[str, dict[str, tuple[float, float, float]]] = {
     # Calibrated against the private historical benchmark for this model. The
@@ -405,12 +410,14 @@ class SemanticRecallService:
         except Exception as error:
             error_type = type(error).__name__
             reason = f"{error_type}: {str(error)[:160]}"
+            category = semantic_error_category(error)
             log_event(
                 logger,
                 logging.WARNING,
                 "semantic_query_fallback",
                 reason=reason,
                 error_type=error_type,
+                category=category,
                 query_batch_size=len(expressions),
             )
             return DenseRecallEvidence(

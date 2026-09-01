@@ -11,6 +11,7 @@ from momoi.semantic import (
     DenseMemoryHit,
     DenseRecallEvidence,
     SemanticRecallService,
+    semantic_error_category,
 )
 from momoi.storage import MemoryRecallQuery, Store, encode_vector
 from momoi.storage.episode_ranking import EpisodeRecallQuery, rank_episode_matches
@@ -29,6 +30,10 @@ def vector(first: float = 1.0, second: float = 0.0) -> list[float]:
 
 
 class SemanticRecallTest(unittest.TestCase):
+    def test_semantic_error_category(self) -> None:
+        self.assertEqual(semantic_error_category(TimeoutError("slow")), "timeout")
+        self.assertEqual(semantic_error_category(ConnectionError("offline")), "error")
+
     def setUp(self) -> None:
         self.directory = TemporaryDirectory()
         self.store = Store(Path(self.directory.name) / "momoi.sqlite3")
