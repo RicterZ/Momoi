@@ -1482,6 +1482,7 @@ class TurnOrchestrator:
             "Use tools before claiming searches, observations, file work, or other results."
         )
         current_input = _pack_user_context(
+            ("workflow_contract", self._heartbeat_system_prompt()),
             ("autonomous_heartbeat", heartbeat_event),
             (
                 "runtime_state",
@@ -1519,14 +1520,7 @@ class TurnOrchestrator:
             ("recall_memories", recalled["recall_memories"]),
             ("reflection_memories", recalled["reflection_memories"]),
         )
-        system = [
-            *self._system(),
-            {
-                "type": "text",
-                "text": self._heartbeat_system_prompt(),
-                "cache_control": {"type": "ephemeral"},
-            },
-        ]
+        system = self._system()
         context_message = _context_data_message(
             ("long_term_memories", recalled["long_term_memories"]),
             ("recent_memories", recalled["recent_memories"]),

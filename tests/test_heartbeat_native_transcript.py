@@ -44,6 +44,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                 return degraded_heartbeat_plan("resting", "test")
 
             class Provider:
+                first_system: object = None
                 first_messages: list[dict[str, object]] = []
 
                 async def complete(
@@ -53,6 +54,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                     _tools: list[dict[str, object]],
                     **_kwargs: object,
                 ) -> ProviderResponse:
+                    self.first_system = copy.deepcopy(_system)
                     self.first_messages = copy.deepcopy(messages)
                     call = ToolCall(
                         "finish",
@@ -96,6 +98,9 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             )
 
             rendered = str(provider.first_messages)
+            self.assertNotIn("Autonomous heartbeat contract", str(provider.first_system))
+            self.assertIn("<workflow_contract>", rendered)
+            self.assertIn("Autonomous heartbeat contract", rendered)
             self.assertNotIn("<recent_turn_base>", rendered)
             self.assertNotIn("<recent_turn_append>", rendered)
             self.assertIn("<autonomous_heartbeat>", rendered)
