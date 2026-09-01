@@ -358,6 +358,11 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
 
     def _initialize_database(self) -> None:
         self._db.executescript(Path(__file__).with_name("schema.sql").read_text())
+        columns = {row[1] for row in self._db.execute("PRAGMA table_info(conversation_episodes)")}
+        if "archive_kind" not in columns:
+            self._db.execute("ALTER TABLE conversation_episodes ADD COLUMN archive_kind TEXT")
+        if "archive_day" not in columns:
+            self._db.execute("ALTER TABLE conversation_episodes ADD COLUMN archive_day TEXT")
         now = time.time()
         self._db.execute(
             """INSERT OR IGNORE INTO self_state
@@ -1903,6 +1908,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         *recall_values: object,
     ) -> str:
         day_match = re.search(r":day:(\d{4}-\d{2}-\d{2})$", episode_key)
+        archive_kind = episode_key.split(":", 1)[0] if episode_key.startswith(("goal:", "heartbeat:", "webhook:")) else None
         if day_match:
             title = f"{title} · {day_match.group(1)}"
         episode_id = uuid.uuid5(
@@ -1916,9 +1922,9 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         )
         self._db.execute(
             """INSERT OR IGNORE INTO conversation_episodes
-               (id, title, salience, created_at, updated_at)
-               VALUES (?, ?, 0.4, ?, ?)""",
-            (episode_id, title[:200], now, now),
+               (id, title, salience, created_at, updated_at, archive_kind, archive_day)
+               VALUES (?, ?, 0.4, ?, ?, ?, ?)""",
+            (episode_id, title[:200], now, now, archive_kind, day_match.group(1) if day_match else None),
         )
         visited_successors: set[str] = set()
         while episode_id not in visited_successors:
@@ -1955,9 +1961,9 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             ).hex
             self._db.execute(
                 """INSERT OR IGNORE INTO conversation_episodes
-                   (id, title, salience, created_at, updated_at)
-                   VALUES (?, ?, 0.4, ?, ?)""",
-                (episode_id, title[:200], now, now),
+                   (id, title, salience, created_at, updated_at, archive_kind, archive_day)
+                   VALUES (?, ?, 0.4, ?, ?, ?, ?)""",
+                (episode_id, title[:200], now, now, archive_kind, day_match.group(1) if day_match else None),
             )
             self._db.execute(
                 """INSERT OR IGNORE INTO episode_links
@@ -1998,6 +2004,12 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
 
     def _runtime_archive_kind(self, episode_id: str) -> str | None:
         """Return the runtime owner of a Goal, Webhook or Heartbeat archive."""
+        explicit = self._db.execute(
+            "SELECT archive_kind FROM conversation_episodes WHERE id=?",
+            (episode_id,),
+        ).fetchone()
+        if explicit is not None and explicit["archive_kind"]:
+            return str(explicit["archive_kind"])
         row = self._db.execute(
             """SELECT CASE
                      WHEN EXISTS (

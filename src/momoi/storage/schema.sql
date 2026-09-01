@@ -255,7 +255,9 @@ CREATE TABLE IF NOT EXISTS conversation_episodes (
     summary_abandoned_at REAL,
     created_at REAL NOT NULL,
     updated_at REAL NOT NULL,
-    closed_at REAL
+    closed_at REAL,
+    archive_kind TEXT,
+    archive_day TEXT
 );
 CREATE INDEX IF NOT EXISTS conversation_episodes_candidates
     ON conversation_episodes(status, salience DESC, updated_at DESC);
