@@ -43,7 +43,7 @@ class HeartbeatEpisodeTests(unittest.TestCase):
             self.assertNotEqual(first, next_day)
             self.assertEqual(
                 store.episode(first)["title"],
-                f"Heartbeat {datetime.fromtimestamp(day_one).astimezone().date()}",
+                f"心跳 · {datetime.fromtimestamp(day_one).astimezone().date()}",
             )
             store.close()
 

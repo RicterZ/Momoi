@@ -613,7 +613,7 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertGreater(searched["count"], 0)
             episode = found[0]
             self.assertRegex(
-                str(episode["title"]), r"^Webhook event-message \d{4}-\d{2}-\d{2}$"
+                str(episode["title"]), r"^Webhook event-message · \d{4}-\d{2}-\d{2}$"
             )
             store.close()
 
