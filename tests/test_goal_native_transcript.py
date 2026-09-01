@@ -64,6 +64,7 @@ class GoalNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
 
             class Provider:
                 calls = 0
+                first_system: object = None
                 first_messages: list[dict[str, object]] = []
 
                 async def complete(
@@ -75,6 +76,7 @@ class GoalNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                 ) -> ProviderResponse:
                     self.calls += 1
                     if self.calls == 1:
+                        self.first_system = copy.deepcopy(_system)
                         self.first_messages = copy.deepcopy(messages)
                         call = ToolCall(
                             "update",
@@ -109,6 +111,9 @@ class GoalNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             await daemon._complete_goal_turn(goal_id, asyncio.Event())
 
             rendered = str(provider.first_messages)
+            self.assertNotIn("Due Goal contract", str(provider.first_system))
+            self.assertIn("<workflow_contract>", rendered)
+            self.assertIn("Due Goal contract", rendered)
             self.assertNotIn("<recent_conversation>", rendered)
             self.assertNotIn("<recent_turns>", rendered)
             self.assertIn("<due_goal>", rendered)
