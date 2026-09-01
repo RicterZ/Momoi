@@ -66,6 +66,9 @@ if TYPE_CHECKING:
 
 
 EPISODE_ANNEAL_MAX_FAILURES = 3
+EPISODE_MAINTENANCE_RESTART_REASON = (
+    "process_restart_interrupted_episode_maintenance"
+)
 
 
 def _recall_query_texts(value: object) -> list[str]:
@@ -391,6 +394,17 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         )
         self._db.execute(
             "UPDATE conversation_episodes SET summary_claimed_at=NULL"
+        )
+        self._db.execute(
+            """UPDATE turns SET state='cancelled', stage='cancelled',
+               failure_reason=?, updated_at=?
+               WHERE kind='autonomous' AND state='running'
+                 AND external_effect_started=0
+                 AND (
+                   source_ids_json LIKE '%\"episode-consolidate:%'
+                   OR source_ids_json LIKE '%\"episode-anneal:%'
+                 )""",
+            (EPISODE_MAINTENANCE_RESTART_REASON, now),
         )
         self.recover_semantic_encoding()
         self._db.commit()
@@ -750,7 +764,8 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         now = time.time()
         with self._db:
             row = self._db.execute(
-                "SELECT state, external_effect_started FROM turns WHERE id=?",
+                """SELECT state, external_effect_started, failure_reason
+                   FROM turns WHERE id=?""",
                 (turn_id,),
             ).fetchone()
             if row is None:
@@ -759,6 +774,18 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                        (id, kind, source_ids_json, state, started_at, updated_at)
                        VALUES (?, ?, ?, 'running', ?, ?)""",
                     (turn_id, kind, json.dumps(source_ids), now, now),
+                )
+                return "running"
+            if (
+                row["state"] == "cancelled"
+                and row["failure_reason"]
+                == EPISODE_MAINTENANCE_RESTART_REASON
+            ):
+                self._db.execute(
+                    """UPDATE turns SET state='running', stage='started',
+                       failure_reason=NULL, llm_calls=0, input_tokens=0,
+                       output_tokens=0, started_at=?, updated_at=? WHERE id=?""",
+                    (now, now, turn_id),
                 )
                 return "running"
             if row["state"] == "running" and row["external_effect_started"]:

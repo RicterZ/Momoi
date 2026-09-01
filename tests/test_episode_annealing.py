@@ -142,6 +142,76 @@ def add_turn(daemon: MomoiDaemon, ordinal: int) -> None:
 
 
 class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
+    async def test_restart_recovers_interrupted_episode_maintenance(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            first = MomoiDaemon(config(directory))
+            first.store.create_episode("长期项目", episode_id="episode-main")
+            for ordinal in range(1, 6):
+                add_turn(first, ordinal)
+            candidate = first.store.claim_episode_annealing_candidate(2, 30)
+            self.assertIsNotNone(candidate)
+            anneal_turn_id = first._turn_id(
+                "episode-anneal",
+                "episode-main",
+                candidate["through_ordinal"],
+            )
+            consolidate_turn_id = first._turn_id(
+                "episode-consolidate", "pending-1", "through:"
+            )
+            first.store.begin_turn(
+                anneal_turn_id,
+                "autonomous",
+                [
+                    "episode-anneal:episode-main:"
+                    f"{candidate['through_ordinal']}"
+                ],
+            )
+            first.store.begin_turn(
+                consolidate_turn_id,
+                "autonomous",
+                ["episode-consolidate:pending-1"],
+            )
+            first.store.close()
+
+            recovered = MomoiDaemon(config(directory))
+
+            self.assertIsNone(
+                recovered.store.episode("episode-main")["summary_claimed_at"]
+            )
+            rows = recovered.store._db.execute(
+                """SELECT id, state, stage, failure_reason FROM turns
+                   WHERE id IN (?, ?) ORDER BY id""",
+                (anneal_turn_id, consolidate_turn_id),
+            ).fetchall()
+            self.assertEqual(len(rows), 2)
+            for row in rows:
+                self.assertEqual(row["state"], "cancelled")
+                self.assertEqual(row["stage"], "cancelled")
+                self.assertEqual(
+                    row["failure_reason"],
+                    "process_restart_interrupted_episode_maintenance",
+                )
+
+            self.assertEqual(
+                recovered.store.begin_turn(
+                    anneal_turn_id,
+                    "autonomous",
+                    [
+                        "episode-anneal:episode-main:"
+                        f"{candidate['through_ordinal']}"
+                    ],
+                ),
+                "running",
+            )
+            revived = recovered.store._db.execute(
+                "SELECT state, stage, failure_reason FROM turns WHERE id=?",
+                (anneal_turn_id,),
+            ).fetchone()
+            self.assertEqual(revived["state"], "running")
+            self.assertEqual(revived["stage"], "started")
+            self.assertIsNone(revived["failure_reason"])
+            recovered.store.close()
+
     async def test_partial_consolidation_uses_owner_idle_timeout(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(
