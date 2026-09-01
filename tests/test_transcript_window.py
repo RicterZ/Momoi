@@ -80,6 +80,7 @@ class TranscriptWindowTest(unittest.TestCase):
             self.assertEqual(directory_rows[0]["title"], "当前聊天")
             self.assertEqual(
                 set(directory_rows[0]),
-                {"id", "title", "last_activity_timestamp"},
+                {"id", "title", "last_activity_timestamp", "turn_ids"},
             )
+            self.assertEqual(directory_rows[0]["turn_ids"], [current])
             store.close()

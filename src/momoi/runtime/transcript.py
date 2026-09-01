@@ -204,6 +204,19 @@ def _elapsed(seconds: float) -> str:
     return f"{max(1, round(seconds / 60))}m"
 
 
+def turn_labels(groups: Sequence[TranscriptGroup]) -> dict[str, str]:
+    ordered = [
+        turn_id
+        for group in groups
+        for turn_id in group.turn_ids
+        if turn_id
+    ]
+    return {
+        turn_id: f"T{index}"
+        for index, turn_id in enumerate(dict.fromkeys(ordered), 1)
+    }
+
+
 def _silence(
     group: TranscriptGroup, previous: TranscriptGroup | None
 ) -> dict[str, object] | None:
@@ -319,6 +332,7 @@ def render_messages(
     gap_seconds: float = DEFAULT_GAP_SECONDS,
     tool_activity: Mapping[str, Sequence[Mapping[str, object]]] | None = None,
     action_limit: int = DEFAULT_ACTION_LIMIT,
+    labels: Mapping[str, str] | None = None,
 ) -> list[dict[str, object]]:
     """Render groups as provider-neutral ``role`` / ``content`` messages."""
 
@@ -329,6 +343,13 @@ def render_messages(
         if silence is not None:
             messages.append(silence)
         annotations = []
+        group_labels = [
+            str((labels or {}).get(turn_id) or "")
+            for turn_id in group.turn_ids
+            if (labels or {}).get(turn_id)
+        ]
+        if group_labels:
+            annotations.append("turn=" + ",".join(dict.fromkeys(group_labels)))
         marker = _marker(
             group.started_at,
             previous.ended_at if previous else 0.0,

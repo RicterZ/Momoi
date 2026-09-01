@@ -22,7 +22,7 @@ from .context_assembler import (
     assemble_recent_webhook_activity,
     recall_episode_context,
 )
-from .transcript import build_transcript, render_messages
+from .transcript import build_transcript, render_messages, turn_labels
 from .context_service import (
     _heartbeat_activity_lines,
     _heartbeat_self_state_lines,
@@ -1148,14 +1148,22 @@ class TurnOrchestrator:
         conversation_rows = self._recent_conversation_rows(
             min(event.received_at for event in batch)
         )
+        tool_activity = self.store.turn_activity(
+            [str(row["turn_id"]) for row in conversation_rows]
+        )
         transcript = build_transcript(
             conversation_rows,
-            tool_activity=self.store.turn_activity(
-                [str(row["turn_id"]) for row in conversation_rows]
-            ),
+            tool_activity=tool_activity,
         )
+        transcript_labels = turn_labels(transcript.groups)
         candidates = self.owner_context_candidates(
-            [turn for group in transcript.groups for turn in group.turn_ids]
+            [turn for group in transcript.groups for turn in group.turn_ids],
+            transcript_labels,
+        )
+        transcript_messages = render_messages(
+            transcript.groups,
+            tool_activity=tool_activity,
+            labels=transcript_labels,
         )
         system = self._system()
         # Slow-changing material sits ahead of the transcript so it stays inside
@@ -1189,7 +1197,7 @@ class TurnOrchestrator:
         current_content[-1]["cache_control"] = {"type": "ephemeral"}
         messages: list[dict[str, Any]] = [
             *([context_message] if context_message else []),
-            *transcript.messages,
+            *transcript_messages,
             {"role": "user", "content": current_content},
         ]
         if transcript.orphaned:

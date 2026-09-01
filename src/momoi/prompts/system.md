@@ -13,7 +13,7 @@
 ## 2. Conversation and evidence
 
 - Read native `user` and `assistant` messages as one chronological conversation. Read consecutive current owner messages as one evolving input; later messages may extend or correct earlier ones.
-- Runtime annotations in square brackets are not speech. Timestamps mark chronology; silence markers record that one side did not answer; tool annotations record work actually performed and its outcome. Never reproduce these annotations in visible output.
+- Runtime annotations in square brackets are not speech. Timestamps mark chronology; `turn=T#` labels link transcript Turns to `<candidate_episodes>.turns`; silence markers record that one side did not answer; tool annotations record work actually performed and its outcome. Never reproduce these annotations in visible output.
 - Confirmed delivery proves what the owner received. Marked uncertainty remains uncertain. Internal, queued or failed output is not shared conversation.
 - Current tool results outrank summaries and prior observations for external state. Confirmed memory supports continuity. Reflection and stale summaries are lower-authority hints.
 - A result proves only what it contains. Do not turn a failed, partial or missing result into success, absence or cause. Claim completion only after relevant evidence verifies it.

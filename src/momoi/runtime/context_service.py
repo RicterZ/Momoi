@@ -15,11 +15,45 @@ logger = logging.getLogger("momoi.runtime.turns")
 # Episode reference syntax the runtime already stores.
 _NEW_EPISODE_SLUG = re.compile(r"new:[a-z0-9][a-z0-9_-]{0,39}")
 
-def _episode_candidate_lines(items: list[dict[str, object]]) -> str:
+def _turn_label_ranges(values: list[str]) -> str:
+    numbers = sorted(
+        {
+            int(value[1:])
+            for value in values
+            if value.startswith("T") and value[1:].isdigit()
+        }
+    )
+    ranges: list[str] = []
+    start = previous = 0
+    for number in numbers:
+        if not start:
+            start = previous = number
+            continue
+        if number == previous + 1:
+            previous = number
+            continue
+        ranges.append(f"T{start}" if start == previous else f"T{start}-T{previous}")
+        start = previous = number
+    if start:
+        ranges.append(f"T{start}" if start == previous else f"T{start}-T{previous}")
+    return ",".join(ranges)
+
+
+def _episode_candidate_lines(
+    items: list[dict[str, object]], labels: dict[str, str]
+) -> str:
     lines: list[str] = []
     for episode in items:
+        episode_labels = _turn_label_ranges(
+            [
+                labels[turn_id]
+                for turn_id in episode.get("turn_ids") or []
+                if turn_id in labels
+            ]
+        )
         lines.append(
             f"- id={episode['id']} title={str(episode['title'])[:120]} "
+            f"turns={episode_labels or '?'} "
             f"last_activity={episode.get('last_activity_timestamp') or '?'}"
         )
     return "\n".join(lines)
@@ -241,7 +275,9 @@ class ContextService:
             recent_before_timestamp=min(event.received_at for event in events),
         )
 
-    def owner_context_candidates(self, turn_ids: list[str]) -> dict[str, str]:
+    def owner_context_candidates(
+        self, turn_ids: list[str], labels: dict[str, str] | None = None
+    ) -> dict[str, str]:
         """Give the Owner the two catalogs its context decision depends on.
 
         Continuing an Episode requires seeing which ones are open, and reusing a
@@ -255,7 +291,8 @@ class ContextService:
                 self.store.episode_directory_for_turns(
                     turn_ids,
                     exclude_runtime_archives=True,
-                )
+                ),
+                labels or {},
             ),
             "recent_recall_context": _recall_context_lines(
                 self.store.recall_reuse_candidates(turn_ids)

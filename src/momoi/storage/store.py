@@ -2656,7 +2656,8 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             return []
         placeholders = ",".join("?" for _ in ordered_ids)
         rows = self._db.execute(
-            f"""SELECT e.*, MAX(t.updated_at) AS last_activity_at
+            f"""SELECT e.*, MAX(t.updated_at) AS last_activity_at,
+                       GROUP_CONCAT(DISTINCT selected.turn_id) AS selected_turn_ids
                 FROM episode_turns AS selected
                 JOIN conversation_episodes AS e ON e.id=selected.episode_id
                 JOIN episode_turns AS all_turns ON all_turns.episode_id=e.id
@@ -2678,6 +2679,11 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                     "last_activity_timestamp": context_timestamp(
                         row["last_activity_at"]
                     ),
+                    "turn_ids": [
+                        value
+                        for value in str(row["selected_turn_ids"] or "").split(",")
+                        if value
+                    ],
                 }
             )
         return results

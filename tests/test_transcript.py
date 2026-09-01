@@ -5,6 +5,7 @@ from momoi.runtime.transcript import (
     build_transcript,
     render_messages,
     select_groups,
+    turn_labels,
 )
 
 BASE = time.mktime((2026, 8, 31, 20, 0, 0, 0, 0, -1))
@@ -16,6 +17,23 @@ def text(message: dict[str, object]) -> str:
         for block in message["content"]
         if isinstance(block, dict)
     )
+
+
+def test_turn_labels_are_stable_for_each_runtime_turn():
+    groups = build_groups(
+        [
+            owner(1, "第一问", turn_id="turn-a"),
+            bubble(2, "第一答", turn_id="turn-a"),
+            owner(3, "第二问", turn_id="turn-b"),
+        ]
+    )
+    labels = turn_labels(groups)
+    messages = render_messages(groups, labels=labels)
+
+    assert labels == {"turn-a": "T1", "turn-b": "T2"}
+    assert "[turn=T1" in text(messages[0])
+    assert "[turn=T1" in text(messages[1])
+    assert "[turn=T2" in text(messages[2])
 
 
 def owner(

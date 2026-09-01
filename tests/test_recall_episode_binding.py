@@ -43,12 +43,14 @@ class RecallEpisodeBindingTest(unittest.IsolatedAsyncioTestCase):
                 daemon.store.create_episode(title, episode_id=f"episode-{suffix}")
                 daemon.store.link_turn_to_episode(f"episode-{suffix}", turn_id)
 
-            candidates = daemon.owner_context_candidates(["turn-inside"])[
-                "candidate_episodes"
-            ]
+            candidates = daemon.owner_context_candidates(
+                ["turn-inside"],
+                {"turn-inside": "T1"},
+            )["candidate_episodes"]
 
             self.assertIn("id=episode-inside", candidates)
             self.assertIn("title=窗口内经历", candidates)
+            self.assertIn("turns=T1", candidates)
             self.assertIn("last_activity=", candidates)
             self.assertNotIn("episode-outside", candidates)
             self.assertNotIn("status=", candidates)
