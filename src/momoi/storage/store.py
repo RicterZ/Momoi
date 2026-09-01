@@ -1903,6 +1903,9 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         now: float,
         *recall_values: object,
     ) -> str:
+        day_match = re.search(r":day:(\d{4}-\d{2}-\d{2})$", episode_key)
+        if day_match and not title.endswith(f" · {day_match.group(1)}"):
+            title = f"{title} · {day_match.group(1)}"
         episode_id = uuid.uuid5(
             uuid.NAMESPACE_URL, f"momoi:autonomous-episode:{episode_key}"
         ).hex
@@ -2026,12 +2029,22 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                                SELECT 1 FROM json_each(archive_source.source_ids_json)
                                     AS source_id
                                WHERE source_id.value GLOB 'goal:*'
+                                  OR archive_source.id GLOB 'goal:*'
                            )
                      ) THEN 'goal'
                    END AS kind""",
             (episode_id, episode_id, episode_id),
         ).fetchone()
         return str(row["kind"]) if row is not None and row["kind"] else None
+
+    @staticmethod
+    def _dashboard_episode_title(episode_id: str, title: str) -> str:
+        """Append the archive day to runtime-owned titles in the dashboard."""
+        if not (episode_id.startswith("goal:") or episode_id.startswith("heartbeat:")
+                or episode_id.startswith("webhook:")):
+            return title
+        match = re.search(r":day:(\d{4}-\d{2}-\d{2})$", episode_id)
+        return f"{title} · {match.group(1)}" if match else title
 
     def create_episode(
         self,
@@ -2693,7 +2706,13 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             (limit,),
         ).fetchall()
         items = [
-            {**self._episode_dict(row), "record_type": "episode"}
+            {
+                **self._episode_dict(row),
+                "title": self._dashboard_episode_title(
+                    str(row["id"]), str(row["title"])
+                ),
+                "record_type": "episode",
+            }
             for row in episode_rows
         ]
         turn_rows = self._db.execute(

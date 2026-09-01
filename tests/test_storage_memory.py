@@ -816,6 +816,14 @@ class StorageMemoryTest(unittest.TestCase):
 
             archive_ids = {webhook_archive_id, heartbeat_archive_id, goal_archive_id}
             self.assertEqual(store._runtime_archive_kind(goal_archive_id), "goal")
+            dashboard = {
+                item["id"]: item["title"]
+                for item in store.list_dashboard_conversations(8)
+                if item["record_type"] == "episode"
+            }
+            self.assertEqual(
+                dashboard[goal_archive_id], "Goal night 2026-08-26 · 2026-08-26"
+            )
             self.assertLessEqual(
                 archive_ids,
                 {item["id"] for item in store.list_recent_episode_directory(8)},
