@@ -1308,6 +1308,7 @@ class TurnOrchestrator:
             tool_activity=tool_activity,
         )
         current_input = _pack_user_context(
+            ("workflow_contract", self._reply_wait_system_prompt()),
             (
                 "followup",
                 f"reason: {str(pending.get('reason') or '').strip()}\n"
@@ -1321,14 +1322,7 @@ class TurnOrchestrator:
                 ),
             ),
         )
-        system = [
-            *self._system(),
-            {
-                "type": "text",
-                "text": self._reply_wait_system_prompt(),
-                "cache_control": {"type": "ephemeral"},
-            },
-        ]
+        system = self._system()
         context_message = _context_data_message(
             ("long_term_memories", long_term_memories),
             ("recent_memories", recent_memories),

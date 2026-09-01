@@ -66,8 +66,12 @@ class ReplyWaitNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                     "reply-followup", "napcat", owner_event_revision=1
                 )
 
+            system = str(run.await_args.args[0])
             messages = run.await_args.args[1]
             rendered = json.dumps(messages, ensure_ascii=False)
+            self.assertNotIn("Required reply follow-up", system)
+            self.assertIn("<workflow_contract>", rendered)
+            self.assertIn("Required reply follow-up", rendered)
             self.assertNotIn("<reply_timeline>", rendered)
             self.assertIn("<followup>", rendered)
             self.assertIn("reason: 这个问题需要老师决定", rendered)
