@@ -3,7 +3,6 @@ from __future__ import annotations
 import copy
 import json
 import logging
-import time
 from typing import TYPE_CHECKING
 
 from ..config import AppConfig
@@ -26,7 +25,6 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
-RECENT_EPISODE_LIMIT = 6
 PLAN_RECALL_QUERY_LIMIT = 6
 RECENT_EXTERNAL_EVENT_LIMIT = 6
 RECENT_EXTERNAL_EVENT_LOOKBACK_SECONDS = 6 * 3600
@@ -176,30 +174,8 @@ def build_plan_retrieval(
     config: AppConfig,
     dense_evidence: DenseRecallEvidence | None = None,
 ) -> dict[str, object]:
-    recent_episodes = (
-        store.list_recent_episodes(
-            time.time() - config.recent_episode_hours * 3600,
-            RECENT_EPISODE_LIMIT,
-        )
-        if config.recent_episode_hours > 0 and config.summary_tokens > 0
-        else []
-    )
-    recent_episode_ids = {str(episode["id"]) for episode in recent_episodes}
-    episodes = [
-        {
-            "episode_id": str(episode["id"]),
-            "relation": "recent",
-            "is_new": False,
-            "matches": [],
-            "unit_ids": [],
-            "last_activity_at": float(episode.get("last_activity_at") or 0),
-            "matched_keywords": [],
-            "keyword_match_count": 0,
-            "search_score": 0.0,
-            "is_recent": True,
-        }
-        for episode in recent_episodes
-    ]
+    recent_episode_ids: set[str] = set()
+    episodes: list[dict[str, object]] = []
     goals = [
         {
             name: row.get(name)
@@ -459,8 +435,7 @@ def build_plan_retrieval(
             }
         )
 
-    # Query-specific episodes supplement the time-window directory, without
-    # duplicating an episode already selected by recency.
+    # Only query-specific or explicitly reused Episodes enter recalled context.
     ranked_recalled_episodes = rank_recall_items(
         list(recalled_episode_rows.values())
     )

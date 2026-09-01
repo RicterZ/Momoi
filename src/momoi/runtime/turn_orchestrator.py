@@ -73,6 +73,18 @@ from .turn_support import (
 logger = logging.getLogger("momoi.runtime.turns")
 
 class TurnOrchestrator:
+    def _recent_conversation_rows(
+        self, before_timestamp: float | None = None
+    ) -> list[dict[str, object]]:
+        turn_limit = self.store.transcript_window_turn_limit(
+            self.config.transcript_turns_min,
+            self.config.transcript_turns_max,
+        )
+        return self.store.recent_conversation_messages(
+            turn_limit,
+            self.config.recent_raw_tokens,
+            before_timestamp,
+        )
 
     def _drain_owner_updates(
         self, current_events: list[IncomingMessage], channel_name: str
@@ -261,10 +273,7 @@ class TurnOrchestrator:
             max(100, self.config.memory_tokens // 8)
         )
         long_term_memories = self.store.always_memory_context()
-        conversation_rows = self.store.recent_conversation_messages(
-            self.config.recent_turns * 2,
-            self.config.recent_raw_tokens,
-        )
+        conversation_rows = self._recent_conversation_rows()
         tool_activity = self.store.turn_activity(
             [str(row["turn_id"]) for row in conversation_rows]
         )
@@ -1136,14 +1145,8 @@ class TurnOrchestrator:
             )
         if reconciliation_control:
             directives.append(reconciliation_control)
-        # The retired base/append split existed to keep a stable cached prefix
-        # inside one large user message, which made the effective window swing
-        # between recent_turns and twice that. Native history is append-only on
-        # its own, so the window is simply held at the old upper bound.
-        conversation_rows = self.store.recent_conversation_messages(
-            self.config.recent_turns * 2,
-            self.config.recent_raw_tokens,
-            min(event.received_at for event in batch),
+        conversation_rows = self._recent_conversation_rows(
+            min(event.received_at for event in batch)
         )
         transcript = build_transcript(
             conversation_rows,
@@ -1274,10 +1277,7 @@ class TurnOrchestrator:
         recent_memories = self.store.recent_memory_context(
             max(100, self.config.memory_tokens // 8)
         )
-        conversation_rows = self.store.recent_conversation_messages(
-            self.config.recent_turns * 2,
-            self.config.recent_raw_tokens,
-        )
+        conversation_rows = self._recent_conversation_rows()
         tool_activity = self.store.turn_activity(
             [str(row["turn_id"]) for row in conversation_rows]
         )
@@ -1404,10 +1404,7 @@ class TurnOrchestrator:
             max(100, self.config.memory_tokens // 8)
         )
         long_term_memories = self.store.always_memory_context()
-        conversation_rows = self.store.recent_conversation_messages(
-            self.config.recent_turns * 2,
-            self.config.recent_raw_tokens,
-        )
+        conversation_rows = self._recent_conversation_rows()
         tool_activity = self.store.turn_activity(
             [str(row["turn_id"]) for row in conversation_rows]
         )
@@ -1484,7 +1481,7 @@ class TurnOrchestrator:
         ]
         draft = TurnDraft()
         memory_events = self.store.recent_owner_events(
-            max(20, self.config.recent_turns * 4)
+            max(20, self.config.transcript_turns_max)
         )
         reply = await self._run_tool_loop(
             system,
@@ -1783,10 +1780,7 @@ class TurnOrchestrator:
             max(100, self.config.memory_tokens // 8)
         )
         long_term_memories = self.store.always_memory_context()
-        conversation_rows = self.store.recent_conversation_messages(
-            self.config.recent_turns * 2,
-            self.config.recent_raw_tokens,
-        )
+        conversation_rows = self._recent_conversation_rows()
         tool_activity = self.store.turn_activity(
             [str(row["turn_id"]) for row in conversation_rows]
         )

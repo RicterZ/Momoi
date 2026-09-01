@@ -209,7 +209,9 @@ class ConfigurationTest(unittest.TestCase):
             self.assertEqual(config.llm.max_tokens, 16384)
             self.assertEqual(config.llm.timeout_seconds, 300)
             self.assertEqual(config.summary_results, 8)
-            self.assertEqual(config.recent_episode_hours, 6)
+            self.assertEqual(config.transcript_turns_min, 48)
+            self.assertEqual(config.transcript_turns_max, 96)
+            self.assertEqual(config.episode_raw_tail_turns, 6)
             self.assertTrue(config.episode_annealing.enabled)
             self.assertEqual(config.episode_annealing.idle_seconds, 60)
             self.assertEqual(config.episode_annealing.max_seconds, 650)
@@ -228,7 +230,7 @@ class ConfigurationTest(unittest.TestCase):
             with self.assertRaisesRegex(ConfigError, "must name an enabled channel"):
                 load_config(path)
 
-    def test_recent_episode_hours_is_configurable_and_nonnegative(self) -> None:
+    def test_context_result_limits_are_capped(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "prompts").mkdir()
@@ -241,26 +243,17 @@ class ConfigurationTest(unittest.TestCase):
                     "model": "model",
                 },
                 "channels": _napcat_channels(),
-                "context": {"recent_episode_hours": 2.5},
+                "context": {},
                 "storage": {"database": "momoi.sqlite3"},
                 "logging": {},
             }
             path.write_text(json.dumps(value))
-            self.assertEqual(load_config(path).recent_episode_hours, 2.5)
-
             value["context"]["summary_results"] = 99  # type: ignore[index]
             value["context"]["memory_results"] = 99  # type: ignore[index]
             path.write_text(json.dumps(value))
             configured = load_config(path)
             self.assertEqual(configured.summary_results, 12)
             self.assertEqual(configured.memory_results, 6)
-
-            value["context"]["recent_episode_hours"] = -1  # type: ignore[index]
-            path.write_text(json.dumps(value))
-            with self.assertRaisesRegex(
-                ConfigError, "context.recent_episode_hours must not be negative"
-            ):
-                load_config(path)
 
     def test_loads_primary_channel_configuration(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

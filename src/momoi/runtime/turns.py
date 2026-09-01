@@ -44,7 +44,7 @@ class TurnRunner(
             if remaining is not None and archived:
                 return True
         candidate = self.store.claim_episode_annealing_candidate(
-            self.config.recent_turns, self.config.recent_raw_tokens
+            self.config.episode_raw_tail_turns, self.config.recent_raw_tokens
         )
         if candidate is None:
             return False
@@ -189,7 +189,7 @@ class TurnRunner(
         max_seconds: float | None = None,
     ) -> bool:
         candidate = candidate or self.store.claim_episode_annealing_candidate(
-            self.config.recent_turns, self.config.recent_raw_tokens
+            self.config.episode_raw_tail_turns, self.config.recent_raw_tokens
         )
         if candidate is None:
             return False

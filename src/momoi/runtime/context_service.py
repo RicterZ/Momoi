@@ -16,30 +16,13 @@ logger = logging.getLogger("momoi.runtime.turns")
 _NEW_EPISODE_SLUG = re.compile(r"new:[a-z0-9][a-z0-9_-]{0,39}")
 
 def _episode_candidate_lines(items: list[dict[str, object]]) -> str:
-    blocks: list[str] = []
+    lines: list[str] = []
     for episode in items:
-        fields = [
-            f"id={episode['id']}",
-            f"status={episode['status']}",
-            f"title={str(episode['title'])[:120]}",
-        ]
-        summary = str(
-            episode.get("narrative_summary")
-            or episode.get("working_summary")
-            or ""
-        ).strip()
-        if summary:
-            fields.append(f"summary={summary[:240]}")
-        topics = episode.get("topics") or []
-        if topics:
-            fields.append("topics=" + ",".join(str(item) for item in topics[:8]))
-        loops = episode.get("open_loops") or []
-        if loops:
-            fields.append(
-                "open_loops=" + ",".join(str(item) for item in loops[:4])
-            )
-        blocks.append("- " + " ".join(fields))
-    return "\n".join(blocks)
+        lines.append(
+            f"- id={episode['id']} title={str(episode['title'])[:120]} "
+            f"last_activity={episode.get('last_activity_timestamp') or '?'}"
+        )
+    return "\n".join(lines)
 
 
 def _heartbeat_topic_lines(items: list[dict[str, object]]) -> str:
@@ -142,10 +125,19 @@ class ContextService:
         raw_units = arguments.get("units")
         if not isinstance(raw_units, list) or not raw_units:
             raise ValueError("recall requires at least one intent unit")
+        candidate_rows = self.store.recent_conversation_messages(
+            self.store.transcript_window_turn_limit(
+                self.config.transcript_turns_min,
+                self.config.transcript_turns_max,
+            ),
+            self.config.recent_raw_tokens,
+            min(event.received_at for event in events),
+        )
         candidate_ids = {
             str(item["id"])
-            for item in self.store.list_recent_episode_directory(
-                8, exclude_runtime_archives=True
+            for item in self.store.episode_directory_for_turns(
+                [str(row["turn_id"]) for row in candidate_rows],
+                exclude_runtime_archives=True,
             )
             if item.get("id")
         }
@@ -260,8 +252,9 @@ class ContextService:
 
         return {
             "candidate_episodes": _episode_candidate_lines(
-                self.store.list_recent_episode_directory(
-                    8, exclude_runtime_archives=True
+                self.store.episode_directory_for_turns(
+                    turn_ids,
+                    exclude_runtime_archives=True,
                 )
             ),
             "recent_recall_context": _recall_context_lines(

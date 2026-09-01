@@ -23,7 +23,6 @@ from momoi.storage.episode_ranking import rank_recall_items
 def config(
     directory: str,
     memory_results: int = 6,
-    recent_episode_hours: float = 6,
     summary_results: int = 3,
 ) -> AppConfig:
     return AppConfig(
@@ -31,12 +30,13 @@ def config(
         channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
         system_prompt="test",
         recent_raw_tokens=2000,
-        recent_turns=2,
+        transcript_turns_min=4,
+        transcript_turns_max=4,
+        episode_raw_tail_turns=2,
         memory_results=memory_results,
         memory_tokens=4000,
         summary_results=summary_results,
         summary_tokens=2000,
-        recent_episode_hours=recent_episode_hours,
         database=Path(directory) / "momoi.sqlite3",
         log_level="INFO",
     )
@@ -157,7 +157,7 @@ class ContextAssemblerTest(unittest.TestCase):
             retrieval = build_plan_retrieval(
                 store,
                 reuse_plan,
-                config(directory, recent_episode_hours=0),
+                config(directory),
             )
 
             self.assertEqual(retrieval["recall_memories"], [])
@@ -247,7 +247,7 @@ class ContextAssemblerTest(unittest.TestCase):
             retrieval = build_plan_retrieval(
                 store,
                 reuse_plan,
-                config(directory, recent_episode_hours=0),
+                config(directory),
             )
 
             self.assertEqual(
@@ -293,7 +293,7 @@ class ContextAssemblerTest(unittest.TestCase):
             retrieval = build_plan_retrieval(
                 store,
                 recall_plan,
-                config(directory, recent_episode_hours=0),
+                config(directory),
             )
 
             self.assertIn(
@@ -429,7 +429,7 @@ class ContextAssemblerTest(unittest.TestCase):
                         }
                     ]
                 },
-                config(directory, recent_episode_hours=0),
+                config(directory),
             )
             heartbeat_episode_retrieval = build_plan_retrieval(
                 store,
@@ -439,7 +439,7 @@ class ContextAssemblerTest(unittest.TestCase):
                         "recall_queries": ["蓝色杯子"],
                     }
                 },
-                config(directory, recent_episode_hours=0),
+                config(directory),
             )
             self.assertEqual(
                 [item["episode_id"] for item in owner_episode_retrieval["episodes"]],
@@ -699,7 +699,7 @@ class ContextAssemblerTest(unittest.TestCase):
 
 
 
-    def test_recent_episode_window_is_injected_without_keyword_recall(self) -> None:
+    def test_recent_episodes_are_not_injected_without_recall(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
             now = time.time()
@@ -737,33 +737,15 @@ class ContextAssemblerTest(unittest.TestCase):
             retrieval = build_plan_retrieval(
                 store,
                 empty_plan,
-                config(directory, recent_episode_hours=6),
+                config(directory),
             )
 
-            self.assertEqual(
-                [item["episode_id"] for item in retrieval["episodes"]],
-                [f"recent-topic-{index:02d}" for index in range(6)],
-            )
-            self.assertTrue(
-                all(item["relation"] == "recent" for item in retrieval["episodes"])
-            )
-            self.assertTrue(
-                all(item["unit_ids"] == [] for item in retrieval["episodes"])
-            )
+            self.assertEqual(retrieval["episodes"], [])
             assembled = assemble_main_context(store, retrieval, 2000)
-            self.assertIn("最近六小时话题 05", assembled["episodes"])
-            self.assertNotIn("最近六小时话题 06", assembled["episodes"])
-            self.assertNotIn("六小时前旧话题", assembled["episodes"])
-
-            disabled = build_plan_retrieval(
-                store,
-                empty_plan,
-                config(directory, recent_episode_hours=0),
-            )
-            self.assertEqual(disabled["episodes"], [])
+            self.assertEqual(assembled["episodes"], "")
             store.close()
 
-    def test_recent_episode_is_injected_without_keyword_search(self) -> None:
+    def test_episode_is_injected_only_by_query_recall(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
             now = time.time()
@@ -788,7 +770,7 @@ class ContextAssemblerTest(unittest.TestCase):
             retrieval = build_plan_retrieval(
                 store,
                 plan("项目邮件"),
-                config(directory, recent_episode_hours=6),
+                config(directory),
             )
 
             self.assertEqual(len(retrieval["episodes"]), 1)
@@ -796,12 +778,12 @@ class ContextAssemblerTest(unittest.TestCase):
                 retrieval["episodes"][0]["episode_id"], "episode-mail"
             )
             self.assertEqual(
-                retrieval["episodes"][0]["relation"], "recent"
+                retrieval["episodes"][0]["relation"], "recalled"
             )
             self.assertEqual(retrieval["episodes"][0]["unit_ids"], ["mail"])
             store.close()
 
-    def test_recent_and_recalled_episode_groups_are_capped_and_deduplicated(
+    def test_recalled_episode_groups_are_capped_and_deduplicated(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -847,7 +829,7 @@ class ContextAssemblerTest(unittest.TestCase):
             retrieval = build_plan_retrieval(
                 store,
                 recall_plan,
-                config(directory, recent_episode_hours=6, summary_results=12),
+                config(directory, summary_results=12),
             )
             episode_ids = [
                 str(item["episode_id"]) for item in retrieval["episodes"]
@@ -859,9 +841,9 @@ class ContextAssemblerTest(unittest.TestCase):
                 item["relation"] == "recalled" for item in retrieval["episodes"]
             )
 
-            self.assertEqual(recent_count, 6)
+            self.assertEqual(recent_count, 0)
             self.assertLessEqual(recalled_count, 12)
-            self.assertLessEqual(len(episode_ids), 18)
+            self.assertLessEqual(len(episode_ids), 12)
             self.assertEqual(len(episode_ids), len(set(episode_ids)))
             self.assertEqual(episode_ids.count("recent-0"), 1)
             store.close()
@@ -899,7 +881,6 @@ class ContextAssemblerTest(unittest.TestCase):
                 plan("关键词"),
                 config(
                     directory,
-                    recent_episode_hours=6,
                     summary_results=12,
                 ),
             )
@@ -951,7 +932,6 @@ class ContextAssemblerTest(unittest.TestCase):
                 plan("甲关键词 | 乙关键词"),
                 config(
                     directory,
-                    recent_episode_hours=6,
                     summary_results=12,
                 ),
             )
@@ -964,12 +944,11 @@ class ContextAssemblerTest(unittest.TestCase):
                     "old-multi",
                     "recent-single",
                     "old-single",
-                    "recent-only",
                 ],
             )
             store.close()
 
-    def test_recent_episode_window_is_independent_of_directory_cap(self) -> None:
+    def test_query_recall_does_not_inject_unmatched_old_episode(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
             store.create_episode("旧暗号", episode_id="old-secret")
@@ -997,12 +976,12 @@ class ContextAssemblerTest(unittest.TestCase):
             expanded = plan("朱红钥匙 | 温室 | 花盆", "current-topic")
             retrieval = build_plan_retrieval(store, expanded, config(directory))
 
-            self.assertIn(
+            self.assertNotIn(
                 "old-secret",
                 {item["episode_id"] for item in retrieval["episodes"]},
             )
             assembled = assemble_main_context(store, retrieval, 2000)
-            self.assertIn("title: 旧暗号", assembled["episodes"])
+            self.assertNotIn("title: 旧暗号", assembled["episodes"])
             self.assertNotIn("朱红钥匙藏在温室花盆下面", assembled["episodes"])
             store.close()
 

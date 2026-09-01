@@ -15,7 +15,9 @@ def config(directory: str) -> AppConfig:
         channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
         system_prompt="test",
         recent_raw_tokens=1000,
-        recent_turns=2,
+        transcript_turns_min=4,
+        transcript_turns_max=4,
+        episode_raw_tail_turns=2,
         memory_results=2,
         memory_tokens=1000,
         database=Path(directory) / "momoi.sqlite3",
@@ -24,6 +26,36 @@ def config(directory: str) -> AppConfig:
 
 
 class RecallEpisodeBindingTest(unittest.IsolatedAsyncioTestCase):
+    async def test_candidate_directory_follows_transcript_episode_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(config(directory))
+            for suffix, title in (("inside", "窗口内经历"), ("outside", "窗口外经历")):
+                event = IncomingMessage(suffix, suffix, title, 1, 1)
+                daemon.store.add_event(event)
+                turn_id = f"turn-{suffix}"
+                daemon.store.begin_turn(turn_id, "owner", [event.event_id])
+                daemon.store.commit_turn(
+                    [event],
+                    event.text,
+                    AgentReply(["知道了"]),
+                    turn_id=turn_id,
+                )
+                daemon.store.create_episode(title, episode_id=f"episode-{suffix}")
+                daemon.store.link_turn_to_episode(f"episode-{suffix}", turn_id)
+
+            candidates = daemon.owner_context_candidates(["turn-inside"])[
+                "candidate_episodes"
+            ]
+
+            self.assertIn("id=episode-inside", candidates)
+            self.assertIn("title=窗口内经历", candidates)
+            self.assertIn("last_activity=", candidates)
+            self.assertNotIn("episode-outside", candidates)
+            self.assertNotIn("status=", candidates)
+            self.assertNotIn("summary=", candidates)
+            self.assertNotIn("open_loops=", candidates)
+            daemon.store.close()
+
     async def test_new_episode_ref_is_resolved_before_owner_commit(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(config(directory))

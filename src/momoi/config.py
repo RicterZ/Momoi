@@ -123,7 +123,9 @@ class AppConfig:
     channel: object
     system_prompt: str
     recent_raw_tokens: int
-    recent_turns: int
+    transcript_turns_min: int
+    transcript_turns_max: int
+    episode_raw_tail_turns: int
     memory_results: int
     memory_tokens: int
     database: Path
@@ -131,7 +133,6 @@ class AppConfig:
     max_input_tokens: int = 96000
     summary_results: int = 8
     summary_tokens: int = 6000
-    recent_episode_hours: float = 6
     soul_prompt: str = ""
     mcp_config: Path | None = None
     notifications: NotificationConfig = NotificationConfig()
@@ -476,7 +477,14 @@ def load_config(path: str | Path) -> AppConfig:
     max_input_tokens = max(
         1000, int(context_raw.get("max_input_tokens", 96000))
     )
-    recent_turns = max(1, int(context_raw.get("recent_turns", 6)))
+    transcript_turns_min = max(1, int(context_raw.get("transcript_turns_min", 48)))
+    transcript_turns_max = max(
+        transcript_turns_min,
+        int(context_raw.get("transcript_turns_max", 96)),
+    )
+    episode_raw_tail_turns = max(
+        1, int(context_raw.get("episode_raw_tail_turns", 6))
+    )
 
     return AppConfig(
         llm=LLMConfig(
@@ -497,7 +505,9 @@ def load_config(path: str | Path) -> AppConfig:
         channel=channel_config,
         system_prompt=system_prompt,
         recent_raw_tokens=max(1, int(context_raw.get("recent_raw_tokens", 32000))),
-        recent_turns=recent_turns,
+        transcript_turns_min=transcript_turns_min,
+        transcript_turns_max=transcript_turns_max,
+        episode_raw_tail_turns=episode_raw_tail_turns,
         memory_results=min(6, max(0, int(context_raw.get("memory_results", 6)))),
         memory_tokens=max(0, int(context_raw.get("memory_tokens", 8000))),
         database=database,
@@ -507,10 +517,6 @@ def load_config(path: str | Path) -> AppConfig:
             12, max(0, int(context_raw.get("summary_results", 8)))
         ),
         summary_tokens=max(0, int(context_raw.get("summary_tokens", 6000))),
-        recent_episode_hours=_nonnegative(
-            context_raw.get("recent_episode_hours", 6),
-            "context.recent_episode_hours",
-        ),
         soul_prompt=soul_prompt,
         heartbeat_prompt=heartbeat_prompt,
         mcp_config=mcp_config,

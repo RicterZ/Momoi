@@ -2051,6 +2051,93 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         ).fetchone()
         return self._episode_dict(row) if row else None
 
+    def transcript_window_turn_limit(
+        self, minimum_turns: int, maximum_turns: int
+    ) -> int:
+        minimum_turns = max(1, minimum_turns)
+        maximum_turns = max(minimum_turns, maximum_turns)
+        latest = self._db.execute(
+            """SELECT t.id, t.updated_at FROM turns AS t
+               WHERE t.state='completed' AND EXISTS (
+                   SELECT 1 FROM messages AS m
+                   WHERE m.turn_id=t.id
+                     AND (
+                         m.role='user'
+                         OR m.role='assistant'
+                            AND m.delivery_state IN ('delivered', 'uncertain')
+                     )
+               )
+               ORDER BY t.updated_at DESC, t.id DESC LIMIT 1"""
+        ).fetchone()
+        if latest is None:
+            return minimum_turns
+        with self._db:
+            state = self._db.execute(
+                "SELECT * FROM transcript_window_state WHERE id=1"
+            ).fetchone()
+            if state is None:
+                self._db.execute(
+                    """INSERT INTO transcript_window_state
+                       (id, current_turns, observed_turn_id, observed_updated_at)
+                       VALUES (1, ?, ?, ?)""",
+                    (minimum_turns, latest["id"], latest["updated_at"]),
+                )
+                return minimum_turns
+            new_turns = int(
+                self._db.execute(
+                    """SELECT COUNT(*) FROM turns AS t
+                       WHERE t.state='completed'
+                         AND (
+                             t.updated_at>?
+                             OR t.updated_at=? AND t.id>?
+                         )
+                         AND EXISTS (
+                             SELECT 1 FROM messages AS m
+                             WHERE m.turn_id=t.id
+                               AND (
+                                   m.role='user'
+                                   OR m.role='assistant'
+                                      AND m.delivery_state IN (
+                                          'delivered', 'uncertain'
+                                      )
+                               )
+                         )""",
+                    (
+                        state["observed_updated_at"],
+                        state["observed_updated_at"],
+                        state["observed_turn_id"],
+                    ),
+                ).fetchone()[0]
+            )
+            current = min(
+                maximum_turns,
+                max(minimum_turns, int(state["current_turns"])),
+            )
+            span = maximum_turns - minimum_turns
+            compacted = span > 0 and current - minimum_turns + new_turns >= span
+            current = (
+                minimum_turns
+                if span == 0
+                else minimum_turns + (current - minimum_turns + new_turns) % span
+            )
+            self._db.execute(
+                """UPDATE transcript_window_state
+                   SET current_turns=?, observed_turn_id=?, observed_updated_at=?
+                   WHERE id=1""",
+                (current, latest["id"], latest["updated_at"]),
+            )
+        if compacted:
+            log_event(
+                logger,
+                logging.INFO,
+                "transcript_window_compacted",
+                retained_turns=current,
+                minimum_turns=minimum_turns,
+                maximum_turns=maximum_turns,
+                observed_new_turns=new_turns,
+            )
+        return current
+
     def recent_conversation_messages(
         self,
         turn_limit: int,
@@ -2520,36 +2607,6 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             results.append(episode)
         return results
 
-    def list_recent_episodes(
-        self, after: float, limit: int = 6
-    ) -> list[dict[str, object]]:
-        if limit <= 0:
-            return []
-        rows = self._db.execute(
-            """SELECT e.*, COALESCE((
-                       SELECT MAX(t.updated_at) FROM episode_turns AS et
-                       JOIN turns AS t ON t.id=et.turn_id
-                       WHERE et.episode_id=e.id
-                   ), e.updated_at) AS last_activity_at
-               FROM conversation_episodes AS e
-               WHERE EXISTS (
-                   SELECT 1 FROM episode_turns AS et
-                   JOIN messages AS m ON m.turn_id=et.turn_id
-                   WHERE et.episode_id=e.id AND m.created_at>=?
-               )
-               ORDER BY last_activity_at DESC, e.id DESC
-               LIMIT ?""",
-            (after, limit),
-        ).fetchall()
-        results = []
-        for row in rows:
-            episode = self._episode_dict(row)
-            episode["last_activity_timestamp"] = context_timestamp(
-                row["last_activity_at"]
-            )
-            results.append(episode)
-        return results
-
     def list_recent_episode_directory(
         self, limit: int = 8, *, exclude_runtime_archives: bool = False
     ) -> list[dict[str, object]]:
@@ -2592,6 +2649,43 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                 row["last_activity_at"]
             )
             results.append(episode)
+        return results
+
+    def episode_directory_for_turns(
+        self,
+        turn_ids: list[str],
+        *,
+        exclude_runtime_archives: bool = False,
+    ) -> list[dict[str, object]]:
+        ordered_ids = [str(value) for value in dict.fromkeys(turn_ids) if value]
+        if not ordered_ids:
+            return []
+        placeholders = ",".join("?" for _ in ordered_ids)
+        rows = self._db.execute(
+            f"""SELECT e.*, MAX(t.updated_at) AS last_activity_at
+                FROM episode_turns AS selected
+                JOIN conversation_episodes AS e ON e.id=selected.episode_id
+                JOIN episode_turns AS all_turns ON all_turns.episode_id=e.id
+                JOIN turns AS t ON t.id=all_turns.turn_id
+                WHERE selected.turn_id IN ({placeholders})
+                GROUP BY e.id
+                ORDER BY last_activity_at DESC, e.id DESC""",
+            tuple(ordered_ids),
+        ).fetchall()
+        results = []
+        for row in rows:
+            episode_id = str(row["id"])
+            if exclude_runtime_archives and self._runtime_archive_kind(episode_id):
+                continue
+            results.append(
+                {
+                    "id": episode_id,
+                    "title": str(row["title"]),
+                    "last_activity_timestamp": context_timestamp(
+                        row["last_activity_at"]
+                    ),
+                }
+            )
         return results
 
     def list_dashboard_conversations(

@@ -57,13 +57,14 @@
     "soul_prompt": "prompts/SOUL.md",
     "heartbeat_prompt": "prompts/HEARTBEAT.md",
     "recent_raw_tokens": 32000,
-    "recent_turns": 6,
+    "transcript_turns_min": 48,
+    "transcript_turns_max": 96,
+    "episode_raw_tail_turns": 6,
     "memory_results": 6,
     "memory_tokens": 8000,
     "max_input_tokens": 96000,
     "summary_results": 8,
-    "summary_tokens": 6000,
-    "recent_episode_hours": 6
+    "summary_tokens": 6000
   },
   "storage": {
     "database": "data/momoi.sqlite3",

@@ -115,7 +115,8 @@ def main() -> int:
     parser.add_argument("--soul", type=Path)
     parser.add_argument("--output", type=Path, default=Path("/tmp/momoi-owner-request.json"))
     parser.add_argument("--offset", type=int, default=0, help="0 is the newest Owner Turn")
-    parser.add_argument("--recent-turns", type=int, default=6)
+    parser.add_argument("--transcript-turns-min", type=int, default=48)
+    parser.add_argument("--transcript-turns-max", type=int, default=96)
     parser.add_argument("--recent-raw-tokens", type=int, default=32000)
     parser.add_argument("--summary-tokens", type=int, default=6000)
     args = parser.parse_args()
@@ -137,8 +138,12 @@ def main() -> int:
         print("no Owner Turn at that offset", file=sys.stderr)
         return 1
 
+    turn_limit = store.transcript_window_turn_limit(
+        args.transcript_turns_min,
+        args.transcript_turns_max,
+    )
     conversation_rows = store.recent_conversation_messages(
-        args.recent_turns * 2,
+        turn_limit,
         args.recent_raw_tokens,
         float(subject["started_at"]),
     )

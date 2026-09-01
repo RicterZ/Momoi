@@ -161,13 +161,14 @@ All fields must be positive.
     "soul_prompt": "prompts/SOUL.md",
     "heartbeat_prompt": "prompts/HEARTBEAT.md",
     "recent_raw_tokens": 32000,
-    "recent_turns": 6,
+    "transcript_turns_min": 48,
+    "transcript_turns_max": 96,
+    "episode_raw_tail_turns": 6,
     "memory_results": 6,
     "memory_tokens": 8000,
     "max_input_tokens": 96000,
     "summary_results": 8,
-    "summary_tokens": 6000,
-    "recent_episode_hours": 6
+    "summary_tokens": 6000
   }
 }
 ```
@@ -177,13 +178,14 @@ All fields must be positive.
 | `soul_prompt` | `prompts/SOUL.md` | Required, non-empty persona file |
 | `heartbeat_prompt` | `prompts/HEARTBEAT.md` | Optional heartbeat guidance file |
 | `recent_raw_tokens` | `32000` | Native transcript token budget and Episode-maintenance raw-evidence budget; minimum `1` |
-| `recent_turns` | `6` | Base recent-Turn count; active Momoi workflows read up to twice this many Turns into the native transcript, while Episode maintenance retains this many raw tail Turns; minimum `1` |
+| `transcript_turns_min` | `48` | Recent completed Turns retained after the transcript window slides; minimum `1` |
+| `transcript_turns_max` | `96` | High watermark at which the transcript window slides back to `transcript_turns_min`; cannot be lower than the minimum |
+| `episode_raw_tail_turns` | `6` | Raw tail Turns retained outside the summary for an open Episode; its normal annealing threshold is twice this value; minimum `1` |
 | `memory_results` | `6` | Per-category top-k for confirmed recall memory and reflection memory; range `0`–`6`, and `0` disables both (combined maximum `12`) |
 | `memory_tokens` | `8000` | Durable-memory context budget; minimum `0` |
 | `max_input_tokens` | `96000` | Target ceiling for complete model input; minimum `1000` |
 | `summary_results` | `8` | Maximum query-recalled Episodes, configurable up to `12`; `0` disables query recall |
 | `summary_tokens` | `6000` | Merged Episode-summary token budget; `0` disables this layer |
-| `recent_episode_hours` | `6` | Recent-Episode window in hours; `0` disables it |
 
 `max_input_tokens` should remain below the provider's actual context window.
 
