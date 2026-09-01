@@ -802,9 +802,20 @@ class StorageMemoryTest(unittest.TestCase):
                 store._db.execute(
                     "UPDATE turns SET state='completed' WHERE id='heartbeat:run:0'"
                 )
+                goal_archive_id = store._ensure_autonomous_episode(
+                    "goal:night:day:2026-08-26",
+                    "goal:night:0",
+                    "Goal night 2026-08-26",
+                    now + 2,
+                    "睡觉提醒",
+                )
+                store._db.execute(
+                    "UPDATE turns SET state='completed' WHERE id='goal:night:0'"
+                )
             store.create_episode("普通话题", episode_id="ordinary")
 
-            archive_ids = {webhook_archive_id, heartbeat_archive_id}
+            archive_ids = {webhook_archive_id, heartbeat_archive_id, goal_archive_id}
+            self.assertEqual(store._runtime_archive_kind(goal_archive_id), "goal")
             self.assertLessEqual(
                 archive_ids,
                 {item["id"] for item in store.list_recent_episode_directory(8)},
@@ -839,6 +850,10 @@ class StorageMemoryTest(unittest.TestCase):
                 store.apply_conversation_actions(
                     [{"action": "close", "episode_id": archive_id}], now=now + 2
                 )
+                owner_turn = "owner-for-" + archive_id
+                store.begin_turn(owner_turn, "owner", [owner_turn + "-event"])
+                with self.assertRaisesRegex(ValueError, "archive does not accept"):
+                    store.link_turn_to_episode(archive_id, owner_turn)
                 self.assertEqual(store.episode(archive_id)["status"], "open")
 
             stale_event = IncomingMessage(

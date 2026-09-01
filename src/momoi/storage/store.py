@@ -1995,7 +1995,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         return episode_id
 
     def _runtime_archive_kind(self, episode_id: str) -> str | None:
-        """Return the runtime owner of a Webhook or Heartbeat day archive."""
+        """Return the runtime owner of a Goal, Webhook or Heartbeat archive."""
         row = self._db.execute(
             """SELECT CASE
                      WHEN EXISTS (
@@ -2016,8 +2016,20 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                                WHERE source_id.value GLOB 'heartbeat:*'
                            )
                      ) THEN 'heartbeat'
+                     WHEN EXISTS (
+                         SELECT 1 FROM episode_turns AS archive_turn
+                         JOIN turns AS archive_source
+                           ON archive_source.id=archive_turn.turn_id
+                         WHERE archive_turn.episode_id=?
+                           AND archive_source.kind='autonomous'
+                           AND EXISTS (
+                               SELECT 1 FROM json_each(archive_source.source_ids_json)
+                                    AS source_id
+                               WHERE source_id.value GLOB 'goal:*'
+                           )
+                     ) THEN 'goal'
                    END AS kind""",
-            (episode_id, episode_id),
+            (episode_id, episode_id, episode_id),
         ).fetchone()
         return str(row["kind"]) if row is not None and row["kind"] else None
 
@@ -2550,7 +2562,16 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                                    FROM json_each(
                                        archive_source.source_ids_json
                                    ) AS source_id
-                                   WHERE source_id.value GLOB 'heartbeat:*'
+                               WHERE source_id.value GLOB 'heartbeat:*'
+                           )
+                         )
+                         OR EXISTS (
+                             SELECT 1 FROM turns AS archive_source
+                             WHERE archive_source.id=archive_turn.turn_id
+                               AND archive_source.kind='autonomous'
+                               AND EXISTS (
+                                   SELECT 1 FROM json_each(archive_source.source_ids_json)
+                                   AS source_id WHERE source_id.value GLOB 'goal:*'
                                )
                          )
                      )
@@ -2609,6 +2630,8 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         ).fetchall()
         results = []
         for row in rows:
+            if exclude_runtime_archives and self._runtime_archive_kind(str(row["id"])):
+                continue
             episode = self._episode_dict(row)
             episode["last_activity_timestamp"] = context_timestamp(
                 row["last_activity_at"]
@@ -2818,6 +2841,8 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         ).fetchall()
         inventory: list[dict[str, object]] = []
         for row in rows:
+            if self._runtime_archive_kind(str(row["id"])):
+                continue
             item = dict(row)
             try:
                 open_loops = json.loads(str(item.pop("open_loops_json")))
@@ -6812,8 +6837,9 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                         goal_source,
                     ),
                 )
+                goal_day = datetime.fromtimestamp(now, ZoneInfo("Asia/Shanghai")).date().isoformat()
                 self._ensure_autonomous_episode(
-                    f"goal:{goal_id}",
+                    f"goal:{goal_id}:day:{goal_day}",
                     turn_id,
                     str(current["title"]),
                     now,
@@ -6997,7 +7023,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                 )
                 if row["goal_id"] == "heartbeat"
                 else (
-                    f"goal:{row['goal_id']}",
+                    f"goal:{row['goal_id']}:day:{datetime.fromtimestamp(now, ZoneInfo('Asia/Shanghai')).date().isoformat()}",
                     self._episode_title(
                         visible_messages[0], "Autonomous conversation"
                     ),
