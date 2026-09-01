@@ -2084,12 +2084,12 @@ function ThinkingLayout({
   );
 }
 
-function RecallEvidenceGroup({ title, items, renderItem }) {
+function RecallEvidenceGroup({ title, items, renderItem, tone = "memory" }) {
   const [showAll, setShowAll] = useState(false);
   const visibleItems = showAll ? items : items.slice(0, 4);
   const hiddenCount = items.length - visibleItems.length;
   return (
-    <section className="recall-evidence-group">
+    <section className={`recall-evidence-group is-${tone}`}>
       <div className="recall-evidence-group-head">
         <h4>{title}</h4>
         <span>{items.length} 条</span>
@@ -2112,6 +2112,7 @@ function RecallEvidenceGroup({ title, items, renderItem }) {
 }
 
 function RecallDetail({ recall }) {
+  const [showEvidence, setShowEvidence] = useState(false);
   if (!recall) return null;
   const units = recall.units || [];
   const memories = [
@@ -2178,64 +2179,96 @@ function RecallDetail({ recall }) {
             </article>
           ))}
         </div>
-        {!!recall.episode_actions?.length && (
-          <section className="recall-archive" aria-labelledby="recall-archive-title">
-            <div className="recall-archive-head">
-              <span className="recall-section-label" id="recall-archive-title">SAVE DATA // 对话归档</span>
-            </div>
-            {recall.episode_actions.map((action, index) => (
-              <div className="recall-episode-action" key={`${action.action}:${action.episode_id || index}`}>
-                <span>{action.action === "continue" ? "继续记录" : action.action === "new" ? "新建记录" : "关联记录"}</span>
-                {action.episode_id ? (
-                  <a href={`#conversations/${encodeURIComponent(action.episode_id)}`}>
-                    {action.title || "查看聊天记录"} <span aria-hidden="true">↗</span>
-                  </a>
-                ) : (
-                  <strong>{action.title || "未命名聊天记录"}</strong>
-                )}
-              </div>
-            ))}
-          </section>
-        )}
-        {!!evidenceCount && (
-          <details className="recall-evidence">
-            <summary>
-              <span className="recall-evidence-kicker">ARCHIVE // 召回依据</span>
-              <span>{evidenceCount} 条资料</span>
-            </summary>
-            <div className="recall-evidence-body">
-              {!!memories.length && (
-                <RecallEvidenceGroup
-                  title="记忆与复盘"
-                  items={memories}
-                  renderItem={(item, index) => (
-                    <li key={`${item.source}:${item.kind}:${item.key || index}`}>
-                      <div className="recall-evidence-meta">
-                        <span>{memoryKindLabel(item.kind)}</span>
-                        {item.local_date ? <time>{item.local_date}</time> : null}
-                      </div>
-                      <p>{item.content || "这条记录没有正文。"}</p>
-                    </li>
-                  )}
-                />
-              )}
-              {!!episodes.length && (
-                <RecallEvidenceGroup
-                  title="相关聊天"
-                  items={episodes}
-                  renderItem={(item) => (
-                    <li key={item.id}>
-                      <a className="recall-evidence-link" href={`#conversations/${encodeURIComponent(item.id)}`}>
-                        {item.title || "未命名聊天记录"} <span aria-hidden="true">↗</span>
+        {!!recall.episode_actions?.length || !!evidenceCount ? (
+          <div
+            className={`recall-panel-footer${
+              recall.episode_actions?.length ? " has-archive" : ""
+            }${evidenceCount ? " has-evidence" : ""}`}
+          >
+            {!!recall.episode_actions?.length && (
+              <section className="recall-archive" aria-labelledby="recall-archive-title">
+                <div className="recall-archive-head">
+                  <span className="recall-section-label" id="recall-archive-title">SAVE DATA // 对话归档</span>
+                </div>
+                {recall.episode_actions.map((action, index) => (
+                  <div className="recall-episode-action" key={`${action.action}:${action.episode_id || index}`}>
+                    <span>{action.action === "continue" ? "继续记录" : action.action === "new" ? "新建记录" : "关联记录"}</span>
+                    {action.episode_id ? (
+                      <a href={`#conversations/${encodeURIComponent(action.episode_id)}`}>
+                        {action.title || "查看聊天记录"} <span aria-hidden="true">↗</span>
                       </a>
-                      {item.summary ? <p>{item.summary}</p> : null}
-                    </li>
+                    ) : (
+                      <strong>{action.title || "未命名聊天记录"}</strong>
+                    )}
+                  </div>
+                ))}
+              </section>
+            )}
+            {!!evidenceCount && (
+              <button
+                className="recall-evidence-toggle"
+                type="button"
+                aria-expanded={showEvidence}
+                onClick={() => setShowEvidence((current) => !current)}
+              >
+                  <span className="recall-evidence-kicker">ARCHIVE // 召回依据</span>
+                  <span>{evidenceCount} 条资料</span>
+                  <svg
+                    className="sort-toggle-icon recall-evidence-toggle-icon"
+                    viewBox="0 0 16 16"
+                    width="20"
+                    height="20"
+                    aria-hidden="true"
+                    focusable="false"
+                  >
+                    <path
+                      d="M3.2 6.2 L8 11 l4.8-4.8"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.2"
+                      strokeLinecap="square"
+                      strokeLinejoin="miter"
+                    />
+                  </svg>
+              </button>
+            )}
+            {showEvidence && (
+                <div className="recall-evidence-body">
+                  {!!memories.length && (
+                    <RecallEvidenceGroup
+                      title="记忆与复盘"
+                      items={memories}
+                      tone="memory"
+                      renderItem={(item, index) => (
+                        <li key={`${item.source}:${item.kind}:${item.key || index}`}>
+                          <div className="recall-evidence-meta">
+                            <span>{memoryKindLabel(item.kind)}</span>
+                            {item.local_date ? <time>{item.local_date}</time> : null}
+                          </div>
+                          <p>{item.content || "这条记录没有正文。"}</p>
+                        </li>
+                      )}
+                    />
                   )}
-                />
-              )}
-            </div>
-          </details>
-        )}
+                  {!!episodes.length && (
+                    <RecallEvidenceGroup
+                      title="相关聊天"
+                      items={episodes}
+                      tone="episode"
+                      renderItem={(item) => (
+                        <li key={item.id}>
+                          <a className="recall-evidence-link" href={`#conversations/${encodeURIComponent(item.id)}`}>
+                            {item.title || "未命名聊天记录"} <span aria-hidden="true">↗</span>
+                          </a>
+                          {item.summary ? <p>{item.summary}</p> : null}
+                        </li>
+                      )}
+                    />
+                  )}
+                </div>
+            )}
+          </div>
+        ) : null}
         {recall.semantic?.fallback_reason ? (
           <p className="recall-warning">
             向量召回降级：{recall.semantic.fallback_reason}
