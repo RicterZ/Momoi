@@ -2,7 +2,6 @@ import json
 import sqlite3
 import time
 import uuid
-from datetime import datetime
 
 from ..channel import normalize_channel_message
 from ..models import AgentReply, OutboxMessage
@@ -151,16 +150,6 @@ class DeliveryStore:
             raise ValueError("webhook run not found")
         return str(row["workflow_id"])
 
-    @staticmethod
-    def _webhook_day_episode(when: float, workflow_id: str) -> tuple[str, str]:
-        day = datetime.fromtimestamp(when).astimezone().date().isoformat()
-        return f"webhook:{workflow_id}:day:{day}", f"Webhook {workflow_id}"
-
-    @staticmethod
-    def _heartbeat_day_episode(when: float) -> tuple[str, str]:
-        day = datetime.fromtimestamp(when).astimezone().date().isoformat()
-        return f"heartbeat:day:{day}", "心跳"
-
     def _heartbeat_turn_time(self, turn_id: str, fallback: float) -> float:
         row = self._db.execute(
             """SELECT MIN(created_at) AS created_at FROM messages
@@ -201,15 +190,16 @@ class DeliveryStore:
                    VALUES (?, 'event', ?, ?, ?, 'delivered')""",
                 (turn_id, text, now, source),
             )
-            episode_key, title = self._webhook_day_episode(
-                now, self._webhook_workflow_id(run_id)
-            )
-            self._ensure_autonomous_episode(
-                episode_key,
-                turn_id,
-                title,
-                now,
-                text,
+            workflow_id = self._webhook_workflow_id(run_id)
+            archive_day = self._archive_day(now)
+            self._ensure_runtime_archive(
+                archive_kind="webhook",
+                archive_day=archive_day,
+                episode_key=f"webhook:{workflow_id}:day:{archive_day}",
+                turn_id=turn_id,
+                title=f"Webhook {workflow_id}",
+                now=now,
+                recall_values=(text,),
             )
             return int(inserted.lastrowid)
 
@@ -303,15 +293,16 @@ class DeliveryStore:
                     (turn_id,),
                 ).fetchone()
                 when = float(event["created_at"]) if event is not None else now
-                episode_key, title = self._webhook_day_episode(
-                    when, self._webhook_workflow_id(run_id)
-                )
-                self._ensure_autonomous_episode(
-                    episode_key,
-                    turn_id,
-                    title,
-                    now,
-                    visible,
+                workflow_id = self._webhook_workflow_id(run_id)
+                archive_day = self._archive_day(when)
+                self._ensure_runtime_archive(
+                    archive_kind="webhook",
+                    archive_day=archive_day,
+                    episode_key=f"webhook:{workflow_id}:day:{archive_day}",
+                    turn_id=turn_id,
+                    title=f"Webhook {workflow_id}",
+                    now=now,
+                    recall_values=(visible,),
                 )
             self._apply_mood_update(reply.mood_update, now)
             if reply.should_schedule_reply_wait:

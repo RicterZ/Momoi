@@ -4,6 +4,7 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 from momoi.config import NotificationConfig
 from momoi.context_time import context_timestamp
@@ -34,8 +35,11 @@ class HeartbeatEpisodeTests(unittest.TestCase):
 
     def test_heartbeat_uses_one_episode_per_local_day(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            store = Store(Path(directory) / "momoi.sqlite3")
-            day_one = datetime(2026, 8, 16, 10).astimezone().timestamp()
+            zone = ZoneInfo("Asia/Shanghai")
+            store = Store(
+                Path(directory) / "momoi.sqlite3", timezone="Asia/Shanghai"
+            )
+            day_one = datetime(2026, 8, 16, 10, tzinfo=zone).timestamp()
             first = self._commit(store, "heartbeat-1", day_one)
             second = self._commit(store, "heartbeat-2", day_one + 3600)
             next_day = self._commit(store, "heartbeat-3", day_one + 86400)
@@ -43,7 +47,7 @@ class HeartbeatEpisodeTests(unittest.TestCase):
             self.assertNotEqual(first, next_day)
             self.assertEqual(
                 store.episode(first)["title"],
-                f"心跳 · {datetime.fromtimestamp(day_one).astimezone().date()}",
+                "心跳 · 2026-08-16",
             )
             store.close()
 
@@ -66,8 +70,13 @@ class HeartbeatEpisodeTests(unittest.TestCase):
 
     def test_delayed_notification_stays_with_heartbeat_day(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            store = Store(Path(directory) / "momoi.sqlite3")
-            heartbeat_at = datetime(2026, 8, 16, 23, 59).astimezone().timestamp()
+            zone = ZoneInfo("Asia/Shanghai")
+            store = Store(
+                Path(directory) / "momoi.sqlite3", timezone="Asia/Shanghai"
+            )
+            heartbeat_at = datetime(
+                2026, 8, 16, 23, 59, tzinfo=zone
+            ).timestamp()
             delivered_at = heartbeat_at + 120
             turn_id = "heartbeat-delayed"
             with patch("momoi.storage.store.time.time", return_value=heartbeat_at):

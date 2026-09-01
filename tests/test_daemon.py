@@ -1082,6 +1082,52 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 await worker
             daemon.store.close()
 
+    async def test_failed_episode_annealing_does_not_delay_other_work(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(
+                AppConfig(
+                    llm=LLMConfig(
+                        "http://127.0.0.1", "test", "test", 100, 0, 1, 0
+                    ),
+                    channel=NapCatConfig(
+                        "ws://127.0.0.1", "20000", 0.01, 1, 30, 30, 20
+                    ),
+                    system_prompt="test",
+                    transcript_turns_min=4,
+                    transcript_turns_max=4,
+                    episode_raw_tail_turns=2,
+                    memory_results=2,
+                    database=Path(directory) / "momoi.sqlite3",
+                    log_level="INFO",
+                )
+            )
+            stop = asyncio.Event()
+            second_run = asyncio.Event()
+            calls = 0
+
+            async def ready(_stop: asyncio.Event) -> bool:
+                return False
+
+            async def anneal(**_: object) -> bool:
+                nonlocal calls
+                calls += 1
+                if calls == 1:
+                    raise RuntimeError("first candidate failed")
+                second_run.set()
+                stop.set()
+                return False
+
+            daemon._wait_for_episode_annealing_ready = ready  # type: ignore[method-assign]
+            daemon._run_episode_annealing_once = anneal  # type: ignore[method-assign]
+            worker = asyncio.create_task(daemon._episode_annealing_worker(stop))
+            daemon.episode_annealing_requested.set()
+
+            await asyncio.wait_for(second_run.wait(), timeout=1)
+            await asyncio.wait_for(worker, timeout=1)
+
+            self.assertEqual(calls, 2)
+            daemon.store.close()
+
     async def test_manual_heartbeat_command_queues_once_even_when_disabled(
         self,
     ) -> None:

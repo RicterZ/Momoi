@@ -356,8 +356,14 @@ class StorageMemoryTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
             now = time.time()
-            root = store._ensure_autonomous_episode(
-                "legacy-cycle", "initial-turn", "Legacy", now, "initial"
+            root = store._ensure_runtime_archive(
+                archive_kind="heartbeat",
+                archive_day="2026-08-25",
+                episode_key="legacy-cycle",
+                turn_id="initial-turn",
+                title="Legacy",
+                now=now,
+                recall_values=("initial",),
             )
             store.create_episode("Cycle peer", episode_id="cycle-peer")
             with store._db:
@@ -368,8 +374,14 @@ class StorageMemoryTest(unittest.TestCase):
                     [("cycle-peer", root), (root, "cycle-peer")],
                 )
 
-            selected = store._ensure_autonomous_episode(
-                "legacy-cycle", "later-turn", "Legacy", now + 1, "later"
+            selected = store._ensure_runtime_archive(
+                archive_kind="heartbeat",
+                archive_day="2026-08-25",
+                episode_key="legacy-cycle",
+                turn_id="later-turn",
+                title="Legacy",
+                now=now + 1,
+                recall_values=("later",),
             )
 
             self.assertIn(selected, {root, "cycle-peer"})
@@ -782,32 +794,38 @@ class StorageMemoryTest(unittest.TestCase):
             store = Store(Path(directory) / "momoi.sqlite3")
             now = time.time()
             with store._db:
-                webhook_archive_id = store._ensure_autonomous_episode(
-                    "webhook:event-message:day:2026-08-24",
-                    "webhook:run:0",
-                    "Webhook event-message 2026-08-24",
-                    now,
-                    "门锁通知",
+                webhook_archive_id = store._ensure_runtime_archive(
+                    archive_kind="webhook",
+                    archive_day="2026-08-24",
+                    episode_key="webhook:event-message:day:2026-08-24",
+                    turn_id="webhook:run:0",
+                    title="Webhook event-message",
+                    now=now,
+                    recall_values=("门锁通知",),
                 )
                 store._db.execute(
                     "UPDATE turns SET state='completed' WHERE id='webhook:run:0'"
                 )
-                heartbeat_archive_id = store._ensure_autonomous_episode(
-                    "heartbeat:day:2026-08-25",
-                    "heartbeat:run:0",
-                    "心跳",
-                    now + 1,
-                    "休息一下",
+                heartbeat_archive_id = store._ensure_runtime_archive(
+                    archive_kind="heartbeat",
+                    archive_day="2026-08-25",
+                    episode_key="heartbeat:day:2026-08-25",
+                    turn_id="heartbeat:run:0",
+                    title="心跳",
+                    now=now + 1,
+                    recall_values=("休息一下",),
                 )
                 store._db.execute(
                     "UPDATE turns SET state='completed' WHERE id='heartbeat:run:0'"
                 )
-                goal_archive_id = store._ensure_autonomous_episode(
-                    "goal:night:day:2026-08-26",
-                    "goal:night:0",
-                    "Goal night 2026-08-26",
-                    now + 2,
-                    "睡觉提醒",
+                goal_archive_id = store._ensure_runtime_archive(
+                    archive_kind="goal",
+                    archive_day="2026-08-26",
+                    episode_key="goal:night:day:2026-08-26",
+                    turn_id="goal:night:0",
+                    title="Goal night",
+                    now=now + 2,
+                    recall_values=("睡觉提醒",),
                 )
                 store._db.execute(
                     "UPDATE turns SET state='completed' WHERE id='goal:night:0'"
@@ -828,7 +846,7 @@ class StorageMemoryTest(unittest.TestCase):
                 if item["record_type"] == "episode"
             }
             self.assertEqual(
-                dashboard[goal_archive_id], "Goal night 2026-08-26 · 2026-08-26"
+                dashboard[goal_archive_id], "Goal night · 2026-08-26"
             )
             self.assertLessEqual(
                 archive_ids,
@@ -975,6 +993,44 @@ class StorageMemoryTest(unittest.TestCase):
                     store.apply_episode_consolidation(
                         ["owner-pending"], [decision], [archive_id]
                     )
+            store.close()
+
+    def test_runtime_archive_day_uses_configured_timezone(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(
+                Path(directory) / "momoi.sqlite3", timezone="Asia/Shanghai"
+            )
+            timestamp = datetime(
+                2026, 9, 1, 16, 30, tzinfo=ZoneInfo("UTC")
+            ).timestamp()
+
+            self.assertEqual(store._archive_day(timestamp), "2026-09-02")
+            store.close()
+
+    def test_runtime_archive_rollover_keeps_explicit_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            now = time.time()
+            with store._db:
+                archive_id = store._ensure_runtime_archive(
+                    archive_kind="webhook",
+                    archive_day="2026-09-02",
+                    episode_key="webhook:test:day:2026-09-02",
+                    turn_id="webhook:test:0",
+                    title="Webhook test",
+                    now=now,
+                )
+                successor = store._roll_episode(
+                    archive_id,
+                    "webhook:test:rollover",
+                    now + 1,
+                    "x" * 300_000,
+                )
+
+            self.assertNotEqual(successor, archive_id)
+            episode = store.episode(successor)
+            self.assertEqual(episode["archive_kind"], "webhook")
+            self.assertEqual(episode["archive_day"], "2026-09-02")
             store.close()
 
     def test_latest_consolidation_turn_is_deferred_then_reconsidered(
@@ -1548,6 +1604,49 @@ class StorageMemoryTest(unittest.TestCase):
                 ],
                 1,
             )
+            reopened.close()
+
+    def test_existing_database_adds_runtime_archive_columns(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "momoi.sqlite3"
+            store = Store(path)
+            store.create_episode("Legacy episode", episode_id="legacy")
+            store.close()
+
+            database = sqlite3.connect(path)
+            database.execute(
+                "ALTER TABLE conversation_episodes DROP COLUMN archive_kind"
+            )
+            database.execute(
+                "ALTER TABLE conversation_episodes DROP COLUMN archive_day"
+            )
+            database.commit()
+            database.close()
+
+            reopened = Store(path)
+            columns = {
+                str(row[1])
+                for row in reopened._db.execute(
+                    "PRAGMA table_info(conversation_episodes)"
+                )
+            }
+            self.assertLessEqual({"archive_kind", "archive_day"}, columns)
+            legacy = reopened.episode("legacy")
+            self.assertEqual(legacy["title"], "Legacy episode")
+            self.assertIsNone(legacy["archive_kind"])
+
+            with reopened._db:
+                archive_id = reopened._ensure_runtime_archive(
+                    archive_kind="heartbeat",
+                    archive_day="2026-09-02",
+                    episode_key="heartbeat:day:2026-09-02",
+                    turn_id="heartbeat:migration-test",
+                    title="心跳",
+                    now=time.time(),
+                )
+            archive = reopened.episode(archive_id)
+            self.assertEqual(archive["archive_kind"], "heartbeat")
+            self.assertEqual(archive["archive_day"], "2026-09-02")
             reopened.close()
 
     def test_recall_reuse_candidate_is_only_the_latest_effective_scope(self) -> None:

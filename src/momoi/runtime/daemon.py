@@ -76,6 +76,7 @@ class MomoiDaemon(TurnRunner):
             config.workspace,
             config.policies.memory,
             thinking=config.thinking,
+            timezone=config.notifications.timezone,
         )
         self.semantic_recall = SemanticRecallService(
             self.store, config.embedding
@@ -774,11 +775,9 @@ class MomoiDaemon(TurnRunner):
                     error_type=type(error).__name__,
                     reason=safe_preview(str(error), 300),
                 )
-                # ``release_episode_annealing`` persists the retry deadline.
-                # Do not wake the worker immediately: that bypasses the
-                # durable backoff and can repeatedly reclaim the same work,
-                # starving pending consolidation.
-                await self._wait_for_episode_annealing_retry()
+                # The failed Episode remains protected by its persisted retry
+                # deadline; wake the worker so other eligible work can proceed.
+                self.episode_annealing_requested.set()
             else:
                 if completed:
                     self.episode_annealing_requested.set()

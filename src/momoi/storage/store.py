@@ -286,11 +286,13 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         search_backend: SearchBackend | None = None,
         episode_search_backend: EpisodeSearchBackend | None = None,
         thinking: Path | None = None,
+        timezone: str = NotificationConfig().timezone,
     ) -> None:
         database = Path(path).expanduser().resolve()
         self._workspace = (workspace or database.parent).expanduser().resolve()
         self._memory_policy = memory_policy
         self._search_backend = search_backend or StringSearchBackend()
+        self._timezone = ZoneInfo(timezone)
         self._episode_query = EpisodeQueryService(
             episode_search_backend
             or StringEpisodeSearchBackend(self._search_backend)
@@ -1899,18 +1901,21 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         for turn in turns:
             self._index_turn_episode_terms(str(turn["turn_id"]))
 
-    def _ensure_autonomous_episode(
+    def _archive_day(self, timestamp: float) -> str:
+        return datetime.fromtimestamp(timestamp, self._timezone).date().isoformat()
+
+    def _ensure_runtime_archive(
         self,
+        *,
+        archive_kind: str,
+        archive_day: str,
         episode_key: str,
         turn_id: str,
         title: str,
         now: float,
-        *recall_values: object,
+        recall_values: tuple[object, ...] = (),
     ) -> str:
-        day_match = re.search(r":day:(\d{4}-\d{2}-\d{2})$", episode_key)
-        archive_kind = episode_key.split(":", 1)[0] if episode_key.startswith(("goal:", "heartbeat:", "webhook:")) else None
-        if day_match:
-            title = f"{title} · {day_match.group(1)}"
+        title = f"{title} · {archive_day}"
         episode_id = uuid.uuid5(
             uuid.NAMESPACE_URL, f"momoi:autonomous-episode:{episode_key}"
         ).hex
@@ -1924,7 +1929,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             """INSERT OR IGNORE INTO conversation_episodes
                (id, title, salience, created_at, updated_at, archive_kind, archive_day)
                VALUES (?, ?, 0.4, ?, ?, ?, ?)""",
-            (episode_id, title[:200], now, now, archive_kind, day_match.group(1) if day_match else None),
+            (episode_id, title[:200], now, now, archive_kind, archive_day),
         )
         visited_successors: set[str] = set()
         while episode_id not in visited_successors:
@@ -1963,7 +1968,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                 """INSERT OR IGNORE INTO conversation_episodes
                    (id, title, salience, created_at, updated_at, archive_kind, archive_day)
                    VALUES (?, ?, 0.4, ?, ?, ?, ?)""",
-                (episode_id, title[:200], now, now, archive_kind, day_match.group(1) if day_match else None),
+                (episode_id, title[:200], now, now, archive_kind, archive_day),
             )
             self._db.execute(
                 """INSERT OR IGNORE INTO episode_links
@@ -1995,8 +2000,9 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                 (episode_id, turn_id, ordinal),
             )
         self._db.execute(
-            "UPDATE conversation_episodes SET updated_at=? WHERE id=?",
-            (now, episode_id),
+            """UPDATE conversation_episodes
+               SET updated_at=?, archive_kind=?, archive_day=? WHERE id=?""",
+            (now, archive_kind, archive_day, episode_id),
         )
         self._index_episode_terms(episode_id, title, *recall_values)
         self._index_turn_episode_terms(turn_id)
@@ -4483,8 +4489,8 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         self._db.execute(
             """INSERT OR IGNORE INTO conversation_episodes
                (id, status, title, topics_json, entities_json, open_loops_json,
-                salience, created_at, updated_at)
-               VALUES (?, 'closing', ?, ?, ?, ?, ?, ?, ?)""",
+                salience, created_at, updated_at, archive_kind, archive_day)
+               VALUES (?, 'closing', ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 successor,
                 row["title"],
@@ -4494,6 +4500,8 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                 row["salience"],
                 now,
                 now,
+                row["archive_kind"],
+                row["archive_day"],
             ),
         )
         self._db.execute(
@@ -5310,15 +5318,19 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                         heartbeat_source,
                     ),
                 )
-                episode_key, title = self._heartbeat_day_episode(now)
-                self._ensure_autonomous_episode(
-                    episode_key,
-                    turn_id,
-                    title,
-                    now,
-                    activity,
-                    result,
-                    *(str(row["text"]) for row in progress_rows),
+                archive_day = self._archive_day(now)
+                self._ensure_runtime_archive(
+                    archive_kind="heartbeat",
+                    archive_day=archive_day,
+                    episode_key=f"heartbeat:day:{archive_day}",
+                    turn_id=turn_id,
+                    title="心跳",
+                    now=now,
+                    recall_values=(
+                        activity,
+                        result,
+                        *(str(row["text"]) for row in progress_rows),
+                    ),
                 )
             target_channel = (
                 str(pending["pending_reply_channel"] or "")
@@ -6852,13 +6864,15 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                         goal_source,
                     ),
                 )
-                goal_day = datetime.fromtimestamp(now, ZoneInfo("Asia/Shanghai")).date().isoformat()
-                self._ensure_autonomous_episode(
-                    f"goal:{goal_id}:day:{goal_day}",
-                    turn_id,
-                    str(current["title"]),
-                    now,
-                    goal_record,
+                archive_day = self._archive_day(now)
+                self._ensure_runtime_archive(
+                    archive_kind="goal",
+                    archive_day=archive_day,
+                    episode_key=f"goal:{goal_id}:day:{archive_day}",
+                    turn_id=turn_id,
+                    title=str(current["title"]),
+                    now=now,
+                    recall_values=(goal_record,),
                 )
             if draft.notification_messages:
                 self._db.execute(
@@ -7032,24 +7046,32 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                 ),
             )
         if visible_messages:
-            episode_key, title = (
-                self._heartbeat_day_episode(
-                    self._heartbeat_turn_time(str(row["turn_id"]), now)
-                )
-                if row["goal_id"] == "heartbeat"
-                else (
-                    f"goal:{row['goal_id']}:day:{datetime.fromtimestamp(now, ZoneInfo('Asia/Shanghai')).date().isoformat()}",
-                    self._episode_title(
-                        visible_messages[0], "Autonomous conversation"
-                    ),
+            archive_kind = "heartbeat" if row["goal_id"] == "heartbeat" else "goal"
+            archive_time = (
+                self._heartbeat_turn_time(str(row["turn_id"]), now)
+                if archive_kind == "heartbeat"
+                else now
+            )
+            archive_day = self._archive_day(archive_time)
+            title = (
+                "心跳"
+                if archive_kind == "heartbeat"
+                else self._episode_title(
+                    visible_messages[0], "Autonomous conversation"
                 )
             )
-            self._ensure_autonomous_episode(
-                episode_key,
-                str(row["turn_id"]),
-                title,
-                now,
-                visible_messages,
+            self._ensure_runtime_archive(
+                archive_kind=archive_kind,
+                archive_day=archive_day,
+                episode_key=(
+                    f"heartbeat:day:{archive_day}"
+                    if archive_kind == "heartbeat"
+                    else f"goal:{row['goal_id']}:day:{archive_day}"
+                ),
+                turn_id=str(row["turn_id"]),
+                title=title,
+                now=now,
+                recall_values=(visible_messages,),
             )
         self._db.execute(
             """UPDATE notifications SET state='queued', claimed_at=NULL, queued_at=?

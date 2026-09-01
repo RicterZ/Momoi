@@ -519,7 +519,11 @@ class ConfigurationTest(unittest.TestCase):
             source.write_bytes(b"fake-image-content")
             database = root / "data" / "momoi.sqlite3"
             database.parent.mkdir()
-            fake_config = SimpleNamespace(database=database, thinking=None)
+            fake_config = SimpleNamespace(
+                database=database,
+                thinking=None,
+                notifications=NotificationConfig(),
+            )
 
             def run(command: str, slug: str | None = None) -> list[object]:
                 arguments = SimpleNamespace(

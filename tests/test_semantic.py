@@ -4,6 +4,8 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+import httpx
+
 from momoi.config import EmbeddingConfig
 from momoi.search import StringSearchBackend
 from momoi.semantic import (
@@ -32,6 +34,12 @@ def vector(first: float = 1.0, second: float = 0.0) -> list[float]:
 class SemanticRecallTest(unittest.TestCase):
     def test_semantic_error_category(self) -> None:
         self.assertEqual(semantic_error_category(TimeoutError("slow")), "timeout")
+        self.assertEqual(
+            semantic_error_category(httpx.ReadTimeout("slow read")), "timeout"
+        )
+        self.assertEqual(
+            semantic_error_category(httpx.ConnectTimeout("slow connect")), "timeout"
+        )
         self.assertEqual(semantic_error_category(ConnectionError("offline")), "error")
 
     def setUp(self) -> None:

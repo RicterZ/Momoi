@@ -113,6 +113,7 @@ def emotion(args: argparse.Namespace) -> None:
         config.database,
         args.workspace,
         thinking=config.thinking,
+        timezone=config.notifications.timezone,
     )
     try:
         if args.emotion_command == "add":
@@ -151,6 +152,7 @@ def goal(args: argparse.Namespace) -> None:
         config.database,
         args.workspace,
         thinking=config.thinking,
+        timezone=config.notifications.timezone,
     )
     try:
         if args.goal_command == "list":
@@ -231,7 +233,12 @@ def goal(args: argparse.Namespace) -> None:
 async def embedding(args: argparse.Namespace) -> None:
     config = load_config(args.workspace / "config.json")
     embedding_config = replace(config.embedding, enabled=True)
-    store = Store(config.database, args.workspace, thinking=config.thinking)
+    store = Store(
+        config.database,
+        args.workspace,
+        thinking=config.thinking,
+        timezone=config.notifications.timezone,
+    )
     service = SemanticRecallService(
         store, embedding_config, auto_activate=False
     )

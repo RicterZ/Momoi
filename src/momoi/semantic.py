@@ -20,7 +20,13 @@ logger = logging.getLogger(__name__)
 
 def semantic_error_category(error: BaseException) -> str:
     """Classify embedding failures without changing the fallback payload."""
-    return "timeout" if isinstance(error, TimeoutError) else "error"
+    return (
+        "timeout"
+        if isinstance(error, (TimeoutError, httpx.TimeoutException))
+        else "error"
+    )
+
+
 QUERY_INSTRUCTION = "为这个句子生成表示以用于检索相关文章："
 CALIBRATION_PROFILES: dict[str, dict[str, tuple[float, float, float]]] = {
     # Calibrated against the private historical benchmark for this model. The
