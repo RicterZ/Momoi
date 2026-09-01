@@ -2693,12 +2693,121 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
     ) -> list[dict[str, object]]:
         if limit <= 0:
             return []
-        rows = self._db.execute(
+        episode_rows = self._db.execute(
             """SELECT * FROM conversation_episodes
                ORDER BY updated_at DESC, id DESC LIMIT ?""",
             (limit,),
         ).fetchall()
-        return [self._episode_dict(row) for row in rows]
+        items = [
+            {**self._episode_dict(row), "record_type": "episode"}
+            for row in episode_rows
+        ]
+        turn_rows = self._db.execute(
+            """SELECT t.id, t.updated_at, d.action, d.reason,
+                      (
+                          SELECT m.content FROM messages AS m
+                          WHERE m.turn_id=t.id AND m.role='user'
+                          ORDER BY m.id LIMIT 1
+                      ) AS owner_content,
+                      (
+                          SELECT m.content FROM messages AS m
+                          WHERE m.turn_id=t.id AND m.role='assistant'
+                            AND m.delivery_state IN ('delivered', 'uncertain')
+                          ORDER BY m.id DESC LIMIT 1
+                      ) AS assistant_content
+               FROM turns AS t
+               LEFT JOIN episode_consolidation_decisions AS d ON d.turn_id=t.id
+               WHERE t.state='completed'
+                 AND NOT EXISTS (
+                     SELECT 1 FROM episode_turns AS et WHERE et.turn_id=t.id
+                 )
+                 AND EXISTS (
+                     SELECT 1 FROM messages AS m
+                     WHERE m.turn_id=t.id
+                       AND (
+                           m.role='user'
+                           OR m.role='assistant'
+                              AND m.delivery_state IN ('delivered', 'uncertain')
+                       )
+                 )
+               ORDER BY t.updated_at DESC, t.id DESC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+        for row in turn_rows:
+            owner = re.sub(
+                r"^\d{4}-\d{2}-\d{2}T\S+\s+",
+                "",
+                str(row["owner_content"] or ""),
+            ).strip()
+            assistant = " ".join(str(row["assistant_content"] or "").split())
+            status = str(row["action"] or "unclassified")
+            items.append(
+                {
+                    "id": f"turn:{row['id']}",
+                    "turn_id": str(row["id"]),
+                    "record_type": "turn",
+                    "status": status,
+                    "title": (" ".join(owner.split()) or assistant or "未归类聊天")[:80],
+                    "working_summary": "",
+                    "summary": str(row["reason"] or assistant)[:240],
+                    "topics": [],
+                    "updated_at": float(row["updated_at"]),
+                }
+            )
+        items.sort(
+            key=lambda item: (float(item.get("updated_at") or 0), str(item["id"])),
+            reverse=True,
+        )
+        return items[:limit]
+
+    def dashboard_conversation_turn(
+        self, turn_id: str
+    ) -> dict[str, object] | None:
+        row = self._db.execute(
+            """SELECT t.id, t.updated_at, d.action, d.reason
+               FROM turns AS t
+               LEFT JOIN episode_consolidation_decisions AS d ON d.turn_id=t.id
+               WHERE t.id=? AND t.state='completed'""",
+            (turn_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        messages = [
+            {
+                "id": int(message["id"]),
+                "role": str(message["role"]),
+                "content": str(message["content"]),
+                "created_at": float(message["created_at"]),
+                "delivery_state": str(message["delivery_state"]),
+            }
+            for message in self._db.execute(
+                """SELECT id, role, content, created_at, delivery_state
+                   FROM messages
+                   WHERE turn_id=? AND role IN ('user', 'assistant')
+                   ORDER BY id""",
+                (turn_id,),
+            ).fetchall()
+        ]
+        owner = next(
+            (str(message["content"]) for message in messages if message["role"] == "user"),
+            "",
+        )
+        owner = re.sub(r"^\d{4}-\d{2}-\d{2}T\S+\s+", "", owner).strip()
+        status = str(row["action"] or "unclassified")
+        return {
+            "id": f"turn:{turn_id}",
+            "turn_id": turn_id,
+            "record_type": "turn",
+            "status": status,
+            "title": (" ".join(owner.split()) or "未归类聊天")[:80],
+            "working_summary": "",
+            "summary": str(row["reason"] or ""),
+            "topics": [],
+            "updated_at": float(row["updated_at"]),
+            "messages": messages,
+            "truncated": False,
+            "next_before_ordinal": None,
+        }
 
     def open_conversation_inventory(self, limit: int = 64) -> list[dict[str, object]]:
         if limit <= 0:

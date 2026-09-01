@@ -931,7 +931,9 @@ function ConversationDetail({ item }) {
     <>
       <header className="conversation-head">
         <div className="conversation-head-row">
-          <span className="panel-label">{item.status} conversation</span>
+          <span className="panel-label">
+            {item.status} {item.record_type === "turn" ? "turn" : "conversation"}
+          </span>
           <button
             className={`sort-toggle${newestFirst ? " newest" : " oldest"}`}
             type="button"

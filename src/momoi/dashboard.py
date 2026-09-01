@@ -437,10 +437,15 @@ def create_dashboard_app(
             before_ordinal = int(before) if before else None
         except ValueError:
             raise web.HTTPBadRequest(text="invalid before_ordinal") from None
-        item = store.conversation_episode(
-            request.match_info["episode_id"],
-            token_budget,
-            before_ordinal=before_ordinal,
+        record_id = request.match_info["episode_id"]
+        item = (
+            store.dashboard_conversation_turn(record_id.removeprefix("turn:"))
+            if record_id.startswith("turn:")
+            else store.conversation_episode(
+                record_id,
+                token_budget,
+                before_ordinal=before_ordinal,
+            )
         )
         if item is None:
             raise web.HTTPNotFound(text="conversation not found")

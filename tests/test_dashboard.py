@@ -298,6 +298,62 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(asset.status, 200)
         self.assertEqual(await asset.read(), b"GIF89a")
 
+    async def test_chat_log_includes_ignored_and_deferred_turns(self) -> None:
+        now = time.time()
+        with self.store._db:
+            for index, (turn_id, action, owner_text) in enumerate(
+                (
+                    ("ignored-turn", "ignored", "微博最近有什么新消息"),
+                    ("deferred-turn", "deferred", "让爱丽丝开始清扫"),
+                ),
+                1,
+            ):
+                updated_at = now + index
+                self.store._db.execute(
+                    """INSERT INTO turns
+                       (id, kind, source_ids_json, state, started_at, updated_at)
+                       VALUES (?, 'owner', '[]', 'completed', ?, ?)""",
+                    (turn_id, updated_at, updated_at),
+                )
+                self.store._db.execute(
+                    """INSERT INTO messages
+                       (turn_id, role, content, created_at, source_event_ids_json)
+                       VALUES (?, 'user', ?, ?, '[]')""",
+                    (turn_id, owner_text, updated_at),
+                )
+                self.store._db.execute(
+                    """INSERT INTO messages
+                       (turn_id, role, content, created_at,
+                        source_event_ids_json, delivery_state)
+                       VALUES (?, 'assistant', '完成', ?, '[]', 'delivered')""",
+                    (turn_id, updated_at),
+                )
+                self.store._db.execute(
+                    """INSERT INTO episode_consolidation_decisions
+                       (turn_id, action, reason, processed_at)
+                       VALUES (?, ?, '测试归类', ?)""",
+                    (turn_id, action, updated_at),
+                )
+
+        response = await self.client.get("/api/conversations", headers=self._auth())
+        items = (await response.json())["items"]
+        by_id = {item["id"]: item for item in items}
+        self.assertEqual(by_id["turn:ignored-turn"]["status"], "ignored")
+        self.assertEqual(by_id["turn:deferred-turn"]["status"], "deferred")
+        self.assertEqual(by_id["turn:ignored-turn"]["record_type"], "turn")
+
+        detail = await (
+            await self.client.get(
+                "/api/conversations/turn:ignored-turn",
+                headers=self._auth(),
+            )
+        ).json()
+        self.assertEqual(detail["title"], "微博最近有什么新消息")
+        self.assertEqual(
+            [message["content"] for message in detail["messages"]],
+            ["微博最近有什么新消息", "完成"],
+        )
+
     async def test_usage_endpoint_counts_recorded_calls(self) -> None:
         self.store.record_llm_call(
             created_at=time.time(),
