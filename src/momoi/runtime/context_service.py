@@ -103,19 +103,6 @@ def _heartbeat_self_state_lines(value: str) -> str:
     return "\n".join(lines) or "(none)"
 
 
-def _heartbeat_conversation_state_lines(state: dict[str, object]) -> str:
-    fields = [
-        f"owner event revision: {state.get('owner_event_revision') or 0}",
-        f"owner busy: {bool(state.get('owner_busy') or state.get('owner_turn_or_delivery_active'))}",
-    ]
-    for key in ("blocked_by", "owner_contact_allowed_now", "owner_contact_eligible_at"):
-        if state.get(key) not in (None, "", [], {}):
-            fields.append(f"{key}: {state[key]}")
-    return "\n".join(fields)
-
-
-
-
 def _recall_context_lines(
     values: list[dict[str, object]],
 ) -> str:

@@ -245,16 +245,11 @@ class ProvidersToolsTest(unittest.TestCase):
         rendered = pack_user_context(
             ("followup", "continue the thought"),
             ("runtime_state", "now"),
-            ("conversation_state", '{"busy":false}'),
             ("long_term_memories", "喜欢短回复"),
         )
         self.assertNotIn("<emotion_catalog>", rendered)
         self.assertLess(
             rendered.index("<long_term_memories>"),
-            rendered.index("<conversation_state>"),
-        )
-        self.assertLess(
-            rendered.index("<conversation_state>"),
             rendered.index("<runtime_state>"),
         )
         self.assertLess(rendered.index("<runtime_state>"), rendered.index("<followup>"))
