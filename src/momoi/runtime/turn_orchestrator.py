@@ -364,7 +364,7 @@ class TurnOrchestrator:
             messages,
             [
                 self._send_bubbles_tool_spec(channel.name),
-                *self._announced_tool_specs([CURL_TOOL_SPEC], mcp=False),
+                CURL_TOOL_SPEC,
                 READ_TOOL_RESULT_SPEC,
                 END_TURN_TOOL_SPEC,
             ],

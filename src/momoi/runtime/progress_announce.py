@@ -19,11 +19,9 @@ def should_announce(name: str, *, mcp: bool) -> bool:
 
 def should_deliver_announce(
     *,
-    heartbeat_turn: bool,
-    reply_wait_turn: bool,
-    autonomous_goal: bool = False,
+    authority: str,
 ) -> bool:
-    return not heartbeat_turn and not reply_wait_turn and not autonomous_goal
+    return authority == "owner"
 
 
 def announce_field(spec: dict[str, Any]) -> str | None:

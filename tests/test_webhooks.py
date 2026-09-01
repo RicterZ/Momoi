@@ -270,7 +270,6 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "curl",
                             {
                                 "url": "http://static.test/package_state.json",
-                                "say_to_owner": "我先去看一下快递到了没。",
                             },
                         )
                     elif self.calls == 2:
@@ -342,7 +341,9 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             curl_spec = next(
                 tool for tool in provider.tools if tool["name"] == "curl"
             )
-            self.assertNotIn("say_to_owner", curl_spec["input_schema"]["required"])
+            self.assertNotIn(
+                "say_to_owner", curl_spec["input_schema"]["properties"]
+            )
             self.assertEqual(tools.last_call.name, "curl")
             self.assertEqual(
                 tools.last_call.arguments,
@@ -354,7 +355,6 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                     "SELECT text FROM outbox ORDER BY id"
                 )
             ]
-            self.assertIn("我先去看一下快递到了没。", outbox)
             self.assertIn("有一个快递到了，取件码是 1234。", outbox)
             system_text = json.dumps(provider.systems[0], ensure_ascii=False)
             context_text = json.dumps(provider.conversations[0], ensure_ascii=False)

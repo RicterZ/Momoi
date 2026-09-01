@@ -186,7 +186,7 @@ class ProgressAnnounceTest(unittest.TestCase):
         self.assertIsNone(error)
         self.assertEqual(arguments, {"url": "https://example.com"})
 
-    def test_owner_specs_advertise_say_to_owner_heartbeat_specs_do_not(self) -> None:
+    def test_only_owner_specs_advertise_say_to_owner(self) -> None:
         daemon = object.__new__(MomoiDaemon)
         daemon.channels = {"napcat": SimpleNamespace(name="napcat")}
         daemon.channel = daemon.channels["napcat"]
@@ -225,30 +225,27 @@ class ProgressAnnounceTest(unittest.TestCase):
         self.assertIsNone(announce_field(owner["read_file"]))
         self.assertIsNone(announce_field(heartbeat["curl"]))
 
-    def test_harness_never_delivers_on_heartbeat_or_autonomous_turns(self) -> None:
-        self.assertFalse(
-            should_deliver_announce(heartbeat_turn=True, reply_wait_turn=False)
-        )
-        self.assertFalse(
-            should_deliver_announce(heartbeat_turn=False, reply_wait_turn=True)
-        )
-        self.assertFalse(
-            should_deliver_announce(
-                heartbeat_turn=False, reply_wait_turn=False, autonomous_goal=True
-            )
-        )
-        self.assertTrue(
-            should_deliver_announce(heartbeat_turn=False, reply_wait_turn=False)
-        )
+    def test_harness_delivers_only_for_owner_authority(self) -> None:
+        self.assertTrue(should_deliver_announce(authority="owner"))
+        for authority in (
+            "webhook",
+            "agent",
+            "heartbeat",
+            "reply_followup",
+            "reflection",
+            "memory_maintenance",
+            "episode_consolidation",
+            "episode_anneal",
+        ):
+            with self.subTest(authority=authority):
+                self.assertFalse(should_deliver_announce(authority=authority))
 
     def test_heartbeat_strips_say_to_owner_without_delivering(self) -> None:
         arguments = {"url": "https://example.com", ANNOUNCE_FIELD: "我去搜一下"}
         text, error = apply_tool_announce(
             arguments,
             ANNOUNCE_FIELD,
-            deliver=should_deliver_announce(
-                heartbeat_turn=True, reply_wait_turn=False
-            ),
+            deliver=should_deliver_announce(authority="agent"),
         )
         self.assertIsNone(text)
         self.assertIsNone(error)
@@ -259,9 +256,7 @@ class ProgressAnnounceTest(unittest.TestCase):
         text, error = apply_tool_announce(
             arguments,
             ANNOUNCE_FIELD,
-            deliver=should_deliver_announce(
-                heartbeat_turn=False, reply_wait_turn=False
-            ),
+            deliver=should_deliver_announce(authority="owner"),
         )
         self.assertEqual(text, "我去搜一下")
         self.assertIsNone(error)

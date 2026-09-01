@@ -821,11 +821,7 @@ class ToolExecutionService:
                 response.tool_calls,
                 request_tools,
                 owner_work_acknowledged=owner_work_acknowledged,
-                deliver=should_deliver_announce(
-                    heartbeat_turn=heartbeat_turn,
-                    reply_wait_turn=reply_wait_turn,
-                    autonomous_goal=bool(autonomous_goal_id),
-                ),
+                deliver=should_deliver_announce(authority=authority),
             )
             if missing_announce is not None:
                 missing_call_id, field = missing_announce
@@ -1207,11 +1203,7 @@ class ToolExecutionService:
                             text, _ = apply_tool_announce(
                                 call.arguments,
                                 announce,
-                                deliver=should_deliver_announce(
-                                    heartbeat_turn=heartbeat_turn,
-                                    reply_wait_turn=reply_wait_turn,
-                                    autonomous_goal=bool(autonomous_goal_id),
-                                )
+                                deliver=should_deliver_announce(authority=authority)
                                 and not announce_delivered_in_batch,
                             )
                             history_arguments = history_tool_inputs.get(call.id)
