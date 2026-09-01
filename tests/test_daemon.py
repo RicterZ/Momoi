@@ -1812,11 +1812,13 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     names = {str(tool["name"]) for tool in tools}
                     if self.calls == 1:
                         system_request = json.dumps(_, ensure_ascii=False)
-                        if "偶尔看看最近有什么有趣的新游戏。" not in system_request:
+                        if "偶尔看看最近有什么有趣的新游戏。" in system_request:
                             raise AssertionError(_)
                         request = json.dumps(__, ensure_ascii=False)
                         if (
-                            "<autonomous_heartbeat>" not in request
+                            "<workflow_contract>" not in request
+                            or "偶尔看看最近有什么有趣的新游戏。" not in request
+                            or "<autonomous_heartbeat>" not in request
                             or "<heartbeat_plan>" not in request
                             or "<runtime_state>" not in request
                             or "<recent_topic_reference>" not in request
