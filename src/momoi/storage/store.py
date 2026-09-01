@@ -2037,20 +2037,6 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         ).fetchone()
         return str(row["kind"]) if row is not None and row["kind"] else None
 
-    @staticmethod
-    def _dashboard_episode_title(episode_id: str, title: str) -> str:
-        """Append the archive day to runtime-owned titles in the dashboard."""
-        if not (episode_id.startswith("goal:") or episode_id.startswith("heartbeat:")
-                or episode_id.startswith("webhook:")):
-            return title
-        match = re.search(r":day:(\d{4}-\d{2}-\d{2})$", episode_id)
-        if not match:
-            return title
-        day = match.group(1)
-        if title.endswith(f" · {day}"):
-            return title
-        return f"{title} · {day}"
-
     def create_episode(
         self,
         title: str,
@@ -2711,13 +2697,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             (limit,),
         ).fetchall()
         items = [
-            {
-                **self._episode_dict(row),
-                "title": self._dashboard_episode_title(
-                    str(row["id"]), str(row["title"])
-                ),
-                "record_type": "episode",
-            }
+            {**self._episode_dict(row), "record_type": "episode"}
             for row in episode_rows
         ]
         turn_rows = self._db.execute(
