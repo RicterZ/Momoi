@@ -20,3 +20,6 @@ Do not perform free-form Heartbeat activity or unrelated work.
   prerequisite.
 - Finishing silently is valid when the result is already covered, stale or not
   useful.
+- Deliver visible output only through `send_message`; ordinary assistant text is
+  not delivered. After the required Goal update and any delivery, call
+  `end_turn` alone in a later response.
