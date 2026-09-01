@@ -447,9 +447,13 @@ RECALL_TOOL_SPEC: dict[str, Any] = {
                                     "type": "string",
                                     "enum": ["none", "continue", "new"],
                                     "description": (
-                                        "continue only the same concrete experience; "
-                                        "new only when this already forms a retainable "
-                                        "experience; otherwise none."
+                                        "Episode continuity is not conversational "
+                                        "continuity. Use none by default for ordinary "
+                                        "chat, banter, reactions and transient moments. "
+                                        "continue only when this Turn directly advances "
+                                        "the same concrete experience represented by the "
+                                        "Episode; new only for a distinct experience "
+                                        "already worth retaining."
                                     ),
                                 },
                                 "ref": {
