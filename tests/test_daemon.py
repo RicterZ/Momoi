@@ -45,7 +45,12 @@ from momoi.provider import (
     ProviderError,
 )
 from momoi.runtime.turn_support import (
+    OWNER_TURN_PROTOCOL_REMINDER,
     STYLE_CARD_SYSTEM_PROMPT,
+)
+from momoi.runtime.tool_execution import (
+    OWNER_BUBBLE_REQUEST_REMINDER,
+    _owner_request_messages,
 )
 from momoi.runtime.parsing import parse_mood_decision, parse_mood_update
 from momoi.runtime.daemon import _message_gap_bounds
@@ -58,6 +63,43 @@ from tests.support import (
 
 
 class DaemonTest(unittest.TestCase):
+    def test_owner_request_bubble_reminder_is_wire_only(self) -> None:
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "first"},
+                    {"type": "tool_result", "content": "{}"},
+                    {"type": "text", "text": "last"},
+                ],
+            }
+        ]
+
+        request = _owner_request_messages(messages, remind_bubbles=True)
+
+        self.assertEqual(messages[0]["content"][-1]["text"], "last")
+        self.assertEqual(request[0]["content"][0]["text"], "first")
+        self.assertEqual(
+            request[0]["content"][-1]["text"],
+            f"last\n\n{OWNER_BUBBLE_REQUEST_REMINDER}",
+        )
+
+    def test_owner_request_bubble_reminder_follows_tool_results(self) -> None:
+        messages = [
+            {
+                "role": "user",
+                "content": [{"type": "tool_result", "content": "{}"}],
+            }
+        ]
+
+        request = _owner_request_messages(messages, remind_bubbles=True)
+
+        self.assertEqual(len(messages[0]["content"]), 1)
+        self.assertEqual(
+            request[0]["content"][-1],
+            {"type": "text", "text": OWNER_BUBBLE_REQUEST_REMINDER},
+        )
+
     def test_message_gap_scales_with_length_within_bounds(self) -> None:
         self.assertEqual(_message_gap_bounds("短句"), (4.0, 5.0))
         self.assertEqual(_message_gap_bounds("中等长度" * 8), (5.0, 6.0))
@@ -2086,7 +2128,11 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     **_: object,
                 ) -> ProviderResponse:
                     self.calls += 1
+                    request_text = json.dumps(messages, ensure_ascii=False)
                     if self.calls == 1:
+                        self_outer.assertIn(
+                            OWNER_BUBBLE_REQUEST_REMINDER, request_text
+                        )
                         call = ToolCall(
                             "bad-end_turn",
                             "end_turn",
@@ -2116,18 +2162,24 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     ):
                         raise AssertionError(tools)
                     if self.calls == 2:
-                        correction = json.dumps(messages, ensure_ascii=False)
+                        correction = request_text
                         if (
                             "without end_turn" not in correction
                             or "alone on the next step" not in correction
                         ):
                             raise AssertionError(correction)
+                        self_outer.assertIn(
+                            OWNER_BUBBLE_REQUEST_REMINDER, correction
+                        )
                         call = ToolCall(
                             "send",
                             "send_bubbles",
                             {"bubbles": ["午饭要好好吃呀"]},
                         )
                     else:
+                        self_outer.assertNotIn(
+                            OWNER_BUBBLE_REQUEST_REMINDER, request_text
+                        )
                         call = ToolCall(
                             "finish",
                             "end_turn",
@@ -2150,6 +2202,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         [call],
                     )
 
+            self_outer = self
             provider = Provider()
             event = IncomingMessage(
                 "owner-lunch", "owner-lunch", "等午饭吧", 1, 1
@@ -2158,9 +2211,10 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             turn_id = daemon._turn_id(event.event_id)
             daemon.store.begin_turn(turn_id, "owner", [event.event_id])
             daemon.provider = with_owner_recall(provider)  # type: ignore[assignment]
+            canonical_messages = [{"role": "user", "content": event.text}]
             reply = await daemon._run_tool_loop(
                 daemon._system(),
-                [{"role": "user", "content": event.text}],
+                canonical_messages,
                 daemon._owner_tool_specs(),
                 [event],
                 TurnDraft(),
@@ -2175,6 +2229,10 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
 
             self.assertEqual(provider.calls, 3)
+            self.assertNotIn(
+                OWNER_BUBBLE_REQUEST_REMINDER,
+                json.dumps(canonical_messages, ensure_ascii=False),
+            )
             self.assertEqual(reply.messages, [])
             self.assertEqual(
                 daemon.store._db.execute(
@@ -3107,8 +3165,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         # Slow-changing memory sits ahead of the transcript instead.
         self.assertIn("<current_owner_bubbles>", current_text)
         self.assertIn("</current_owner_bubbles>", current_text)
-        self.assertIn("1. Call recall first", current_text)
-        self.assertIn("2. Only send_bubbles can send bubbles", current_text)
+        self.assertIn(OWNER_TURN_PROTOCOL_REMINDER, current_text)
         self.assertNotIn("Every response in this Turn", current_text)
         self.assertIn("<runtime_state>", current_text)
         self.assertLess(

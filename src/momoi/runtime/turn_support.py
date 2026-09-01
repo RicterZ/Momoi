@@ -122,9 +122,7 @@ USER_CONTEXT_SECTION_ORDER = (
 # The two ordering rules sit in the last position because the live endpoint
 # follows them reliably there. Field semantics remain in the tool schemas.
 OWNER_TURN_PROTOCOL_REMINDER = (
-    "[Trusted Owner Turn protocol. "
-    "1. Call recall first; every independent intent must search or reuse. "
-    "2. Only send_bubbles can send bubbles.]"
+    "[Owner Turn: recall first; only send_bubbles sends bubbles.]"
 )
 
 

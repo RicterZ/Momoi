@@ -57,6 +57,52 @@ MAX_TOOL_RESULT_TRUNCATION_ATTEMPTS = 16
 # Room for the reference field appended to every serialized tool result.
 _RESULT_REF_OVERHEAD = 64
 SIMILAR_SEND_BUBBLES_THRESHOLD = 0.75
+OWNER_BUBBLE_REQUEST_REMINDER = "[Only send_bubbles sends bubbles.]"
+
+
+def _owner_request_messages(
+    messages: list[dict[str, Any]], *, remind_bubbles: bool
+) -> list[dict[str, Any]]:
+    """Build an Owner-only wire copy without changing canonical Turn history."""
+
+    request_messages = copy.deepcopy(messages)
+    if not remind_bubbles:
+        return request_messages
+    user_message = next(
+        (
+            message
+            for message in reversed(request_messages)
+            if message.get("role") == "user"
+        ),
+        None,
+    )
+    if user_message is None:
+        return request_messages
+    content = user_message.get("content")
+    if isinstance(content, str):
+        user_message["content"] = (
+            f"{content}\n\n{OWNER_BUBBLE_REQUEST_REMINDER}".lstrip()
+        )
+        return request_messages
+    if not isinstance(content, list):
+        user_message["content"] = OWNER_BUBBLE_REQUEST_REMINDER
+        return request_messages
+    text_block = next(
+        (
+            block
+            for block in reversed(content)
+            if isinstance(block, dict) and block.get("type") == "text"
+        ),
+        None,
+    )
+    if text_block is None:
+        content.append({"type": "text", "text": OWNER_BUBBLE_REQUEST_REMINDER})
+    else:
+        text = str(text_block.get("text") or "")
+        text_block["text"] = (
+            f"{text}\n\n{OWNER_BUBBLE_REQUEST_REMINDER}".lstrip()
+        )
+    return request_messages
 
 
 def _send_bubbles_text(bubbles: list[ChannelMessage]) -> str:
@@ -304,6 +350,7 @@ class ToolExecutionService:
         last_sent_messages: list[ChannelMessage] | None = None
         last_sent_channel = ""
         llm_round = 0
+        remind_owner_bubbles = False
         enable_tool_groups = (
             self._owner_enable_tool_groups()
             if authority == "owner"
@@ -348,6 +395,7 @@ class ToolExecutionService:
                 context_submitted = authority != "owner"
                 force_autonomous_finish = False
                 failed_tool_rounds = 0
+                remind_owner_bubbles = False
             request_tools = (
                 [AUTONOMOUS_FINISH_SPEC] if force_autonomous_finish else tools
             )
@@ -369,8 +417,15 @@ class ToolExecutionService:
                 history_messages = self._fit_context(
                     request_system, messages, request_tools, history_messages
                 )
+                request_messages = (
+                    _owner_request_messages(
+                        messages, remind_bubbles=remind_owner_bubbles
+                    )
+                    if authority == "owner"
+                    else messages
+                )
                 self._check_turn_budget(
-                    turn_id, request_system, messages, request_tools
+                    turn_id, request_system, request_messages, request_tools
                 )
             require_tool = bool(
                 autonomous_goal_id or heartbeat_turn or reply_wait_turn or workflow
@@ -389,7 +444,7 @@ class ToolExecutionService:
                     if accept_owner_updates:
                         response = await self._complete_with_owner_interrupt(
                             request_system,
-                            messages,
+                            request_messages,
                             request_tools,
                             require_tool=require_tool,
                             current_events=current_events,
@@ -398,7 +453,7 @@ class ToolExecutionService:
                     else:
                         response = await self.provider.complete(
                             request_system,
-                            messages,
+                            request_messages,
                             request_tools,
                             require_tool=require_tool,
                         )
@@ -426,12 +481,16 @@ class ToolExecutionService:
                 context_submitted = authority != "owner"
                 force_autonomous_finish = False
                 failed_tool_rounds = 0
+                remind_owner_bubbles = False
                 continue
             except Exception as error:
                 if external_tool_used:
                     raise ExternalToolTurnError(type(error).__name__) from error
                 raise
             metrics = response.usage or {}
+            remind_owner_bubbles = authority == "owner" and not any(
+                call.name == "send_bubbles" for call in response.tool_calls
+            )
             input_tokens = int(
                 metrics.get(
                     "input",
@@ -439,7 +498,7 @@ class ToolExecutionService:
                         json.dumps(
                             {
                                 "system": request_system,
-                                "messages": messages,
+                                "messages": request_messages,
                                 "tools": request_tools,
                             },
                             ensure_ascii=False,
@@ -493,6 +552,7 @@ class ToolExecutionService:
                 context_submitted = authority != "owner"
                 force_autonomous_finish = False
                 failed_tool_rounds = 0
+                remind_owner_bubbles = False
                 continue
             if not response.tool_calls:
                 if workflow is not None:
