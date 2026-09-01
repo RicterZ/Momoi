@@ -774,7 +774,11 @@ class MomoiDaemon(TurnRunner):
                     error_type=type(error).__name__,
                     reason=safe_preview(str(error), 300),
                 )
-                self.episode_annealing_requested.set()
+                # ``release_episode_annealing`` persists the retry deadline.
+                # Do not wake the worker immediately: that bypasses the
+                # durable backoff and can repeatedly reclaim the same work,
+                # starving pending consolidation.
+                await self._wait_for_episode_annealing_retry()
             else:
                 if completed:
                     self.episode_annealing_requested.set()
