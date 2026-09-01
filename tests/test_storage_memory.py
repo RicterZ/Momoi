@@ -2062,7 +2062,6 @@ class StorageMemoryTest(unittest.TestCase):
                 transcript_turns_max=4,
                 episode_raw_tail_turns=2,
                 memory_results=2,
-                memory_tokens=1000,
                 database=Path(directory) / "momoi.sqlite3",
                 log_level="INFO",
             )
@@ -3455,7 +3454,7 @@ class StorageMemoryTest(unittest.TestCase):
             )
             self.assertIn(
                 "卧室灯默认使用暖色",
-                store.memory_context("卧室灯", 6, 8000),
+                str(store.search_memories("卧室灯", 6)),
             )
 
             correction = IncomingMessage(
@@ -3490,7 +3489,7 @@ class StorageMemoryTest(unittest.TestCase):
                 AgentReply(["改成冷色了"]),
                 correction_draft,
             )
-            recalled = store.memory_context("卧室灯", 6, 8000)
+            recalled = str(store.search_memories("卧室灯", 6))
             self.assertIn("卧室灯默认使用冷色", recalled)
             self.assertNotIn("卧室灯默认使用暖色", recalled)
 
@@ -3512,7 +3511,7 @@ class StorageMemoryTest(unittest.TestCase):
             store = Store(path)
             self.assertIn(
                 "卧室灯默认使用冷色",
-                store.memory_context("卧室灯", 6, 8000),
+                str(store.search_memories("卧室灯", 6)),
             )
             store.close()
 
@@ -3776,7 +3775,7 @@ class StorageMemoryTest(unittest.TestCase):
             store.commit_turn(
                 [relearned], relearned.text, AgentReply(["重新记住了"]), relearn_draft
             )
-            self.assertIn("主人喜欢冷色", store.memory_context("冷色", 6, 1000))
+            self.assertIn("主人喜欢冷色", str(store.search_memories("冷色", 6)))
             store.close()
 
     def test_memory_remember_validates_boundary_parameters(self) -> None:
@@ -3880,8 +3879,8 @@ class StorageMemoryTest(unittest.TestCase):
                 store.commit_turn([event], event.text, AgentReply(["记住了"]), draft)
 
             always = store.always_memory_context()
-            recent = store.recent_memory_context(500)
-            recalled = store.memory_context("骑车", 6, 1000)
+            recent = store.recent_memory_context()
+            recalled = str(store.search_memories("骑车", 6))
             self.assertIn("波浪号", always)
             self.assertNotIn("骑车", always)
             self.assertIn("恢复身体", recent)
@@ -3934,12 +3933,12 @@ class StorageMemoryTest(unittest.TestCase):
             ).fetchone()["expires_at"]
             self.assertGreaterEqual(expires_at, before + 2 * 3600 - 1)
             self.assertLessEqual(expires_at, time.time() + 2 * 3600 + 1)
-            self.assertIn("沙发", store.recent_memory_context(500))
+            self.assertIn("沙发", store.recent_memory_context())
             store._db.execute(
                 "UPDATE memories SET expires_at=? WHERE key='current.sofa'",
                 (time.time() - 1,),
             )
             store._db.commit()
-            self.assertNotIn("沙发", store.recent_memory_context(500))
+            self.assertNotIn("沙发", store.recent_memory_context())
             self.assertEqual(store.list_memories(), [])
             store.close()

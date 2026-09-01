@@ -14,20 +14,19 @@ from momoi.models import ProviderResponse, ToolCall
 
 
 class ReflectionTest(unittest.IsolatedAsyncioTestCase):
-    async def test_daily_reflection_promotes_only_evidence_backed_learning(self) -> None:
+    async def test_daily_reflection_promotes_only_evidence_backed_learning(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
                 llm=LLMConfig("http://127.0.0.1", "test", "test", 1000, 0, 1, 0),
-                channel=NapCatConfig(
-                    "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
-                ),
+                channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="test {{SOUL}} {{CAPABILITY_POLICIES}}",
                 soul_prompt="Test soul",
                 transcript_turns_min=4,
                 transcript_turns_max=4,
                 episode_raw_tail_turns=2,
                 memory_results=4,
-                memory_tokens=4000,
                 database=Path(directory) / "momoi.sqlite3",
                 log_level="DEBUG",
                 notifications=NotificationConfig(timezone="Asia/Shanghai"),
@@ -47,9 +46,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                    (role, content, created_at, source_event_ids_json)
                    VALUES ('user', ?, ?, '[]')""",
                 (
-                    (
-                        "我不吃香菜，今天看了项目资料。回答直接说结论就好。"
-                    ),
+                    ("我不吃香菜，今天看了项目资料。回答直接说结论就好。"),
                     occurred,
                 ),
             )
@@ -118,9 +115,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                     assert "<always_memory_inventory>" not in request
                     assert "<recent_memory_inventory>" not in request
                     assert "No open or closing conversations are stored." in request
-                    assert (
-                        "state=completed ok=true capability=read" in request
-                    )
+                    assert "state=completed ok=true capability=read" in request
                     schema = json.dumps(tools, ensure_ascii=False)
                     assert "grounded, thoughtful Chinese diary" in schema
                     assert "Use tool_skill" in schema
@@ -158,7 +153,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                                     ),
                                     "evidence": "project summary",
                                     "confidence": 0.8,
-                                }
+                                },
                             ],
                         },
                     )
@@ -190,26 +185,18 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
             )
             self.assertIn(
                 "主人不吃香菜",
-                daemon.store.reflection_memory_context("香菜", 4, 2000),
-            )
-            self.assertIn(
-                "lead with the conclusion",
-                daemon.store.reflection_memory_context("直接回答", 4, 2000),
+                daemon.store.ranked_memory_context("香菜", 4)[1],
             )
             self.assertIn(
                 "mcp__gog__gmail_search",
-                daemon.store.reflection_memory_context("gmail", 4, 2000),
+                daemon.store.ranked_memory_context("gmail", 4)[1],
             )
-            rendered_reflection = daemon.store.reflection_memory_context(
-                "gmail", 4, 2000
-            )
+            rendered_reflection = daemon.store.ranked_memory_context("gmail", 4)[1]
             self.assertIn(
                 "may be outdated or no longer applicable", rendered_reflection
             )
             self.assertIn("[date=2026-07-21 tool_skill:", rendered_reflection)
-            _, ranked_reflection = daemon.store.ranked_memory_context(
-                "gmail", 4, 2000
-            )
+            _, ranked_reflection = daemon.store.ranked_memory_context("gmail", 4)
             self.assertIn("mcp__gog__gmail_search", ranked_reflection)
             self.assertIn("[date=2026-07-21 tool_skill:", ranked_reflection)
             stored_memories = json.loads(reflection["memories_json"])
@@ -382,16 +369,13 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
                 llm=LLMConfig("http://127.0.0.1", "test", "test", 1000, 0, 1, 0),
-                channel=NapCatConfig(
-                    "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
-                ),
+                channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="test {{SOUL}} {{CAPABILITY_POLICIES}}",
                 soul_prompt="Test soul",
                 transcript_turns_min=4,
                 transcript_turns_max=4,
                 episode_raw_tail_turns=2,
                 memory_results=4,
-                memory_tokens=4000,
                 database=Path(directory) / "momoi.sqlite3",
                 log_level="DEBUG",
                 notifications=NotificationConfig(timezone="Asia/Shanghai"),
@@ -410,7 +394,10 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                 """INSERT INTO messages
                    (role, content, created_at, source_event_ids_json)
                    VALUES ('user', ?, ?, '[]')""",
-                ("# Current owner messages\n今天已经回家了，上次那趟旅行早就结束了。", occurred),
+                (
+                    "# Current owner messages\n今天已经回家了，上次那趟旅行早就结束了。",
+                    occurred,
+                ),
             )
             seeds = [
                 (
@@ -508,9 +495,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                 always[("preference", "food.avoids_cilantro")]["content"],
                 "老师希望后续日常回复末尾不使用中文句号。",
             )
-            self.assertTrue(
-                daemon.store.has_memory("preference", "food.no_cilantro")
-            )
+            self.assertTrue(daemon.store.has_memory("preference", "food.no_cilantro"))
             self.assertEqual(
                 daemon.store._db.execute(
                     "SELECT activation FROM memories WHERE id=?",
@@ -550,7 +535,6 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                 transcript_turns_max=4,
                 episode_raw_tail_turns=2,
                 memory_results=4,
-                memory_tokens=4000,
                 database=Path(directory) / "momoi.sqlite3",
                 log_level="DEBUG",
                 notifications=NotificationConfig(timezone="Asia/Shanghai"),
@@ -650,11 +634,6 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                 json.loads(first_reflection["memories_json"])[0]["key"],
                 "topic.first_pass",
             )
-            self.assertIn(
-                "第一轮晋升",
-                daemon.store.reflection_memory_context("第一轮", 4, 2000),
-            )
-
             second = daemon.store.claim_manual_reflection(
                 config.notifications.timezone, second_now
             )
@@ -668,14 +647,9 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                 json.loads(overwritten["memories_json"])[0]["key"],
                 "topic.second_pass",
             )
-            self.assertIn(
-                "第二轮覆盖晋升",
-                daemon.store.reflection_memory_context("第二轮", 4, 2000),
-            )
-            self.assertNotIn(
-                "第一轮晋升",
-                daemon.store.reflection_memory_context("第一轮", 4, 2000),
-            )
+            active_memories = str(daemon.store.search_reflection_memories("第二轮", 4))
+            self.assertIn("第二轮覆盖晋升", active_memories)
+            self.assertNotIn("第一轮晋升", active_memories)
             turn_states = {
                 row["id"]: row["state"]
                 for row in daemon.store._db.execute(
@@ -705,16 +679,13 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
                 llm=LLMConfig("http://127.0.0.1", "test", "test", 1000, 0, 1, 0),
-                channel=NapCatConfig(
-                    "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
-                ),
+                channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="test {{SOUL}} {{CAPABILITY_POLICIES}}",
                 soul_prompt="Test soul",
                 transcript_turns_min=4,
                 transcript_turns_max=4,
                 episode_raw_tail_turns=2,
                 memory_results=4,
-                memory_tokens=4000,
                 database=Path(directory) / "momoi.sqlite3",
                 log_level="DEBUG",
                 notifications=NotificationConfig(timezone="Asia/Shanghai"),

@@ -33,7 +33,6 @@ def config(
         transcript_turns_max=4,
         episode_raw_tail_turns=2,
         memory_results=memory_results,
-        memory_tokens=4000,
         summary_results=summary_results,
         summary_tokens=2000,
         database=Path(directory) / "momoi.sqlite3",
@@ -338,6 +337,8 @@ class ContextAssemblerTest(unittest.TestCase):
             store = Store(Path(directory) / "momoi.sqlite3")
             store.create_episode("蓝色杯子共同回忆", episode_id="cup")
             now = time.time()
+            always_content = "长期记得蓝色杯子" + "很重要" * 500 + "长期正文结尾"
+            recall_content = "召回蓝色杯子的旧位置" + "在书房" * 100 + "召回正文结尾"
             with store._db:
                 store._db.executemany(
                     """INSERT INTO memories
@@ -346,8 +347,8 @@ class ContextAssemblerTest(unittest.TestCase):
                        VALUES ('profile', ?, ?, ?, 'owner', 'source', 'evidence',
                                0.8, ?, ?)""",
                     [
-                        ("fixed.cup", "长期记得蓝色杯子", "always", now, now),
-                        ("recalled.cup", "召回蓝色杯子的旧位置", "recall", now, now),
+                        ("fixed.cup", always_content, "always", now, now),
+                        ("recalled.cup", recall_content, "recall", now, now),
                     ],
                 )
                 store._db.execute(
@@ -374,10 +375,12 @@ class ContextAssemblerTest(unittest.TestCase):
             )
 
             self.assertIn("长期记得蓝色杯子", retrieval["long_term_memories"])
+            self.assertIn("长期正文结尾", retrieval["long_term_memories"])
             recalled = "\n".join(
                 str(item["content"]) for item in retrieval["recall_memories"]
             )
             self.assertIn("召回蓝色杯子的旧位置", recalled)
+            self.assertIn("召回正文结尾", recalled)
             self.assertNotIn("长期记得蓝色杯子", recalled)
             reflections = "\n".join(
                 str(item["content"]) for item in retrieval["reflection_memories"]

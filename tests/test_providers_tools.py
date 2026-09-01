@@ -295,7 +295,6 @@ class ProvidersToolsTest(unittest.TestCase):
                 transcript_turns_max=4,
                 episode_raw_tail_turns=2,
                 memory_results=2,
-                memory_tokens=1000,
                 database=Path(directory) / "momoi.sqlite3",
                 log_level="INFO",
                 tool_result_max_chars=1000,
@@ -388,7 +387,6 @@ class ProvidersToolsTest(unittest.TestCase):
                 transcript_turns_max=4,
                 episode_raw_tail_turns=2,
                 memory_results=2,
-                memory_tokens=1000,
                 database=Path(directory) / "momoi.sqlite3",
                 log_level="INFO",
                 tool_result_max_chars=1000,
@@ -1184,7 +1182,6 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                 transcript_turns_max=4,
                 episode_raw_tail_turns=2,
                 memory_results=2,
-                memory_tokens=1000,
                 database=Path(directory) / "momoi.sqlite3",
                 log_level="INFO",
             )
@@ -1264,7 +1261,6 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                 transcript_turns_max=4,
                 episode_raw_tail_turns=2,
                 memory_results=2,
-                memory_tokens=1000,
                 database=Path(directory) / "momoi.sqlite3",
                 log_level="INFO",
             )

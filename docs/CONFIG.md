@@ -164,7 +164,6 @@ All fields must be positive.
     "transcript_turns_max": 96,
     "episode_raw_tail_turns": 6,
     "memory_results": 6,
-    "memory_tokens": 8000,
     "max_input_tokens": 142222,
     "context_compaction_ratio": 0.9,
     "summary_results": 8,
@@ -181,7 +180,6 @@ All fields must be positive.
 | `transcript_turns_max` | `96` | High watermark at which the transcript window slides back to `transcript_turns_min`; cannot be lower than the minimum |
 | `episode_raw_tail_turns` | `6` | Raw tail Turns retained outside the summary for an open Episode; its normal annealing threshold is twice this value; minimum `1` |
 | `memory_results` | `6` | Per-category top-k for confirmed recall memory and reflection memory; range `0`–`6`, and `0` disables both (combined maximum `12`) |
-| `memory_tokens` | `8000` | Durable-memory context budget; minimum `0` |
 | `max_input_tokens` | `142222` | Upper budget for the complete model input; minimum `1000` |
 | `context_compaction_ratio` | `0.9` | Fraction of `max_input_tokens` at which old transcript and current-Turn tool results begin compacting; range `(0, 1]`. The defaults compact at 128,000 tokens. |
 | `summary_results` | `8` | Maximum query-recalled Episodes, configurable up to `12`; `0` disables query recall |
@@ -191,6 +189,8 @@ All fields must be positive.
 48–96 Turn transcript watermark and the complete-request token watermark are
 independent safeguards. Episode raw evidence uses a budget derived from the same
 compaction watermark; it has no separate token setting.
+Always-on and active recent memories are injected in full. Query recall is bounded
+by `memory_results`, not by a separate memory token budget.
 
 ## Storage
 

@@ -40,7 +40,6 @@ MEMORY_ACTIVATIONS = {"always", "recent", "recall"}
 ALWAYS_MEMORY_KINDS = {"profile", "preference", "relationship"}
 RECENT_MEMORY_WINDOW_SECONDS = 30 * 24 * 60 * 60
 _DEFAULT_MEMORY_POLICY = MemoryPolicy()
-ALWAYS_MEMORY_TOKEN_BUDGET = 1200
 _MEMORY_QUERY_PRIORITY_WEIGHTS = (1.0, 0.5, 0.3)
 _MEMORY_SECOND_ALIAS_WEIGHT = 0.18
 _MEMORY_THIRD_ALIAS_WEIGHT = 0.08
@@ -229,9 +228,9 @@ class MemoryStore:
 
     @staticmethod
     def _compact_memory_context(
-        label: str, rows: list[sqlite3.Row], token_budget: int
+        label: str, rows: list[sqlite3.Row]
     ) -> str:
-        if token_budget <= 0 or not rows:
+        if not rows:
             return ""
         contents: list[str] = []
         seen: set[str] = set()
@@ -243,13 +242,11 @@ class MemoryStore:
             contents.append(content)
         if not contents:
             return ""
-        return truncate_tokens(
-            f"{label}：" + "；".join(contents), token_budget
-        )
+        return f"{label}：" + "；".join(contents)
 
-    def always_memory_context(self, token_budget: int = ALWAYS_MEMORY_TOKEN_BUDGET) -> str:
+    def always_memory_context(self) -> str:
         return self._compact_memory_context(
-            "老师的长期记忆", self._memory_rows("always"), token_budget
+            "老师的长期记忆", self._memory_rows("always")
         )
 
     def always_memory_inventory(self) -> list[dict[str, object]]:
@@ -287,10 +284,10 @@ class MemoryStore:
             )
         return "\n".join(lines)
 
-    def recent_memory_context(self, token_budget: int) -> str:
+    def recent_memory_context(self) -> str:
         self.purge_expired_memories()
         return self._compact_memory_context(
-            "老师近期需要保持的上下文", self._memory_rows("recent"), token_budget
+            "老师近期需要保持的上下文", self._memory_rows("recent")
         )
 
     def recent_memory_inventory_context(self) -> str:
@@ -315,41 +312,6 @@ class MemoryStore:
             f"{row['content']} expires_at={context_timestamp(row['expires_at']) if row['expires_at'] else 'legacy-window'}"
             for row in rows
         )
-
-    def memory_context(self, query: str, max_results: int, token_budget: int) -> str:
-        if max_results <= 0 or token_budget <= 0:
-            return ""
-        rows = self.search_memories(query, max_results, activation="recall")
-
-        lines: list[str] = []
-        used_tokens = 0
-        for row in rows:
-            line = f"- [{row['kind']}:{row['key']}] {row['content']}"
-            line_tokens = estimate_tokens(line)
-            if lines and used_tokens + line_tokens > token_budget:
-                break
-            lines.append(line)
-            used_tokens += line_tokens
-        return "\n".join(lines)
-
-    def reflection_memory_context(
-        self, query: str, max_results: int, token_budget: int
-    ) -> str:
-        if max_results <= 0 or token_budget <= 0:
-            return ""
-        rows = self.search_reflection_memories(
-            query, max_results, include_core=True
-        )
-        lines = [REFLECTION_MEMORY_CAUTION]
-        used = estimate_tokens(lines[0])
-        for row in rows:
-            line = format_reflection_memory(dict(row))
-            size = estimate_tokens(line)
-            if len(lines) > 1 and used + size > token_budget:
-                break
-            lines.append(line)
-            used += size
-        return "\n".join(lines) if len(lines) > 1 else ""
 
     def _alternative_weights(
         self,
@@ -715,11 +677,10 @@ class MemoryStore:
         self,
         query: str,
         max_results: int,
-        token_budget: int,
     ) -> tuple[str, str]:
         """Render independently ranked confirmed and reflection result sets."""
 
-        if max_results <= 0 or token_budget <= 0 or not query.strip():
+        if max_results <= 0 or not query.strip():
             return "", ""
         ranked = self.rank_recalled_memories(
             [MemoryRecallQuery(query.strip())],
@@ -728,19 +689,12 @@ class MemoryStore:
         confirmed: list[str] = []
         reflected: list[str] = []
         reflection_header = REFLECTION_MEMORY_CAUTION
-        used_tokens = 0
         for row in ranked:
             line = (
                 format_reflection_memory(row)
                 if row["source"] == "reflection"
                 else f"- [{row['kind']}:{row['key']}] {row['content']}"
             )
-            size = estimate_tokens(line)
-            if row["source"] == "reflection" and not reflected:
-                size += estimate_tokens(reflection_header)
-            if used_tokens + size > token_budget:
-                continue
-            used_tokens += size
             if row["source"] == "confirmed":
                 confirmed.append(line)
             else:

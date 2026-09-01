@@ -126,7 +126,6 @@ class AppConfig:
     transcript_turns_max: int
     episode_raw_tail_turns: int
     memory_results: int
-    memory_tokens: int
     database: Path
     log_level: str
     max_input_tokens: int = 142222
@@ -518,7 +517,6 @@ def load_config(path: str | Path) -> AppConfig:
         transcript_turns_max=transcript_turns_max,
         episode_raw_tail_turns=episode_raw_tail_turns,
         memory_results=min(6, max(0, int(context_raw.get("memory_results", 6)))),
-        memory_tokens=max(0, int(context_raw.get("memory_tokens", 8000))),
         database=database,
         log_level=str(logging_raw.get("level", "DEBUG")).upper(),
         max_input_tokens=max_input_tokens,

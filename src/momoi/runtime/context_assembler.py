@@ -313,7 +313,7 @@ def build_plan_retrieval(
         {
             "kind": truncate_tokens(str(row.get("kind") or ""), 24),
             "key": truncate_tokens(str(row.get("key") or ""), 64),
-            "content": truncate_tokens(str(row.get("content") or ""), 160),
+            "content": str(row.get("content") or ""),
             "unit_ids": list(row.get("unit_ids") or []),
         }
         for row in ranked_memories
@@ -323,7 +323,7 @@ def build_plan_retrieval(
         {
             "kind": truncate_tokens(str(row.get("kind") or ""), 24),
             "key": truncate_tokens(str(row.get("key") or ""), 64),
-            "content": truncate_tokens(str(row.get("content") or ""), 160),
+            "content": str(row.get("content") or ""),
             "local_date": str(row.get("local_date") or "unknown"),
             "unit_ids": list(row.get("unit_ids") or []),
         }
@@ -522,9 +522,7 @@ def build_plan_retrieval(
         "version": 6,
         "episodes": episodes,
         "long_term_memories": store.always_memory_context(),
-        "recent_memories": store.recent_memory_context(
-            max(100, config.memory_tokens // 8)
-        ),
+        "recent_memories": store.recent_memory_context(),
         "recall_memories": recall_memories,
         "reflection_memories": reflection_memories,
         "goals": goals,

@@ -278,11 +278,8 @@ class TurnOrchestrator:
         memories, learned = self.store.ranked_memory_context(
             prompt,
             self.config.memory_results,
-            self.config.memory_tokens,
         )
-        recent_memories = self.store.recent_memory_context(
-            max(100, self.config.memory_tokens // 8)
-        )
+        recent_memories = self.store.recent_memory_context()
         long_term_memories = self.store.always_memory_context()
         conversation_rows = self._recent_conversation_rows()
         tool_activity = self.store.turn_activity(
@@ -1266,9 +1263,7 @@ class TurnOrchestrator:
         )
         notification_key = "heartbeat.reply_followup"
         long_term_memories = self.store.always_memory_context()
-        recent_memories = self.store.recent_memory_context(
-            max(100, self.config.memory_tokens // 8)
-        )
+        recent_memories = self.store.recent_memory_context()
         conversation_rows = self._recent_conversation_rows()
         tool_activity = self.store.turn_activity(
             [str(row["turn_id"]) for row in conversation_rows]
@@ -1392,9 +1387,7 @@ class TurnOrchestrator:
             recent_topics.append(topic)
             topic_tokens += size
         goals = self.store.active_goals_context(authority="agent")
-        recent_memories = self.store.recent_memory_context(
-            max(100, self.config.memory_tokens // 8)
-        )
+        recent_memories = self.store.recent_memory_context()
         long_term_memories = self.store.always_memory_context()
         conversation_rows = self._recent_conversation_rows()
         tool_activity = self.store.turn_activity(
@@ -1578,13 +1571,10 @@ class TurnOrchestrator:
         confirmed_memory, learned = self.store.ranked_memory_context(
             query,
             self.config.memory_results,
-            self.config.memory_tokens,
         )
         open_conversations = self.store.open_conversation_inventory()
         open_episode_ids = {str(item["id"]) for item in open_conversations}
-        recent_memories = self.store.recent_memory_context(
-            max(100, self.config.memory_tokens // 8)
-        )
+        recent_memories = self.store.recent_memory_context()
         episodes = recall_episode_context(
             self.store,
             query,
@@ -1722,11 +1712,8 @@ class TurnOrchestrator:
         memories, learned = self.store.ranked_memory_context(
             memory_query,
             self.config.memory_results,
-            self.config.memory_tokens,
         )
-        recent_memories = self.store.recent_memory_context(
-            max(100, self.config.memory_tokens // 8)
-        )
+        recent_memories = self.store.recent_memory_context()
         long_term_memories = self.store.always_memory_context()
         conversation_rows = self._recent_conversation_rows()
         tool_activity = self.store.turn_activity(

@@ -656,7 +656,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     transcript_turns_max=4,
                     episode_raw_tail_turns=2,
                     memory_results=2,
-                    memory_tokens=1000,
                     database=Path(directory) / "momoi.sqlite3",
                     log_level="INFO",
                 )
@@ -705,7 +704,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     transcript_turns_max=4,
                     episode_raw_tail_turns=2,
                     memory_results=2,
-                    memory_tokens=1000,
                     database=Path(directory) / "momoi.sqlite3",
                     log_level="INFO",
                 )
@@ -808,7 +806,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     transcript_turns_max=4,
                     episode_raw_tail_turns=2,
                     memory_results=2,
-                    memory_tokens=1000,
                     database=Path(directory) / "momoi.sqlite3",
                     log_level="INFO",
                 )
@@ -957,7 +954,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     transcript_turns_max=4,
                     episode_raw_tail_turns=2,
                     memory_results=2,
-                    memory_tokens=1000,
                     database=Path(directory) / "momoi.sqlite3",
                     log_level="INFO",
                     episode_annealing=EpisodeAnnealingConfig(
@@ -1023,7 +1019,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     transcript_turns_max=4,
                     episode_raw_tail_turns=2,
                     memory_results=2,
-                    memory_tokens=1000,
                     database=Path(directory) / "momoi.sqlite3",
                     log_level="INFO",
                 )
@@ -1059,7 +1054,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     transcript_turns_max=4,
                     episode_raw_tail_turns=2,
                     memory_results=2,
-                    memory_tokens=1000,
                     database=Path(directory) / "momoi.sqlite3",
                     log_level="INFO",
                     notifications=NotificationConfig(timezone="Asia/Shanghai"),
@@ -1120,7 +1114,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     transcript_turns_max=4,
                     episode_raw_tail_turns=2,
                     memory_results=2,
-                    memory_tokens=1000,
                     database=Path(directory) / "momoi.sqlite3",
                     log_level="INFO",
                 )
@@ -1163,7 +1156,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     transcript_turns_max=4,
                     episode_raw_tail_turns=2,
                     memory_results=2,
-                    memory_tokens=1000,
                     database=Path(directory) / "momoi.sqlite3",
                     log_level="INFO",
                 )
@@ -1208,7 +1200,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     transcript_turns_max=4,
                     episode_raw_tail_turns=2,
                     memory_results=2,
-                    memory_tokens=1000,
                     database=Path(directory) / "momoi.sqlite3",
                     log_level="INFO",
                 )
@@ -1309,7 +1300,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     transcript_turns_max=4,
                     episode_raw_tail_turns=2,
                     memory_results=2,
-                    memory_tokens=1000,
                     database=root / "momoi.sqlite3",
                     log_level="INFO",
                     workspace=root,
@@ -1434,7 +1424,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     transcript_turns_max=4,
                     episode_raw_tail_turns=2,
                     memory_results=2,
-                    memory_tokens=1000,
                     database=root / "momoi.sqlite3",
                     log_level="INFO",
                     workspace=root,
@@ -1518,7 +1507,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     transcript_turns_max=4,
                     episode_raw_tail_turns=2,
                     memory_results=2,
-                    memory_tokens=1000,
                     database=Path(directory) / "momoi.sqlite3",
                     log_level="INFO",
                 )
@@ -1551,7 +1539,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     transcript_turns_max=4,
                     episode_raw_tail_turns=2,
                     memory_results=2,
-                    memory_tokens=1000,
                     database=Path(directory) / "momoi.sqlite3",
                     log_level="DEBUG",
                 )
@@ -1673,7 +1660,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     transcript_turns_max=4,
                     episode_raw_tail_turns=2,
                     memory_results=2,
-                    memory_tokens=1000,
                     database=Path(directory) / "momoi.sqlite3",
                     log_level="INFO",
                 )
@@ -1699,7 +1685,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     transcript_turns_max=4,
                     episode_raw_tail_turns=2,
                     memory_results=2,
-                    memory_tokens=1000,
                     database=Path(directory) / "momoi.sqlite3",
                     log_level="INFO",
                 )
@@ -1777,7 +1762,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 transcript_turns_max=4,
                 episode_raw_tail_turns=2,
                 memory_results=2,
-                memory_tokens=1000,
                 database=Path(directory) / "momoi.sqlite3",
                 log_level="INFO",
                 notifications=NotificationConfig(
@@ -2042,7 +2026,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 transcript_turns_max=4,
                 episode_raw_tail_turns=2,
                 memory_results=2,
-                memory_tokens=1000,
                 database=Path(directory) / "momoi.sqlite3",
                 log_level="INFO",
                 turn_max_total_tokens=1,
@@ -2089,7 +2072,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     transcript_turns_max=4,
                     episode_raw_tail_turns=2,
                     memory_results=2,
-                    memory_tokens=1000,
                     database=Path(directory) / "momoi.sqlite3",
                     log_level="INFO",
                 )
@@ -2223,7 +2205,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     transcript_turns_max=4,
                     episode_raw_tail_turns=2,
                     memory_results=2,
-                    memory_tokens=1000,
                     database=Path(directory) / "momoi.sqlite3",
                     log_level="INFO",
                 )
@@ -2377,7 +2358,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     transcript_turns_max=4,
                     episode_raw_tail_turns=2,
                     memory_results=2,
-                    memory_tokens=1000,
                     database=Path(directory) / "momoi.sqlite3",
                     log_level="INFO",
                 )
@@ -2554,7 +2534,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 transcript_turns_max=4,
                 episode_raw_tail_turns=2,
                 memory_results=2,
-                memory_tokens=1000,
                 database=Path(directory) / "momoi.sqlite3",
                 log_level="INFO",
             )
@@ -2603,7 +2582,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 transcript_turns_max=4,
                 episode_raw_tail_turns=2,
                 memory_results=2,
-                memory_tokens=1000,
                 database=Path(directory) / "momoi.sqlite3",
                 log_level="INFO",
             )
@@ -2642,7 +2620,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 transcript_turns_max=4,
                 episode_raw_tail_turns=2,
                 memory_results=2,
-                memory_tokens=1000,
                 database=Path(directory) / "momoi.sqlite3",
                 log_level="INFO",
                 notifications=NotificationConfig(
@@ -2683,7 +2660,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 transcript_turns_max=12,
                 episode_raw_tail_turns=6,
                 memory_results=6,
-                memory_tokens=1000,
                 database=Path(directory) / "momoi.sqlite3",
                 log_level="INFO",
             )
@@ -2721,7 +2697,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 transcript_turns_max=4,
                 episode_raw_tail_turns=2,
                 memory_results=2,
-                memory_tokens=1000,
                 database=Path(directory) / "momoi.sqlite3",
                 log_level="INFO",
             )
@@ -2829,7 +2804,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 transcript_turns_max=4,
                 episode_raw_tail_turns=2,
                 memory_results=2,
-                memory_tokens=1000,
                 database=Path(directory) / "momoi.sqlite3",
                 log_level="INFO",
             )
@@ -3072,7 +3046,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     transcript_turns_max=12,
                     episode_raw_tail_turns=6,
                     memory_results=6,
-                    memory_tokens=1000,
                     database=Path(directory) / "momoi.sqlite3",
                     log_level="INFO",
                 )

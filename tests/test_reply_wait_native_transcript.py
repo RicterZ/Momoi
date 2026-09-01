@@ -24,7 +24,6 @@ class ReplyWaitNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                     transcript_turns_max=4,
                     episode_raw_tail_turns=2,
                     memory_results=2,
-                    memory_tokens=1000,
                     database=Path(directory) / "momoi.sqlite3",
                     log_level="INFO",
                 )
