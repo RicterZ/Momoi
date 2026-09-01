@@ -488,6 +488,32 @@ function previewRecords() {
   ].join("\n\n");
 
   const conversationDetails = {
+    "episode-deep-link-only": {
+      id: "episode-deep-link-only",
+      title: "只通过深链打开的旧聊天",
+      status: "closed",
+      record_type: "episode",
+      working_summary: "这条记录不在最近 100 条列表里，但详情路由仍应直接加载。",
+      topics: ["深链", "旧聊天"],
+      updated_at: now - 120 * 86400,
+      messages: [
+        {
+          id: 9001,
+          role: "user",
+          content: "这条旧聊天能从链接直接打开吗？",
+          created_at: now - 120 * 86400,
+          ordinal: 1,
+        },
+        {
+          id: 9002,
+          role: "assistant",
+          content: "可以，即使它没有出现在左侧最近记录中。",
+          created_at: now - 120 * 86400 + 20,
+          delivery_state: "delivered",
+          ordinal: 2,
+        },
+      ],
+    },
     "episode-laundry": {
       id: "episode-laundry",
       title: "衣服洗好了",

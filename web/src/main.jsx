@@ -796,7 +796,7 @@ function Conversations({ refreshKey, token, routeParam }) {
   const [selected, setSelected] = useState(routeParam || null);
   const [detail, setDetail] = useState({ loading: false });
   useEffect(() => {
-    if (routeParam) setSelected(routeParam);
+    setSelected(routeParam || null);
   }, [routeParam]);
   function select(id) {
     setSelected(id);
@@ -808,11 +808,8 @@ function Conversations({ refreshKey, token, routeParam }) {
     <DataView path="/api/conversations?limit=100" refreshKey={refreshKey} token={token}>
       {(data) => {
         const items = data.items || [];
-        if (!items.length) return <Empty />;
-        const activeId =
-          (selected && items.some((item) => item.id === selected)
-            ? selected
-            : items[0].id);
+        const activeId = selected || items[0]?.id || "";
+        if (!activeId) return <Empty />;
         return (
           <ConversationLayout
             items={items}
@@ -847,10 +844,15 @@ function ConversationLayout({ items, activeId, detail, token, onSelect, setDetai
     return () => controller.abort();
   }, [activeId, setDetail, token]);
 
+  const visibleItems =
+    detail.data?.id === activeId && !items.some((item) => item.id === activeId)
+      ? [detail.data, ...items]
+      : items;
+
   return (
     <section className="record-layout">
       <div className="record-list" aria-label="聊天主题">
-        {items.map((item) => (
+        {visibleItems.map((item) => (
           <button
             className={`record-item ${item.id === activeId ? "active" : ""}`}
             type="button"
@@ -1835,7 +1837,7 @@ function thinkingStageCode(stage) {
 
 function Thinking({ refreshKey, token, routeParam }) {
   const [items, setItems] = useState([]);
-  const [selectedId, setSelectedId] = useState("");
+  const [selectedId, setSelectedId] = useState(routeParam || "");
   const [detail, setDetail] = useState({});
   const [status, setStatus] = useState({ loading: true });
   const [loadingMore, setLoadingMore] = useState(false);
@@ -1845,7 +1847,7 @@ function Thinking({ refreshKey, token, routeParam }) {
   const allowAuto = useRef(true);
 
   useEffect(() => {
-    if (routeParam) setSelectedId(routeParam);
+    setSelectedId(routeParam || "");
   }, [routeParam]);
 
   useEffect(() => {
@@ -1858,7 +1860,6 @@ function Thinking({ refreshKey, token, routeParam }) {
     allowAuto.current = true;
     pager.current = { available: [], month: "", cursor: null };
     setItems([]);
-    setSelectedId(routeParam || "");
     setDetail({});
     setHasMore(false);
     setLoadingMore(false);
@@ -1897,7 +1898,7 @@ function Thinking({ refreshKey, token, routeParam }) {
     })();
 
     return () => controller.abort();
-  }, [refreshKey, routeParam, token]);
+  }, [refreshKey, token]);
 
   async function loadOlder() {
     if (busy.current || !thinkingHasMore(pager.current) || !token) return;
