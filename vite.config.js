@@ -8,6 +8,44 @@ function previewThinkingCalls() {
     Math.floor(day.getTime() / 1000) + minutes * 60 + seconds;
   return [
     {
+      turn_id: "preview-recall-dense",
+      call_id: "preview-recall-dense-1",
+      created_at: at(6),
+      stage: "owner",
+      round: 1,
+      model: "deepseek-v4-flash",
+      tools: ["recall"],
+      reasoning_chars: 1680,
+      excerpt: "这是同一段连续对话，沿用上一轮已经确认的召回范围。",
+      reasoning:
+        "当前消息只是延续上一轮的玩笑，没有新增历史依赖。沿用已确认的召回范围，并继续记录在同一个聊天 Episode。",
+    },
+    {
+      turn_id: "preview-recall-mixed",
+      call_id: "preview-recall-mixed-1",
+      created_at: at(5),
+      stage: "owner",
+      round: 1,
+      model: "deepseek-v4-flash",
+      tools: ["recall"],
+      reasoning_chars: 1320,
+      excerpt: "一条消息里有两个独立意图，分别检索，不把关键词挤成一排标签。",
+      reasoning:
+        "把这轮拆成两个意图：一个检索提醒规则，一个检索关卡方案。它们分别绑定已有聊天和新建聊天，用来检查多单元布局。",
+    },
+    {
+      turn_id: "preview-recall-empty",
+      call_id: "preview-recall-empty-1",
+      created_at: at(4),
+      stage: "owner",
+      round: 1,
+      model: "deepseek-v4-flash",
+      tools: ["recall"],
+      reasoning_chars: 620,
+      excerpt: "执行了检索，但没有召回可用依据，也不绑定聊天记录。",
+      reasoning: "这轮需要搜索，但结果为空。保留检索决策，不展示空的 evidence 或 Episode 区块。",
+    },
+    {
       turn_id: "9d5db6937f765921b2d6cbe0773e5111",
       call_id: "216921a1df9e4da7",
       created_at: at(0),
@@ -140,8 +178,8 @@ function previewThinkingCalls() {
 }
 
 function previewRecall(turnId) {
-  if (turnId !== "9d5db6937f765921b2d6cbe0773e5111") return null;
-  return {
+  const fixtures = {
+    "9d5db6937f765921b2d6cbe0773e5111": {
     revision: 1,
     state: "recalled",
     units: [
@@ -152,14 +190,18 @@ function previewRecall(turnId) {
         queries: [
           {
             semantic: "衣服洗完后的提醒约定与刚才 Webhook 的处理记录",
-            keywords: ["洗衣", "提醒", "Webhook"],
+            keywords: ["洗衣", "提醒", "Webhook", "通知约定", "静默处理", "完成状态"],
           },
         ],
         reused_from: "",
       },
     ],
     episode_actions: [
-      { action: "continue", episode_id: "laundry", unit_ids: ["u1"] },
+      {
+        action: "continue",
+        episode_id: "episode-laundry",
+        title: "衣服洗好后的提醒约定",
+      },
     ],
     status: "semantic_queries=衣服洗完后的提醒约定与刚才 Webhook 的处理记录\nhits=洗衣提醒",
     memories: [
@@ -179,7 +221,169 @@ function previewRecall(turnId) {
       },
     ],
     semantic: { fallback_reason: "", query_batch_size: 1 },
+    },
+    "preview-recall-dense": {
+      revision: 1,
+      state: "recalled",
+      units: [
+        {
+          id: "u1",
+          intent: "延续回家路上的轻松玩笑，并回应刚才那句调侃",
+          mode: "reuse",
+          queries: [],
+          reused_from: "9d5db6937f765921b2d6cbe0773e5111",
+        },
+      ],
+      episode_actions: [
+        {
+          action: "continue",
+          episode_id: "episode-game",
+          title: "下班路上的随口玩笑",
+        },
+      ],
+      status: "reused_from=hidden-in-ui units=u1",
+      memories: [
+        {
+          kind: "routine",
+          key: "private.internal.memory-key",
+          content: "睡前互道晚安是已经形成的日常习惯，漏掉时会互相提醒。",
+        },
+      ],
+      reflections: [
+        {
+          kind: "self_insight",
+          key: "private.internal.reflection-one",
+          content: "识别轻松玩笑时先看完整对话，不要只凭一个词猜测语气。",
+          local_date: "2026-08-28",
+        },
+        {
+          kind: "relationship",
+          key: "private.internal.reflection-two",
+          content: "对方疲惫时仍可以接住简短玩笑，但回复不要拖得太长。",
+          local_date: "2026-08-29",
+        },
+        {
+          kind: "shared_experience",
+          key: "private.internal.reflection-three",
+          content: "两人曾在下班回家的路上聊小游戏，用短句互相报平安。",
+          local_date: "2026-08-30",
+        },
+        {
+          kind: "owner_preference",
+          key: "private.internal.reflection-four",
+          content: "主人更喜欢自然、简短、有停顿感的回复。",
+          local_date: "2026-08-31",
+        },
+        {
+          kind: "practice",
+          key: "private.internal.reflection-five",
+          content: "连续对话已有完整召回范围时，可以沿用，避免重复搜索。",
+          local_date: "2026-09-01",
+        },
+        {
+          kind: "relationship",
+          key: "private.internal.reflection-six",
+          content: "熟悉的玩笑可以直接接住，不需要把背景重新解释一遍。",
+          local_date: "2026-09-01",
+        },
+      ],
+      episodes: Array.from({ length: 11 }, (_, index) => ({
+        id: index === 0 ? "episode-game" : `episode-preview-${index}`,
+        title: [
+          "下班路上的随口玩笑",
+          "一起通关小游戏的晚上",
+          "周五早上的赖床闲聊",
+          "洗衣完成后的提醒",
+          "分享新表情包的一天",
+          "晚饭后讨论关卡节奏",
+          "出门前互相报平安",
+          "深夜聊到最近玩的游戏",
+          "午休时的短消息",
+          "周末一起整理游戏清单",
+          "回家后继续聊未完的话题",
+        ][index],
+        relation: "recalled",
+        summary: index % 2
+          ? "这是一条较长的聊天摘要，用来确认展开后内容会被限制在可读的行数，不会把整个页面撑乱。"
+          : "",
+      })),
+      semantic: { fallback_reason: "", query_batch_size: 0 },
+    },
+    "preview-recall-mixed": {
+      revision: 2,
+      state: "recalled",
+      units: [
+        {
+          id: "u1",
+          intent: "确认洗衣完成后的提醒规则",
+          mode: "search",
+          reused_from: "",
+          queries: [
+            {
+              semantic: "最近关于洗衣完成、通知时机与静默处理的明确约定",
+              keywords: ["洗衣", "完成提醒", "通知", "静默", "Webhook", "当前约定", "送达状态"],
+            },
+            {
+              semantic: "上一次没有发出提醒时的实际处理记录",
+              keywords: ["outbox", "end_turn", "未发送"],
+            },
+          ],
+        },
+        {
+          id: "u2",
+          intent: "找到最近讨论过的小游戏关卡方案",
+          mode: "search",
+          reused_from: "",
+          queries: [
+            {
+              semantic: "小游戏里先观察机关再决定是否触发的关卡节奏",
+              keywords: ["小游戏", "关卡", "机关", "节奏"],
+            },
+          ],
+        },
+      ],
+      episode_actions: [
+        {
+          action: "continue",
+          episode_id: "episode-laundry",
+          title: "衣服洗好后的提醒约定",
+        },
+        {
+          action: "new",
+          episode_id: "episode-game",
+          title: "小游戏关卡的新方案",
+        },
+      ],
+      memories: [],
+      reflections: [],
+      episodes: [],
+      semantic: { fallback_reason: "", query_batch_size: 3 },
+    },
+    "preview-recall-empty": {
+      revision: 1,
+      state: "recalled",
+      units: [
+        {
+          id: "u1",
+          intent: "查找一个此前没有提到过的新主题",
+          mode: "search",
+          reused_from: "",
+          queries: [
+            {
+              semantic: "此前是否讨论过这个全新的主题",
+              keywords: ["新主题"],
+            },
+          ],
+        },
+      ],
+      episode_actions: [],
+      memories: [],
+      reflections: [],
+      episodes: [],
+      semantic: { fallback_reason: "", query_batch_size: 1 },
+    },
   };
+  return fixtures[turnId] || null;
 }
 
 function previewMonthKey(timestamp) {

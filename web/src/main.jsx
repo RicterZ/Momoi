@@ -1833,7 +1833,7 @@ function thinkingStageCode(stage) {
   );
 }
 
-function Thinking({ refreshKey, token }) {
+function Thinking({ refreshKey, token, routeParam }) {
   const [items, setItems] = useState([]);
   const [selectedId, setSelectedId] = useState("");
   const [detail, setDetail] = useState({});
@@ -1845,6 +1845,10 @@ function Thinking({ refreshKey, token }) {
   const allowAuto = useRef(true);
 
   useEffect(() => {
+    if (routeParam) setSelectedId(routeParam);
+  }, [routeParam]);
+
+  useEffect(() => {
     if (!token) {
       setStatus({ error: new Error("unauthorized") });
       return undefined;
@@ -1854,7 +1858,7 @@ function Thinking({ refreshKey, token }) {
     allowAuto.current = true;
     pager.current = { available: [], month: "", cursor: null };
     setItems([]);
-    setSelectedId("");
+    setSelectedId(routeParam || "");
     setDetail({});
     setHasMore(false);
     setLoadingMore(false);
@@ -1893,7 +1897,7 @@ function Thinking({ refreshKey, token }) {
     })();
 
     return () => controller.abort();
-  }, [refreshKey, token]);
+  }, [refreshKey, routeParam, token]);
 
   async function loadOlder() {
     if (busy.current || !thinkingHasMore(pager.current) || !token) return;
@@ -1937,7 +1941,13 @@ function Thinking({ refreshKey, token }) {
   if (status.loading) return <Loading>正在读取思考…</Loading>;
   if (status.error) return <ErrorState error={status.error} />;
   if (!items.length) return <Empty text="还没有思考记录。" />;
-  const active = items.find((item) => item.id === selectedId) || items[0];
+  const active =
+    items.find((item) => item.id === selectedId) ||
+    (selectedId ? { id: selectedId, turn_id: selectedId, stages: [] } : items[0]);
+  function select(id) {
+    setSelectedId(id);
+    window.location.hash = id ? `thinking/${encodeURIComponent(id)}` : "thinking";
+  }
   return (
     <ThinkingLayout
       items={items}
@@ -1948,7 +1958,7 @@ function Thinking({ refreshKey, token }) {
       loadingMore={loadingMore}
       allowAuto={allowAuto}
       onLoadOlder={loadOlder}
-      onSelect={setSelectedId}
+      onSelect={select}
       setDetail={setDetail}
     />
   );
@@ -2059,7 +2069,11 @@ function ThinkingLayout({
         {detail.error && <ErrorState error={detail.error} />}
         {detail.data && (
           <ThinkingDetail
-            item={active}
+            item={{
+              ...active,
+              episode_id: detail.data.episode_id || active.episode_id,
+              episode_title: detail.data.episode_title || active.episode_title,
+            }}
             calls={detail.data.items || (detail.data.item ? [detail.data.item] : [])}
             recall={detail.data.recall}
           />
@@ -2072,88 +2086,121 @@ function ThinkingLayout({
 function RecallDetail({ recall }) {
   if (!recall) return null;
   const units = recall.units || [];
-  const evidence = [
-    ...(recall.memories || []).map((item) => ({
-      key: `memory:${item.kind}:${item.key}`,
-      label: item.kind || "memory",
-      title: item.key,
-      content: item.content,
-    })),
-    ...(recall.reflections || []).map((item) => ({
-      key: `reflection:${item.kind}:${item.key}`,
-      label: item.kind || "reflection",
-      title: item.key,
-      content: item.content,
-    })),
-    ...(recall.episodes || []).map((item) => ({
-      key: `episode:${item.id}`,
-      label: item.relation || "episode",
-      title: item.title || item.id,
-      content: item.summary,
-    })),
+  const memories = [
+    ...(recall.memories || []).map((item) => ({ ...item, source: "memory" })),
+    ...(recall.reflections || []).map((item) => ({ ...item, source: "reflection" })),
   ];
+  const episodes = recall.episodes || [];
+  const evidenceCount = memories.length + episodes.length;
   return (
     <section className="recall-panel">
-      <div className="card-head">
+      <div className="recall-panel-head">
         <div>
           <span className="panel-label">CONTEXT // RECALL</span>
           <h3>上下文召回</h3>
         </div>
-        <span className="status">{recall.state || "unknown"}</span>
       </div>
-      {units.map((unit) => (
-        <article className="recall-unit" key={unit.id}>
-          <div className="memory-head">
-            <span className="memory-kind">{unit.mode}</span>
-            <strong>{unit.intent || unit.id}</strong>
-          </div>
-          {unit.reused_from ? (
-            <p className="secondary">复用 Turn：{unit.reused_from}</p>
-          ) : null}
-          {(unit.queries || []).map((query, index) => (
-            <div className="recall-query" key={`${unit.id}:${index}`}>
-              <p>{query.semantic}</p>
-              {!!query.keywords?.length && (
-                <div className="tags">
-                  {query.keywords.map((keyword) => (
-                    <span className="tag" key={keyword}>{keyword}</span>
+      <div className="recall-units">
+        {units.map((unit, unitIndex) => (
+          <article className="recall-unit" key={unit.id}>
+            <div className="recall-unit-index" aria-hidden="true">
+              {String(unitIndex + 1).padStart(2, "0")}
+            </div>
+            <div className="recall-unit-body">
+              <div className="recall-unit-head">
+                <span className={`recall-mode ${unit.mode === "reuse" ? "is-reuse" : "is-search"}`}>
+                  {unit.mode === "reuse" ? "沿用" : unit.mode === "search" ? "检索" : "召回"}
+                </span>
+                <h4>{unit.intent || "未命名意图"}</h4>
+              </div>
+              {unit.reused_from ? (
+                <div className="recall-source">
+                  <span>沿用上一轮已经确认的召回范围</span>
+                  <a href={`#thinking/${encodeURIComponent(unit.reused_from)}`}>
+                    查看来源思考 <span aria-hidden="true">↗</span>
+                  </a>
+                </div>
+              ) : null}
+              {!!unit.queries?.length && (
+                <div className="recall-queries">
+                  {unit.queries.map((query, index) => (
+                    <div className="recall-query" key={`${unit.id}:${index}`}>
+                      <p>{query.semantic}</p>
+                      {!!query.keywords?.length && (
+                        <ul className="recall-keywords" aria-label="检索关键词">
+                          {query.keywords.map((keyword) => (
+                            <li key={keyword}>{keyword}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
                   ))}
                 </div>
               )}
             </div>
-          ))}
-        </article>
-      ))}
+          </article>
+        ))}
+      </div>
       {!!recall.episode_actions?.length && (
-        <div className="tags">
+        <section className="recall-archive" aria-labelledby="recall-archive-title">
+          <span className="recall-section-label" id="recall-archive-title">对话归档</span>
           {recall.episode_actions.map((action, index) => (
-            <span className="tag" key={`${action.action}:${index}`}>
-              Episode {action.action}
-              {action.episode_ref || action.episode_id
-                ? ` · ${action.episode_ref || action.episode_id}`
-                : ""}
-            </span>
+            <div className="recall-episode-action" key={`${action.action}:${action.episode_id || index}`}>
+              <span>{action.action === "continue" ? "继续记录" : action.action === "new" ? "新建记录" : "关联记录"}</span>
+              {action.episode_id ? (
+                <a href={`#conversations/${encodeURIComponent(action.episode_id)}`}>
+                  {action.title || "查看聊天记录"} <span aria-hidden="true">↗</span>
+                </a>
+              ) : (
+                <strong>{action.title || "未命名聊天记录"}</strong>
+              )}
+            </div>
           ))}
-        </div>
+        </section>
       )}
-      {!!evidence.length && (
-        <div className="recall-evidence">
-          {evidence.map((item) => (
-            <article className="memory" key={item.key}>
-              <div className="memory-head">
-                <span className="memory-kind">{item.label}</span>
-                <strong>{item.title}</strong>
-              </div>
-              {item.content ? <p className="secondary">{item.content}</p> : null}
-            </article>
-          ))}
-        </div>
+      {!!evidenceCount && (
+        <details className="recall-evidence">
+          <summary>
+            <span>召回依据</span>
+            <span>{evidenceCount} 条</span>
+          </summary>
+          <div className="recall-evidence-body">
+            {!!memories.length && (
+              <section className="recall-evidence-group">
+                <h4>记忆与复盘 <span>{memories.length}</span></h4>
+                <ul>
+                  {memories.map((item, index) => (
+                    <li key={`${item.source}:${item.kind}:${item.key || index}`}>
+                      <div className="recall-evidence-meta">
+                        <span>{memoryKindLabel(item.kind)}</span>
+                        {item.local_date ? <time>{item.local_date}</time> : null}
+                      </div>
+                      <p>{item.content || "这条记录没有正文。"}</p>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+            {!!episodes.length && (
+              <section className="recall-evidence-group">
+                <h4>相关聊天 <span>{episodes.length}</span></h4>
+                <ul>
+                  {episodes.map((item) => (
+                    <li key={item.id}>
+                      <a className="recall-evidence-link" href={`#conversations/${encodeURIComponent(item.id)}`}>
+                        {item.title || "未命名聊天记录"} <span aria-hidden="true">↗</span>
+                      </a>
+                      {item.summary ? <p>{item.summary}</p> : null}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+          </div>
+        </details>
       )}
-      {recall.status ? (
-        <pre className="recall-status">{recall.status}</pre>
-      ) : null}
       {recall.semantic?.fallback_reason ? (
-        <p className="secondary">
+        <p className="recall-warning">
           向量召回降级：{recall.semantic.fallback_reason}
         </p>
       ) : null}
@@ -2169,10 +2216,13 @@ function ThinkingDetail({ item, calls, recall }) {
   if (!flow.length) return <Empty text="这个 Turn 还没有思考记录。" />;
   const episodeId = item?.episode_id;
   const episodeTitle = item?.episode_title || "查看聊天记录";
+  const titleItem = item?.stages?.length || item?.stage
+    ? item
+    : { stages: flow.map((call) => call.stage) };
   return (
     <>
-      <header className="conversation-head">
-        <h2>{thinkingFlowTitle(item || { stages: flow.map((call) => call.stage) })}</h2>
+      <header className={`conversation-head${recall ? " has-recall" : ""}`}>
+        <h2>{thinkingFlowTitle(titleItem)}</h2>
         {episodeId ? (
           <a
             className="tag thinking-conversation"

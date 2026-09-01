@@ -497,6 +497,16 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             detail["recall"]["episodes"][0]["title"],
             "一次测试聊天",
         )
+        self.assertEqual(
+            detail["recall"]["episode_actions"],
+            [
+                {
+                    "action": "continue",
+                    "episode_id": "episode-one",
+                    "title": "一次测试聊天",
+                }
+            ],
+        )
         call = await (
             await self.client.get(
                 "/api/thinking/calls/call-think", headers=self._auth()

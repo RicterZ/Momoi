@@ -247,15 +247,26 @@ def _dashboard_recall(store: Store, turn_id: str) -> dict[str, object] | None:
             }
         )
     semantic = retrieval.get("semantic_recall")
+    episode_actions: list[dict[str, object]] = []
+    for action in plan.get("episode_actions") or []:
+        if not isinstance(action, dict):
+            continue
+        episode_id = str(action.get("episode_id") or "")
+        episode = store.episode(episode_id) if episode_id else None
+        episode_actions.append(
+            {
+                "action": str(action.get("action") or ""),
+                "episode_id": episode_id,
+                "title": str(
+                    (episode or {}).get("title") or action.get("title") or ""
+                ),
+            }
+        )
     return {
         "revision": int(record.get("revision") or 0),
         "state": str(record.get("state") or ""),
         "units": units,
-        "episode_actions": [
-            action
-            for action in plan.get("episode_actions") or []
-            if isinstance(action, dict)
-        ],
+        "episode_actions": episode_actions,
         "status": str(retrieval.get("query_recall") or ""),
         "memories": [
             item
