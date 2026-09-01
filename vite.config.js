@@ -28,12 +28,12 @@ function previewThinkingCalls() {
       stage: "owner",
       round: 1,
       model: "deepseek-v4-flash",
-      tools: ["send_message"],
+      tools: ["send_bubbles"],
       reasoning_chars: 2557,
       excerpt:
-        "先核对 outbox。那次 webhook 只调了 end_turn，没有 send_message，所以老师确实没收到。",
+        "先核对 outbox。那次 webhook 只调了 end_turn，没有 send_bubbles，所以老师确实没收到。",
       reasoning:
-        "先看事实，不看旧笔记。\n\n那次 webhook 的工具只有 end_turn，outbox 是空的。thinking 里写过「烘干结束提醒并非老师要求」，那是当时的判断，不能当成现行禁令。\n\n老师现在明确在问为什么没提醒。结论：衣服洗好这件事到了，我评估后选择了静默，所以没有发出去。接下来用 send_message 把这件事说清楚，不要假装已经提醒过。",
+        "先看事实，不看旧笔记。\n\n那次 webhook 的工具只有 end_turn，outbox 是空的。thinking 里写过「烘干结束提醒并非老师要求」，那是当时的判断，不能当成现行禁令。\n\n老师现在明确在问为什么没提醒。结论：衣服洗好这件事到了，我评估后选择了静默，所以没有发出去。接下来用 send_bubbles 把这件事说清楚，不要假装已经提醒过。",
     },
     {
       turn_id: "9d5db6937f765921b2d6cbe0773e5111",
@@ -73,7 +73,7 @@ function previewThinkingCalls() {
       excerpt:
         "关卡节奏可以再压一拍。这次只记下来，先不发消息。",
       reasoning:
-        "读完一条新玩法公开。关卡可以做成「先看见机关，再决定要不要踩」。\n\n这不是必须告诉老师的事。记下活动结果，end_turn 收束，不发 send_message。",
+        "读完一条新玩法公开。关卡可以做成「先看见机关，再决定要不要踩」。\n\n这不是必须告诉老师的事。记下活动结果，end_turn 收束，不发 send_bubbles。",
     },
     {
       turn_id: "webhook:event-message:0",
@@ -87,7 +87,7 @@ function previewThinkingCalls() {
       excerpt:
         "衣服洗好了。旧 Episode 写过烘干结束不必提醒，所以这次也先静默。",
       reasoning:
-        "Webhook 任务：衣服洗好了。\n\n对照 native transcript，老师没有正在等这条。旧 Episode 笔记写过「烘干结束提醒并非老师要求」。webhook 合同说：如果只是重复已知状态，可以静默。\n\n决定：不发 send_message，直接 end_turn。",
+        "Webhook 任务：衣服洗好了。\n\n对照 native transcript，老师没有正在等这条。旧 Episode 笔记写过「烘干结束提醒并非老师要求」。webhook 合同说：如果只是重复已知状态，可以静默。\n\n决定：不发 send_bubbles，直接 end_turn。",
     },
     {
       turn_id: "july-quest-note",
@@ -279,7 +279,7 @@ function previewRecords() {
     "那次 webhook 的工具只有 end_turn，outbox 是空的，所以老师确实没收到提醒。",
     "thinking 里写过「烘干结束提醒并非老师要求」，那是当时的判断，不能当成现行禁令。",
     "老师现在明确在问为什么没提醒。结论：衣服洗好这件事到了，我评估后选择了静默。",
-    "接下来用 send_message 把这件事说清楚，不要假装已经提醒过。",
+    "接下来用 send_bubbles 把这件事说清楚，不要假装已经提醒过。",
     "如果老师还想补一条提醒，我可以现在就记下时间，不再把旧 Episode 笔记直接套过来。",
   ].join("\n\n");
 

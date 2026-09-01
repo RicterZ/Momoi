@@ -649,7 +649,7 @@ def _text(content: Any, separator: str = "\n") -> str:
 def _merge_adjacent_roles(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Combine neighbouring same-role messages for strictly alternating APIs.
 
-    The transcript keeps one assistant message per ``send_message`` call because
+    The transcript keeps one assistant bubble per ``send_bubbles`` call because
     that is what Momoi actually did, and a Turn can send several. The Anthropic
     Messages API rejects any two adjacent messages sharing a role, so the split
     is preserved logically and collapsed only here, on the wire. Rendered time

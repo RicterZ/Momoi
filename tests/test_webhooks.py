@@ -277,9 +277,9 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                         self.assert_tool_result(messages)
                         call = ToolCall(
                             "notify-owner",
-                            "send_message",
+                            "send_bubbles",
                             {
-                                "messages": ["有一个快递到了，取件码是 1234。"],
+                                "bubbles": ["有一个快递到了，取件码是 1234。"],
                             },
                         )
                     else:
@@ -337,7 +337,7 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(provider.calls, 3)
             self.assertEqual(
                 provider.tool_names[0],
-                ["send_message", "curl", "read_tool_result", "end_turn"],
+                ["send_bubbles", "curl", "read_tool_result", "end_turn"],
             )
             curl_spec = next(
                 tool for tool in provider.tools if tool["name"] == "curl"

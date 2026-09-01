@@ -88,6 +88,7 @@ RECENT_HEARTBEAT_LIMIT = 6
 # Delivery and turn-control calls are protocol, not work worth recalling.
 TRANSCRIPT_PROTOCOL_TOOLS = frozenset(
     {
+        "send_bubbles",
         "send_message",
         "end_turn",
         "autonomous_finish",

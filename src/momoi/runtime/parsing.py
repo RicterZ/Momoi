@@ -20,20 +20,20 @@ def response_text(content: list[dict[str, Any]]) -> str:
     ).strip()
 
 
-def parse_messages(
-    arguments: dict[str, Any], *, allow_empty: bool = False
+def parse_bubbles(
+    arguments: dict[str, Any],
 ) -> tuple[list[ChannelMessage] | None, str | None]:
-    raw_messages = arguments.get("messages")
-    if not isinstance(raw_messages, list) or (not raw_messages and not allow_empty):
-        return None, "messages_must_be_a_non_empty_array"
-    messages: list[ChannelMessage] = []
-    for item in raw_messages:
+    raw_bubbles = arguments.get("bubbles")
+    if not isinstance(raw_bubbles, list) or not raw_bubbles:
+        return None, "bubbles_must_be_a_non_empty_array"
+    bubbles: list[ChannelMessage] = []
+    for item in raw_bubbles:
         if isinstance(item, str):
             if not item.strip():
-                return None, "messages_must_contain_non_empty_items"
+                return None, "bubbles_must_contain_non_empty_items"
             if has_blank_line(item):
-                return None, "blank_lines_must_be_separate_messages"
-            messages.append(item.strip())
+                return None, "blank_lines_must_be_separate_bubbles"
+            bubbles.append(item.strip())
             continue
         try:
             normalized = normalize_channel_message(item)
@@ -49,10 +49,10 @@ def parse_messages(
                     EMOTION_PREFIX
                 )
             ):
-                messages.append(str(segments[0]["data"]["text"]))
+                bubbles.append(str(segments[0]["data"]["text"]))
             else:
-                messages.append(message)
-    return messages, None
+                bubbles.append(message)
+    return bubbles, None
 
 
 def parse_reply_wait_decision(
@@ -99,8 +99,8 @@ def parse_response(
     require_heartbeat: bool = False,
     allow_activity_update: bool = False,
 ) -> tuple[AgentReply | None, str | None]:
-    if "messages" in arguments:
-        return None, "messages_not_allowed_in_end_turn"
+    if "bubbles" in arguments:
+        return None, "bubbles_not_allowed_in_end_turn"
     messages: list[ChannelMessage] = []
     error: str | None = None
     mood, error = parse_mood_decision(arguments.get("mood"))

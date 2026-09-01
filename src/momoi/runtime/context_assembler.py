@@ -941,7 +941,7 @@ def assemble_recent_webhook_activity(
                 name = str(item.get("name") or "tool")
                 calls.append(name)
             elif kind == "tool_result":
-                if str(item.get("name") or "") == "send_message":
+                if str(item.get("name") or "") in {"send_bubbles", "send_message"}:
                     notified = bool(item.get("ok", True))
                 summary = item.get("summary") or item.get("result") or item.get("error")
                 if summary and not result_text:

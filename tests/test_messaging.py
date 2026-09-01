@@ -39,7 +39,7 @@ from momoi.models import (
 from momoi.reply_wait import decode_reply_wait, encode_reply_wait
 from momoi.runtime.parsing import (
     parse_activity_decision,
-    parse_messages,
+    parse_bubbles,
     parse_response,
 )
 from momoi.storage import Store
@@ -543,14 +543,14 @@ class MessagingTest(unittest.TestCase):
         self.assertEqual(error, "invalid_reply_wait_decision")
         legacy, error = parse_response(
             {
-                "messages": ["旧协议消息"],
+                "bubbles": ["旧协议气泡"],
                 "expects_reply": False,
                 "reply_expectation": "",
                 "mood": {"decision": "unchanged"},
             }
         )
         self.assertIsNone(legacy)
-        self.assertEqual(error, "messages_not_allowed_in_end_turn")
+        self.assertEqual(error, "bubbles_not_allowed_in_end_turn")
         heartbeat, error = parse_response(
             {
                 "reply_wait": {"wait": False},
@@ -575,13 +575,16 @@ class MessagingTest(unittest.TestCase):
         )
         self.assertIsNone(invalid_heartbeat)
         self.assertEqual(error, "invalid_heartbeat_state")
-        invalid_blank_lines, error = parse_messages(
-            {"messages": ["第一条。\n\n第二条。"]}
+        empty_bubbles, error = parse_bubbles({"bubbles": []})
+        self.assertIsNone(empty_bubbles)
+        self.assertEqual(error, "bubbles_must_be_a_non_empty_array")
+        invalid_blank_lines, error = parse_bubbles(
+            {"bubbles": ["第一条。\n\n第二条。"]}
         )
         self.assertIsNone(invalid_blank_lines)
-        self.assertEqual(error, "blank_lines_must_be_separate_messages")
-        single_line_break, error = parse_messages(
-            {"messages": ["第一行。\n第二行。"]}
+        self.assertEqual(error, "blank_lines_must_be_separate_bubbles")
+        single_line_break, error = parse_bubbles(
+            {"bubbles": ["第一行。\n第二行。"]}
         )
         self.assertIsNone(error)
         self.assertEqual(single_line_break, ["第一行。\n第二行。"])
@@ -592,9 +595,9 @@ class MessagingTest(unittest.TestCase):
         )
         self.assertIsNone(invalid)
         self.assertEqual(error, "invalid_reply_wait_decision")
-        rich, error = parse_messages(
+        rich, error = parse_bubbles(
             {
-                "messages": [
+                "bubbles": [
                     {
                         "segments": [
                             {"type": "reply", "data": {"id": "9"}},
@@ -606,9 +609,9 @@ class MessagingTest(unittest.TestCase):
         )
         self.assertIsNone(error)
         self.assertEqual(rich[0]["action"], "message")
-        invalid_rich, error = parse_messages(
+        invalid_rich, error = parse_bubbles(
             {
-                "messages": [
+                "bubbles": [
                     {
                         "segments": [
                             {"type": "text", "data": {"text": "第一段\n\n第二段"}}
@@ -618,10 +621,10 @@ class MessagingTest(unittest.TestCase):
             }
         )
         self.assertIsNone(invalid_rich)
-        self.assertEqual(error, "blank_lines_must_be_separate_messages")
-        mixed, error = parse_messages(
+        self.assertEqual(error, "blank_lines_must_be_separate_bubbles")
+        mixed, error = parse_bubbles(
             {
-                "messages": [
+                "bubbles": [
                     {
                         "segments": [
                             {
@@ -647,9 +650,9 @@ class MessagingTest(unittest.TestCase):
             mixed[1]["segments"],
             [{"type": "file", "data": {"file": "/tmp/concept.md"}}],
         )
-        captioned_image, error = parse_messages(
+        captioned_image, error = parse_bubbles(
             {
-                "messages": [
+                "bubbles": [
                     {
                         "segments": [
                             {"type": "text", "data": {"text": "看看这张"}},
@@ -662,9 +665,9 @@ class MessagingTest(unittest.TestCase):
         self.assertIsNone(error)
         self.assertEqual(len(captioned_image), 1)
         self.assertEqual(len(captioned_image[0]["segments"]), 2)
-        file_then_text, error = parse_messages(
+        file_then_text, error = parse_bubbles(
             {
-                "messages": [
+                "bubbles": [
                     {
                         "segments": [
                             {"type": "file", "data": {"file": "/tmp/a.md"}},
@@ -760,7 +763,7 @@ class MessagingTest(unittest.TestCase):
 
 
 class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
-    async def test_consecutive_similar_send_message_is_skipped_with_warning(
+    async def test_consecutive_similar_send_bubbles_is_skipped_with_warning(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -795,9 +798,9 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                     if self.calls == 1:
                         call = ToolCall(
                             "first-message",
-                            "send_message",
+                            "send_bubbles",
                             {
-                                "messages": [
+                                "bubbles": [
                                     "嗝得这么响亮，这顿吃得超满意嘛",
                                     "吃饱了就好，下午接着瘫着养精神",
                                 ]
@@ -806,9 +809,9 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                     elif self.calls == 2:
                         call = ToolCall(
                             "similar-message",
-                            "send_message",
+                            "send_bubbles",
                             {
-                                "messages": [
+                                "bubbles": [
                                     "嗝得这么响，看来这顿很满意嘛",
                                     "吃饱了就好，下午接着舒服瘫着",
                                 ]
@@ -836,7 +839,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             await daemon._complete_batch([event], turn_id)
 
             self.assertEqual(provider.calls, 3)
-            self.assertIn("A very similar message was already sent.", provider.warning)
+            self.assertIn("A very similar bubble was already sent.", provider.warning)
             self.assertIn("skipped", provider.warning)
             self.assertEqual(
                 [
@@ -928,7 +931,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                     **___: object,
                 ) -> ProviderResponse:
                     end_turn = next(tool for tool in tools if tool["name"] == "end_turn")
-                    case.assertNotIn("messages", end_turn["input_schema"]["properties"])
+                    case.assertNotIn("bubbles", end_turn["input_schema"]["properties"])
                     call = ToolCall(
                         "silent-close",
                         "end_turn",
@@ -959,7 +962,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(daemon.store.pending_events(), [])
             daemon.store.close()
 
-    async def test_empty_end_turn_can_wait_for_a_send_message_reply(self) -> None:
+    async def test_empty_end_turn_can_wait_for_a_send_bubbles_reply(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(
                 AppConfig(
@@ -992,9 +995,9 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                             [
                                 ToolCall(
                                     "live-question",
-                                    "send_message",
+                                    "send_bubbles",
                                     {
-                                        "messages": ["老师会选哪一个？"],
+                                        "bubbles": ["老师会选哪一个？"],
                                     },
                                 )
                             ],
@@ -1240,9 +1243,9 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                         return ProviderResponse([], [call])
                     call = ToolCall(
                         "emotion-response",
-                        "send_message",
+                        "send_bubbles",
                         {
-                            "messages": [
+                            "bubbles": [
                                 "太好了",
                                 "emotion://happy-1",
                                 "这次我可厉害了",
@@ -1327,8 +1330,8 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                         self.errors.append(json.dumps(messages[-1], ensure_ascii=False))
                     if self.calls <= 2:
                         value = "emotion://missing" if self.calls == 1 else "改成文字回复"
-                        tool_name = "send_message"
-                        arguments = {"messages": [value]}
+                        tool_name = "send_bubbles"
+                        arguments = {"bubbles": [value]}
                     else:
                         tool_name = "end_turn"
                         arguments = {
@@ -1534,7 +1537,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                         case.assertNotIn("channel=weixin", serialized)
                         case.assertNotIn("channel=napcat", serialized)
                         spec = next(
-                            tool for tool in tools if tool["name"] == "send_message"
+                            tool for tool in tools if tool["name"] == "send_bubbles"
                         )
                         channel = spec["input_schema"]["properties"][  # type: ignore[index]
                             "channel"
@@ -1555,7 +1558,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                             5: "微信回复",
                         }[self.calls]
                         arguments: dict[str, object] = {
-                            "messages": [text],
+                            "bubbles": [text],
                         }
                         if self.calls == 3:
                             arguments["channel"] = "napcat"
@@ -1564,7 +1567,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                             [
                                 ToolCall(
                                     f"progress-{self.calls}",
-                                    "send_message",
+                                    "send_bubbles",
                                     arguments,
                                 )
                             ],

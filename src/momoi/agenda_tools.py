@@ -26,13 +26,13 @@ AGENDA_TOOL_POLICY = """### Agenda tools
 - Use a Goal for every future action, including a one-time or recurring owner
   notification. Use `next_review_at` once or a recurring `schedule`; describe the
   intended notification in its success criteria and next action. At review time,
-  use current context and `owner_notify`, then finish a one-time Goal or update a
+  use current context and `send_bubbles`, then finish a one-time Goal or update a
   recurring one. Never use `sleep` to cross Turns.
-- `owner_notify` is available only during autonomous work. Use it only for a
-  useful result, a needed decision, or a meaningful failure; otherwise finish
-  the autonomous Turn silently. Give it one to three separate short `messages`
-  beats when the notification has distinct parts; use a single item when it is
-  one thought. Treat each item as an owner-visible private-chat bubble governed
+- During autonomous Goal review, `send_bubbles` is available only for a useful
+  result, a needed decision, or a meaningful failure; otherwise finish the
+  autonomous Turn silently. Use separate short `bubbles` when the notification
+  has distinct parts; use a single item when it is one thought. Treat each item
+  as an owner-visible private-chat bubble governed
   by the shared Style Card and system bubble rules. Give it a stable category
   `key`; use urgent priority only for a decision or failure that should bypass
   normal quiet rules.
@@ -170,22 +170,21 @@ AGENDA_TOOL_SPECS: list[dict[str, Any]] = [
     },
 ]
 
-OWNER_NOTIFY_SPEC: dict[str, Any] = {
-    "name": "owner_notify",
+AUTONOMOUS_SEND_BUBBLES_SPEC: dict[str, Any] = {
+    "name": "send_bubbles",
     "description": (
         "Send one useful notification to the owner from an autonomous Turn. "
         "Check the supplied current conversation first; do not notify when the "
         "result is already covered or stale. "
-        "Use messages as one to three separate short conversational beats; do not "
+        "Use bubbles as separate short conversational beats; do not "
         "pack independent sentences into one item."
     ),
     "input_schema": {
         "type": "object",
         "properties": {
-            "messages": {
+            "bubbles": {
                 "type": "array",
                 "minItems": 1,
-                "maxItems": 3,
                 "items": {"type": "string", "minLength": 1, "maxLength": 500},
             },
             "reason": {"type": "string"},
@@ -199,7 +198,7 @@ OWNER_NOTIFY_SPEC: dict[str, Any] = {
                 "default": "normal",
             },
         },
-        "required": ["messages", "reason", "key"],
+        "required": ["bubbles", "reason", "key"],
         "additionalProperties": False,
     },
 }
@@ -223,7 +222,7 @@ class AgendaTools:
     @staticmethod
     def has_tool(name: str, *, allow_notify: bool) -> bool:
         return any(spec["name"] == name for spec in AGENDA_TOOL_SPECS) or (
-            allow_notify and name == "owner_notify"
+            allow_notify and name == "send_bubbles"
         )
 
     def execute(
@@ -242,7 +241,7 @@ class AgendaTools:
                 return self._update(call.arguments, draft)
             if call.name in {"goal_finish", "goal_cancel"}:
                 return self._close(call.name, call.arguments, draft)
-            if call.name == "owner_notify" and allow_notify:
+            if call.name == "send_bubbles" and allow_notify:
                 return self._notify(call.arguments, draft)
             return {"ok": False, "error": "tool_not_allowed"}
         except (TypeError, ValueError) as error:
@@ -373,35 +372,35 @@ class AgendaTools:
         return {"ok": True, "state": "staged", "goal": goal}
 
     def _notify(self, arguments: dict[str, Any], draft: TurnDraft) -> dict[str, Any]:
-        raw_messages = arguments.get("messages")
+        raw_bubbles = arguments.get("bubbles")
         reason = str(arguments.get("reason") or "").strip()
         key = str(arguments.get("key") or "").strip()
         priority = str(arguments.get("priority", "normal"))
         if (
-            not isinstance(raw_messages, list)
-            or not 1 <= len(raw_messages) <= 3
+            not isinstance(raw_bubbles, list)
+            or not raw_bubbles
             or any(
                 not isinstance(item, str)
                 or not item.strip()
                 or len(item.strip()) > 500
-                for item in raw_messages
+                for item in raw_bubbles
             )
             or not reason
             or not re.fullmatch(
                 r"[a-z0-9][a-z0-9_.-]{0,99}", key
             )
         ):
-            raise ValueError("messages, reason, and a stable lowercase key are required")
+            raise ValueError("bubbles, reason, and a stable lowercase key are required")
         if priority not in {"normal", "urgent"}:
             raise ValueError("priority must be normal or urgent")
-        messages = [item.strip() for item in raw_messages]
-        for message in messages:
-            if message.startswith(EMOTION_PREFIX):
-                slug = emotion_slug(message)
+        bubbles = [item.strip() for item in raw_bubbles]
+        for bubble in bubbles:
+            if bubble.startswith(EMOTION_PREFIX):
+                slug = emotion_slug(bubble)
                 if slug is None or self.store.emotion(slug) is None:
                     raise ValueError("notification contains an unknown emotion slug")
-        draft.notification_messages = messages
+        draft.notification_messages = bubbles
         draft.notification_key = key
         draft.notification_priority = priority
         draft.notification_reason = reason[:500]
-        return {"ok": True, "state": "staged", "messages": len(draft.notification_messages)}
+        return {"ok": True, "state": "staged", "bubbles": len(draft.notification_messages)}

@@ -24,6 +24,7 @@ from ..memory_tools import MEMORY_TOOL_SPECS
 from ..models import AgentReply, IncomingMessage, ToolCall, TurnDraft
 from ..storage import estimate_tokens
 from .agent_workflow import AgentWorkflow, WorkflowProtocolError
+from .parsing import parse_bubbles, parse_response, response_text
 from .progress_announce import (
     announce_field,
     apply_tool_announce,
@@ -32,14 +33,13 @@ from .progress_announce import (
     should_announce,
     should_deliver_announce,
 )
-from .parsing import parse_messages, parse_response, response_text
 from .protocol import (
     AUTONOMOUS_FINISH_SPEC,
     READ_TOOL_RESULT_SPEC,
     RECALL_TOOL_SPEC,
     heartbeat_begin_spec,
     owner_end_turn_tool_spec,
-    send_message_tool_spec,
+    send_bubbles_tool_spec,
     tool_enable_spec,
 )
 from .turn_support import (
@@ -56,25 +56,25 @@ logger = logging.getLogger("momoi.runtime.turns")
 MAX_TOOL_RESULT_TRUNCATION_ATTEMPTS = 16
 # Room for the reference field appended to every serialized tool result.
 _RESULT_REF_OVERHEAD = 64
-SIMILAR_SEND_MESSAGE_THRESHOLD = 0.75
+SIMILAR_SEND_BUBBLES_THRESHOLD = 0.75
 
 
-def _send_message_text(messages: list[ChannelMessage]) -> str:
+def _send_bubbles_text(bubbles: list[ChannelMessage]) -> str:
     rendered = [
-        message
-        if isinstance(message, str)
-        else render_channel_message(normalize_channel_message(message))
-        for message in messages
+        bubble
+        if isinstance(bubble, str)
+        else render_channel_message(normalize_channel_message(bubble))
+        for bubble in bubbles
     ]
     text = unicodedata.normalize("NFKC", "\n".join(rendered)).casefold()
     return re.sub(r"[^\w]+", "", text)
 
 
-def _send_message_similarity(
+def _send_bubbles_similarity(
     previous: list[ChannelMessage], current: list[ChannelMessage]
 ) -> float:
-    previous_text = _send_message_text(previous)
-    current_text = _send_message_text(current)
+    previous_text = _send_bubbles_text(previous)
+    current_text = _send_bubbles_text(current)
     if not previous_text or not current_text:
         return 0.0
     return SequenceMatcher(
@@ -226,14 +226,14 @@ class ToolExecutionService:
         }
         visible = [
             RECALL_TOOL_SPEC,
-            self._send_message_tool_spec(channel_name),
+            self._send_bubbles_tool_spec(channel_name),
             *all_internal,
             tool_enable_spec(group_catalog),
             owner_end_turn_tool_spec(),
         ]
         full = [
             RECALL_TOOL_SPEC,
-            self._send_message_tool_spec(channel_name),
+            self._send_bubbles_tool_spec(channel_name),
             *all_internal,
             tool_enable_spec(group_catalog),
             *[
@@ -569,10 +569,9 @@ class ToolExecutionService:
                             "role": "user",
                             "content": (
                                 "[Trusted runtime protocol error. The previous text was not "
-                                "delivered. In this response, call send_message with the "
-                                "owner-visible reply; do not output assistant text or call "
-                                "end_turn. After the send_message result, call end_turn "
-                                "alone in a later response.]"
+                                "delivered. Call send_bubbles with the owner-visible "
+                                "bubbles, without end_turn. After its result, call "
+                                "end_turn alone on the next step.]"
                             ),
                         },
                     ]
@@ -699,14 +698,14 @@ class ToolExecutionService:
                     and not visible_since_owner_update
                 ):
                     reply = None
-                    error = "reply_expectation_without_visible_message"
+                    error = "reply_expectation_without_visible_bubble"
                 if (
                     reply is not None
                     and reply_wait_turn
                     and not visible_since_owner_update
                 ):
                     reply = None
-                    error = "reply_followup_message_required"
+                    error = "reply_followup_bubble_required"
                 if (
                     reply is not None
                     and reply_wait_turn
@@ -753,10 +752,9 @@ class ToolExecutionService:
                                         "text": (
                                             "[Trusted runtime protocol correction: "
                                             "plain assistant text is not delivered. "
-                                            "In this response, call send_message with "
-                                            "the owner-visible reply and do not call "
-                                            "end_turn. After its result, call end_turn "
-                                            "alone in a later response.]"
+                                            "Call send_bubbles with the owner-visible "
+                                            "bubbles, without end_turn. After its result, "
+                                            "call end_turn alone on the next step.]"
                                         ),
                                     },
                                 ]
@@ -817,9 +815,9 @@ class ToolExecutionService:
                             "content": (
                                 "[Trusted runtime protocol stop. Tool calls failed "
                                 "validation three consecutive times. Do not retry tools "
-                                "in this Turn. In this response, use send_message for "
-                                "the last concrete failure reason without end_turn. "
-                                "After its result, call end_turn alone in a later response.]"
+                                "in this Turn. Use send_bubbles for the last concrete "
+                                "failure reason without end_turn. After its result, call "
+                                "end_turn alone on the next step.]"
                             ),
                         }
                     )
@@ -1011,88 +1009,97 @@ class ToolExecutionService:
                         "ok": False,
                         "error": "autonomous_finish_must_be_the_only_terminal_tool",
                     }
-                elif call.name == "send_message":
-                    progress, error = parse_messages(call.arguments)
-                    if progress is not None:
-                        error = self._validate_emotion_messages(progress)
-                        if error is not None:
-                            progress = None
-                    if not (require_response or heartbeat_turn):
-                        result = {"ok": False, "error": "tool_not_allowed"}
+                elif call.name == "send_bubbles":
+                    if autonomous_goal_id and allow_notify:
+                        result = self.agenda_tools.execute(
+                            call,
+                            draft,
+                            authority=authority,
+                            source_event_id=source_event_id,
+                            allow_notify=True,
+                        )
                     elif not call.id:
                         result = {"ok": False, "error": "missing_tool_call_id"}
-                    elif progress is None:
-                        result = {"ok": False, "error": error}
                     else:
-                        check_contact = (
-                            (heartbeat_turn or reply_wait_turn)
-                            and heartbeat_owner_event_revision is not None
-                        )
-                        contact_error = (
-                            self._heartbeat_contact_error(
-                                heartbeat_owner_event_revision,
-                                heartbeat_notification_key,
-                            )
-                            if check_contact
-                            else None
-                        )
-                        if contact_error is not None:
-                            result = {"ok": False, "error": contact_error}
+                        progress, error = parse_bubbles(call.arguments)
+                        if progress is not None:
+                            error = self._validate_emotion_messages(progress)
+                            if error is not None:
+                                progress = None
+                        if not (require_response or heartbeat_turn):
+                            result = {"ok": False, "error": "tool_not_allowed"}
+                        elif progress is None:
+                            result = {"ok": False, "error": error}
                         else:
-                            target = self.channels.get(
-                                str(
-                                    call.arguments.get("channel")
-                                    or delivery_channel.name
-                                )
+                            check_contact = (
+                                (heartbeat_turn or reply_wait_turn)
+                                and heartbeat_owner_event_revision is not None
                             )
-                            if target is None:
-                                result = {"ok": False, "error": "invalid_channel"}
-                            else:
-                                similarity = (
-                                    _send_message_similarity(
-                                        last_sent_messages, progress
-                                    )
-                                    if previous_tool_name == "send_message"
-                                    and last_sent_messages is not None
-                                    and last_sent_channel == target.name
-                                    else 0.0
+                            contact_error = (
+                                self._heartbeat_contact_error(
+                                    heartbeat_owner_event_revision,
+                                    heartbeat_notification_key,
                                 )
-                                if similarity >= SIMILAR_SEND_MESSAGE_THRESHOLD:
-                                    log_event(
-                                        logger,
-                                        logging.WARNING,
-                                        "similar_send_message_skipped",
-                                        stage=stage,
-                                        turn_id=turn_id,
-                                        round=llm_round,
-                                        channel=target.name,
-                                        tool_call_id=call.id,
-                                        similarity=round(similarity, 3),
-                                        threshold=SIMILAR_SEND_MESSAGE_THRESHOLD,
+                                if check_contact
+                                else None
+                            )
+                            if contact_error is not None:
+                                result = {"ok": False, "error": contact_error}
+                            else:
+                                target = self.channels.get(
+                                    str(
+                                        call.arguments.get("channel")
+                                        or delivery_channel.name
                                     )
-                                    result = {
-                                        "ok": True,
-                                        "state": "skipped",
-                                        "warning": (
-                                            "A very similar message was already sent."
-                                        ),
-                                    }
+                                )
+                                if target is None:
+                                    result = {"ok": False, "error": "invalid_channel"}
                                 else:
-                                    self.store.queue_progress(
-                                        turn_id, call.id, progress, target.name
+                                    similarity = (
+                                        _send_bubbles_similarity(
+                                            last_sent_messages, progress
+                                        )
+                                        if previous_tool_name == "send_bubbles"
+                                        and last_sent_messages is not None
+                                        and last_sent_channel == target.name
+                                        else 0.0
                                     )
-                                    visible_since_owner_update = True
-                                    if not check_contact:
-                                        owner_work_acknowledged = True
-                                    last_sent_messages = copy.deepcopy(progress)
-                                    last_sent_channel = target.name
-                                    self.outbox_changed.set()
-                                    result = {
-                                        "ok": True,
-                                        "state": "committed",
-                                        "channel": target.name,
-                                        "messages": len(progress),
-                                    }
+                                    if similarity >= SIMILAR_SEND_BUBBLES_THRESHOLD:
+                                        log_event(
+                                            logger,
+                                            logging.WARNING,
+                                            "similar_send_bubbles_skipped",
+                                            stage=stage,
+                                            turn_id=turn_id,
+                                            round=llm_round,
+                                            channel=target.name,
+                                            tool_call_id=call.id,
+                                            similarity=round(similarity, 3),
+                                            threshold=SIMILAR_SEND_BUBBLES_THRESHOLD,
+                                        )
+                                        result = {
+                                            "ok": True,
+                                            "state": "skipped",
+                                            "warning": (
+                                                "A very similar bubble was already sent."
+                                            ),
+                                        }
+                                    else:
+                                        self.store.queue_progress(
+                                            turn_id, call.id, progress, target.name
+                                        )
+                                        visible_since_owner_update = True
+                                        if not check_contact:
+                                            owner_work_acknowledged = True
+                                        last_sent_messages = copy.deepcopy(progress)
+                                        last_sent_channel = target.name
+                                        self.outbox_changed.set()
+                                        result = {
+                                            "ok": True,
+                                            "state": "committed",
+                                            "channel": target.name,
+                                            "bubbles": len(progress),
+                                        }
                 elif call.name == "tool_enable":
                     requested = call.arguments.get("groups")
                     if (
@@ -1369,9 +1376,9 @@ class ToolExecutionService:
                     "content": (
                         "[Trusted runtime protocol stop. Tool calls failed validation "
                         "three consecutive times. Do not retry tools in this Turn. "
-                        "In this response, use send_message for the last concrete "
-                        "failure reason without end_turn. After its result, call "
-                        "end_turn alone in a later response.]"
+                        "Use send_bubbles for the last concrete failure reason without "
+                        "end_turn. After its result, call end_turn alone on the next "
+                        "step.]"
                     ),
                 }
             )
@@ -1421,8 +1428,8 @@ class ToolExecutionService:
             if not field:
                 continue
             if any(
-                earlier.name == "send_message"
-                and bool(earlier.arguments.get("messages"))
+                earlier.name == "send_bubbles"
+                and bool(earlier.arguments.get("bubbles"))
                 for earlier in calls[:index]
             ):
                 return None
@@ -1458,9 +1465,11 @@ class ToolExecutionService:
             )
 
     def _tool_source(self, name: str, *, allow_notify: bool) -> str:
+        if name == "send_bubbles" and allow_notify:
+            return "agenda"
         if name in {
             "end_turn",
-            "send_message",
+            "send_bubbles",
             "tool_enable",
             "read_tool_result",
             "autonomous_finish",
@@ -1558,10 +1567,10 @@ class ToolExecutionService:
             )
         ]
 
-    def _send_message_tool_spec(
+    def _send_bubbles_tool_spec(
         self, channel_name: str | None = None
     ) -> dict[str, Any]:
-        return send_message_tool_spec(
+        return send_bubbles_tool_spec(
             list(self.channels), channel_name or self.channel.name
         )
 

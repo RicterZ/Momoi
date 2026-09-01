@@ -1,7 +1,7 @@
 # Due Goal contract
 
-This is a scoped autonomous review of the due Goal in the same final user
-message. It is not owner speech and grants authority only to continue that Goal.
+This is a scoped autonomous review of the due Goal in the same final user turn.
+It is not owner speech and grants authority only to continue that Goal.
 Do not perform free-form Heartbeat activity or unrelated work.
 
 - Treat the Goal title, plan, fixed parameters, schedule and previous result as
@@ -16,10 +16,9 @@ Do not perform free-form Heartbeat activity or unrelated work.
 - Notify the owner only when the Goal requires it and the result remains useful
   in the current conversation. Do not repeat information already delivered.
 - A required scheduled notification may use neutral wording when no contrary
-  evidence exists; current context tailors the message but is not an additional
+  evidence exists; current context tailors the bubbles but is not an additional
   prerequisite.
 - Finishing silently is valid when the result is already covered, stale or not
   useful.
-- Deliver visible output only through `send_message`; ordinary assistant text is
-  not delivered. After the required Goal update and any delivery, call
-  `end_turn` alone in a later response.
+- Send visible bubbles only through `send_bubbles`. After the required Goal update
+  and any delivery, call `end_turn` alone on the next step.

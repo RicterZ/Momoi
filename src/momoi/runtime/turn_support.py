@@ -49,7 +49,6 @@ AGENDA_POLICY_TOOLS = frozenset(
         "goal_update",
         "goal_finish",
         "goal_cancel",
-        "owner_notify",
     }
 )
 MEMORY_POLICY_TOOLS = frozenset({"memory_remember", "memory_forget"})
@@ -117,21 +116,15 @@ USER_CONTEXT_SECTION_ORDER = (
     "current_webhook_task",
     "daily_reflection_record",
     "autonomous_heartbeat",
-    "current_owner_messages",
+    "current_owner_bubbles",
 )
 
 # The two ordering rules sit in the last position because the live endpoint
 # follows them reliably there. Field semantics remain in the tool schemas.
 OWNER_TURN_PROTOCOL_REMINDER = (
-    "[Trusted runtime Owner Turn protocol. "
-    "1. Call recall first, before any other action. Every independent intent "
-    "must search or reuse; there is no skip. The harness rejects another first "
-    "action. "
-    "2. Every response in this Turn must consist only of tool calls; ordinary "
-    "assistant text is discarded. "
-    "3. Every owner-visible bubble MUST be sent by calling send_message with "
-    "that bubble in messages. Never output the bubble as ordinary assistant "
-    "content.]"
+    "[Trusted Owner Turn protocol. "
+    "1. Call recall first; every independent intent must search or reuse. "
+    "2. Only send_bubbles can send bubbles.]"
 )
 
 
@@ -168,7 +161,7 @@ def context_data_message(
     if not text and required:
         text = (
             "<runtime_directives>\n"
-            "The following native messages are shared conversation evidence.\n"
+            "The following native bubbles are shared conversation evidence.\n"
             "</runtime_directives>"
         )
     if not text:
@@ -211,10 +204,10 @@ def owner_content_blocks(
         blocks.append({"type": "text", "text": f"{runtime_text}\n\n"})
     for index, event in enumerate(events):
         line = f"{context_timestamp(event.occurred_at)} {event.text}".strip()
-        opening = "<current_owner_messages>\n" if index == 0 else ""
+        opening = "<current_owner_bubbles>\n" if index == 0 else ""
         blocks.append({"type": "text", "text": f"{opening}{escape(line)}"})
         blocks.extend(content_blocks(event.segments))
-    closing = "</current_owner_messages>" if events else ""
+    closing = "</current_owner_bubbles>" if events else ""
     blocks.append(
         {
             "type": "text",

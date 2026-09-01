@@ -2100,9 +2100,9 @@ class StorageMemoryTest(unittest.TestCase):
                 tools.execute(
                     ToolCall(
                         "notify",
-                        "owner_notify",
+                        "send_bubbles",
                         {
-                            "messages": ["检查完成", "目前正常"],
+                            "bubbles": ["检查完成", "目前正常", "没有数量上限", "继续观察"],
                             "reason": "任务阶段结果",
                             "key": "service.check",
                         },
@@ -2113,6 +2113,7 @@ class StorageMemoryTest(unittest.TestCase):
                     allow_notify=True,
                 )["ok"]
             )
+            self.assertEqual(len(autonomous.notification_messages or []), 4)
             store.commit_autonomous_turn(goal_id, autonomous)
             self.assertEqual(store.goal(goal_id)["status"], "waiting")
             first = store.due_outbox()[0]

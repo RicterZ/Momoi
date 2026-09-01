@@ -180,13 +180,13 @@ class ThinkingStoreTests(unittest.TestCase):
 
         with log_context(turn_id="turn-1", call_id="call-1", stage="owner", round=2):
             _persist_thinking(
-                sink, reasoning="决定提醒", tools=["send_message"], model="test"
+                sink, reasoning="决定提醒", tools=["send_bubbles"], model="test"
             )
         self.assertEqual(recorded["turn_id"], "turn-1")
         self.assertEqual(recorded["call_id"], "call-1")
         self.assertEqual(recorded["stage"], "owner")
         self.assertEqual(recorded["round"], 2)
-        self.assertEqual(recorded["tools"], ["send_message"])
+        self.assertEqual(recorded["tools"], ["send_bubbles"])
         self.assertEqual(recorded["reasoning"], "决定提醒")
 
     def test_writes_into_the_month_of_created_at(self) -> None:

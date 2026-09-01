@@ -74,7 +74,7 @@ def build_groups(rows: Iterable[Mapping[str, object]]) -> list[TranscriptGroup]:
     """Group visible rows into one message per role per runtime Turn.
 
     A Turn is the unit of Momoi speaking. Within one Turn it may call
-    ``send_message`` several times around tool work, but the owner simply sees
+    ``send_bubbles`` several times around tool work, but the owner simply sees
     consecutive bubbles, and the tool work between them never enters history.
     Grouping by Turn therefore needs no timing heuristic, and it gives
     consecutive assistant groups one exact meaning: Momoi opened a new Turn and

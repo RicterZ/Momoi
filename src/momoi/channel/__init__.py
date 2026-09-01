@@ -196,7 +196,7 @@ def _normalize_segments(value: object) -> list[dict[str, Any]]:
             if not isinstance(text, str) or not text.strip():
                 raise ValueError("invalid_text_segment")
             if has_blank_line(text):
-                raise ValueError("blank_lines_must_be_separate_messages")
+                raise ValueError("blank_lines_must_be_separate_bubbles")
             data["text"] = text.strip()
         if kind in _MEDIA_TYPES and not isinstance(data.get("file"), str):
             raise ValueError("media_segment_requires_file")

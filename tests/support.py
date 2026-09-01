@@ -43,7 +43,7 @@ class ContextAwareProvider:
     """Answer the Owner Turn's opening context decision, then delegate.
 
     Owner Turns must submit a recall decision before acting, so a fake provider
-    that goes straight to send_message would spend its first rounds being
+    that goes straight to send_bubbles would spend its first rounds being
     refused. This keeps that protocol out of every individual test.
     """
 
@@ -75,7 +75,7 @@ class ContextAwareProvider:
                 last_recall = index
             if any(
                 isinstance(block, dict)
-                and "<current_owner_messages>" in str(block.get("text") or "")
+                and "<current_owner_bubbles>" in str(block.get("text") or "")
                 for block in content
             ):
                 last_current_input = index

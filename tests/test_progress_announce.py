@@ -18,7 +18,7 @@ from momoi.runtime.progress_announce import (
     should_deliver_announce,
     take_announce_message,
 )
-from momoi.runtime.protocol import send_message_tool_spec, tool_enable_spec
+from momoi.runtime.protocol import send_bubbles_tool_spec, tool_enable_spec
 from momoi.storage import estimate_tokens
 
 
@@ -50,7 +50,7 @@ class ProgressAnnounceTest(unittest.TestCase):
         self.assertNotIn("Optional natural", description)
         self.assertIn("Conditionally required", description)
         self.assertIn("first external-work batch", description)
-        self.assertIn("first tool unless send_message", description)
+        self.assertIn("first tool unless send_bubbles", description)
         self.assertIn("Ordinary assistant content is discarded", description)
         self.assertIn("Later tool rounds may omit it", description)
         self.assertIn("evidence-backed", description)
@@ -61,10 +61,10 @@ class ProgressAnnounceTest(unittest.TestCase):
         self.assertLess(len(description), 700)
         self.assertNotIn(ANNOUNCE_FIELD, curl["input_schema"]["properties"])
 
-    def test_send_message_schema_stays_compact_without_losing_constraints(
+    def test_send_bubbles_schema_stays_compact_without_losing_constraints(
         self,
     ) -> None:
-        spec = send_message_tool_spec(["napcat", "weixin"], "napcat")
+        spec = send_bubbles_tool_spec(["napcat", "weixin"], "napcat")
         rendered = json.dumps(
             spec, ensure_ascii=False, separators=(",", ":")
         )
@@ -98,7 +98,7 @@ class ProgressAnnounceTest(unittest.TestCase):
     def test_initial_announce_error_explains_conditional_requirement(self) -> None:
         message = initial_announce_error_message(ANNOUNCE_FIELD)
         self.assertIn("first external-work tool batch", message)
-        self.assertIn("send_message before it", message)
+        self.assertIn("send_bubbles before it", message)
         self.assertIn("Later tool rounds may omit", message)
 
     def test_first_external_batch_requires_one_initial_acknowledgement(self) -> None:
@@ -139,7 +139,7 @@ class ProgressAnnounceTest(unittest.TestCase):
 
         message_then_tool = MomoiDaemon._missing_initial_work_announce(
             [
-                ToolCall("say", "send_message", {"messages": ["我先看看"]}),
+                ToolCall("say", "send_bubbles", {"bubbles": ["我先看看"]}),
                 ToolCall("first", "curl", {"url": "https://example.com"}),
             ],
             tools,

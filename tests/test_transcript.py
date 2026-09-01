@@ -67,7 +67,7 @@ def bubble(
     }
 
 
-def test_one_send_message_call_becomes_one_assistant_message():
+def test_one_send_bubbles_call_becomes_one_assistant_message():
     groups = build_groups(
         [
             owner(1, "在吗"),
@@ -80,7 +80,7 @@ def test_one_send_message_call_becomes_one_assistant_message():
     assert groups[1].message_ids == (2, 3)
 
 
-def test_send_message_calls_around_tool_work_stay_one_assistant_turn():
+def test_send_bubbles_calls_around_tool_work_stay_one_assistant_turn():
     groups = build_groups(
         [
             owner(1, "帮我看看"),

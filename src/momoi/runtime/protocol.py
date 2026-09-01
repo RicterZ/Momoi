@@ -27,7 +27,7 @@ SEGMENT_SCHEMA: dict[str, Any] = {
     "required": ["type", "data"],
     "additionalProperties": False,
 }
-CHANNEL_MESSAGE_SCHEMA: dict[str, Any] = {
+CHANNEL_BUBBLE_SCHEMA: dict[str, Any] = {
     "oneOf": [
         {
             "type": "string",
@@ -183,12 +183,12 @@ ACTIVITY_DECISION_SCHEMA: dict[str, Any] = {
 REPLY_WAIT_DECISION_SCHEMA: dict[str, Any] = {
     "description": (
         "Whether this conversational beat remains open after the last visible "
-        "message. Use wait=false when it is complete, nothing remains open, or "
+        "bubble. Use wait=false when it is complete, nothing remains open, or "
         "another scheduler owns the work. Use wait=true when a reply, reaction, "
         "information still coming, or a later continuation is genuinely expected; "
         "do not default to false merely because the close feels routine. wait=true "
-        "requires a visible message in this Turn and schedules exactly one "
-        "follow-up if the owner stays silent."
+        "requires a visible bubble in this Turn and schedules one follow-up Turn "
+        "if the owner stays silent."
     ),
     "oneOf": [
         {
@@ -204,7 +204,7 @@ REPLY_WAIT_DECISION_SCHEMA: dict[str, Any] = {
             "type": "object",
             "description": (
                 "The beat is still open. If it stays quiet, the runtime sends "
-                "exactly one follow-up after delay_minutes."
+                "one follow-up Turn after delay_minutes."
             ),
             "properties": {
                 "wait": {"type": "boolean", "enum": [True]},
@@ -213,7 +213,7 @@ REPLY_WAIT_DECISION_SCHEMA: dict[str, Any] = {
                     "minimum": 1,
                     "maximum": 10,
                     "description": (
-                        "Whole minutes to wait after the last visible message is "
+                        "Whole minutes to wait after the last visible bubble is "
                         "successfully delivered."
                     ),
                 },
@@ -233,7 +233,7 @@ REPLY_WAIT_DECISION_SCHEMA: dict[str, Any] = {
                     "maxLength": 500,
                     "description": (
                         "Concrete direction for the one follow-up Momoi should add "
-                        "after her last sent message if the owner stays quiet; describe "
+                        "after her last sent bubble if the owner stays quiet; describe "
                         "the new conversational move, not merely the reply being awaited."
                     ),
                 },
@@ -254,14 +254,14 @@ END_TURN_TOOL_SPEC: dict[str, Any] = {
     "description": (
         "Terminal action that commits private conversational Turn state; it cannot "
         "send owner-visible content. Call it exactly once and alone after all work "
-        "and delivery are complete. After send_message, wait for its result and call "
-        "end_turn in a later model response."
+        "and delivery are complete. After send_bubbles, wait for its result and call "
+        "end_turn alone on the next step."
     ),
     "input_schema": {
         "type": "object",
         "description": (
-            "Private Turn state only. Visible text, message, messages, content, and "
-            "delivery fields are not valid here."
+            "Private Turn state only. Visible bubbles and delivery fields are not "
+            "valid here."
         ),
         "properties": {
             "reply_wait": REPLY_WAIT_DECISION_SCHEMA,
@@ -283,8 +283,8 @@ def owner_end_turn_tool_spec() -> dict[str, Any]:
         "description": (
             "Terminal action for this Owner Turn. It commits private state and "
             "cannot send owner-visible content. Call it exactly once and alone after "
-            "all work and delivery are complete. After send_message, wait for its "
-            "result and call end_turn in a later model response. "
+            "all work and delivery are complete. After send_bubbles, wait for its "
+            "result and call end_turn alone on the next step. "
             "For activity, compare Current self state with authenticated owner input "
             "and reliable evidence from this Turn. Correct it only when this Turn "
             "completes, cancels, replaces, proves impossible, invalidates a premise "
@@ -330,9 +330,9 @@ def heartbeat_end_turn_tool_spec() -> dict[str, Any]:
         **END_TURN_TOOL_SPEC,
         "description": (
             "Terminal action for this autonomous heartbeat Turn. It commits private "
-            "state and cannot send owner-visible content. After any send_message "
+            "state and cannot send owner-visible content. After any send_bubbles "
             "result and completed work, call end_turn exactly once and alone in a "
-            "later model response. The heartbeat object records Momoi's activity and "
+            "later step. The heartbeat object records Momoi's activity and "
             "schedules her next Turn."
         ),
         "input_schema": {
@@ -596,24 +596,24 @@ def heartbeat_begin_spec(group_descriptions: dict[str, str]) -> dict[str, Any]:
     }
 
 
-SEND_MESSAGE_TOOL_SPEC: dict[str, Any] = {
-    "name": "send_message",
+SEND_BUBBLES_TOOL_SPEC: dict[str, Any] = {
+    "name": "send_bubbles",
     "description": (
-        "Use for owner-visible delivery, independently of work. Put each non-empty "
-        "chat bubble in messages. Ordinary assistant content is discarded. After "
-        "its result and work, call end_turn alone in a later response. Text may "
+        "The only way to send owner-visible bubbles. Put each non-empty chat bubble "
+        "in bubbles. After its result and all work, call end_turn alone on the next "
+        "step. Text may "
         "accompany images; file, video, audio, and record items must stand alone."
     ),
     "input_schema": {
         "type": "object",
         "properties": {
-            "messages": {
+            "bubbles": {
                 "type": "array",
                 "minItems": 1,
-                "items": CHANNEL_MESSAGE_SCHEMA,
+                "items": CHANNEL_BUBBLE_SCHEMA,
             },
         },
-        "required": ["messages"],
+        "required": ["bubbles"],
         "additionalProperties": False,
     },
 }
@@ -655,15 +655,15 @@ def tool_enable_spec(group_descriptions: dict[str, str]) -> dict[str, Any]:
     }
 
 
-def send_message_tool_spec(
+def send_bubbles_tool_spec(
     channel_names: list[str], primary_channel: str
 ) -> dict[str, Any]:
     return {
-        **SEND_MESSAGE_TOOL_SPEC,
+        **SEND_BUBBLES_TOOL_SPEC,
         "input_schema": {
-            **SEND_MESSAGE_TOOL_SPEC["input_schema"],
+            **SEND_BUBBLES_TOOL_SPEC["input_schema"],
             "properties": {
-                **SEND_MESSAGE_TOOL_SPEC["input_schema"]["properties"],
+                **SEND_BUBBLES_TOOL_SPEC["input_schema"]["properties"],
                 "channel": {
                     "type": "string",
                     "enum": channel_names,
@@ -681,7 +681,7 @@ AUTONOMOUS_FINISH_SPEC: dict[str, Any] = {
     "name": "autonomous_finish",
     "description": (
         "Required terminal marker for a Goal review. Call it alone after updating, "
-        "finishing, or cancelling the Goal and after any optional owner_notify call."
+        "finishing, or cancelling the Goal and after any optional send_bubbles call."
     ),
     "input_schema": {
         "type": "object",

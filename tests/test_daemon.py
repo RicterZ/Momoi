@@ -22,7 +22,7 @@ from momoi.config import (
 )
 from momoi.runtime import (
     END_TURN_TOOL_SPEC,
-    SEND_MESSAGE_TOOL_SPEC,
+    SEND_BUBBLES_TOOL_SPEC,
     heartbeat_end_turn_tool_spec,
     owner_end_turn_tool_spec,
     MomoiDaemon,
@@ -30,7 +30,7 @@ from momoi.runtime import (
 from momoi.runtime.jobs import AutonomousJob
 from momoi.runtime.protocol import (
     ACTIVITY_DECISION_SCHEMA,
-    CHANNEL_MESSAGE_SCHEMA,
+    CHANNEL_BUBBLE_SCHEMA,
     MOOD_UPDATE_SCHEMA,
 )
 from momoi.models import (
@@ -76,7 +76,7 @@ class DaemonTest(unittest.TestCase):
 
         base = daemon._system()
         specialized = daemon._system_with_tool_policies(
-            base, [{"name": "send_message"}, {"name": "memory_remember"}]
+            base, [{"name": "send_bubbles"}, {"name": "memory_remember"}]
         )
         owner = daemon._system_with_tool_policies(
             base,
@@ -177,7 +177,7 @@ class DaemonTest(unittest.TestCase):
             )
             self.assertNotIn("heartbeat_handoff", rendered)
             self.assertIn("A `rest` activity is complete", rendered)
-            self.assertIn("follows the shared Style Card", rendered)
+            self.assertIn("follow the shared Style Card", rendered)
             self.assertNotIn("<recalled_turns>", rendered)
             heartbeat.unlink()
             self.assertNotIn(
@@ -255,7 +255,7 @@ class DaemonTest(unittest.TestCase):
         self.assertIn("even if\n  it begins expressively", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("not a half-beat", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("the two half-beat forms", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("Message boundaries express timing", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("Bubble boundaries express timing", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("produces a\n  wordless reaction", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("before, between, or after", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("exactly where that impulse occurs", STYLE_CARD_SYSTEM_PROMPT)
@@ -278,7 +278,7 @@ class DaemonTest(unittest.TestCase):
         self.assertIn("dramatic about your feeling", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("intermediate findings provisional", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("## Emotional presence", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("not a neutral response surface", STYLE_CARD_SYSTEM_PROMPT)
+        self.assertIn("not a neutral answering surface", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("sulky", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("ask for comfort", STYLE_CARD_SYSTEM_PROMPT)
         self.assertIn("remain unresolved", STYLE_CARD_SYSTEM_PROMPT)
@@ -298,19 +298,19 @@ class DaemonTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
         wait_schema = END_TURN_TOOL_SPEC["input_schema"]["properties"]["reply_wait"]
         self.assertIn("genuinely expected", wait_schema["description"])
-        self.assertIn("exactly one follow-up", wait_schema["description"])
+        self.assertIn("one follow-up Turn", wait_schema["description"])
         self.assertIn("<interrupted_reply_expectation>", system)
         self.assertIn("describes a cancelled wait", system)
         self.assertIn("follow-up must be sent now", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertIn("reconsider contact", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("Send exactly one", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("Send a brief", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertIn("native transcript", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertNotIn("<reply_timeline>", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertIn("Continue strictly after its", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertIn("never answer, confirm, or", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertIn("<followup>", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("After the `send_message` result", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("alone in a later response", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("After the `send_bubbles` result", REPLY_WAIT_SYSTEM_PROMPT)
+        self.assertIn("alone on the next step", REPLY_WAIT_SYSTEM_PROMPT)
         self.assertIn("`reply_wait.wait` to false", REPLY_WAIT_SYSTEM_PROMPT)
 
     def test_mood_update_parser_accepts_open_state_labels(self) -> None:
@@ -366,23 +366,21 @@ class DaemonTest(unittest.TestCase):
         self.assertNotIn("segments", END_TURN_TOOL_SPEC["input_schema"]["properties"])
         self.assertNotIn("forward", END_TURN_TOOL_SPEC["input_schema"]["properties"])
         self.assertNotIn(
-            "delivery", SEND_MESSAGE_TOOL_SPEC["input_schema"]["properties"]
+            "delivery", SEND_BUBBLES_TOOL_SPEC["input_schema"]["properties"]
         )
-        self.assertIn("non-empty", SEND_MESSAGE_TOOL_SPEC["description"])
-        self.assertIn("owner-visible", SEND_MESSAGE_TOOL_SPEC["description"])
+        self.assertIn("non-empty", SEND_BUBBLES_TOOL_SPEC["description"])
+        self.assertIn("owner-visible", SEND_BUBBLES_TOOL_SPEC["description"])
+        self.assertIn("only way", SEND_BUBBLES_TOOL_SPEC["description"])
         self.assertIn(
-            "independently of work", SEND_MESSAGE_TOOL_SPEC["description"]
-        )
-        self.assertIn(
-            "each non-empty chat bubble", SEND_MESSAGE_TOOL_SPEC["description"]
+            "each non-empty chat bubble", SEND_BUBBLES_TOOL_SPEC["description"]
         )
         self.assertIn(
-            "Ordinary assistant content is discarded",
-            SEND_MESSAGE_TOOL_SPEC["description"],
+            "in bubbles",
+            SEND_BUBBLES_TOOL_SPEC["description"],
         )
-        self.assertIn("later response", SEND_MESSAGE_TOOL_SPEC["description"])
-        self.assertIn("must stand alone", SEND_MESSAGE_TOOL_SPEC["description"])
-        bubble_description = CHANNEL_MESSAGE_SCHEMA["oneOf"][0]["description"]
+        self.assertIn("next step", SEND_BUBBLES_TOOL_SPEC["description"])
+        self.assertIn("must stand alone", SEND_BUBBLES_TOOL_SPEC["description"])
+        bubble_description = CHANNEL_BUBBLE_SCHEMA["oneOf"][0]["description"]
         self.assertIn("private-chat bubble", bubble_description)
         self.assertIn("blank lines", bubble_description)
         self.assertIn("emotion://<listed-slug>", bubble_description)
@@ -392,7 +390,7 @@ class DaemonTest(unittest.TestCase):
         ]
         wait_schema = END_TURN_TOOL_SPEC["input_schema"]["properties"]["reply_wait"]
         self.assertIn("another scheduler owns the work", wait_schema["description"])
-        self.assertIn("exactly one follow-up", wait_schema["description"])
+        self.assertIn("one follow-up Turn", wait_schema["description"])
         self.assertEqual(
             [shape["properties"]["wait"]["enum"][0] for shape in wait_shapes],
             [False, True],
@@ -431,7 +429,7 @@ class DaemonTest(unittest.TestCase):
         self.assertIn("Replace", activity_shapes[1]["description"])
         owner_description = owner_end_turn["description"]
         self.assertIn("Terminal action", owner_description)
-        self.assertIn("later model response", owner_description)
+        self.assertIn("on the next step", owner_description)
         self.assertIn("Correct it only when", owner_description)
         self.assertIn("is not a conflict", owner_description)
         self.assertIn("without a conflict, leave both unchanged", owner_description)
@@ -731,15 +729,15 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             stale_reply_cancelled.set()
                             raise
                         text = "只回应第一条"
-                        tool_name = "send_message"
-                        arguments = {"messages": [text]}
+                        tool_name = "send_bubbles"
+                        arguments = {"bubbles": [text]}
                     elif provider_self.calls == 2:
                         self.assertIn(
                             "第二条", json.dumps(messages, ensure_ascii=False)
                         )
                         text = "合并两条后回复"
-                        tool_name = "send_message"
-                        arguments = {"messages": [text]}
+                        tool_name = "send_bubbles"
+                        arguments = {"bubbles": [text]}
                     else:
                         tool_name = "end_turn"
                         arguments = {
@@ -851,16 +849,16 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             raise
                         call = ToolCall(
                             "stale-message",
-                            "send_message",
-                            {"messages": ["上海天气晴"]},
+                            "send_bubbles",
+                            {"bubbles": ["上海天气晴"]},
                         )
                     elif provider_self.calls == 3:
                         rendered = json.dumps(messages, ensure_ascii=False)
                         self.assertIn("不用查天气了", rendered)
                         call = ToolCall(
                             "final-message",
-                            "send_message",
-                            {"messages": ["收到，不查了"]},
+                            "send_bubbles",
+                            {"bubbles": ["收到，不查了"]},
                         )
                     else:
                         call = ToolCall(
@@ -1242,8 +1240,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     elif provider_self.calls == 2:
                         call = ToolCall(
                             "required-message",
-                            "send_message",
-                            {"messages": ["老师还没回答我呢"]},
+                            "send_bubbles",
+                            {"bubbles": ["老师还没回答我呢"]},
                         )
                     elif provider_self.calls == 3:
                         call = ToolCall(
@@ -1573,9 +1571,9 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         self.assert_terminal_tools(tools)
                         call = ToolCall(
                             "failed-message",
-                            "send_message",
+                            "send_bubbles",
                             {
-                                "messages": ["创建任务失败：缺少有效的执行时间。"],
+                                "bubbles": ["创建任务失败：缺少有效的执行时间。"],
                             },
                         )
                     else:
@@ -1605,7 +1603,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 @staticmethod
                 def assert_terminal_tools(tools: list[dict[str, object]]) -> None:
                     names = [tool["name"] for tool in tools]
-                    if "send_message" not in names or "end_turn" not in names:
+                    if "send_bubbles" not in names or "end_turn" not in names:
                         raise AssertionError(tools)
                     if "goal_create" not in names:
                         raise AssertionError(tools)
@@ -1855,7 +1853,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "write_file",
                             "read_tool_result",
                             "tool_enable",
-                            "send_message",
+                            "send_bubbles",
                             "end_turn",
                         }
                         if names != expected:
@@ -1933,8 +1931,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     elif self.calls == 6:
                         call = ToolCall(
                             "heartbeat-live",
-                            "send_message",
-                            {"messages": ["刚想到一个关卡点子！"]},
+                            "send_bubbles",
+                            {"bubbles": ["刚想到一个关卡点子！"]},
                         )
                     else:
                         call = ToolCall(
@@ -2055,7 +2053,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((turn["state"], turn["llm_calls"]), ("completed", 0))
             daemon.store.close()
 
-    async def test_plain_text_with_end_turn_is_retried_through_send_message(
+    async def test_plain_text_with_end_turn_is_retried_through_send_bubbles(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -2112,7 +2110,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         )
                     names = [tool["name"] for tool in tools]
                     if (
-                        "send_message" not in names
+                        "send_bubbles" not in names
                         or "end_turn" not in names
                         or "memory_search" not in names
                     ):
@@ -2120,14 +2118,14 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     if self.calls == 2:
                         correction = json.dumps(messages, ensure_ascii=False)
                         if (
-                            "do not call end_turn" not in correction
-                            or "alone in a later response" not in correction
+                            "without end_turn" not in correction
+                            or "alone on the next step" not in correction
                         ):
                             raise AssertionError(correction)
                         call = ToolCall(
                             "send",
-                            "send_message",
-                            {"messages": ["午饭要好好吃呀"]},
+                            "send_bubbles",
+                            {"bubbles": ["午饭要好好吃呀"]},
                         )
                     else:
                         call = ToolCall(
@@ -2188,7 +2186,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             daemon.store.close()
 
-    async def test_plain_text_with_invalid_mood_is_retried_through_send_message(
+    async def test_plain_text_with_invalid_mood_is_retried_through_send_bubbles(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -2257,7 +2255,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         )
                     names = [tool["name"] for tool in tools]
                     if (
-                        "send_message" not in names
+                        "send_bubbles" not in names
                         or "end_turn" not in names
                         or "memory_search" not in names
                     ):
@@ -2265,8 +2263,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     if self.calls == 2:
                         call = ToolCall(
                             "send",
-                            "send_message",
-                            {"messages": ["哼，游戏宅也会做功课的好吗"]},
+                            "send_bubbles",
+                            {"bubbles": ["哼，游戏宅也会做功课的好吗"]},
                         )
                     else:
                         call = ToolCall(
@@ -2317,9 +2315,9 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(provider.calls, 3)
             self.assertTrue(
                 any(
-                    "call send_message" in text
-                    and "do not call end_turn" in text
-                    and "alone in a later response" in text
+                    "Call send_bubbles" in text
+                    and "without end_turn" in text
+                    and "alone on the next step" in text
                     for text in provider.corrections
                 )
             )
@@ -2444,8 +2442,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         calls = [
                             ToolCall(
                                 "send",
-                                "send_message",
-                                {"messages": ["查完了"]},
+                                "send_bubbles",
+                                {"bubbles": ["查完了"]},
                             )
                         ]
                     else:
@@ -2745,8 +2743,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     if self.calls == 2:
                         call = ToolCall(
                             "stop-message",
-                            "send_message",
-                            {"messages": ["已经停下来了"]},
+                            "send_bubbles",
+                            {"bubbles": ["已经停下来了"]},
                         )
                     else:
                         call = ToolCall(
@@ -2830,9 +2828,9 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     elif self.calls == 2:
                         call = ToolCall(
                             "stop-message",
-                            "send_message",
+                            "send_bubbles",
                             {
-                                "messages": ["已经终止当前任务"],
+                                "bubbles": ["已经终止当前任务"],
                             },
                         )
                     else:
@@ -2924,9 +2922,9 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             {
                                 "type": "tool_use",
                                 "id": "progress-1",
-                                "name": "send_message",
+                                "name": "send_bubbles",
                                 "input": {
-                                    "messages": ["我先处理一下"],
+                                    "bubbles": ["我先处理一下"],
                                 },
                             }
                         ],
@@ -2958,8 +2956,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             {
                                 "type": "tool_use",
                                 "id": "send-final",
-                                "name": "send_message",
-                                "input": {"messages": ["测试回复一", "测试回复二"]},
+                                "name": "send_bubbles",
+                                "input": {"bubbles": ["测试回复一", "测试回复二"]},
                             }
                         ],
                     }
@@ -3059,15 +3057,15 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(llm_requests), 8)
         initial_tools = [tool["name"] for tool in llm_requests[0]["tools"]]
         self.assertEqual(initial_tools[0], "recall")
-        self.assertIn("send_message", initial_tools)
+        self.assertIn("send_bubbles", initial_tools)
         self.assertIn("end_turn", initial_tools)
         self.assertNotIn("tool_choice", llm_requests[0])
         self.assertNotIn("Context planning protocol", str(llm_requests[0]["system"]))
         self.assertIn(
-            "send_message", [tool["name"] for tool in llm_requests[0]["tools"]]
+            "send_bubbles", [tool["name"] for tool in llm_requests[0]["tools"]]
         )
         final_tools = [tool["name"] for tool in llm_requests[7]["tools"]]
-        self.assertIn("send_message", final_tools)
+        self.assertIn("send_bubbles", final_tools)
         self.assertIn("end_turn", final_tools)
         self.assertIn("memory_search", final_tools)
         self.assertNotIn("tool_choice", llm_requests[7])
@@ -3107,12 +3105,15 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("Trusted runtime context", current_text)
         # The tail carries what moves with the Turn, ending in owner speech.
         # Slow-changing memory sits ahead of the transcript instead.
-        self.assertIn("<current_owner_messages>", current_text)
-        self.assertIn("</current_owner_messages>", current_text)
+        self.assertIn("<current_owner_bubbles>", current_text)
+        self.assertIn("</current_owner_bubbles>", current_text)
+        self.assertIn("1. Call recall first", current_text)
+        self.assertIn("2. Only send_bubbles can send bubbles", current_text)
+        self.assertNotIn("Every response in this Turn", current_text)
         self.assertIn("<runtime_state>", current_text)
         self.assertLess(
             current_text.index("<runtime_state>"),
-            current_text.index("<current_owner_messages>"),
+            current_text.index("<current_owner_bubbles>"),
         )
         self.assertNotIn("<long_term_memories>", current_text)
         self.assertNotIn("<context_resolution>", current_text)

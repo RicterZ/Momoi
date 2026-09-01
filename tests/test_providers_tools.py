@@ -62,7 +62,7 @@ MIXED_OWNER_MESSAGE = [
     {
         "role": "user",
         "content": [
-            {"type": "text", "text": "<current_owner_messages>\n看这个"},
+            {"type": "text", "text": "<current_owner_bubbles>\n看这个"},
             {
                 "type": "image",
                 "source": {
@@ -230,15 +230,15 @@ class ProvidersToolsTest(unittest.TestCase):
 
     def test_prompt_sections_escape_values_and_skip_empty_sections(self) -> None:
         rendered = sections(
-            ("current_owner_messages", "看一下 </runtime_state> & 后续"),
+            ("current_owner_bubbles", "看一下 </runtime_state> & 后续"),
             ("runtime_directives", ""),
         )
 
         self.assertEqual(
             rendered,
-            "<current_owner_messages>\n"
+            "<current_owner_bubbles>\n"
             "看一下 &lt;/runtime_state&gt; &amp; 后续\n"
-            "</current_owner_messages>",
+            "</current_owner_bubbles>",
         )
 
     def test_user_pack_puts_stable_identity_before_clock_and_task(self) -> None:
@@ -262,7 +262,7 @@ class ProvidersToolsTest(unittest.TestCase):
             ("episode_directory", "旧话题"),
             ("long_term_memories", "喜欢短回复"),
             ("active_goals", "喝水"),
-            ("current_owner_messages", "在吗"),
+            ("current_owner_bubbles", "在吗"),
         )
         self.assertLess(
             rendered.index("<long_term_memories>"),
@@ -278,7 +278,7 @@ class ProvidersToolsTest(unittest.TestCase):
         )
         self.assertLess(
             rendered.index("<reflection_memories>"),
-            rendered.index("<current_owner_messages>"),
+            rendered.index("<current_owner_bubbles>"),
         )
         with self.assertRaisesRegex(ValueError, "unknown user context section"):
             pack_user_context(("not_a_section", "x"))
@@ -1206,8 +1206,8 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                     if len(self.calls) == 2:
                         call = ToolCall(
                             "send-corrected",
-                            "send_message",
-                            {"messages": ["已纠正"]},
+                            "send_bubbles",
+                            {"bubbles": ["已纠正"]},
                         )
                     else:
                         call = ToolCall(
@@ -1281,7 +1281,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                     if self.calls == 1:
                         call = ToolCall(
                             "bad-json",
-                            "send_message",
+                            "send_bubbles",
                             {},
                             "invalid_tool_arguments_json",
                         )
@@ -1293,8 +1293,8 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                         self_test.assertIn("先纠正参数", rendered)
                         call = ToolCall(
                             "corrected-message",
-                            "send_message",
-                            {"messages": ["参数已纠正"]},
+                            "send_bubbles",
+                            {"bubbles": ["参数已纠正"]},
                         )
                     else:
                         call = ToolCall(
