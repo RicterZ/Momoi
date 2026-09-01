@@ -9,7 +9,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from ..context_time import context_timestamp
 from ..policies import MemoryPolicy
 from ..search import (
     alternative_weights,
@@ -266,51 +265,10 @@ class MemoryStore:
         ).fetchall()
         return [dict(row) for row in rows]
 
-    def always_memory_inventory_context(self) -> str:
-        rows = self.always_memory_inventory()
-        if not rows:
-            return "No always-on owner memories are stored."
-        lines = [
-            "Full inventory of confirmed always-on owner memories. These currently "
-            "inject into every Turn. Memory ids are stable references for dedicated "
-            "maintenance workflows."
-        ]
-        for row in rows:
-            updated = context_timestamp(row["updated_at"])
-            evidence = " ".join(str(row["evidence_quote"] or "").split())
-            lines.append(
-                f"memory_id={row['id']} [{row['kind']}:{row['key']}] {row['content']} "
-                f"evidence={evidence} updated={updated}"
-            )
-        return "\n".join(lines)
-
     def recent_memory_context(self) -> str:
         self.purge_expired_memories()
         return self._compact_memory_context(
             "老师近期需要保持的上下文", self._memory_rows("recent")
-        )
-
-    def recent_memory_inventory_context(self) -> str:
-        self.purge_expired_memories()
-        rows = self._db.execute(
-            """SELECT id, kind, key, content, expires_at, updated_at
-               FROM memories AS m
-               WHERE m.activation='recent' AND m.superseded_by IS NULL
-                 AND (m.expires_at IS NULL OR m.expires_at > ?)
-                 AND (m.expires_at IS NOT NULL OR m.updated_at >= ?)
-                 AND NOT EXISTS (
-                     SELECT 1 FROM memory_tombstones AS t
-                     WHERE t.kind=m.kind AND t.key=m.key
-                 )
-               ORDER BY m.updated_at DESC, m.id DESC LIMIT 32""",
-            (time.time(), time.time() - RECENT_MEMORY_WINDOW_SECONDS),
-        ).fetchall()
-        if not rows:
-            return "No active recent memories are stored."
-        return "\n".join(
-            f"memory_id={row['id']} [{row['kind']}:{row['key']}] "
-            f"{row['content']} expires_at={context_timestamp(row['expires_at']) if row['expires_at'] else 'legacy-window'}"
-            for row in rows
         )
 
     def _alternative_weights(

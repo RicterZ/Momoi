@@ -101,15 +101,6 @@ class ToolExecutionService:
             groups.setdefault(group, []).append(spec)
         return dict(sorted(groups.items()))
 
-    def _mcp_server_catalog(self) -> list[dict[str, object]]:
-        return [
-            {
-                "id": group,
-                "description": self._mcp_group_description(group),
-            }
-            for group in self._mcp_server_groups()
-        ]
-
     def _mcp_group_description(self, group: str) -> str:
         configs = getattr(self.mcp, "configs", {})
         config = configs.get(group) if isinstance(configs, dict) else None

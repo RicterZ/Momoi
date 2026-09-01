@@ -413,23 +413,6 @@ h2, h3, p { overflow-wrap: anywhere; }
   gap: 8px;
   margin-top: 16px;
 }
-.ghost-button, .danger-button {
-  padding: 7px 11px;
-  border-radius: 9px;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-}
-.ghost-button {
-  border: 1px solid var(--line);
-  color: var(--muted);
-  background: transparent;
-}
-.danger-button {
-  border: 1px solid #ffc4d3;
-  color: #d43f68;
-  background: var(--pink-soft);
-}
 .create-form {
   --control-h: calc(24px + 1.2em + 4px);
   display: flex;
@@ -798,54 +781,6 @@ main.is-record .error {
 .overview-group.stickers .overview-stats strong {
   font-size: 44px;
   line-height: .95;
-}
-
-.usage-note {
-  margin: 0 2px 18px;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.65;
-}
-.usage-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-  margin-bottom: 14px;
-}
-.usage-stat {
-  padding: 20px 18px;
-}
-.usage-stat strong {
-  display: block;
-  margin-top: 14px;
-  font-size: 26px;
-  font-weight: 850;
-  letter-spacing: -.04em;
-}
-.usage-block { margin-top: 28px; }
-.usage-table {
-  display: grid;
-  gap: 10px;
-}
-.usage-row {
-  padding: 14px 16px;
-  border: 2px solid var(--ink);
-  border-radius: 12px;
-  background: var(--surface);
-  box-shadow: 3px 3px 0 var(--blue);
-}
-.usage-row-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-}
-.usage-row-head strong { font-size: 14px; font-weight: 800; }
-.usage-row-head span { color: var(--pink); font-weight: 800; }
-.usage-row p {
-  margin: 0;
-  color: var(--muted);
-  font-size: 12px;
 }
 
 .usage-chart-card {
@@ -1458,7 +1393,6 @@ a.tag:hover {
   .goal-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .overview-grid { grid-template-columns: 1fr; }
   .overview-groups { grid-template-columns: 1fr; }
-  .usage-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .usage-home-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .usage-home-stats > div { padding: 12px; }
   .usage-home-stats strong { font-size: 20px; }

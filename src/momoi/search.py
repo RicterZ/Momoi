@@ -2,7 +2,7 @@ import re
 import unicodedata
 from dataclasses import dataclass
 from math import log
-from typing import Iterable, Mapping, Protocol, TypeVar
+from typing import Iterable, Mapping, Protocol
 
 NON_DISCRIMINATING_RATIO = 0.5
 MIN_WEIGHTED_CORPUS = 10
@@ -58,21 +58,6 @@ class StringSearchBackend:
             )
             else None
         )
-
-
-DocumentT = TypeVar("DocumentT")
-HitT = TypeVar("HitT")
-
-
-class RankedSearchBackend(Protocol[DocumentT, HitT]):
-    """Rank documents for one intact query alternative."""
-
-    def search_one(
-        self,
-        keyword: str,
-        documents: list[DocumentT],
-        max_results: int,
-    ) -> list[HitT]: ...
 
 
 def document_frequency(

@@ -321,10 +321,8 @@ class SemanticRecallService:
         self.degraded_reason = "disabled" if not config.enabled else "no_active_space"
         self.auto_activate = auto_activate
         self._needs_reconciliation = False
-        self._started = False
 
     def start(self) -> None:
-        self._started = True
         if not self.config.enabled:
             return
         if self.config.calibration_profile not in CALIBRATION_PROFILES:
