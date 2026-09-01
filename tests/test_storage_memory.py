@@ -576,52 +576,6 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertNotIn("content", result["results"][0]["matches"][0])
             store.close()
 
-    def test_long_recall_queries_ignore_single_term_episode_and_reflection_hits(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            store = Store(Path(directory) / "momoi.sqlite3")
-            store.create_episode("公司副本与风格", episode_id="style-episode")
-            self.assertEqual(
-                store.search_episodes(
-                    "公司 今天 早晨 通勤 疲惫 睡眠 状态 心情 工作 键盘 电池 饭后 "
-                    "备用 充电 邮件 微博 猫 游戏 提示词",
-                    3,
-                ),
-                [],
-            )
-
-            now = time.time()
-            with store._db:
-                store._db.execute(
-                    """INSERT INTO reflections
-                       (id, local_date, state, scheduled_at, created_at, completed_at)
-                       VALUES ('reflection:noise', '2030-01-01', 'completed', ?, ?, ?)""",
-                    (now, now, now),
-                )
-                store._db.execute(
-                    """INSERT INTO reflection_memories
-                       (kind, key, content, evidence, confidence,
-                        source_reflection_id, created_at, updated_at)
-                       VALUES ('practice', 'interaction.style_noise',
-                               '避免堆叠游戏术语', '公司副本', 0.8,
-                               'reflection:noise', ?, ?)""",
-                    (now, now),
-                )
-            self.assertEqual(
-                store.search_reflection_memories(
-                    "公司 今天 早晨 通勤 疲惫 睡眠 状态 心情 工作 键盘 电池 饭后 "
-                    "备用 充电 邮件 微博 猫 提示词",
-                    3,
-                ),
-                [],
-            )
-            self.assertEqual(
-                store.search_reflection_memories("游戏术语", 3)[0]["key"],
-                "interaction.style_noise",
-            )
-            store.close()
-
     def test_assistant_conversation_truth_follows_delivery_state(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
@@ -1434,7 +1388,7 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertEqual(store.episode("episode-a")["status"], "closed")
             self.assertEqual(store.episode("episode-b")["status"], "closed")
             self.assertEqual(
-                [item["id"] for item in store.list_episode_candidates()],
+                [item["id"] for item in store.open_conversation_inventory()],
                 ["episode-c"],
             )
             store.close()
@@ -1521,8 +1475,8 @@ class StorageMemoryTest(unittest.TestCase):
             )
             self.assertEqual(mail["topics"], ["邮件"])
             self.assertEqual(
-                [item["id"] for item in store.list_episode_candidates()],
-                ["episode-mail", "episode-social"],
+                {item["id"] for item in store.open_conversation_inventory()},
+                {"episode-mail", "episode-social"},
             )
             first_link = store.link_turn_to_episode(
                 "episode-mail", "turn-1", unit_ids=["unit-1"]
@@ -2415,7 +2369,6 @@ class StorageMemoryTest(unittest.TestCase):
                 ).fetchall()
             ]
             self.assertIn("还没想好的话，我可以帮你挑两个呀。", source_messages)
-            self.assertEqual(store.recent_turn_record_count(), 1)
             candidate = store.claim_episode_consolidation_candidate(minimum=1)
             self.assertEqual(candidate["turns"][0]["turn_id"], "owner-question")
             self.assertTrue(

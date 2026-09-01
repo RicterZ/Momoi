@@ -24,7 +24,6 @@ class RuntimePolicyDefaultsTests(unittest.TestCase):
         self.assertEqual(policies.memory, MemoryPolicy())
         self.assertEqual(MAX_CONSECUTIVE_TOOL_FAILURES, 3)
         self.assertEqual(policies.context.max_visible_goals, 8)
-        self.assertEqual(policies.memory.lexical_overlap_floor, 0.1)
         self.assertEqual(_message_gap_bounds("短句"), (4.0, 5.0))
         self.assertEqual(_message_gap_bounds("中等长度" * 8), (5.0, 6.0))
         self.assertEqual(_message_gap_bounds("长消息" * 30), (6.0, 7.0))
@@ -35,7 +34,7 @@ class RuntimePolicyDefaultsTests(unittest.TestCase):
         self.assertEqual(memory_expires_at("recent", 999, now), now + 720 * 3600)
 
     def test_injected_memory_policy_is_used_end_to_end(self):
-        policy = MemoryPolicy(2, 12, 0.5)
+        policy = MemoryPolicy(2, 12)
         now = 100.0
         self.assertEqual(
             memory_expires_at("recent", 1, now, policy), now + 2 * 3600
@@ -64,29 +63,6 @@ class RuntimePolicyDefaultsTests(unittest.TestCase):
             )
             self.assertEqual(result["error"], "invalid_ttl")
             store.close()
-
-    def test_injected_overlap_floor_controls_reflection_recall(self):
-        with tempfile.TemporaryDirectory() as directory:
-            store = Store(
-                Path(directory) / "momoi.sqlite3",
-                memory_policy=MemoryPolicy(lexical_overlap_floor=0.6),
-            )
-            with store._db:
-                store._db.execute(
-                    """INSERT INTO reflections
-                       (id, local_date, state, scheduled_at, created_at, completed_at)
-                       VALUES ('reflection:policy', '2030-01-01', 'completed', 1, 1, 1)"""
-                )
-                store._db.execute(
-                    """INSERT INTO reflection_memories
-                       (kind, key, content, evidence, confidence,
-                        source_reflection_id, created_at, updated_at)
-                       VALUES ('practice', 'policy.overlap', 'alpha beta',
-                               'alpha beta', 0.8, 'reflection:policy', 1, 1)"""
-                )
-            self.assertEqual(store.search_reflection_memories("alpha gamma", 3), [])
-            store.close()
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -248,23 +248,6 @@ class MemoryStore:
             "老师的长期记忆", self._memory_rows("always")
         )
 
-    def always_memory_inventory(self) -> list[dict[str, object]]:
-        now = time.time()
-        rows = self._db.execute(
-            """SELECT id, kind, key, content, activation, evidence_quote,
-                      importance, updated_at
-               FROM memories AS m
-               WHERE m.activation='always' AND m.superseded_by IS NULL
-                 AND (m.expires_at IS NULL OR m.expires_at > ?)
-                 AND NOT EXISTS (
-                     SELECT 1 FROM memory_tombstones AS t
-                     WHERE t.kind=m.kind AND t.key=m.key
-                 )
-               ORDER BY m.importance DESC, m.updated_at DESC, m.id DESC""",
-            (now,),
-        ).fetchall()
-        return [dict(row) for row in rows]
-
     def recent_memory_context(self) -> str:
         self.purge_expired_memories()
         return self._compact_memory_context(
@@ -282,48 +265,6 @@ class MemoryStore:
             ),
             len(documents),
         )
-
-    def search_reflection_memories(
-        self,
-        query: str,
-        max_results: int,
-        *,
-        include_core: bool = False,
-        core_match_only: bool = False,
-    ) -> list[dict[str, object]]:
-        if max_results <= 0:
-            return []
-        core_kinds = {"owner_profile", "self_insight", "relationship", "practice"}
-        ranked: list[tuple[float, sqlite3.Row]] = []
-        rows = self._db.execute(
-            """SELECT rm.id, rm.kind, rm.key, rm.content, rm.confidence,
-                      rm.updated_at, r.local_date
-               FROM reflection_memories AS rm
-               LEFT JOIN reflections AS r ON r.id=rm.source_reflection_id
-               ORDER BY rm.updated_at DESC"""
-        ).fetchall()
-        documents = [(str(row["key"]), str(row["content"])) for row in rows]
-        weights = self._alternative_weights(query, documents)
-        for row, document in zip(rows, documents):
-            match = search_expression(
-                query,
-                document,
-                self._search_backend,
-                weights=weights,
-            )
-            core = include_core and row["kind"] in core_kinds
-            if core and core_match_only and match is None:
-                core = False
-            if not core and match is None:
-                continue
-            score = (
-                (match.score if match else 0.0)
-                + float(row["confidence"]) * 0.1
-                + (1.0 if core else 0.0)
-            )
-            ranked.append((score, row))
-        ranked.sort(key=lambda item: item[0], reverse=True)
-        return [dict(row) for _, row in ranked[:max_results]]
 
     def rank_recalled_memories(
         self,

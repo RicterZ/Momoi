@@ -214,7 +214,6 @@ class ConfigurationTest(unittest.TestCase):
             self.assertEqual(config.episode_raw_tail_turns, 6)
             self.assertEqual(config.max_input_tokens, 142222)
             self.assertEqual(config.context_compaction_ratio, 0.9)
-            self.assertEqual(config.context_compaction_tokens, 128000)
             self.assertTrue(config.episode_annealing.enabled)
             self.assertEqual(config.episode_annealing.idle_seconds, 60)
             self.assertEqual(config.episode_annealing.max_seconds, 650)

@@ -160,10 +160,6 @@ class AppConfig:
     def channel_configs(self) -> tuple[object, ...]:
         return self.channels or (self.channel,)
 
-    @property
-    def context_compaction_tokens(self) -> int:
-        return max(1, round(self.max_input_tokens * self.context_compaction_ratio))
-
 
 def _mapping(value: Any, name: str) -> dict[str, Any]:
     if not isinstance(value, dict):

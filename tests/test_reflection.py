@@ -488,7 +488,8 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(reflection["state"], "completed")
             always = {
                 (row["kind"], row["key"]): row
-                for row in daemon.store.always_memory_inventory()
+                for row in daemon.store.maintenance_memory_inventory()
+                if row["activation"] == "always"
             }
             self.assertEqual(len(always), len(seeds) - 1)
             self.assertEqual(
@@ -647,7 +648,12 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                 json.loads(overwritten["memories_json"])[0]["key"],
                 "topic.second_pass",
             )
-            active_memories = str(daemon.store.search_reflection_memories("第二轮", 4))
+            active_memories = "\n".join(
+                str(row["content"])
+                for row in daemon.store._db.execute(
+                    "SELECT content FROM reflection_memories ORDER BY id"
+                ).fetchall()
+            )
             self.assertIn("第二轮覆盖晋升", active_memories)
             self.assertNotIn("第一轮晋升", active_memories)
             turn_states = {

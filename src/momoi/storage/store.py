@@ -2258,26 +2258,6 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                 )
         return calls
 
-    def recent_turn_record_count(
-        self,
-        before_timestamp: float | None = None,
-    ) -> int:
-        row = self._db.execute(
-            """SELECT COUNT(*) AS count FROM turns AS t
-               WHERE t.state<>'running'
-                 AND (? IS NULL OR t.updated_at < ?)
-                 AND (
-                     t.kind='owner' OR EXISTS (
-                         SELECT 1 FROM messages AS m
-                         WHERE m.turn_id=t.id
-                           AND m.role='assistant'
-                           AND m.delivery_state IN ('delivered', 'uncertain')
-                     )
-                 )""",
-            (before_timestamp, before_timestamp),
-        ).fetchone()
-        return int(row["count"]) if row is not None else 0
-
     def recent_turn_records(
         self,
         turn_limit: int,
@@ -2506,43 +2486,6 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             key=lambda item: (float(item["last_seen"]), str(item["source"])),
         )[-limit:]
         return selected
-
-    def list_episode_candidates(
-        self, limit: int = 20, *, after: float | None = None
-    ) -> list[dict[str, object]]:
-        if limit <= 0:
-            return []
-        rows = self._db.execute(
-            """SELECT e.*, COALESCE((
-                       SELECT MAX(t.updated_at) FROM episode_turns AS et
-                       JOIN turns AS t ON t.id=et.turn_id
-                       WHERE et.episode_id=e.id
-                   ), e.updated_at) AS last_activity_at
-               FROM conversation_episodes AS e
-               WHERE status IN ('open', 'closing')
-                 AND (? IS NULL OR COALESCE((
-                     SELECT MAX(t.updated_at) FROM episode_turns AS et
-                     JOIN turns AS t ON t.id=et.turn_id
-                     WHERE et.episode_id=e.id
-                 ), e.updated_at)>=?)
-               ORDER BY status='open' DESC,
-                        COALESCE((
-                            SELECT MAX(t.updated_at) FROM episode_turns AS et
-                            JOIN turns AS t ON t.id=et.turn_id
-                            WHERE et.episode_id=e.id
-                        ), 0) DESC,
-                        salience DESC, updated_at DESC
-               LIMIT ?""",
-            (after, after, limit),
-        ).fetchall()
-        results = []
-        for row in rows:
-            episode = self._episode_dict(row)
-            episode["last_activity_timestamp"] = context_timestamp(
-                row["last_activity_at"]
-            )
-            results.append(episode)
-        return results
 
     def list_episode_directory(
         self,
