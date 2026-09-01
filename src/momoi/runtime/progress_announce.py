@@ -1,5 +1,4 @@
 import copy
-from dataclasses import dataclass
 from typing import Any
 
 
@@ -14,24 +13,8 @@ ANNOUNCE_FIELD = "say_to_owner"
 ANNOUNCE_MARKER = "Delivered on the primary channel before this tool runs."
 
 
-@dataclass(frozen=True)
-class ProgressPolicy:
-    """Whether a tool surface may request an owner-visible work acknowledgement."""
-
-    external: bool = False
-    local_work: bool = False
-
-
-OWNER_PROGRESS_POLICY = ProgressPolicy(external=True, local_work=True)
-SILENT_PROGRESS_POLICY = ProgressPolicy()
-
-
 def should_announce(name: str, *, mcp: bool) -> bool:
-    policy = OWNER_PROGRESS_POLICY if mcp else (
-        ProgressPolicy(local_work=True) if name in ANNOUNCE_LOCAL_TOOLS
-        else SILENT_PROGRESS_POLICY
-    )
-    return policy.external or policy.local_work
+    return mcp or name in ANNOUNCE_LOCAL_TOOLS
 
 
 def should_deliver_announce(
