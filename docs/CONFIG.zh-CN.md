@@ -384,7 +384,7 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
 | `enabled` | `true` | 启用后台 Episode 维护 |
-| `idle_seconds` | `60` | 所需的主人空闲时间，必须为非负数 |
+| `idle_seconds` | `60` | 合格 Turn 少于 6 个时允许小批次归类所需的主人空闲时间，必须为非负数；满 6 个不等待该超时 |
 | `max_seconds` | `650` | 单个批次的正数模型运行时间上限 |
 
 ## Webhook

@@ -3553,10 +3553,11 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             (turn_id, action, episode_id, reason[:500], now),
         )
 
-    def claim_episode_consolidation_candidate(
-        self, limit: int = 6
-    ) -> dict[str, object] | None:
-        rows = self._db.execute(
+    def _episode_consolidation_pending_rows(
+        self, limit: int
+    ) -> list[sqlite3.Row]:
+        limit = max(1, limit)
+        return self._db.execute(
             """SELECT pending.id, pending.updated_at FROM (
                    SELECT t.id, t.updated_at FROM turns AS t
                    WHERE t.kind='owner' AND t.state='completed'
@@ -3605,9 +3606,19 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                    ORDER BY t.updated_at DESC LIMIT ?
                ) AS pending
                ORDER BY pending.updated_at""",
-            (max(1, limit),),
+            (limit,),
         ).fetchall()
-        if not rows:
+
+    def episode_consolidation_pending_count(self, limit: int = 6) -> int:
+        return len(self._episode_consolidation_pending_rows(limit))
+
+    def claim_episode_consolidation_candidate(
+        self, limit: int = 6, *, minimum: int = 6
+    ) -> dict[str, object] | None:
+        limit = max(1, limit)
+        minimum = max(1, min(minimum, limit))
+        rows = self._episode_consolidation_pending_rows(limit)
+        if len(rows) < minimum:
             return None
         turn_ids = [str(row["id"]) for row in rows]
         by_turn = self._consolidation_turn_messages(turn_ids)
@@ -3702,6 +3713,26 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             "context_turns": context_turns,
             "candidate_episodes": candidate_episodes,
         }
+
+    def episode_consolidation_remaining(
+        self, turn_ids: list[str]
+    ) -> list[str]:
+        """Return fixed-batch Turns without a durable consolidation decision."""
+
+        remaining: list[str] = []
+        for turn_id in turn_ids:
+            covered = self._db.execute(
+                """SELECT EXISTS (
+                       SELECT 1 FROM episode_turns WHERE turn_id=?
+                   ) OR EXISTS (
+                       SELECT 1 FROM episode_consolidation_decisions
+                       WHERE turn_id=? AND action IN ('ignored', 'deferred', 'linked')
+                   )""",
+                (turn_id, turn_id),
+            ).fetchone()[0]
+            if not covered:
+                remaining.append(turn_id)
+        return remaining
 
     def apply_episode_consolidation(
         self,

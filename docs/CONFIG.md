@@ -386,7 +386,7 @@ omitted. Overnight windows are supported.
 | Field | Default | Description |
 | --- | --- | --- |
 | `enabled` | `true` | Enable background Episode maintenance |
-| `idle_seconds` | `60` | Non-negative required owner-idle time |
+| `idle_seconds` | `60` | Non-negative owner-idle time before a partial batch of fewer than 6 eligible Turns may run; a full 6-Turn batch does not wait for this timeout |
 | `max_seconds` | `650` | Positive model-time limit for one batch |
 
 ## Webhooks

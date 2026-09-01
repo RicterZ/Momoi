@@ -556,7 +556,7 @@ class MemoryMaintenanceStorageTest(unittest.TestCase):
 
 
 class MemoryMaintenanceExecutionTest(unittest.IsolatedAsyncioTestCase):
-    async def test_protocol_exhaustion_defers_without_turn_failure(self) -> None:
+    async def test_consecutive_invalid_calls_defer_without_turn_failure(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(
                 AppConfig(
@@ -785,10 +785,8 @@ class MemoryMaintenanceExecutionTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(call_contexts[0]["stage"], "memory_maintenance")
             self.assertEqual(call_contexts[0]["turn_id"], turn_id)
             self.assertEqual(call_contexts[0]["round"], 1)
-            self.assertEqual(call_contexts[0]["protocol_round"], 1)
             self.assertTrue(call_contexts[0]["call_id"])
             self.assertNotIn("preview", call_contexts[0])
-            self.assertEqual(call_contexts[1]["protocol_round"], 2)
             self.assertTrue(
                 any("memory_maintenance_applied" in line for line in logs.output)
             )

@@ -1,5 +1,4 @@
 import asyncio
-import json
 import re
 import tempfile
 import unittest
@@ -7,15 +6,19 @@ from dataclasses import replace
 from pathlib import Path
 
 from momoi.channel.napcat import NapCatConfig
-from momoi.config import AppConfig, LLMConfig
+from momoi.config import AppConfig, EpisodeAnnealingConfig, LLMConfig
 from momoi.logging_context import current_log_context
-from momoi.models import AgentReply, IncomingMessage, ProviderResponse
+from momoi.models import AgentReply, IncomingMessage, ProviderResponse, ToolCall
 from momoi.runtime import MomoiDaemon
 from momoi.runtime.context_assembler import assemble_main_context
 from momoi.runtime.episode_prompt_renderer import (
-    parse_episode_summary_result,
     render_episode_annealing_request,
     render_episode_consolidation_request,
+)
+from momoi.runtime.episode_tools import (
+    EPISODE_CLASSIFY_TURNS_SPEC,
+    EPISODE_CONSOLIDATION_FINISH_SPEC,
+    EPISODE_SUMMARY_FINISH_SPEC,
 )
 from momoi.runtime.turn_support import (
     EPISODE_CONSOLIDATION_SYSTEM_PROMPT,
@@ -62,15 +65,47 @@ def annealing_items(prompt: str, section: str, label: str) -> list[dict[str, obj
     return items
 
 
-def latest_pending_turn_id(prompt: str) -> str:
-    ids = re.findall(
-        r"^  turn id: (.+)$",
-        prompt_section(prompt, "pending_turns"),
-        re.MULTILINE,
+def workflow_response(
+    name: str,
+    arguments: dict[str, object],
+    *,
+    call_id: str = "workflow-call",
+    reasoning: str = "",
+) -> ProviderResponse:
+    call = ToolCall(call_id, name, arguments)
+    return ProviderResponse(
+        [
+            {
+                "type": "tool_use",
+                "id": call.id,
+                "name": call.name,
+                "input": call.arguments,
+            }
+        ],
+        [call],
+        reasoning=reasoning,
     )
-    if not ids:
-        raise AssertionError("missing pending Turn")
-    return ids[-1]
+
+
+def workflow_calls_response(
+    items: list[tuple[str, dict[str, object]]],
+) -> ProviderResponse:
+    calls = [
+        ToolCall(f"workflow-call-{index}", name, arguments)
+        for index, (name, arguments) in enumerate(items, 1)
+    ]
+    return ProviderResponse(
+        [
+            {
+                "type": "tool_use",
+                "id": call.id,
+                "name": call.name,
+                "input": call.arguments,
+            }
+            for call in calls
+        ],
+        calls,
+    )
 
 
 def config(directory: str) -> AppConfig:
@@ -109,6 +144,92 @@ def add_turn(daemon: MomoiDaemon, ordinal: int) -> None:
 
 
 class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
+    async def test_partial_consolidation_uses_owner_idle_timeout(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(
+                replace(
+                    config(directory),
+                    episode_annealing=EpisodeAnnealingConfig(
+                        idle_seconds=0.02,
+                        max_seconds=1,
+                    ),
+                )
+            )
+            daemon.store.commit_turn(
+                [], "pending", AgentReply([]), turn_id="pending-1"
+            )
+            loop = asyncio.get_running_loop()
+            daemon._last_owner_activity_at = loop.time()
+
+            started_at = loop.time()
+            allow_partial = await asyncio.wait_for(
+                daemon._wait_for_episode_annealing_ready(asyncio.Event()),
+                timeout=0.2,
+            )
+
+            self.assertTrue(allow_partial)
+            self.assertGreaterEqual(loop.time() - started_at, 0.015)
+            daemon.store.close()
+
+    async def test_full_consolidation_batch_bypasses_owner_idle_timeout(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(
+                replace(
+                    config(directory),
+                    episode_annealing=EpisodeAnnealingConfig(
+                        idle_seconds=60,
+                        max_seconds=1,
+                    ),
+                )
+            )
+            for ordinal in range(1, 7):
+                daemon.store.commit_turn(
+                    [],
+                    f"pending-{ordinal}",
+                    AgentReply([]),
+                    turn_id=f"pending-{ordinal}",
+                )
+            daemon._last_owner_activity_at = asyncio.get_running_loop().time()
+
+            allow_partial = await asyncio.wait_for(
+                daemon._wait_for_episode_annealing_ready(asyncio.Event()),
+                timeout=0.1,
+            )
+
+            self.assertFalse(allow_partial)
+            daemon.store.close()
+
+    async def test_partial_consolidation_requires_explicit_idle_permission(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(config(directory))
+            daemon.store.commit_turn(
+                [], "pending", AgentReply([]), turn_id="pending-1"
+            )
+            candidates: list[dict[str, object]] = []
+
+            async def consolidate(candidate: dict[str, object]) -> bool:
+                candidates.append(candidate)
+                return True
+
+            daemon._consolidate_episode_turns = consolidate  # type: ignore[method-assign]
+
+            self.assertFalse(await daemon._run_episode_annealing_once())
+            self.assertEqual(candidates, [])
+            self.assertTrue(
+                await daemon._run_episode_annealing_once(
+                    allow_partial_consolidation=True
+                )
+            )
+            self.assertEqual(
+                [turn["turn_id"] for turn in candidates[0]["turns"]],
+                ["pending-1"],
+            )
+            daemon.store.close()
+
     def test_consolidation_prompt_is_human_readable_and_drops_storage_metadata(
         self,
     ) -> None:
@@ -333,7 +454,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                     **_: object,
                 ) -> ProviderResponse:
                     self.assertEqual(system, EPISODE_SUMMARY_SYSTEM_PROMPT)
-                    self.assertEqual(tools, [])
+                    self.assertEqual(tools, [EPISODE_SUMMARY_FINISH_SPEC])
                     prompt = str(messages[0]["content"])
                     provider_self.prompts.append(prompt)
                     claims = [
@@ -354,23 +475,18 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                             "quote": f"第{message['ordinal']}轮",
                         }
                     )
-                    return ProviderResponse(
-                        [
-                            {
-                                "type": "text",
-                                "text": json.dumps(
-                                    {
-                                        "version": 2,
-                                        "claims": claims,
-                                        "narrative_summary": "",
-                                        "emotional_context": {},
-                                        "outcomes": [],
-                                    },
-                                    ensure_ascii=False,
-                                ),
-                            }
-                        ],
-                        [],
+                    return workflow_response(
+                        "episode_summary_finish",
+                        {
+                            "claims": claims,
+                            "narrative_summary": "",
+                            "emotional_context": {
+                                "owner": "",
+                                "momoi": "",
+                                "tone": "",
+                            },
+                            "outcomes": [],
+                        },
                     )
 
             provider = Provider()
@@ -470,7 +586,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                     return ProviderResponse([], [])
 
             daemon.provider = Provider()  # type: ignore[assignment]
-            with self.assertRaisesRegex(RuntimeError, "no text"):
+            with self.assertRaisesRegex(RuntimeError, "workflow protocol"):
                 await daemon._anneal_episode_history("turn-5")
             episode = daemon.store.episode("episode-main")
             self.assertIsNone(episode["summary_claimed_at"])
@@ -525,7 +641,6 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                         str(messages[0]["content"]), "new_messages", "Message"
                     )[0]
                     response = {
-                        "version": 2,
                         "claims": [
                             {
                                 "message_id": message["message_id"],
@@ -538,18 +653,13 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                         "emotional_context": {},
                         "outcomes": [],
                     }
-                    return ProviderResponse(
-                        [
-                            {
-                                "type": "text",
-                                "text": json.dumps(response, ensure_ascii=False),
-                            }
-                        ],
-                        [],
+                    return workflow_response(
+                        "episode_summary_finish",
+                        response,
                     )
 
             daemon.provider = Provider()  # type: ignore[assignment]
-            with self.assertRaisesRegex(ValueError, "does not match raw history"):
+            with self.assertRaisesRegex(RuntimeError, "does not match raw history"):
                 await daemon._anneal_episode_history("turn-5")
             episode = daemon.store.episode("episode-main")
             self.assertEqual(episode["working_summary"], "")
@@ -558,7 +668,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(episode["summary_abandoned_at"])
             daemon.store.close()
 
-    async def test_v2_summary_stores_narrative_emotion_and_outcomes(self) -> None:
+    async def test_summary_tool_stores_narrative_emotion_and_outcomes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(config(directory))
             daemon.store.create_episode("长期项目", episode_id="episode-main")
@@ -576,34 +686,25 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                     message = annealing_items(
                         str(messages[0]["content"]), "new_messages", "Message"
                     )[0]
-                    return ProviderResponse(
-                        [
-                            {
-                                "type": "text",
-                                "text": json.dumps(
-                                    {
-                                        "version": 2,
-                                        "claims": [
-                                            {
-                                                "message_id": message["message_id"],
-                                                "turn_id": message["turn_id"],
-                                                "ordinal": message["ordinal"],
-                                                "quote": f"第{message['ordinal']}轮",
-                                            }
-                                        ],
-                                        "narrative_summary": "主人和桃衣持续讨论长期项目。",
-                                        "emotional_context": {
-                                            "owner": "投入",
-                                            "momoi": "配合",
-                                            "tone": "合作",
-                                        },
-                                        "outcomes": ["完成一次阶段讨论"],
-                                    },
-                                    ensure_ascii=False,
-                                ),
-                            }
-                        ],
-                        [],
+                    return workflow_response(
+                        "episode_summary_finish",
+                        {
+                            "claims": [
+                                {
+                                    "message_id": message["message_id"],
+                                    "turn_id": message["turn_id"],
+                                    "ordinal": message["ordinal"],
+                                    "quote": f"第{message['ordinal']}轮",
+                                }
+                            ],
+                            "narrative_summary": "主人和桃衣持续讨论长期项目。",
+                            "emotional_context": {
+                                "owner": "投入",
+                                "momoi": "配合",
+                                "tone": "合作",
+                            },
+                            "outcomes": ["完成一次阶段讨论"],
+                        },
                     )
 
             daemon.provider = Provider()  # type: ignore[assignment]
@@ -616,23 +717,6 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(episode["emotional_context"]["tone"], "合作")
             self.assertEqual(episode["outcomes"], ["完成一次阶段讨论"])
             daemon.store.close()
-
-    def test_summary_parser_rejects_obsolete_or_malformed_shapes(self) -> None:
-        with self.assertRaisesRegex(RuntimeError, "invalid result"):
-            parse_episode_summary_result('{"version":1,"claims":[]}')
-        with self.assertRaisesRegex(RuntimeError, "invalid outcomes"):
-            parse_episode_summary_result(
-                json.dumps(
-                    {
-                        "version": 2,
-                        "claims": [],
-                        "narrative_summary": "",
-                        "emotional_context": {},
-                        "outcomes": [{"outcome": "老师已下班，当天工作结束"}],
-                    },
-                    ensure_ascii=False,
-                )
-            )
 
     async def test_third_failure_abandons_episode_and_other_lines_continue(
         self,
@@ -657,7 +741,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                 claimed = daemon.store.claim_episode_annealing_candidate(2, 10000)
                 self.assertIsNotNone(claimed)
                 self.assertEqual(claimed["episode"]["id"], "episode-stuck")
-                with self.assertRaisesRegex(RuntimeError, "no text"):
+                with self.assertRaisesRegex(RuntimeError, "workflow protocol"):
                     await daemon._anneal_episode_history(
                         f"turn-stuck-{attempt}",
                         candidate=claimed,
@@ -692,13 +776,18 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
             daemon.store.create_episode("长期项目", episode_id="episode-main")
             for ordinal in range(1, 6):
                 add_turn(daemon, ordinal)
-            daemon.store.commit_turn(
-                [], "ping", AgentReply([]), turn_id="lonely-ping"
-            )
+            for ordinal in range(1, 7):
+                daemon.store.commit_turn(
+                    [],
+                    f"ping-{ordinal}",
+                    AgentReply([]),
+                    turn_id=f"pending-{ordinal}",
+                )
 
             class Provider:
                 systems: list[object] = []
                 contexts: list[dict[str, object]] = []
+                consolidation_round = 0
 
                 async def complete(
                     provider_self,
@@ -710,59 +799,88 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                     provider_self.systems.append(system)
                     provider_self.contexts.append(current_log_context())
                     if system == EPISODE_CONSOLIDATION_SYSTEM_PROMPT:
-                        latest = latest_pending_turn_id(str(messages[0]["content"]))
-                        return ProviderResponse(
+                        provider_self.consolidation_round += 1
+                        self.assertEqual(
+                            _tools,
                             [
-                                {
-                                    "type": "text",
-                                    "text": json.dumps(
-                                        {
-                                            "version": 1,
-                                            "decisions": [
-                                                {
-                                                    "action": "defer",
-                                                    "turn_ids": [latest],
-                                                    "reason": "needs later context",
-                                                }
-                                            ],
-                                        },
-                                        ensure_ascii=False,
-                                    ),
-                                }
+                                EPISODE_CLASSIFY_TURNS_SPEC,
+                                EPISODE_CONSOLIDATION_FINISH_SPEC,
                             ],
-                            [],
+                        )
+                        if provider_self.consolidation_round == 2:
+                            assistant = messages[-2]["content"]
+                            self.assertEqual(assistant[0]["type"], "reasoning")
+                            return workflow_response(
+                                "episode_consolidation_finish", {}
+                            )
+                        ids = re.findall(
+                            r"^  turn id: (.+)$",
+                            prompt_section(
+                                str(messages[0]["content"]), "pending_turns"
+                            ),
+                            re.MULTILINE,
+                        )
+                        self.assertEqual(len(ids), 6)
+                        response = workflow_calls_response(
+                            [
+                                (
+                                    "episode_classify_turns",
+                                    {
+                                        "decisions": [
+                                            {
+                                                "action": "ignore",
+                                                "turn_ids": ids[:3],
+                                                "reason": "low information",
+                                            }
+                                        ]
+                                    },
+                                ),
+                                (
+                                    "episode_classify_turns",
+                                    {
+                                        "decisions": [
+                                            {
+                                                "action": "ignore",
+                                                "turn_ids": ids[3:5],
+                                                "reason": "low information",
+                                            },
+                                            {
+                                                "action": "defer",
+                                                "turn_ids": [ids[-1]],
+                                                "reason": "needs later context",
+                                            },
+                                        ]
+                                    },
+                                ),
+                            ]
+                        )
+                        return ProviderResponse(
+                            response.content,
+                            response.tool_calls,
+                            reasoning="split the fixed batch safely",
                         )
                     message = annealing_items(
                         str(messages[0]["content"]), "new_messages", "Message"
                     )[0]
-                    return ProviderResponse(
-                        [
-                            {
-                                "type": "text",
-                                "text": json.dumps(
-                                    {
-                                        "version": 2,
-                                        "claims": [
-                                            {
-                                                "message_id": message["message_id"],
-                                                "turn_id": message["turn_id"],
-                                                "ordinal": message["ordinal"],
-                                                "quote": f"第{message['ordinal']}轮",
-                                            }
-                                        ],
-                                        "narrative_summary": "项目讨论仍在继续。",
-                                        "emotional_context": {
-                                            "owner": "",
-                                            "momoi": "",
-                                            "tone": "",
-                                        },
-                                        "outcomes": [],
-                                    },
-                                    ensure_ascii=False,
-                                ),
-                            }
-                        ],
-                        [],
+                    return workflow_response(
+                        "episode_summary_finish",
+                        {
+                            "claims": [
+                                {
+                                    "message_id": message["message_id"],
+                                    "turn_id": message["turn_id"],
+                                    "ordinal": message["ordinal"],
+                                    "quote": f"第{message['ordinal']}轮",
+                                }
+                            ],
+                            "narrative_summary": "项目讨论仍在继续。",
+                            "emotional_context": {
+                                "owner": "",
+                                "momoi": "",
+                                "tone": "",
+                            },
+                            "outcomes": [],
+                        },
                     )
 
             provider = Provider()
@@ -772,12 +890,13 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                 provider.systems,
                 [
                     EPISODE_CONSOLIDATION_SYSTEM_PROMPT,
+                    EPISODE_CONSOLIDATION_SYSTEM_PROMPT,
                     EPISODE_SUMMARY_SYSTEM_PROMPT,
                 ],
             )
             self.assertEqual(
                 [context["stage"] for context in provider.contexts],
-                ["episode_consolidate", "episode_anneal"],
+                ["episode_consolidate", "episode_consolidate", "episode_anneal"],
             )
             self.assertTrue(
                 all(context.get("turn_id") for context in provider.contexts)
@@ -788,7 +907,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 daemon.store._db.execute(
                     """SELECT action FROM episode_consolidation_decisions
-                       WHERE turn_id='lonely-ping'"""
+                       WHERE turn_id='pending-6'"""
                 ).fetchone()["action"],
                 "deferred",
             )
@@ -796,6 +915,65 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 daemon.store.episode("episode-main")["narrative_summary"],
                 "项目讨论仍在继续。",
+            )
+            daemon.store.close()
+
+    async def test_consolidation_allows_any_number_of_valid_tool_rounds(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(config(directory))
+            for ordinal in range(1, 7):
+                daemon.store.commit_turn(
+                    [],
+                    f"pending-{ordinal}",
+                    AgentReply([]),
+                    turn_id=f"pending-{ordinal}",
+                )
+            candidate = daemon.store.claim_episode_consolidation_candidate()
+            self.assertIsNotNone(candidate)
+            turn_ids = [str(turn["turn_id"]) for turn in candidate["turns"]]
+            calls = 0
+
+            class Provider:
+                async def complete(
+                    self,
+                    _system: object,
+                    _messages: object,
+                    tools: list[dict[str, object]],
+                    **kwargs: object,
+                ) -> ProviderResponse:
+                    nonlocal calls
+                    calls += 1
+                    assert tools == [
+                        EPISODE_CLASSIFY_TURNS_SPEC,
+                        EPISODE_CONSOLIDATION_FINISH_SPEC,
+                    ]
+                    assert kwargs["require_tool"] is True
+                    if calls == 7:
+                        return workflow_response(
+                            "episode_consolidation_finish", {}
+                        )
+                    action = "defer" if calls == 6 else "ignore"
+                    return workflow_response(
+                        "episode_classify_turns",
+                        {
+                            "decisions": [
+                                {
+                                    "action": action,
+                                    "turn_ids": [turn_ids[calls - 1]],
+                                    "reason": "bounded test decision",
+                                }
+                            ]
+                        },
+                        call_id=f"classify-{calls}",
+                    )
+
+            daemon.provider = Provider()  # type: ignore[assignment]
+            self.assertTrue(await daemon._consolidate_episode_turns(candidate))
+            self.assertEqual(calls, 7)
+            self.assertEqual(
+                daemon.store.episode_consolidation_remaining(turn_ids), []
             )
             daemon.store.close()
 

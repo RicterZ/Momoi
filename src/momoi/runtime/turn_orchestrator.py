@@ -10,9 +10,9 @@ from ..agenda_tools import AGENDA_TOOL_SPECS, OWNER_NOTIFY_SPEC
 from ..builtin_tools import BUILTIN_TOOL_SPECS
 from ..channel import Channel
 from ..context_time import context_timestamp
-from ..logging_context import log_context, log_event, new_trace_id, safe_preview
+from ..logging_context import log_event, safe_preview
 from ..memory_tools import MEMORY_TOOL_SPECS
-from ..models import AgentReply, IncomingMessage, ProviderResponse, TurnDraft
+from ..models import AgentReply, IncomingMessage, ProviderResponse, ToolCall, TurnDraft
 from ..provider import ProviderError
 from ..reply_wait import REPLY_FOLLOWUP_RETRY_SECONDS
 from ..storage import estimate_tokens, truncate_tokens
@@ -22,6 +22,7 @@ from .context_assembler import (
     assemble_recent_webhook_activity,
     recall_episode_context,
 )
+from .agent_workflow import AgentWorkflow, WorkflowProtocolError
 from .transcript import build_transcript, render_messages, turn_labels
 from .context_service import (
     _heartbeat_activity_lines,
@@ -33,7 +34,6 @@ from .memory_maintenance import (
     MEMORY_MAINTENANCE_FINISH_SPEC,
     build_atomic_memory_groups,
     filter_owner_evidence_for_memories,
-    memory_maintenance_correction,
     pack_memory_groups,
     parse_memory_maintenance_result,
     render_memory_maintenance_request,
@@ -66,7 +66,6 @@ from .turn_support import (
     pack_user_context as _pack_user_context,
     provider_failure_message as _provider_failure_message,
     reconciliation_message as _reconciliation_message,
-    tool_error_block as _tool_error_block,
     turn_tool_names as _turn_tool_names,
 )
 
@@ -970,108 +969,82 @@ class TurnOrchestrator:
             topic_context="",
         )
         owner_marker = self.store.latest_owner_event_marker()
-        batch_round = 1 + sum(
-            item.get("item_type")
-            in {
-                "memory_maintenance_batch",
-            }
-            for item in journal
-        )
         messages: list[dict[str, Any]] = [{"role": "user", "content": request}]
         evidence_by_id = {
             str(item["event_id"]): str(item["content"]) for item in evidence
         }
         decision: dict[str, Any] | None = None
-        error = "invalid_memory_maintenance_result"
-        for protocol_round in range(1, 4):
-            call_id = new_trace_id()
-            with log_context(
-                stage="memory_maintenance",
-                turn_id=turn_id,
-                call_id=call_id,
-                round=batch_round,
-                protocol_round=protocol_round,
-            ):
-                response = await self.provider.complete(
-                    MEMORY_MAINTENANCE_SYSTEM_PROMPT,
-                    messages,
-                    [MEMORY_MAINTENANCE_FINISH_SPEC],
-                    require_tool=True,
-                )
-            if (
-                len(response.tool_calls) == 1
-                and response.tool_calls[0].name == "memory_maintenance_finish"
-            ):
-                arguments = response.tool_calls[0].arguments
-                decision, error = parse_memory_maintenance_result(
-                    arguments,
-                    mutable_memories=mutable,
-                    context_ids={int(item["id"]) for item in context},
-                    directory_ids=set(by_id),
-                    owner_evidence=evidence_by_id,
-                )
-            else:
-                arguments = {}
-                error = "memory_maintenance_finish_must_be_the_only_terminal_tool"
-            metrics = response.usage or {}
-            self.store.record_turn_usage(
-                turn_id,
-                int(
-                    metrics.get(
-                        "input",
-                        estimate_tokens(
-                            MEMORY_MAINTENANCE_SYSTEM_PROMPT
-                            + json.dumps(messages, ensure_ascii=False, default=str)
-                        ),
-                    )
-                ),
-                int(
-                    metrics.get(
-                        "output",
-                        estimate_tokens(
-                            json.dumps(arguments, ensure_ascii=False, default=str)
-                        ),
-                    )
-                ),
+        workflow_complete = False
+        workflow_result: dict[str, object] | None = None
+
+        async def execute_tool(call: ToolCall) -> dict[str, Any]:
+            nonlocal decision, workflow_complete, workflow_result
+            if workflow_complete:
+                return {
+                    "ok": False,
+                    "error": "memory_maintenance_batch_already_completed",
+                }
+            parsed, error = parse_memory_maintenance_result(
+                call.arguments,
+                mutable_memories=mutable,
+                context_ids={int(item["id"]) for item in context},
+                directory_ids=set(by_id),
+                owner_evidence=evidence_by_id,
             )
-            if decision is not None:
-                break
-            messages.append({"role": "assistant", "content": response.content})
-            correction = memory_maintenance_correction(
-                error or "invalid_memory_maintenance_result"
-            )
-            if response.tool_calls:
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": [
-                            _tool_error_block(
-                                call.id,
-                                correction,
-                            )
-                            for call in response.tool_calls
-                        ],
-                    }
+            if parsed is None:
+                return {
+                    "ok": False,
+                    "error": "invalid_memory_maintenance_result",
+                    "message": (
+                        "Fix this exact validation error and resubmit the complete "
+                        "batch: "
+                        + (error or "invalid_memory_maintenance_result")
+                    ),
+                }
+            try:
+                self.store.apply_memory_maintenance_batch(
+                    turn_id,
+                    parsed,
+                    mutable,
+                    owner_marker=owner_marker,
                 )
-            else:
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": (
-                            "[Trusted runtime protocol error. "
-                            + correction
-                            + "]"
-                        ),
-                    }
-                )
-        if decision is None:
-            return False, 0, error or "invalid memory maintenance result"
-        self.store.apply_memory_maintenance_batch(
-            turn_id,
-            decision,
-            mutable,
-            owner_marker=owner_marker,
+            except ValueError as error:
+                return {
+                    "ok": False,
+                    "error": "memory_maintenance_store_rejected",
+                    "message": str(error),
+                }
+            decision = parsed
+            workflow_complete = True
+            workflow_result = {
+                "ok": True,
+                "changes": len(parsed["changes"]),
+            }
+            return {"ok": True, "state": "completed", **workflow_result}
+
+        workflow = AgentWorkflow(
+            stage="memory_maintenance",
+            tool_names=frozenset({"memory_maintenance_finish"}),
+            execute_tool=execute_tool,
+            is_complete=lambda: workflow_complete,
+            completion_result=lambda: workflow_result,
+            no_tool_correction=(
+                "[Trusted runtime protocol error. Plain assistant text is not stored. "
+                "Call memory_maintenance_finish with the complete batch result.]"
+            ),
         )
+        try:
+            result = await self._run_agent_workflow(
+                MEMORY_MAINTENANCE_SYSTEM_PROMPT,
+                messages,
+                [MEMORY_MAINTENANCE_FINISH_SPEC],
+                turn_id=turn_id,
+                workflow=workflow,
+            )
+        except WorkflowProtocolError as error:
+            return False, 0, str(error)
+        if not isinstance(result, dict) or decision is None or not workflow_complete:
+            return False, 0, "memory maintenance ended before completion"
         log_event(
             logger,
             logging.INFO,
@@ -1664,111 +1637,74 @@ class TurnOrchestrator:
             }
         ]
         tools = [REFLECTION_FINISH_SPEC]
-        reflection_round = 0
-        while True:
-            reflection_round += 1
-            call_id = new_trace_id()
-            with log_context(
-                stage="reflection",
-                turn_id=turn_id,
-                call_id=call_id,
-                round=reflection_round,
-            ):
-                self._fit_context(system, messages, tools, 0)
-                self._check_turn_budget(turn_id, system, messages, tools)
-                response = await self.provider.complete(
-                    system, messages, tools, require_tool=True
-                )
-            metrics = response.usage or {}
-            self.store.record_turn_usage(
-                turn_id,
-                int(
-                    metrics.get(
-                        "input",
-                        estimate_tokens(
-                            json.dumps(
-                                {
-                                    "system": system,
-                                    "messages": messages,
-                                    "tools": tools,
-                                },
-                                ensure_ascii=False,
-                                default=str,
-                            )
-                        ),
-                    )
-                ),
-                int(
-                    metrics.get(
-                        "output",
-                        estimate_tokens(
-                            json.dumps(
-                                response.content, ensure_ascii=False, default=str
-                            )
-                        ),
-                    )
-                ),
+        workflow_complete = False
+        workflow_result: dict[str, object] | None = None
+
+        async def execute_tool(call: ToolCall) -> dict[str, Any]:
+            nonlocal workflow_complete, workflow_result
+            decision, error = parse_reflection_finish(
+                call.arguments,
+                reflection_evidence,
+                owner_source,
+                knowledge_source,
+                open_episode_ids,
             )
-            if (
-                len(response.tool_calls) == 1
-                and response.tool_calls[0].name == "reflection_finish"
-            ):
-                decision, error = parse_reflection_finish(
-                    response.tool_calls[0].arguments,
-                    reflection_evidence,
-                    owner_source,
-                    knowledge_source,
-                    open_episode_ids,
-                )
-                if decision is not None:
-                    self._commit_reflection_state(
-                        local_date,
-                        turn_id,
-                        decision["summary"],
-                        decision["memories"],
-                        decision["conversation_actions"],
-                        maintenance_turn_id,
-                    )
-                    self._enqueue_memory_maintenance(maintenance_turn_id)
-                    self.agenda_changed.set()
-                    if self.config.episode_annealing.enabled:
-                        self.episode_annealing_requested.set()
-                    log_event(
-                        logger,
-                        logging.INFO,
-                        "turn_complete",
-                        stage="reflection",
-                        turn_id=turn_id,
-                        call_id=call_id,
-                        round=reflection_round,
-                        local_date=local_date,
-                        memories=len(decision["memories"]),
-                        conversation_actions=len(decision["conversation_actions"]),
-                    )
-                    return
-            else:
-                error = "reflection_finish_must_be_the_only_terminal_tool"
-            messages.append({"role": "assistant", "content": response.content})
-            if response.tool_calls:
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": [
-                            _tool_error_block(call.id, error)
-                            for call in response.tool_calls
-                        ],
-                    }
-                )
-            else:
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": (
-                            "[Trusted runtime protocol error. The previous text was not "
-                            "stored. Call reflection_finish exactly once.]"
-                        ),
-                    }
-                )
+            if decision is None:
+                return {
+                    "ok": False,
+                    "error": error or "invalid_reflection_finish",
+                    "message": "Correct the reflection result and resubmit it.",
+                }
+            self._commit_reflection_state(
+                local_date,
+                turn_id,
+                decision["summary"],
+                decision["memories"],
+                decision["conversation_actions"],
+                maintenance_turn_id,
+            )
+            self._enqueue_memory_maintenance(maintenance_turn_id)
+            self.agenda_changed.set()
+            if self.config.episode_annealing.enabled:
+                self.episode_annealing_requested.set()
+            workflow_complete = True
+            workflow_result = {
+                "ok": True,
+                "memories": len(decision["memories"]),
+                "conversation_actions": len(decision["conversation_actions"]),
+            }
+            return {"ok": True, "state": "completed", **workflow_result}
+
+        workflow = AgentWorkflow(
+            stage="reflection",
+            tool_names=frozenset({"reflection_finish"}),
+            execute_tool=execute_tool,
+            is_complete=lambda: workflow_complete,
+            completion_result=lambda: workflow_result,
+            no_tool_correction=(
+                "[Trusted runtime protocol error. Plain assistant text is not stored. "
+                "Call reflection_finish with the complete retrospective result.]"
+            ),
+        )
+        result = await self._run_agent_workflow(
+            system,
+            messages,
+            tools,
+            turn_id=turn_id,
+            workflow=workflow,
+        )
+        if not isinstance(result, dict) or not workflow_complete:
+            raise RuntimeError("reflection ended before completion")
+        log_event(
+            logger,
+            logging.INFO,
+            "turn_complete",
+            stage="reflection",
+            turn_id=turn_id,
+            local_date=local_date,
+            memories=result.get("memories", 0),
+            conversation_actions=result.get("conversation_actions", 0),
+        )
 
     async def _complete_goal(self, goal_id: str, turn_id: str) -> None:
         goal = self.store.goal(goal_id)

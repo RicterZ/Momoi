@@ -1201,7 +1201,7 @@ class ContextAssemblerTest(unittest.TestCase):
             store.mark_sent(int(outbox_id))
 
             self.assertEqual(store.search_episodes("规划器失败 归档", 3), [])
-            candidate = store.claim_episode_consolidation_candidate()
+            candidate = store.claim_episode_consolidation_candidate(minimum=1)
             self.assertEqual(candidate["turns"][0]["turn_id"], "fallback")
             self.assertNotIn(
                 "这轮仍然会归档",

@@ -23,6 +23,7 @@ from ..logging_context import TRACE, compact_log_value, log_context, log_event, 
 from ..memory_tools import MEMORY_TOOL_SPECS
 from ..models import AgentReply, IncomingMessage, ToolCall, TurnDraft
 from ..storage import estimate_tokens
+from .agent_workflow import AgentWorkflow, WorkflowProtocolError
 from .progress_announce import (
     announce_field,
     apply_tool_announce,
@@ -297,10 +298,12 @@ class ToolExecutionService:
         accept_owner_updates: bool = False,
         dynamic_tool_policies: bool = False,
         delivery_channel: Channel,
+        workflow: AgentWorkflow | None = None,
     ) -> AgentReply | dict[str, Any] | None:
         external_tool_used = False
         force_autonomous_finish = False
         failed_tool_rounds = 0
+        last_tool_error = ""
         history_messages = max(0, len(messages) - 1)
         context_submitted = authority != "owner"
         heartbeat_started = not heartbeat_turn
@@ -319,7 +322,7 @@ class ToolExecutionService:
                 else {}
             )
         )
-        stage = (
+        stage = workflow.stage if workflow is not None else (
             "reply_followup"
             if reply_wait_turn
             else (
@@ -379,7 +382,7 @@ class ToolExecutionService:
                     turn_id, request_system, messages, request_tools
                 )
             require_tool = bool(
-                autonomous_goal_id or heartbeat_turn or reply_wait_turn
+                autonomous_goal_id or heartbeat_turn or reply_wait_turn or workflow
             ) or (
                 require_response and self.config.llm.api_format == "openai"
             )
@@ -501,6 +504,28 @@ class ToolExecutionService:
                 failed_tool_rounds = 0
                 continue
             if not response.tool_calls:
+                if workflow is not None:
+                    failed_tool_rounds += 1
+                    if failed_tool_rounds >= MAX_CONSECUTIVE_TOOL_FAILURES:
+                        raise WorkflowProtocolError(
+                            last_tool_error or "repeated workflow protocol failures"
+                        )
+                    assistant_content = copy.deepcopy(response.content)
+                    if response.reasoning:
+                        assistant_content.insert(
+                            0,
+                            {"type": "reasoning", "text": response.reasoning},
+                        )
+                    messages.extend(
+                        [
+                            {"role": "assistant", "content": assistant_content},
+                            {
+                                "role": "user",
+                                "content": workflow.no_tool_correction,
+                            },
+                        ]
+                    )
+                    continue
                 if heartbeat_turn and not heartbeat_started:
                     failed_tool_rounds += 1
                     if failed_tool_rounds >= MAX_CONSECUTIVE_TOOL_FAILURES:
@@ -840,8 +865,18 @@ class ToolExecutionService:
             announce_delivered_in_batch = False
             for index, call in enumerate(response.tool_calls):
                 tool_started = time.monotonic()
-                source = self._tool_source(call.name, allow_notify=allow_notify)
-                journal_tool = source in {"mcp", "builtin", "agenda", "memory"}
+                source = (
+                    "workflow"
+                    if workflow is not None and call.name in workflow.tool_names
+                    else self._tool_source(call.name, allow_notify=allow_notify)
+                )
+                journal_tool = source in {
+                    "mcp",
+                    "builtin",
+                    "agenda",
+                    "memory",
+                    "workflow",
+                }
                 if journal_tool:
                     journal_arguments = dict(call.arguments)
                     journal_arguments.pop("say_to_owner", None)
@@ -1107,6 +1142,8 @@ class ToolExecutionService:
                             "tool": "read_tool_result",
                         },
                     )
+                elif workflow is not None and call.name in workflow.tool_names:
+                    result = await workflow.execute_tool(call)
                 elif self.mcp.has_tool(call.name) or self.builtin_tools.has_tool(
                     call.name
                 ):
@@ -1215,6 +1252,12 @@ class ToolExecutionService:
                     )
                 if "provenance" not in result:
                     result = self._normalize_tool_result(call, result, source)
+                if result.get("ok"):
+                    last_tool_error = ""
+                else:
+                    last_tool_error = str(
+                        result.get("message") or result.get("error") or "tool_failed"
+                    )
                 provenance = result.get("provenance")
                 log_message = (
                     result.get("message")
@@ -1280,6 +1323,14 @@ class ToolExecutionService:
                     )
                 results.append(_tool_result_block(call.id, result))
                 previous_tool_name = call.name
+                if workflow is not None and workflow.is_complete():
+                    results.extend(
+                        _tool_error_block(
+                            pending.id, "workflow_already_completed"
+                        )
+                        for pending in response.tool_calls[index + 1 :]
+                    )
+                    break
                 if accept_owner_updates:
                     updates = await self._settle_owner_updates(
                         current_events, delivery_channel.name
@@ -1310,6 +1361,8 @@ class ToolExecutionService:
                 context_submitted = authority != "owner"
                 failed_tool_rounds = 0
                 continue
+            if workflow is not None and workflow.is_complete():
+                return workflow.completion_result() or {"ok": True}
             if any(not block["is_error"] for block in results):
                 failed_tool_rounds = 0
                 continue
@@ -1317,7 +1370,8 @@ class ToolExecutionService:
             if failed_tool_rounds < MAX_CONSECUTIVE_TOOL_FAILURES:
                 continue
             if not require_response:
-                raise RuntimeError("repeated tool validation failures")
+                error_type = WorkflowProtocolError if workflow else RuntimeError
+                raise error_type(last_tool_error or "repeated tool validation failures")
             messages.append(
                 {
                     "role": "user",
@@ -1330,6 +1384,32 @@ class ToolExecutionService:
                     ),
                 }
             )
+
+    async def _run_agent_workflow(
+        self,
+        system: Any,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        turn_id: str,
+        workflow: AgentWorkflow,
+    ) -> dict[str, Any]:
+        result = await self._run_tool_loop(
+            system,
+            messages,
+            tools,
+            [],
+            TurnDraft(),
+            authority=workflow.stage,
+            source_event_id=turn_id,
+            allow_notify=False,
+            turn_id=turn_id,
+            require_response=False,
+            delivery_channel=self.channel,
+            workflow=workflow,
+        )
+        if not isinstance(result, dict):
+            raise RuntimeError(f"{workflow.stage} ended without workflow state")
+        return result
 
     @staticmethod
     def _missing_initial_work_announce(

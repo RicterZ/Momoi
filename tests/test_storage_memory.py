@@ -725,7 +725,7 @@ class StorageMemoryTest(unittest.TestCase):
             ):
                 store.commit_turn([], text, AgentReply([]), turn_id=turn_id)
 
-            candidate = store.claim_episode_consolidation_candidate()
+            candidate = store.claim_episode_consolidation_candidate(minimum=1)
             turn_ids = [turn["turn_id"] for turn in candidate["turns"]]
             linked, deferred = store.apply_episode_consolidation(
                 turn_ids,
@@ -751,7 +751,9 @@ class StorageMemoryTest(unittest.TestCase):
 
             self.assertEqual(linked, 2)
             self.assertEqual(deferred, 0)
-            self.assertIsNone(store.claim_episode_consolidation_candidate())
+            self.assertIsNone(
+                store.claim_episode_consolidation_candidate(minimum=1)
+            )
             episode_id = store._db.execute(
                 """SELECT episode_id FROM episode_turns
                    WHERE turn_id='game-1'"""
@@ -765,6 +767,30 @@ class StorageMemoryTest(unittest.TestCase):
                     "SELECT content FROM messages ORDER BY id"
                 ).fetchall()[1]["content"],
                 "昨晚开始玩湖之仆从",
+            )
+            store.close()
+
+    def test_episode_consolidation_waits_for_six_eligible_turns(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            for ordinal in range(1, 6):
+                store.commit_turn(
+                    [],
+                    f"pending-{ordinal}",
+                    AgentReply([]),
+                    turn_id=f"turn-{ordinal}",
+                )
+
+            self.assertIsNone(store.claim_episode_consolidation_candidate())
+
+            store.commit_turn(
+                [], "pending-6", AgentReply([]), turn_id="turn-6"
+            )
+            candidate = store.claim_episode_consolidation_candidate()
+            self.assertIsNotNone(candidate)
+            self.assertEqual(
+                [turn["turn_id"] for turn in candidate["turns"]],
+                [f"turn-{ordinal}" for ordinal in range(1, 7)],
             )
             store.close()
 
@@ -939,7 +965,7 @@ class StorageMemoryTest(unittest.TestCase):
                     store.episode(heartbeat_archive_id)["status"], "closing"
                 )
 
-            candidate = store.claim_episode_consolidation_candidate()
+            candidate = store.claim_episode_consolidation_candidate(minimum=1)
             self.assertTrue(
                 archive_ids.isdisjoint(
                     {item["id"] for item in candidate["candidate_episodes"]}
@@ -979,7 +1005,7 @@ class StorageMemoryTest(unittest.TestCase):
             ).fetchone()["id"]
             store.mark_sent(int(first_outbox))
 
-            candidate = store.claim_episode_consolidation_candidate()
+            candidate = store.claim_episode_consolidation_candidate(minimum=1)
             self.assertEqual(
                 [turn["turn_id"] for turn in candidate["turns"]], ["first"]
             )
@@ -1004,14 +1030,16 @@ class StorageMemoryTest(unittest.TestCase):
                 ).fetchone()["action"],
                 "deferred",
             )
-            self.assertIsNone(store.claim_episode_consolidation_candidate())
+            self.assertIsNone(
+                store.claim_episode_consolidation_candidate(minimum=1)
+            )
 
             store.commit_turn([], "在玩什么", AgentReply(["塞尔达"]), turn_id="second")
             second_outbox = store._db.execute(
                 "SELECT id FROM outbox WHERE turn_id='second'"
             ).fetchone()["id"]
             store.mark_sent(int(second_outbox))
-            candidate = store.claim_episode_consolidation_candidate()
+            candidate = store.claim_episode_consolidation_candidate(minimum=1)
             turn_ids = [turn["turn_id"] for turn in candidate["turns"]]
             self.assertEqual(turn_ids, ["first", "second"])
             self.assertEqual(candidate["context_turns"], [])
@@ -1034,7 +1062,9 @@ class StorageMemoryTest(unittest.TestCase):
                 ),
                 (2, 0),
             )
-            self.assertIsNone(store.claim_episode_consolidation_candidate())
+            self.assertIsNone(
+                store.claim_episode_consolidation_candidate(minimum=1)
+            )
             store.close()
 
     def test_deferred_turn_reconsiders_with_already_linked_later_context(
@@ -1067,7 +1097,7 @@ class StorageMemoryTest(unittest.TestCase):
             store.create_episode("聊正在玩的游戏", episode_id="playing-game")
             store.link_turn_to_episode("playing-game", "second")
 
-            candidate = store.claim_episode_consolidation_candidate()
+            candidate = store.claim_episode_consolidation_candidate(minimum=1)
             self.assertEqual(
                 [turn["turn_id"] for turn in candidate["turns"]], ["first"]
             )
@@ -1107,7 +1137,9 @@ class StorageMemoryTest(unittest.TestCase):
                 ],
                 [("first", 1), ("second", 2)],
             )
-            self.assertIsNone(store.claim_episode_consolidation_candidate())
+            self.assertIsNone(
+                store.claim_episode_consolidation_candidate(minimum=1)
+            )
             store.close()
 
     def test_deferred_latest_may_be_ignored_when_later_context_exists(
@@ -1156,7 +1188,9 @@ class StorageMemoryTest(unittest.TestCase):
                 ).fetchone()["action"],
                 "ignored",
             )
-            self.assertIsNone(store.claim_episode_consolidation_candidate())
+            self.assertIsNone(
+                store.claim_episode_consolidation_candidate(minimum=1)
+            )
             store.close()
 
     def test_latest_consolidation_turn_cannot_be_ignored(self) -> None:
@@ -1182,7 +1216,9 @@ class StorageMemoryTest(unittest.TestCase):
                     ],
                     [],
                 )
-            self.assertIsNotNone(store.claim_episode_consolidation_candidate())
+            self.assertIsNotNone(
+                store.claim_episode_consolidation_candidate(minimum=1)
+            )
             store.close()
 
     def test_episode_consolidation_skips_completed_turns_without_messages(
@@ -1194,7 +1230,7 @@ class StorageMemoryTest(unittest.TestCase):
             store.complete_background_turn("empty")
             store.commit_turn([], "真实对话", AgentReply([]), turn_id="real")
 
-            candidate = store.claim_episode_consolidation_candidate()
+            candidate = store.claim_episode_consolidation_candidate(minimum=1)
 
             self.assertEqual(
                 [turn["turn_id"] for turn in candidate["turns"]],
@@ -2319,7 +2355,9 @@ class StorageMemoryTest(unittest.TestCase):
                 initial_pending["reason"], "晚餐需要按主人的选择来准备"
             )
             self.assertEqual(store.next_heartbeat_due_at(False), 1300)
-            self.assertIsNone(store.claim_episode_consolidation_candidate())
+            self.assertIsNone(
+                store.claim_episode_consolidation_candidate(minimum=1)
+            )
             self.assertIsNotNone(
                 store.claim_due_heartbeat(heartbeat, NotificationConfig(), now=1300)
             )
@@ -2380,7 +2418,7 @@ class StorageMemoryTest(unittest.TestCase):
             ]
             self.assertIn("还没想好的话，我可以帮你挑两个呀。", source_messages)
             self.assertEqual(store.recent_turn_record_count(), 1)
-            candidate = store.claim_episode_consolidation_candidate()
+            candidate = store.claim_episode_consolidation_candidate(minimum=1)
             self.assertEqual(candidate["turns"][0]["turn_id"], "owner-question")
             self.assertTrue(
                 any(

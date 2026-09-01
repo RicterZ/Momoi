@@ -1,4 +1,3 @@
-import json
 from collections.abc import Mapping, Sequence
 
 
@@ -179,25 +178,3 @@ def render_episode_annealing_request(
         + ("\n\n".join(message_blocks) or "none")
         + "\n</new_messages>"
     )
-
-
-def parse_episode_summary_result(text: str) -> dict[str, object]:
-    try:
-        value = json.loads(text)
-    except (json.JSONDecodeError, TypeError) as error:
-        raise RuntimeError("episode summary provider returned invalid JSON") from error
-    if not isinstance(value, dict) or not isinstance(value.get("claims"), list):
-        raise RuntimeError("episode summary provider returned invalid claims")
-    if value.get("version") != 2 or set(value) != {
-        "version",
-        "claims",
-        "narrative_summary",
-        "emotional_context",
-        "outcomes",
-    }:
-        raise RuntimeError("episode summary provider returned invalid result")
-    if not isinstance(value["outcomes"], list) or not all(
-        isinstance(item, str) for item in value["outcomes"]
-    ):
-        raise RuntimeError("episode summary provider returned invalid outcomes")
-    return value

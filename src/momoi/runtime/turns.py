@@ -1,9 +1,11 @@
 import asyncio
 import json
 import logging
-import re
 import uuid
-from ..logging_context import log_context, log_event, new_trace_id
+from typing import Any
+
+from ..logging_context import log_event
+from ..models import ToolCall
 from ..storage import estimate_tokens
 from .turn_support import (
     EPISODE_CONSOLIDATION_SYSTEM_PROMPT,
@@ -11,11 +13,15 @@ from .turn_support import (
 )
 from .context_service import ContextService
 from .episode_prompt_renderer import (
-    parse_episode_summary_result,
     render_episode_annealing_request,
     render_episode_consolidation_request,
 )
-from .parsing import response_text
+from .agent_workflow import AgentWorkflow
+from .episode_tools import (
+    EPISODE_CLASSIFY_TURNS_SPEC,
+    EPISODE_CONSOLIDATION_FINISH_SPEC,
+    EPISODE_SUMMARY_FINISH_SPEC,
+)
 from .prompt_renderer import PromptRenderer
 from .tool_execution import ToolExecutionService
 from .turn_committer import TurnCommitter
@@ -36,11 +42,18 @@ class TurnRunner(
         seed = json.dumps(parts, ensure_ascii=False, separators=(",", ":"), default=str)
         return uuid.uuid5(uuid.NAMESPACE_URL, f"momoi:{seed}").hex
 
-    async def _run_episode_annealing_once(self) -> bool:
-        consolidation = self.store.claim_episode_consolidation_candidate()
+    async def _run_episode_annealing_once(
+        self, *, allow_partial_consolidation: bool = False
+    ) -> bool:
+        minimum = 1 if allow_partial_consolidation else 6
+        consolidation = self.store.claim_episode_consolidation_candidate(
+            minimum=minimum
+        )
         if consolidation is not None:
             archived = await self._consolidate_episode_turns(consolidation)
-            remaining = self.store.claim_episode_consolidation_candidate()
+            remaining = self.store.claim_episode_consolidation_candidate(
+                minimum=minimum
+            )
             if remaining is not None and archived:
                 return True
         candidate = self.store.claim_episode_annealing_candidate(
@@ -101,78 +114,152 @@ class TurnRunner(
             return False
         user_prompt = render_episode_consolidation_request(candidate)
         request = [{"role": "user", "content": user_prompt}]
-        try:
-            call_id = new_trace_id()
-            with log_context(
-                stage="episode_consolidate",
-                turn_id=turn_id,
-                call_id=call_id,
-            ):
-                response = await asyncio.wait_for(
-                    self.provider.complete(
-                        EPISODE_CONSOLIDATION_SYSTEM_PROMPT, request, []
-                    ),
-                    timeout=self.config.episode_annealing.max_seconds,
-                )
-            text = re.sub(
-                r"<think>.*?</think>",
-                "",
-                response_text(response.content),
-                flags=re.DOTALL,
-            ).strip()
-            value = json.loads(text)
+        candidate_episode_ids = [
+            str(episode["id"])
+            for episode in candidate["candidate_episodes"]
+            if isinstance(episode, dict) and episode.get("id")
+        ]
+        allow_ignore_latest = bool(context_items)
+        workflow_complete = False
+        workflow_result: dict[str, object] | None = None
+
+        def remaining() -> list[str]:
+            return self.store.episode_consolidation_remaining(turn_ids)
+
+        async def execute_tool(call: ToolCall) -> dict[str, Any]:
+            nonlocal workflow_complete, workflow_result
+            if call.name == "episode_consolidation_finish":
+                pending = remaining()
+                if pending:
+                    return {
+                        "ok": False,
+                        "error": "incomplete_consolidation_turn_coverage",
+                        "covered_turn_ids": [
+                            value for value in turn_ids if value not in pending
+                        ],
+                        "remaining_turn_ids": pending,
+                    }
+                self.store.complete_background_turn(turn_id)
+                workflow_complete = True
+                workflow_result = {"ok": True, "covered_turn_ids": turn_ids}
+                return {"ok": True, "state": "completed", **workflow_result}
+
+            decisions = call.arguments.get("decisions")
+            if not isinstance(decisions, list) or not decisions:
+                return {
+                    "ok": False,
+                    "error": "invalid_consolidation_decisions",
+                    "remaining_turn_ids": remaining(),
+                }
+            decision_turn_ids: list[str] = []
+            for decision in decisions:
+                if not isinstance(decision, dict):
+                    return {
+                        "ok": False,
+                        "error": "invalid_consolidation_decision",
+                        "remaining_turn_ids": remaining(),
+                    }
+                raw_ids = decision.get("turn_ids")
+                if not isinstance(raw_ids, list) or any(
+                    not isinstance(value, str) for value in raw_ids
+                ):
+                    return {
+                        "ok": False,
+                        "error": "invalid_consolidation_turn_coverage",
+                        "remaining_turn_ids": remaining(),
+                    }
+                decision_turn_ids.extend(raw_ids)
+                if decision.get("action") == "defer" and raw_ids != [turn_ids[-1]]:
+                    return {
+                        "ok": False,
+                        "error": "only_latest_consolidation_turn_may_defer",
+                        "remaining_turn_ids": remaining(),
+                    }
+                if (
+                    decision.get("action") == "ignore"
+                    and turn_ids[-1] in raw_ids
+                    and not allow_ignore_latest
+                ):
+                    return {
+                        "ok": False,
+                        "error": "latest_consolidation_turn_may_not_be_ignored",
+                        "remaining_turn_ids": remaining(),
+                    }
+            pending = remaining()
+            selected = [value for value in turn_ids if value in decision_turn_ids]
             if (
-                not isinstance(value, dict)
-                or set(value) != {"version", "decisions"}
-                or value["version"] != 1
-                or not isinstance(value["decisions"], list)
+                not selected
+                or len(decision_turn_ids) != len(set(decision_turn_ids))
+                or set(decision_turn_ids) != set(selected)
+                or not set(selected) <= set(pending)
             ):
-                raise RuntimeError("invalid episode consolidation response")
-            linked, deferred = self.store.apply_episode_consolidation(
-                turn_ids,
-                value["decisions"],
-                [
-                    str(episode["id"])
-                    for episode in candidate["candidate_episodes"]
-                    if isinstance(episode, dict) and episode.get("id")
-                ],
-                allow_ignore_latest=bool(context_items),
-            )
-            action_counts = {
-                action: sum(
-                    1
-                    for decision in value["decisions"]
-                    if isinstance(decision, dict)
-                    and decision.get("action") == action
+                return {
+                    "ok": False,
+                    "error": "invalid_or_already_covered_turn_subset",
+                    "remaining_turn_ids": pending,
+                }
+            try:
+                linked, deferred = self.store.apply_episode_consolidation(
+                    selected,
+                    decisions,
+                    candidate_episode_ids,
+                    allow_ignore_latest=True,
                 )
-                for action in ("defer", "ignore", "continue", "new")
+            except ValueError as error:
+                return {
+                    "ok": False,
+                    "error": "invalid_consolidation_decisions",
+                    "message": str(error),
+                    "remaining_turn_ids": remaining(),
+                }
+            pending = remaining()
+            return {
+                "ok": True,
+                "state": "applied",
+                "linked": linked,
+                "deferred": deferred,
+                "covered_turn_ids": selected,
+                "remaining_turn_ids": pending,
             }
-            metrics = response.usage or {}
-            self.store.record_turn_usage(
-                turn_id,
-                int(
-                    metrics.get(
-                        "input",
-                        estimate_tokens(
-                            EPISODE_CONSOLIDATION_SYSTEM_PROMPT
-                            + user_prompt
-                        ),
-                    )
+
+        workflow = AgentWorkflow(
+            stage="episode_consolidate",
+            tool_names=frozenset(
+                {"episode_classify_turns", "episode_consolidation_finish"}
+            ),
+            execute_tool=execute_tool,
+            is_complete=lambda: workflow_complete,
+            completion_result=lambda: workflow_result,
+            no_tool_correction=(
+                "[Trusted runtime protocol error. Plain assistant text is not stored. "
+                "Call episode_classify_turns for remaining Turns, or call "
+                "episode_consolidation_finish after every Turn is durably covered.]"
+            ),
+        )
+        try:
+            result = await asyncio.wait_for(
+                self._run_agent_workflow(
+                    EPISODE_CONSOLIDATION_SYSTEM_PROMPT,
+                    request,
+                    [
+                        EPISODE_CLASSIFY_TURNS_SPEC,
+                        EPISODE_CONSOLIDATION_FINISH_SPEC,
+                    ],
+                    turn_id=turn_id,
+                    workflow=workflow,
                 ),
-                int(metrics.get("output", estimate_tokens(text))),
+                timeout=self.config.episode_annealing.max_seconds,
             )
-            self.store.complete_background_turn(turn_id)
+            if not isinstance(result, dict) or not workflow_complete:
+                raise RuntimeError("episode consolidation ended before completion")
             log_event(
                 logger,
                 logging.DEBUG,
                 "episode_consolidation_complete",
                 stage="episode_consolidate",
                 turn_id=turn_id,
-                call_id=call_id,
                 turns=len(turn_ids),
-                linked=linked,
-                deferred=deferred,
-                **action_counts,
+                remaining=len(remaining()),
             )
             return True
         except asyncio.CancelledError:
@@ -199,58 +286,72 @@ class TurnRunner(
             episode, candidate["messages"]
         )
         request = [{"role": "user", "content": user_prompt}]
+        workflow_complete = False
+        workflow_result: dict[str, object] | None = None
+
+        async def execute_tool(call: ToolCall) -> dict[str, Any]:
+            nonlocal workflow_complete, workflow_result
+            try:
+                working_summary = self.store.finish_episode_annealing(
+                    episode_id,
+                    int(candidate["through_ordinal"]),
+                    call.arguments.get("claims", []),
+                    narrative_summary=str(
+                        call.arguments.get("narrative_summary") or ""
+                    ),
+                    emotional_context=call.arguments.get("emotional_context"),
+                    outcomes=call.arguments.get("outcomes"),
+                )
+            except (TypeError, ValueError) as error:
+                return {
+                    "ok": False,
+                    "error": "invalid_episode_summary",
+                    "message": str(error),
+                }
+            workflow_complete = True
+            workflow_result = {
+                "ok": True,
+                "working_summary": working_summary,
+            }
+            return {
+                "ok": True,
+                "state": "completed",
+                "summary_tokens": estimate_tokens(working_summary),
+            }
+
+        workflow = AgentWorkflow(
+            stage="episode_anneal",
+            tool_names=frozenset({"episode_summary_finish"}),
+            execute_tool=execute_tool,
+            is_complete=lambda: workflow_complete,
+            completion_result=lambda: workflow_result,
+            no_tool_correction=(
+                "[Trusted runtime protocol error. Plain assistant text is not stored. "
+                "Call episode_summary_finish with the complete evidence-backed result.]"
+            ),
+        )
         try:
-            call_id = new_trace_id()
-            with log_context(
-                stage="episode_anneal",
+            completion = self._run_agent_workflow(
+                EPISODE_SUMMARY_SYSTEM_PROMPT,
+                request,
+                [EPISODE_SUMMARY_FINISH_SPEC],
                 turn_id=turn_id,
-                call_id=call_id,
-                episode_id=episode_id,
-            ):
-                completion = self.provider.complete(
-                    EPISODE_SUMMARY_SYSTEM_PROMPT, request, []
-                )
-                response = (
-                    await asyncio.wait_for(completion, timeout=max_seconds)
-                    if max_seconds is not None
-                    else await completion
-                )
-            summary = response_text(response.content)
-            summary = re.sub(
-                r"<think>.*?</think>", "", summary, flags=re.DOTALL
-            ).strip()
-            if not summary:
-                raise RuntimeError("episode summary provider returned no text")
-            result = parse_episode_summary_result(summary)
-            working_summary = self.store.finish_episode_annealing(
-                episode_id,
-                int(candidate["through_ordinal"]),
-                result["claims"],  # type: ignore[arg-type]
-                narrative_summary=str(result["narrative_summary"]),
-                emotional_context=result["emotional_context"],  # type: ignore[arg-type]
-                outcomes=result["outcomes"],  # type: ignore[arg-type]
+                workflow=workflow,
             )
-            metrics = response.usage or {}
-            self.store.record_turn_usage(
-                turn_id,
-                int(
-                    metrics.get(
-                        "input",
-                        estimate_tokens(
-                            EPISODE_SUMMARY_SYSTEM_PROMPT
-                            + user_prompt
-                        ),
-                    )
-                ),
-                int(metrics.get("output", estimate_tokens(summary))),
+            result = (
+                await asyncio.wait_for(completion, timeout=max_seconds)
+                if max_seconds is not None
+                else await completion
             )
+            if not isinstance(result, dict) or not workflow_complete:
+                raise RuntimeError("episode summary ended before completion")
+            working_summary = str(result.get("working_summary") or "")
             log_event(
                 logger,
                 logging.DEBUG,
                 "episode_anneal_complete",
                 stage="episode_anneal",
                 turn_id=turn_id,
-                call_id=call_id,
                 episode_id=episode_id,
                 through_ordinal=candidate["through_ordinal"],
                 summary_tokens=estimate_tokens(working_summary),

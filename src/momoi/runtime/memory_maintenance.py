@@ -387,12 +387,6 @@ MEMORY_MAINTENANCE_FINISH_SPEC: dict[str, object] = {
         "additionalProperties": False,
     },
 }
-
-
-def memory_maintenance_correction(error: str) -> str:
-    return "Fix this exact validation error and resubmit the complete batch: " + error
-
-
 def _normalized_content(value: object) -> str:
     return re.sub(r"[\W_]+", "", str(value or "").casefold())
 

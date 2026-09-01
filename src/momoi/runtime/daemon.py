@@ -697,26 +697,31 @@ class MomoiDaemon(TurnRunner):
             return False
         return not bool(self.store.heartbeat_conversation_snapshot()["owner_busy"])
 
-    async def _wait_for_episode_annealing_idle(
+    async def _wait_for_episode_annealing_ready(
         self, stop: asyncio.Event
-    ) -> bool:
+    ) -> bool | None:
         loop = asyncio.get_running_loop()
         while not stop.is_set():
             quiet_for = loop.time() - self._last_owner_activity_at
-            if (
-                quiet_for >= self.config.episode_annealing.idle_seconds
-                and self._episode_annealing_is_idle()
-            ):
-                return True
+            if self._episode_annealing_is_idle():
+                if self.store.episode_consolidation_pending_count() >= 6:
+                    return False
+                if quiet_for >= self.config.episode_annealing.idle_seconds:
+                    return True
             remaining = max(
                 0.05,
                 self.config.episode_annealing.idle_seconds - quiet_for,
             )
             try:
-                await asyncio.wait_for(stop.wait(), timeout=min(1.0, remaining))
+                await asyncio.wait_for(
+                    self.episode_annealing_requested.wait(),
+                    timeout=min(1.0, remaining),
+                )
             except TimeoutError:
                 pass
-        return False
+            else:
+                self.episode_annealing_requested.clear()
+        return None
 
     async def _wait_for_episode_annealing_retry(self) -> None:
         retry_at = self.store.next_episode_annealing_retry_at()
@@ -737,9 +742,14 @@ class MomoiDaemon(TurnRunner):
             self.episode_annealing_requested.clear()
             if not self.config.episode_annealing.enabled:
                 continue
-            if not await self._wait_for_episode_annealing_idle(stop):
+            allow_partial = await self._wait_for_episode_annealing_ready(stop)
+            if allow_partial is None:
                 return
-            task = asyncio.create_task(self._run_episode_annealing_once())
+            task = asyncio.create_task(
+                self._run_episode_annealing_once(
+                    allow_partial_consolidation=allow_partial
+                )
+            )
             self._active_annealing = task
             try:
                 completed = await task

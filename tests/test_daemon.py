@@ -955,7 +955,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             started = asyncio.Event()
             cancelled = asyncio.Event()
 
-            async def anneal() -> bool:
+            async def anneal(**_: object) -> bool:
                 started.set()
                 try:
                     await asyncio.Event().wait()
