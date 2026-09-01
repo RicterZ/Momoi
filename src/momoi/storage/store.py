@@ -1904,7 +1904,10 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         *recall_values: object,
     ) -> str:
         day_match = re.search(r":day:(\d{4}-\d{2}-\d{2})$", episode_key)
-        if day_match and not title.endswith(f" · {day_match.group(1)}"):
+        if day_match and not (
+            title.endswith(f" · {day_match.group(1)}")
+            or title == f"Heartbeat {day_match.group(1)}"
+        ):
             title = f"{title} · {day_match.group(1)}"
         episode_id = uuid.uuid5(
             uuid.NAMESPACE_URL, f"momoi:autonomous-episode:{episode_key}"
@@ -2044,7 +2047,12 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                 or episode_id.startswith("webhook:")):
             return title
         match = re.search(r":day:(\d{4}-\d{2}-\d{2})$", episode_id)
-        return f"{title} · {match.group(1)}" if match else title
+        if not match:
+            return title
+        day = match.group(1)
+        if title.endswith(f" · {day}") or title == f"Heartbeat {day}":
+            return title
+        return f"{title} · {day}"
 
     def create_episode(
         self,
