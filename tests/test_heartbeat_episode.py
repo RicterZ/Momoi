@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 from momoi.config import NotificationConfig
 from momoi.context_time import context_timestamp
 from momoi.storage import Store
-from momoi.storage.store import RECENT_HEARTBEAT_LIMIT
+from momoi.storage.heartbeat import RECENT_HEARTBEAT_LIMIT
 
 
 class HeartbeatEpisodeTests(unittest.TestCase):
