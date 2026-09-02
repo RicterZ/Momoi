@@ -3,9 +3,9 @@ import time
 from datetime import datetime, timedelta
 
 from ..config import ReflectionConfig
-from ..context_time import context_timestamp
 from .integrity import decode_stored_json
 from .memory import estimate_tokens, truncate_tokens
+from .timestamps import add_context_timestamps
 
 REFLECTION_MEMORY_KINDS = {
     "owner_profile",
@@ -18,15 +18,6 @@ REFLECTION_MEMORY_KINDS = {
     "tool_skill",
 }
 
-
-def _add_context_timestamps(
-    value: dict[str, object], fields: tuple[str, ...], timezone: object
-) -> None:
-    for name in fields:
-        if value.get(name) is not None:
-            value[f"{name.removesuffix('_at')}_timestamp"] = context_timestamp(
-                value[name], timezone
-            )
 
 def _reflection_json(
     value: object,
@@ -576,7 +567,7 @@ class ReflectionStore:
                 expected_type=list,
                 fallback=[],
             )
-            _add_context_timestamps(
+            add_context_timestamps(
                 item,
                 ("scheduled_at", "retry_at", "created_at", "completed_at"),
                 self._timezone,
