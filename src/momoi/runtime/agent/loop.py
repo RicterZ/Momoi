@@ -1,14 +1,13 @@
 import copy
 import json
 import logging
-import time
 from typing import Any
 
 from ...channel import (
     Channel,
     ChannelMessage,
 )
-from ...logging_context import TRACE, compact_log_value, log_context, log_event, new_trace_id, safe_preview
+from ...logging_context import TRACE, log_context, log_event, new_trace_id, safe_preview
 from ...models import AgentReply, IncomingMessage, TurnDraft
 from ...storage import estimate_tokens
 from . import (
@@ -587,7 +586,6 @@ class AgentLoop:
             allowed_tool_names = {str(spec["name"]) for spec in request_tools}
             announce_delivered_in_batch = False
             for index, call in enumerate(response.tool_calls):
-                tool_started = time.monotonic()
                 source = (
                     "workflow"
                     if workflow is not None and call.name in workflow.tool_names
@@ -595,47 +593,14 @@ class AgentLoop:
                         call.name, allow_notify=allow_notify
                     )
                 )
-                journal_tool = source in {
-                    "mcp",
-                    "builtin",
-                    "agenda",
-                    "memory",
-                    "workflow",
-                }
-                if journal_tool:
-                    journal_arguments = dict(call.arguments)
-                    journal_arguments.pop("say_to_owner", None)
-                    self.tool_executor.journal(
-                        turn_id,
-                        "tool_call",
-                        {
-                            "tool_call_id": call.id,
-                            "name": call.name,
-                            "source": source,
-                            "arguments": compact_log_value(
-                                journal_arguments,
-                                string_limit=500,
-                                item_limit=20,
-                            ),
-                        },
-                        trust="runtime",
-                    )
-                log_event(
-                    logger,
-                    logging.DEBUG,
-                    "tool_start",
-                    stage=stage,
+                trace = self.tool_executor.begin_trace(
+                    call,
+                    source,
                     turn_id=turn_id,
+                    stage=stage,
                     call_id=call_id,
-                    round=llm_round,
+                    round_number=llm_round,
                     channel=delivery_channel.name,
-                    tool_call_id=call.id,
-                    tool_name=call.name,
-                    arguments=compact_log_value(
-                        call.arguments,
-                        string_limit=800,
-                        item_limit=30,
-                    ),
                 )
                 if call.argument_error:
                     result = {
@@ -828,69 +793,7 @@ class AgentLoop:
                     last_tool_error = str(
                         result.get("message") or result.get("error") or "tool_failed"
                     )
-                provenance = result.get("provenance")
-                log_message = (
-                    result.get("message")
-                    if isinstance(provenance, dict)
-                    and provenance.get("source") in {"agenda", "memory", "runtime"}
-                    else None
-                )
-                log_event(
-                    logger,
-                    logging.DEBUG,
-                    "tool_end",
-                    stage=stage,
-                    turn_id=turn_id,
-                    call_id=call_id,
-                    round=llm_round,
-                    channel=delivery_channel.name,
-                    tool_call_id=call.id,
-                    tool_name=call.name,
-                    ok=bool(result.get("ok")),
-                    error=result.get("error"),
-                    result=compact_log_value(
-                        result,
-                        string_limit=800,
-                        item_limit=30,
-                    ),
-                    result_message=(
-                        safe_preview(log_message, 500)
-                        if log_message is not None
-                        else None
-                    ),
-                    duration_ms=int((time.monotonic() - tool_started) * 1000),
-                )
-                draft.tool_calls.append(
-                    {
-                        "tool": call.name,
-                        "ok": bool(result.get("ok")),
-                        "error": result.get("error"),
-                        "duration_ms": int(
-                            (time.monotonic() - tool_started) * 1000
-                        ),
-                    }
-                )
-                if journal_tool:
-                    self.tool_executor.journal(
-                        turn_id,
-                        "tool_result",
-                        {
-                            "tool_call_id": call.id,
-                            "name": call.name,
-                            "ok": bool(result.get("ok")),
-                            "error": result.get("error"),
-                            "result": compact_log_value(
-                                result,
-                                string_limit=800,
-                                item_limit=30,
-                            ),
-                        },
-                        trust=(
-                            "untrusted_tool_data"
-                            if source in {"mcp", "builtin"}
-                            else "runtime"
-                        ),
-                    )
+                self.tool_executor.finish_trace(trace, call, result, draft)
                 results.append(_tool_result_block(call.id, result))
                 previous_tool_name = call.name
                 if workflow is not None and workflow.is_complete():

@@ -1,16 +1,30 @@
 import json
 import logging
+import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from ...contracts import ToolResult
-from ...logging_context import log_event, safe_preview
+from ...logging_context import compact_log_value, log_event, safe_preview
 from ...memory_tools import MEMORY_TOOL_SPECS
-from ...models import ToolCall
+from ...models import ToolCall, TurnDraft
 from ..turn_support import truncate_tool_result_json
 
 logger = logging.getLogger("momoi.runtime.turns")
 RESULT_REF_OVERHEAD = 64
+
+
+@dataclass(frozen=True)
+class ToolCallTrace:
+    started_at: float
+    source: str
+    journaled: bool
+    turn_id: str
+    stage: str
+    call_id: str
+    round_number: int
+    channel: str
 
 
 def artifact_root(config: Any) -> Path:
@@ -87,6 +101,130 @@ class ToolExecutor:
                 exc_info=True,
             )
 
+    def begin_trace(
+        self,
+        call: ToolCall,
+        source: str,
+        *,
+        turn_id: str,
+        stage: str,
+        call_id: str,
+        round_number: int,
+        channel: str,
+    ) -> ToolCallTrace:
+        journaled = source in {"mcp", "builtin", "agenda", "memory", "workflow"}
+        if journaled:
+            arguments = dict(call.arguments)
+            arguments.pop("say_to_owner", None)
+            self.journal(
+                turn_id,
+                "tool_call",
+                {
+                    "tool_call_id": call.id,
+                    "name": call.name,
+                    "source": source,
+                    "arguments": compact_log_value(
+                        arguments,
+                        string_limit=500,
+                        item_limit=20,
+                    ),
+                },
+                trust="runtime",
+            )
+        log_event(
+            logger,
+            logging.DEBUG,
+            "tool_start",
+            stage=stage,
+            turn_id=turn_id,
+            call_id=call_id,
+            round=round_number,
+            channel=channel,
+            tool_call_id=call.id,
+            tool_name=call.name,
+            arguments=compact_log_value(
+                call.arguments,
+                string_limit=800,
+                item_limit=30,
+            ),
+        )
+        return ToolCallTrace(
+            started_at=time.monotonic(),
+            source=source,
+            journaled=journaled,
+            turn_id=turn_id,
+            stage=stage,
+            call_id=call_id,
+            round_number=round_number,
+            channel=channel,
+        )
+
+    def finish_trace(
+        self,
+        trace: ToolCallTrace,
+        call: ToolCall,
+        result: ToolResult,
+        draft: TurnDraft,
+    ) -> None:
+        duration_ms = int((time.monotonic() - trace.started_at) * 1000)
+        provenance = result.get("provenance")
+        result_message = (
+            result.get("message")
+            if isinstance(provenance, dict)
+            and provenance.get("source") in {"agenda", "memory", "runtime"}
+            else None
+        )
+        compact_result = compact_log_value(
+            result,
+            string_limit=800,
+            item_limit=30,
+        )
+        log_event(
+            logger,
+            logging.DEBUG,
+            "tool_end",
+            stage=trace.stage,
+            turn_id=trace.turn_id,
+            call_id=trace.call_id,
+            round=trace.round_number,
+            channel=trace.channel,
+            tool_call_id=call.id,
+            tool_name=call.name,
+            ok=bool(result.get("ok")),
+            error=result.get("error"),
+            result=compact_result,
+            result_message=(
+                safe_preview(result_message, 500)
+                if result_message is not None
+                else None
+            ),
+            duration_ms=duration_ms,
+        )
+        draft.tool_calls.append(
+            {
+                "tool": call.name,
+                "ok": bool(result.get("ok")),
+                "error": result.get("error"),
+                "duration_ms": duration_ms,
+            }
+        )
+        if trace.journaled:
+            self.journal(
+                trace.turn_id,
+                "tool_result",
+                {
+                    "tool_call_id": call.id,
+                    "name": call.name,
+                    "ok": bool(result.get("ok")),
+                    "error": result.get("error"),
+                    "result": compact_result,
+                },
+                trust=(
+                    "untrusted_tool_data"
+                    if trace.source in {"mcp", "builtin"}
+                    else "runtime"
+                ),
+            )
     def normalize(self, call: ToolCall, result: object, source: str) -> ToolResult:
         raw = dict(result) if isinstance(result, dict) else {"value": result}
         ok = raw.get("ok") is True
