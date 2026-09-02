@@ -4,9 +4,8 @@ from typing import Any
 
 from ...channel import (
     Channel,
-    ChannelMessage,
 )
-from ...logging_context import TRACE, log_context, log_event, safe_preview
+from ...logging_context import TRACE, log_event, safe_preview
 from ...models import AgentReply, IncomingMessage, TurnDraft
 from . import (
     AgentWorkflow,
@@ -15,18 +14,13 @@ from . import (
     WorkflowProtocolError,
 )
 from ..parsing import response_text
-from .progress import (
-    announce_field,
-    apply_tool_announce,
-    initial_announce_error_message,
-    missing_initial_work_announce,
-)
+from .progress import initial_announce_error_message, missing_initial_work_announce
 from .protocol import (
     handle_no_tool_response,
     harness_correction,
     parse_end_turn,
 )
-from .runtime_tools import begin_heartbeat, enable_tools, recall_owner_context
+from .tool_batch import ToolBatchRequest, ToolBatchState
 from ..protocol import (
     AUTONOMOUS_FINISH_SPEC,
 )
@@ -74,19 +68,12 @@ class AgentLoop:
         workflow: AgentWorkflow | None = None,
     ) -> AgentReply | dict[str, Any] | None:
         authority = execution.authority
-        allow_notify = execution.allow_notify
         require_response = execution.require_response
         autonomous_goal_id = execution.goal_id
         heartbeat_turn = execution.heartbeat
         reply_wait_turn = execution.reply_followup
         accept_owner_updates = execution.accept_owner_updates
         dynamic_tool_policies = execution.dynamic_tool_policies
-        allowed_capabilities = (
-            set(execution.allowed_capabilities)
-            if execution.allowed_capabilities is not None
-            else None
-        )
-        artifact_root = execution.artifact_root
         external_tool_used = False
         force_autonomous_finish = False
         failed_tool_rounds = 0
@@ -95,7 +82,7 @@ class AgentLoop:
         visible_since_owner_update = False
         owner_work_acknowledged = False
         previous_tool_name: str | None = None
-        last_sent_messages: list[ChannelMessage] | None = None
+        last_sent_messages = None
         last_sent_channel = ""
         llm_round = 0
         remind_owner_bubbles = False
@@ -466,268 +453,47 @@ class AgentLoop:
                         }
                     )
                 continue
-            # Tool execution strips harness-only arguments in place. Preserve an
-            # independent assistant-history copy so the next model round still
-            # knows exactly what the owner already heard.
-            assistant_history_content = copy.deepcopy(response.content)
-            if response.reasoning and response.tool_calls:
-                assistant_history_content.insert(
-                    0,
-                    {
-                        "type": "reasoning",
-                        "text": response.reasoning,
-                    },
-                )
-            messages.append(
-                {"role": "assistant", "content": assistant_history_content}
-            )
-            history_tool_inputs = {
-                str(block.get("id") or ""): block.get("input")
-                for block in (
-                    assistant_history_content
-                    if isinstance(assistant_history_content, list)
-                    else []
-                )
-                if isinstance(block, dict)
-                and block.get("type") == "tool_use"
-                and isinstance(block.get("input"), dict)
-            }
-            results: list[dict[str, Any]] = []
-            updates = []
-            allowed_tool_names = {str(spec["name"]) for spec in request_tools}
-            announce_delivered_in_batch = False
-            for index, call in enumerate(response.tool_calls):
-                source = (
-                    "workflow"
-                    if workflow is not None and call.name in workflow.tool_names
-                    else self.tool_executor.source(
-                        call.name, allow_notify=allow_notify
-                    )
-                )
-                trace = self.tool_executor.begin_trace(
-                    call,
-                    source,
+            batch = await self.tool_batch.execute(
+                ToolBatchRequest(
+                    response=response,
+                    messages=messages,
+                    request_tools=request_tools,
+                    tools=tools,
+                    enable_tool_groups=enable_tool_groups,
+                    current_events=current_events,
+                    draft=draft,
+                    harness=harness,
+                    execution=execution,
+                    source_event_id=source_event_id,
                     turn_id=turn_id,
-                    stage=stage,
                     call_id=call_id,
                     round_number=llm_round,
-                    channel=delivery_channel.name,
+                    delivery_channel=delivery_channel,
+                    heartbeat_owner_event_revision=heartbeat_owner_event_revision,
+                    heartbeat_notification_key=heartbeat_notification_key,
+                    workflow=workflow,
+                    state=ToolBatchState(
+                        visible_since_owner_update=visible_since_owner_update,
+                        owner_work_acknowledged=owner_work_acknowledged,
+                        previous_tool_name=previous_tool_name,
+                        last_sent_bubbles=last_sent_messages,
+                        last_sent_channel=last_sent_channel,
+                    ),
+                    progress_channel=self.channel.name,
+                    prepare_heartbeat_context=self.prepare_heartbeat_context,
+                    submit_owner_context=self.submit_owner_context,
+                    settle_owner_updates=self._settle_owner_updates,
                 )
-                if call.argument_error:
-                    result = {
-                        "ok": False,
-                        "error": call.argument_error,
-                        "message": (
-                            "Tool arguments must be one valid JSON object. "
-                            "Call the tool again with corrected arguments."
-                        ),
-                    }
-                elif call.name not in allowed_tool_names:
-                    result = {"ok": False, "error": "tool_not_allowed"}
-                elif call.name == "heartbeat_begin":
-                    result = await begin_heartbeat(
-                        call,
-                        heartbeat_turn=heartbeat_turn,
-                        harness_started=harness.started,
-                        enable_tool_groups=enable_tool_groups,
-                        tools=tools,
-                        tool_surface=self.tool_surface,
-                        prepare_context=self.prepare_heartbeat_context,
-                    )
-                elif call.name == "recall":
-                    result = await recall_owner_context(
-                        call,
-                        current_events=current_events,
-                        turn_id=turn_id,
-                        submit_context=self.submit_owner_context,
-                    )
-                elif not harness.started and authority == "owner":
-                    # The recall decision is what makes the rest of the Turn
-                    # accountable, so it cannot be skipped by acting first.
-                    result = {
-                        "ok": False,
-                        "error": "context_not_submitted",
-                        "message": (
-                            "Call recall first to decide what history "
-                            "this input depends on."
-                        ),
-                    }
-                elif call.name == "end_turn":
-                    result = {
-                        "ok": False,
-                        "error": (
-                            "end_turn_must_be_the_only_terminal_tool"
-                            if require_response
-                            else "tool_not_allowed"
-                        ),
-                    }
-                elif call.name == "autonomous_finish":
-                    result = {
-                        "ok": False,
-                        "error": "autonomous_finish_must_be_the_only_terminal_tool",
-                    }
-                elif call.name == "send_bubbles":
-                    if autonomous_goal_id and allow_notify:
-                        result = self.agenda_tools.execute(
-                            call,
-                            draft,
-                            authority=authority,
-                            source_event_id=source_event_id,
-                            allow_notify=True,
-                        )
-                    else:
-                        delivery = self.bubble_delivery.dispatch(
-                            call,
-                            turn_id=turn_id,
-                            stage=stage,
-                            round_number=llm_round,
-                            delivery_channel=delivery_channel,
-                            response_required=require_response,
-                            heartbeat_turn=heartbeat_turn,
-                            reply_followup_turn=reply_wait_turn,
-                            heartbeat_owner_event_revision=(
-                                heartbeat_owner_event_revision
-                            ),
-                            heartbeat_notification_key=heartbeat_notification_key,
-                            previous_tool_name=previous_tool_name,
-                            previous_bubbles=last_sent_messages,
-                            previous_channel=last_sent_channel,
-                        )
-                        result = delivery.result
-                        if delivery.bubbles is not None:
-                            visible_since_owner_update = True
-                            owner_work_acknowledged = (
-                                owner_work_acknowledged
-                                or delivery.acknowledges_work
-                            )
-                            last_sent_messages = copy.deepcopy(delivery.bubbles)
-                            last_sent_channel = delivery.channel
-                elif call.name == "tool_enable":
-                    result = enable_tools(
-                        call,
-                        enable_tool_groups=enable_tool_groups,
-                        tools=tools,
-                        tool_surface=self.tool_surface,
-                    )
-                elif call.name == "read_tool_result":
-                    result = self.tool_results.read(
-                        call.arguments.get("result_ref"),
-                        call.arguments.get("cursor"),
-                        max_chars=self.config.tool_result_max_chars,
-                        provenance={
-                            "source": "runtime",
-                            "tool": "read_tool_result",
-                        },
-                    )
-                elif workflow is not None and call.name in workflow.tool_names:
-                    result = await workflow.execute_tool(call)
-                elif self.mcp.has_tool(call.name) or self.builtin_tools.has_tool(
-                    call.name
-                ):
-                    result = None
-                    if not call.id:
-                        result = {"ok": False, "error": "missing_tool_call_id"}
-                    else:
-                        announce = next(
-                            (
-                                announce_field(spec)
-                                for spec in request_tools
-                                if spec.get("name") == call.name
-                            ),
-                            None,
-                        )
-                        if announce:
-                            text = apply_tool_announce(
-                                call.arguments,
-                                announce,
-                            )
-                            if announce_delivered_in_batch:
-                                text = None
-                            history_arguments = history_tool_inputs.get(call.id)
-                            if isinstance(history_arguments, dict):
-                                if text is None:
-                                    history_arguments.pop(announce, None)
-                                else:
-                                    history_arguments[announce] = text
-                            if text is not None:
-                                self.store.queue_progress(
-                                    turn_id,
-                                    call.id,
-                                    [text],
-                                    self.channel.name,
-                                )
-                                announce_delivered_in_batch = True
-                                visible_since_owner_update = True
-                                owner_work_acknowledged = True
-                                self.outbox_changed.set()
-                    if result is None:
-                        with log_context(
-                            stage=stage,
-                            turn_id=turn_id,
-                            call_id=call_id,
-                            round=llm_round,
-                            channel=delivery_channel.name,
-                            goal_id=autonomous_goal_id,
-                            tool_call_id=call.id,
-                            tool_name=call.name,
-                        ):
-                            result, has_external_effect = (
-                                await self.tool_executor.execute_external(
-                                    call,
-                                    source,
-                                    turn_id=turn_id,
-                                    allowed_capabilities=allowed_capabilities,
-                                    artifact_root=artifact_root,
-                                )
-                            )
-                        external_tool_used = (
-                            external_tool_used or has_external_effect
-                        )
-                elif self.agenda_tools.has_tool(call.name, allow_notify=allow_notify):
-                    result = self.agenda_tools.execute(
-                        call,
-                        draft,
-                        authority=authority,
-                        source_event_id=source_event_id,
-                        allow_notify=allow_notify,
-                    )
-                else:
-                    result = await self.memory_tools.execute_async(
-                        call, current_events, draft
-                    )
-                if "provenance" not in result:
-                    result = self.tool_executor.normalize(call, result, source)
-                if result.get("ok"):
-                    harness.accept(call.name)
-                    last_tool_error = ""
-                else:
-                    last_tool_error = str(
-                        result.get("message") or result.get("error") or "tool_failed"
-                    )
-                self.tool_executor.finish_trace(trace, call, result, draft)
-                results.append(_tool_result_block(call.id, result))
-                previous_tool_name = call.name
-                if workflow is not None and workflow.is_complete():
-                    results.extend(
-                        _tool_error_block(
-                            pending.id, "workflow_already_completed"
-                        )
-                        for pending in response.tool_calls[index + 1 :]
-                    )
-                    break
-                if accept_owner_updates:
-                    updates = await self._settle_owner_updates(
-                        current_events, delivery_channel.name
-                    )
-                    if updates:
-                        results.extend(
-                            _tool_error_block(
-                                pending.id, "superseded_by_owner_update"
-                            )
-                            for pending in response.tool_calls[index + 1 :]
-                        )
-                        break
-            messages.append({"role": "user", "content": results})
+            )
+            results = batch.results
+            updates = batch.owner_updates
+            external_tool_used = external_tool_used or batch.external_effect
+            visible_since_owner_update = batch.state.visible_since_owner_update
+            owner_work_acknowledged = batch.state.owner_work_acknowledged
+            previous_tool_name = batch.state.previous_tool_name
+            last_sent_messages = batch.state.last_sent_bubbles
+            last_sent_channel = batch.state.last_sent_channel
+            last_tool_error = batch.last_tool_error
             if updates:
                 visible_since_owner_update = False
                 previous_tool_name = None

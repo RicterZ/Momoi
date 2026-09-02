@@ -27,6 +27,7 @@ from .agent.result_store import ToolResultStore
 from .agent.context_window import ContextWindow
 from .agent.delivery import BubbleDelivery, DeliveryPolicy
 from .agent.model_round import ModelRoundRunner
+from .agent.tool_batch import ToolBatchExecutor
 from .agent.tool_executor import ToolExecutor, artifact_root, tool_result_root
 from .agent.tool_surface import ToolSurface
 from .dispatch import AgentWorker, CommandRouter, OutboxWorker, Scheduler
@@ -172,6 +173,17 @@ class MomoiDaemon(
             self.store,
             self.channels,
             self.delivery_policy,
+            self.outbox_changed,
+        )
+        self.tool_batch = ToolBatchExecutor(
+            config,
+            self.store,
+            self.tool_surface,
+            self.tool_executor,
+            self.bubble_delivery,
+            self.agenda_tools,
+            self.memory_tools,
+            self.tool_results,
             self.outbox_changed,
         )
         self.agenda_changed = asyncio.Event()

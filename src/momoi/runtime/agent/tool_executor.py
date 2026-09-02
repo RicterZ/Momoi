@@ -79,6 +79,9 @@ class ToolExecutor:
             return "memory"
         return "unknown"
 
+    def is_external(self, name: str) -> bool:
+        return self.mcp.has_tool(name) or self.builtin_tools.has_tool(name)
+
     def journal(
         self,
         turn_id: str,
