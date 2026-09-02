@@ -12,6 +12,7 @@ from typing import Iterable
 import numpy as np
 
 from .memory import estimate_tokens, token_chunk
+from .integrity import decode_stored_json
 
 QUERY_TEMPLATE_VERSION = 1
 DOCUMENT_TEMPLATE_VERSION = 1
@@ -63,15 +64,15 @@ def decode_vector(blob: object, dimensions: int) -> np.ndarray:
 
 
 def _json_strings(value: object) -> list[str]:
-    try:
-        parsed = json.loads(str(value or "[]"))
-    except json.JSONDecodeError:
-        return []
-    return (
-        [str(item).strip() for item in parsed if str(item).strip()]
-        if isinstance(parsed, list)
-        else []
+    parsed = decode_stored_json(
+        value or "[]",
+        entity="semantic_document",
+        record_id="unknown",
+        field="terms_json",
+        expected_type=list,
+        fallback=[],
     )
+    return [str(item).strip() for item in parsed if str(item).strip()]
 
 
 def _episode_summary_document(row: sqlite3.Row) -> SemanticDocument | None:

@@ -51,27 +51,45 @@ def turn_workflow_kind_sql(table: str = "turns") -> str:
                   LIKE '[AUTONOMOUS HEARTBEAT RECORD;%'
         ) THEN 'heartbeat'
         WHEN EXISTS (
-            SELECT 1 FROM json_each({table}.source_ids_json) AS source
+            SELECT 1 FROM json_each(CASE
+                WHEN json_valid({table}.source_ids_json)
+                THEN {table}.source_ids_json ELSE '[]' END
+            ) AS source
             WHERE source.value GLOB 'goal:*'
         ) THEN 'goal'
         WHEN EXISTS (
-            SELECT 1 FROM json_each({table}.source_ids_json) AS source
+            SELECT 1 FROM json_each(CASE
+                WHEN json_valid({table}.source_ids_json)
+                THEN {table}.source_ids_json ELSE '[]' END
+            ) AS source
             WHERE source.value GLOB 'reply-followup:*'
         ) THEN 'reply_followup'
         WHEN EXISTS (
-            SELECT 1 FROM json_each({table}.source_ids_json) AS source
+            SELECT 1 FROM json_each(CASE
+                WHEN json_valid({table}.source_ids_json)
+                THEN {table}.source_ids_json ELSE '[]' END
+            ) AS source
             WHERE source.value GLOB 'heartbeat:*'
         ) THEN 'heartbeat'
         WHEN EXISTS (
-            SELECT 1 FROM json_each({table}.source_ids_json) AS source
+            SELECT 1 FROM json_each(CASE
+                WHEN json_valid({table}.source_ids_json)
+                THEN {table}.source_ids_json ELSE '[]' END
+            ) AS source
             WHERE source.value GLOB 'reflection:*'
         ) THEN 'reflection'
         WHEN EXISTS (
-            SELECT 1 FROM json_each({table}.source_ids_json) AS source
+            SELECT 1 FROM json_each(CASE
+                WHEN json_valid({table}.source_ids_json)
+                THEN {table}.source_ids_json ELSE '[]' END
+            ) AS source
             WHERE source.value GLOB 'episode-consolidate:*'
         ) THEN 'episode_consolidate'
         WHEN EXISTS (
-            SELECT 1 FROM json_each({table}.source_ids_json) AS source
+            SELECT 1 FROM json_each(CASE
+                WHEN json_valid({table}.source_ids_json)
+                THEN {table}.source_ids_json ELSE '[]' END
+            ) AS source
             WHERE source.value GLOB 'episode-anneal:*'
         ) THEN 'episode_anneal'
     END"""

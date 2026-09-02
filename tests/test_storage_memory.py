@@ -29,6 +29,7 @@ from momoi.runtime import (
     MomoiDaemon,
 )
 from momoi.storage import MemoryRecallQuery, Store, estimate_tokens
+from momoi.storage.integrity import StorageIntegrityError
 from momoi.storage.scheduling import next_schedule_at, normalize_schedule
 
 
@@ -1757,6 +1758,45 @@ class StorageMemoryTest(unittest.TestCase):
                 store.begin_turn("current", "goal", ["goal:misleading"])
             with self.assertRaisesRegex(ValueError, "unknown Turn workflow"):
                 store.begin_turn("invalid", "autonomous", ["invalid"])
+            store.close()
+
+    def test_corrupt_internal_json_is_reported_and_maintenance_reconciles(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store.create_episode("损坏测试", episode_id="corrupt-episode")
+            with store._db:
+                store._db.execute(
+                    """UPDATE conversation_episodes
+                       SET working_summary_claims_json='not-json'
+                       WHERE id='corrupt-episode'"""
+                )
+            with self.assertLogs("momoi.storage.integrity", level="ERROR") as logs:
+                episode = store.episode("corrupt-episode")
+            self.assertEqual(episode["working_summary_claims"], [])
+            self.assertEqual(logs.records[0].momoi_event, "storage_integrity_error")
+            self.assertEqual(
+                logs.records[0].momoi_fields["field"],
+                "working_summary_claims_json",
+            )
+
+            store.queue_memory_maintenance_turn("corrupt-maintenance", "reflection:1")
+            with store._db:
+                store._db.execute(
+                    """INSERT INTO turn_journal
+                       (turn_id, sequence, created_at, item_type, visibility,
+                        trust, payload_json)
+                       VALUES ('corrupt-maintenance', 1, 1,
+                               'memory_maintenance_plan', 'internal', 'runtime',
+                               'not-json')"""
+                )
+            with self.assertLogs("momoi.storage.integrity", level="ERROR"):
+                with self.assertRaises(StorageIntegrityError):
+                    store.memory_maintenance_journal("corrupt-maintenance")
+            turn = store._db.execute(
+                "SELECT state, failure_reason FROM turns WHERE id='corrupt-maintenance'"
+            ).fetchone()
+            self.assertEqual(turn["state"], "needs_reconciliation")
+            self.assertIn("storage_integrity_error", turn["failure_reason"])
             store.close()
 
     def test_recall_reuse_candidate_is_only_the_latest_effective_scope(self) -> None:

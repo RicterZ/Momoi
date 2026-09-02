@@ -59,6 +59,7 @@ from .memory import (
     token_chunk,
     truncate_tokens,
 )
+from .integrity import StorageIntegrityError, decode_stored_json
 from .migrations import apply_migrations
 from .semantic import SemanticStore
 from .scheduling import next_schedule_at, normalize_schedule, quiet_until
@@ -249,12 +250,21 @@ def _heartbeat_record_activity(content: str) -> str:
     return match.group(1).strip()[:300] if match else ""
 
 
-def _reflection_json(value: object, fallback: object) -> object:
-    try:
-        parsed = json.loads(str(value))
-    except (TypeError, json.JSONDecodeError):
-        return fallback
-    return parsed
+def _reflection_json(
+    value: object,
+    fallback: list[object] | dict[str, object],
+    *,
+    record_id: object,
+    field: str,
+) -> list[object] | dict[str, object]:
+    return decode_stored_json(
+        value,
+        entity="reflection_material",
+        record_id=record_id,
+        field=field,
+        expected_type=type(fallback),
+        fallback=fallback,
+    )
 
 
 def _reflection_compact_value(value: object, limit: int = 240) -> str:
@@ -790,10 +800,18 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
     @staticmethod
     def _incoming_message(row: sqlite3.Row) -> IncomingMessage:
         raw = str(row["payload_json"] or "")
-        try:
-            value = json.loads(raw) if raw else []
-        except json.JSONDecodeError:
-            value = []
+        value = (
+            decode_stored_json(
+                raw,
+                entity="event",
+                record_id=row["id"],
+                field="payload_json",
+                expected_type=(dict, list),
+                fallback=[],
+            )
+            if raw
+            else []
+        )
         if isinstance(value, dict):
             channel = str(value.get("channel") or "unknown")
             raw_segments = value.get("segments") or []
@@ -974,10 +992,17 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         if row is None:
             return []
         try:
-            value = json.loads(str(row["source_ids_json"]))
-        except (json.JSONDecodeError, TypeError):
-            return []
-        return [str(item) for item in value] if isinstance(value, list) else []
+            value = decode_stored_json(
+                row["source_ids_json"],
+                entity="turn",
+                record_id=turn_id,
+                field="source_ids_json",
+                expected_type=list,
+            )
+        except StorageIntegrityError:
+            self.record_turn_integrity_failure(turn_id, "source_ids_json")
+            raise
+        return [str(item) for item in value]
 
     def memory_maintenance_journal(
         self, turn_id: str
@@ -991,12 +1016,30 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         items: list[dict[str, object]] = []
         for row in rows:
             try:
-                payload = json.loads(str(row["payload_json"]))
-            except (json.JSONDecodeError, TypeError):
-                continue
-            if isinstance(payload, dict):
-                items.append({"item_type": str(row["item_type"]), **payload})
+                payload = decode_stored_json(
+                    row["payload_json"],
+                    entity="turn_journal",
+                    record_id=turn_id,
+                    field=str(row["item_type"]),
+                    expected_type=dict,
+                )
+            except StorageIntegrityError:
+                self.record_turn_integrity_failure(
+                    turn_id, f"journal:{row['item_type']}"
+                )
+                raise
+            items.append({"item_type": str(row["item_type"]), **payload})
         return items
+
+    def record_turn_integrity_failure(self, turn_id: str, field: str) -> None:
+        now = time.time()
+        with self._db:
+            self._db.execute(
+                """UPDATE turns SET state='needs_reconciliation',
+                   stage='needs_reconciliation', failure_reason=?, updated_at=?
+                   WHERE id=? AND state='running'""",
+                (f"storage_integrity_error:{field}"[:500], now, turn_id),
+            )
 
     def latest_memory_maintenance_completion(
         self,
@@ -1009,24 +1052,38 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                ORDER BY j.created_at DESC, j.sequence DESC"""
         ).fetchall()
         for row in rows:
-            try:
-                payload = json.loads(str(row["payload_json"]))
-            except (json.JSONDecodeError, TypeError):
-                continue
-            if isinstance(payload, dict):
+            payload = decode_stored_json(
+                row["payload_json"],
+                entity="turn_journal",
+                record_id="memory_maintenance_complete",
+                field="payload_json",
+                expected_type=dict,
+                fallback={},
+            )
+            if payload:
                 return payload
         return None
 
     def memory_maintenance_bootstrap_complete(self) -> bool:
-        row = self._db.execute(
-            """SELECT 1 FROM turn_journal AS j
+        rows = self._db.execute(
+            """SELECT j.turn_id, j.payload_json FROM turn_journal AS j
                JOIN turns AS t ON t.id=j.turn_id
                WHERE j.item_type='memory_maintenance_complete'
                  AND t.state='completed'
-                 AND json_extract(j.payload_json, '$.mode')='bootstrap'
-               LIMIT 1"""
-        ).fetchone()
-        return row is not None
+               ORDER BY j.created_at DESC, j.sequence DESC"""
+        ).fetchall()
+        for row in rows:
+            payload = decode_stored_json(
+                row["payload_json"],
+                entity="turn_journal",
+                record_id=row["turn_id"],
+                field="memory_maintenance_complete",
+                expected_type=dict,
+                fallback={},
+            )
+            if payload.get("mode") == "bootstrap":
+                return True
+        return False
 
     def latest_owner_event_marker(
         self, *, through: float | None = None
@@ -1588,13 +1645,32 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
     @staticmethod
     def _context_plan_dict(row: sqlite3.Row) -> dict[str, object]:
         plan = dict(row)
-        plan["source_event_ids"] = json.loads(str(plan.pop("source_event_ids_json")))
+        record_id = f"{row['turn_id']}:{row['revision']}"
+        plan["source_event_ids"] = decode_stored_json(
+            plan.pop("source_event_ids_json"),
+            entity="context_plan",
+            record_id=record_id,
+            field="source_event_ids_json",
+            expected_type=list,
+        )
         normalized_plan = normalize_context_plan(
-            json.loads(str(plan.pop("plan_json")))
+            decode_stored_json(
+                plan.pop("plan_json"),
+                entity="context_plan",
+                record_id=record_id,
+                field="plan_json",
+                expected_type=dict,
+            )
         )
         plan["plan"] = normalized_plan
         plan["retrieval"] = normalize_context_retrieval(
-            json.loads(str(plan.pop("retrieval_json"))),
+            decode_stored_json(
+                plan.pop("retrieval_json"),
+                entity="context_plan",
+                record_id=record_id,
+                field="retrieval_json",
+                expected_type=dict,
+            ),
             normalized_plan,
         )
         return plan
@@ -1771,29 +1847,37 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
 
     def _episode_dict(self, row: sqlite3.Row) -> dict[str, object]:
         episode = dict(row)
+        episode_id = episode.get("id")
         episode.pop("overlap", None)
         _add_context_timestamps(
             episode,
             ("created_at", "updated_at", "closed_at", "summary_abandoned_at"),
             self._timezone,
         )
-        try:
-            claims = json.loads(str(episode.pop("working_summary_claims_json")))
-        except (json.JSONDecodeError, TypeError):
-            claims = []
-        episode["working_summary_claims"] = claims if isinstance(claims, list) else []
-        try:
-            emotional_context = json.loads(str(episode.pop("emotional_context_json")))
-        except (json.JSONDecodeError, TypeError):
-            emotional_context = {}
-        try:
-            outcomes = json.loads(str(episode.pop("outcomes_json")))
-        except (json.JSONDecodeError, TypeError):
-            outcomes = []
-        episode["emotional_context"] = (
-            emotional_context if isinstance(emotional_context, dict) else {}
+        episode["working_summary_claims"] = decode_stored_json(
+            episode.pop("working_summary_claims_json"),
+            entity="conversation_episode",
+            record_id=episode_id,
+            field="working_summary_claims_json",
+            expected_type=list,
+            fallback=[],
         )
-        episode["outcomes"] = outcomes if isinstance(outcomes, list) else []
+        episode["emotional_context"] = decode_stored_json(
+            episode.pop("emotional_context_json"),
+            entity="conversation_episode",
+            record_id=episode_id,
+            field="emotional_context_json",
+            expected_type=dict,
+            fallback={},
+        )
+        episode["outcomes"] = decode_stored_json(
+            episode.pop("outcomes_json"),
+            entity="conversation_episode",
+            record_id=episode_id,
+            field="outcomes_json",
+            expected_type=list,
+            fallback=[],
+        )
         episode.pop("summary", None)
         for name in ("topics", "entities", "open_loops"):
             episode[name] = json.loads(str(episode.pop(f"{name}_json")))
@@ -2443,12 +2527,14 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                    ORDER BY sequence""",
                 (turn_id,),
             ).fetchall():
-                try:
-                    payload = json.loads(str(item["payload_json"]))
-                except (TypeError, json.JSONDecodeError):
-                    payload = {"error": "invalid_journal_payload"}
-                if not isinstance(payload, dict):
-                    payload = {"value": payload}
+                payload = decode_stored_json(
+                    item["payload_json"],
+                    entity="turn_journal",
+                    record_id=f"{turn_id}:{item['sequence']}",
+                    field="payload_json",
+                    expected_type=dict,
+                    fallback={"error": "invalid_journal_payload"},
+                )
                 if item["item_type"] == "final":
                     final.update(payload)
                     continue
@@ -2476,12 +2562,15 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             ).fetchone()
             interpretation: dict[str, object] = {}
             if plan_row is not None:
-                try:
-                    plan = normalize_context_plan(
-                        json.loads(str(plan_row["plan_json"]))
-                    )
-                except (TypeError, json.JSONDecodeError):
-                    plan = {}
+                raw_plan = decode_stored_json(
+                    plan_row["plan_json"],
+                    entity="context_plan",
+                    record_id=turn_id,
+                    field="plan_json",
+                    expected_type=dict,
+                    fallback={},
+                )
+                plan = normalize_context_plan(raw_plan)
                 if isinstance(plan, dict):
                     units = plan.get("intent_units")
                     interpretation = {
@@ -2582,10 +2671,14 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             if workflow_id:
                 source = f"webhook:{workflow_id}"
             else:
-                try:
-                    source_ids = json.loads(str(row["source_ids_json"] or "[]"))
-                except (TypeError, json.JSONDecodeError):
-                    source_ids = []
+                source_ids = decode_stored_json(
+                    row["source_ids_json"] or "[]",
+                    entity="turn",
+                    record_id=row["turn_id"],
+                    field="source_ids_json",
+                    expected_type=list,
+                    fallback=[],
+                )
                 raw_source = str(source_ids[0]) if source_ids else str(row["turn_id"])
                 source = raw_source.split(":", 1)[0] or "autonomous"
             key = (source, content)
@@ -2858,11 +2951,14 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         inventory: list[dict[str, object]] = []
         for row in rows:
             item = dict(row)
-            try:
-                open_loops = json.loads(str(item.pop("open_loops_json")))
-            except (json.JSONDecodeError, TypeError):
-                open_loops = []
-            item["open_loops"] = open_loops if isinstance(open_loops, list) else []
+            item["open_loops"] = decode_stored_json(
+                item.pop("open_loops_json"),
+                entity="conversation_episode",
+                record_id=item["id"],
+                field="open_loops_json",
+                expected_type=list,
+                fallback=[],
+            )
             item["last_activity_timestamp"] = self.context_timestamp(
                 item["last_activity_at"]
             )
@@ -5600,7 +5696,12 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                ORDER BY j.created_at, j.sequence""",
             (start.timestamp(), end.timestamp()),
         ).fetchall():
-            payload = _reflection_json(row["payload_json"], {})
+            payload = _reflection_json(
+                row["payload_json"],
+                {},
+                record_id=row["turn_id"],
+                field="payload_json",
+            )
             if not isinstance(payload, dict):
                 continue
             stamp = self.context_timestamp(row["created_at"])
@@ -5695,7 +5796,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
 
         topic_entries: list[str] = []
         episode_rows = self._db.execute(
-            """SELECT title, status, working_summary, narrative_summary,
+            """SELECT id, title, status, working_summary, narrative_summary,
                       emotional_context_json, outcomes_json, topics_json,
                       open_loops_json, created_at, updated_at
                FROM conversation_episodes
@@ -5711,10 +5812,27 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         ).fetchall()
         for row in episode_rows:
             summary = str(row["narrative_summary"] or row["working_summary"] or "").strip()
-            topics = _reflection_json(row["topics_json"], [])
-            loops = _reflection_json(row["open_loops_json"], [])
-            emotional = _reflection_json(row["emotional_context_json"], {})
-            outcomes = _reflection_json(row["outcomes_json"], [])
+            topics = _reflection_json(
+                row["topics_json"], [], record_id=row["id"], field="topics_json"
+            )
+            loops = _reflection_json(
+                row["open_loops_json"],
+                [],
+                record_id=row["id"],
+                field="open_loops_json",
+            )
+            emotional = _reflection_json(
+                row["emotional_context_json"],
+                {},
+                record_id=row["id"],
+                field="emotional_context_json",
+            )
+            outcomes = _reflection_json(
+                row["outcomes_json"],
+                [],
+                record_id=row["id"],
+                field="outcomes_json",
+            )
             parts = [
                 f"{self.context_timestamp(row['updated_at'])} {row['status']} {row['title']}",
             ]
@@ -5846,11 +5964,14 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         results: list[dict[str, object]] = []
         for row in rows[:size]:
             item = dict(row)
-            try:
-                memories = json.loads(str(item.pop("memories_json", "[]")))
-            except (json.JSONDecodeError, TypeError):
-                memories = []
-            item["memories"] = memories if isinstance(memories, list) else []
+            item["memories"] = decode_stored_json(
+                item.pop("memories_json", "[]"),
+                entity="reflection",
+                record_id=item["id"],
+                field="memories_json",
+                expected_type=list,
+                fallback=[],
+            )
             _add_context_timestamps(
                 item,
                 ("scheduled_at", "retry_at", "created_at", "completed_at"),

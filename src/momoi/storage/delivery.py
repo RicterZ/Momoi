@@ -7,6 +7,7 @@ from ..channel import normalize_channel_message
 from ..models import AgentReply, OutboxMessage
 from ..reply_wait import decode_reply_wait, encode_reply_wait
 from .turn_workflow import turn_workflow_kind_sql
+from .integrity import decode_stored_json
 
 
 class DeliveryStore:
@@ -121,10 +122,14 @@ class DeliveryStore:
         if row is None:
             return None
         result = dict(row)
-        try:
-            result["result"] = json.loads(str(row["result_json"]))
-        except json.JSONDecodeError:
-            result["result"] = {}
+        result["result"] = decode_stored_json(
+            row["result_json"],
+            entity="webhook_step",
+            record_id=f"{run_id}:{step_index}",
+            field="result_json",
+            expected_type=dict,
+            fallback={},
+        )
         return result
 
     def start_webhook_step(self, run_id: str, step_index: int) -> None:
@@ -452,10 +457,18 @@ class DeliveryStore:
         messages: list[OutboxMessage] = []
         for row in rows:
             raw = str(row["payload_json"] or "")
-            try:
-                payload = json.loads(raw) if raw else None
-            except json.JSONDecodeError:
-                payload = None
+            payload = (
+                decode_stored_json(
+                    raw,
+                    entity="outbox",
+                    record_id=row["id"],
+                    field="payload_json",
+                    expected_type=dict,
+                    fallback={},
+                )
+                if raw
+                else None
+            )
             if not isinstance(payload, dict):
                 if row["kind"] == "image" and row["media_path"]:
                     payload = {
