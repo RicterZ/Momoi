@@ -19,8 +19,8 @@ from momoi.channel.napcat import (
     image_blocks,
     incoming_segments,
     render_segments,
-    VOICE_UNAVAILABLE_TEXT,
 )
+from momoi.channel.napcat.channel import VOICE_UNAVAILABLE_TEXT
 from momoi.channel.weixin import WeixinConfig
 from momoi.config.models import (
     AppConfig,
