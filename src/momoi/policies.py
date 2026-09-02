@@ -27,7 +27,18 @@ class MemoryPolicy:
 
 
 @dataclass(frozen=True)
+class SemanticPolicy:
+    query_failure_limit: int = 2
+    query_breaker_seconds: float = 30.0
+    candidate_floor: int = 32
+    candidate_multiplier: int = 8
+    active_poll_seconds: float = 0.05
+    idle_poll_seconds: float = 2.0
+
+
+@dataclass(frozen=True)
 class RuntimePolicies:
     daemon: DaemonPolicy = DaemonPolicy()
     context: ContextPolicy = ContextPolicy()
     memory: MemoryPolicy = MemoryPolicy()
+    semantic: SemanticPolicy = SemanticPolicy()

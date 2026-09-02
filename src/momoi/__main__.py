@@ -240,7 +240,10 @@ async def embedding(args: argparse.Namespace) -> None:
         timezone=config.timezone,
     )
     service = SemanticRecallService(
-        store, embedding_config, auto_activate=False
+        store,
+        embedding_config,
+        auto_activate=False,
+        policy=config.policies.semantic,
     )
     try:
         if args.embedding_command == "status":

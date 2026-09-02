@@ -12,6 +12,7 @@ import numpy as np
 
 from .config import EmbeddingConfig
 from .logging_context import log_event
+from .policies import SemanticPolicy
 from .storage import MemoryRecallQuery, Store, decode_vector
 from .storage.episode_ranking import EpisodeRecallQuery
 
@@ -114,8 +115,13 @@ class _VectorSegment:
 
 
 class EmbeddingClient:
-    def __init__(self, config: EmbeddingConfig) -> None:
+    def __init__(
+        self,
+        config: EmbeddingConfig,
+        policy: SemanticPolicy = SemanticPolicy(),
+    ) -> None:
         self.config = config
+        self.policy = policy
         self._client = httpx.AsyncClient()
         self._query_failures = 0
         self._query_breaker_until = 0.0
@@ -172,8 +178,17 @@ class EmbeddingClient:
         except Exception:
             if query:
                 self._query_failures += 1
-                if self._query_failures >= 2:
-                    self._query_breaker_until = time.monotonic() + 30.0
+                if self._query_failures >= self.policy.query_failure_limit:
+                    self._query_breaker_until = (
+                        time.monotonic() + self.policy.query_breaker_seconds
+                    )
+                    log_event(
+                        logger,
+                        logging.WARNING,
+                        "semantic_query_breaker_opened",
+                        failures=self._query_failures,
+                        cooldown_seconds=self.policy.query_breaker_seconds,
+                    )
             raise
 
     async def health(self) -> tuple[bool, float, str]:
@@ -323,11 +338,17 @@ class SegmentedVectorSnapshot:
 
 class SemanticRecallService:
     def __init__(
-        self, store: Store, config: EmbeddingConfig, *, auto_activate: bool = True
+        self,
+        store: Store,
+        config: EmbeddingConfig,
+        *,
+        auto_activate: bool = True,
+        policy: SemanticPolicy = SemanticPolicy(),
     ) -> None:
         self.store = store
         self.config = config
-        self.client = EmbeddingClient(config)
+        self.policy = policy
+        self.client = EmbeddingClient(config, policy)
         self.snapshot = SegmentedVectorSnapshot(store, config.dimensions)
         self.degraded_reason = "disabled" if not config.enabled else "no_active_space"
         self.auto_activate = auto_activate
@@ -435,7 +456,10 @@ class SemanticRecallService:
             )
         request_ms = (time.monotonic() - request_started) * 1000
         matrix = np.asarray(vectors, dtype=np.float32)
-        candidate_width = max(32, max(1, output_limit) * 8)
+        candidate_width = max(
+            self.policy.candidate_floor,
+            max(1, output_limit) * self.policy.candidate_multiplier,
+        )
         search_started = time.monotonic()
         memory_hits: dict[int, list[tuple[_VectorMeta, float]]] = {}
         if include_memory:
@@ -610,6 +634,13 @@ class SemanticRecallService:
                     exc_info=True,
                 )
             try:
-                await asyncio.wait_for(stop.wait(), timeout=0.05 if worked else 2.0)
+                await asyncio.wait_for(
+                    stop.wait(),
+                    timeout=(
+                        self.policy.active_poll_seconds
+                        if worked
+                        else self.policy.idle_poll_seconds
+                    ),
+                )
             except TimeoutError:
                 pass

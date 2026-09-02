@@ -3,15 +3,18 @@ import time
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import AsyncMock, patch
 
 import httpx
 
 from momoi.config import EmbeddingConfig
+from momoi.policies import SemanticPolicy
 from momoi.search import StringSearchBackend
 from momoi.semantic import (
     DenseEpisodeHit,
     DenseMemoryHit,
     DenseRecallEvidence,
+    EmbeddingClient,
     SemanticRecallService,
     semantic_error_category,
 )
@@ -41,6 +44,89 @@ class SemanticRecallTest(unittest.TestCase):
             semantic_error_category(httpx.ConnectTimeout("slow connect")), "timeout"
         )
         self.assertEqual(semantic_error_category(ConnectionError("offline")), "error")
+
+    def test_query_breaker_uses_declared_policy(self) -> None:
+        policy = SemanticPolicy(query_failure_limit=2, query_breaker_seconds=17)
+        transport = AsyncMock()
+        transport.post.side_effect = httpx.ConnectError("offline")
+        with patch("momoi.semantic.httpx.AsyncClient", return_value=transport):
+            client = EmbeddingClient(EmbeddingConfig(enabled=True), policy)
+
+        async def run() -> None:
+            with patch("momoi.semantic.time.monotonic", return_value=100):
+                for _ in range(2):
+                    with self.assertRaises(httpx.ConnectError):
+                        await client.encode(["query"], query=True)
+                with self.assertRaisesRegex(RuntimeError, "circuit breaker is open"):
+                    await client.encode(["query"], query=True)
+
+        asyncio.run(run())
+        self.assertEqual(transport.post.await_count, 2)
+        self.assertEqual(client._query_breaker_until, 117)
+
+    def test_candidate_width_uses_declared_policy(self) -> None:
+        policy = SemanticPolicy(candidate_floor=5, candidate_multiplier=2)
+        self.space(state="active")
+        service = SemanticRecallService(
+            self.store,
+            EmbeddingConfig(enabled=True),
+            policy=policy,
+        )
+        service.start()
+        widths: list[int] = []
+
+        async def run() -> None:
+            service.client.encode = AsyncMock(return_value=[vector()])  # type: ignore[method-assign]
+
+            def search(
+                _queries: object,
+                _types: object,
+                width: int,
+                **_scope: object,
+            ) -> dict[int, list[object]]:
+                widths.append(width)
+                return {}
+
+            service.snapshot.search = search  # type: ignore[method-assign]
+            try:
+                await service.prepare(
+                    [MemoryRecallQuery("query")],
+                    include_episode=False,
+                    output_limit=3,
+                )
+            finally:
+                await service.close()
+
+        asyncio.run(run())
+        self.assertEqual(widths, [6, 6])
+
+    def test_worker_cadence_uses_declared_policy(self) -> None:
+        policy = SemanticPolicy(active_poll_seconds=0.25, idle_poll_seconds=0.75)
+        service = SemanticRecallService(
+            self.store,
+            EmbeddingConfig(enabled=True),
+            policy=policy,
+        )
+        stop = asyncio.Event()
+        timeouts: list[float] = []
+        service.maintain_once = AsyncMock(side_effect=[True, False])  # type: ignore[method-assign]
+
+        async def wait_for(awaitable: object, *, timeout: float) -> None:
+            close = getattr(awaitable, "close", None)
+            if close is not None:
+                close()
+            timeouts.append(timeout)
+            if len(timeouts) == 2:
+                stop.set()
+            raise TimeoutError
+
+        async def run() -> None:
+            with patch("momoi.semantic.asyncio.wait_for", side_effect=wait_for):
+                await service.run_worker(stop)
+            await service.close()
+
+        asyncio.run(run())
+        self.assertEqual(timeouts, [0.25, 0.75])
 
     def setUp(self) -> None:
         self.directory = TemporaryDirectory()

@@ -78,7 +78,9 @@ class MomoiDaemon(TurnRunner):
             timezone=config.timezone,
         )
         self.semantic_recall = SemanticRecallService(
-            self.store, config.embedding
+            self.store,
+            config.embedding,
+            policy=config.policies.semantic,
         )
         self.semantic_recall.start()
         usage_plugin = None
