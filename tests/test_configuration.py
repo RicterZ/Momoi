@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
+from zoneinfo import ZoneInfo
 import asyncio
 
 
@@ -17,7 +18,6 @@ from momoi.config import (
     ConfigError,
     DashboardConfig,
     EmbeddingConfig,
-    NotificationConfig,
     ThinkingConfig,
     UsageConfig,
     load_config,
@@ -416,7 +416,8 @@ class ConfigurationTest(unittest.TestCase):
                             "host": "127.0.0.1",
                             "token": "old-hook",
                         },
-                        "notifications": {"timezone": "UTC"},
+                        "timezone": "UTC",
+                        "notifications": {},
                         "context": {},
                         "storage": {"database": "momoi.sqlite3"},
                         "logging": {},
@@ -454,7 +455,7 @@ class ConfigurationTest(unittest.TestCase):
             )
             self.assertEqual(napcat.url, "ws://napcat:3001")
             self.assertEqual(napcat.owner_qq, "999")
-            self.assertEqual(config.notifications.timezone, "Asia/Shanghai")
+            self.assertEqual(config.timezone, "Asia/Shanghai")
             self.assertEqual(config.dashboard.token, "env-dash")
             self.assertTrue(config.webhooks.enabled)
             self.assertEqual(config.webhooks.host, "0.0.0.0")
@@ -522,7 +523,7 @@ class ConfigurationTest(unittest.TestCase):
             fake_config = SimpleNamespace(
                 database=database,
                 thinking=None,
-                notifications=NotificationConfig(),
+                timezone="UTC",
             )
 
             def run(command: str, slug: str | None = None) -> list[object]:
@@ -605,7 +606,7 @@ class ConfigurationTest(unittest.TestCase):
             config = SimpleNamespace(
                 database=database,
                 thinking=None,
-                notifications=NotificationConfig(timezone="Asia/Shanghai"),
+                timezone="Asia/Shanghai",
             )
 
             def invoke(command: str, **values: object) -> list[str]:
@@ -615,7 +616,10 @@ class ConfigurationTest(unittest.TestCase):
                     title="检查天气",
                     success="给出天气建议",
                     action="查询天气",
-                    at=(datetime.now().astimezone() + timedelta(hours=1)).isoformat(),
+                    at=(
+                        datetime.now(ZoneInfo("Asia/Shanghai"))
+                        + timedelta(hours=1)
+                    ).isoformat(),
                     every_seconds=None,
                     daily=None,
                     include_closed=False,
@@ -654,7 +658,6 @@ class ConfigurationTest(unittest.TestCase):
                         "next_review_at": "",
                         "schedule": {
                             "kind": "daily",
-                            "timezone": "Asia/Shanghai",
                             "times": ["07:30"],
                         },
                     },

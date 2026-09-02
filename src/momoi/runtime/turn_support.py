@@ -3,6 +3,7 @@ import logging
 from collections.abc import Callable, Sequence
 from importlib.resources import files
 from typing import Any
+from zoneinfo import ZoneInfo
 from xml.sax.saxutils import escape
 
 from ..context_time import context_timestamp
@@ -187,6 +188,7 @@ def owner_context_message(*items: tuple[str, str]) -> dict[str, Any] | None:
 def owner_content_blocks(
     events: Sequence[Any],
     content_blocks: Callable[[Any], list[dict[str, Any]]],
+    timezone: ZoneInfo,
     runtime_text: str = "",
 ) -> list[dict[str, Any]]:
     """Lay out the current owner input with each attachment beside its words.
@@ -203,7 +205,7 @@ def owner_content_blocks(
         # that keeps the sections readable has to be part of the text.
         blocks.append({"type": "text", "text": f"{runtime_text}\n\n"})
     for index, event in enumerate(events):
-        line = f"{context_timestamp(event.occurred_at)} {event.text}".strip()
+        line = f"{context_timestamp(event.occurred_at, timezone)} {event.text}".strip()
         opening = "<current_owner_bubbles>\n" if index == 0 else ""
         blocks.append({"type": "text", "text": f"{opening}{escape(line)}"})
         blocks.extend(content_blocks(event.segments))

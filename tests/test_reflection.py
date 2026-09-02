@@ -7,7 +7,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from momoi.channel.napcat import NapCatConfig
-from momoi.config import AppConfig, LLMConfig, NotificationConfig, ReflectionConfig
+from momoi.config import AppConfig, LLMConfig, ReflectionConfig
 from momoi.runtime import REFLECTION_FINISH_SPEC, MomoiDaemon
 from momoi.runtime.parsing import parse_reflection_finish
 from momoi.models import ProviderResponse, ToolCall
@@ -29,13 +29,13 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                 memory_results=4,
                 database=Path(directory) / "momoi.sqlite3",
                 log_level="DEBUG",
-                notifications=NotificationConfig(timezone="Asia/Shanghai"),
+                timezone="Asia/Shanghai",
                 reflection=ReflectionConfig(enabled=True),
             )
             daemon = MomoiDaemon(config)
             now = datetime(2026, 7, 22, 3, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
             claimed = daemon.store.claim_due_reflection(
-                config.reflection, config.notifications.timezone, now.timestamp()
+                config.reflection, now.timestamp()
             )
             self.assertEqual(claimed["local_date"], "2026-07-21")
             occurred = datetime(
@@ -204,7 +204,6 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 daemon.store.next_reflection_due_at(
                     config.reflection,
-                    config.notifications.timezone,
                     now.timestamp(),
                 ),
                 datetime(
@@ -378,13 +377,13 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                 memory_results=4,
                 database=Path(directory) / "momoi.sqlite3",
                 log_level="DEBUG",
-                notifications=NotificationConfig(timezone="Asia/Shanghai"),
+                timezone="Asia/Shanghai",
                 reflection=ReflectionConfig(enabled=True),
             )
             daemon = MomoiDaemon(config)
             now = datetime(2026, 7, 22, 3, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
             claimed = daemon.store.claim_due_reflection(
-                config.reflection, config.notifications.timezone, now.timestamp()
+                config.reflection, now.timestamp()
             )
             self.assertEqual(claimed["local_date"], "2026-07-21")
             occurred = datetime(
@@ -538,7 +537,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                 memory_results=4,
                 database=Path(directory) / "momoi.sqlite3",
                 log_level="DEBUG",
-                notifications=NotificationConfig(timezone="Asia/Shanghai"),
+                timezone="Asia/Shanghai",
             )
             daemon = MomoiDaemon(config)
             first_now = datetime(
@@ -624,7 +623,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
 
             daemon.provider = Provider()
             first = daemon.store.claim_manual_reflection(
-                config.notifications.timezone, first_now
+                first_now
             )
             self.assertEqual(first["local_date"], "2026-07-21")
             await daemon._complete_reflection_turn("2026-07-21", asyncio.Event())
@@ -636,7 +635,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                 "topic.first_pass",
             )
             second = daemon.store.claim_manual_reflection(
-                config.notifications.timezone, second_now
+                second_now
             )
             self.assertEqual(second["state"], "running")
             self.assertNotEqual(first["claimed_at"], second["claimed_at"])
@@ -694,13 +693,13 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                 memory_results=4,
                 database=Path(directory) / "momoi.sqlite3",
                 log_level="DEBUG",
-                notifications=NotificationConfig(timezone="Asia/Shanghai"),
+                timezone="Asia/Shanghai",
                 reflection=ReflectionConfig(enabled=True),
             )
             daemon = MomoiDaemon(config)
             now = datetime(2026, 7, 22, 3, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
             claimed = daemon.store.claim_due_reflection(
-                config.reflection, config.notifications.timezone, now.timestamp()
+                config.reflection, now.timestamp()
             )
             self.assertEqual(claimed["local_date"], "2026-07-21")
             occurred = datetime(

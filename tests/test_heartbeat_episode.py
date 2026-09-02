@@ -54,7 +54,9 @@ class HeartbeatEpisodeTests(unittest.TestCase):
     def test_closed_daily_episode_is_not_reopened(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
-            now = datetime(2026, 8, 16, 10).astimezone().timestamp()
+            now = datetime(
+                2026, 8, 16, 10, tzinfo=ZoneInfo("Asia/Shanghai")
+            ).timestamp()
             closed = self._commit(store, "heartbeat-closed", now)
             store._db.execute(
                 """UPDATE conversation_episodes
@@ -138,7 +140,9 @@ class RecentHeartbeatActivityTests(unittest.TestCase):
     def test_recent_heartbeat_activities_keep_latest_six(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
-            now = datetime(2026, 8, 16, 10).astimezone().timestamp()
+            now = datetime(
+                2026, 8, 16, 10, tzinfo=ZoneInfo("Asia/Shanghai")
+            ).timestamp()
             for index in range(RECENT_HEARTBEAT_LIMIT + 1):
                 self._commit(
                     store,
@@ -154,7 +158,7 @@ class RecentHeartbeatActivityTests(unittest.TestCase):
             self.assertEqual(
                 [item["at"] for item in items],
                 [
-                    context_timestamp(now + index)
+                    context_timestamp(now + index, store.timezone)
                     for index in range(1, RECENT_HEARTBEAT_LIMIT + 1)
                 ],
             )
@@ -163,7 +167,9 @@ class RecentHeartbeatActivityTests(unittest.TestCase):
     def test_reply_followup_does_not_append_recent_heartbeat_activity(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
-            now = datetime(2026, 8, 16, 10).astimezone().timestamp()
+            now = datetime(
+                2026, 8, 16, 10, tzinfo=ZoneInfo("Asia/Shanghai")
+            ).timestamp()
             self._commit(store, "heartbeat-1", now, "刷微博")
             self.assertEqual(
                 [item["text"] for item in store.recent_heartbeat_activities()],
@@ -198,7 +204,9 @@ class RecentHeartbeatActivityTests(unittest.TestCase):
     def test_recent_heartbeat_activities_read_existing_records(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
-            now = datetime(2026, 8, 16, 17, 6, 36).astimezone().timestamp()
+            now = datetime(
+                2026, 8, 16, 17, 6, 36, tzinfo=ZoneInfo("Asia/Shanghai")
+            ).timestamp()
             for index, activity in enumerate(["刷微博", "整理笔记", "发呆"], start=1):
                 turn_id = f"legacy-heartbeat-{index}"
                 record = (

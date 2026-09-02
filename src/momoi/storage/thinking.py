@@ -8,6 +8,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from ..logging_context import log_event
 from ..search import (
@@ -45,8 +46,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS calls_call_id ON calls(call_id);
 """
 
 
-def month_key(when: float) -> str:
-    return datetime.fromtimestamp(when).astimezone().strftime("%Y-%m")
+def month_key(when: float, timezone: ZoneInfo) -> str:
+    return datetime.fromtimestamp(when, timezone).strftime("%Y-%m")
 
 
 def parse_month(value: str) -> str:
@@ -59,13 +60,13 @@ def parse_month(value: str) -> str:
     return text
 
 
-def month_bounds(month: str) -> tuple[float, float]:
+def month_bounds(month: str, timezone: ZoneInfo) -> tuple[float, float]:
     year, month_number = (int(part) for part in parse_month(month).split("-"))
-    start = datetime(year, month_number, 1).astimezone()
+    start = datetime(year, month_number, 1, tzinfo=timezone)
     if month_number == 12:
-        end = datetime(year + 1, 1, 1).astimezone()
+        end = datetime(year + 1, 1, 1, tzinfo=timezone)
     else:
-        end = datetime(year, month_number + 1, 1).astimezone()
+        end = datetime(year, month_number + 1, 1, tzinfo=timezone)
     return start.timestamp(), end.timestamp()
 
 
@@ -87,11 +88,13 @@ class ThinkingStore:
     def __init__(
         self,
         directory: Path,
+        timezone: ZoneInfo,
         search_backend: SearchBackend | None = None,
     ) -> None:
         self.directory = directory.expanduser().resolve()
         self.directory.mkdir(parents=True, exist_ok=True)
         self._search_backend = search_backend or StringSearchBackend()
+        self._timezone = timezone
         self._dbs: dict[str, sqlite3.Connection] = {}
 
     def close(self) -> None:
@@ -116,7 +119,7 @@ class ThinkingStore:
     ) -> None:
         text = str(reasoning or "")
         codec, blob = encode_reasoning(text)
-        month = month_key(created_at)
+        month = month_key(created_at, self._timezone)
         connection = self._db(month)
         with connection:
             connection.execute(
@@ -236,14 +239,14 @@ class ThinkingStore:
     ) -> list[str]:
         available = self._available_months()
         if hint_at is not None:
-            key = month_key(hint_at)
+            key = month_key(hint_at, self._timezone)
             nearby = [month for month in available if abs(_month_index(month) - _month_index(key)) <= 1]
             if nearby:
                 return nearby
         selected = [
             month
             for month in available
-            if _month_overlaps(month, after, before)
+            if _month_overlaps(month, after, before, self._timezone)
         ]
         if turn_id and after is None and before is None and hint_at is None:
             selected = available[-_MAX_ALL_MONTHS :]
@@ -312,9 +315,12 @@ def _month_index(month: str) -> int:
 
 
 def _month_overlaps(
-    month: str, after: float | None, before: float | None
+    month: str,
+    after: float | None,
+    before: float | None,
+    timezone: ZoneInfo,
 ) -> bool:
-    start, end = month_bounds(month)
+    start, end = month_bounds(month, timezone)
     if after is not None and end <= after:
         return False
     if before is not None and start >= before:

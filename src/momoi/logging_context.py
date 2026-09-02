@@ -6,6 +6,7 @@ import uuid
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from typing import Any, Iterator, Mapping
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -313,12 +314,13 @@ def log_event(
 
 
 class KeyValueFormatter(logging.Formatter):
-    def __init__(self, *, color: bool = False) -> None:
+    def __init__(self, timezone: ZoneInfo, *, color: bool = False) -> None:
         super().__init__()
+        self.timezone = timezone
         self.color = color
 
     def format(self, record: logging.LogRecord) -> str:
-        timestamp = datetime.fromtimestamp(record.created).astimezone().strftime(
+        timestamp = datetime.fromtimestamp(record.created, self.timezone).strftime(
             "%Y-%m-%d %H:%M:%S"
         )
         level = record.levelname.ljust(7)
@@ -358,9 +360,9 @@ class KeyValueFormatter(logging.Formatter):
         return f"{color}{value}{_COLOR_RESET}" if color else value
 
 
-def configure_logging(level: int) -> None:
+def configure_logging(level: int, timezone: ZoneInfo) -> None:
     handler = logging.StreamHandler()
     handler.setFormatter(
-        KeyValueFormatter(color="NO_COLOR" not in os.environ)
+        KeyValueFormatter(timezone, color="NO_COLOR" not in os.environ)
     )
     logging.basicConfig(level=level, handlers=[handler], force=True)

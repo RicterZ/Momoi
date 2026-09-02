@@ -7,6 +7,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta
 from importlib.metadata import version
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from .agenda_tools import AgendaTools
 from .channel import login_channel
@@ -113,7 +114,7 @@ def emotion(args: argparse.Namespace) -> None:
         config.database,
         args.workspace,
         thinking=config.thinking,
-        timezone=config.notifications.timezone,
+        timezone=config.timezone,
     )
     try:
         if args.emotion_command == "add":
@@ -152,14 +153,15 @@ def goal(args: argparse.Namespace) -> None:
         config.database,
         args.workspace,
         thinking=config.thinking,
-        timezone=config.notifications.timezone,
+        timezone=config.timezone,
     )
     try:
         if args.goal_command == "list":
             for item in store.list_goals(args.include_closed):
                 review = (
-                    datetime.fromtimestamp(float(item["next_review_at"]))
-                    .astimezone()
+                    datetime.fromtimestamp(
+                        float(item["next_review_at"]), store.timezone
+                    )
                     .isoformat(timespec="seconds")
                     if item["next_review_at"] is not None
                     else "-"
@@ -181,18 +183,16 @@ def goal(args: argparse.Namespace) -> None:
             if args.every_seconds is not None:
                 arguments["schedule"] = {
                     "kind": "interval",
-                    "timezone": config.notifications.timezone,
                     "every_seconds": args.every_seconds,
                 }
             elif args.daily is not None:
                 arguments["schedule"] = {
                     "kind": "daily",
-                    "timezone": config.notifications.timezone,
                     "times": args.daily,
                 }
             else:
                 arguments["next_review_at"] = args.at or (
-                    datetime.now().astimezone() + timedelta(seconds=1)
+                    datetime.now(store.timezone) + timedelta(seconds=1)
                 ).isoformat()
             result = tools.execute(
                 ToolCall("cli-goal-add", "goal_create", arguments),
@@ -237,7 +237,7 @@ async def embedding(args: argparse.Namespace) -> None:
         config.database,
         args.workspace,
         thinking=config.thinking,
-        timezone=config.notifications.timezone,
+        timezone=config.timezone,
     )
     service = SemanticRecallService(
         store, embedding_config, auto_activate=False
@@ -305,7 +305,10 @@ async def run(
     config = load_config(config_path)
     if dashboard and not config.dashboard.token:
         raise ValueError("dashboard.token is required when --dashboard is enabled")
-    configure_logging(getattr(logging, config.log_level, logging.INFO))
+    configure_logging(
+        getattr(logging, config.log_level, logging.INFO),
+        ZoneInfo(config.timezone),
+    )
     for noisy_logger in ("httpx", "httpcore", "mcp"):
         logging.getLogger(noisy_logger).setLevel(logging.WARNING)
     stop = asyncio.Event()

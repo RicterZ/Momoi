@@ -40,7 +40,6 @@ class LLMConfig:
 
 @dataclass(frozen=True)
 class NotificationConfig:
-    timezone: str = "UTC"
     quiet_start: str | None = None
     quiet_end: str | None = None
     cooldown_seconds: float = 1800
@@ -128,6 +127,7 @@ class AppConfig:
     memory_results: int
     database: Path
     log_level: str
+    timezone: str = "UTC"
     max_input_tokens: int = 142222
     context_compaction_ratio: float = 0.9
     summary_results: int = 8
@@ -235,9 +235,8 @@ def _apply_env_overrides(raw: dict[str, Any]) -> None:
             if value := _env("MOMOI_OWNER_QQ"):
                 napcat["owner_qq"] = value
 
-    notifications = raw.setdefault("notifications", {})
-    if isinstance(notifications, dict) and (value := _env("MOMOI_TIMEZONE")):
-        notifications["timezone"] = value
+    if value := _env("MOMOI_TIMEZONE"):
+        raw["timezone"] = value
 
     dashboard = raw.setdefault("dashboard", {})
     if isinstance(dashboard, dict) and (value := _env("MOMOI_DASHBOARD_TOKEN")):
@@ -337,11 +336,15 @@ def load_config(path: str | Path) -> AppConfig:
     storage_raw = _mapping(raw.get("storage"), "storage")
     logging_raw = _mapping(raw.get("logging"), "logging")
     notification_raw = _mapping(raw.get("notifications", {}), "notifications")
-    notification_timezone = str(notification_raw.get("timezone", "UTC"))
+    if "timezone" in notification_raw:
+        raise ConfigError(
+            "notifications.timezone was removed; use the top-level timezone"
+        )
+    app_timezone = str(raw.get("timezone", "UTC"))
     try:
-        ZoneInfo(notification_timezone)
+        ZoneInfo(app_timezone)
     except (ZoneInfoNotFoundError, ValueError):
-        raise ConfigError("notifications.timezone must be a valid IANA timezone") from None
+        raise ConfigError("timezone must be a valid IANA timezone") from None
     quiet_start = _clock(notification_raw.get("quiet_start"), "notifications.quiet_start")
     quiet_end = _clock(notification_raw.get("quiet_end"), "notifications.quiet_end")
     if (quiet_start is None) != (quiet_end is None) or (
@@ -515,6 +518,7 @@ def load_config(path: str | Path) -> AppConfig:
         memory_results=min(6, max(0, int(context_raw.get("memory_results", 6)))),
         database=database,
         log_level=str(logging_raw.get("level", "DEBUG")).upper(),
+        timezone=app_timezone,
         max_input_tokens=max_input_tokens,
         context_compaction_ratio=context_compaction_ratio,
         summary_results=min(
@@ -525,7 +529,6 @@ def load_config(path: str | Path) -> AppConfig:
         heartbeat_prompt=heartbeat_prompt,
         mcp_config=mcp_config,
         notifications=NotificationConfig(
-            timezone=notification_timezone,
             quiet_start=quiet_start,
             quiet_end=quiet_end,
             cooldown_seconds=_nonnegative(

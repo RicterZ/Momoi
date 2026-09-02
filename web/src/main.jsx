@@ -124,6 +124,7 @@ function formatDate(value, dateOnly = false) {
       : new Date(String(value).replace(" ", "T"));
   if (Number.isNaN(date.valueOf())) return String(value);
   return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: document.documentElement.dataset.timezone || "UTC",
     year: "numeric",
     month: "short",
     day: "numeric",
@@ -1307,8 +1308,7 @@ function Memories({ refreshKey, token, onMutated }) {
 function dailyScheduleText(schedule) {
   const times = Array.isArray(schedule?.times) ? schedule.times : [];
   const timeText = times.length ? times.join("、") : "未设置时间";
-  const timezoneText = schedule?.timezone ? ` · ${schedule.timezone}` : "";
-  return `每天 ${timeText}${timezoneText}`;
+  return `每天 ${timeText}`;
 }
 
 function scheduleText(schedule, nextReview) {
@@ -1804,11 +1804,6 @@ function Emotions({ refreshKey, token, onMutated }) {
   );
 }
 
-function currentMonth() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-}
-
 function olderMonths(available, month) {
   return (available || []).filter((value) => value < month);
 }
@@ -1868,7 +1863,7 @@ function Thinking({ refreshKey, token, routeParam }) {
     (async () => {
       try {
         let rows = [];
-        let month = currentMonth();
+        let month = "";
         let available = [];
         while (true) {
           const data = await api(
@@ -2406,6 +2401,7 @@ function App() {
   const [token, setToken] = useState(readToken);
   const [tokenDraft, setTokenDraft] = useState("");
   const [version, setVersion] = useState("");
+  const [timezone, setTimezone] = useState("UTC");
   const locked = !token;
   const [pageTitle, eyebrow] = pages[view];
   const View = viewComponents[view];
@@ -2431,6 +2427,11 @@ function App() {
         }
         if (!response.ok) return;
         const payload = await response.json();
+        if (typeof payload.timezone === "string" && payload.timezone.trim()) {
+          const configured = payload.timezone.trim();
+          document.documentElement.dataset.timezone = configured;
+          setTimezone(configured);
+        }
         if (typeof payload.version === "string" && payload.version.trim()) {
           setVersion(payload.version.trim());
         }
@@ -2445,6 +2446,7 @@ function App() {
     <>
       <div
         className={`shell${locked ? " is-locked" : ""}${isRecord ? " is-record" : ""}`}
+        data-timezone={timezone}
         aria-hidden={locked || undefined}
         inert={locked || undefined}
       >

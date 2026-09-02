@@ -1,12 +1,23 @@
 import time
+from zoneinfo import ZoneInfo
 
 from momoi.runtime.transcript import (
     build_groups,
-    build_transcript,
-    render_messages,
+    build_transcript as _build_transcript,
+    render_messages as _render_messages,
     select_groups,
     turn_labels,
 )
+
+TEST_TIMEZONE = ZoneInfo("Asia/Shanghai")
+
+
+def render_messages(*args, **kwargs):
+    return _render_messages(*args, timezone=TEST_TIMEZONE, **kwargs)
+
+
+def build_transcript(*args, **kwargs):
+    return _build_transcript(*args, timezone=TEST_TIMEZONE, **kwargs)
 
 BASE = time.mktime((2026, 8, 31, 20, 0, 0, 0, 0, -1))
 

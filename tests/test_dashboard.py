@@ -254,6 +254,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         ).json()
         self.assertTrue(health["ok"])
         self.assertTrue(str(health["version"]).strip())
+        self.assertEqual(health["timezone"], "UTC")
         self.assertEqual(
             overview["heartbeat"],
             {

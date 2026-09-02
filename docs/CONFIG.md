@@ -11,6 +11,16 @@ Relative paths are resolved from the directory containing `config.json`.
 Absolute paths are accepted for every path field. `config.json` does not expand
 `${VAR}` placeholders.
 
+## Timezone
+
+```json
+{"timezone": "Asia/Shanghai"}
+```
+
+`timezone` is the single IANA timezone used by all Momoi timestamps, local-day
+boundaries, schedules, quiet hours, logs, and model context. It defaults to
+`UTC`. Individual subsystems and Goals cannot override it.
+
 ## LLM
 
 ```json
@@ -302,7 +312,6 @@ Both values must be non-negative.
 ```json
 {
   "notifications": {
-    "timezone": "UTC",
     "quiet_start": null,
     "quiet_end": null,
     "cooldown_seconds": 1800,
@@ -313,7 +322,6 @@ Both values must be non-negative.
 
 | Field | Default | Description |
 | --- | --- | --- |
-| `timezone` | `UTC` | IANA timezone for schedules and quiet hours |
 | `quiet_start` | unset | Quiet-window start in local `HH:MM` |
 | `quiet_end` | unset | Quiet-window end in local `HH:MM` |
 | `cooldown_seconds` | `1800` | Non-negative interval between proactive contacts with the same key |
@@ -372,7 +380,7 @@ omitted. Overnight windows are supported.
 | Field | Default | Description |
 | --- | --- | --- |
 | `enabled` | `false` | Enable daily reflection |
-| `at` | `03:00` | Local run time in `HH:MM`, using `notifications.timezone` |
+| `at` | `03:00` | Local run time in `HH:MM`, using the top-level `timezone` |
 
 ## Episode maintenance
 
@@ -488,7 +496,7 @@ Environment values override `config.json` for the current process.
 | `MOMOI_NAPCAT_URL` | `channels.enabled.napcat.url` |
 | `MOMOI_OWNER_QQ` | `channels.enabled.napcat.owner_qq` |
 | `MOMOI_PRIMARY` | `channels.primary` |
-| `MOMOI_TIMEZONE` | `notifications.timezone` |
+| `MOMOI_TIMEZONE` | `timezone` |
 | `MOMOI_DASHBOARD_TOKEN` | `dashboard.token` |
 | `MOMOI_WEBHOOKS_ENABLED` | `webhooks.enabled` |
 | `MOMOI_WEBHOOKS_HOST` | `webhooks.host` |

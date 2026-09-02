@@ -12,8 +12,10 @@ from .base import (
 )
 
 
-SHANGHAI = ZoneInfo("Asia/Shanghai")
-PEAK_START = datetime(2026, 8, 17, tzinfo=SHANGHAI)
+# DeepSeek publishes its billing windows in Beijing time. This is a provider
+# pricing rule, not Momoi's application/display timezone.
+DEEPSEEK_BILLING_TIMEZONE = ZoneInfo("Asia/Shanghai")
+PEAK_START = datetime(2026, 8, 17, tzinfo=DEEPSEEK_BILLING_TIMEZONE)
 _RATES = {
     "deepseek-v4-flash": {
         "flat": (0.02, 1.0, 2.0),
@@ -49,7 +51,7 @@ class DeepSeekPlugin(UsagePlugin):
 
     def token_rates(self, model: str, timestamp: float) -> tuple[float, float, float]:
         table = _RATES.get(model) or _RATES["deepseek-v4-flash"]
-        when = datetime.fromtimestamp(timestamp, SHANGHAI)
+        when = datetime.fromtimestamp(timestamp, DEEPSEEK_BILLING_TIMEZONE)
         if when < PEAK_START:
             return table["flat"]
         minutes = when.hour * 60 + when.minute

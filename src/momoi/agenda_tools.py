@@ -18,8 +18,9 @@ logger = logging.getLogger(__name__)
 AGENDA_TOOL_POLICY = """### Agenda tools
 
 - Every active goal needs a concrete next action and future review time.
-- A recurring goal may use an interval or daily `schedule`. The runtime computes
-  each next review while the Goal remains open.
+- A recurring goal may use an interval or daily `schedule`. Daily times use the
+  application's single configured timezone. The runtime computes each next
+  review while the Goal remains open.
 - `goal_update` keeps a Goal open with its latest state. `goal_finish` closes it as
   successfully completed when its success criteria are satisfied. `goal_cancel`
   closes it without claiming success when it should no longer be pursued.
@@ -48,23 +49,15 @@ def _schedule_schema(description: str | None = None) -> dict[str, Any]:
                 "type": "object",
                 "properties": {
                     "kind": {"type": "string", "enum": ["interval"]},
-                    "timezone": {
-                        "type": "string",
-                        "description": "IANA timezone, for example Asia/Shanghai.",
-                    },
                     "every_seconds": {"type": "integer", "minimum": 60},
                 },
-                "required": ["kind", "timezone", "every_seconds"],
+                "required": ["kind", "every_seconds"],
                 "additionalProperties": False,
             },
             {
                 "type": "object",
                 "properties": {
                     "kind": {"type": "string", "enum": ["daily"]},
-                    "timezone": {
-                        "type": "string",
-                        "description": "IANA timezone, for example Asia/Shanghai.",
-                    },
                     "times": {
                         "type": "array",
                         "description": "One or more distinct local times in HH:MM format.",
@@ -77,7 +70,7 @@ def _schedule_schema(description: str | None = None) -> dict[str, Any]:
                         "uniqueItems": True,
                     },
                 },
-                "required": ["kind", "timezone", "times"],
+                "required": ["kind", "times"],
                 "additionalProperties": False,
             },
         ],
@@ -104,8 +97,8 @@ AGENDA_TOOL_SPECS: list[dict[str, Any]] = [
                     "description": "ISO 8601 timestamp with timezone.",
                 },
                 "schedule": _schedule_schema(
-                    "Recurring interval or daily local-time schedule. Use instead "
-                    "of next_review_at."
+                    "Recurring interval or daily schedule in the configured app "
+                    "timezone. Use instead of next_review_at."
                 ),
             },
             "required": ["title", "success_criteria", "next_action"],
@@ -288,7 +281,7 @@ class AgendaTools:
         if schedule is not None and review_value:
             raise ValueError("use schedule or next_review_at, not both")
         next_review_at = (
-            next_schedule_at(schedule)
+            next_schedule_at(schedule, self.store.timezone)
             if schedule is not None
             else _future_timestamp(review_value, "next_review_at")
         )
@@ -343,7 +336,9 @@ class AgendaTools:
             if status == "active" and goal.get("schedule"):
                 if str(arguments.get("next_review_at") or "").strip():
                     raise ValueError("recurring active goal does not accept next_review_at")
-                goal["next_review_at"] = next_schedule_at(goal["schedule"])
+                goal["next_review_at"] = next_schedule_at(
+                    goal["schedule"], self.store.timezone
+                )
             else:
                 goal["next_review_at"] = _future_timestamp(
                     arguments.get("next_review_at"), "next_review_at"

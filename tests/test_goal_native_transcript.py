@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from momoi.channel.napcat import NapCatConfig
 from momoi.config import AppConfig, LLMConfig
@@ -41,7 +42,7 @@ class GoalNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                         "success_criteria": "记录检查结果",
                         "next_action": "执行检查",
                         "next_review_at": (
-                            datetime.now().astimezone() + timedelta(minutes=1)
+                            datetime.now(ZoneInfo("UTC")) + timedelta(minutes=1)
                         ).isoformat(),
                     },
                 ),
@@ -87,7 +88,7 @@ class GoalNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                                 "waiting_for": "下一次检查",
                                 "latest_result": "本次检查正常",
                                 "next_review_at": (
-                                    datetime.now().astimezone()
+                                    datetime.now(ZoneInfo("UTC"))
                                     + timedelta(hours=1)
                                 ).isoformat(),
                             },

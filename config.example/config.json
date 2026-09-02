@@ -1,4 +1,5 @@
 {
+  "timezone": "UTC",
   "llm": {
     "api_format": "anthropic",
     "base_url": "https://api.example.com",
@@ -90,7 +91,6 @@
     "max_total_tokens": 0
   },
   "notifications": {
-    "timezone": "UTC",
     "quiet_start": null,
     "quiet_end": null,
     "cooldown_seconds": 1800,

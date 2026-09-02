@@ -1178,7 +1178,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     memory_results=2,
                     database=Path(directory) / "momoi.sqlite3",
                     log_level="INFO",
-                    notifications=NotificationConfig(timezone="Asia/Shanghai"),
+                    timezone="Asia/Shanghai",
                 )
             )
             command = IncomingMessage(
@@ -1823,7 +1823,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         "success_criteria": "完成",
                         "next_action": "继续",
                         "next_review_at": (
-                            datetime.now().astimezone() + timedelta(milliseconds=20)
+                            datetime.now(ZoneInfo("UTC")) + timedelta(milliseconds=20)
                         ).isoformat(),
                     },
                 ),
@@ -1886,8 +1886,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 memory_results=2,
                 database=Path(directory) / "momoi.sqlite3",
                 log_level="INFO",
+                timezone="Asia/Shanghai",
                 notifications=NotificationConfig(
-                    timezone="Asia/Shanghai",
                     cooldown_seconds=0,
                     pending_owner_delay_seconds=0,
                 ),
@@ -2048,7 +2048,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "success_criteria": "写下一份可玩的关卡草案",
                                 "next_action": "把玩法联想整理成关卡结构",
                                 "next_review_at": (
-                                    datetime.now().astimezone() + timedelta(hours=1)
+                                    datetime.now(ZoneInfo("UTC")) + timedelta(hours=1)
                                 ).isoformat(),
                             },
                         )
@@ -2955,7 +2955,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         "success_criteria": "完成",
                         "next_action": "继续执行",
                         "next_review_at": (
-                            datetime.now().astimezone() + timedelta(milliseconds=20)
+                            datetime.now(ZoneInfo("UTC")) + timedelta(milliseconds=20)
                         ).isoformat(),
                     },
                 ),

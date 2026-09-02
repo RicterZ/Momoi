@@ -6,7 +6,6 @@ import logging
 from typing import TYPE_CHECKING
 
 from ..config import AppConfig
-from ..context_time import context_timestamp
 from ..logging_context import log_event, safe_preview
 from ..search import search_alternatives
 from ..storage import (
@@ -898,12 +897,12 @@ def assemble_recent_external_events(
         last_seen = float(event["last_seen"])
         occurrences = int(event["occurrences"])
         lines = [
-            f"E-{index} {context_timestamp(last_seen)} [{event['source']}]",
+            f"E-{index} {store.context_timestamp(last_seen)} [{event['source']}]",
             f"  event: {event['event']}",
         ]
         if occurrences > 1:
             lines.append(
-                f"  observations: {occurrences} since {context_timestamp(first_seen)}"
+                f"  observations: {occurrences} since {store.context_timestamp(first_seen)}"
             )
         blocks.append("\n".join(lines))
     rendered = "\n\n".join(blocks)

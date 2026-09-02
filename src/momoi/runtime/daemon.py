@@ -2,8 +2,7 @@ import asyncio
 import logging
 import random
 from collections import deque
-from datetime import datetime
-from time import monotonic
+from time import monotonic, time
 from typing import Any
 
 from ..agenda_tools import AgendaTools
@@ -76,7 +75,7 @@ class MomoiDaemon(TurnRunner):
             config.workspace,
             config.policies.memory,
             thinking=config.thinking,
-            timezone=config.notifications.timezone,
+            timezone=config.timezone,
         )
         self.semantic_recall = SemanticRecallService(
             self.store, config.embedding
@@ -385,9 +384,7 @@ class MomoiDaemon(TurnRunner):
             )
             return
         if message.text.strip() == "/reflect":
-            reflection = self.store.claim_manual_reflection(
-                self.config.notifications.timezone
-            )
+            reflection = self.store.claim_manual_reflection()
             if reflection is not None:
                 log_event(
                     logger,
@@ -728,7 +725,7 @@ class MomoiDaemon(TurnRunner):
         retry_at = self.store.next_episode_annealing_retry_at()
         if retry_at is None:
             return
-        delay = max(1.0, retry_at - datetime.now().timestamp())
+        delay = max(1.0, retry_at - time())
         try:
             await asyncio.wait_for(
                 self.episode_annealing_requested.wait(),
@@ -818,9 +815,7 @@ class MomoiDaemon(TurnRunner):
                 )
                 await self.autonomous.put(AutonomousJob.goal(str(goal["id"])))
                 continue
-            reflection = self.store.claim_due_reflection(
-                self.config.reflection, self.config.notifications.timezone
-            )
+            reflection = self.store.claim_due_reflection(self.config.reflection)
             if reflection is not None:
                 log_event(
                     logger,
@@ -859,7 +854,6 @@ class MomoiDaemon(TurnRunner):
                     self.store.next_goal_due_at(),
                     self.store.next_reflection_due_at(
                         self.config.reflection,
-                        self.config.notifications.timezone,
                     ),
                     self.store.next_heartbeat_due_at(self.config.heartbeat.enabled),
                 )
@@ -876,7 +870,7 @@ class MomoiDaemon(TurnRunner):
             due_at = min(due_times)
             timeout = min(
                 AGENDA_POLL_SECONDS,
-                max(0.0, due_at - datetime.now().timestamp()),
+                max(0.0, due_at - time()),
             )
             try:
                 await asyncio.wait_for(self.agenda_changed.wait(), timeout=timeout)

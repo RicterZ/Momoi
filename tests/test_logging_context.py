@@ -2,6 +2,7 @@ import asyncio
 import io
 import logging
 import unittest
+from zoneinfo import ZoneInfo
 
 from momoi.logging_context import (
     KeyValueFormatter,
@@ -20,7 +21,7 @@ class LoggingContextTest(unittest.TestCase):
         logger.propagate = False
         logger.setLevel(logging.DEBUG)
         handler = logging.StreamHandler(stream)
-        handler.setFormatter(KeyValueFormatter())
+        handler.setFormatter(KeyValueFormatter(ZoneInfo("UTC")))
         logger.addHandler(handler)
 
         with log_context(stage="owner", turn_id="turn-1"):
@@ -75,8 +76,8 @@ class LoggingContextTest(unittest.TestCase):
             (),
             None,
         )
-        plain = KeyValueFormatter().format(record)
-        colored = KeyValueFormatter(color=True).format(record)
+        plain = KeyValueFormatter(ZoneInfo("UTC")).format(record)
+        colored = KeyValueFormatter(ZoneInfo("UTC"), color=True).format(record)
         self.assertNotIn("\033[", plain)
         self.assertTrue(colored.startswith("\033[33m"))
         self.assertTrue(colored.endswith("\033[0m"))

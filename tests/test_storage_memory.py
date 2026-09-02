@@ -1492,7 +1492,7 @@ class StorageMemoryTest(unittest.TestCase):
         daily = schedules[0]["oneOf"][1]
         self.assertIn("times", daily["properties"])
         self.assertNotIn("at", daily["properties"])
-        self.assertEqual(daily["required"], ["kind", "timezone", "times"])
+        self.assertEqual(daily["required"], ["kind", "times"])
         self.assertNotIn("reminder_create", {item["name"] for item in AGENDA_TOOL_SPECS})
         self.assertIn("Use a Goal for every future action", AGENDA_TOOL_POLICY)
         self.assertIn("governed", AGENDA_TOOL_POLICY)
@@ -2188,7 +2188,7 @@ class StorageMemoryTest(unittest.TestCase):
                         "success_criteria": "确认检查完成",
                         "next_action": "再次检查",
                         "next_review_at": (
-                            datetime.now().astimezone() + timedelta(milliseconds=20)
+                            datetime.now(ZoneInfo("UTC")) + timedelta(milliseconds=20)
                         ).isoformat(),
                     },
                 ),
@@ -2214,7 +2214,7 @@ class StorageMemoryTest(unittest.TestCase):
                         "waiting_for": "下一次检查时间",
                         "latest_result": "本次检查正常",
                         "next_review_at": (
-                            datetime.now().astimezone() + timedelta(hours=1)
+                            datetime.now(ZoneInfo("UTC")) + timedelta(hours=1)
                         ).isoformat(),
                     },
                 ),
@@ -2301,7 +2301,10 @@ class StorageMemoryTest(unittest.TestCase):
 
             context = json.loads(store.self_state_context(now=1180))
 
-            self.assertEqual(context["mood"]["updated_at"], context_timestamp(1000))
+            self.assertEqual(
+                context["mood"]["updated_at"],
+                context_timestamp(1000, store.timezone),
+            )
             self.assertEqual(context["mood"]["age_minutes"], 3)
             store.close()
 
@@ -2313,12 +2316,14 @@ class StorageMemoryTest(unittest.TestCase):
             min_interval_seconds=60,
             max_interval_seconds=600,
         )
-        notifications = NotificationConfig(timezone="Asia/Shanghai")
+        notifications = NotificationConfig()
         with (
             tempfile.TemporaryDirectory() as directory,
             patch("momoi.storage.store.time.time", return_value=now),
         ):
-            store = Store(Path(directory) / "momoi.sqlite3")
+            store = Store(
+                Path(directory) / "momoi.sqlite3", timezone="Asia/Shanghai"
+            )
             self.assertEqual(store.self_state()["next_heartbeat_at"], 0)
             store.ensure_heartbeat(heartbeat, now)
             self.assertEqual(store.next_heartbeat_due_at(True), now + 60)
@@ -3174,7 +3179,6 @@ class StorageMemoryTest(unittest.TestCase):
                         "schedule": {
                             "kind": "interval",
                             "every_seconds": 3600,
-                            "timezone": "Asia/Shanghai",
                         },
                     },
                 ),
@@ -3254,8 +3258,8 @@ class StorageMemoryTest(unittest.TestCase):
                 {
                     "kind": "daily",
                     "times": ["08:00"],
-                    "timezone": "Asia/Shanghai",
                 },
+                ZoneInfo("Asia/Shanghai"),
                 after.timestamp(),
             )
             self.assertEqual(
@@ -3267,7 +3271,6 @@ class StorageMemoryTest(unittest.TestCase):
                     {
                         "kind": "daily",
                         "at": "08:00",
-                        "timezone": "Asia/Shanghai",
                     }
                 )
 
@@ -3275,8 +3278,8 @@ class StorageMemoryTest(unittest.TestCase):
                 {
                     "kind": "daily",
                     "times": ["20:00", "08:00", "12:00"],
-                    "timezone": "Asia/Shanghai",
                 },
+                ZoneInfo("Asia/Shanghai"),
                 after.timestamp(),
             )
             self.assertEqual(
@@ -3287,14 +3290,77 @@ class StorageMemoryTest(unittest.TestCase):
                 {
                     "kind": "daily",
                     "times": ["08:00", "12:00", "20:00"],
-                    "timezone": "Asia/Shanghai",
                 },
+                ZoneInfo("Asia/Shanghai"),
                 datetime(2026, 7, 20, 20, tzinfo=ZoneInfo("Asia/Shanghai")).timestamp(),
             )
             self.assertEqual(
                 datetime.fromtimestamp(next_day, ZoneInfo("Asia/Shanghai")),
                 datetime(2026, 7, 21, 8, tzinfo=ZoneInfo("Asia/Shanghai")),
             )
+            store.close()
+
+    def test_legacy_goal_timezone_is_removed_without_delaying_due_work(self) -> None:
+        zone = ZoneInfo("Asia/Shanghai")
+        startup = datetime(2030, 1, 1, 7, 0, tzinfo=zone).timestamp()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "momoi.sqlite3"
+            store = Store(path)
+            draft = TurnDraft()
+            created = AgendaTools(store).execute(
+                ToolCall(
+                    "legacy-daily",
+                    "goal_create",
+                    {
+                        "title": "晨间检查",
+                        "success_criteria": "每天完成检查",
+                        "next_action": "检查",
+                        "schedule": {"kind": "daily", "times": ["08:00"]},
+                    },
+                ),
+                draft,
+                authority="owner",
+                source_event_id="test",
+                allow_notify=False,
+            )
+            self.assertTrue(created["ok"], created)
+            store.commit_goal_draft(draft)
+            goal_id = str(created["goal"]["id"])
+            with store._db:
+                store._db.execute(
+                    "UPDATE goals SET schedule_json=?, next_review_at=? WHERE id=?",
+                    (
+                        json.dumps(
+                            {
+                                "kind": "daily",
+                                "timezone": "UTC",
+                                "times": ["08:00"],
+                            }
+                        ),
+                        datetime(2030, 1, 2, tzinfo=zone).timestamp(),
+                        goal_id,
+                    ),
+                )
+            store.close()
+
+            with patch("momoi.storage.store.time.time", return_value=startup):
+                store = Store(path, timezone="Asia/Shanghai")
+            goal = store.goal(goal_id)
+            self.assertNotIn("timezone", goal["schedule"])
+            self.assertEqual(
+                datetime.fromtimestamp(goal["next_review_at"], zone),
+                datetime(2030, 1, 1, 8, 0, tzinfo=zone),
+            )
+            with store._db:
+                store._db.execute(
+                    "UPDATE goals SET next_review_at=? WHERE id=?",
+                    (startup - 1, goal_id),
+                )
+            store.close()
+
+            with patch("momoi.storage.store.time.time", return_value=startup):
+                store = Store(path, timezone="Asia/Shanghai")
+            self.assertEqual(store.goal(goal_id)["next_review_at"], startup - 1)
             store.close()
 
     def test_notification_policy_delays_without_replaying_goal_work(self) -> None:
@@ -3324,9 +3390,10 @@ class StorageMemoryTest(unittest.TestCase):
 
         zone = ZoneInfo("Asia/Shanghai")
         with tempfile.TemporaryDirectory() as directory:
-            store = Store(Path(directory) / "momoi.sqlite3")
+            store = Store(
+                Path(directory) / "momoi.sqlite3", timezone="Asia/Shanghai"
+            )
             quiet = NotificationConfig(
-                timezone="Asia/Shanghai",
                 quiet_start="23:00",
                 quiet_end="08:00",
                 cooldown_seconds=3600,
@@ -3349,14 +3416,15 @@ class StorageMemoryTest(unittest.TestCase):
             store.close()
 
         with tempfile.TemporaryDirectory() as directory:
-            store = Store(Path(directory) / "momoi.sqlite3")
+            store = Store(
+                Path(directory) / "momoi.sqlite3", timezone="Asia/Shanghai"
+            )
             now = datetime(2030, 1, 2, 10, 0, tzinfo=zone).timestamp()
             pending = IncomingMessage("qq:pending", "pending", "主人消息", now, now)
             store.add_event(pending)
             add(store, "normal", "normal.status", "normal", now)
             add(store, "urgent", "urgent.failure", "urgent", now)
             policy = NotificationConfig(
-                timezone="Asia/Shanghai",
                 cooldown_seconds=0,
                 pending_owner_delay_seconds=60,
             )

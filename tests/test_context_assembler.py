@@ -635,7 +635,7 @@ class ContextAssemblerTest(unittest.TestCase):
             )
             self.assertEqual(external.count("event: 门锁超时未关"), 1)
             self.assertIn("observations: 12 since", external)
-            self.assertIn(context_timestamp(31), external)
+            self.assertIn(context_timestamp(31, store.timezone), external)
             store.close()
 
     def test_visible_autonomous_event_remains_shared_conversation(self) -> None:
@@ -661,7 +661,7 @@ class ContextAssemblerTest(unittest.TestCase):
                 )
 
             recent = store.recent_conversation_messages(6, 88000, 20)
-            transcript = build_transcript(recent)
+            transcript = build_transcript(recent, timezone=store.timezone)
             self.assertEqual(transcript.messages, [])
             self.assertEqual(
                 [part for group in transcript.orphaned for part in group.parts],

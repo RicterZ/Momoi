@@ -358,7 +358,13 @@ def create_dashboard_app(
         )
 
     async def health(_request: web.Request) -> web.Response:
-        return web.json_response({"ok": True, "version": momoi_version()})
+        return web.json_response(
+            {
+                "ok": True,
+                "version": momoi_version(),
+                "timezone": getattr(store.timezone, "key", str(store.timezone)),
+            }
+        )
 
     async def issue_token(request: web.Request) -> web.Response:
         secret = str(request.app[DASHBOARD_TOKEN] or "")

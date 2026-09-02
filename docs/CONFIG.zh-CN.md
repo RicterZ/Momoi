@@ -9,6 +9,16 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
 相对路径以 `config.json` 所在目录为基准解析。所有路径字段均可使用绝对路径。
 `config.json` 不会展开 `${VAR}` 占位符。
 
+## 时区
+
+```json
+{"timezone": "Asia/Shanghai"}
+```
+
+`timezone` 是 Momoi 唯一使用的 IANA 时区，统一控制时间显示、本地日期边界、
+日程、免打扰时间、日志和模型上下文。默认值为 `UTC`。各子系统和 Goal 不能
+单独覆盖。
+
 ## LLM
 
 ```json
@@ -299,7 +309,6 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
 ```json
 {
   "notifications": {
-    "timezone": "UTC",
     "quiet_start": null,
     "quiet_end": null,
     "cooldown_seconds": 1800,
@@ -310,7 +319,6 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
 
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
-| `timezone` | `UTC` | 日程和免打扰时间使用的 IANA 时区 |
 | `quiet_start` | 未设置 | 本地免打扰时间段的开始时间，格式为 `HH:MM` |
 | `quiet_end` | 未设置 | 本地免打扰时间段的结束时间，格式为 `HH:MM` |
 | `cooldown_seconds` | `1800` | 相同标识主动联系之间的非负间隔 |
@@ -369,7 +377,7 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
 | `enabled` | `false` | 启用每日复盘 |
-| `at` | `03:00` | 使用 `notifications.timezone` 的本地运行时间，格式为 `HH:MM` |
+| `at` | `03:00` | 使用顶层 `timezone` 的本地运行时间，格式为 `HH:MM` |
 
 ## Episode 维护
 
@@ -484,7 +492,7 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
 | `MOMOI_NAPCAT_URL` | `channels.enabled.napcat.url` |
 | `MOMOI_OWNER_QQ` | `channels.enabled.napcat.owner_qq` |
 | `MOMOI_PRIMARY` | `channels.primary` |
-| `MOMOI_TIMEZONE` | `notifications.timezone` |
+| `MOMOI_TIMEZONE` | `timezone` |
 | `MOMOI_DASHBOARD_TOKEN` | `dashboard.token` |
 | `MOMOI_WEBHOOKS_ENABLED` | `webhooks.enabled` |
 | `MOMOI_WEBHOOKS_HOST` | `webhooks.host` |

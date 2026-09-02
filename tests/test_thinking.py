@@ -4,6 +4,7 @@ import time
 import unittest
 from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 from momoi.config import load_config
 from momoi.logging_context import log_context
 from momoi.memory_tools import MemoryTools
@@ -94,7 +95,7 @@ class ThinkingStoreTests(unittest.TestCase):
             read = store.read_thinking("turn-laundry")
             self.assertTrue(read["ok"])
             self.assertIn("静默", read["calls"][0]["reasoning"])
-            month = month_key(now)
+            month = month_key(now, store.timezone)
             self.assertTrue(
                 (Path(directory) / f"thinking-{month}.sqlite3").is_file()
             )
@@ -192,7 +193,7 @@ class ThinkingStoreTests(unittest.TestCase):
     def test_writes_into_the_month_of_created_at(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
-            july = datetime(2026, 7, 16, 12).astimezone()
+            july = datetime(2026, 7, 16, 12, tzinfo=ZoneInfo("UTC"))
             store.record_thinking_call(
                 created_at=july.timestamp(),
                 turn_id="turn-july",

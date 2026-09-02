@@ -1,7 +1,7 @@
 import re
 import time
 from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from zoneinfo import ZoneInfo
 
 from ..config import NotificationConfig
 
@@ -10,16 +10,13 @@ def normalize_schedule(value: object) -> dict[str, object]:
     if not isinstance(value, dict):
         raise ValueError("schedule must be an object")
     kind = str(value.get("kind") or "")
-    timezone = str(value.get("timezone") or "")
-    try:
-        ZoneInfo(timezone)
-    except (ZoneInfoNotFoundError, ValueError):
-        raise ValueError("schedule.timezone must be a valid IANA timezone") from None
+    if "timezone" in value:
+        raise ValueError("schedule.timezone is not allowed; schedules use the app timezone")
     if kind == "interval":
         every_seconds = int(value.get("every_seconds", 0))
         if every_seconds < 60:
             raise ValueError("interval schedule requires every_seconds >= 60")
-        return {"kind": kind, "timezone": timezone, "every_seconds": every_seconds}
+        return {"kind": kind, "every_seconds": every_seconds}
     if kind == "daily":
         raw_times = value.get("times")
         if not isinstance(raw_times, list) or not 1 <= len(raw_times) <= 24:
@@ -33,17 +30,18 @@ def normalize_schedule(value: object) -> dict[str, object]:
             times.append(item)
         if len(set(times)) != len(times):
             raise ValueError("daily schedule times must be unique")
-        return {"kind": kind, "timezone": timezone, "times": sorted(times)}
+        return {"kind": kind, "times": sorted(times)}
     raise ValueError("schedule.kind must be interval or daily")
 
 
-def next_schedule_at(schedule: dict[str, object], after: float | None = None) -> float:
+def next_schedule_at(
+    schedule: dict[str, object], timezone: ZoneInfo, after: float | None = None
+) -> float:
     normalized = normalize_schedule(schedule)
     after = time.time() if after is None else after
     if normalized["kind"] == "interval":
         return after + int(normalized["every_seconds"])
-    zone = ZoneInfo(str(normalized["timezone"]))
-    local = datetime.fromtimestamp(after, zone)
+    local = datetime.fromtimestamp(after, timezone)
     for at in normalized["times"]:
         hour, minute = (int(part) for part in str(at).split(":"))
         candidate = local.replace(hour=hour, minute=minute, second=0, microsecond=0)
@@ -57,11 +55,10 @@ def next_schedule_at(schedule: dict[str, object], after: float | None = None) ->
     return candidate.timestamp()
 
 
-def quiet_until(now: float, config: NotificationConfig) -> float:
+def quiet_until(now: float, timezone: ZoneInfo, config: NotificationConfig) -> float:
     if not config.quiet_start or not config.quiet_end:
         return now
-    zone = ZoneInfo(config.timezone)
-    local = datetime.fromtimestamp(now, zone)
+    local = datetime.fromtimestamp(now, timezone)
     start_hour, start_minute = map(int, config.quiet_start.split(":"))
     end_hour, end_minute = map(int, config.quiet_end.split(":"))
     minute = local.hour * 60 + local.minute

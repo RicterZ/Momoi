@@ -56,7 +56,7 @@ from .memory import (
     truncate_tokens,
 )
 from .semantic import SemanticStore
-from .scheduling import next_schedule_at, quiet_until
+from .scheduling import next_schedule_at, normalize_schedule, quiet_until
 from .thinking import ThinkingStore, month_bounds, parse_month
 
 logger = logging.getLogger(__name__)
@@ -188,12 +188,12 @@ def _group_thinking_turns(calls: list[dict[str, object]]) -> list[dict[str, obje
 
 
 def _add_context_timestamps(
-    value: dict[str, object], fields: tuple[str, ...]
+    value: dict[str, object], fields: tuple[str, ...], timezone: ZoneInfo
 ) -> None:
     for name in fields:
         if value.get(name) is not None:
             value[f"{name.removesuffix('_at')}_timestamp"] = context_timestamp(
-                value[name]
+                value[name], timezone
             )
 
 
@@ -286,7 +286,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         search_backend: SearchBackend | None = None,
         episode_search_backend: EpisodeSearchBackend | None = None,
         thinking: Path | None = None,
-        timezone: str = NotificationConfig().timezone,
+        timezone: str = "UTC",
     ) -> None:
         database = Path(path).expanduser().resolve()
         self._workspace = (workspace or database.parent).expanduser().resolve()
@@ -303,6 +303,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         self._db.execute("PRAGMA foreign_keys=ON")
         self._thinking = ThinkingStore(
             Path(thinking) if thinking is not None else database.parent,
+            self._timezone,
             self._search_backend,
         )
         self._usage_plugin: UsagePlugin | None = None
@@ -317,6 +318,13 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
     @property
     def search_backend(self) -> SearchBackend:
         return self._search_backend
+
+    @property
+    def timezone(self) -> ZoneInfo:
+        return self._timezone
+
+    def context_timestamp(self, value: object) -> str:
+        return context_timestamp(value, self._timezone)
 
     def close(self) -> None:
         self._thinking.close()
@@ -366,6 +374,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         if "archive_day" not in columns:
             self._db.execute("ALTER TABLE conversation_episodes ADD COLUMN archive_day TEXT")
         now = time.time()
+        self._normalize_goal_schedules(now)
         self._db.execute(
             """INSERT OR IGNORE INTO self_state
                (id, mood_state, mood_intensity, mood_cause, mood_updated_at,
@@ -414,6 +423,40 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         )
         self.recover_semantic_encoding()
         self._db.commit()
+
+    def _normalize_goal_schedules(self, now: float) -> None:
+        """Remove the retired per-Goal timezone and reschedule in app time."""
+        rows = self._db.execute(
+            """SELECT id, status, schedule_json, next_review_at
+               FROM goals WHERE schedule_json<>''"""
+        ).fetchall()
+        for row in rows:
+            schedule = json.loads(str(row["schedule_json"]))
+            if not isinstance(schedule, dict):
+                raise ValueError(f"goal {row['id']} has an invalid schedule")
+            schedule.pop("timezone", None)
+            normalized = normalize_schedule(schedule)
+            encoded = json.dumps(
+                normalized, ensure_ascii=False, separators=(",", ":")
+            )
+            if (
+                normalized["kind"] == "daily"
+                and row["status"] in {"active", "waiting"}
+                and float(row["next_review_at"] or 0) > now
+            ):
+                self._db.execute(
+                    "UPDATE goals SET schedule_json=?, next_review_at=? WHERE id=?",
+                    (
+                        encoded,
+                        next_schedule_at(normalized, self._timezone, now),
+                        row["id"],
+                    ),
+                )
+            else:
+                self._db.execute(
+                    "UPDATE goals SET schedule_json=? WHERE id=?",
+                    (encoded, row["id"]),
+                )
 
     def _recover_outbox(self) -> None:
         recovered = self._db.execute(
@@ -595,7 +638,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                 "role": str(item["role"]),
                 "content": str(item["content"]),
                 "delivery_state": str(item["delivery_state"]),
-                "timestamp": context_timestamp(item["created_at"]),
+                "timestamp": self.context_timestamp(item["created_at"]),
             }
             for item in source_rows
         ]
@@ -606,11 +649,11 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                 "reason": str(row["cooled_reply_reason"] or ""),
                 "source_turn": source_turn,
                 "source_messages": source_messages,
-                "waiting_since": context_timestamp(
+                "waiting_since": self.context_timestamp(
                     row["cooled_reply_waiting_since"] or now
                 ),
-                "interrupted_at": context_timestamp(row["cooled_reply_since"] or now),
-                "deadline": context_timestamp(row["cooled_reply_due_at"] or now),
+                "interrupted_at": self.context_timestamp(row["cooled_reply_since"] or now),
+                "deadline": self.context_timestamp(row["cooled_reply_due_at"] or now),
                 "delay_minutes": int(row["cooled_reply_delay_minutes"] or 0),
                 "elapsed_minutes": max(
                     0,
@@ -994,7 +1037,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             {
                 "event_id": str(row["id"]),
                 "content": str(row["content"]),
-                "occurred_at": context_timestamp(row["occurred_at"]),
+                "occurred_at": self.context_timestamp(row["occurred_at"]),
                 "received_at": float(row["received_at"]),
             }
             for row in rows
@@ -1018,7 +1061,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             {
                 "event_id": str(row["id"]),
                 "content": str(row["content"]),
-                "occurred_at": context_timestamp(row["occurred_at"]),
+                "occurred_at": self.context_timestamp(row["occurred_at"]),
                 "received_at": float(row["received_at"]),
             }
             for row in rows
@@ -1418,9 +1461,9 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             pass
         else:
             if not selected:
-                selected = datetime.now().astimezone().strftime("%Y-%m")
+                selected = datetime.now(self._timezone).strftime("%Y-%m")
             selected = parse_month(selected)
-            after, before = month_bounds(selected)
+            after, before = month_bounds(selected, self._timezone)
             if selected not in months:
                 months = sorted({*months, selected})
         found = self.search_thinking(
@@ -1482,8 +1525,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         self, *, days: int = 30, now: float | None = None
     ) -> dict[str, object]:
         current = time.time() if now is None else now
-        zone = datetime.now().astimezone().tzinfo or ZoneInfo("UTC")
-        start = datetime.fromtimestamp(current, zone).replace(
+        start = datetime.fromtimestamp(current, self._timezone).replace(
             hour=0, minute=0, second=0, microsecond=0
         ) - timedelta(days=max(1, days) - 1)
         rows = self._db.execute(
@@ -1500,7 +1542,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             [dict(row) for row in rows],
             days=days,
             now=current,
-            zone=zone,
+            zone=self._timezone,
             estimate=None if plugin is None else plugin.estimate_cost,
             note=PRICING_NOTE,
         )
@@ -1682,13 +1724,13 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             raise RuntimeError("context retrieval was not saved")
         return saved
 
-    @staticmethod
-    def _episode_dict(row: sqlite3.Row) -> dict[str, object]:
+    def _episode_dict(self, row: sqlite3.Row) -> dict[str, object]:
         episode = dict(row)
         episode.pop("overlap", None)
         _add_context_timestamps(
             episode,
             ("created_at", "updated_at", "closed_at", "summary_abandoned_at"),
+            self._timezone,
         )
         try:
             claims = json.loads(str(episode.pop("working_summary_claims_json")))
@@ -2232,7 +2274,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         by_turn: dict[str, list[dict[str, object]]] = {}
         for row in rows:
             item = dict(row)
-            item["timestamp"] = context_timestamp(item["created_at"])
+            item["timestamp"] = self.context_timestamp(item["created_at"])
             by_turn.setdefault(str(row["turn_id"]), []).append(item)
         selected: list[list[dict[str, object]]] = []
         used = 0
@@ -2358,7 +2400,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                             if role == "user"
                             else ("event" if role == "event" else "assistant_message")
                         ),
-                        "timestamp": context_timestamp(message["created_at"]),
+                        "timestamp": self.context_timestamp(message["created_at"]),
                         "text": str(message["content"]),
                         "delivery": str(message["delivery_state"]),
                         "trust": "owner" if role == "user" else "context_data",
@@ -2398,7 +2440,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                 timeline.append(
                     {
                         "type": str(item["item_type"]),
-                        "timestamp": context_timestamp(item["created_at"]),
+                        "timestamp": self.context_timestamp(item["created_at"]),
                         "visibility": str(item["visibility"]),
                         "trust": str(item["trust"]),
                         **payload,
@@ -2466,8 +2508,8 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                     "kind": str(turn["kind"]),
                     "state": str(turn["state"]),
                     "channel": str(final.get("channel") or ""),
-                    "started_at": context_timestamp(turn["started_at"]),
-                    "completed_at": context_timestamp(turn["updated_at"]),
+                    "started_at": self.context_timestamp(turn["started_at"]),
+                    "completed_at": self.context_timestamp(turn["updated_at"]),
                     "interpretation": interpretation,
                     "timeline": timeline,
                     "final": final,
@@ -2608,7 +2650,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         results = []
         for row in rows:
             episode = self._episode_dict(row)
-            episode["last_activity_timestamp"] = context_timestamp(
+            episode["last_activity_timestamp"] = self.context_timestamp(
                 row["last_activity_at"]
             )
             results.append(episode)
@@ -2654,7 +2696,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             if exclude_runtime_archives and self._runtime_archive_kind(str(row["id"])):
                 continue
             episode = self._episode_dict(row)
-            episode["last_activity_timestamp"] = context_timestamp(
+            episode["last_activity_timestamp"] = self.context_timestamp(
                 row["last_activity_at"]
             )
             results.append(episode)
@@ -2691,7 +2733,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                 {
                     "id": episode_id,
                     "title": str(row["title"]),
-                    "last_activity_timestamp": context_timestamp(
+                    "last_activity_timestamp": self.context_timestamp(
                         row["last_activity_at"]
                     ),
                     "turn_ids": [
@@ -2870,10 +2912,10 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             except (json.JSONDecodeError, TypeError):
                 open_loops = []
             item["open_loops"] = open_loops if isinstance(open_loops, list) else []
-            item["last_activity_timestamp"] = context_timestamp(
+            item["last_activity_timestamp"] = self.context_timestamp(
                 item["last_activity_at"]
             )
-            item["updated_timestamp"] = context_timestamp(item.pop("updated_at"))
+            item["updated_timestamp"] = self.context_timestamp(item.pop("updated_at"))
             inventory.append(item)
         return inventory
 
@@ -3013,7 +3055,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                     content=content,
                     created_at=float(message["created_at"]),
                     delivery_state=str(message["delivery_state"]),
-                    timestamp=context_timestamp(message["created_at"]),
+                    timestamp=self.context_timestamp(message["created_at"]),
                     searchable_text=searchable_text,
                     scoped=bool(scoped_text),
                 )
@@ -3113,7 +3155,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                 continue
             episode = self._episode_dict(row)
             episode["last_activity_at"] = hit.last_activity_at
-            episode["last_activity_timestamp"] = context_timestamp(
+            episode["last_activity_timestamp"] = self.context_timestamp(
                 hit.last_activity_at
             )
             episode["matches"] = [
@@ -3223,7 +3265,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         results = []
         for _, row in ranked[offset : offset + max_results]:
             episode = self._episode_dict(row)
-            episode["last_activity_timestamp"] = context_timestamp(
+            episode["last_activity_timestamp"] = self.context_timestamp(
                 row["last_activity_at"]
             )
             episode["matches"] = []
@@ -3262,7 +3304,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                     "delivery_state",
                 )
             },
-            "timestamp": context_timestamp(row["created_at"]),
+            "timestamp": self.context_timestamp(row["created_at"]),
             "content": content,
             "content_offset": content_offset,
             "next_content_offset": next_offset,
@@ -3494,7 +3536,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         groups: list[list[dict[str, object]]] = []
         for row in rows:
             item = dict(row)
-            item["timestamp"] = context_timestamp(item["created_at"])
+            item["timestamp"] = self.context_timestamp(item["created_at"])
             if int(item["id"]) in excluded:
                 continue
             if not groups or groups[-1][0]["turn_id"] != item["turn_id"]:
@@ -3546,7 +3588,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         ).fetchall()
         for row in messages:
             item = dict(row)
-            item["timestamp"] = context_timestamp(item["created_at"])
+            item["timestamp"] = self.context_timestamp(item["created_at"])
             by_turn[str(row["turn_id"])].append(item)
         return by_turn
 
@@ -3680,7 +3722,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             context_turns.append(
                 {
                     "turn_id": str(row["id"]),
-                    "timestamp": context_timestamp(row["updated_at"]),
+                    "timestamp": self.context_timestamp(row["updated_at"]),
                     "episode_id": episode_id,
                     "episode_title": "" if episode is None else episode["title"],
                     "messages": context_messages[str(row["id"])],
@@ -3722,7 +3764,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             "turns": [
                 {
                     "turn_id": turn_id,
-                    "timestamp": context_timestamp(row["updated_at"]),
+                    "timestamp": self.context_timestamp(row["updated_at"]),
                     "messages": by_turn[turn_id],
                 }
                 for turn_id, row in zip(turn_ids, rows, strict=True)
@@ -4067,7 +4109,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                         break
                     for row in group:
                         item = dict(row)
-                        item["timestamp"] = context_timestamp(item["created_at"])
+                        item["timestamp"] = self.context_timestamp(item["created_at"])
                         compact.append(item)
                     compact_tokens += group_tokens
                     through = ordinal
@@ -4788,7 +4830,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         state = self.self_state()
 
         def timestamp(value: object) -> str | None:
-            return context_timestamp(value) if value is not None else None
+            return self.context_timestamp(value) if value is not None else None
 
         return json.dumps(
             {
@@ -4828,7 +4870,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                 continue
             items.append(
                 {
-                    "at": context_timestamp(row["created_at"]),
+                    "at": self.context_timestamp(row["created_at"]),
                     "text": text,
                 }
             )
@@ -4852,7 +4894,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                 "role": str(item["role"]),
                 "content": str(item["content"]),
                 "delivery_state": str(item["delivery_state"]),
-                "timestamp": context_timestamp(item["created_at"]),
+                "timestamp": self.context_timestamp(item["created_at"]),
             }
             for item in self._db.execute(
                 """SELECT role, content, created_at, delivery_state FROM messages
@@ -4866,10 +4908,10 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             "source_messages": source_messages,
             "expected_information": str(row["pending_reply_expectation"]),
             "reason": str(row["pending_reply_last_reason"] or ""),
-            "waiting_since": context_timestamp(since),
+            "waiting_since": self.context_timestamp(since),
             "waiting_minutes": max(0, int((now - since) / 60)),
             "delay_minutes": int(row["pending_reply_delay_minutes"] or 0),
-            "deadline": context_timestamp(row["pending_reply_next_check_at"] or now),
+            "deadline": self.context_timestamp(row["pending_reply_next_check_at"] or now),
             "channel": str(row["pending_reply_channel"] or ""),
         }
 
@@ -4940,7 +4982,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             )
             if scheduled_at > now:
                 return None
-            quiet_end = quiet_until(now, notifications)
+            quiet_end = quiet_until(now, self._timezone, notifications)
             if quiet_end > now:
                 column = (
                     "pending_reply_next_check_at"
@@ -5459,12 +5501,10 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             )
         return len(messages) + len(progress_rows)
 
-    @staticmethod
     def _reflection_slot(
-        now: float, timezone: str, at: str
+        self, now: float, at: str
     ) -> tuple[str, float, datetime]:
-        zone = ZoneInfo(timezone)
-        local = datetime.fromtimestamp(now, zone)
+        local = datetime.fromtimestamp(now, self._timezone)
         hour, minute = map(int, at.split(":"))
         scheduled = local.replace(hour=hour, minute=minute, second=0, microsecond=0)
         if scheduled.timestamp() > now:
@@ -5474,11 +5514,10 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
 
     def claim_manual_reflection(
         self,
-        timezone: str,
         now: float | None = None,
     ) -> dict[str, object] | None:
         now = time.time() if now is None else now
-        local_date = datetime.fromtimestamp(now, ZoneInfo(timezone)).date().isoformat()
+        local_date = datetime.fromtimestamp(now, self._timezone).date().isoformat()
         reflection_id = f"reflection:{local_date}"
         with self._db:
             self._db.execute(
@@ -5507,13 +5546,12 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
     def claim_due_reflection(
         self,
         config: ReflectionConfig,
-        timezone: str,
         now: float | None = None,
     ) -> dict[str, object] | None:
         if not config.enabled:
             return None
         now = time.time() if now is None else now
-        local_date, scheduled_at, _ = self._reflection_slot(now, timezone, config.at)
+        local_date, scheduled_at, _ = self._reflection_slot(now, config.at)
         reflection_id = f"reflection:{local_date}"
         with self._db:
             self._db.execute(
@@ -5540,14 +5578,13 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
     def next_reflection_due_at(
         self,
         config: ReflectionConfig,
-        timezone: str,
         now: float | None = None,
     ) -> float | None:
         if not config.enabled:
             return None
         now = time.time() if now is None else now
         local_date, scheduled_at, scheduled = self._reflection_slot(
-            now, timezone, config.at
+            now, config.at
         )
         row = self._db.execute(
             "SELECT state, retry_at FROM reflections WHERE local_date=?",
@@ -5583,10 +5620,11 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             )
 
     def reflection_source(
-        self, local_date: str, timezone: str, token_budget: int
+        self, local_date: str, token_budget: int
     ) -> dict[str, object]:
-        zone = ZoneInfo(timezone)
-        start = datetime.fromisoformat(f"{local_date}T00:00:00").replace(tzinfo=zone)
+        start = datetime.fromisoformat(f"{local_date}T00:00:00").replace(
+            tzinfo=self._timezone
+        )
         end = start + timedelta(days=1)
         entries: list[tuple[float, str, str, bool, bool]] = []
         for row in self._db.execute(
@@ -5649,7 +5687,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             )
         selected = _reflection_select_entries(entries, token_budget)
         text = "\n\n".join(
-            f"[{context_timestamp(occurred_at)} {label}]\n{content}"
+            f"[{self.context_timestamp(occurred_at)} {label}]\n{content}"
             for occurred_at, label, content, _, _ in selected
         )
         owner_text = "\n".join(content for _, _, content, owner, _ in selected if owner)
@@ -5673,7 +5711,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             payload = _reflection_json(row["payload_json"], {})
             if not isinstance(payload, dict):
                 continue
-            stamp = context_timestamp(row["created_at"])
+            stamp = self.context_timestamp(row["created_at"])
             if row["item_type"] in {"tool_call", "tool_result"}:
                 call_id = str(payload.get("tool_call_id") or "unknown")
                 identity = (str(row["turn_id"]), call_id)
@@ -5759,7 +5797,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             max(1000, min(8000, token_budget // 3)),
         )
         tool_timeline = "\n\n".join(
-            f"[{context_timestamp(occurred_at)} {label}]\n{content}"
+            f"[{self.context_timestamp(occurred_at)} {label}]\n{content}"
             for occurred_at, label, content, _, _ in selected_tools
         )
 
@@ -5786,7 +5824,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             emotional = _reflection_json(row["emotional_context_json"], {})
             outcomes = _reflection_json(row["outcomes_json"], [])
             parts = [
-                f"{context_timestamp(row['updated_at'])} {row['status']} {row['title']}",
+                f"{self.context_timestamp(row['updated_at'])} {row['status']} {row['title']}",
             ]
             if summary:
                 parts.append(f"summary={_reflection_compact_value(summary, 320)}")
@@ -5922,7 +5960,9 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                 memories = []
             item["memories"] = memories if isinstance(memories, list) else []
             _add_context_timestamps(
-                item, ("scheduled_at", "retry_at", "created_at", "completed_at")
+                item,
+                ("scheduled_at", "retry_at", "created_at", "completed_at"),
+                self._timezone,
             )
             results.append(item)
         payload: dict[str, object] = {"items": results}
@@ -5990,7 +6030,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                 "name": state["activity"],
                 "result": state.get("activity_result") or "",
                 "since": state["activity_since"],
-                "since_timestamp": context_timestamp(state["activity_since"]),
+                "since_timestamp": self.context_timestamp(state["activity_since"]),
             },
             "heartbeat": {
                 "next_at": _dashboard_unix(state.get("next_heartbeat_at")),
@@ -6005,7 +6045,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             },
             "latest_message_at": latest_message,
             "latest_message_timestamp": (
-                context_timestamp(latest_message) if latest_message is not None else None
+                self.context_timestamp(latest_message) if latest_message is not None else None
             ),
             "usage": self.dashboard_usage(days=30),
         }
@@ -6044,7 +6084,9 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
     def _memory_public_dict(self, row: sqlite3.Row) -> dict[str, object]:
         item = dict(row)
         item["evidence"] = item.pop("evidence_quote")
-        _add_context_timestamps(item, ("created_at", "updated_at", "expires_at"))
+        _add_context_timestamps(
+            item, ("created_at", "updated_at", "expires_at"), self._timezone
+        )
         return item
 
     def _active_memory_row(self, memory_id: int) -> sqlite3.Row | None:
@@ -6370,12 +6412,12 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             kind = str(segments[0].get("type")) if len(segments) == 1 else "message"
         return text, kind, media_path(payload), payload
 
-    @staticmethod
-    def _goal_dict(row: sqlite3.Row) -> dict[str, object]:
+    def _goal_dict(self, row: sqlite3.Row) -> dict[str, object]:
         goal = dict(row)
         _add_context_timestamps(
             goal,
             ("next_review_at", "retry_at", "created_at", "updated_at"),
+            self._timezone,
         )
         goal["plan"] = json.loads(str(goal.pop("plan_json")))
         schedule_json = str(goal.pop("schedule_json", ""))
@@ -6826,7 +6868,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             if goal_id not in draft.goals:
                 current = self.goal(goal_id)
                 next_review_at = (
-                    next_schedule_at(current["schedule"], now)
+                    next_schedule_at(current["schedule"], self._timezone, now)
                     if current and current.get("schedule")
                     else now + 900
                 )
@@ -6911,7 +6953,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
     ) -> float:
         eligible = now
         if priority == "normal":
-            eligible = max(eligible, quiet_until(now, config))
+            eligible = max(eligible, quiet_until(now, self._timezone, config))
             last = self._db.execute(
                 """SELECT MAX(n.queued_at) FROM notifications AS n
                    WHERE n.notification_key=? AND (

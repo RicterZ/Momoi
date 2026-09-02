@@ -20,6 +20,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from .budget import TEXT_SIZER
 
@@ -180,15 +181,17 @@ def partition_for_protocol(
     return list(groups[:leading]), list(groups[leading:])
 
 
-def _marker(moment_at: float, previous_at: float, gap: float) -> str:
+def _marker(
+    moment_at: float, previous_at: float, gap: float, timezone: ZoneInfo
+) -> str:
     """Render a time marker only where it changes how the text reads."""
 
     if moment_at <= 0:
         return ""
-    moment = datetime.fromtimestamp(moment_at).astimezone()
+    moment = datetime.fromtimestamp(moment_at, timezone)
     if previous_at <= 0:
         return moment.isoformat(timespec="minutes")
-    earlier = datetime.fromtimestamp(previous_at).astimezone()
+    earlier = datetime.fromtimestamp(previous_at, timezone)
     if moment.date() != earlier.date():
         return moment.isoformat(timespec="minutes")
     if moment_at - previous_at >= gap:
@@ -329,6 +332,7 @@ def _assistant_body(
 def render_messages(
     groups: Sequence[TranscriptGroup],
     *,
+    timezone: ZoneInfo,
     gap_seconds: float = DEFAULT_GAP_SECONDS,
     tool_activity: Mapping[str, Sequence[Mapping[str, object]]] | None = None,
     action_limit: int = DEFAULT_ACTION_LIMIT,
@@ -354,6 +358,7 @@ def render_messages(
             group.started_at,
             previous.ended_at if previous else 0.0,
             gap_seconds,
+            timezone,
         )
         if marker:
             annotations.append(marker)
@@ -396,6 +401,7 @@ class Transcript:
 def build_transcript(
     rows: Iterable[Mapping[str, object]],
     *,
+    timezone: ZoneInfo,
     max_groups: int = 0,
     token_budget: int = 0,
     gap_seconds: float = DEFAULT_GAP_SECONDS,
@@ -411,6 +417,7 @@ def build_transcript(
     return Transcript(
         messages=render_messages(
             groups,
+            timezone=timezone,
             gap_seconds=gap_seconds,
             tool_activity=tool_activity,
             action_limit=action_limit,
