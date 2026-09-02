@@ -9,12 +9,13 @@ from ...builtin_tools import BUILTIN_TOOL_SPECS, SELF_DIRECTED_BUILTIN_TOOL_SPEC
 from ...logging_context import TRACE, log_event
 from ...memory_tools import MEMORY_TOOL_SPECS
 from ...storage import estimate_tokens
-from ..protocol import (
-    READ_TOOL_RESULT_SPEC,
-    RECALL_TOOL_SPEC,
-    heartbeat_begin_spec,
+from ..tool_contracts.context import RECALL_TOOL_SPEC, heartbeat_begin_spec
+from ..tool_contracts.conversation import (
     owner_end_turn_tool_spec,
     send_bubbles_tool_spec,
+)
+from ..tool_contracts.runtime import (
+    READ_TOOL_RESULT_SPEC,
     tool_enable_spec,
 )
 from .progress import decorate_tool_spec, public_tool_spec, requests_owner_progress

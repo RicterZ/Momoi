@@ -4,7 +4,7 @@ from typing import Any
 from ...models import AgentReply, TurnDraft
 from ..agent import TurnExecutionSpec
 from ..context.presentation import heartbeat_self_state_lines
-from ..protocol import END_TURN_TOOL_SPEC
+from ..tool_contracts.conversation import END_TURN_TOOL_SPEC
 from ..transcript import build_transcript, render_messages
 from ..turn_support import (
     context_data_message as _context_data_message,

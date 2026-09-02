@@ -31,7 +31,7 @@ from momoi.runtime.jobs import AutonomousJob
 from momoi.runtime.agent import TurnExecutionSpec
 from momoi.runtime.agent.context_window import ContextWindow
 from momoi.runtime.agent.tool_surface import ToolSurface
-from momoi.runtime.protocol import (
+from momoi.runtime.tool_contracts.conversation import (
     ACTIVITY_DECISION_SCHEMA,
     CHANNEL_BUBBLE_SCHEMA,
     MOOD_UPDATE_SCHEMA,

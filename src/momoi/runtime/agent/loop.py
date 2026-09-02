@@ -21,9 +21,7 @@ from .protocol import (
     parse_end_turn,
 )
 from .tool_batch import ToolBatchRequest, ToolBatchState
-from ..protocol import (
-    AUTONOMOUS_FINISH_SPEC,
-)
+from ..tool_contracts.runtime import AUTONOMOUS_FINISH_SPEC
 from ..turn_support import (
     ExternalToolTurnError,
     MAX_CONSECUTIVE_TOOL_FAILURES,

@@ -20,7 +20,8 @@ from momoi.runtime.agent.progress import (
     take_announce_message,
 )
 from momoi.runtime.agent.tool_surface import ToolSurface
-from momoi.runtime.protocol import send_bubbles_tool_spec, tool_enable_spec
+from momoi.runtime.tool_contracts.conversation import send_bubbles_tool_spec
+from momoi.runtime.tool_contracts.runtime import tool_enable_spec
 from momoi.storage import estimate_tokens
 
 

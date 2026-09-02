@@ -15,7 +15,7 @@ from ..context.rendering import (
     assemble_recent_external_events,
     recall_episode_context,
 )
-from ..protocol import AUTONOMOUS_FINISH_SPEC, READ_TOOL_RESULT_SPEC
+from ..tool_contracts.runtime import AUTONOMOUS_FINISH_SPEC, READ_TOOL_RESULT_SPEC
 from ..transcript import build_transcript, render_messages
 from ..turn_support import (
     ExternalToolTurnError,

@@ -9,7 +9,7 @@ from ..agent import AgentWorkflow
 from ..context.presentation import heartbeat_self_state_lines
 from ..context.rendering import recall_episode_context
 from ..parsing import parse_reflection_finish
-from ..protocol import REFLECTION_FINISH_SPEC
+from ..tool_contracts.reflection import REFLECTION_FINISH_SPEC
 from ..turn_support import (
     REFLECTION_PROMPT_PATH,
     REFLECTION_SYSTEM_PROMPT,

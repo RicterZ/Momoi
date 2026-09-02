@@ -10,11 +10,8 @@ from ..context.rendering import (
     recall_episode_context,
 )
 from ..context.presentation import heartbeat_self_state_lines
-from ..protocol import (
-    CURL_TOOL_SPEC,
-    END_TURN_TOOL_SPEC,
-    READ_TOOL_RESULT_SPEC,
-)
+from ..tool_contracts.conversation import END_TURN_TOOL_SPEC
+from ..tool_contracts.runtime import CURL_TOOL_SPEC, READ_TOOL_RESULT_SPEC
 from ..transcript import build_transcript, render_messages
 from ..turn_support import (
     WEBHOOK_PROMPT_PATH,

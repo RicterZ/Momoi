@@ -18,7 +18,7 @@ from ..context.presentation import (
     heartbeat_topic_lines,
 )
 from ..context.rendering import assemble_recent_external_events
-from ..protocol import heartbeat_end_turn_tool_spec
+from ..tool_contracts.conversation import heartbeat_end_turn_tool_spec
 from ..transcript import build_transcript, render_messages
 from ..turn_support import (
     ExternalToolTurnError,

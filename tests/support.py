@@ -1,7 +1,7 @@
 from typing import Any
 
 from momoi.models import ProviderResponse, ToolCall
-from momoi.runtime.protocol import RECALL_TOOL_SPEC
+from momoi.runtime.tool_contracts.context import RECALL_TOOL_SPEC
 
 
 def recall_response(units: int = 1) -> ProviderResponse:
