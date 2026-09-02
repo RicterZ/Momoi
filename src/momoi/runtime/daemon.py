@@ -23,7 +23,7 @@ from ..llm.anthropic import AnthropicProvider
 from ..llm.openai import OpenAIProvider
 from ..semantic import SemanticRecallService
 from ..storage import Store
-from ..webhooks import WebhookService
+from ..webhooks.service import WebhookService
 from .jobs import AutonomousJob
 from .agent.result_store import ToolResultStore
 from .agent.context_window import ContextWindow

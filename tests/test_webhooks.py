@@ -23,7 +23,8 @@ from momoi.runtime import (
 )
 from momoi.runtime.context.rendering import assemble_recent_external_events
 from momoi.storage import Store
-from momoi.webhooks import WebhookService, WorkflowError, bind_workflow, load_catalog
+from momoi.webhooks.catalog import WorkflowError, bind_workflow, load_catalog
+from momoi.webhooks.service import WebhookService
 
 
 class WebhooksTest(unittest.TestCase):
@@ -96,7 +97,7 @@ steps:
 """,
                 encoding="utf-8",
             )
-            with self.assertLogs("momoi.webhooks", level="INFO") as logs:
+            with self.assertLogs("momoi.webhooks.catalog", level="INFO") as logs:
                 workflows, executors = load_catalog(workflows_path, executors_path)
             self.assertEqual(set(workflows), {"event-message"})
             self.assertEqual(set(executors), {"echo-ok"})
@@ -162,7 +163,7 @@ steps:
                 encoding="utf-8",
             )
 
-            with self.assertLogs("momoi.webhooks", level="WARNING") as logs:
+            with self.assertLogs("momoi.webhooks.catalog", level="WARNING") as logs:
                 workflows, executors = load_catalog(
                     workflows_path,
                     root / "executors.yaml",
