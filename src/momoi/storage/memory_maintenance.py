@@ -2,7 +2,7 @@ import json
 import time
 
 from .integrity import StorageIntegrityError, decode_stored_json
-from .memory import memory_snapshot_fingerprint
+from .memory_values import memory_snapshot_fingerprint
 
 
 class MemoryMaintenanceStore:

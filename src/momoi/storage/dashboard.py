@@ -1,7 +1,7 @@
 import sqlite3
 import time
 
-from .memory import RECENT_MEMORY_WINDOW_SECONDS
+from .memory_values import RECENT_MEMORY_WINDOW_SECONDS
 from .timestamps import add_context_timestamps
 
 def _dashboard_unix(value: object) -> float | None:

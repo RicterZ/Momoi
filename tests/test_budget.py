@@ -8,7 +8,7 @@ from momoi.runtime.agent.budget import (
     ToolResultFitter,
 )
 from momoi.runtime.turn_support import truncate_tool_result_json
-from momoi.storage.memory import estimate_tokens, truncate_tokens
+from momoi.storage.memory_values import estimate_tokens, truncate_tokens
 
 
 class BudgetTests(unittest.TestCase):

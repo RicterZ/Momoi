@@ -1,4 +1,4 @@
-from .memory import (
+from .memory_values import (
     ALWAYS_MEMORY_KINDS,
     MEMORY_ACTIVATIONS,
     MEMORY_KINDS,

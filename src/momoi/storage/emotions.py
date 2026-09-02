@@ -3,7 +3,7 @@ import time
 from pathlib import Path
 
 from ..emotions import valid_emotion_slug
-from .memory import estimate_tokens
+from .memory_values import estimate_tokens
 
 
 class EmotionStore:

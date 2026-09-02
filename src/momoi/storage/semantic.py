@@ -11,7 +11,7 @@ from typing import Iterable
 
 import numpy as np
 
-from .memory import estimate_tokens, token_chunk
+from .memory_values import estimate_tokens, token_chunk
 from .integrity import decode_stored_json
 
 QUERY_TEMPLATE_VERSION = 1

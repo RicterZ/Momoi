@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 
 from ..config import ReflectionConfig
 from .integrity import decode_stored_json
-from .memory import estimate_tokens, truncate_tokens
+from .memory_values import estimate_tokens, truncate_tokens
 from .timestamps import add_context_timestamps
 
 REFLECTION_MEMORY_KINDS = {

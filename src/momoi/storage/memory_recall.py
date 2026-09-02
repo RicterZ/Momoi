@@ -1,12 +1,8 @@
 from __future__ import annotations
 
-import hashlib
-import json
 import math
 import sqlite3
 import time
-from collections.abc import Mapping
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from ..policies import MemoryPolicy
@@ -16,29 +12,19 @@ from ..search import (
     search_alternatives,
     search_expression,
 )
-from ..models import (
-    IncomingMessage,
-    MemoryCandidate,
-    MemoryForgetCandidate,
-)
 from .episode_ranking import rank_recall_items
+from .memory_values import (
+    MEMORY_ACTIVATIONS,
+    RECENT_MEMORY_WINDOW_SECONDS,
+    REFLECTION_MEMORY_CAUTION,
+    MemoryRecallQuery,
+    format_reflection_memory,
+)
 
 if TYPE_CHECKING:
     from ..semantic import DenseRecallEvidence
 
 
-MEMORY_KINDS = {
-    "profile",
-    "preference",
-    "relationship",
-    "shared",
-    "episodic",
-    "routine",
-}
-MEMORY_ACTIVATIONS = {"always", "recent", "recall"}
-ALWAYS_MEMORY_KINDS = {"profile", "preference", "relationship"}
-RECENT_MEMORY_WINDOW_SECONDS = 30 * 24 * 60 * 60
-_DEFAULT_MEMORY_POLICY = MemoryPolicy()
 _MEMORY_QUERY_PRIORITY_WEIGHTS = (1.0, 0.5, 0.3)
 _MEMORY_SECOND_ALIAS_WEIGHT = 0.18
 _MEMORY_THIRD_ALIAS_WEIGHT = 0.08
@@ -49,109 +35,9 @@ _MEMORY_RECENCY_HALF_LIFE_SECONDS = 180 * 86400
 _CONFIRMED_MEMORY_SCORE_FLOOR = 0.35
 _REFLECTION_MEMORY_SCORE_FLOOR = 0.35
 MAX_MEMORY_RECALL_RESULTS = 6
-REFLECTION_MEMORY_CAUTION = (
-    "Daily reflection memories are fallible and may be outdated or no longer "
-    "applicable; use them only as supporting context and prefer current evidence."
-)
 
 
-@dataclass(frozen=True)
-class MemoryRecallQuery:
-    expression: str
-    unit_ids: tuple[str, ...] = ()
-    priority: int = 0
-    semantic_expression: str = ""
-
-    @property
-    def dense_expression(self) -> str:
-        return self.semantic_expression.strip() or self.expression.strip()
-
-
-def memory_snapshot_fingerprint(memory: Mapping[str, object]) -> str:
-    payload = {
-        key: memory.get(key)
-        for key in (
-            "id",
-            "kind",
-            "key",
-            "content",
-            "activation",
-            "expires_at",
-            "source_event_id",
-            "evidence_quote",
-            "updated_at",
-            "superseded_by",
-        )
-    }
-    encoded = json.dumps(
-        payload,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        default=str,
-    ).encode()
-    return "sha256:" + hashlib.sha256(encoded).hexdigest()
-
-
-def format_reflection_memory(row: Mapping[str, object]) -> str:
-    local_date = str(row.get("local_date") or "unknown")
-    return (
-        f"- [date={local_date} {row['kind']}:{row['key']}] "
-        f"{row['content']}"
-    )
-
-
-def memory_expires_at(
-    activation: str,
-    ttl_hours: float,
-    now: float,
-    policy: MemoryPolicy = _DEFAULT_MEMORY_POLICY,
-) -> float | None:
-    if activation != "recent":
-        return None
-    hours = min(
-        policy.recent_max_ttl_hours,
-        max(policy.recent_min_ttl_hours, float(ttl_hours)),
-    )
-    return now + hours * 3600
-
-
-def estimate_tokens(text: str) -> int:
-    from ..runtime.agent.budget import TEXT_SIZER
-
-    return TEXT_SIZER.estimate(text)
-
-
-def truncate_tokens(text: str, token_budget: int) -> str:
-    from ..runtime.agent.budget import MEMORY_TEXT_FITTER
-
-    return MEMORY_TEXT_FITTER.truncate(text, token_budget)
-
-
-def token_chunk(text: str, offset: int, token_budget: int) -> tuple[str, int | None]:
-    if token_budget <= 0:
-        raise ValueError("token budget must be positive")
-    if offset < 0 or offset > len(text):
-        raise ValueError("content offset is outside the message")
-    remaining = text[offset:]
-    if estimate_tokens(remaining) <= token_budget:
-        return remaining, None
-    marker = "…[continued]"
-    if estimate_tokens(marker) >= token_budget:
-        marker = ""
-    low, high = 0, len(remaining)
-    while low < high:
-        middle = (low + high + 1) // 2
-        if estimate_tokens(remaining[:middle] + marker) <= token_budget:
-            low = middle
-        else:
-            high = middle - 1
-    if low == 0:
-        low = 1
-    return remaining[:low] + marker, offset + low
-
-
-class MemoryStore:
+class MemoryRecallStore:
     _memory_policy: MemoryPolicy
 
     def maintenance_memory_inventory(self) -> list[dict[str, object]]:
@@ -683,118 +569,3 @@ class MemoryStore:
             (kind, key, time.time()),
         ).fetchone()
         return dict(row) if row else None
-
-    def _remember(
-        self,
-        memory: MemoryCandidate,
-        events: list[IncomingMessage],
-        now: float,
-    ) -> None:
-        source_event = next(
-            (event for event in events if memory.evidence in event.text), None
-        )
-        if (
-            memory.kind not in MEMORY_KINDS
-            or memory.activation not in MEMORY_ACTIVATIONS
-            or not all((memory.key, memory.content, memory.evidence))
-            or source_event is None
-            or len(memory.key) > 200
-            or len(memory.content) > 2000
-            or len(memory.evidence) > 500
-        ):
-            return
-        source_event_id = source_event.event_id
-        self._db.execute(
-            "DELETE FROM memory_tombstones WHERE kind=? AND key=?",
-            (memory.kind, memory.key),
-        )
-        old = self._db.execute(
-            """SELECT id, content FROM memories
-               WHERE kind=? AND key=? AND superseded_by IS NULL
-               ORDER BY id DESC LIMIT 1""",
-            (memory.kind, memory.key),
-        ).fetchone()
-        expires_at = memory_expires_at(
-            memory.activation, memory.ttl_hours, now, self._memory_policy
-        )
-        if old and old["content"] == memory.content:
-            self._db.execute(
-                """UPDATE memories SET source_event_id=?, evidence_quote=?,
-                   activation=?, expires_at=?, importance=MAX(importance, ?),
-                   updated_at=?
-                   WHERE id=?""",
-                (
-                    source_event_id,
-                    memory.evidence,
-                    memory.activation,
-                    expires_at,
-                    memory.importance,
-                    now,
-                    old["id"],
-                ),
-            )
-            self._add_memory_evidence(
-                int(old["id"]), source_event_id, memory.evidence, now
-            )
-            return
-        cursor = self._db.execute(
-            """INSERT INTO memories
-               (kind, key, content, activation, authority, source_event_id,
-                evidence_quote, importance, created_at, updated_at, expires_at)
-               VALUES (?, ?, ?, ?, 'owner', ?, ?, ?, ?, ?, ?)""",
-            (
-                memory.kind,
-                memory.key,
-                memory.content,
-                memory.activation,
-                source_event_id,
-                memory.evidence,
-                memory.importance,
-                now,
-                now,
-                expires_at,
-            ),
-        )
-        if old:
-            self._db.execute(
-                "UPDATE memories SET superseded_by=?, updated_at=? WHERE id=?",
-                (cursor.lastrowid, now, old["id"]),
-            )
-        self._add_memory_evidence(
-            int(cursor.lastrowid), source_event_id, memory.evidence, now
-        )
-    def _add_memory_evidence(
-        self,
-        memory_id: int,
-        source_event_id: str,
-        quote: str,
-        now: float,
-    ) -> None:
-        self._db.execute(
-            """INSERT OR IGNORE INTO memory_evidence
-               (memory_id, source_event_id, quote, created_at)
-               VALUES (?, ?, ?, ?)""",
-            (memory_id, source_event_id, quote, now),
-        )
-
-    def _forget_memory(
-        self,
-        memory: MemoryForgetCandidate,
-        events: list[IncomingMessage],
-        now: float,
-    ) -> None:
-        source_event = next(
-            (event for event in events if memory.evidence in event.text), None
-        )
-        if source_event is None:
-            return
-        self._db.execute(
-            """INSERT INTO memory_tombstones
-               (kind, key, source_event_id, evidence_quote, created_at)
-               VALUES (?, ?, ?, ?, ?)
-               ON CONFLICT(kind, key) DO UPDATE SET
-                 source_event_id=excluded.source_event_id,
-                 evidence_quote=excluded.evidence_quote,
-                 created_at=excluded.created_at""",
-            (memory.kind, memory.key, source_event.event_id, memory.evidence, now),
-        )

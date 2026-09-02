@@ -5,7 +5,7 @@ import time
 from ..logging_context import log_event
 from .context_plan_adapter import normalize_context_plan
 from .integrity import decode_stored_json
-from .memory import estimate_tokens, truncate_tokens
+from .memory_values import estimate_tokens, truncate_tokens
 from .turn_workflow import turn_workflow_kind_sql
 
 logger = logging.getLogger(__name__)

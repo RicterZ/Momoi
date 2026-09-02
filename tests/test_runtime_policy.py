@@ -13,7 +13,7 @@ from momoi.policies import (
 from momoi.runtime.dispatch.delivery import message_gap_bounds
 from momoi.runtime.turn_support import MAX_CONSECUTIVE_TOOL_FAILURES
 from momoi.storage import Store
-from momoi.storage.memory import memory_expires_at
+from momoi.storage.memory_values import memory_expires_at
 
 
 class RuntimePolicyDefaultsTests(unittest.TestCase):

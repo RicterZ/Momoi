@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 from .context_plan_adapter import normalize_context_plan
 from .episode_sql import runtime_archive_kind_sql
 from .integrity import decode_stored_json
-from .memory import estimate_tokens
+from .memory_values import estimate_tokens
 from .timestamps import add_context_timestamps
 from ..logging_context import log_event
 

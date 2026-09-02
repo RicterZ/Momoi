@@ -19,9 +19,8 @@ from .episode_search import (
     StringEpisodeSearchBackend,
 )
 from .episode_maintenance import EpisodeMaintenanceStore
-from .memory import (
-    MemoryStore,
-)
+from .memory_mutations import MemoryMutationStore
+from .memory_recall import MemoryRecallStore
 from .memory_maintenance import MemoryMaintenanceStore
 from .goals import GoalStore
 from .emotions import EmotionStore
@@ -67,7 +66,8 @@ class Store(
     ReconciliationStore,
     TurnCommitStore,
     MemoryMaintenanceStore,
-    MemoryStore,
+    MemoryRecallStore,
+    MemoryMutationStore,
     WebhookStore,
     DeliveryStore,
     SemanticStore,

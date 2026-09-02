@@ -8,7 +8,7 @@ import uuid
 
 from ..logging_context import log_event
 from .episode_sql import runtime_archive_kind_sql
-from .memory import estimate_tokens
+from .memory_values import estimate_tokens
 
 EPISODE_ANNEAL_MAX_FAILURES = 3
 EPISODE_CONSOLIDATION_LOOKBACK_SECONDS = 30 * 24 * 60 * 60
