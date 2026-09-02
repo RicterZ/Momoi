@@ -1605,9 +1605,12 @@ class StorageMemoryTest(unittest.TestCase):
                 {"units": [{"id": "unit-1", "query": "邮件"}]},
             )
             self.assertEqual(first["state"], "planned")
-            recalled = store.save_context_retrieval("turn-1", 1, {"memory_ids": [7]})
+            recalled = store.save_context_retrieval(
+                "turn-1", 1, {"version": 6, "memory_ids": [7]}
+            )
             self.assertEqual(recalled["state"], "recalled")
-            self.assertEqual(recalled["retrieval"], {"memory_ids": [7]})
+            self.assertEqual(recalled["retrieval"]["memory_ids"], [7])
+            self.assertEqual(recalled["retrieval"]["version"], 6)
             second = store.save_context_plan(
                 "turn-1",
                 2,

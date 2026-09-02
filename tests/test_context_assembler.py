@@ -1,3 +1,4 @@
+import json
 import tempfile
 import time
 import unittest
@@ -50,7 +51,12 @@ def plan(query: str, episode_id: str = "episode-mail") -> dict[str, object]:
                 "text": "看看之前等的项目邮件",
                 "intent": "check expected project email",
                 "references": ["之前等的"],
-                "recall_queries": [query],
+                "recall_queries": [
+                    {
+                        "semantic": query,
+                        "keywords": query.split(" | "),
+                    }
+                ],
             }
         ],
         "episode_actions": [
@@ -128,18 +134,48 @@ class ContextAssemblerTest(unittest.TestCase):
             ],
         )
 
-    def test_legacy_recall_expression_remains_readable(self) -> None:
-        legacy_plan = plan("设备名称 | device-42")
+    def test_legacy_context_record_is_normalized_at_storage_boundary(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store.begin_turn("legacy", "owner", ["legacy-event"])
+            legacy_plan = plan("unused")
+            legacy_plan["intent_units"][0]["recall_queries"] = [
+                "设备名称 | device-42"
+            ]
+            with store._db:
+                store._db.execute(
+                    """INSERT INTO context_plans
+                       (turn_id, revision, source_event_ids_json, plan_json,
+                        retrieval_json, state, created_at, updated_at)
+                       VALUES ('legacy', 1, '["legacy-event"]', ?, ?,
+                               'recalled', 1, 1)""",
+                    (
+                        json.dumps(legacy_plan, ensure_ascii=False),
+                        json.dumps(
+                            {
+                                "version": 5,
+                                "query_recall": (
+                                    "queries=设备名称 | device-42\n"
+                                    "hits=设备名称 | device-42"
+                                ),
+                            },
+                            ensure_ascii=False,
+                        ),
+                    ),
+                )
 
-        selected, _reused, _emitted, _skipped = select_plan_recall_queries(
-            legacy_plan
-        )
-
-        self.assertEqual(selected[0]["expression"], "设备名称|device-42")
-        self.assertEqual(
-            selected[0]["semantic_expression"], "设备名称 | device-42"
-        )
-        self.assertEqual(selected[0]["keywords"], ["设备名称", "device-42"])
+            record = store.context_plan("legacy")
+            self.assertEqual(record["retrieval"]["version"], 6)
+            self.assertEqual(
+                record["retrieval"]["effective_recall_queries"],
+                ["设备名称 | device-42"],
+            )
+            selected, _reused, _emitted, _skipped = select_plan_recall_queries(
+                record["plan"]
+            )
+            self.assertEqual(selected[0]["expression"], "设备名称|device-42")
+            self.assertEqual(selected[0]["keywords"], ["设备名称", "device-42"])
+            store.close()
 
     def test_plan_recall_reuse_does_not_repeat_search(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -183,7 +219,12 @@ class ContextAssemblerTest(unittest.TestCase):
                                 "mode": "search",
                                 "queries": ["亲密互动|暧昧打闹|晚间玩闹"],
                             },
-                            "recall_queries": ["亲密互动|暧昧打闹|晚间玩闹"],
+                            "recall_queries": [
+                                {
+                                    "semantic": "亲密互动|暧昧打闹|晚间玩闹",
+                                    "keywords": ["亲密互动", "暧昧打闹", "晚间玩闹"],
+                                }
+                            ],
                             "recall_from_turn_id": "",
                         }
                     ]
@@ -282,7 +323,13 @@ class ContextAssemblerTest(unittest.TestCase):
                     "text": unit_id,
                     "intent": unit_id,
                     "references": [],
-                    "recall_queries": [f"{unit_id}1", f"{unit_id}2", f"{unit_id}3"],
+                    "recall_queries": [
+                        {
+                            "semantic": f"{unit_id}{index}",
+                            "keywords": [f"{unit_id}{index}"],
+                        }
+                        for index in range(1, 4)
+                    ],
                 }
                 for unit_id in ("a", "b", "c")
             ]
@@ -410,7 +457,9 @@ class ContextAssemblerTest(unittest.TestCase):
                     "activity": {
                         "intent": "整理蓝色杯子的共同回忆",
                         "reason": "想回顾这件事",
-                        "recall_queries": ["蓝色杯子"],
+                        "recall_queries": [
+                            {"semantic": "蓝色杯子", "keywords": ["蓝色杯子"]}
+                        ],
                     }
                 },
                 config(directory),
@@ -427,7 +476,9 @@ class ContextAssemblerTest(unittest.TestCase):
                         {
                             "id": "u1",
                             "intent": shared_intent,
-                            "recall_queries": ["蓝色杯子"],
+                            "recall_queries": [
+                                {"semantic": "蓝色杯子", "keywords": ["蓝色杯子"]}
+                            ],
                         }
                     ]
                 },
@@ -438,7 +489,9 @@ class ContextAssemblerTest(unittest.TestCase):
                 {
                     "activity": {
                         "intent": shared_intent,
-                        "recall_queries": ["蓝色杯子"],
+                        "recall_queries": [
+                            {"semantic": "蓝色杯子", "keywords": ["蓝色杯子"]}
+                        ],
                     }
                 },
                 config(directory),
@@ -827,7 +880,10 @@ class ContextAssemblerTest(unittest.TestCase):
                 )
 
             recall_plan = plan("旧甲")
-            recall_plan["intent_units"][0]["recall_queries"] = ["旧甲", "旧乙"]
+            recall_plan["intent_units"][0]["recall_queries"] = [
+                {"semantic": "旧甲", "keywords": ["旧甲"]},
+                {"semantic": "旧乙", "keywords": ["旧乙"]},
+            ]
             retrieval = build_plan_retrieval(
                 store,
                 recall_plan,
@@ -1044,7 +1100,9 @@ class ContextAssemblerTest(unittest.TestCase):
                         "text": "检查 SMTP 邮件",
                         "intent": "check mail",
                         "references": [],
-                        "recall_queries": ["SMTP 邮件"],
+                        "recall_queries": [
+                            {"semantic": "SMTP 邮件", "keywords": ["SMTP", "邮件"]}
+                        ],
                     },
                     {
                         "id": "social-unit",
@@ -1052,7 +1110,9 @@ class ContextAssemblerTest(unittest.TestCase):
                         "text": "刷微博看猫",
                         "intent": "browse social media",
                         "references": [],
-                        "recall_queries": ["微博 看猫"],
+                        "recall_queries": [
+                            {"semantic": "微博 看猫", "keywords": ["微博", "看猫"]}
+                        ],
                     },
                 ],
                 "episode_actions": [

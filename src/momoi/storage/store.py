@@ -38,6 +38,10 @@ from ..search import (
     search_alternatives,
 )
 from .delivery import DeliveryStore
+from .context_plan_adapter import (
+    normalize_context_plan,
+    normalize_context_retrieval,
+)
 from .episode_search import (
     EpisodeQueryService,
     EpisodeSearchBackend,
@@ -1585,8 +1589,14 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
     def _context_plan_dict(row: sqlite3.Row) -> dict[str, object]:
         plan = dict(row)
         plan["source_event_ids"] = json.loads(str(plan.pop("source_event_ids_json")))
-        plan["plan"] = json.loads(str(plan.pop("plan_json")))
-        plan["retrieval"] = json.loads(str(plan.pop("retrieval_json")))
+        normalized_plan = normalize_context_plan(
+            json.loads(str(plan.pop("plan_json")))
+        )
+        plan["plan"] = normalized_plan
+        plan["retrieval"] = normalize_context_retrieval(
+            json.loads(str(plan.pop("retrieval_json"))),
+            normalized_plan,
+        )
         return plan
 
     def save_context_plan(
@@ -1605,7 +1615,10 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         source_json = json.dumps(
             source_event_ids, ensure_ascii=False, separators=(",", ":")
         )
-        plan_json = json.dumps(plan, ensure_ascii=False, separators=(",", ":"))
+        normalized_plan = normalize_context_plan(plan)
+        plan_json = json.dumps(
+            normalized_plan, ensure_ascii=False, separators=(",", ":")
+        )
         now = time.time()
         with self._db:
             existing = self._db.execute(
@@ -1616,7 +1629,10 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                 if (
                     json.loads(str(existing["source_event_ids_json"]))
                     != source_event_ids
-                    or json.loads(str(existing["plan_json"])) != plan
+                    or normalize_context_plan(
+                        json.loads(str(existing["plan_json"]))
+                    )
+                    != normalized_plan
                 ):
                     raise ValueError("context plan revision already exists")
                 return self._context_plan_dict(existing)
@@ -1681,41 +1697,26 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             else:
                 retrieval = record.get("retrieval")
                 plan = record.get("plan")
-                if (
-                    not isinstance(retrieval, dict)
-                    or retrieval.get("version") not in {4, 5, 6}
-                    or not isinstance(plan, dict)
-                ):
+                if not isinstance(retrieval, dict) or not isinstance(plan, dict):
                     queries = []
                 else:
-                    query_recall = str(retrieval.get("query_recall") or "")
                     stored = retrieval.get("effective_recall_queries")
-                    if isinstance(stored, list):
-                        queries = [
-                            text[:240]
-                            for query in stored
-                            for text in _recall_query_texts(query)[:1]
-                        ]
-                    elif "misses=" in query_recall:
-                        queries = []
-                    else:
-                        units = [
-                            unit
-                            for unit in plan.get("intent_units") or []
-                            if isinstance(unit, dict)
-                        ]
-                        queries = [
-                            text[:240]
-                            for unit in units
-                            for query in unit.get("recall_queries") or []
-                            for text in _recall_query_texts(query)[:1]
-                        ]
-                        for source_turn_id in dict.fromkeys(
-                            str(unit.get("recall_from_turn_id") or "")
-                            for unit in units
-                            if unit.get("recall_from_turn_id")
-                        ):
-                            queries.extend(effective_queries(source_turn_id))
+                    queries = [
+                        text[:240]
+                        for query in (stored if isinstance(stored, list) else [])
+                        for text in _recall_query_texts(query)[:1]
+                    ]
+                    units = [
+                        unit
+                        for unit in plan.get("intent_units") or []
+                        if isinstance(unit, dict)
+                    ]
+                    for source_turn_id in dict.fromkeys(
+                        str(unit.get("recall_from_turn_id") or "")
+                        for unit in units
+                        if unit.get("recall_from_turn_id")
+                    ):
+                        queries.extend(effective_queries(source_turn_id))
                     queries = list(dict.fromkeys(queries))
             resolving.discard(turn_id)
             query_cache[turn_id] = queries
@@ -1738,13 +1739,23 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
     ) -> dict[str, object]:
         if state not in {"recalled", "degraded"}:
             raise ValueError("context retrieval must be recalled or degraded")
+        record = self.context_plan(turn_id, revision)
+        if record is None or not isinstance(record.get("plan"), dict):
+            raise ValueError("active context plan not found")
+        normalized_retrieval = normalize_context_retrieval(
+            retrieval, record["plan"]
+        )
         now = time.time()
         with self._db:
             cursor = self._db.execute(
                 """UPDATE context_plans SET retrieval_json=?, state=?, updated_at=?
                    WHERE turn_id=? AND revision=? AND state<>'superseded'""",
                 (
-                    json.dumps(retrieval, ensure_ascii=False, separators=(",", ":")),
+                    json.dumps(
+                        normalized_retrieval,
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                    ),
                     state,
                     now,
                     turn_id,
@@ -1882,7 +1893,11 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                ORDER BY revision DESC LIMIT 1""",
             (turn_id,),
         ).fetchone()
-        plan = json.loads(str(plan_row["plan_json"])) if plan_row else {}
+        plan = (
+            normalize_context_plan(json.loads(str(plan_row["plan_json"])))
+            if plan_row
+            else {}
+        )
         units = {
             str(unit["id"]): unit
             for unit in plan.get("intent_units", [])
@@ -2462,7 +2477,9 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             interpretation: dict[str, object] = {}
             if plan_row is not None:
                 try:
-                    plan = json.loads(str(plan_row["plan_json"]))
+                    plan = normalize_context_plan(
+                        json.loads(str(plan_row["plan_json"]))
+                    )
                 except (TypeError, json.JSONDecodeError):
                     plan = {}
                 if isinstance(plan, dict):
@@ -2927,7 +2944,9 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             (after, after, before, before),
         ).fetchall()
         active_plans = {
-            str(row["turn_id"]): json.loads(str(row["plan_json"]))
+            str(row["turn_id"]): normalize_context_plan(
+                json.loads(str(row["plan_json"]))
+            )
             for row in self._db.execute(
                 """SELECT cp.turn_id, cp.plan_json
                    FROM context_plans AS cp
@@ -4486,7 +4505,11 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                ORDER BY revision DESC LIMIT 1""",
             (turn_id,),
         ).fetchone()
-        plan = json.loads(str(row["plan_json"])) if row is not None else {}
+        plan = (
+            normalize_context_plan(json.loads(str(row["plan_json"])))
+            if row is not None
+            else {}
+        )
         actions = self._episode_actions(plan)
         links = plan.get("episode_links", [])
         selected: set[str] = set()

@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 
 from ..config import AppConfig
 from ..logging_context import log_event, safe_preview
-from ..search import search_alternatives
 from ..storage import (
     REFLECTION_MEMORY_CAUTION,
     MemoryRecallQuery,
@@ -17,6 +16,7 @@ from ..storage import (
     truncate_tokens,
 )
 from ..storage.episode_ranking import EpisodeRecallQuery, rank_recall_items
+from ..storage.context_plan_adapter import CURRENT_RETRIEVAL_VERSION
 from .budget import SECTION_BUDGET_ALLOCATOR
 
 if TYPE_CHECKING:
@@ -64,19 +64,15 @@ def select_plan_recall_queries(
             continue
         queries: list[dict[str, object]] = []
         for raw_query in unit.get("recall_queries") or []:
-            if isinstance(raw_query, dict):
-                semantic = " ".join(str(raw_query.get("semantic") or "").split())[:240]
-                raw_keywords = raw_query.get("keywords") or []
-                keywords = [
-                    " ".join(str(keyword).split())[:60]
-                    for keyword in raw_keywords
-                    if " ".join(str(keyword).split())
-                ]
-            else:
-                # Historical v5 plans stored one expression for both channels.
-                legacy = " ".join(str(raw_query).split())[:120]
-                semantic = legacy
-                keywords = list(search_alternatives(legacy))
+            if not isinstance(raw_query, dict):
+                raise ValueError("context plan recall query is not normalized")
+            semantic = " ".join(str(raw_query.get("semantic") or "").split())[:240]
+            raw_keywords = raw_query.get("keywords") or []
+            keywords = [
+                " ".join(str(keyword).split())[:60]
+                for keyword in raw_keywords
+                if " ".join(str(keyword).split())
+            ]
             query = {
                 "semantic": semantic,
                 "keywords": list(dict.fromkeys(keywords)),
@@ -221,29 +217,16 @@ def build_plan_retrieval(
             return
         source_retrieval = record.get("retrieval")
         source_plan = record.get("plan")
-        if (
-            not isinstance(source_retrieval, dict)
-            or source_retrieval.get("version") not in {4, 5, 6}
-            or not isinstance(source_plan, dict)
-        ):
+        if not isinstance(source_retrieval, dict) or not isinstance(source_plan, dict):
             return
         stored_queries = source_retrieval.get("effective_recall_queries")
-        if isinstance(stored_queries, list) and stored_queries:
-            inherited_queries.extend(
-                recall_query_semantic(query)
-                for query in stored_queries
-                if recall_query_semantic(query)
-            )
-        else:
-            query_recall = str(source_retrieval.get("query_recall") or "")
-            if "hits=" in query_recall and "misses=" not in query_recall:
-                inherited_queries.extend(
-                    recall_query_semantic(query)
-                    for source_unit in source_plan.get("intent_units") or []
-                    if isinstance(source_unit, dict)
-                    for query in source_unit.get("recall_queries") or []
-                    if recall_query_semantic(query)
-                )
+        if not isinstance(stored_queries, list):
+            raise ValueError("context retrieval is not normalized")
+        inherited_queries.extend(
+            recall_query_semantic(query)
+            for query in stored_queries
+            if recall_query_semantic(query)
+        )
         for item in source_retrieval.get("recall_memories") or []:
             if isinstance(item, dict):
                 inherited_memories.append(
@@ -263,7 +246,7 @@ def build_plan_retrieval(
                 if isinstance(query, dict):
                     query["unit_ids"] = unit_ids
             inherited_episodes.append(inherited)
-        if isinstance(stored_queries, list) and stored_queries:
+        if stored_queries:
             return
         for source_unit in source_plan.get("intent_units") or []:
             if not isinstance(source_unit, dict):
@@ -518,7 +501,7 @@ def build_plan_retrieval(
         dict.fromkeys([*recall_hits, *inherited_queries])
     )
     retrieval = {
-        "version": 6,
+        "version": CURRENT_RETRIEVAL_VERSION,
         "episodes": episodes,
         "long_term_memories": store.always_memory_context(),
         "recent_memories": store.recent_memory_context(),
