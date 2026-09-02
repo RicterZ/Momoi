@@ -190,7 +190,9 @@ class AgentLoop:
                 failed_tool_rounds = 0
                 remind_owner_bubbles = False
             request_tools = (
-                [AUTONOMOUS_FINISH_SPEC] if force_autonomous_finish else tools
+                [AUTONOMOUS_FINISH_SPEC]
+                if force_autonomous_finish
+                else harness.project_surface(tools)
             )
             request_system = (
                 self._system_with_tool_policies(system, request_tools)

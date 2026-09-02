@@ -70,6 +70,19 @@ class TurnHarnessTest(unittest.TestCase):
         harness.accept("recall")
         self.assertEqual(harness.validate([recall]), "recall_already_completed")
 
+    def test_first_tool_is_the_only_tool_visible_until_it_succeeds(self) -> None:
+        harness = TurnHarness.for_stage("owner")
+        tools = [
+            {"name": "recall"},
+            {"name": "send_bubbles"},
+            {"name": "curl"},
+            {"name": "end_turn"},
+        ]
+
+        self.assertEqual(harness.project_surface(tools), [{"name": "recall"}])
+        harness.accept("recall")
+        self.assertIs(harness.project_surface(tools), tools)
+
     def test_assistant_text_invalidates_an_otherwise_valid_tool_call(self) -> None:
         harness = TurnHarness.for_stage("owner")
         recall = ToolCall("recall", "recall", {})
