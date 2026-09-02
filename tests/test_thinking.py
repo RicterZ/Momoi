@@ -5,7 +5,7 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
-from momoi.config import load_config
+from momoi.config.loading import load_config
 from momoi.logging_context import log_context
 from momoi.tools.memory import MemoryTools
 from momoi.models import ToolCall, TurnDraft

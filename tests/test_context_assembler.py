@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from momoi.channel.napcat import NapCatConfig
-from momoi.config import AppConfig, LLMConfig
+from momoi.config.models import AppConfig, LLMConfig
 from momoi.context_time import context_timestamp
 from momoi.models import AgentReply, IncomingMessage
 from momoi.runtime.context.rendering import (

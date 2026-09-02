@@ -4,7 +4,7 @@ import json
 import sqlite3
 import time
 
-from ..config import NotificationConfig
+from ..config.models import NotificationConfig
 from .scheduling import quiet_until
 
 

@@ -16,7 +16,7 @@ from .telemetry import (
     thinking_effort,
 )
 from .transport import anthropic_url, http_error, retry_request
-from ..config import LLMConfig
+from ..config.models import LLMConfig
 from ..logging_context import log_event
 from ..models import ProviderResponse, ToolCall
 

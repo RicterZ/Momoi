@@ -5,7 +5,7 @@ import time
 import httpx
 import numpy as np
 
-from ..config import EmbeddingConfig
+from ..config.models import EmbeddingConfig
 from ..logging_context import log_event
 from ..policies import SemanticPolicy
 

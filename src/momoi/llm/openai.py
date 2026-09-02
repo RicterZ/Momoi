@@ -17,7 +17,7 @@ from .telemetry import (
     thinking_effort,
 )
 from .transport import http_error, openai_url, retry_request
-from ..config import LLMConfig
+from ..config.models import LLMConfig
 from ..logging_context import log_event, safe_preview
 from ..models import ProviderResponse, ToolCall
 

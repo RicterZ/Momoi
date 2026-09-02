@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from momoi.channel.napcat import NapCatConfig
-from momoi.config import AppConfig, LLMConfig
+from momoi.config.models import AppConfig, LLMConfig
 from momoi.logging_context import current_log_context
 from momoi.models import IncomingMessage, ProviderResponse, ToolCall
 from momoi.runtime import MomoiDaemon

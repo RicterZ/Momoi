@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from momoi.channel.napcat import NapCatConfig
-from momoi.config import AppConfig, LLMConfig
+from momoi.config.models import AppConfig, LLMConfig
 from momoi.runtime.daemon import MomoiDaemon
 from momoi.runtime.jobs import AutonomousJob
 

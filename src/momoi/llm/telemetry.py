@@ -6,7 +6,7 @@ from time import monotonic, time
 from typing import Any, Callable
 
 from .dumps import dump_response
-from ..config import LLMConfig
+from ..config.models import LLMConfig
 from ..extensions.base import parse_protocol_usage
 from ..logging_context import TRACE, current_log_context, log_event
 from ..storage import estimate_tokens

@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
-from momoi.config import NotificationConfig
+from momoi.config.models import NotificationConfig
 from momoi.context_time import context_timestamp
 from momoi.storage import Store
 from momoi.storage.heartbeat_state import RECENT_HEARTBEAT_LIMIT

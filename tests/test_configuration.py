@@ -13,14 +13,14 @@ from momoi.__main__ import emotion as emotion_command, goal as goal_command, par
 from momoi.tools.agenda import AgendaTools
 from momoi.channel.napcat import NapCatConfig
 from momoi.channel.weixin import WeixinConfig
-from momoi.config import (
+from momoi.config.loading import load_config
+from momoi.config.models import (
     ASRConfig,
     ConfigError,
     DashboardConfig,
     EmbeddingConfig,
     ThinkingConfig,
     UsageConfig,
-    load_config,
 )
 from momoi.mcp.config import load_mcp_servers
 from momoi.models import (

@@ -1,6 +1,6 @@
 import time
 
-from ..config import HeartbeatConfig, NotificationConfig
+from ..config.models import HeartbeatConfig, NotificationConfig
 from .scheduling import quiet_until
 
 

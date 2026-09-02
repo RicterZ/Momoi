@@ -4,7 +4,7 @@ import uuid
 from pathlib import Path
 
 from momoi.channel.napcat import NapCatConfig
-from momoi.config import AppConfig, LLMConfig
+from momoi.config.models import AppConfig, LLMConfig
 from momoi.models import AgentReply, IncomingMessage
 from momoi.runtime import MomoiDaemon
 

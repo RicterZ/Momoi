@@ -2,7 +2,7 @@ import json
 import time
 
 from ..channel import ChannelMessage
-from ..config import NotificationConfig
+from ..config.models import NotificationConfig
 from ..models import IncomingMessage, TurnDraft
 from ..reply_wait import encode_reply_wait
 

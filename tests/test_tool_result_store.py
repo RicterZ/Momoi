@@ -6,7 +6,7 @@ from pathlib import Path
 
 from momoi.tools.builtin import BuiltinTools
 from momoi.channel.napcat import NapCatConfig
-from momoi.config import AppConfig, LLMConfig
+from momoi.config.models import AppConfig, LLMConfig
 from momoi.models import ToolCall
 from momoi.runtime import MomoiDaemon
 from momoi.runtime.agent.result_store import ToolResultStore

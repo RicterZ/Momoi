@@ -22,7 +22,7 @@ from momoi.channel.napcat import (
     VOICE_UNAVAILABLE_TEXT,
 )
 from momoi.channel.weixin import WeixinConfig
-from momoi.config import (
+from momoi.config.models import (
     AppConfig,
     LLMConfig,
 )

@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 from momoi.tools.agenda import AGENDA_TOOL_POLICY, AGENDA_TOOL_SPECS, AgendaTools
 from momoi.tools.builtin import BuiltinTools
 from momoi.channel.napcat import NapCatConfig
-from momoi.config import (
+from momoi.config.models import (
     AppConfig,
     HeartbeatConfig,
     LLMConfig,

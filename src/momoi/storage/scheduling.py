@@ -3,7 +3,7 @@ import time
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from ..config import NotificationConfig
+from ..config.models import NotificationConfig
 
 
 def normalize_schedule(value: object) -> dict[str, object]:

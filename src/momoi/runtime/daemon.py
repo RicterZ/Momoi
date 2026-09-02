@@ -11,7 +11,7 @@ from ..channel import (
     ChannelDependencies,
     create_channel,
 )
-from ..config import AppConfig
+from ..config.models import AppConfig
 from ..dashboard.service import DashboardService
 from ..extensions import load_usage_plugin
 from ..logging_context import log_event

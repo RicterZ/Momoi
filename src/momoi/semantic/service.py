@@ -7,7 +7,7 @@ from typing import Callable, Iterable
 
 import numpy as np
 
-from ..config import EmbeddingConfig
+from ..config.models import EmbeddingConfig
 from ..logging_context import log_event
 from ..policies import SemanticPolicy
 from ..storage import MemoryRecallQuery, Store

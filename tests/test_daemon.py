@@ -13,7 +13,7 @@ from aiohttp import web
 from aiohttp.test_utils import TestServer
 
 from momoi.channel.napcat import NapCatConfig
-from momoi.config import (
+from momoi.config.models import (
     AppConfig,
     EpisodeAnnealingConfig,
     HeartbeatConfig,

@@ -11,7 +11,8 @@ from zoneinfo import ZoneInfo
 
 from .tools.agenda import AgendaTools
 from .channel import login_channel
-from .config import ConfigError, load_config
+from .config.loading import load_config
+from .config.models import ConfigError
 from .emotions import managed_emotion_path, remove_unreferenced_emotion_asset
 from .logging_context import configure_logging, log_event
 from .models import ToolCall, TurnDraft

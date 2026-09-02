@@ -13,7 +13,7 @@ from aiohttp.test_utils import TestServer
 
 from momoi.tools.builtin import BuiltinTools
 from momoi.channel.napcat import NapCatConfig
-from momoi.config import (
+from momoi.config.models import (
     AppConfig,
     LLMConfig,
     ThinkingConfig,

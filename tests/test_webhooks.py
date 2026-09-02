@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from momoi.channel.napcat import NapCatConfig
-from momoi.config import (
+from momoi.config.models import (
     AppConfig,
     LLMConfig,
     WebhookConfig,

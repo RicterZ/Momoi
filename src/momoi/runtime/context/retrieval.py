@@ -4,7 +4,7 @@ import copy
 import logging
 from typing import TYPE_CHECKING
 
-from ...config import AppConfig
+from ...config.models import AppConfig
 from ...logging_context import log_event, safe_preview
 from ...storage import MemoryRecallQuery, Store, truncate_tokens
 from ...storage.context_plan_adapter import CURRENT_RETRIEVAL_VERSION

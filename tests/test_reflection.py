@@ -7,7 +7,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from momoi.channel.napcat import NapCatConfig
-from momoi.config import AppConfig, LLMConfig, ReflectionConfig
+from momoi.config.models import AppConfig, LLMConfig, ReflectionConfig
 from momoi.runtime import REFLECTION_FINISH_SPEC, MomoiDaemon
 from momoi.runtime.parsing import parse_reflection_finish
 from momoi.models import ProviderResponse, ToolCall

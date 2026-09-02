@@ -1,7 +1,7 @@
 import time
 from datetime import datetime, timedelta
 
-from ..config import ReflectionConfig
+from ..config.models import ReflectionConfig
 
 
 class ReflectionScheduleStore:

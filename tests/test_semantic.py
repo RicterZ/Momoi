@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 
-from momoi.config import EmbeddingConfig
+from momoi.config.models import EmbeddingConfig
 from momoi.policies import SemanticPolicy
 from momoi.search import StringSearchBackend
 from momoi.semantic.client import EmbeddingClient, semantic_error_category
