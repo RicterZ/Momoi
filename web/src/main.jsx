@@ -799,22 +799,26 @@ function Conversations({ refreshKey, token, routeParam }) {
   useEffect(() => {
     setSelected(routeParam || null);
   }, [routeParam]);
-  function select(id) {
-    setSelected(id);
-    window.location.hash = id
-      ? `conversations/${encodeURIComponent(id)}`
+  function select(record) {
+    setSelected(record);
+    window.location.hash = record
+      ? `conversations/${record}`
       : "conversations";
   }
   return (
     <DataView path="/api/conversations?limit=100" refreshKey={refreshKey} token={token}>
       {(data) => {
         const items = data.items || [];
-        const activeId = selected || items[0]?.id || "";
-        if (!activeId) return <Empty />;
+        const activeRecord =
+          selected ||
+          (items[0]
+            ? `${items[0].record_type}/${encodeURIComponent(items[0].id)}`
+            : "");
+        if (!activeRecord) return <Empty />;
         return (
           <ConversationLayout
             items={items}
-            activeId={activeId}
+            activeRecord={activeRecord}
             detail={detail}
             token={token}
             onSelect={select}
@@ -826,7 +830,14 @@ function Conversations({ refreshKey, token, routeParam }) {
   );
 }
 
-function ConversationLayout({ items, activeId, detail, token, onSelect, setDetail }) {
+function ConversationLayout({
+  items,
+  activeRecord,
+  detail,
+  token,
+  onSelect,
+  setDetail,
+}) {
   useEffect(() => {
     if (!token) {
       setDetail({ error: new Error("unauthorized") });
@@ -834,7 +845,7 @@ function ConversationLayout({ items, activeId, detail, token, onSelect, setDetai
     }
     const controller = new AbortController();
     setDetail({ loading: true });
-    api(`/api/conversations/${encodeURIComponent(activeId)}?token_budget=100000`, {
+    api(`/api/conversations/${activeRecord}?token_budget=100000`, {
       signal: controller.signal,
       token,
     })
@@ -843,39 +854,48 @@ function ConversationLayout({ items, activeId, detail, token, onSelect, setDetai
         if (error.name !== "AbortError") setDetail({ error });
       });
     return () => controller.abort();
-  }, [activeId, setDetail, token]);
+  }, [activeRecord, setDetail, token]);
 
   const visibleItems =
-    detail.data?.id === activeId && !items.some((item) => item.id === activeId)
+    detail.data &&
+    `${detail.data.record_type}/${encodeURIComponent(detail.data.id)}` ===
+      activeRecord &&
+    !items.some(
+      (item) =>
+        `${item.record_type}/${encodeURIComponent(item.id)}` === activeRecord,
+    )
       ? [detail.data, ...items]
       : items;
 
   return (
     <section className="record-layout">
       <div className="record-list" aria-label="聊天主题">
-        {visibleItems.map((item) => (
-          <button
-            className={`record-item ${item.id === activeId ? "active" : ""}`}
-            type="button"
-            key={item.id}
-            onClick={() => onSelect(item.id)}
-          >
-            <h3>{item.title}</h3>
-            <p>
-              {item.narrative_summary ||
-                item.summary ||
-                item.topics?.join(" · ") ||
-                "暂无摘要"}
-            </p>
-            <time>{formatDate(item.updated_at)}</time>
-          </button>
-        ))}
+        {visibleItems.map((item) => {
+          const record = `${item.record_type}/${encodeURIComponent(item.id)}`;
+          return (
+            <button
+              className={`record-item ${record === activeRecord ? "active" : ""}`}
+              type="button"
+              key={`${item.record_type}:${item.id}`}
+              onClick={() => onSelect(record)}
+            >
+              <h3>{item.title}</h3>
+              <p>
+                {item.narrative_summary ||
+                  item.summary ||
+                  item.topics?.join(" · ") ||
+                  "暂无摘要"}
+              </p>
+              <time>{formatDate(item.updated_at)}</time>
+            </button>
+          );
+        })}
       </div>
       <div className="conversation">
         {detail.loading && <Loading>正在读取聊天…</Loading>}
         {detail.error && <ErrorState error={detail.error} />}
         {detail.data && (
-          <ConversationDetail key={activeId} item={detail.data} />
+          <ConversationDetail key={activeRecord} item={detail.data} />
         )}
       </div>
     </section>
@@ -2189,7 +2209,7 @@ function RecallDetail({ recall }) {
                   <div className="recall-episode-action" key={`${action.action}:${action.episode_id || index}`}>
                     <span>{action.action === "continue" ? "继续记录" : action.action === "new" ? "新建记录" : "关联记录"}</span>
                     {action.episode_id ? (
-                      <a href={`#conversations/${encodeURIComponent(action.episode_id)}`}>
+                      <a href={`#conversations/episode/${encodeURIComponent(action.episode_id)}`}>
                         {action.title || "查看聊天记录"} <span aria-hidden="true">↗</span>
                       </a>
                     ) : (
@@ -2252,7 +2272,7 @@ function RecallDetail({ recall }) {
                       tone="episode"
                       renderItem={(item) => (
                         <li key={item.id}>
-                          <a className="recall-evidence-link" href={`#conversations/${encodeURIComponent(item.id)}`}>
+                          <a className="recall-evidence-link" href={`#conversations/episode/${encodeURIComponent(item.id)}`}>
                             {item.title || "未命名聊天记录"} <span aria-hidden="true">↗</span>
                           </a>
                           {item.summary ? <p>{item.summary}</p> : null}
@@ -2292,7 +2312,7 @@ function ThinkingDetail({ item, calls, recall }) {
         {episodeId ? (
           <a
             className="tag thinking-conversation"
-            href={`#conversations/${encodeURIComponent(episodeId)}`}
+            href={`#conversations/episode/${encodeURIComponent(episodeId)}`}
           >
             {episodeTitle}
           </a>

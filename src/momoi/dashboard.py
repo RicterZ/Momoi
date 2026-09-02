@@ -447,23 +447,25 @@ def create_dashboard_app(
         limit = _bounded_int(request, "limit", 64, 1, 200)
         return web.json_response({"items": store.list_dashboard_conversations(limit)})
 
-    async def conversation(request: web.Request) -> web.Response:
+    async def episode_conversation(request: web.Request) -> web.Response:
         token_budget = _bounded_int(request, "token_budget", 100_000, 1_000, 250_000)
         before = request.query.get("before_ordinal")
         try:
             before_ordinal = int(before) if before else None
         except ValueError:
             raise web.HTTPBadRequest(text="invalid before_ordinal") from None
-        record_id = request.match_info["episode_id"]
-        item = (
-            store.dashboard_conversation_turn(record_id.removeprefix("turn:"))
-            if record_id.startswith("turn:")
-            else store.conversation_episode(
-                record_id,
-                token_budget,
-                before_ordinal=before_ordinal,
-            )
+        item = store.conversation_episode(
+            request.match_info["record_id"],
+            token_budget,
+            before_ordinal=before_ordinal,
         )
+        if item is None:
+            raise web.HTTPNotFound(text="conversation not found")
+        item["record_type"] = "episode"
+        return web.json_response(item)
+
+    async def turn_conversation(request: web.Request) -> web.Response:
+        item = store.dashboard_conversation_turn(request.match_info["record_id"])
         if item is None:
             raise web.HTTPNotFound(text="conversation not found")
         return web.json_response(item)
@@ -684,7 +686,10 @@ def create_dashboard_app(
     app.router.add_get("/api/thinking/calls/{call_id}", thinking_call)
     app.router.add_get("/api/thinking/{turn_id}", thinking_turn)
     app.router.add_get("/api/conversations", conversations)
-    app.router.add_get("/api/conversations/{episode_id}", conversation)
+    app.router.add_get(
+        "/api/conversations/episode/{record_id}", episode_conversation
+    )
+    app.router.add_get("/api/conversations/turn/{record_id}", turn_conversation)
     app.router.add_get("/api/reflections", reflections)
     app.router.add_get("/api/memories", memories)
     app.router.add_patch("/api/memories/{memory_id}", update_memory)

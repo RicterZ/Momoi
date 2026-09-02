@@ -2864,7 +2864,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             status = str(row["action"] or "unclassified")
             items.append(
                 {
-                    "id": f"turn:{row['id']}",
+                    "id": str(row["id"]),
                     "turn_id": str(row["id"]),
                     "record_type": "turn",
                     "status": status,
@@ -2916,7 +2916,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         owner = re.sub(r"^\d{4}-\d{2}-\d{2}T\S+\s+", "", owner).strip()
         status = str(row["action"] or "unclassified")
         return {
-            "id": f"turn:{turn_id}",
+            "id": turn_id,
             "turn_id": turn_id,
             "record_type": "turn",
             "status": status,

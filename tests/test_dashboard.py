@@ -271,8 +271,11 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         ).json()
         self.assertEqual(conversations["items"][0]["title"], "一次测试聊天")
         conversation = await (
-            await self.client.get("/api/conversations/episode-one", headers=auth)
+            await self.client.get(
+                "/api/conversations/episode/episode-one", headers=auth
+            )
         ).json()
+        self.assertEqual(conversation["record_type"], "episode")
         self.assertEqual(
             [message["content"] for message in conversation["messages"]],
             ["你好，Momoi", "早上好。"],
@@ -339,16 +342,18 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         response = await self.client.get("/api/conversations", headers=self._auth())
         items = (await response.json())["items"]
         by_id = {item["id"]: item for item in items}
-        self.assertEqual(by_id["turn:ignored-turn"]["status"], "ignored")
-        self.assertEqual(by_id["turn:deferred-turn"]["status"], "deferred")
-        self.assertEqual(by_id["turn:ignored-turn"]["record_type"], "turn")
+        self.assertEqual(by_id["ignored-turn"]["status"], "ignored")
+        self.assertEqual(by_id["deferred-turn"]["status"], "deferred")
+        self.assertEqual(by_id["ignored-turn"]["record_type"], "turn")
 
         detail = await (
             await self.client.get(
-                "/api/conversations/turn:ignored-turn",
+                "/api/conversations/turn/ignored-turn",
                 headers=self._auth(),
             )
         ).json()
+        self.assertEqual(detail["id"], "ignored-turn")
+        self.assertEqual(detail["record_type"], "turn")
         self.assertEqual(detail["title"], "微博最近有什么新消息")
         self.assertEqual(
             [message["content"] for message in detail["messages"]],
