@@ -349,6 +349,7 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             tools = Tools()
             daemon.provider = provider  # type: ignore[assignment]
             daemon.builtin_tools = tools  # type: ignore[assignment]
+            daemon.tool_executor.builtin_tools = tools  # type: ignore[assignment]
             reply = await daemon._complete_webhook_turn(
                 "回家时检查快递状态并根据结果提醒我。", "webhook:test:0"
             )

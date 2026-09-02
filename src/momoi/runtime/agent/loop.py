@@ -860,58 +860,28 @@ class AgentLoop:
                                 owner_work_acknowledged = True
                                 self.outbox_changed.set()
                     if result is None:
-                        capability = (
-                            self.mcp.capability(call.name)
-                            if source == "mcp"
-                            else self.builtin_tools.capability(call)
-                        )
-                        if (
-                            allowed_capabilities is not None
-                            and capability not in allowed_capabilities
+                        with log_context(
+                            stage=stage,
+                            turn_id=turn_id,
+                            call_id=call_id,
+                            round=llm_round,
+                            channel=delivery_channel.name,
+                            goal_id=autonomous_goal_id,
+                            tool_call_id=call.id,
+                            tool_name=call.name,
                         ):
-                            result = {"ok": False, "error": "tool_not_allowed"}
-                        elif (
-                            artifact_root is not None
-                            and call.name in {"read_file", "write_file", "list_dir"}
-                            and not self.tool_executor.artifact_path_allowed(
-                                call, artifact_root
-                            )
-                        ):
-                            result = {
-                                "ok": False,
-                                "error": "path_outside_autonomous_artifacts",
-                            }
-                        else:
-                            external_tool_used = (
-                                external_tool_used or capability != "read"
-                            )
-                            result = self.store.begin_tool_call(
-                                turn_id,
-                                call.id,
-                                call.name,
-                                call.arguments,
-                                capability,
-                            )
-                            if result is None:
-                                with log_context(
-                                    stage=stage,
+                            result, has_external_effect = (
+                                await self.tool_executor.execute_external(
+                                    call,
+                                    source,
                                     turn_id=turn_id,
-                                    call_id=call_id,
-                                    round=llm_round,
-                                    channel=delivery_channel.name,
-                                    goal_id=autonomous_goal_id,
-                                    tool_call_id=call.id,
-                                    tool_name=call.name,
-                                ):
-                                    result = (
-                                        await self.mcp.call(call.name, call.arguments)
-                                        if self.mcp.has_tool(call.name)
-                                        else await self.builtin_tools.execute(call)
-                                    )
-                                result = self.tool_executor.normalize(
-                                    call, result, source
+                                    allowed_capabilities=allowed_capabilities,
+                                    artifact_root=artifact_root,
                                 )
-                                self.store.complete_tool_call(turn_id, call.id, result)
+                            )
+                        external_tool_used = (
+                            external_tool_used or has_external_effect
+                        )
                 elif self.agenda_tools.has_tool(call.name, allow_notify=allow_notify):
                     result = self.agenda_tools.execute(
                         call,

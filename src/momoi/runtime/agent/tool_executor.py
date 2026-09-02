@@ -133,3 +133,51 @@ class ToolExecutor:
             return True
         except (OSError, ValueError):
             return False
+
+    async def execute_external(
+        self,
+        call: ToolCall,
+        source: str,
+        *,
+        turn_id: str,
+        allowed_capabilities: set[str] | None,
+        artifact_root: Path | None,
+    ) -> tuple[ToolResult, bool]:
+        capability = (
+            self.mcp.capability(call.name)
+            if source == "mcp"
+            else self.builtin_tools.capability(call)
+        )
+        if allowed_capabilities is not None and capability not in allowed_capabilities:
+            return self.normalize(
+                call, {"ok": False, "error": "tool_not_allowed"}, source
+            ), False
+        if (
+            artifact_root is not None
+            and call.name in {"read_file", "write_file", "list_dir"}
+            and not self.artifact_path_allowed(call, artifact_root)
+        ):
+            return self.normalize(
+                call,
+                {"ok": False, "error": "path_outside_autonomous_artifacts"},
+                source,
+            ), False
+        external_effect = capability != "read"
+        result = self.store.begin_tool_call(
+            turn_id,
+            call.id,
+            call.name,
+            call.arguments,
+            capability,
+        )
+        if result is None:
+            result = (
+                await self.mcp.call(call.name, call.arguments)
+                if source == "mcp"
+                else await self.builtin_tools.execute(call)
+            )
+            result = self.normalize(call, result, source)
+            self.store.complete_tool_call(turn_id, call.id, result)
+        elif "provenance" not in result:
+            result = self.normalize(call, result, source)
+        return result, external_effect
