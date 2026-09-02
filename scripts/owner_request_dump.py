@@ -18,9 +18,10 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-from momoi.provider import _merge_adjacent_roles, _openai_messages
-from momoi.runtime.context_assembler import assemble_main_context
-from momoi.runtime.transcript import build_transcript
+from momoi.llm.anthropic import merge_adjacent_roles
+from momoi.llm.openai import openai_messages
+from momoi.runtime.context.rendering import assemble_main_context
+from momoi.runtime.transcript.building import build_transcript
 from momoi.runtime.turn_support import (
     STYLE_CARD_SYSTEM_PROMPT,
     owner_content_blocks,
@@ -104,8 +105,8 @@ def multimodal_example() -> dict[str, object]:
     return {
         "note": "synthetic; demonstrates attachment placement only",
         "logical": logical,
-        "anthropic_wire": _merge_adjacent_roles(logical),
-        "openai_wire": _openai_messages("", logical),
+        "anthropic_wire": merge_adjacent_roles(logical),
+        "openai_wire": openai_messages("", logical),
     }
 
 
@@ -195,8 +196,8 @@ def main() -> int:
         "turn_id": str(subject["turn_id"]),
         "system": system,
         "messages": logical,
-        "anthropic_wire_messages": _merge_adjacent_roles(logical),
-        "openai_wire_messages": _openai_messages("", logical),
+        "anthropic_wire_messages": merge_adjacent_roles(logical),
+        "openai_wire_messages": openai_messages("", logical),
         "orphaned_proactive_groups": [
             {"turn_ids": list(group.turn_ids), "bubbles": list(group.parts)}
             for group in transcript.orphaned

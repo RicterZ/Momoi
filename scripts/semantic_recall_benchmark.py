@@ -14,9 +14,9 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
-from momoi.config import EmbeddingConfig
-from momoi.runtime.context_assembler import select_plan_recall_queries
-from momoi.semantic import SemanticRecallService
+from momoi.config.models import EmbeddingConfig
+from momoi.runtime.context.retrieval import select_plan_recall_queries
+from momoi.semantic.service import SemanticRecallService
 from momoi.storage import MemoryRecallQuery, Store
 from momoi.storage.episode_ranking import EpisodeRecallQuery
 
