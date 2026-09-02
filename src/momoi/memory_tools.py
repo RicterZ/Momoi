@@ -1,10 +1,9 @@
 import json
 import logging
 import re
-import time
-from datetime import datetime
 from typing import Any
 
+from .history_time_range import parse_history_time_range
 from .logging_context import log_event
 from .models import (
     IncomingMessage,
@@ -28,7 +27,6 @@ from .semantic import DenseRecallEvidence, SemanticRecallService
 from .thinking_tools import THINKING_TOOL_SPECS, ThinkingTools
 
 logger = logging.getLogger(__name__)
-_DEFAULT_EPISODE_LOOKBACK_DAYS = 30
 _EPISODE_SEARCH_SUMMARY_TOKENS = 300
 
 
@@ -99,51 +97,6 @@ def _episode_match_excerpt(episode: dict[str, object]) -> str:
         )
     return truncate_tokens("\n".join(lines), _EPISODE_SEARCH_SUMMARY_TOKENS)
 
-
-def _episode_time_range(
-    value: object,
-) -> tuple[float | None, float | None, dict[str, object]]:
-    now = time.time()
-    if value is None:
-        after = now - _DEFAULT_EPISODE_LOOKBACK_DAYS * 86400
-        return after, None, {
-            "kind": "recent",
-            "days": _DEFAULT_EPISODE_LOOKBACK_DAYS,
-        }
-    if not isinstance(value, dict):
-        raise ValueError("invalid_time_range")
-    kind = value.get("kind")
-    if kind == "all" and set(value) == {"kind"}:
-        return None, None, {"kind": "all"}
-    if kind == "recent" and set(value) <= {"kind", "days"}:
-        days = value.get("days", _DEFAULT_EPISODE_LOOKBACK_DAYS)
-        if isinstance(days, bool) or not isinstance(days, int) or not 1 <= days <= 3650:
-            raise ValueError("invalid_time_range")
-        return now - days * 86400, None, {"kind": "recent", "days": days}
-    if kind == "range" and set(value) <= {"kind", "from", "to"}:
-        try:
-            after = (
-                datetime.fromisoformat(str(value["from"])).timestamp()
-                if value.get("from")
-                else None
-            )
-            before = (
-                datetime.fromisoformat(str(value["to"])).timestamp()
-                if value.get("to")
-                else None
-            )
-        except (ValueError, TypeError):
-            raise ValueError("invalid_time_range") from None
-        if after is None and before is None or (
-            after is not None and before is not None and after >= before
-        ):
-            raise ValueError("invalid_time_range")
-        return after, before, {
-            "kind": "range",
-            **({"from": str(value["from"])} if after is not None else {}),
-            **({"to": str(value["to"])} if before is not None else {}),
-        }
-    raise ValueError("invalid_time_range")
 
 MEMORY_TOOL_POLICY = """### Memory tools
 
@@ -543,7 +496,7 @@ class MemoryTools:
             if call.name == "episode_search":
                 query = str(call.arguments.get("query") or "").strip()
                 try:
-                    after, before, _window = _episode_time_range(
+                    after, before, _window = parse_history_time_range(
                         call.arguments.get("time_range")
                     )
                 except ValueError:
@@ -669,7 +622,9 @@ class MemoryTools:
         if isinstance(cursor, bool) or not isinstance(cursor, int) or cursor < 0:
             return _memory_error("invalid_search_cursor")
         try:
-            after, before, window = _episode_time_range(arguments.get("time_range"))
+            after, before, window = parse_history_time_range(
+                arguments.get("time_range")
+            )
         except ValueError as error:
             return _memory_error(str(error))
         results = self.store.search_episodes(
@@ -777,7 +732,7 @@ class MemoryTools:
             window = None
         else:
             try:
-                after, before, window = _episode_time_range(time_range)
+                after, before, window = parse_history_time_range(time_range)
             except ValueError as error:
                 return _memory_error(str(error))
         if message_id is not None:

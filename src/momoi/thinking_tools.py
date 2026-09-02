@@ -1,6 +1,7 @@
 import logging
 from typing import Any
 
+from .history_time_range import parse_history_time_range
 from .logging_context import log_event
 from .models import ToolCall
 from .storage import Store, truncate_tokens
@@ -152,14 +153,12 @@ class ThinkingTools:
             }
 
     def _search(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        from .memory_tools import _episode_time_range
-
         turn_id = str(arguments.get("turn_id") or "").strip()
         query = str(arguments.get("query") or "")
         after, before, window = (
             (None, None, {"kind": "turn"})
             if turn_id and arguments.get("time_range") is None
-            else _episode_time_range(arguments.get("time_range"))
+            else parse_history_time_range(arguments.get("time_range"))
         )
         limit = arguments.get("limit", _DEFAULT_SEARCH_LIMIT)
         if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 10:
