@@ -11,8 +11,8 @@ from momoi.runtime.turn_support import truncate_tool_result_json
 from momoi.storage.memory import estimate_tokens, truncate_tokens
 
 
-class BudgetCompatibilityTests(unittest.TestCase):
-    def test_memory_text_boundaries_remain_compatible(self):
+class BudgetTests(unittest.TestCase):
+    def test_memory_text_boundaries(self):
         sizer = TextSizer()
         fitter = MemoryTextFitter(sizer)
         self.assertEqual(estimate_tokens(""), 1)

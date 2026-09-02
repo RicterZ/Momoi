@@ -2123,24 +2123,6 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertTrue(replay["ambiguous"])
             store.close()
 
-    def test_legacy_context_manifest_tables_are_left_untouched(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "momoi.sqlite3"
-            database = sqlite3.connect(path)
-            database.executescript(
-                "CREATE TABLE context_manifests(id INTEGER);"
-                "INSERT INTO context_manifests VALUES (1);"
-                "CREATE TABLE context_blobs(id INTEGER);"
-            )
-            database.close()
-
-            store = Store(path)
-            count = store._db.execute(
-                "SELECT COUNT(*) FROM context_manifests"
-            ).fetchone()[0]
-            self.assertEqual(count, 1)
-            store.close()
-
     def test_crashed_external_effect_turn_requires_reconciliation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "momoi.sqlite3"

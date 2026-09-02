@@ -120,7 +120,7 @@ steps:
             self.assertEqual(catalog.momoi_fields["workflow_ids"], "event-message")
             self.assertEqual(catalog.momoi_fields["executor_ids"], "echo-ok")
 
-    def test_incompatible_channel_executor_only_disables_its_workflow(self) -> None:
+    def test_optional_incompatible_executor_and_workflow_are_skipped(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             workflows_path = root / "workflows"
