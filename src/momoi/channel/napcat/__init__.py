@@ -1,8 +1,9 @@
 from pathlib import Path
 
 from .. import ChannelDependencies
-from .channel import NapCatChannel, image_blocks, incoming_segments, render_segments
+from .channel import NapCatChannel
 from .config import NapCatConfig
+from .parsing import image_blocks, incoming_segments, render_segments
 
 
 def load_config(value: object, _workspace: Path) -> NapCatConfig:
