@@ -666,11 +666,11 @@ class MomoiDaemon(TurnRunner):
             candidates.append(self.autonomous.get_nowait())
         selected_index = min(
             range(len(candidates)),
-            key=lambda index: (candidates[index].priority, index),
+            key=lambda index: (candidates[index].effective_priority, index),
         )
         selected = candidates.pop(selected_index)
         for item in candidates:
-            self.autonomous.put_nowait(item)
+            self.autonomous.put_nowait(item.waited())
         return selected
 
     async def _request_webhook_turn(

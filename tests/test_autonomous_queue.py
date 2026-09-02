@@ -51,5 +51,36 @@ class AutonomousQueueTests(unittest.IsolatedAsyncioTestCase):
             )
             daemon.store.close()
 
+    async def test_continuous_goals_cannot_starve_heartbeat(self):
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(
+                AppConfig(
+                    llm=LLMConfig(
+                        "http://127.0.0.1", "test", "test", 100, 0, 1, 0
+                    ),
+                    channel=NapCatConfig(
+                        "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
+                    ),
+                    system_prompt="test",
+                    transcript_turns_min=4,
+                    transcript_turns_max=4,
+                    episode_raw_tail_turns=2,
+                    memory_results=2,
+                    database=Path(directory) / "momoi.sqlite3",
+                    log_level="INFO",
+                )
+            )
+            daemon.autonomous.put_nowait(AutonomousJob.heartbeat())
+            selected = []
+            for index in range(5):
+                daemon.autonomous.put_nowait(AutonomousJob.goal(f"goal-{index}"))
+                _kind, job = await daemon._next_work()
+                selected.append(job.kind)
+                if job.kind == "heartbeat":
+                    break
+
+            self.assertEqual(selected, ["goal", "goal", "goal", "heartbeat"])
+            daemon.store.close()
+
 if __name__ == "__main__":
     unittest.main()

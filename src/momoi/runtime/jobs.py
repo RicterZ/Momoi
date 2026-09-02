@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Literal
 
 
@@ -12,6 +12,7 @@ class AutonomousJob:
     kind: JobKind
     id: str = ""
     priority: int = field(init=False)
+    wait_rounds: int = field(default=0, compare=False, repr=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -37,3 +38,10 @@ class AutonomousJob:
     @classmethod
     def heartbeat(cls) -> "AutonomousJob":
         return cls("heartbeat")
+
+    @property
+    def effective_priority(self) -> int:
+        return self.priority - self.wait_rounds
+
+    def waited(self) -> "AutonomousJob":
+        return replace(self, wait_rounds=self.wait_rounds + 1)
