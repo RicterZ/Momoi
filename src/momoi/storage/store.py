@@ -27,7 +27,8 @@ from .emotions import EmotionStore
 from .turns import TurnStore
 from .inbox import InboxStore
 from .heartbeat import HeartbeatStore
-from .semantic import SemanticStore
+from .semantic_queue import SemanticQueueStore
+from .semantic_sources import SemanticSourceStore
 from .thinking import ThinkingStore
 from .observability import ObservabilityStore
 from .reflections import ReflectionStore
@@ -70,7 +71,8 @@ class Store(
     MemoryMutationStore,
     WebhookStore,
     DeliveryStore,
-    SemanticStore,
+    SemanticSourceStore,
+    SemanticQueueStore,
 ):
     def __init__(
         self,

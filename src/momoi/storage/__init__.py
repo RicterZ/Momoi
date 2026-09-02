@@ -11,7 +11,7 @@ from .memory_values import (
 )
 from .reflections import REFLECTION_MEMORY_KINDS
 from .store import Store
-from .semantic import (
+from .semantic_documents import (
     DOCUMENT_TEMPLATE_VERSION,
     QUERY_TEMPLATE_VERSION,
     SEMANTIC_PROVIDER,
