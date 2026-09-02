@@ -1,5 +1,4 @@
 import asyncio
-import json
 import logging
 import os
 import re
@@ -14,14 +13,15 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamable_http_client
 
-from .contracts import OWNER_PROGRESS_BEFORE_FIRST_CALL, OWNER_PROGRESS_FIELD
-from .logging_context import (
+from ..contracts import OWNER_PROGRESS_BEFORE_FIRST_CALL, OWNER_PROGRESS_FIELD
+from ..logging_context import (
     TRACE,
     captured_log_context,
     current_log_context,
     log_event,
     safe_preview,
 )
+from .config import expand_mcp_value, load_mcp_servers
 
 logger = logging.getLogger(__name__)
 MCPRequest = tuple[
@@ -30,15 +30,6 @@ MCPRequest = tuple[
     asyncio.Future[dict[str, Any]],
     dict[str, Any],
 ]
-
-MCP_TOOL_POLICY = """### External MCP tools
-
-- MCP tools are real capabilities. Use them when the owner's request requires
-  current external information or an action they provide; do not pretend to
-  have searched or acted without a successful tool result.
-- For non-trivial research, retry with a better query when the first result is
-  insufficient, then answer from the evidence actually returned.
-"""
 
 
 def _mcp_error_message(payload: dict[str, Any]) -> str:
@@ -53,60 +44,6 @@ def _mcp_error_message(payload: dict[str, Any]) -> str:
             if isinstance(item, dict) and item.get("text"):
                 return safe_preview(item["text"], 500)
     return "The MCP server reported a tool error."
-
-
-def _expand(value: str) -> str:
-    def replace(match: re.Match[str]) -> str:
-        name = match.group(1)
-        if name not in os.environ:
-            raise ValueError(f"environment variable {name} is not set")
-        return os.environ[name]
-
-    return re.sub(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}", replace, value)
-
-
-def load_mcp_servers(path: Path | None) -> dict[str, dict[str, Any]]:
-    if path is None:
-        return {}
-    if not path.exists():
-        log_event(
-            logger,
-            logging.ERROR,
-            "mcp_config_missing",
-            path=str(path),
-        )
-        raise FileNotFoundError(f"MCP configuration file does not exist: {path}")
-    raw = json.loads(path.read_text(encoding="utf-8"))
-    servers = raw.get("mcpServers") if isinstance(raw, dict) else None
-    if not isinstance(servers, dict):
-        raise ValueError("mcp.json must contain an mcpServers object")
-    loaded = {
-        str(name): config
-        for name, config in servers.items()
-        if isinstance(config, dict) and not config.get("disabled", False)
-    }
-    for name, config in loaded.items():
-        optional = config.get("optional", False)
-        if not isinstance(optional, bool):
-            raise ValueError(f"MCP server {name} optional must be boolean")
-        description = config.get("description")
-        if description is not None and (
-            not isinstance(description, str)
-            or not description.strip()
-            or len(description.strip()) > 500
-        ):
-            raise ValueError(
-                f"MCP server {name} description must be 1 to 500 characters"
-            )
-    log_event(
-        logger,
-        logging.INFO,
-        "mcp_config_loaded",
-        path=str(path),
-        servers=len(loaded),
-        names=",".join(sorted(loaded)) or None,
-    )
-    return loaded
 
 
 class MCPManager:
@@ -261,8 +198,7 @@ class MCPManager:
                             "ok": False,
                             "error": "mcp_transport_error",
                             "message": (
-                                safe_preview(str(error), 500)
-                                or type(error).__name__
+                                safe_preview(str(error), 500) or type(error).__name__
                             ),
                             "upstream_error_type": type(error).__name__,
                             "ambiguous": True,
@@ -351,7 +287,7 @@ class MCPManager:
                 env = {
                     **os.environ,
                     **{
-                        str(key): _expand(str(value))
+                        str(key): expand_mcp_value(str(value))
                         for key, value in (config.get("env") or {}).items()
                     },
                 }
@@ -368,14 +304,16 @@ class MCPManager:
                 read, write = transport
             elif url := config.get("url") or config.get("baseUrl"):
                 headers = {
-                    str(key): _expand(str(value))
+                    str(key): expand_mcp_value(str(value))
                     for key, value in (config.get("headers") or {}).items()
                 }
                 client = await stack.enter_async_context(
                     httpx.AsyncClient(headers=headers, timeout=60)
                 )
                 read, write, _ = await stack.enter_async_context(
-                    streamable_http_client(_expand(str(url)), http_client=client)
+                    streamable_http_client(
+                        expand_mcp_value(str(url)), http_client=client
+                    )
                 )
             else:
                 raise ValueError("server requires command or url")
@@ -397,8 +335,7 @@ class MCPManager:
                 config.get("enabledTools", ["*"]),
             )
             if not isinstance(configured_tools, list) or not all(
-                isinstance(item, str) and item
-                for item in configured_tools
+                isinstance(item, str) and item for item in configured_tools
             ):
                 raise ValueError(
                     f"MCP server {name} enabled_tools must be an array of names"

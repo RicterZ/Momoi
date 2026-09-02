@@ -18,7 +18,7 @@ from momoi.config import (
     LLMConfig,
     ThinkingConfig,
 )
-from momoi.mcp_client import MCPManager
+from momoi.mcp.manager import MCPManager
 from momoi.models import (
     IncomingMessage,
     ProviderResponse,
@@ -909,8 +909,8 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
             "search": {"command": "fake", "readOnlyTools": ["zeta"]}
         }
         with (
-            patch("momoi.mcp_client.stdio_client", return_value=Transport()),
-            patch("momoi.mcp_client.ClientSession", Session),
+            patch("momoi.mcp.manager.stdio_client", return_value=Transport()),
+            patch("momoi.mcp.manager.ClientSession", Session),
         ):
             await manager._connect("search", manager.configs["search"])
             await manager.__aexit__()
@@ -969,8 +969,8 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                 "enabled_tools": enabled,
             }
             with (
-                patch("momoi.mcp_client.stdio_client", return_value=Transport()),
-                patch("momoi.mcp_client.ClientSession", Session),
+                patch("momoi.mcp.manager.stdio_client", return_value=Transport()),
+                patch("momoi.mcp.manager.ClientSession", Session),
             ):
                 await manager._connect("search", config)
                 await manager.__aexit__()
@@ -1057,8 +1057,8 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
             "healthy": {"command": "healthy"},
         }
         with (
-            patch("momoi.mcp_client.stdio_client", side_effect=make_transport),
-            patch("momoi.mcp_client.ClientSession", Session),
+            patch("momoi.mcp.manager.stdio_client", side_effect=make_transport),
+            patch("momoi.mcp.manager.ClientSession", Session),
         ):
             async with manager:
                 rejected = await manager.call("mcp__stale__work", {})

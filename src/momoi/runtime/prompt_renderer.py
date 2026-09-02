@@ -3,7 +3,7 @@ from typing import Any
 
 from ..tools.agenda import AGENDA_TOOL_POLICY
 from ..logging_context import log_event, safe_preview
-from ..mcp_client import MCP_TOOL_POLICY
+from ..mcp.prompt import MCP_TOOL_POLICY
 from ..tools.memory import MEMORY_TOOL_POLICY
 from ..tools.thinking import THINKING_TOOL_POLICY
 from .turn_support import (

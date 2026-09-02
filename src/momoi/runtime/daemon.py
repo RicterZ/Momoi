@@ -17,7 +17,7 @@ from ..extensions import load_usage_plugin
 from ..logging_context import log_event
 from ..tools.memory import MemoryTools
 from ..tools.thinking import ThinkingTools
-from ..mcp_client import MCPManager
+from ..mcp.manager import MCPManager
 from ..models import AgentReply, IncomingMessage
 from ..llm.anthropic import AnthropicProvider
 from ..llm.openai import OpenAIProvider

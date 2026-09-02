@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from momoi.tools.agenda import AGENDA_TOOL_SPECS
 from momoi.tools.builtin import BUILTIN_TOOL_SPECS
 from momoi.contracts import OWNER_PROGRESS_BEFORE_FIRST_CALL, OWNER_PROGRESS_FIELD
-from momoi.mcp_client import MCP_TOOL_POLICY
+from momoi.mcp.prompt import MCP_TOOL_POLICY
 from momoi.models import ToolCall
 from momoi.runtime.agent.progress import (
     ANNOUNCE_FIELD,

@@ -22,7 +22,7 @@ from momoi.config import (
     UsageConfig,
     load_config,
 )
-from momoi.mcp_client import load_mcp_servers
+from momoi.mcp.config import load_mcp_servers
 from momoi.models import (
     ToolCall,
     TurnDraft,
