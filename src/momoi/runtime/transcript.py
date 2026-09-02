@@ -385,6 +385,39 @@ def render_messages(
     return messages
 
 
+def render_delivered_bubble_evidence(
+    groups: Sequence[TranscriptGroup],
+    *,
+    timezone: ZoneInfo,
+    tool_activity: Mapping[str, Sequence[Mapping[str, object]]] | None = None,
+) -> str:
+    """Render leading Momoi speech as evidence without fabricating dialogue."""
+
+    rendered = render_messages(
+        groups,
+        timezone=timezone,
+        tool_activity=tool_activity,
+    )
+    parts = [
+        "Momoi bubbles already delivered before the retained owner transcript:"
+    ]
+    for message in rendered:
+        content = "\n".join(
+            str(block.get("text") or "")
+            for block in message.get("content", [])
+            if isinstance(block, Mapping)
+        ).strip()
+        if not content:
+            continue
+        label = (
+            "Momoi"
+            if message.get("role") == "assistant"
+            else "Conversation state"
+        )
+        parts.append(f"[{label}]\n{content}")
+    return "\n\n".join(parts) if len(parts) > 1 else ""
+
+
 @dataclass(frozen=True)
 class Transcript:
     """A protocol-valid transcript plus the speech that could not enter it."""

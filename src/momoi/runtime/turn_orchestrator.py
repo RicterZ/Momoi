@@ -23,7 +23,12 @@ from .context_assembler import (
     recall_episode_context,
 )
 from .agent_workflow import AgentWorkflow, WorkflowProtocolError
-from .transcript import build_transcript, render_messages, turn_labels
+from .transcript import (
+    build_transcript,
+    render_delivered_bubble_evidence,
+    render_messages,
+    turn_labels,
+)
 from .context_service import (
     _heartbeat_activity_lines,
     _heartbeat_self_state_lines,
@@ -1150,6 +1155,11 @@ class TurnOrchestrator:
             tool_activity=tool_activity,
             labels=transcript_labels,
         )
+        delivered_proactive_bubbles = render_delivered_bubble_evidence(
+            transcript.orphaned,
+            timezone=self.store.timezone,
+            tool_activity=tool_activity,
+        )
         system = self._system()
         # Slow-changing material sits ahead of the transcript so it stays inside
         # the cached prefix; everything that moves with the Turn stays in the
@@ -1169,6 +1179,7 @@ class TurnOrchestrator:
             ),
             ("runtime_directives", "\n\n".join(directives)),
             ("goal_progress", recalled["goal_progress"]),
+            ("delivered_proactive_bubbles", delivered_proactive_bubbles),
             ("candidate_episodes", candidates["candidate_episodes"]),
             ("recent_recall_context", candidates["recent_recall_context"]),
             ("recent_external_events", recalled["recent_external_events"]),
@@ -1187,9 +1198,6 @@ class TurnOrchestrator:
             {"role": "user", "content": current_content},
         ]
         if transcript.orphaned:
-            # Proactive Heartbeat/Goal speech that opens the window has no owner
-            # message to follow, so it cannot enter native history yet. Tracked
-            # separately with the autonomous Turn migration.
             log_event(
                 logger,
                 logging.INFO,

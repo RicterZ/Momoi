@@ -4,6 +4,7 @@ from zoneinfo import ZoneInfo
 from momoi.runtime.transcript import (
     build_groups,
     build_transcript as _build_transcript,
+    render_delivered_bubble_evidence,
     render_messages as _render_messages,
     select_groups,
     turn_labels,
@@ -338,6 +339,15 @@ def test_proactive_speech_without_an_owner_message_is_kept_as_evidence():
     )
     assert transcript.messages == []
     assert len(transcript.orphaned) == 2
+
+    evidence = render_delivered_bubble_evidence(
+        transcript.orphaned,
+        timezone=TEST_TIMEZONE,
+    )
+    assert "Momoi bubbles already delivered" in evidence
+    assert "我看到一条新闻" in evidence
+    assert "[owner did not reply" in evidence
+    assert "你还没睡吧" in evidence
 
 
 def test_owner_reply_after_proactive_speech_keeps_the_whole_exchange():

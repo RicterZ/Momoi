@@ -855,6 +855,92 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             daemon.store.close()
 
+    async def test_owner_receives_leading_proactive_bubbles_as_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(
+                AppConfig(
+                    llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
+                    channel=NapCatConfig(
+                        "ws://127.0.0.1", "20000", 0.01, 60, 30, 30, 20
+                    ),
+                    system_prompt="You are Momoi.",
+                    transcript_turns_min=4,
+                    transcript_turns_max=4,
+                    episode_raw_tail_turns=2,
+                    memory_results=2,
+                    database=Path(directory) / "momoi.sqlite3",
+                    log_level="INFO",
+                )
+            )
+            now = time.time()
+            with daemon.store._db:
+                daemon.store._db.execute(
+                    """INSERT INTO turns
+                       (id, kind, source_ids_json, state, started_at, updated_at)
+                       VALUES ('heartbeat:proactive', 'autonomous', '[]',
+                               'completed', ?, ?)""",
+                    (now - 20, now - 10),
+                )
+                daemon.store._db.execute(
+                    """INSERT INTO messages
+                       (turn_id, role, content, created_at, source_event_ids_json,
+                        delivery_state)
+                       VALUES ('heartbeat:proactive', 'assistant', ?, ?, '[]',
+                               'delivered')""",
+                    ("刚才提醒你窗户还开着", now - 10),
+                )
+
+            class Provider:
+                messages: list[dict[str, object]] = []
+
+                async def complete(
+                    self,
+                    _system: object,
+                    messages: list[dict[str, object]],
+                    *__: object,
+                    **___: object,
+                ) -> ProviderResponse:
+                    self.messages = messages
+                    return ProviderResponse(
+                        [],
+                        [
+                            ToolCall(
+                                "finish",
+                                "end_turn",
+                                {
+                                    "reply_wait": {"wait": False},
+                                    "mood": {"decision": "unchanged"},
+                                    "activity": {"decision": "unchanged"},
+                                },
+                            )
+                        ],
+                    )
+
+            provider = Provider()
+            daemon.provider = with_owner_recall(provider)  # type: ignore[assignment]
+            event = IncomingMessage("qq:after-proactive", "1", "看到了", now, now)
+            daemon.store.add_event(event)
+            turn_id = daemon._turn_id(event.event_id)
+            daemon.store.begin_turn(turn_id, "owner", [event.event_id])
+            await daemon._complete_batch([event], turn_id)
+
+            wire = json.dumps(provider.messages, ensure_ascii=False)
+            self.assertIn("<delivered_proactive_bubbles>", wire)
+            self.assertIn("刚才提醒你窗户还开着", wire)
+            self.assertIn(
+                "already delivered before the retained owner transcript", wire
+            )
+            self.assertFalse(
+                any(
+                    message.get("role") == "assistant"
+                    and "刚才提醒你窗户还开着" in json.dumps(
+                        message, ensure_ascii=False
+                    )
+                    for message in provider.messages
+                )
+            )
+            daemon.store.close()
+
     async def test_outbox_waits_only_between_messages_in_the_same_turn(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
