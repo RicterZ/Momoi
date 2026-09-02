@@ -34,7 +34,9 @@ from .semantic_queue import SemanticQueueStore
 from .semantic_sources import SemanticSourceStore
 from .thinking import ThinkingStore
 from .observability import ObservabilityStore
-from .reflections import ReflectionStore
+from .reflection_records import ReflectionRecordStore
+from .reflection_schedule import ReflectionScheduleStore
+from .reflection_source import ReflectionSourceStore
 from .dashboard import DashboardStore
 from .conversations import ConversationStore
 from .conversation_views import ConversationViewStore
@@ -57,7 +59,9 @@ class Store(
     ObservabilityStore,
     ContextPlanStore,
     InboxStore,
-    ReflectionStore,
+    ReflectionScheduleStore,
+    ReflectionSourceStore,
+    ReflectionRecordStore,
     HeartbeatStateStore,
     HeartbeatScheduleStore,
     HeartbeatCommitStore,

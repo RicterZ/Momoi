@@ -1,6 +1,6 @@
 from typing import Any
 
-from ...storage import REFLECTION_MEMORY_KINDS
+from ...storage.reflection_values import REFLECTION_MEMORY_KINDS
 
 
 REFLECTION_FINISH_SPEC: dict[str, Any] = {
@@ -114,4 +114,3 @@ REFLECTION_FINISH_SPEC: dict[str, Any] = {
         "additionalProperties": False,
     },
 }
-

@@ -9,7 +9,7 @@ from .memory_values import (
     memory_snapshot_fingerprint,
     truncate_tokens,
 )
-from .reflections import REFLECTION_MEMORY_KINDS
+from .reflection_values import REFLECTION_MEMORY_KINDS
 from .store import Store
 from .semantic_documents import (
     DOCUMENT_TEMPLATE_VERSION,
