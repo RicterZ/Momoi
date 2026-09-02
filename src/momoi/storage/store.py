@@ -18,7 +18,8 @@ from .episode_search import (
     EpisodeSearchBackend,
     StringEpisodeSearchBackend,
 )
-from .episode_maintenance import EpisodeMaintenanceStore
+from .episode_annealing import EpisodeAnnealingStore
+from .episode_consolidation import EpisodeConsolidationStore
 from .memory_mutations import MemoryMutationStore
 from .memory_recall import MemoryRecallStore
 from .memory_maintenance import MemoryMaintenanceStore
@@ -57,7 +58,8 @@ class Store(
     ReflectionStore,
     HeartbeatStore,
     DashboardStore,
-    EpisodeMaintenanceStore,
+    EpisodeConsolidationStore,
+    EpisodeAnnealingStore,
     ConversationStore,
     RuntimeArchiveStore,
     ConversationViewStore,
