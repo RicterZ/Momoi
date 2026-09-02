@@ -15,7 +15,7 @@ from momoi.storage.store import RECENT_HEARTBEAT_LIMIT
 class HeartbeatEpisodeTests(unittest.TestCase):
     def _commit(self, store: Store, turn_id: str, now: float) -> str:
         with patch("momoi.storage.store.time.time", return_value=now):
-            store.begin_turn(turn_id, "autonomous", [f"heartbeat:{turn_id}"])
+            store.begin_turn(turn_id, "heartbeat", [f"heartbeat:{turn_id}"])
             store.commit_heartbeat(
                 turn_id,
                 owner_event_revision=0,
@@ -82,7 +82,7 @@ class HeartbeatEpisodeTests(unittest.TestCase):
             delivered_at = heartbeat_at + 120
             turn_id = "heartbeat-delayed"
             with patch("momoi.storage.store.time.time", return_value=heartbeat_at):
-                store.begin_turn(turn_id, "autonomous", ["heartbeat:delayed"])
+                store.begin_turn(turn_id, "heartbeat", ["heartbeat:delayed"])
                 store.commit_heartbeat(
                     turn_id,
                     owner_event_revision=0,
@@ -124,7 +124,7 @@ class RecentHeartbeatActivityTests(unittest.TestCase):
         activity: str,
     ) -> None:
         with patch("momoi.storage.store.time.time", return_value=now):
-            store.begin_turn(turn_id, "autonomous", [f"heartbeat:{turn_id}"])
+            store.begin_turn(turn_id, "heartbeat", [f"heartbeat:{turn_id}"])
             store.commit_heartbeat(
                 turn_id,
                 owner_event_revision=0,
@@ -184,7 +184,7 @@ class RecentHeartbeatActivityTests(unittest.TestCase):
                     (now, now + 60),
                 )
             store.begin_turn(
-                "reply-followup", "autonomous", ["reply-followup:1"]
+                "reply-followup", "reply_followup", ["reply-followup:1"]
             )
             with patch("momoi.storage.store.time.time", return_value=now + 60):
                 store.commit_reply_followup(

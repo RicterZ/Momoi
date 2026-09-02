@@ -922,8 +922,7 @@ def assemble_recent_webhook_activity(
     """
     rows: list[str] = []
     for record in reversed(store.recent_turn_records(max(1, turn_limit * 3))):
-        turn_id = str(record.get("turn_id") or "")
-        if not turn_id.startswith("webhook:"):
+        if record.get("workflow_kind") != "webhook":
             continue
         timeline = record.get("timeline")
         if not isinstance(timeline, list):

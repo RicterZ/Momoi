@@ -11,11 +11,11 @@ class TranscriptWindowTest(unittest.TestCase):
         store: Store,
         index: int,
         *,
-        kind: str = "owner",
+        workflow_kind: str = "owner",
         source: str | None = None,
     ) -> str:
         turn_id = f"turn-{index:04d}"
-        store.begin_turn(turn_id, kind, [source or turn_id])
+        store.begin_turn(turn_id, workflow_kind, [source or turn_id])
         with store._db:
             store._db.execute(
                 """INSERT INTO messages
@@ -63,7 +63,7 @@ class TranscriptWindowTest(unittest.TestCase):
             heartbeat = self._add_visible_turn(
                 store,
                 3,
-                kind="autonomous",
+                workflow_kind="heartbeat",
                 source="heartbeat:3",
             )
             store.link_turn_to_episode("current", current)

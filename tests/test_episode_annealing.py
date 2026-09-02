@@ -160,7 +160,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
             )
             first.store.begin_turn(
                 anneal_turn_id,
-                "autonomous",
+                "episode_anneal",
                 [
                     "episode-anneal:episode-main:"
                     f"{candidate['through_ordinal']}"
@@ -168,7 +168,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
             )
             first.store.begin_turn(
                 consolidate_turn_id,
-                "autonomous",
+                "episode_consolidate",
                 ["episode-consolidate:pending-1"],
             )
             first.store.close()
@@ -195,7 +195,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 recovered.store.begin_turn(
                     anneal_turn_id,
-                    "autonomous",
+                    "episode_anneal",
                     [
                         "episode-anneal:episode-main:"
                         f"{candidate['through_ordinal']}"

@@ -99,7 +99,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             provider = Provider()
             daemon.provider = provider  # type: ignore[assignment]
             turn_id = daemon._turn_id("heartbeat-native")
-            daemon.store.begin_turn(turn_id, "autonomous", [f"heartbeat:{turn_id}"])
+            daemon.store.begin_turn(turn_id, "heartbeat", [f"heartbeat:{turn_id}"])
             await daemon._complete_heartbeat(
                 turn_id,
                 owner_event_revision=int(
@@ -234,7 +234,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             provider = Provider()
             daemon.provider = provider  # type: ignore[assignment]
             turn_id = daemon._turn_id("heartbeat-groups")
-            daemon.store.begin_turn(turn_id, "autonomous", [f"heartbeat:{turn_id}"])
+            daemon.store.begin_turn(turn_id, "heartbeat", [f"heartbeat:{turn_id}"])
             await daemon._complete_heartbeat(
                 turn_id,
                 owner_event_revision=0,

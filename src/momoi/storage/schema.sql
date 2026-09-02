@@ -216,6 +216,11 @@ CREATE TABLE IF NOT EXISTS tool_audit (
 CREATE TABLE IF NOT EXISTS turns (
     id TEXT PRIMARY KEY,
     kind TEXT NOT NULL CHECK (kind IN ('owner', 'autonomous')),
+    workflow_kind TEXT CHECK (workflow_kind IN (
+        'owner', 'webhook', 'goal', 'heartbeat', 'reply_followup',
+        'reflection', 'memory_maintenance', 'episode_consolidate',
+        'episode_anneal'
+    )),
     source_ids_json TEXT NOT NULL,
     state TEXT NOT NULL CHECK (
         state IN ('running', 'needs_reconciliation', 'completed', 'cancelled')

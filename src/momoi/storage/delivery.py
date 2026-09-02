@@ -6,6 +6,7 @@ import uuid
 from ..channel import normalize_channel_message
 from ..models import AgentReply, OutboxMessage
 from ..reply_wait import decode_reply_wait, encode_reply_wait
+from .turn_workflow import turn_workflow_kind_sql
 
 
 class DeliveryStore:
@@ -151,10 +152,12 @@ class DeliveryStore:
         return str(row["workflow_id"])
 
     def _heartbeat_turn_time(self, turn_id: str, fallback: float) -> float:
+        workflow = turn_workflow_kind_sql("t")
         row = self._db.execute(
-            """SELECT MIN(created_at) AS created_at FROM messages
-               WHERE turn_id=? AND delivery_state='internal'
-                 AND content LIKE '[AUTONOMOUS HEARTBEAT RECORD;%'""",
+            f"""SELECT MIN(m.created_at) AS created_at FROM messages AS m
+               JOIN turns AS t ON t.id=m.turn_id
+               WHERE m.turn_id=? AND m.delivery_state='internal'
+                 AND {workflow}='heartbeat'""",
             (turn_id,),
         ).fetchone()
         return (
@@ -558,11 +561,11 @@ class DeliveryStore:
         *,
         delivered: bool,
     ) -> None:
+        workflow = turn_workflow_kind_sql("t")
         followup = self._db.execute(
-            """SELECT t.state FROM turns AS t
+            f"""SELECT t.state FROM turns AS t
                WHERE t.id=? AND (
-                   t.source_ids_json LIKE '%"reply-followup:%'
-                   OR EXISTS (
+                   {workflow}='reply_followup' OR EXISTS (
                        SELECT 1 FROM notifications
                        WHERE turn_id=t.id
                          AND notification_key='heartbeat.reply_followup'

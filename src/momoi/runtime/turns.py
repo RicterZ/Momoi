@@ -102,7 +102,7 @@ class TurnRunner(
         )
         state = self.store.begin_turn(
             turn_id,
-            "autonomous",
+            "episode_anneal",
             [f"episode-anneal:{episode_id}:{through_ordinal}"],
         )
         if state in {"completed", "cancelled"}:
@@ -140,7 +140,7 @@ class TurnRunner(
         )
         state = self.store.begin_turn(
             turn_id,
-            "autonomous",
+            "episode_consolidate",
             [f"episode-consolidate:{value}" for value in turn_ids],
         )
         if state in {"completed", "cancelled"}:

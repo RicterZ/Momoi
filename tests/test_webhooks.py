@@ -395,7 +395,7 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
 
             async def generate(prompt: str, turn_id: str) -> AgentReply:
                 generated.append(prompt)
-                store.begin_turn(turn_id, "autonomous", [turn_id])
+                store.begin_turn(turn_id, "webhook", [turn_id])
                 return AgentReply(
                     ["门口好像有人，需要我继续帮你留意吗？"],
                     mood_update={

@@ -404,7 +404,7 @@ class StorageMemoryTest(unittest.TestCase):
                 ("generic-message", "generic-turn", "今天收到了一条普通消息"),
                 ("good-news", "good-turn", "今天有好消息想讲给你听"),
             ):
-                store.begin_turn(turn_id, "autonomous", [turn_id])
+                store.begin_turn(turn_id, "owner", [turn_id])
                 with store._db:
                     store._db.execute(
                         """INSERT INTO messages
@@ -437,7 +437,7 @@ class StorageMemoryTest(unittest.TestCase):
                 ("old-turn", "七月旧暗号", 100.0),
                 ("new-turn", "八月新内容", 1000.0),
             ):
-                store.begin_turn(turn_id, "autonomous", [turn_id])
+                store.begin_turn(turn_id, "owner", [turn_id])
                 with store._db:
                     store._db.execute(
                         """INSERT INTO messages
@@ -520,7 +520,7 @@ class StorageMemoryTest(unittest.TestCase):
             store = Store(Path(directory) / "momoi.sqlite3")
             store.create_episode("长期项目", episode_id="project")
             turn_id = "project-turn"
-            store.begin_turn(turn_id, "autonomous", [turn_id])
+            store.begin_turn(turn_id, "owner", [turn_id])
             with store._db:
                 message_id = store._db.execute(
                     """INSERT INTO messages
@@ -1420,7 +1420,7 @@ class StorageMemoryTest(unittest.TestCase):
             )
             for ordinal in range(64):
                 turn_id = f"old-{ordinal}"
-                store.begin_turn(turn_id, "autonomous", [turn_id])
+                store.begin_turn(turn_id, "owner", [turn_id])
                 store.complete_background_turn(turn_id)
                 store.link_turn_to_episode("long-project", turn_id)
 
@@ -1731,6 +1731,31 @@ class StorageMemoryTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "newer than supported"):
                 Store(path)
 
+    def test_turn_workflow_is_explicit_with_one_legacy_adapter(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store.begin_turn("current", "heartbeat", ["goal:misleading"])
+            current = store._db.execute(
+                "SELECT kind, workflow_kind FROM turns WHERE id='current'"
+            ).fetchone()
+            self.assertEqual(tuple(current), ("autonomous", "heartbeat"))
+            self.assertEqual(store.turn_workflow_kind("current"), "heartbeat")
+
+            with store._db:
+                store._db.execute(
+                    """INSERT INTO turns
+                       (id, kind, source_ids_json, state, started_at, updated_at)
+                       VALUES ('legacy', 'autonomous', '["reply-followup:1"]',
+                               'completed', 1, 1)"""
+                )
+            self.assertEqual(store.turn_workflow_kind("legacy"), "reply_followup")
+
+            with self.assertRaisesRegex(ValueError, "belongs to heartbeat"):
+                store.begin_turn("current", "goal", ["goal:misleading"])
+            with self.assertRaisesRegex(ValueError, "unknown Turn workflow"):
+                store.begin_turn("invalid", "autonomous", ["invalid"])
+            store.close()
+
     def test_recall_reuse_candidate_is_only_the_latest_effective_scope(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
@@ -1828,7 +1853,7 @@ class StorageMemoryTest(unittest.TestCase):
             store.create_episode("很长的旧对话", episode_id="long-episode")
             for ordinal in range(1, 5):
                 turn_id = f"long-turn-{ordinal}"
-                store.begin_turn(turn_id, "autonomous", [turn_id])
+                store.begin_turn(turn_id, "owner", [turn_id])
                 with store._db:
                     store._db.execute(
                         """INSERT INTO messages
@@ -1880,7 +1905,7 @@ class StorageMemoryTest(unittest.TestCase):
                 ("inside-2", "窗口内第二条", 250.0),
                 ("after", "窗口之后", 400.0),
             ):
-                store.begin_turn(turn_id, "autonomous", [turn_id])
+                store.begin_turn(turn_id, "owner", [turn_id])
                 with store._db:
                     store._db.execute(
                         """INSERT INTO messages
@@ -1943,7 +1968,7 @@ class StorageMemoryTest(unittest.TestCase):
             store = Store(Path(directory) / "momoi.sqlite3")
             store.create_episode("单条超长消息", episode_id="oversized")
             turn_id = "oversized-turn"
-            store.begin_turn(turn_id, "autonomous", [turn_id])
+            store.begin_turn(turn_id, "owner", [turn_id])
             secret = "末尾仍然必须可以读取"
             with store._db:
                 store._db.execute(
@@ -2411,7 +2436,7 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertEqual(store.next_heartbeat_due_at(True), now + 60)
             for index in range(20):
                 turn_id = f"heartbeat-{index}"
-                store.begin_turn(turn_id, "autonomous", [f"heartbeat:{index}"])
+                store.begin_turn(turn_id, "heartbeat", [f"heartbeat:{index}"])
                 store._db.execute(
                     "UPDATE self_state SET next_heartbeat_at=? WHERE id=1", (now - 1,)
                 )
@@ -2470,7 +2495,7 @@ class StorageMemoryTest(unittest.TestCase):
                 draft,
             )
             self.assertTrue(memory["ok"])
-            store.begin_turn("heartbeat-tools", "autonomous", ["heartbeat:test"])
+            store.begin_turn("heartbeat-tools", "heartbeat", ["heartbeat:test"])
             store.commit_heartbeat(
                 "heartbeat-tools",
                 owner_event_revision=1,
@@ -2531,7 +2556,7 @@ class StorageMemoryTest(unittest.TestCase):
             )
 
             store.begin_turn(
-                "reply-followup", "autonomous", ["reply-followup:1300"]
+                "reply-followup", "reply_followup", ["reply-followup:1300"]
             )
             store.queue_progress(
                 "reply-followup",
@@ -2616,7 +2641,7 @@ class StorageMemoryTest(unittest.TestCase):
                 store.mark_sent(store.due_outbox()[0].id)
             store.begin_turn(
                 "early-followup",
-                "autonomous",
+                "reply_followup",
                 ["reply-followup:1060"],
             )
             store.queue_progress(
@@ -2842,7 +2867,7 @@ class StorageMemoryTest(unittest.TestCase):
             )
             store.begin_turn(
                 "claimed-followup",
-                "autonomous",
+                "reply_followup",
                 ["reply-followup:1060"],
             )
             store.queue_progress(
@@ -2896,7 +2921,7 @@ class StorageMemoryTest(unittest.TestCase):
             )
             before = store.self_state()
             store.begin_turn(
-                "reply-followup", "autonomous", ["reply-followup:1100"]
+                "reply-followup", "reply_followup", ["reply-followup:1100"]
             )
             store.queue_progress(
                 "reply-followup",
@@ -2962,7 +2987,7 @@ class StorageMemoryTest(unittest.TestCase):
                    pending_reply_next_check_at=1100 WHERE id=1"""
             )
             store.begin_turn(
-                "single-followup", "autonomous", ["reply-followup:1100"]
+                "single-followup", "reply_followup", ["reply-followup:1100"]
             )
             store.queue_progress(
                 "single-followup",
@@ -3027,7 +3052,7 @@ class StorageMemoryTest(unittest.TestCase):
             revision = int(
                 store.heartbeat_conversation_snapshot()["owner_event_revision"]
             )
-            store.begin_turn("stale-heartbeat", "autonomous", ["heartbeat:1000"])
+            store.begin_turn("stale-heartbeat", "heartbeat", ["heartbeat:1000"])
             store.add_event(
                 IncomingMessage("new-owner", "new-owner", "嗯，我是 ISFJ", 1010, 1010)
             )
@@ -3058,7 +3083,7 @@ class StorageMemoryTest(unittest.TestCase):
     def test_heartbeat_live_progress_uses_same_turn_history_and_outbox(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
-            store.begin_turn("heartbeat-live", "autonomous", ["heartbeat:1000"])
+            store.begin_turn("heartbeat-live", "heartbeat", ["heartbeat:1000"])
             store.queue_progress(
                 "heartbeat-live", "live-beat", ["先跟老师说一声"], "napcat"
             )
@@ -3122,7 +3147,7 @@ class StorageMemoryTest(unittest.TestCase):
                            'heartbeat.chat', 'normal', 'previous', '["旧消息"]',
                            'queued', 1000, 1000, 1000)"""
             )
-            store.begin_turn("cooldown-heartbeat", "autonomous", ["heartbeat:1100"])
+            store.begin_turn("cooldown-heartbeat", "heartbeat", ["heartbeat:1100"])
             with patch("momoi.storage.store.time.time", return_value=1100):
                 committed = store.commit_heartbeat(
                     "cooldown-heartbeat",
@@ -3173,7 +3198,7 @@ class StorageMemoryTest(unittest.TestCase):
     def test_owner_message_supersedes_queued_heartbeat_chat(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
-            store.begin_turn("heartbeat-chat", "autonomous", ["heartbeat:1000"])
+            store.begin_turn("heartbeat-chat", "heartbeat", ["heartbeat:1000"])
             with patch("momoi.storage.store.time.time", return_value=1000):
                 committed = store.commit_heartbeat(
                     "heartbeat-chat",

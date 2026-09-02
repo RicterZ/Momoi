@@ -278,7 +278,7 @@ class TurnOrchestrator:
         self, prompt: str, turn_id: str, channel: Channel | None = None
     ) -> AgentReply:
         channel = channel or self.channel
-        state = self.store.begin_turn(turn_id, "autonomous", [turn_id])
+        state = self.store.begin_turn(turn_id, "webhook", [turn_id])
         if state in {"completed", "cancelled", "needs_reconciliation"}:
             raise RuntimeError(f"webhook turn is {state}")
         memories, learned = self.store.ranked_memory_context(
@@ -508,7 +508,7 @@ class TurnOrchestrator:
         turn_id = self._turn_id(
             "goal", goal_id, goal.get("next_review_at") if goal else "missing"
         )
-        state = self.store.begin_turn(turn_id, "autonomous", [f"goal:{goal_id}"])
+        state = self.store.begin_turn(turn_id, "goal", [f"goal:{goal_id}"])
         if state in {"completed", "cancelled"}:
             self.store.release_goal_claim(goal_id)
             return
@@ -672,7 +672,9 @@ class TurnOrchestrator:
         turn_kind = "reply-followup" if claim_kind == "reply" else "heartbeat"
         turn_id = self._turn_id(turn_kind, scheduled_at)
         turn_state = self.store.begin_turn(
-            turn_id, "autonomous", [f"{turn_kind}:{scheduled_at}"]
+            turn_id,
+            "reply_followup" if claim_kind == "reply" else "heartbeat",
+            [f"{turn_kind}:{scheduled_at}"],
         )
         if turn_state in {"completed", "cancelled"}:
             self.store.clear_heartbeat_claim()
@@ -745,7 +747,7 @@ class TurnOrchestrator:
         claimed_at = None if reflection is None else reflection.get("claimed_at")
         turn_id = self._turn_id("reflection", local_date, claimed_at)
         state = self.store.begin_turn(
-            turn_id, "autonomous", [f"reflection:{local_date}"]
+            turn_id, "reflection", [f"reflection:{local_date}"]
         )
         if state == "completed":
             self.store.restore_completed_reflection_claim(local_date)

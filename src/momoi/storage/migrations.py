@@ -26,7 +26,23 @@ def _add_runtime_archive_metadata(database: sqlite3.Connection) -> None:
         )
 
 
-MIGRATIONS: tuple[Migration, ...] = (_add_runtime_archive_metadata,)
+def _add_turn_workflow_kind(database: sqlite3.Connection) -> None:
+    if "workflow_kind" not in _columns(database, "turns"):
+        database.execute(
+            """ALTER TABLE turns ADD COLUMN workflow_kind TEXT CHECK (
+                workflow_kind IN (
+                    'owner', 'webhook', 'goal', 'heartbeat', 'reply_followup',
+                    'reflection', 'memory_maintenance', 'episode_consolidate',
+                    'episode_anneal'
+                )
+            )"""
+        )
+
+
+MIGRATIONS: tuple[Migration, ...] = (
+    _add_runtime_archive_metadata,
+    _add_turn_workflow_kind,
+)
 SCHEMA_VERSION = len(MIGRATIONS)
 
 

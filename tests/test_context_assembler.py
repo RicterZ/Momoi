@@ -610,7 +610,7 @@ class ContextAssemblerTest(unittest.TestCase):
             for index in range(12):
                 turn_id = f"webhook:silent-{index}:0"
                 observed_at = 20 + index
-                store.begin_turn(turn_id, "autonomous", [turn_id])
+                store.begin_turn(turn_id, "webhook", [turn_id])
                 with store._db:
                     store._db.execute(
                         """INSERT INTO messages
@@ -642,7 +642,7 @@ class ContextAssemblerTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
             turn_id = "webhook:visible:0"
-            store.begin_turn(turn_id, "autonomous", [turn_id])
+            store.begin_turn(turn_id, "webhook", [turn_id])
             with store._db:
                 store._db.executemany(
                     """INSERT INTO messages
@@ -719,7 +719,7 @@ class ContextAssemblerTest(unittest.TestCase):
             )
             for episode_id, title, turn_id, timestamp in episodes:
                 store.create_episode(title, episode_id=episode_id)
-                store.begin_turn(turn_id, "autonomous", [turn_id])
+                store.begin_turn(turn_id, "owner", [turn_id])
                 with store._db:
                     store._db.execute(
                         """INSERT INTO messages
@@ -752,7 +752,7 @@ class ContextAssemblerTest(unittest.TestCase):
             store = Store(Path(directory) / "momoi.sqlite3")
             now = time.time()
             store.create_episode("项目邮件", episode_id="episode-mail")
-            store.begin_turn("mail-turn", "autonomous", ["mail-turn"])
+            store.begin_turn("mail-turn", "owner", ["mail-turn"])
             with store._db:
                 store._db.execute(
                     """INSERT INTO messages
@@ -795,7 +795,7 @@ class ContextAssemblerTest(unittest.TestCase):
             def add_episode(episode_id: str, title: str, timestamp: float) -> None:
                 turn_id = f"turn-{episode_id}"
                 store.create_episode(title, episode_id=episode_id)
-                store.begin_turn(turn_id, "autonomous", [turn_id])
+                store.begin_turn(turn_id, "owner", [turn_id])
                 with store._db:
                     store._db.execute(
                         """INSERT INTO messages
@@ -861,7 +861,7 @@ class ContextAssemblerTest(unittest.TestCase):
                 store.create_episode(
                     f"{marker}话题 {index:02d}", episode_id=episode_id
                 )
-                store.begin_turn(turn_id, "autonomous", [turn_id])
+                store.begin_turn(turn_id, "owner", [turn_id])
                 timestamp = now - 7 * 3600 - index * 60
                 with store._db:
                     store._db.execute(
@@ -913,7 +913,7 @@ class ContextAssemblerTest(unittest.TestCase):
             for episode_id, title, timestamp in episodes:
                 turn_id = f"turn-{episode_id}"
                 store.create_episode(title, episode_id=episode_id)
-                store.begin_turn(turn_id, "autonomous", [turn_id])
+                store.begin_turn(turn_id, "owner", [turn_id])
                 with store._db:
                     store._db.execute(
                         """INSERT INTO messages

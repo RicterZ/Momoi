@@ -1335,7 +1335,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             daemon.store.begin_turn(
                 "mandatory-followup",
-                "autonomous",
+                "reply_followup",
                 ["reply-followup:1060"],
             )
 

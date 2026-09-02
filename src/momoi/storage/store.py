@@ -59,6 +59,7 @@ from .migrations import apply_migrations
 from .semantic import SemanticStore
 from .scheduling import next_schedule_at, normalize_schedule, quiet_until
 from .thinking import ThinkingStore, month_bounds, parse_month
+from .turn_workflow import require_turn_workflow_kind, turn_workflow_kind_sql
 
 logger = logging.getLogger(__name__)
 
@@ -201,41 +202,29 @@ def _add_context_timestamps(
 def _runtime_archive_kind_sql(episode: str) -> str:
     """Resolve explicit archive ownership, with one legacy-read fallback."""
 
+    legacy_workflow = turn_workflow_kind_sql("legacy_archive_source")
     return f"""CASE
         WHEN COALESCE({episode}.archive_kind, '')<>'' THEN {episode}.archive_kind
         WHEN EXISTS (
             SELECT 1 FROM episode_turns AS legacy_archive_turn
+            JOIN turns AS legacy_archive_source
+              ON legacy_archive_source.id=legacy_archive_turn.turn_id
             WHERE legacy_archive_turn.episode_id={episode}.id
-              AND legacy_archive_turn.turn_id GLOB 'webhook:*'
+              AND {legacy_workflow}='webhook'
         ) THEN 'webhook'
         WHEN EXISTS (
             SELECT 1 FROM episode_turns AS legacy_archive_turn
             JOIN turns AS legacy_archive_source
               ON legacy_archive_source.id=legacy_archive_turn.turn_id
             WHERE legacy_archive_turn.episode_id={episode}.id
-              AND legacy_archive_source.kind='autonomous'
-              AND EXISTS (
-                  SELECT 1
-                  FROM json_each(legacy_archive_source.source_ids_json)
-                       AS legacy_source_id
-                  WHERE legacy_source_id.value GLOB 'heartbeat:*'
-              )
+              AND {legacy_workflow}='heartbeat'
         ) THEN 'heartbeat'
         WHEN EXISTS (
             SELECT 1 FROM episode_turns AS legacy_archive_turn
             JOIN turns AS legacy_archive_source
               ON legacy_archive_source.id=legacy_archive_turn.turn_id
             WHERE legacy_archive_turn.episode_id={episode}.id
-              AND legacy_archive_source.kind='autonomous'
-              AND (
-                  legacy_archive_source.id GLOB 'goal:*'
-                  OR EXISTS (
-                      SELECT 1
-                      FROM json_each(legacy_archive_source.source_ids_json)
-                           AS legacy_source_id
-                      WHERE legacy_source_id.value GLOB 'goal:*'
-                  )
-              )
+              AND {legacy_workflow}='goal'
         ) THEN 'goal'
     END"""
 
@@ -449,14 +438,14 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         self._db.execute(
             "UPDATE conversation_episodes SET summary_claimed_at=NULL"
         )
+        episode_workflow = turn_workflow_kind_sql("turns")
         self._db.execute(
-            """UPDATE turns SET state='cancelled', stage='cancelled',
+            f"""UPDATE turns SET state='cancelled', stage='cancelled',
                failure_reason=?, updated_at=?
                WHERE kind='autonomous' AND state='running'
                  AND external_effect_started=0
-                 AND (
-                   source_ids_json LIKE '%\"episode-consolidate:%'
-                   OR source_ids_json LIKE '%\"episode-anneal:%'
+                 AND {episode_workflow} IN (
+                   'episode_consolidate', 'episode_anneal'
                  )""",
             (EPISODE_MAINTENANCE_RESTART_REASON, now),
         )
@@ -708,6 +697,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         self, keys: tuple[str, ...], reason: str, now: float
     ) -> None:
         placeholders = ",".join("?" for _ in keys)
+        workflow = turn_workflow_kind_sql("t")
         stale = self._db.execute(
             f"""SELECT o.id, o.state FROM outbox AS o
                 LEFT JOIN notifications AS n ON n.turn_id=o.turn_id
@@ -717,10 +707,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                         WHERE t.id=o.turn_id
                           AND t.kind='autonomous'
                           AND t.state='running'
-                          AND (
-                              t.source_ids_json LIKE '%\"heartbeat:%'
-                              OR t.source_ids_json LIKE '%\"reply-followup:%'
-                          )
+                          AND {workflow} IN ('heartbeat', 'reply_followup')
                     )
                 ) AND o.state IN ('pending', 'ambiguous')""",
             keys,
@@ -830,22 +817,37 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                 ((event.event_id,) for event in events),
             )
 
-    def begin_turn(self, turn_id: str, kind: str, source_ids: list[str]) -> str:
+    def begin_turn(
+        self,
+        turn_id: str,
+        workflow_kind: str,
+        source_ids: list[str],
+    ) -> str:
+        workflow = require_turn_workflow_kind(workflow_kind)
+        kind = "owner" if workflow == "owner" else "autonomous"
         now = time.time()
+        stored_workflow = turn_workflow_kind_sql("turns")
         with self._db:
             row = self._db.execute(
-                """SELECT state, external_effect_started, failure_reason
-                   FROM turns WHERE id=?""",
+                f"""SELECT state, external_effect_started, failure_reason,
+                           {stored_workflow} AS stored_workflow_kind
+                    FROM turns WHERE id=?""",
                 (turn_id,),
             ).fetchone()
             if row is None:
                 self._db.execute(
                     """INSERT INTO turns
-                       (id, kind, source_ids_json, state, started_at, updated_at)
-                       VALUES (?, ?, ?, 'running', ?, ?)""",
-                    (turn_id, kind, json.dumps(source_ids), now, now),
+                       (id, kind, workflow_kind, source_ids_json, state,
+                        started_at, updated_at)
+                       VALUES (?, ?, ?, ?, 'running', ?, ?)""",
+                    (turn_id, kind, workflow, json.dumps(source_ids), now, now),
                 )
                 return "running"
+            existing_workflow = row["stored_workflow_kind"]
+            if existing_workflow is not None and existing_workflow != workflow:
+                raise ValueError(
+                    f"Turn {turn_id} belongs to {existing_workflow}, not {workflow}"
+                )
             if (
                 row["state"] == "cancelled"
                 and row["failure_reason"]
@@ -879,6 +881,16 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                 )
             return str(row["state"])
 
+    def turn_workflow_kind(self, turn_id: str) -> str | None:
+        workflow = turn_workflow_kind_sql("turns")
+        row = self._db.execute(
+            f"SELECT {workflow} AS workflow_kind FROM turns WHERE id=?",
+            (turn_id,),
+        ).fetchone()
+        if row is None or row["workflow_kind"] is None:
+            return None
+        return str(row["workflow_kind"])
+
     def queue_memory_maintenance_turn(
         self, turn_id: str, source_id: str
     ) -> bool:
@@ -886,8 +898,9 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         with self._db:
             cursor = self._db.execute(
                 """INSERT OR IGNORE INTO turns
-                   (id, kind, source_ids_json, state, stage, started_at, updated_at)
-                   VALUES (?, 'autonomous', ?, 'running',
+                   (id, kind, workflow_kind, source_ids_json, state, stage,
+                    started_at, updated_at)
+                   VALUES (?, 'autonomous', 'memory_maintenance', ?, 'running',
                            'memory_maintenance_queued', ?, ?)""",
                 (turn_id, json.dumps([source_id]), now, now),
             )
@@ -1984,9 +1997,10 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         ).hex
         self._db.execute(
             """INSERT OR IGNORE INTO turns
-               (id, kind, source_ids_json, state, started_at, updated_at)
-               VALUES (?, 'autonomous', ?, 'running', ?, ?)""",
-            (turn_id, json.dumps([episode_key]), now, now),
+               (id, kind, workflow_kind, source_ids_json, state,
+                started_at, updated_at)
+               VALUES (?, 'autonomous', ?, ?, 'running', ?, ?)""",
+            (turn_id, archive_kind, json.dumps([episode_key]), now, now),
         )
         self._db.execute(
             """INSERT OR IGNORE INTO conversation_episodes
@@ -2352,8 +2366,10 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
     ) -> list[dict[str, object]]:
         if turn_limit <= 0:
             return []
+        workflow = turn_workflow_kind_sql("t")
         turns = self._db.execute(
-            """SELECT t.* FROM turns AS t
+            f"""SELECT t.*, {workflow} AS resolved_workflow_kind
+               FROM turns AS t
                WHERE t.state<>'running'
                  AND (? IS NULL OR t.updated_at < ?)
                  AND (
@@ -2490,6 +2506,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                 {
                     "turn_id": turn_id,
                     "kind": str(turn["kind"]),
+                    "workflow_kind": str(turn["resolved_workflow_kind"] or ""),
                     "state": str(turn["state"]),
                     "channel": str(final.get("channel") or ""),
                     "started_at": self.context_timestamp(turn["started_at"]),
@@ -3300,21 +3317,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             raise ValueError("episode turn relation must be primary or related")
         archive_kind = self._runtime_archive_kind(episode_id)
         if archive_kind:
-            source_kind = "webhook" if turn_id.startswith("webhook:") else None
-            if source_kind is None:
-                source = self._db.execute(
-                    """SELECT 1 FROM turns AS archive_source
-                       WHERE archive_source.id=?
-                         AND archive_source.kind='autonomous'
-                         AND EXISTS (
-                             SELECT 1
-                             FROM json_each(archive_source.source_ids_json)
-                                  AS source_id
-                             WHERE source_id.value GLOB 'heartbeat:*'
-                         )""",
-                    (turn_id,),
-                ).fetchone()
-                source_kind = "heartbeat" if source is not None else None
+            source_kind = self.turn_workflow_kind(turn_id)
             if source_kind != archive_kind:
                 raise ValueError(
                     f"{archive_kind} archive does not accept "
@@ -4719,11 +4722,13 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         )
 
     def recent_heartbeat_activities(self) -> list[dict[str, str]]:
+        workflow = turn_workflow_kind_sql("t")
         rows = self._db.execute(
-            """SELECT content, created_at FROM messages
-               WHERE delivery_state='internal'
-                 AND content LIKE '[AUTONOMOUS HEARTBEAT RECORD;%'
-               ORDER BY created_at DESC, id DESC
+            f"""SELECT m.content, m.created_at FROM messages AS m
+               JOIN turns AS t ON t.id=m.turn_id
+               WHERE m.delivery_state='internal'
+                 AND {workflow}='heartbeat'
+               ORDER BY m.created_at DESC, m.id DESC
                LIMIT ?""",
             (RECENT_HEARTBEAT_LIMIT,),
         ).fetchall()
@@ -5776,9 +5781,9 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             if maintenance_turn_id:
                 self._db.execute(
                     """INSERT OR IGNORE INTO turns
-                       (id, kind, source_ids_json, state, stage,
+                       (id, kind, workflow_kind, source_ids_json, state, stage,
                         started_at, updated_at)
-                       VALUES (?, 'autonomous', ?, 'running',
+                       VALUES (?, 'autonomous', 'memory_maintenance', ?, 'running',
                                'memory_maintenance_queued', ?, ?)""",
                     (
                         maintenance_turn_id,
@@ -6547,8 +6552,9 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             source_json = json.dumps(event_ids, ensure_ascii=False)
             self._db.execute(
                 """INSERT OR IGNORE INTO turns
-                   (id, kind, source_ids_json, state, started_at, updated_at)
-                   VALUES (?, 'owner', ?, 'running', ?, ?)""",
+                   (id, kind, workflow_kind, source_ids_json, state,
+                    started_at, updated_at)
+                   VALUES (?, 'owner', 'owner', ?, 'running', ?, ?)""",
                 (turn_id, source_json, now, now),
             )
             progress = self._db.execute(
