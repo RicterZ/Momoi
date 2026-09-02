@@ -1119,10 +1119,13 @@ class ToolExecutionService:
                                             threshold=SIMILAR_SEND_BUBBLES_THRESHOLD,
                                         )
                                         result = {
-                                            "ok": True,
-                                            "state": "skipped",
-                                            "warning": (
-                                                "A very similar bubble was already sent."
+                                            "ok": False,
+                                            "error": "similar_bubbles_already_sent",
+                                            "message": (
+                                                "A very similar set of bubbles was "
+                                                "already sent successfully. Do not "
+                                                "repeat it; continue the work or end "
+                                                "the Turn."
                                             ),
                                         }
                                     else:

@@ -763,7 +763,7 @@ class MessagingTest(unittest.TestCase):
 
 
 class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
-    async def test_consecutive_similar_send_bubbles_is_skipped_with_warning(
+    async def test_consecutive_similar_send_bubbles_returns_tool_error(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -839,8 +839,9 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             await daemon._complete_batch([event], turn_id)
 
             self.assertEqual(provider.calls, 3)
-            self.assertIn("A very similar bubble was already sent.", provider.warning)
-            self.assertIn("skipped", provider.warning)
+            self.assertIn("similar_bubbles_already_sent", provider.warning)
+            self.assertIn("already sent successfully", provider.warning)
+            self.assertIn('"is_error": true', provider.warning)
             self.assertEqual(
                 [
                     str(row["text"])
