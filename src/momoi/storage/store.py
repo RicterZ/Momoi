@@ -38,7 +38,10 @@ from .reflection_records import ReflectionRecordStore
 from .reflection_schedule import ReflectionScheduleStore
 from .reflection_source import ReflectionSourceStore
 from .dashboard import DashboardStore
-from .conversations import ConversationStore
+from .episode_lifecycle import EpisodeLifecycleStore
+from .episode_links import EpisodeLinkStore
+from .episode_plans import EpisodePlanStore
+from .episode_records import EpisodeRecordStore
 from .conversation_views import ConversationViewStore
 from .transcripts import TranscriptStore
 from .episode_queries import EpisodeQueryStore
@@ -68,7 +71,10 @@ class Store(
     DashboardStore,
     EpisodeConsolidationStore,
     EpisodeAnnealingStore,
-    ConversationStore,
+    EpisodeRecordStore,
+    EpisodeLinkStore,
+    EpisodeLifecycleStore,
+    EpisodePlanStore,
     RuntimeArchiveStore,
     ConversationViewStore,
     TranscriptStore,
