@@ -974,7 +974,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         return cursor.rowcount == 1
 
     def release_memory_maintenance_turn(
-        self, turn_id: str, reason: str
+        self, turn_id: str, reason: str | None
     ) -> None:
         with self._db:
             self._db.execute(
@@ -982,7 +982,11 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                    failure_reason=?, updated_at=?
                    WHERE id=? AND state='running'
                      AND stage='memory_maintenance_running'""",
-                (reason[:500], time.time(), turn_id),
+                (
+                    reason[:500] if reason is not None else None,
+                    time.time(),
+                    turn_id,
+                ),
             )
 
     def memory_maintenance_source_ids(self, turn_id: str) -> list[str]:
@@ -1372,6 +1376,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                 {
                     "reviewed_ids": list(decision.get("reviewed_ids", [])),
                     "completed_ids": list(decision.get("completed_ids", [])),
+                    "change_count": len(decision.get("changes", [])),
                     "regroup_requests": list(
                         decision.get("regroup_requests", [])
                     ),

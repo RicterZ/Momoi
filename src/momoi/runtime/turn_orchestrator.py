@@ -784,48 +784,63 @@ class TurnOrchestrator:
 
     async def _complete_memory_maintenance_turn(
         self, turn_id: str, stop: asyncio.Event
-    ) -> None:
+    ) -> bool:
+        """Run one durable batch and report whether it should be requeued."""
         if stop.is_set() or not self.store.claim_memory_maintenance_turn(turn_id):
-            return
+            return False
         try:
-            batches = 0
-            changes = 0
-            while not stop.is_set():
-                (
-                    completed,
-                    batch_changes,
-                    defer_reason,
-                ) = await self._run_memory_maintenance_batch(turn_id)
-                if defer_reason:
-                    self.store.release_memory_maintenance_turn(
-                        turn_id, defer_reason
-                    )
-                    log_event(
-                        logger,
-                        logging.WARNING,
-                        "memory_maintenance_protocol_deferred",
-                        stage="memory_maintenance",
-                        turn_id=turn_id,
-                        reason=defer_reason,
-                    )
-                    self.agenda_changed.set()
-                    return
-                if completed:
-                    break
-                batches += 1
-                changes += batch_changes
-            self.store.complete_background_turn(turn_id)
+            completed, batch_changes, defer_reason = (
+                await self._run_memory_maintenance_batch(turn_id)
+            )
+            if defer_reason:
+                self.store.release_memory_maintenance_turn(
+                    turn_id, defer_reason
+                )
+                log_event(
+                    logger,
+                    logging.WARNING,
+                    "memory_maintenance_protocol_deferred",
+                    stage="memory_maintenance",
+                    turn_id=turn_id,
+                    reason=defer_reason,
+                )
+                self.agenda_changed.set()
+                return False
+            if completed:
+                journal = self.store.memory_maintenance_journal(turn_id)
+                batch_items = [
+                    item
+                    for item in journal
+                    if item.get("item_type") == "memory_maintenance_batch"
+                ]
+                self.store.complete_background_turn(turn_id)
+                log_event(
+                    logger,
+                    logging.INFO,
+                    "turn_complete",
+                    stage="memory_maintenance",
+                    turn_id=turn_id,
+                    batches=len(batch_items),
+                    changes=sum(
+                        int(item.get("change_count") or 0)
+                        for item in batch_items
+                    ),
+                )
+                return False
+            self.store.release_memory_maintenance_turn(turn_id, None)
             log_event(
                 logger,
-                logging.INFO,
-                "turn_complete",
+                logging.DEBUG,
+                "memory_maintenance_batch_yielded",
                 stage="memory_maintenance",
                 turn_id=turn_id,
-                batches=batches,
-                changes=changes,
+                changes=batch_changes,
             )
+            return not stop.is_set()
         except asyncio.CancelledError:
-            self.store.release_memory_maintenance_turn(turn_id, "cancelled")
+            self.store.release_memory_maintenance_turn(
+                turn_id, "owner_stop" if self._stop_requested else "cancelled"
+            )
             raise
         except Exception as error:
             self.store.release_memory_maintenance_turn(
@@ -841,6 +856,7 @@ class TurnOrchestrator:
                 exc_info=True,
             )
             self.agenda_changed.set()
+            return False
 
     async def _run_memory_maintenance_batch(
         self, turn_id: str

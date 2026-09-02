@@ -170,7 +170,7 @@ class MomoiDaemon(TurnRunner):
         self.episode_annealing_requested = asyncio.Event()
         self.outbox_changed = asyncio.Event()
         self.agenda_changed = asyncio.Event()
-        self._active_turn: asyncio.Task[None] | None = None
+        self._active_turn: asyncio.Task[Any] | None = None
         self._active_annealing: asyncio.Task[None] | None = None
         self._webhook_turn_active = False
         self._stop_requested = False
@@ -455,6 +455,7 @@ class MomoiDaemon(TurnRunner):
                     job = item
                     assert isinstance(job, AutonomousJob)
                     self._stop_requested = False
+                    requeue_memory_maintenance = False
                     if job.kind == "heartbeat":
                         target_channel = self._manual_heartbeat_channel
                         self._manual_heartbeat_channel = None
@@ -467,7 +468,10 @@ class MomoiDaemon(TurnRunner):
                         work = self._complete_goal_turn(job.id, stop)
                     self._active_turn = asyncio.create_task(work)
                     try:
-                        await self._active_turn
+                        result = await self._active_turn
+                        requeue_memory_maintenance = (
+                            job.kind == "memory_maintenance" and result is True
+                        )
                     except asyncio.CancelledError:
                         if not self._stop_requested:
                             raise
@@ -496,7 +500,6 @@ class MomoiDaemon(TurnRunner):
                                 reason="owner_stop",
                             )
                         elif job.kind == "memory_maintenance":
-                            self.store.cancel_turn(job.id)
                             log_event(
                                 logger,
                                 logging.INFO,
@@ -518,6 +521,8 @@ class MomoiDaemon(TurnRunner):
                     finally:
                         if job.kind == "memory_maintenance":
                             self._queued_memory_maintenance.discard(job.id)
+                            if requeue_memory_maintenance and not stop.is_set():
+                                self._enqueue_memory_maintenance(job.id)
                         self._active_turn = None
                         self._stop_requested = False
                         self.agenda_changed.set()

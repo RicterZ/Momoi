@@ -757,20 +757,37 @@ class MemoryMaintenanceExecutionTest(unittest.IsolatedAsyncioTestCase):
 
             daemon.provider = Provider()
             with self.assertLogs("momoi.runtime.turns", level="INFO") as logs:
-                await daemon._complete_memory_maintenance_turn(
+                should_requeue = await daemon._complete_memory_maintenance_turn(
                     turn_id, asyncio.Event()
                 )
+                self.assertTrue(should_requeue)
+                yielded = daemon.store._db.execute(
+                    "SELECT state,stage,failure_reason FROM turns WHERE id=?",
+                    (turn_id,),
+                ).fetchone()
+                self.assertEqual(yielded["state"], "running")
+                self.assertEqual(
+                    yielded["stage"], "memory_maintenance_queued"
+                )
+                self.assertIsNone(yielded["failure_reason"])
+                self.assertFalse(
+                    daemon.store.memory_maintenance_bootstrap_complete()
+                )
+                should_requeue = await daemon._complete_memory_maintenance_turn(
+                    turn_id, asyncio.Event()
+                )
+                self.assertFalse(should_requeue)
             state = daemon.store._db.execute(
                 "SELECT state FROM turns WHERE id=?", (turn_id,)
             ).fetchone()
             self.assertEqual(state["state"], "completed")
             journal = daemon.store.memory_maintenance_journal(turn_id)
-            self.assertTrue(
-                any(
-                    item["item_type"] == "memory_maintenance_batch"
-                    for item in journal
-                )
+            batch = next(
+                item
+                for item in journal
+                if item["item_type"] == "memory_maintenance_batch"
             )
+            self.assertEqual(batch["change_count"], 1)
             self.assertTrue(
                 any(
                     item["item_type"] == "memory_maintenance_complete"
@@ -894,9 +911,14 @@ class MemoryMaintenanceExecutionTest(unittest.IsolatedAsyncioTestCase):
                     )
 
             daemon.provider = Provider()
-            await daemon._complete_memory_maintenance_turn(
+            should_requeue = await daemon._complete_memory_maintenance_turn(
                 turn_id, asyncio.Event()
             )
+            self.assertTrue(should_requeue)
+            should_requeue = await daemon._complete_memory_maintenance_turn(
+                turn_id, asyncio.Event()
+            )
+            self.assertFalse(should_requeue)
             updated = daemon.store._db.execute(
                 """SELECT content,source_event_id,evidence_quote,updated_at
                    FROM memories WHERE id=?""",
@@ -914,6 +936,99 @@ class MemoryMaintenanceExecutionTest(unittest.IsolatedAsyncioTestCase):
                 )
             )
             self.assertTrue(daemon.store.memory_maintenance_bootstrap_complete())
+            daemon.store.close()
+
+    async def test_stop_after_batch_keeps_turn_queued(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(
+                AppConfig(
+                    llm=LLMConfig(
+                        "http://127.0.0.1", "test", "test", 1000, 0, 1, 0
+                    ),
+                    channel=NapCatConfig(
+                        "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
+                    ),
+                    system_prompt="test",
+                    transcript_turns_min=4,
+                    transcript_turns_max=4,
+                    episode_raw_tail_turns=2,
+                    memory_results=2,
+                    database=Path(directory) / "momoi.sqlite3",
+                    log_level="INFO",
+                )
+            )
+            turn_id = "maintenance-stop-after-batch"
+            daemon.store.queue_memory_maintenance_turn(turn_id, "manual:test")
+            stop = asyncio.Event()
+
+            async def run_batch(
+                _turn_id: str,
+            ) -> tuple[bool, int, str | None]:
+                stop.set()
+                return False, 0, None
+
+            daemon._run_memory_maintenance_batch = run_batch  # type: ignore[method-assign]
+            should_requeue = await daemon._complete_memory_maintenance_turn(
+                turn_id, stop
+            )
+            self.assertFalse(should_requeue)
+            row = daemon.store._db.execute(
+                "SELECT state,stage,failure_reason FROM turns WHERE id=?",
+                (turn_id,),
+            ).fetchone()
+            self.assertEqual(row["state"], "running")
+            self.assertEqual(row["stage"], "memory_maintenance_queued")
+            self.assertIsNone(row["failure_reason"])
+            daemon.store.close()
+
+    async def test_owner_stop_keeps_cancelled_batch_recoverable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(
+                AppConfig(
+                    llm=LLMConfig(
+                        "http://127.0.0.1", "test", "test", 1000, 0, 1, 0
+                    ),
+                    channel=NapCatConfig(
+                        "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
+                    ),
+                    system_prompt="test",
+                    transcript_turns_min=4,
+                    transcript_turns_max=4,
+                    episode_raw_tail_turns=2,
+                    memory_results=2,
+                    database=Path(directory) / "momoi.sqlite3",
+                    log_level="INFO",
+                )
+            )
+            turn_id = "maintenance-owner-stop"
+            daemon.store.queue_memory_maintenance_turn(turn_id, "manual:test")
+            started = asyncio.Event()
+
+            async def run_batch(
+                _turn_id: str,
+            ) -> tuple[bool, int, str | None]:
+                started.set()
+                await asyncio.Event().wait()
+                raise AssertionError("unreachable")
+
+            daemon._run_memory_maintenance_batch = run_batch  # type: ignore[method-assign]
+            task = asyncio.create_task(
+                daemon._complete_memory_maintenance_turn(
+                    turn_id, asyncio.Event()
+                )
+            )
+            await started.wait()
+            daemon._stop_requested = True
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+            row = daemon.store._db.execute(
+                "SELECT state,stage,failure_reason FROM turns WHERE id=?",
+                (turn_id,),
+            ).fetchone()
+            self.assertEqual(row["state"], "running")
+            self.assertEqual(row["stage"], "memory_maintenance_queued")
+            self.assertEqual(row["failure_reason"], "owner_stop")
             daemon.store.close()
 
 
