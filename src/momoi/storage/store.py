@@ -11,8 +11,8 @@ from ..search import (
     SearchBackend,
     StringSearchBackend,
 )
-from .delivery import DeliveryStore
 from .context_plans import ContextPlanStore
+from .delivery import DeliveryStore
 from .episode_search import (
     EpisodeQueryService,
     EpisodeSearchBackend,
@@ -42,10 +42,8 @@ from .notifications import NotificationStore
 from .outbox import OutboxStore
 from .reconciliation import ReconciliationStore
 from .turn_commits import TurnCommitStore
+from .webhooks import WebhookStore
 from .lifecycle import LifecycleStore
-
-
-
 
 class Store(
     LifecycleStore,
@@ -70,6 +68,7 @@ class Store(
     TurnCommitStore,
     MemoryMaintenanceStore,
     MemoryStore,
+    WebhookStore,
     DeliveryStore,
     SemanticStore,
 ):
