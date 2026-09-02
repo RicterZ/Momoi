@@ -23,7 +23,12 @@ from .progress import (
     initial_announce_error_message,
     missing_initial_work_announce,
 )
-from .protocol import harness_correction, owner_request_messages, parse_end_turn
+from .protocol import (
+    handle_no_tool_response,
+    harness_correction,
+    owner_request_messages,
+    parse_end_turn,
+)
 from .runtime_tools import begin_heartbeat, enable_tools, recall_owner_context
 from ..protocol import (
     AUTONOMOUS_FINISH_SPEC,
@@ -303,93 +308,37 @@ class AgentLoop:
                 remind_owner_bubbles = False
                 continue
             if not response.tool_calls:
-                if workflow is not None:
-                    failed_tool_rounds += 1
-                    if failed_tool_rounds >= MAX_CONSECUTIVE_TOOL_FAILURES:
-                        raise WorkflowProtocolError(
-                            last_tool_error or "repeated workflow protocol failures"
-                        )
-                    assistant_content = copy.deepcopy(response.content)
-                    if response.reasoning:
-                        assistant_content.insert(
-                            0,
-                            {"type": "reasoning", "text": response.reasoning},
-                        )
-                    messages.extend(
-                        [
-                            {"role": "assistant", "content": assistant_content},
-                            {
-                                "role": "user",
-                                "content": workflow.no_tool_correction,
-                            },
-                        ]
+                resolution = handle_no_tool_response(
+                    messages,
+                    response.content,
+                    response.reasoning,
+                    workflow_correction=(
+                        workflow.no_tool_correction if workflow is not None else None
+                    ),
+                    heartbeat_turn=heartbeat_turn,
+                    harness_started=harness.started,
+                    goal_turn=autonomous_goal_id is not None,
+                    require_response=require_response,
+                    owner_turn=authority == "owner",
+                    failed_rounds=failed_tool_rounds,
+                    last_tool_error=last_tool_error,
+                )
+                failed_tool_rounds = resolution.failed_rounds
+                if resolution.log_rejection:
+                    log_event(
+                        logger,
+                        logging.DEBUG,
+                        "llm_protocol_rejected",
+                        stage=stage,
+                        turn_id=turn_id,
+                        call_id=call_id,
+                        round=llm_round,
+                        reason="native_tool_call_required",
                     )
-                    continue
-                if heartbeat_turn and not harness.started:
-                    failed_tool_rounds += 1
-                    if failed_tool_rounds >= MAX_CONSECUTIVE_TOOL_FAILURES:
-                        raise ExternalToolTurnError("heartbeat_not_started")
-                    messages.extend(
-                        [
-                            {"role": "assistant", "content": response.content},
-                            {
-                                "role": "user",
-                                "content": (
-                                    "[Trusted runtime protocol error. The previous "
-                                    "text was not delivered. Call heartbeat_begin "
-                                    "alone before any other Heartbeat action.]"
-                                ),
-                            },
-                        ]
-                    )
-                    continue
-                if autonomous_goal_id:
-                    messages.extend(
-                        [
-                            {"role": "assistant", "content": response.content},
-                            {
-                                "role": "user",
-                                "content": (
-                                    "[Trusted runtime protocol error. Plain text was not "
-                                    "stored. Finish now by calling autonomous_finish alone.]"
-                                ),
-                            },
-                        ]
-                    )
-                    force_autonomous_finish = True
-                    continue
-                if not require_response:
+                if resolution.action == "return":
                     return None
-                log_event(
-                    logger,
-                    logging.DEBUG,
-                    "llm_protocol_rejected",
-                    stage=stage,
-                    turn_id=turn_id,
-                    call_id=call_id,
-                    round=llm_round,
-                    reason="native_tool_call_required",
-                )
-                messages.extend(
-                    [
-                        {"role": "assistant", "content": response.content},
-                        {
-                            "role": "user",
-                            "content": (
-                                "[Trusted runtime protocol error. The previous text was "
-                                "not delivered. Call recall first and alone as a native "
-                                "tool call; never write or imitate tool syntax in text.]"
-                                if authority == "owner" and not harness.started
-                                else (
-                                    "[Trusted runtime protocol error. The previous text "
-                                    "was not delivered. Call send_bubbles with the "
-                                    "owner-visible bubbles, without end_turn. After its "
-                                    "result, call end_turn alone on the next step.]"
-                                )
-                            ),
-                        },
-                    ]
-                )
+                if resolution.action == "force_finish":
+                    force_autonomous_finish = True
                 continue
             harness_error = harness.validate(
                 response.tool_calls,

@@ -1,16 +1,111 @@
 import copy
 from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Literal
 from typing import Any
 
 from ...channel import ChannelMessage
 from ...models import AgentReply, ToolCall
 from ..parsing import parse_response
 from ..turn_support import tool_error_block
+from ..turn_support import ExternalToolTurnError, MAX_CONSECUTIVE_TOOL_FAILURES
+from .workflow import WorkflowProtocolError
 
 OWNER_BUBBLE_REQUEST_REMINDER = (
     "Native tool calls only: if bubbles are warranted, call send_bubbles with "
     "them; otherwise call the next work or terminal tool."
 )
+
+
+@dataclass(frozen=True)
+class NoToolResolution:
+    action: Literal["retry", "return", "force_finish"]
+    failed_rounds: int
+    log_rejection: bool = False
+
+
+def handle_no_tool_response(
+    messages: list[dict[str, Any]],
+    content: object,
+    reasoning: str | None,
+    *,
+    workflow_correction: str | None,
+    heartbeat_turn: bool,
+    harness_started: bool,
+    goal_turn: bool,
+    require_response: bool,
+    owner_turn: bool,
+    failed_rounds: int,
+    last_tool_error: str,
+) -> NoToolResolution:
+    if workflow_correction is not None:
+        failed_rounds += 1
+        if failed_rounds >= MAX_CONSECUTIVE_TOOL_FAILURES:
+            raise WorkflowProtocolError(
+                last_tool_error or "repeated workflow protocol failures"
+            )
+        assistant_content = copy.deepcopy(content)
+        if reasoning:
+            assistant_content.insert(0, {"type": "reasoning", "text": reasoning})
+        messages.extend(
+            [
+                {"role": "assistant", "content": assistant_content},
+                {"role": "user", "content": workflow_correction},
+            ]
+        )
+        return NoToolResolution("retry", failed_rounds)
+    if heartbeat_turn and not harness_started:
+        failed_rounds += 1
+        if failed_rounds >= MAX_CONSECUTIVE_TOOL_FAILURES:
+            raise ExternalToolTurnError("heartbeat_not_started")
+        messages.extend(
+            [
+                {"role": "assistant", "content": content},
+                {
+                    "role": "user",
+                    "content": (
+                        "[Trusted runtime protocol error. The previous text was not "
+                        "delivered. Call heartbeat_begin alone before any other "
+                        "Heartbeat action.]"
+                    ),
+                },
+            ]
+        )
+        return NoToolResolution("retry", failed_rounds)
+    if goal_turn:
+        messages.extend(
+            [
+                {"role": "assistant", "content": content},
+                {
+                    "role": "user",
+                    "content": (
+                        "[Trusted runtime protocol error. Plain text was not stored. "
+                        "Finish now by calling autonomous_finish alone.]"
+                    ),
+                },
+            ]
+        )
+        return NoToolResolution("force_finish", failed_rounds)
+    if not require_response:
+        return NoToolResolution("return", failed_rounds)
+    correction = (
+        "[Trusted runtime protocol error. The previous text was not delivered. Call "
+        "recall first and alone as a native tool call; never write or imitate tool "
+        "syntax in text.]"
+        if owner_turn and not harness_started
+        else (
+            "[Trusted runtime protocol error. The previous text was not delivered. "
+            "Call send_bubbles with the owner-visible bubbles, without end_turn. "
+            "After its result, call end_turn alone on the next step.]"
+        )
+    )
+    messages.extend(
+        [
+            {"role": "assistant", "content": content},
+            {"role": "user", "content": correction},
+        ]
+    )
+    return NoToolResolution("retry", failed_rounds, log_rejection=True)
 
 
 def owner_request_messages(
