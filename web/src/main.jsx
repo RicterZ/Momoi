@@ -58,25 +58,15 @@ const goalStatuses = [
 ];
 
 function readToken() {
-  const local = localStorage.getItem(TOKEN_KEY) || "";
-  if (local) return local;
-  // Migrate older session-scoped tokens once.
-  const session = sessionStorage.getItem(TOKEN_KEY) || "";
-  if (session) {
-    localStorage.setItem(TOKEN_KEY, session);
-    sessionStorage.removeItem(TOKEN_KEY);
-  }
-  return session;
+  return localStorage.getItem(TOKEN_KEY) || "";
 }
 
 function writeToken(token) {
   localStorage.setItem(TOKEN_KEY, token);
-  sessionStorage.removeItem(TOKEN_KEY);
 }
 
 function clearToken() {
   localStorage.removeItem(TOKEN_KEY);
-  sessionStorage.removeItem(TOKEN_KEY);
 }
 
 async function api(path, { signal, method = "GET", body, token, formData } = {}) {
