@@ -45,6 +45,11 @@ def turn_workflow_kind_sql(table: str = "turns") -> str:
         WHEN {table}.id GLOB 'webhook:*' THEN 'webhook'
         WHEN {table}.stage GLOB 'memory_maintenance_*' THEN 'memory_maintenance'
         WHEN EXISTS (
+            SELECT 1 FROM turn_journal AS workflow_journal
+            WHERE workflow_journal.turn_id={table}.id
+              AND workflow_journal.item_type GLOB 'memory_maintenance_*'
+        ) THEN 'memory_maintenance'
+        WHEN EXISTS (
             SELECT 1 FROM messages AS workflow_message
             WHERE workflow_message.turn_id={table}.id
               AND workflow_message.content

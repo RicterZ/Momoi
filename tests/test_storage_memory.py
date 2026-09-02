@@ -1752,7 +1752,33 @@ class StorageMemoryTest(unittest.TestCase):
                        VALUES ('legacy', 'autonomous', '["reply-followup:1"]',
                                'completed', 1, 1)"""
                 )
+                store._db.execute(
+                    """INSERT INTO turns
+                       (id, kind, source_ids_json, state, stage,
+                        started_at, updated_at)
+                       VALUES ('legacy-reflection', 'autonomous',
+                               '["reflection:2026-09-01"]', 'completed',
+                               'completed', 1, 1),
+                              ('legacy-memory-maintenance', 'autonomous',
+                               '["reflection:2026-09-01"]', 'completed',
+                               'completed', 1, 1)"""
+                )
+                store._db.execute(
+                    """INSERT INTO turn_journal
+                       (turn_id, sequence, created_at, item_type,
+                        visibility, trust, payload_json)
+                       VALUES ('legacy-memory-maintenance', 1, 1,
+                               'memory_maintenance_complete',
+                               'internal', 'runtime', '{}')"""
+                )
             self.assertEqual(store.turn_workflow_kind("legacy"), "reply_followup")
+            self.assertEqual(
+                store.turn_workflow_kind("legacy-reflection"), "reflection"
+            )
+            self.assertEqual(
+                store.turn_workflow_kind("legacy-memory-maintenance"),
+                "memory_maintenance",
+            )
 
             with self.assertRaisesRegex(ValueError, "belongs to heartbeat"):
                 store.begin_turn("current", "goal", ["goal:misleading"])
