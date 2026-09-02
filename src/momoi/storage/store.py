@@ -21,6 +21,7 @@ from .episode_search import (
 from .episode_annealing import EpisodeAnnealingStore
 from .episode_consolidation import EpisodeConsolidationStore
 from .memory_mutations import MemoryMutationStore
+from .memory_inventory import MemoryInventoryStore
 from .memory_recall import MemoryRecallStore
 from .memory_maintenance import MemoryMaintenanceStore
 from .goals import GoalStore
@@ -31,6 +32,7 @@ from .heartbeat_commits import HeartbeatCommitStore
 from .heartbeat_schedule import HeartbeatScheduleStore
 from .heartbeat_state import HeartbeatStateStore
 from .semantic_queue import SemanticQueueStore
+from .semantic_spaces import SemanticSpaceStore
 from .semantic_sources import SemanticSourceStore
 from .thinking import ThinkingStore
 from .observability import ObservabilityStore
@@ -85,10 +87,12 @@ class Store(
     ReconciliationStore,
     TurnCommitStore,
     MemoryMaintenanceStore,
+    MemoryInventoryStore,
     MemoryRecallStore,
     MemoryMutationStore,
     WebhookStore,
     DeliveryStore,
+    SemanticSpaceStore,
     SemanticSourceStore,
     SemanticQueueStore,
 ):
