@@ -56,6 +56,10 @@ from .reflections import ReflectionStore
 from .turn_workflow import turn_workflow_kind_sql
 from .dashboard import DashboardStore
 from .conversations import ConversationStore
+from .conversation_views import ConversationViewStore
+from .transcripts import TranscriptStore
+from .episode_queries import EpisodeQueryStore
+from .episode_index import EpisodeIndexStore
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +106,10 @@ class Store(
     DashboardStore,
     EpisodeMaintenanceStore,
     ConversationStore,
+    ConversationViewStore,
+    TranscriptStore,
+    EpisodeQueryStore,
+    EpisodeIndexStore,
     MemoryMaintenanceStore,
     MemoryStore,
     DeliveryStore,
