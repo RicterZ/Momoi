@@ -23,7 +23,9 @@ from .episode_consolidation import EpisodeConsolidationStore
 from .memory_mutations import MemoryMutationStore
 from .memory_inventory import MemoryInventoryStore
 from .memory_recall import MemoryRecallStore
-from .memory_maintenance import MemoryMaintenanceStore
+from .memory_maintenance_commits import MemoryMaintenanceCommitStore
+from .memory_maintenance_evidence import MemoryMaintenanceEvidenceStore
+from .memory_maintenance_queue import MemoryMaintenanceQueueStore
 from .goals import GoalStore
 from .emotions import EmotionStore
 from .turns import TurnStore
@@ -86,7 +88,9 @@ class Store(
     OutboxStore,
     ReconciliationStore,
     TurnCommitStore,
-    MemoryMaintenanceStore,
+    MemoryMaintenanceQueueStore,
+    MemoryMaintenanceEvidenceStore,
+    MemoryMaintenanceCommitStore,
     MemoryInventoryStore,
     MemoryRecallStore,
     MemoryMutationStore,
