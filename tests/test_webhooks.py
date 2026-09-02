@@ -286,8 +286,7 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "finish",
                             "end_turn",
                             {
-                                "expects_reply": False,
-                                "reply_expectation": "",
+                                "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
                             },
                         )

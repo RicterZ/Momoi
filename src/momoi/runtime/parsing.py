@@ -101,6 +101,13 @@ def parse_response(
 ) -> tuple[AgentReply | None, str | None]:
     if "bubbles" in arguments:
         return None, "bubbles_not_allowed_in_end_turn"
+    legacy_reply_wait_fields = {
+        "expects_reply",
+        "reply_expectation",
+        "schedule_reply_wait",
+    }
+    if legacy_reply_wait_fields & arguments.keys():
+        return None, "legacy_reply_wait_fields_not_allowed"
     messages: list[ChannelMessage] = []
     error: str | None = None
     mood, error = parse_mood_decision(arguments.get("mood"))
@@ -113,14 +120,7 @@ def parse_response(
             return None, error
     elif "activity" in arguments:
         return None, "activity_update_not_allowed"
-    raw_reply_wait = arguments.get("reply_wait")
-    if (
-        "reply_wait" not in arguments
-        and arguments.get("reply_expectation") == ""
-        and arguments.get("schedule_reply_wait") in {None, False}
-    ):
-        raw_reply_wait = {"wait": False}
-    reply_wait, error = parse_reply_wait_decision(raw_reply_wait)
+    reply_wait, error = parse_reply_wait_decision(arguments.get("reply_wait"))
     if reply_wait is None:
         return None, error
     heartbeat = arguments.get("heartbeat")

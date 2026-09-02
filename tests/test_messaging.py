@@ -541,16 +541,24 @@ class MessagingTest(unittest.TestCase):
         )
         self.assertIsNone(invalid_schedule)
         self.assertEqual(error, "invalid_reply_wait_decision")
-        legacy, error = parse_response(
+        with_bubbles, error = parse_response(
             {
                 "bubbles": ["旧协议气泡"],
+                "reply_wait": {"wait": False},
+                "mood": {"decision": "unchanged"},
+            }
+        )
+        self.assertIsNone(with_bubbles)
+        self.assertEqual(error, "bubbles_not_allowed_in_end_turn")
+        old_shape, error = parse_response(
+            {
                 "expects_reply": False,
                 "reply_expectation": "",
                 "mood": {"decision": "unchanged"},
             }
         )
-        self.assertIsNone(legacy)
-        self.assertEqual(error, "bubbles_not_allowed_in_end_turn")
+        self.assertIsNone(old_shape)
+        self.assertEqual(error, "legacy_reply_wait_fields_not_allowed")
         heartbeat, error = parse_response(
             {
                 "reply_wait": {"wait": False},
@@ -1023,8 +1031,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                         "silent-close",
                         "end_turn",
                         {
-                            "expects_reply": False,
-                            "reply_expectation": "",
+                            "reply_wait": {"wait": False},
                             "mood": {"decision": "unchanged"},
                             "activity": {"decision": "unchanged"},
                         },
@@ -1221,8 +1228,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                         "image-response",
                         "end_turn",
                         {
-                            "expects_reply": False,
-                            "reply_expectation": "",
+                            "reply_wait": {"wait": False},
                             "mood": {"decision": "unchanged"},
                             "activity": {"decision": "unchanged"},
                         },
@@ -1321,8 +1327,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "emotion-close",
                             "end_turn",
                             {
-                                "expects_reply": False,
-                                "reply_expectation": "",
+                                "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
                                 "activity": {"decision": "unchanged"},
                             },
@@ -1422,8 +1427,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                     else:
                         tool_name = "end_turn"
                         arguments = {
-                            "expects_reply": False,
-                            "reply_expectation": "",
+                            "reply_wait": {"wait": False},
                             "mood": {"decision": "unchanged"},
                             "activity": {"decision": "unchanged"},
                         }
@@ -1666,8 +1670,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 f"end_turn-{self.calls}",
                                 "end_turn",
                                 {
-                                    "expects_reply": False,
-                                    "reply_expectation": "",
+                                    "reply_wait": {"wait": False},
                                     "mood": {"decision": "unchanged"},
                                     "activity": {"decision": "unchanged"},
                                 },

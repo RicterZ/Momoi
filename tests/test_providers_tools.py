@@ -1232,8 +1232,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "end_turn-corrected",
                             "end_turn",
                             {
-                                "expects_reply": False,
-                                "reply_expectation": "",
+                                "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
                                 "activity": {"decision": "unchanged"},
                             },
@@ -1319,8 +1318,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "corrected-response",
                             "end_turn",
                             {
-                                "expects_reply": False,
-                                "reply_expectation": "",
+                                "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
                                 "activity": {"decision": "unchanged"},
                             },
@@ -1373,8 +1371,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                                             "name": "end_turn",
                                             "arguments": json.dumps(
                                                 {
-                                                    "expects_reply": False,
-                                                    "reply_expectation": "",
+                                                    "reply_wait": {"wait": False},
                                                     "mood": {"decision": "unchanged"},
                                                 },
                                                 ensure_ascii=False,
@@ -1458,8 +1455,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "input_schema": {
                                 "type": "object",
                                 "properties": {
-                                    "expects_reply": {"type": "boolean"},
-                                    "reply_expectation": {"type": "string"},
+                                    "reply_wait": {"type": "object"},
                                     "mood": {"type": "object"},
                                 },
                             },
@@ -1500,8 +1496,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             response.tool_calls[0].arguments,
             {
-                "expects_reply": False,
-                "reply_expectation": "",
+                "reply_wait": {"wait": False},
                 "mood": {"decision": "unchanged"},
             },
         )

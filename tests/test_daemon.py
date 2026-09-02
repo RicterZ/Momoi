@@ -819,8 +819,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     else:
                         tool_name = "end_turn"
                         arguments = {
-                            "expects_reply": False,
-                            "reply_expectation": "",
+                            "reply_wait": {"wait": False},
                             "mood": {"decision": "unchanged"},
                             "activity": {"decision": "unchanged"},
                         }
@@ -943,8 +942,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "final-end_turn",
                             "end_turn",
                             {
-                                "expects_reply": False,
-                                "reply_expectation": "",
+                                "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
                                 "activity": {"decision": "unchanged"},
                             },
@@ -1706,8 +1704,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "failed-response",
                             "end_turn",
                             {
-                                "expects_reply": False,
-                                "reply_expectation": "",
+                                "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
                                 "activity": {"decision": "unchanged"},
                             },
@@ -2219,8 +2216,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "bad-end_turn",
                             "end_turn",
                             {
-                                "expects_reply": False,
-                                "reply_expectation": "",
+                                "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
                             },
                         )
@@ -2266,8 +2262,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "finish",
                             "end_turn",
                             {
-                                "expects_reply": False,
-                                "reply_expectation": "",
+                                "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
                                 "activity": {"decision": "unchanged"},
                             },
@@ -2696,7 +2691,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "finish",
                                 "end_turn",
                                 {
-                                    "reply_expectation": "",
+                                    "reply_wait": {"wait": False},
                                     "mood": {"decision": "unchanged"},
                                     "activity": {"decision": "unchanged"},
                                 },
@@ -2995,8 +2990,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "stop-response",
                             "end_turn",
                             {
-                                "expects_reply": False,
-                                "reply_expectation": "",
+                                "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
                             },
                         )
@@ -3082,8 +3076,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "stop-after-tool",
                             "end_turn",
                             {
-                                "expects_reply": False,
-                                "reply_expectation": "",
+                                "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
                             },
                         )
@@ -3215,8 +3208,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "id": "end_turn-1",
                             "name": "end_turn",
                             "input": {
-                                "expects_reply": False,
-                                "reply_expectation": "",
+                                "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
                                 "activity": {"decision": "unchanged"},
                             },
