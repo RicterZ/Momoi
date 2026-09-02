@@ -2,338 +2,27 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import math
 import time
-from dataclasses import dataclass, field
 from typing import Callable, Iterable
 
-import httpx
 import numpy as np
 
-from .config import EmbeddingConfig
-from .logging_context import log_event
-from .policies import SemanticPolicy
-from .storage import MemoryRecallQuery, Store, decode_vector
-from .storage.episode_ranking import EpisodeRecallQuery
+from ..config import EmbeddingConfig
+from ..logging_context import log_event
+from ..policies import SemanticPolicy
+from ..storage import MemoryRecallQuery, Store
+from ..storage.episode_ranking import EpisodeRecallQuery
+from .client import EmbeddingClient, semantic_error_category
+from .models import (
+    CALIBRATION_PROFILES,
+    DenseEpisodeHit,
+    DenseMemoryHit,
+    DenseRecallEvidence,
+)
+from .snapshot import SegmentedVectorSnapshot, VectorMetadata
 
 logger = logging.getLogger(__name__)
-
-
-def semantic_error_category(error: BaseException) -> str:
-    """Classify embedding failures without changing the fallback payload."""
-    return (
-        "timeout"
-        if isinstance(error, (TimeoutError, httpx.TimeoutException))
-        else "error"
-    )
-
-
 QUERY_INSTRUCTION = "为这个句子生成表示以用于检索相关文章："
-CALIBRATION_PROFILES: dict[str, dict[str, tuple[float, float, float]]] = {
-    # Calibrated against the private historical benchmark for this model. The
-    # episode-only gate is intentionally stricter: generic episode summaries
-    # otherwise produce high cosine scores without sparse/topic corroboration.
-    "bge-small-zh-v1.5-momoi-v1": {
-        "confirmed_memory": (0.55, 0.72, 0.86),
-        "reflection_memory": (0.58, 0.75, 0.87),
-        "episode_summary": (0.52, 0.81, 0.84),
-        "episode_turn": (0.56, 0.81, 0.86),
-    }
-}
-
-
-@dataclass(frozen=True)
-class DenseThresholds:
-    support: float
-    only: float
-    strong: float
-
-    def calibrated(self, cosine: float) -> float:
-        if self.strong <= self.support:
-            return 0.0
-        return min(
-            1.0, max(0.0, (cosine - self.support) / (self.strong - self.support))
-        )
-
-
-@dataclass(frozen=True)
-class DenseMemoryHit:
-    source_id: str
-    cosine: float
-
-
-@dataclass(frozen=True)
-class DenseEpisodeHit:
-    episode_id: str
-    summary_cosine: float | None = None
-    turn_cosine: float | None = None
-
-    @property
-    def cosine(self) -> float:
-        return max(
-            value
-            for value in (self.summary_cosine, self.turn_cosine)
-            if value is not None
-        )
-
-
-@dataclass(frozen=True)
-class DenseRecallEvidence:
-    space_id: str = ""
-    calibration_profile: str = ""
-    memory: dict[str, dict[tuple[str, str], DenseMemoryHit]] = field(
-        default_factory=dict
-    )
-    episodes: dict[str, dict[str, DenseEpisodeHit]] = field(default_factory=dict)
-    query_batch_size: int = 0
-    request_ms: float = 0.0
-    search_ms: float = 0.0
-    fallback_reason: str = ""
-
-    def thresholds(self, document_type: str) -> DenseThresholds | None:
-        values = CALIBRATION_PROFILES.get(self.calibration_profile, {}).get(
-            document_type
-        )
-        return DenseThresholds(*values) if values else None
-
-
-@dataclass(frozen=True)
-class _VectorMeta:
-    key: tuple[str, str, int]
-    document_type: str
-    source_id: str
-    parent_id: str
-    starts_at: float | None
-    ends_at: float | None
-    generation: int
-
-
-@dataclass(frozen=True)
-class _VectorSegment:
-    vectors: np.ndarray
-    metadata: tuple[_VectorMeta, ...]
-
-
-class EmbeddingClient:
-    def __init__(
-        self,
-        config: EmbeddingConfig,
-        policy: SemanticPolicy = SemanticPolicy(),
-    ) -> None:
-        self.config = config
-        self.policy = policy
-        self._client = httpx.AsyncClient()
-        self._query_failures = 0
-        self._query_breaker_until = 0.0
-
-    async def close(self) -> None:
-        await self._client.aclose()
-
-    async def encode(self, texts: list[str], *, query: bool) -> list[list[float]]:
-        if not texts:
-            return []
-        now = time.monotonic()
-        if query and now < self._query_breaker_until:
-            raise RuntimeError("query circuit breaker is open")
-        headers = (
-            {"Authorization": f"Bearer {self.config.api_key}"}
-            if self.config.api_key
-            else {}
-        )
-        timeout = (
-            self.config.query_timeout_seconds
-            if query
-            else self.config.document_timeout_seconds
-        )
-        try:
-            response = await self._client.post(
-                self.config.endpoint,
-                json={"model": self.config.model, "input": texts},
-                headers=headers,
-                timeout=timeout,
-            )
-            response.raise_for_status()
-            payload = response.json()
-            data = payload.get("data") if isinstance(payload, dict) else None
-            if not isinstance(data, list) or len(data) != len(texts):
-                raise ValueError("embedding response count mismatch")
-            ordered = sorted(data, key=lambda item: int(item.get("index", 0)))
-            vectors = [item.get("embedding") for item in ordered]
-            if any(not isinstance(vector, list) for vector in vectors):
-                raise ValueError("embedding response has invalid vectors")
-            normalized: list[list[float]] = []
-            for raw in vectors:
-                array = np.asarray(raw, dtype=np.float32)
-                if array.ndim != 1 or array.size != self.config.dimensions:
-                    raise ValueError("embedding dimension mismatch")
-                if not np.isfinite(array).all():
-                    raise ValueError("embedding contains non-finite values")
-                norm = float(np.linalg.norm(array))
-                if not math.isfinite(norm) or norm <= 0:
-                    raise ValueError("embedding has invalid norm")
-                normalized.append((array / norm).tolist())
-            if query:
-                self._query_failures = 0
-            return normalized
-        except Exception:
-            if query:
-                self._query_failures += 1
-                if self._query_failures >= self.policy.query_failure_limit:
-                    self._query_breaker_until = (
-                        time.monotonic() + self.policy.query_breaker_seconds
-                    )
-                    log_event(
-                        logger,
-                        logging.WARNING,
-                        "semantic_query_breaker_opened",
-                        failures=self._query_failures,
-                        cooldown_seconds=self.policy.query_breaker_seconds,
-                    )
-            raise
-
-    async def health(self) -> tuple[bool, float, str]:
-        started = time.monotonic()
-        try:
-            url = self.config.endpoint.rsplit("/v1/embeddings", 1)[0] + "/healthz"
-            response = await self._client.get(
-                url, timeout=self.config.query_timeout_seconds
-            )
-            response.raise_for_status()
-            return True, (time.monotonic() - started) * 1000, ""
-        except Exception as error:
-            return False, (time.monotonic() - started) * 1000, type(error).__name__
-
-
-class SegmentedVectorSnapshot:
-    def __init__(self, store: Store, dimensions: int) -> None:
-        self.store = store
-        self.dimensions = dimensions
-        self.space_id = ""
-        self._segments: list[_VectorSegment] = []
-        self._latest: dict[tuple[str, str, int], int] = {}
-        self._generation = 0
-
-    def load(self, space_id: str) -> None:
-        self.space_id = space_id
-        self._segments = []
-        self._latest = {}
-        self._generation = 0
-        for rows in self.store.semantic_ready_documents(space_id):
-            self._append(rows)
-
-    def _append(self, rows: list[dict[str, object]]) -> None:
-        vectors: list[np.ndarray] = []
-        metadata: list[_VectorMeta] = []
-        for row in rows:
-            key = (
-                str(row["document_type"]),
-                str(row["source_id"]),
-                int(row["chunk_index"]),
-            )
-            try:
-                if int(row["dimensions"] or 0) != self.dimensions:
-                    raise ValueError("stored embedding dimension mismatch")
-                vector = decode_vector(row["vector"], self.dimensions)
-            except ValueError as error:
-                self.store.invalidate_semantic_document(self.space_id, *key, str(error))
-                continue
-            self._generation += 1
-            generation = self._generation
-            self._latest[key] = generation
-            vectors.append(vector)
-            metadata.append(
-                _VectorMeta(
-                    key,
-                    key[0],
-                    key[1],
-                    str(row["parent_id"] or ""),
-                    float(row["starts_at"]) if row["starts_at"] is not None else None,
-                    float(row["ends_at"]) if row["ends_at"] is not None else None,
-                    generation,
-                )
-            )
-        if vectors:
-            self._segments.append(
-                _VectorSegment(np.ascontiguousarray(np.stack(vectors)), tuple(metadata))
-            )
-
-    def replace_source(self, source_type: str, source_id: str) -> None:
-        stale = [
-            key
-            for key in self._latest
-            if (
-                key[0] in {"episode_summary", "episode_turn"}
-                and source_type == "episode"
-                and any(
-                    meta.key == key and meta.parent_id == source_id
-                    for segment in self._segments
-                    for meta in segment.metadata
-                )
-            )
-            or (key[0] == source_type and key[1] == source_id)
-            or (
-                key[0] == "episode_summary"
-                and source_type == "episode"
-                and key[1] == source_id
-            )
-        ]
-        for key in stale:
-            self._latest.pop(key, None)
-        rows = self.store.semantic_ready_source_documents(
-            self.space_id, source_type, source_id
-        )
-        self._append(rows)
-        if len(self._segments) > 64:
-            self.load(self.space_id)
-
-    def search(
-        self,
-        query_vectors: np.ndarray,
-        document_types: set[str],
-        limit: int,
-        *,
-        after: float | None = None,
-        before: float | None = None,
-    ) -> dict[int, list[tuple[_VectorMeta, float]]]:
-        candidates: dict[int, list[tuple[_VectorMeta, float]]] = {
-            index: [] for index in range(len(query_vectors))
-        }
-        width = max(1, limit)
-        for segment in self._segments:
-            scores = query_vectors @ segment.vectors.T
-            for query_index in range(scores.shape[0]):
-                row_scores = scores[query_index]
-                if document_types.issubset({"episode_summary", "episode_turn"}):
-                    indices = range(len(row_scores))
-                else:
-                    take = min(width, len(row_scores))
-                    indices = np.argpartition(row_scores, -take)[-take:]
-                for index in indices:
-                    meta = segment.metadata[int(index)]
-                    if meta.document_type not in document_types:
-                        continue
-                    if self._latest.get(meta.key) != meta.generation:
-                        continue
-                    if after is not None and (
-                        meta.ends_at is None or meta.ends_at < after
-                    ):
-                        continue
-                    if before is not None and (
-                        meta.starts_at is None or meta.starts_at >= before
-                    ):
-                        continue
-                    candidates[query_index].append((meta, float(row_scores[index])))
-        for query_index, hits in candidates.items():
-            hits.sort(key=lambda item: item[1], reverse=True)
-            if document_types.issubset({"episode_summary", "episode_turn"}):
-                best: dict[tuple[str, str], tuple[_VectorMeta, float]] = {}
-                for meta, score in hits:
-                    key = (meta.parent_id or meta.source_id, meta.document_type)
-                    if key not in best:
-                        best[key] = (meta, score)
-                hits = sorted(best.values(), key=lambda item: item[1], reverse=True)
-            candidates[query_index] = hits[:width]
-        return candidates
 
 
 class SemanticRecallService:
@@ -396,9 +85,7 @@ class SemanticRecallService:
     ) -> list[str]:
         return list(
             dict.fromkeys(
-                query.dense_expression
-                for query in queries
-                if query.dense_expression
+                query.dense_expression for query in queries if query.dense_expression
             )
         )
 
@@ -461,7 +148,7 @@ class SemanticRecallService:
             max(1, output_limit) * self.policy.candidate_multiplier,
         )
         search_started = time.monotonic()
-        memory_hits: dict[int, list[tuple[_VectorMeta, float]]] = {}
+        memory_hits: dict[int, list[tuple[VectorMetadata, float]]] = {}
         if include_memory:
             for document_type in ("confirmed_memory", "reflection_memory"):
                 per_pool = self.snapshot.search(
@@ -474,7 +161,7 @@ class SemanticRecallService:
             if episode_after is not None or episode_before is not None
             else {"episode_summary", "episode_turn"}
         )
-        episode_hits: dict[int, list[tuple[_VectorMeta, float]]] = {}
+        episode_hits: dict[int, list[tuple[VectorMetadata, float]]] = {}
         if include_episode:
             for document_type in episode_types:
                 per_pool = self.snapshot.search(

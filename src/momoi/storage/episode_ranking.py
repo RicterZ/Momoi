@@ -13,7 +13,7 @@ from .episode_search import (
 )
 
 if TYPE_CHECKING:
-    from ..semantic import DenseRecallEvidence
+    from ..semantic.models import DenseRecallEvidence
 
 
 _QUERY_PRIORITY_WEIGHTS = (1.0, 0.5, 0.3)

@@ -23,7 +23,8 @@ from ..storage import (
     truncate_tokens,
 )
 from ..storage.episode_ranking import EpisodeRecallQuery
-from ..semantic import DenseRecallEvidence, SemanticRecallService
+from ..semantic.models import DenseRecallEvidence
+from ..semantic.service import SemanticRecallService
 
 logger = logging.getLogger(__name__)
 _EPISODE_SEARCH_SUMMARY_TOKENS = 300

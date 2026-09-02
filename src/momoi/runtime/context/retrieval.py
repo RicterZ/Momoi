@@ -11,7 +11,7 @@ from ...storage.context_plan_adapter import CURRENT_RETRIEVAL_VERSION
 from ...storage.episode_ranking import EpisodeRecallQuery, rank_recall_items
 
 if TYPE_CHECKING:
-    from ...semantic import DenseRecallEvidence
+    from ...semantic.models import DenseRecallEvidence
 
 
 logger = logging.getLogger(__name__)
@@ -637,4 +637,3 @@ def build_plan_retrieval(
         ),
     )
     return retrieval
-

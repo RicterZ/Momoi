@@ -21,7 +21,7 @@ from ..mcp_client import MCPManager
 from ..models import AgentReply, IncomingMessage
 from ..llm.anthropic import AnthropicProvider
 from ..llm.openai import OpenAIProvider
-from ..semantic import SemanticRecallService
+from ..semantic.service import SemanticRecallService
 from ..storage import Store
 from ..webhooks.service import WebhookService
 from .jobs import AutonomousJob

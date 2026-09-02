@@ -16,7 +16,7 @@ from .emotions import managed_emotion_path, remove_unreferenced_emotion_asset
 from .logging_context import configure_logging, log_event
 from .models import ToolCall, TurnDraft
 from .runtime import MomoiDaemon
-from .semantic import SemanticRecallService
+from .semantic.service import SemanticRecallService
 from .storage import Store
 
 

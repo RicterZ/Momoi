@@ -15,7 +15,7 @@ from .episode_search import (
 from .memory_values import estimate_tokens, token_chunk, truncate_tokens
 
 if TYPE_CHECKING:
-    from ..semantic import DenseRecallEvidence
+    from ..semantic.models import DenseRecallEvidence
 
 
 class EpisodeQueryStore:

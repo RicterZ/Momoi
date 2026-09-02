@@ -10,14 +10,13 @@ import httpx
 from momoi.config import EmbeddingConfig
 from momoi.policies import SemanticPolicy
 from momoi.search import StringSearchBackend
-from momoi.semantic import (
+from momoi.semantic.client import EmbeddingClient, semantic_error_category
+from momoi.semantic.models import (
     DenseEpisodeHit,
     DenseMemoryHit,
     DenseRecallEvidence,
-    EmbeddingClient,
-    SemanticRecallService,
-    semantic_error_category,
 )
+from momoi.semantic.service import SemanticRecallService
 from momoi.storage import MemoryRecallQuery, Store, encode_vector
 from momoi.storage.episode_ranking import EpisodeRecallQuery, rank_episode_matches
 from momoi.storage.episode_search import (
@@ -49,11 +48,11 @@ class SemanticRecallTest(unittest.TestCase):
         policy = SemanticPolicy(query_failure_limit=2, query_breaker_seconds=17)
         transport = AsyncMock()
         transport.post.side_effect = httpx.ConnectError("offline")
-        with patch("momoi.semantic.httpx.AsyncClient", return_value=transport):
+        with patch("momoi.semantic.client.httpx.AsyncClient", return_value=transport):
             client = EmbeddingClient(EmbeddingConfig(enabled=True), policy)
 
         async def run() -> None:
-            with patch("momoi.semantic.time.monotonic", return_value=100):
+            with patch("momoi.semantic.client.time.monotonic", return_value=100):
                 for _ in range(2):
                     with self.assertRaises(httpx.ConnectError):
                         await client.encode(["query"], query=True)
@@ -121,7 +120,7 @@ class SemanticRecallTest(unittest.TestCase):
             raise TimeoutError
 
         async def run() -> None:
-            with patch("momoi.semantic.asyncio.wait_for", side_effect=wait_for):
+            with patch("momoi.semantic.service.asyncio.wait_for", side_effect=wait_for):
                 await service.run_worker(stop)
             await service.close()
 
