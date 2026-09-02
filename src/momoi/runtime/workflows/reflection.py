@@ -166,7 +166,7 @@ class ReflectionWorkflow:
                     "error": error or "invalid_reflection_finish",
                     "message": "Correct the reflection result and resubmit it.",
                 }
-            self._commit_reflection_state(
+            self.store.commit_reflection(
                 local_date,
                 turn_id,
                 decision["summary"],

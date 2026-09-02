@@ -4,30 +4,32 @@ import uuid
 from .context_service import ContextService
 from .prompt_renderer import PromptRenderer
 from .agent.loop import AgentLoop
-from .turn_committer import TurnCommitter
 from .workflows import (
-    EpisodeWorkflow,
+    EpisodeAnnealingWorkflow,
+    EpisodeConsolidationWorkflow,
     GoalWorkflow,
     HeartbeatWorkflow,
     MemoryMaintenanceWorkflow,
     OwnerWorkflow,
     ReflectionWorkflow,
+    ReplyFollowupWorkflow,
     WebhookWorkflow,
 )
 
 
 class TurnRunner(
-    EpisodeWorkflow,
+    EpisodeAnnealingWorkflow,
+    EpisodeConsolidationWorkflow,
     WebhookWorkflow,
     MemoryMaintenanceWorkflow,
     GoalWorkflow,
     ReflectionWorkflow,
     HeartbeatWorkflow,
+    ReplyFollowupWorkflow,
     OwnerWorkflow,
     ContextService,
     AgentLoop,
     PromptRenderer,
-    TurnCommitter,
 ):
     @staticmethod
     def _turn_id(*parts: object) -> str:

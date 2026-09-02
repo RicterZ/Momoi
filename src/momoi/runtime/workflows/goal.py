@@ -43,7 +43,7 @@ class GoalWorkflow:
             self.store.release_goal_claim(goal_id)
             return
         if state == "needs_reconciliation":
-            self._commit_autonomous(
+            self.store.commit_autonomous_turn(
                 goal_id,
                 TurnDraft(
                     notification_messages=[_reconciliation_message(turn_id)],
@@ -163,7 +163,7 @@ class GoalWorkflow:
                 retry_at=retry_at,
             )
             return
-        self._commit_autonomous(goal_id, draft, turn_id=turn_id)
+        self.store.commit_autonomous_turn(goal_id, draft, turn_id=turn_id)
         if draft.notification_messages:
             self.outbox_changed.set()
         self.store.record_turn_failure(turn_id, failure_reason)
@@ -304,7 +304,7 @@ class GoalWorkflow:
             turn_id=turn_id,
             delivery_channel=self.channel,
         )
-        self._commit_autonomous(goal_id, draft, turn_id=turn_id)
+        self.store.commit_autonomous_turn(goal_id, draft, turn_id=turn_id)
         log_event(
             logger,
             logging.INFO,

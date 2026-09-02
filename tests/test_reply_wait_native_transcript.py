@@ -60,7 +60,7 @@ class ReplyWaitNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                     new_callable=AsyncMock,
                     return_value=terminal,
                 ) as run,
-                patch.object(daemon, "_commit_reply_followup_state"),
+                patch.object(daemon.store, "commit_reply_followup"),
             ):
                 await daemon._complete_reply_wait(
                     "reply-followup", "napcat", owner_event_revision=1

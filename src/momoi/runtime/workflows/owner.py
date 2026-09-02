@@ -223,7 +223,7 @@ class OwnerWorkflow:
             return
         if state == "needs_reconciliation":
             owner_content = self._render_batch(batch)
-            self._commit_owner(
+            self.store.commit_turn(
                 batch,
                 owner_content,
                 AgentReply([_reconciliation_message(turn_id)]),
@@ -311,7 +311,7 @@ class OwnerWorkflow:
             )
             failure_reason = type(error).__name__
         owner_content = self._render_batch(batch)
-        self._commit_owner(
+        self.store.commit_turn(
             batch,
             owner_content,
             AgentReply([failure_message]),
@@ -463,7 +463,7 @@ class OwnerWorkflow:
             raise RuntimeError("Owner Turn ended without end_turn")
 
         owner_content = self._render_batch(batch)
-        self._commit_owner(
+        self.store.commit_turn(
             batch,
             owner_content,
             reply,
