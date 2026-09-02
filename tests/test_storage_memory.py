@@ -289,14 +289,14 @@ class StorageMemoryTest(unittest.TestCase):
                    last_heartbeat_at=400, next_heartbeat_at=2000 WHERE id=1"""
             )
 
-            with patch("momoi.storage.store.time.time", return_value=900):
+            with patch("momoi.storage.turn_commits.time.time", return_value=900):
                 store.commit_turn([], "普通回应", AgentReply([]), turn_id="unchanged")
             unchanged = store.self_state()
             self.assertEqual(unchanged["activity"], "傍晚刷微博闲逛")
             self.assertEqual(unchanged["activity_result"], "刷到联动消息")
             self.assertEqual(unchanged["activity_since"], 500)
 
-            with patch("momoi.storage.store.time.time", return_value=1000):
+            with patch("momoi.storage.turn_commits.time.time", return_value=1000):
                 store.commit_turn(
                     [],
                     "继续聊联动",
@@ -313,7 +313,7 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertEqual(continuing["activity_result"], "和老师确认联动大概是日本限定")
             self.assertEqual(continuing["activity_since"], 500)
 
-            with patch("momoi.storage.store.time.time", return_value=1100):
+            with patch("momoi.storage.turn_commits.time.time", return_value=1100):
                 store.commit_turn(
                     [],
                     "纠正双人合作",
@@ -2477,7 +2477,7 @@ class StorageMemoryTest(unittest.TestCase):
         notifications = NotificationConfig()
         with (
             tempfile.TemporaryDirectory() as directory,
-            patch("momoi.storage.store.time.time", return_value=now),
+            patch("momoi.storage.heartbeat.time.time", return_value=now),
         ):
             store = Store(
                 Path(directory) / "momoi.sqlite3", timezone="Asia/Shanghai"
@@ -2615,7 +2615,7 @@ class StorageMemoryTest(unittest.TestCase):
                 ["还没想好的话，我可以帮你挑两个呀。"],
                 "weixin",
             )
-            with patch("momoi.storage.store.time.time", return_value=1300):
+            with patch("momoi.storage.heartbeat.time.time", return_value=1300):
                 store.commit_reply_followup(
                     "reply-followup",
                     owner_event_revision=0,
@@ -2706,7 +2706,7 @@ class StorageMemoryTest(unittest.TestCase):
                 store.mark_sent(followup.id)
             self.assertIsNotNone(store.pending_owner_reply(1060))
 
-            with patch("momoi.storage.store.time.time", return_value=1061):
+            with patch("momoi.storage.heartbeat.time.time", return_value=1061):
                 store.commit_reply_followup(
                     "early-followup",
                     owner_event_revision=0,
@@ -2938,7 +2938,7 @@ class StorageMemoryTest(unittest.TestCase):
                 ).fetchone()[0],
                 "superseded",
             )
-            with patch("momoi.storage.store.time.time", return_value=1061):
+            with patch("momoi.storage.heartbeat.time.time", return_value=1061):
                 store.commit_reply_followup(
                     "claimed-followup",
                     owner_event_revision=1,
@@ -2980,7 +2980,7 @@ class StorageMemoryTest(unittest.TestCase):
                 ["还想听老师说说"],
                 "napcat",
             )
-            with patch("momoi.storage.store.time.time", return_value=1100):
+            with patch("momoi.storage.heartbeat.time.time", return_value=1100):
                 store.commit_reply_followup(
                     "reply-followup",
                     owner_event_revision=0,
@@ -3016,7 +3016,7 @@ class StorageMemoryTest(unittest.TestCase):
             interrupted = json.loads(store.cooled_reply_expectation_context(2000))
             self.assertEqual(interrupted["expected_information"], "旧期待")
             self.assertEqual(interrupted["reason"], "想听老师回答旧期待")
-            with patch("momoi.storage.store.time.time", return_value=2000):
+            with patch("momoi.storage.turn_commits.time.time", return_value=2000):
                 store.commit_turn(
                     [],
                     "",
@@ -3046,7 +3046,7 @@ class StorageMemoryTest(unittest.TestCase):
                 ["老师还没回答呢"],
                 "napcat",
             )
-            with patch("momoi.storage.store.time.time", return_value=1100):
+            with patch("momoi.storage.heartbeat.time.time", return_value=1100):
                 store.commit_reply_followup(
                     "single-followup",
                     owner_event_revision=0,
@@ -3199,7 +3199,7 @@ class StorageMemoryTest(unittest.TestCase):
                            'queued', 1000, 1000, 1000)"""
             )
             store.begin_turn("cooldown-heartbeat", "heartbeat", ["heartbeat:1100"])
-            with patch("momoi.storage.store.time.time", return_value=1100):
+            with patch("momoi.storage.heartbeat.time.time", return_value=1100):
                 committed = store.commit_heartbeat(
                     "cooldown-heartbeat",
                     owner_event_revision=0,
@@ -3250,7 +3250,7 @@ class StorageMemoryTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
             store.begin_turn("heartbeat-chat", "heartbeat", ["heartbeat:1000"])
-            with patch("momoi.storage.store.time.time", return_value=1000):
+            with patch("momoi.storage.heartbeat.time.time", return_value=1000):
                 committed = store.commit_heartbeat(
                     "heartbeat-chat",
                     owner_event_revision=0,
@@ -3501,7 +3501,7 @@ class StorageMemoryTest(unittest.TestCase):
                 )
             store.close()
 
-            with patch("momoi.storage.store.time.time", return_value=startup):
+            with patch("momoi.storage.lifecycle.time.time", return_value=startup):
                 store = Store(path, timezone="Asia/Shanghai")
             goal = store.goal(goal_id)
             self.assertNotIn("timezone", goal["schedule"])
@@ -3516,7 +3516,7 @@ class StorageMemoryTest(unittest.TestCase):
                 )
             store.close()
 
-            with patch("momoi.storage.store.time.time", return_value=startup):
+            with patch("momoi.storage.lifecycle.time.time", return_value=startup):
                 store = Store(path, timezone="Asia/Shanghai")
             self.assertEqual(store.goal(goal_id)["next_review_at"], startup - 1)
             store.close()
