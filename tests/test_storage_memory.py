@@ -941,7 +941,7 @@ class StorageMemoryTest(unittest.TestCase):
                     "uncertainty": [],
                 },
             )
-            with self.assertLogs("momoi.storage.store", level="WARNING"):
+            with self.assertLogs("momoi.storage.conversations", level="WARNING"):
                 store.commit_turn(
                     [stale_event],
                     stale_event.text,
