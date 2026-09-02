@@ -19,7 +19,8 @@ from ..tools.memory import MemoryTools
 from ..tools.thinking import ThinkingTools
 from ..mcp_client import MCPManager
 from ..models import AgentReply, IncomingMessage
-from ..provider import AnthropicProvider, OpenAIProvider
+from ..llm.anthropic import AnthropicProvider
+from ..llm.openai import OpenAIProvider
 from ..semantic import SemanticRecallService
 from ..storage import Store
 from ..webhooks import WebhookService

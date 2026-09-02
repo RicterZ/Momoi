@@ -9,7 +9,7 @@ from ...context_time import context_timestamp
 from ...logging_context import log_event, safe_preview
 from ...tools.memory import MEMORY_TOOL_SPECS
 from ...models import TurnDraft
-from ...provider import ProviderError
+from ...llm.errors import ProviderError
 from ..agent import TurnExecutionSpec
 from ..context.rendering import (
     assemble_recent_external_events,

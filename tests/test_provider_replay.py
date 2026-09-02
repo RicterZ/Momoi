@@ -5,7 +5,9 @@ from aiohttp import web
 from aiohttp.test_utils import TestServer
 
 from momoi.config import LLMConfig
-from momoi.provider import AnthropicProvider, OpenAIProvider, ProviderError
+from momoi.llm.anthropic import AnthropicProvider
+from momoi.llm.errors import ProviderError
+from momoi.llm.openai import OpenAIProvider
 
 
 def _config(base_url: str, api_format: str) -> LLMConfig:
@@ -42,7 +44,7 @@ class ProviderReplayTests(unittest.IsolatedAsyncioTestCase):
                 _config(str(server.make_url("/")).rstrip("/"), "openai")
             )
             sleep = AsyncMock()
-            with patch("momoi.provider.asyncio.sleep", new=sleep):
+            with patch("momoi.llm.transport.asyncio.sleep", new=sleep):
                 async with provider:
                     response = await provider.complete(
                         "system", [{"role": "user", "content": "test"}]
@@ -71,7 +73,7 @@ class ProviderReplayTests(unittest.IsolatedAsyncioTestCase):
                 _config(str(server.make_url("/")).rstrip("/"), "anthropic")
             )
             sleep = AsyncMock()
-            with patch("momoi.provider.asyncio.sleep", new=sleep):
+            with patch("momoi.llm.transport.asyncio.sleep", new=sleep):
                 async with provider:
                     response = await provider.complete(
                         "system", [{"role": "user", "content": "test"}]

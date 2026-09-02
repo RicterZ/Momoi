@@ -4,7 +4,6 @@ from typing import Any
 
 from ...logging_context import log_event
 from ...models import ToolCall
-from ...text_replacement import cyber_keyword_pre_hook
 from ..agent import AgentWorkflow
 from ..context.presentation import heartbeat_self_state_lines
 from ..context.rendering import recall_episode_context
@@ -78,13 +77,13 @@ class ReflectionWorkflow:
         )
         raw_record = str(source["text"] or "").strip()
         query = raw_record[-20000:]
-        record = cyber_keyword_pre_hook(raw_record)
-        tool_timeline = cyber_keyword_pre_hook(str(source["tool_timeline"]))
+        record = raw_record
+        tool_timeline = str(source["tool_timeline"])
         reflection_evidence = "\n\n".join(
             value for value in (record, tool_timeline) if value.strip()
         )
-        owner_source = cyber_keyword_pre_hook(str(source["owner_text"]))
-        knowledge_source = cyber_keyword_pre_hook(str(source["knowledge_text"]))
+        owner_source = str(source["owner_text"])
+        knowledge_source = str(source["knowledge_text"])
         confirmed_memory, learned = self.store.ranked_memory_context(
             query,
             self.config.memory_results,
@@ -133,7 +132,6 @@ class ReflectionWorkflow:
             ("mutation_timeline", str(source.get("mutation_timeline") or "(none)")),
             ("tool_timeline", tool_timeline),
         )
-        current_input = cyber_keyword_pre_hook(current_input)
         system = self._system()
         messages: list[dict[str, Any]] = [
             {

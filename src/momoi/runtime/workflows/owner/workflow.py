@@ -8,7 +8,7 @@ from ....channel import Channel
 from ....context_time import context_timestamp
 from ....logging_context import log_event, safe_preview
 from ....models import AgentReply, IncomingMessage, TurnDraft
-from ....provider import ProviderError
+from ....llm.errors import ProviderError
 from ...agent import TurnExecutionSpec
 from ...transcript.building import build_transcript
 from ...transcript.rendering import (

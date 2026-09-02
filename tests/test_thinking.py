@@ -9,7 +9,11 @@ from momoi.config import load_config
 from momoi.logging_context import log_context
 from momoi.tools.memory import MemoryTools
 from momoi.models import ToolCall, TurnDraft
-from momoi.provider import _anthropic_reasoning, _openai_reasoning, _persist_thinking
+from momoi.llm.telemetry import (
+    anthropic_reasoning,
+    openai_reasoning,
+    persist_thinking,
+)
 from momoi.storage import Store
 from momoi.storage.thinking import (
     decode_reasoning,
@@ -164,11 +168,11 @@ class ThinkingStoreTests(unittest.TestCase):
 
     def test_extracts_and_persists_provider_reasoning(self) -> None:
         self.assertEqual(
-            _openai_reasoning({"reasoning_content": "先核对记忆"}),
+            openai_reasoning({"reasoning_content": "先核对记忆"}),
             "先核对记忆",
         )
         self.assertEqual(
-            _anthropic_reasoning(
+            anthropic_reasoning(
                 [
                     {"type": "thinking", "thinking": "先想一步"},
                     {"type": "text", "text": "hello"},
@@ -183,7 +187,7 @@ class ThinkingStoreTests(unittest.TestCase):
             recorded.update(kwargs)
 
         with log_context(turn_id="turn-1", call_id="call-1", stage="owner", round=2):
-            _persist_thinking(
+            persist_thinking(
                 sink, reasoning="决定提醒", tools=["send_bubbles"], model="test"
             )
         self.assertEqual(recorded["turn_id"], "turn-1")

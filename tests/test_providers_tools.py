@@ -25,15 +25,13 @@ from momoi.models import (
     ToolCall,
 )
 from momoi.logging_context import TRACE, log_context
-from momoi.provider import (
-    AnthropicProvider,
-    OpenAIProvider,
-    _merge_adjacent_roles,
-    _openai_messages,
-    ProviderError,
-    _compact_response_text,
-    _log_tool_schema,
-    _redact_dump_media,
+from momoi.llm.anthropic import AnthropicProvider, merge_adjacent_roles
+from momoi.llm.dumps import redact_dump_media
+from momoi.llm.errors import ProviderError
+from momoi.llm.openai import OpenAIProvider, openai_messages
+from momoi.llm.telemetry import (
+    compact_response_text,
+    log_tool_schema,
     usage_metrics,
 )
 from momoi.runtime import (
@@ -49,7 +47,7 @@ from tests.support import with_owner_recall
 
 @contextmanager
 def _provider_trace_logs():
-    logger = logging.getLogger("momoi.provider")
+    logger = logging.getLogger("momoi.llm")
     previous = logger.level
     logger.setLevel(TRACE)
     try:
@@ -81,7 +79,7 @@ class OwnerAttachmentOrderTest(unittest.TestCase):
     """An attachment must stay beside the message that carried it."""
 
     def test_openai_keeps_each_attachment_in_place(self) -> None:
-        parts = _openai_messages("", MIXED_OWNER_MESSAGE)[0]["content"]
+        parts = openai_messages("", MIXED_OWNER_MESSAGE)[0]["content"]
         self.assertEqual(
             [part["type"] for part in parts],
             ["text", "image_url", "text"],
@@ -93,13 +91,13 @@ class OwnerAttachmentOrderTest(unittest.TestCase):
         )
 
     def test_anthropic_keeps_each_attachment_in_place(self) -> None:
-        blocks = _merge_adjacent_roles(MIXED_OWNER_MESSAGE)[0]["content"]
+        blocks = merge_adjacent_roles(MIXED_OWNER_MESSAGE)[0]["content"]
         self.assertEqual(
             [block["type"] for block in blocks], ["text", "image", "text"]
         )
 
     def test_merging_same_role_messages_preserves_block_order(self) -> None:
-        merged = _merge_adjacent_roles(
+        merged = merge_adjacent_roles(
             [
                 MIXED_OWNER_MESSAGE[0],
                 {"role": "user", "content": [{"type": "text", "text": "还有这个"}]},
@@ -112,7 +110,7 @@ class OwnerAttachmentOrderTest(unittest.TestCase):
         )
 
     def test_a_message_without_attachments_stays_plain_text(self) -> None:
-        wire = _openai_messages(
+        wire = openai_messages(
             "", [{"role": "user", "content": [{"type": "text", "text": "在吗"}]}]
         )
         self.assertEqual(wire[0]["content"], "在吗")
@@ -132,9 +130,9 @@ class ProvidersToolsTest(unittest.TestCase):
         ]
         with (
             _provider_trace_logs(),
-            self.assertLogs("momoi.provider", level=TRACE) as logs,
+            self.assertLogs("momoi.llm", level=TRACE) as logs,
         ):
-            _log_tool_schema("openai", tools)
+            log_tool_schema("openai", tools)
 
         record = next(
             item
@@ -167,7 +165,7 @@ class ProvidersToolsTest(unittest.TestCase):
         self.assertTrue(parsed["truncated"])
 
     def test_openai_adapter_orders_tool_result_before_correction_text(self) -> None:
-        messages = _openai_messages(
+        messages = openai_messages(
             "system",
             [
                 {
@@ -210,13 +208,13 @@ class ProvidersToolsTest(unittest.TestCase):
 
     def test_compacts_structured_response_text_for_single_line_logs(self) -> None:
         self.assertEqual(
-            _compact_response_text('{\n  "version": 1,\n  "items": ["a", "b"]\n}'),
+            compact_response_text('{\n  "version": 1,\n  "items": ["a", "b"]\n}'),
             '{"version":1,"items":["a","b"]}',
         )
-        self.assertEqual(_compact_response_text("普通\n文本"), '"普通\\n文本"')
+        self.assertEqual(compact_response_text("普通\n文本"), '"普通\\n文本"')
 
     def test_openai_system_blocks_keep_a_clear_boundary(self) -> None:
-        messages = _openai_messages(
+        messages = openai_messages(
             [
                 {"type": "text", "text": "Base contract."},
                 {"type": "text", "text": "# Turn contract"},
@@ -429,7 +427,7 @@ class ProvidersToolsTest(unittest.TestCase):
             daemon.store.close()
 
     def test_openai_message_adapter_preserves_image_blocks(self) -> None:
-        messages = _openai_messages(
+        messages = openai_messages(
             "system",
             [
                 {
@@ -470,7 +468,7 @@ class ProvidersToolsTest(unittest.TestCase):
             "anthropic": {"type": "base64", "data": "aW1hZ2U="},
             "openai": "data:image/png;base64,aW1hZ2U=",
         }
-        redacted = _redact_dump_media(payload)
+        redacted = redact_dump_media(payload)
         self.assertEqual(
             redacted,
             {
@@ -1124,7 +1122,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
         )
         try:
             async with provider:
-                with self.assertLogs("momoi.provider", level="DEBUG") as logs:
+                with self.assertLogs("momoi.llm", level="DEBUG") as logs:
                     response = await provider.complete(
                         "system", [{"role": "user", "content": "测试入口"}]
                     )
@@ -1186,7 +1184,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
         )
         try:
             async with provider:
-                with self.assertLogs("momoi.provider", level="WARNING") as logs:
+                with self.assertLogs("momoi.llm", level="WARNING") as logs:
                     response = await provider.complete(
                         "system", [{"role": "user", "content": "测试入口"}]
                     )

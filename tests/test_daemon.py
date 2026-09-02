@@ -44,7 +44,7 @@ from momoi.models import (
     ToolCall,
     TurnDraft,
 )
-from momoi.provider import (
+from momoi.llm.errors import (
     ProviderError,
 )
 from momoi.runtime.turn_support import (
