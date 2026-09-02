@@ -25,6 +25,7 @@ from .progress import (
     missing_initial_work_announce,
 )
 from .protocol import harness_correction, owner_request_messages, parse_end_turn
+from .runtime_tools import begin_heartbeat, enable_tools, recall_owner_context
 from ..protocol import (
     AUTONOMOUS_FINISH_SPEC,
 )
@@ -648,75 +649,22 @@ class AgentLoop:
                 elif call.name not in allowed_tool_names:
                     result = {"ok": False, "error": "tool_not_allowed"}
                 elif call.name == "heartbeat_begin":
-                    requested = call.arguments.get("tool_groups")
-                    if (
-                        not heartbeat_turn
-                        or harness.started
-                        or not isinstance(requested, list)
-                        or any(
-                            not isinstance(group, str)
-                            or group not in enable_tool_groups
-                            for group in requested
-                        )
-                    ):
-                        result = {
-                            "ok": False,
-                            "error": "invalid_heartbeat_begin",
-                        }
-                    else:
-                        try:
-                            prepared = await self.prepare_heartbeat_context(
-                                call.arguments
-                            )
-                        except ValueError as error:
-                            result = {
-                                "ok": False,
-                                "error": "invalid_heartbeat_begin",
-                                "message": str(error),
-                            }
-                        else:
-                            enabled_tools = self.tool_surface.append_visible(
-                                tools,
-                                [
-                                    spec
-                                    for group in dict.fromkeys(requested)
-                                    for spec in enable_tool_groups[group]
-                                ],
-                            )
-                            recalled = prepared["context"]
-                            assert isinstance(recalled, dict)
-                            result = {
-                                "ok": True,
-                                "state": "started",
-                                "activity": call.arguments.get("activity"),
-                                "mode": call.arguments.get("mode"),
-                                "strategy": call.arguments.get("strategy"),
-                                "memory": recalled["recall_memories"],
-                                "status": recalled["query_recall"],
-                                "reflection": recalled["reflection_memories"],
-                                "episodes": recalled["episodes"],
-                                "enabled_tools": enabled_tools,
-                            }
+                    result = await begin_heartbeat(
+                        call,
+                        heartbeat_turn=heartbeat_turn,
+                        harness_started=harness.started,
+                        enable_tool_groups=enable_tool_groups,
+                        tools=tools,
+                        tool_surface=self.tool_surface,
+                        prepare_context=self.prepare_heartbeat_context,
+                    )
                 elif call.name == "recall":
-                    try:
-                        recalled = await self.submit_owner_context(
-                            current_events, turn_id, call.arguments
-                        )
-                    except ValueError as error:
-                        result = {
-                            "ok": False,
-                            "error": "invalid_recall",
-                            "message": str(error),
-                        }
-                    else:
-                        result = {
-                            "ok": True,
-                            "state": "recalled",
-                            "memory": recalled["recall_memories"],
-                            "status": recalled["query_recall"],
-                            "reflection": recalled["reflection_memories"],
-                            "episodes": recalled["episodes"],
-                        }
+                    result = await recall_owner_context(
+                        call,
+                        current_events=current_events,
+                        turn_id=turn_id,
+                        submit_context=self.submit_owner_context,
+                    )
                 elif not harness.started and authority == "owner":
                     # The recall decision is what makes the rest of the Turn
                     # accountable, so it cannot be skipped by acting first.
@@ -779,35 +727,12 @@ class AgentLoop:
                             last_sent_messages = copy.deepcopy(delivery.bubbles)
                             last_sent_channel = delivery.channel
                 elif call.name == "tool_enable":
-                    requested = call.arguments.get("groups")
-                    if (
-                        not isinstance(requested, list)
-                        or not requested
-                        or any(
-                            not isinstance(group, str)
-                            or group not in enable_tool_groups
-                            for group in requested
-                        )
-                    ):
-                        result = {
-                            "ok": False,
-                            "error": "invalid_tool_groups",
-                        }
-                    else:
-                        enabled_tools = self.tool_surface.append_visible(
-                            tools,
-                            [
-                                spec
-                                for group in dict.fromkeys(requested)
-                                for spec in enable_tool_groups[group]
-                            ],
-                        )
-                        result = {
-                            "ok": True,
-                            "state": "enabled",
-                            "groups": list(dict.fromkeys(requested)),
-                            "tools": enabled_tools,
-                        }
+                    result = enable_tools(
+                        call,
+                        enable_tool_groups=enable_tool_groups,
+                        tools=tools,
+                        tool_surface=self.tool_surface,
+                    )
                 elif call.name == "read_tool_result":
                     result = self.tool_results.read(
                         call.arguments.get("result_ref"),
