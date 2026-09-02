@@ -12,7 +12,8 @@ from ..context.rendering import (
 from ..context.presentation import heartbeat_self_state_lines
 from ..tool_contracts.conversation import END_TURN_TOOL_SPEC
 from ..tool_contracts.runtime import CURL_TOOL_SPEC, READ_TOOL_RESULT_SPEC
-from ..transcript import build_transcript, render_messages
+from ..transcript.building import build_transcript
+from ..transcript.rendering import render_messages
 from ..turn_support import (
     WEBHOOK_PROMPT_PATH,
     WEBHOOK_SYSTEM_PROMPT,

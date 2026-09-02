@@ -5,7 +5,8 @@ from ...models import AgentReply, TurnDraft
 from ..agent import TurnExecutionSpec
 from ..context.presentation import heartbeat_self_state_lines
 from ..tool_contracts.conversation import END_TURN_TOOL_SPEC
-from ..transcript import build_transcript, render_messages
+from ..transcript.building import build_transcript
+from ..transcript.rendering import render_messages
 from ..turn_support import (
     context_data_message as _context_data_message,
     pack_user_context as _pack_user_context,

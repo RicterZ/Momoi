@@ -1,12 +1,14 @@
 import time
 from zoneinfo import ZoneInfo
 
-from momoi.runtime.transcript import (
+from momoi.runtime.transcript.building import (
     build_groups,
     build_transcript as _build_transcript,
+    select_groups,
+)
+from momoi.runtime.transcript.rendering import (
     render_delivered_bubble_evidence,
     render_messages as _render_messages,
-    select_groups,
     turn_labels,
 )
 

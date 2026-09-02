@@ -10,8 +10,8 @@ from ....logging_context import log_event, safe_preview
 from ....models import AgentReply, IncomingMessage, TurnDraft
 from ....provider import ProviderError
 from ...agent import TurnExecutionSpec
-from ...transcript import (
-    build_transcript,
+from ...transcript.building import build_transcript
+from ...transcript.rendering import (
     render_delivered_bubble_evidence,
     render_messages,
     turn_labels,

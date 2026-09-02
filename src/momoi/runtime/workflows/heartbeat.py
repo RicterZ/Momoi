@@ -19,7 +19,8 @@ from ..context.presentation import (
 )
 from ..context.rendering import assemble_recent_external_events
 from ..tool_contracts.conversation import heartbeat_end_turn_tool_spec
-from ..transcript import build_transcript, render_messages
+from ..transcript.building import build_transcript
+from ..transcript.rendering import render_messages
 from ..turn_support import (
     ExternalToolTurnError,
     context_data_message as _context_data_message,

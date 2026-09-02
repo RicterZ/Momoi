@@ -16,7 +16,8 @@ from ..context.rendering import (
     recall_episode_context,
 )
 from ..tool_contracts.runtime import AUTONOMOUS_FINISH_SPEC, READ_TOOL_RESULT_SPEC
-from ..transcript import build_transcript, render_messages
+from ..transcript.building import build_transcript
+from ..transcript.rendering import render_messages
 from ..turn_support import (
     ExternalToolTurnError,
     GOAL_PROMPT_PATH,

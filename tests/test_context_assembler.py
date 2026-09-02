@@ -17,7 +17,7 @@ from momoi.runtime.context.retrieval import (
     build_plan_retrieval,
     select_plan_recall_queries,
 )
-from momoi.runtime.transcript import build_transcript
+from momoi.runtime.transcript.building import build_transcript
 from momoi.storage import Store, estimate_tokens
 from momoi.storage.episode_ranking import rank_recall_items
 
