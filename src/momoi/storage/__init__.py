@@ -9,7 +9,8 @@ from .memory import (
     memory_snapshot_fingerprint,
     truncate_tokens,
 )
-from .store import REFLECTION_MEMORY_KINDS, Store
+from .reflections import REFLECTION_MEMORY_KINDS
+from .store import Store
 from .semantic import (
     DOCUMENT_TEMPLATE_VERSION,
     QUERY_TEMPLATE_VERSION,
