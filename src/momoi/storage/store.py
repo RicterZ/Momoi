@@ -197,6 +197,48 @@ def _add_context_timestamps(
             )
 
 
+def _runtime_archive_kind_sql(episode: str) -> str:
+    """Resolve explicit archive ownership, with one legacy-read fallback."""
+
+    return f"""CASE
+        WHEN COALESCE({episode}.archive_kind, '')<>'' THEN {episode}.archive_kind
+        WHEN EXISTS (
+            SELECT 1 FROM episode_turns AS legacy_archive_turn
+            WHERE legacy_archive_turn.episode_id={episode}.id
+              AND legacy_archive_turn.turn_id GLOB 'webhook:*'
+        ) THEN 'webhook'
+        WHEN EXISTS (
+            SELECT 1 FROM episode_turns AS legacy_archive_turn
+            JOIN turns AS legacy_archive_source
+              ON legacy_archive_source.id=legacy_archive_turn.turn_id
+            WHERE legacy_archive_turn.episode_id={episode}.id
+              AND legacy_archive_source.kind='autonomous'
+              AND EXISTS (
+                  SELECT 1
+                  FROM json_each(legacy_archive_source.source_ids_json)
+                       AS legacy_source_id
+                  WHERE legacy_source_id.value GLOB 'heartbeat:*'
+              )
+        ) THEN 'heartbeat'
+        WHEN EXISTS (
+            SELECT 1 FROM episode_turns AS legacy_archive_turn
+            JOIN turns AS legacy_archive_source
+              ON legacy_archive_source.id=legacy_archive_turn.turn_id
+            WHERE legacy_archive_turn.episode_id={episode}.id
+              AND legacy_archive_source.kind='autonomous'
+              AND (
+                  legacy_archive_source.id GLOB 'goal:*'
+                  OR EXISTS (
+                      SELECT 1
+                      FROM json_each(legacy_archive_source.source_ids_json)
+                           AS legacy_source_id
+                      WHERE legacy_source_id.value GLOB 'goal:*'
+                  )
+              )
+        ) THEN 'goal'
+    END"""
+
+
 def _owner_message_created_at(
     events: list[IncomingMessage], now: float
 ) -> float:
@@ -586,31 +628,13 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         if not turn_id:
             return
         self._db.execute(
-            """UPDATE conversation_episodes
+            f"""UPDATE conversation_episodes
                SET status='closing', closed_at=NULL, updated_at=?
                WHERE status='open' AND open_loops_json='[]'
                  AND id IN (
                      SELECT episode_id FROM episode_turns WHERE turn_id=?
                  )
-                 AND NOT EXISTS (
-                     SELECT 1 FROM episode_turns AS archive_turn
-                     WHERE archive_turn.episode_id=conversation_episodes.id
-                       AND (
-                           archive_turn.turn_id GLOB 'webhook:*'
-                           OR EXISTS (
-                               SELECT 1 FROM turns AS archive_source
-                               WHERE archive_source.id=archive_turn.turn_id
-                                 AND archive_source.kind='autonomous'
-                                 AND EXISTS (
-                                     SELECT 1
-                                     FROM json_each(
-                                         archive_source.source_ids_json
-                                     ) AS source_id
-                                     WHERE source_id.value GLOB 'heartbeat:*'
-                                 )
-                           )
-                       )
-                 )""",
+                 AND {_runtime_archive_kind_sql('conversation_episodes')} IS NULL""",
             (now, turn_id),
         )
 
@@ -2051,48 +2075,11 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         return episode_id
 
     def _runtime_archive_kind(self, episode_id: str) -> str | None:
-        """Return the runtime owner of a Goal, Webhook or Heartbeat archive."""
-        explicit = self._db.execute(
-            "SELECT archive_kind FROM conversation_episodes WHERE id=?",
-            (episode_id,),
-        ).fetchone()
-        if explicit is not None and explicit["archive_kind"]:
-            return str(explicit["archive_kind"])
+        """Return explicit archive ownership or classify an unmigrated row."""
         row = self._db.execute(
-            """SELECT CASE
-                     WHEN EXISTS (
-                         SELECT 1 FROM episode_turns AS archive_turn
-                         WHERE archive_turn.episode_id=?
-                           AND archive_turn.turn_id GLOB 'webhook:*'
-                     ) THEN 'webhook'
-                     WHEN EXISTS (
-                         SELECT 1 FROM episode_turns AS archive_turn
-                         JOIN turns AS archive_source
-                           ON archive_source.id=archive_turn.turn_id
-                         WHERE archive_turn.episode_id=?
-                           AND archive_source.kind='autonomous'
-                           AND EXISTS (
-                               SELECT 1
-                               FROM json_each(archive_source.source_ids_json)
-                                    AS source_id
-                               WHERE source_id.value GLOB 'heartbeat:*'
-                           )
-                     ) THEN 'heartbeat'
-                     WHEN EXISTS (
-                         SELECT 1 FROM episode_turns AS archive_turn
-                         JOIN turns AS archive_source
-                           ON archive_source.id=archive_turn.turn_id
-                         WHERE archive_turn.episode_id=?
-                           AND archive_source.kind='autonomous'
-                           AND EXISTS (
-                               SELECT 1 FROM json_each(archive_source.source_ids_json)
-                                    AS source_id
-                               WHERE source_id.value GLOB 'goal:*'
-                                  OR archive_source.id GLOB 'goal:*'
-                           )
-                     ) THEN 'goal'
-                   END AS kind""",
-            (episode_id, episode_id, episode_id),
+            f"""SELECT {_runtime_archive_kind_sql('episode')} AS kind
+                FROM conversation_episodes AS episode WHERE episode.id=?""",
+            (episode_id,),
         ).fetchone()
         return str(row["kind"]) if row is not None and row["kind"] else None
 
@@ -2600,7 +2587,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         if limit <= 0:
             return []
         rows = self._db.execute(
-            """SELECT e.*, COALESCE((
+            f"""SELECT e.*, COALESCE((
                        SELECT MAX(t.updated_at) FROM episode_turns AS et
                        JOIN turns AS t ON t.id=et.turn_id
                        WHERE et.episode_id=e.id
@@ -2611,34 +2598,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                    JOIN turns AS t ON t.id=et.turn_id
                    WHERE et.episode_id=e.id
                ), e.updated_at)>=?)
-               AND (?=0 OR NOT EXISTS (
-                   SELECT 1 FROM episode_turns AS archive_turn
-                   WHERE archive_turn.episode_id=e.id
-                     AND (
-                         archive_turn.turn_id GLOB 'webhook:*'
-                         OR EXISTS (
-                             SELECT 1 FROM turns AS archive_source
-                             WHERE archive_source.id=archive_turn.turn_id
-                               AND archive_source.kind='autonomous'
-                               AND EXISTS (
-                                   SELECT 1
-                                   FROM json_each(
-                                       archive_source.source_ids_json
-                                   ) AS source_id
-                               WHERE source_id.value GLOB 'heartbeat:*'
-                           )
-                         )
-                         OR EXISTS (
-                             SELECT 1 FROM turns AS archive_source
-                             WHERE archive_source.id=archive_turn.turn_id
-                               AND archive_source.kind='autonomous'
-                               AND EXISTS (
-                                   SELECT 1 FROM json_each(archive_source.source_ids_json)
-                                   AS source_id WHERE source_id.value GLOB 'goal:*'
-                               )
-                         )
-                     )
-               ))
+               AND (?=0 OR {_runtime_archive_kind_sql('e')} IS NULL)
                ORDER BY status='open' DESC, status='closing' DESC,
                         COALESCE((
                             SELECT MAX(t.updated_at) FROM episode_turns AS et
@@ -2662,39 +2622,19 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         if limit <= 0:
             return []
         rows = self._db.execute(
-            """SELECT e.*, COALESCE((
+            f"""SELECT e.*, COALESCE((
                        SELECT MAX(t.updated_at) FROM episode_turns AS et
                        JOIN turns AS t ON t.id=et.turn_id
                        WHERE et.episode_id=e.id
                    ), e.updated_at) AS last_activity_at
                FROM conversation_episodes AS e
-               WHERE ?=0 OR NOT EXISTS (
-                   SELECT 1 FROM episode_turns AS archive_turn
-                   WHERE archive_turn.episode_id=e.id
-                     AND (
-                         archive_turn.turn_id GLOB 'webhook:*'
-                         OR EXISTS (
-                             SELECT 1 FROM turns AS archive_source
-                             WHERE archive_source.id=archive_turn.turn_id
-                               AND archive_source.kind='autonomous'
-                               AND EXISTS (
-                                   SELECT 1
-                                   FROM json_each(
-                                       archive_source.source_ids_json
-                                   ) AS source_id
-                                   WHERE source_id.value GLOB 'heartbeat:*'
-                               )
-                         )
-                     )
-               )
+               WHERE ?=0 OR {_runtime_archive_kind_sql('e')} IS NULL
                ORDER BY last_activity_at DESC, e.id DESC
                LIMIT ?""",
             (int(exclude_runtime_archives), limit),
         ).fetchall()
         results = []
         for row in rows:
-            if exclude_runtime_archives and self._runtime_archive_kind(str(row["id"])):
-                continue
             episode = self._episode_dict(row)
             episode["last_activity_timestamp"] = self.context_timestamp(
                 row["last_activity_at"]
@@ -2870,7 +2810,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         if limit <= 0:
             return []
         rows = self._db.execute(
-            """SELECT e.id, e.status, e.title, e.working_summary, e.open_loops_json,
+            f"""SELECT e.id, e.status, e.title, e.working_summary, e.open_loops_json,
                       e.updated_at,
                       COALESCE((
                           SELECT MAX(t.updated_at) FROM episode_turns AS et
@@ -2879,33 +2819,13 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                       ), e.updated_at) AS last_activity_at
                FROM conversation_episodes AS e
                WHERE e.status IN ('open', 'closing')
-                 AND NOT EXISTS (
-                     SELECT 1 FROM episode_turns AS archive_turn
-                     WHERE archive_turn.episode_id=e.id
-                       AND (
-                           archive_turn.turn_id GLOB 'webhook:*'
-                           OR EXISTS (
-                               SELECT 1 FROM turns AS archive_source
-                               WHERE archive_source.id=archive_turn.turn_id
-                                 AND archive_source.kind='autonomous'
-                                 AND EXISTS (
-                                     SELECT 1
-                                     FROM json_each(
-                                         archive_source.source_ids_json
-                                     ) AS source_id
-                                     WHERE source_id.value GLOB 'heartbeat:*'
-                                 )
-                           )
-                       )
-                 )
+                 AND {_runtime_archive_kind_sql('e')} IS NULL
                ORDER BY e.status='open' DESC, last_activity_at DESC, e.updated_at DESC
                LIMIT ?""",
             (limit,),
         ).fetchall()
         inventory: list[dict[str, object]] = []
         for row in rows:
-            if self._runtime_archive_kind(str(row["id"])):
-                continue
             item = dict(row)
             try:
                 open_loops = json.loads(str(item.pop("open_loops_json")))
@@ -3683,30 +3603,13 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
         by_turn = self._consolidation_turn_messages(turn_ids)
         oldest_updated = float(rows[0]["updated_at"])
         context_rows = self._db.execute(
-            """SELECT t.id, t.updated_at, et.episode_id
+            f"""SELECT t.id, t.updated_at, et.episode_id
                FROM turns AS t
                JOIN episode_turns AS et ON et.turn_id=t.id
+               JOIN conversation_episodes AS e ON e.id=et.episode_id
                WHERE t.kind='owner' AND t.state='completed'
                  AND t.updated_at>?
-                 AND NOT EXISTS (
-                     SELECT 1 FROM episode_turns AS archive_turn
-                     WHERE archive_turn.episode_id=et.episode_id
-                       AND (
-                           archive_turn.turn_id GLOB 'webhook:*'
-                           OR EXISTS (
-                               SELECT 1 FROM turns AS archive_source
-                               WHERE archive_source.id=archive_turn.turn_id
-                                 AND archive_source.kind='autonomous'
-                                 AND EXISTS (
-                                     SELECT 1
-                                     FROM json_each(
-                                         archive_source.source_ids_json
-                                     ) AS source_id
-                                     WHERE source_id.value GLOB 'heartbeat:*'
-                                 )
-                           )
-                       )
-                 )
+                 AND {_runtime_archive_kind_sql('e')} IS NULL
                ORDER BY t.updated_at
                LIMIT 12""",
             (oldest_updated,),
@@ -4688,25 +4591,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
                 f"""UPDATE conversation_episodes SET status='closed',
                     closed_at=?, updated_at=?
                     WHERE status='closing' AND id NOT IN ({placeholders})
-                      AND NOT EXISTS (
-                          SELECT 1 FROM episode_turns AS archive_turn
-                          WHERE archive_turn.episode_id=conversation_episodes.id
-                            AND (
-                                archive_turn.turn_id GLOB 'webhook:*'
-                                OR EXISTS (
-                                    SELECT 1 FROM turns AS archive_source
-                                    WHERE archive_source.id=archive_turn.turn_id
-                                      AND archive_source.kind='autonomous'
-                                      AND EXISTS (
-                                          SELECT 1
-                                          FROM json_each(
-                                              archive_source.source_ids_json
-                                          ) AS source_id
-                                          WHERE source_id.value GLOB 'heartbeat:*'
-                                      )
-                                )
-                            )
-                      )
+                      AND {_runtime_archive_kind_sql('conversation_episodes')} IS NULL
                       AND id IN (
                           SELECT et.episode_id FROM episode_turns AS et
                           JOIN turns AS t ON t.id=et.turn_id WHERE t.kind='owner'
@@ -4715,28 +4600,10 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
             )
         elif not keep_open:
             self._db.execute(
-                """UPDATE conversation_episodes SET status='closed',
+                f"""UPDATE conversation_episodes SET status='closed',
                    closed_at=?, updated_at=?
                    WHERE status='closing'
-                     AND NOT EXISTS (
-                         SELECT 1 FROM episode_turns AS archive_turn
-                         WHERE archive_turn.episode_id=conversation_episodes.id
-                           AND (
-                               archive_turn.turn_id GLOB 'webhook:*'
-                               OR EXISTS (
-                                   SELECT 1 FROM turns AS archive_source
-                                   WHERE archive_source.id=archive_turn.turn_id
-                                     AND archive_source.kind='autonomous'
-                                     AND EXISTS (
-                                         SELECT 1
-                                         FROM json_each(
-                                             archive_source.source_ids_json
-                                         ) AS source_id
-                                         WHERE source_id.value GLOB 'heartbeat:*'
-                                     )
-                               )
-                           )
-                     )
+                     AND {_runtime_archive_kind_sql('conversation_episodes')} IS NULL
                      AND id IN (
                        SELECT et.episode_id FROM episode_turns AS et
                        JOIN turns AS t ON t.id=et.turn_id WHERE t.kind='owner'

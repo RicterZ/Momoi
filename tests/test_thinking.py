@@ -203,6 +203,36 @@ class ThinkingStoreTests(unittest.TestCase):
             self.assertTrue((Path(directory) / "thinking-2026-07.sqlite3").is_file())
             store.close()
 
+    def test_timezone_change_reads_adjacent_legacy_month(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "momoi.sqlite3"
+            created_at = datetime(
+                2026, 1, 31, 20, tzinfo=ZoneInfo("UTC")
+            ).timestamp()
+            store = Store(path, timezone="UTC")
+            store.record_thinking_call(
+                created_at=created_at,
+                turn_id="turn-month-boundary",
+                call_id="call-month-boundary",
+                stage="owner",
+                reasoning="跨时区月界线仍然可读",
+            )
+            store.close()
+
+            store = Store(path, timezone="Asia/Shanghai")
+            found = store.search_thinking(
+                query="跨时区月界线",
+                after=datetime(
+                    2026, 2, 1, tzinfo=ZoneInfo("Asia/Shanghai")
+                ).timestamp(),
+                before=datetime(
+                    2026, 2, 2, tzinfo=ZoneInfo("Asia/Shanghai")
+                ).timestamp(),
+            )
+            self.assertEqual(found["count"], 1)
+            self.assertEqual(found["calls"][0]["turn_id"], "turn-month-boundary")
+            store.close()
+
     def test_dashboard_thinking_defaults_to_the_current_month(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")

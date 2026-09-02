@@ -240,13 +240,20 @@ class ThinkingStore:
         available = self._available_months()
         if hint_at is not None:
             key = month_key(hint_at, self._timezone)
-            nearby = [month for month in available if abs(_month_index(month) - _month_index(key)) <= 1]
+            nearby = [
+                month
+                for month in available
+                if abs(_month_index(month) - _month_index(key)) <= 1
+            ]
             if nearby:
                 return nearby
         selected = [
             month
             for month in available
-            if _month_overlaps(month, after, before, self._timezone)
+            if any(
+                _month_overlaps(candidate, after, before, self._timezone)
+                for candidate in _adjacent_months(month)
+            )
         ]
         if turn_id and after is None and before is None and hint_at is None:
             selected = available[-_MAX_ALL_MONTHS :]
@@ -312,6 +319,16 @@ class ThinkingStore:
 def _month_index(month: str) -> int:
     year, month_number = (int(part) for part in month.split("-"))
     return year * 12 + month_number
+
+
+def _adjacent_months(month: str) -> tuple[str, str, str]:
+    """Cover files partitioned before the application timezone changed."""
+
+    zero_based = _month_index(month) - 1
+    return tuple(
+        f"{candidate // 12:04d}-{candidate % 12 + 1:02d}"
+        for candidate in (zero_based - 1, zero_based, zero_based + 1)
+    )
 
 
 def _month_overlaps(

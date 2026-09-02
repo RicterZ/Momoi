@@ -877,6 +877,28 @@ class StorageMemoryTest(unittest.TestCase):
                     {item["id"] for item in store.open_conversation_inventory()}
                 )
             )
+            self.assertEqual(
+                [
+                    item["id"]
+                    for item in store.list_recent_episode_directory(
+                        1, exclude_runtime_archives=True
+                    )
+                ],
+                ["ordinary"],
+            )
+            self.assertEqual(
+                [
+                    item["id"]
+                    for item in store.list_episode_directory(
+                        1, exclude_runtime_archives=True
+                    )
+                ],
+                ["ordinary"],
+            )
+            self.assertEqual(
+                [item["id"] for item in store.open_conversation_inventory(1)],
+                ["ordinary"],
+            )
 
             for archive_id in archive_ids:
                 store.apply_conversation_actions(
@@ -993,6 +1015,50 @@ class StorageMemoryTest(unittest.TestCase):
                     store.apply_episode_consolidation(
                         ["owner-pending"], [decision], [archive_id]
                     )
+            store.close()
+
+    def test_runtime_archive_kind_prefers_metadata_and_reads_legacy_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            now = time.time()
+            archive_ids: dict[str, str] = {}
+            with store._db:
+                for index, kind in enumerate(("webhook", "heartbeat", "goal")):
+                    archive_ids[kind] = store._ensure_runtime_archive(
+                        archive_kind=kind,
+                        archive_day="2026-09-01",
+                        episode_key=f"{kind}:legacy:day:2026-09-01",
+                        turn_id=f"{kind}:legacy:0",
+                        title=f"{kind} legacy",
+                        now=now + index,
+                    )
+                webhook_archive_id = archive_ids["webhook"]
+                store._db.execute(
+                    "UPDATE conversation_episodes SET archive_kind='goal' WHERE id=?",
+                    (webhook_archive_id,),
+                )
+                self.assertEqual(
+                    store._runtime_archive_kind(webhook_archive_id), "goal"
+                )
+
+                store._db.execute(
+                    """UPDATE conversation_episodes
+                       SET archive_kind=NULL, archive_day=NULL""",
+                )
+                for kind, archive_id in archive_ids.items():
+                    with self.subTest(kind=kind):
+                        self.assertEqual(store._runtime_archive_kind(archive_id), kind)
+
+            self.assertTrue(
+                set(archive_ids.values()).isdisjoint(
+                    {
+                        item["id"]
+                        for item in store.list_recent_episode_directory(
+                            8, exclude_runtime_archives=True
+                        )
+                    }
+                )
+            )
             store.close()
 
     def test_runtime_archive_day_uses_configured_timezone(self) -> None:
