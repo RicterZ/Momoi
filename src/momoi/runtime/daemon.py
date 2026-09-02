@@ -26,6 +26,7 @@ from .jobs import AutonomousJob
 from .agent.result_store import ToolResultStore
 from .agent.context_window import ContextWindow
 from .agent.delivery import BubbleDelivery, DeliveryPolicy
+from .agent.model_round import ModelRoundRunner
 from .agent.tool_executor import ToolExecutor, artifact_root, tool_result_root
 from .agent.tool_surface import ToolSurface
 from .dispatch import AgentWorker, CommandRouter, OutboxWorker, Scheduler
@@ -154,6 +155,7 @@ class MomoiDaemon(
             self.tool_results,
         )
         self.context_window = ContextWindow(config, self.store, self.tool_results)
+        self.model_round = ModelRoundRunner(self.context_window, self.store)
         self.incoming: asyncio.Queue[IncomingMessage] = asyncio.Queue()
         self._deferred_incoming: deque[IncomingMessage] = deque()
         self._owner_quiet_until: dict[str, float] = {}

@@ -1,5 +1,4 @@
 import copy
-import json
 import logging
 from typing import Any
 
@@ -7,9 +6,8 @@ from ...channel import (
     Channel,
     ChannelMessage,
 )
-from ...logging_context import TRACE, log_context, log_event, new_trace_id, safe_preview
+from ...logging_context import TRACE, log_context, log_event, safe_preview
 from ...models import AgentReply, IncomingMessage, TurnDraft
-from ...storage import estimate_tokens
 from . import (
     AgentWorkflow,
     TurnExecutionSpec,
@@ -26,7 +24,6 @@ from .progress import (
 from .protocol import (
     handle_no_tool_response,
     harness_correction,
-    owner_request_messages,
     parse_end_turn,
 )
 from .runtime_tools import begin_heartbeat, enable_tools, recall_owner_context
@@ -148,68 +145,57 @@ class AgentLoop:
                 if force_autonomous_finish
                 else harness.project_surface(tools)
             )
-            request_system = (
-                self._system_with_tool_policies(system, request_tools)
-                if dynamic_tool_policies
-                else system
-            )
             llm_round += 1
-            call_id = new_trace_id()
-            with log_context(
-                stage=stage,
-                turn_id=turn_id,
-                call_id=call_id,
-                round=llm_round,
-                channel=delivery_channel.name,
-                goal_id=autonomous_goal_id,
-            ):
-                history_messages = self.context_window.fit(
-                    request_system,
-                    messages,
-                    request_tools,
-                    history_messages,
-                )
-                request_messages = (
-                    owner_request_messages(
-                        messages,
-                        remind_bubbles=remind_owner_bubbles and harness.started,
-                    )
-                    if authority == "owner"
-                    else messages
-                )
-                self.context_window.check_budget(
-                    turn_id, request_system, request_messages, request_tools
-                )
             require_tool = bool(
                 autonomous_goal_id or heartbeat_turn or reply_wait_turn or workflow
             ) or (
                 require_response and self.config.llm.api_format == "openai"
             )
+
+            async def complete(
+                request_system: list[dict[str, Any]],
+                request_messages: list[dict[str, Any]],
+                projected_tools: list[dict[str, Any]],
+                required: bool,
+            ):
+                if accept_owner_updates:
+                    return await self._complete_with_owner_interrupt(
+                        request_system,
+                        request_messages,
+                        projected_tools,
+                        require_tool=required,
+                        current_events=current_events,
+                        channel_name=delivery_channel.name,
+                    )
+                return await self.provider.complete(
+                    request_system,
+                    request_messages,
+                    projected_tools,
+                    require_tool=required,
+                )
+
             try:
-                with log_context(
+                model_round = await self.model_round.run(
+                    system,
+                    messages,
+                    request_tools,
+                    complete=complete,
+                    system_policy=(
+                        self._system_with_tool_policies
+                        if dynamic_tool_policies
+                        else None
+                    ),
+                    authority=authority,
+                    remind_owner_bubbles=remind_owner_bubbles,
+                    harness_started=harness.started,
+                    require_tool=require_tool,
+                    history_messages=history_messages,
                     stage=stage,
                     turn_id=turn_id,
-                    call_id=call_id,
-                    round=llm_round,
                     channel=delivery_channel.name,
                     goal_id=autonomous_goal_id,
-                ):
-                    if accept_owner_updates:
-                        response = await self._complete_with_owner_interrupt(
-                            request_system,
-                            request_messages,
-                            request_tools,
-                            require_tool=require_tool,
-                            current_events=current_events,
-                            channel_name=delivery_channel.name,
-                        )
-                    else:
-                        response = await self.provider.complete(
-                            request_system,
-                            request_messages,
-                            request_tools,
-                            require_tool=require_tool,
-                        )
+                    round_number=llm_round,
+                )
             except OwnerMessagesChanged as interruption:
                 updates = list(interruption.updates)
                 updates.extend(
@@ -240,35 +226,11 @@ class AgentLoop:
                 if external_tool_used:
                     raise ExternalToolTurnError(type(error).__name__) from error
                 raise
-            metrics = response.usage or {}
-            remind_owner_bubbles = authority == "owner" and not any(
-                call.name == "send_bubbles" for call in response.tool_calls
-            )
-            input_tokens = int(
-                metrics.get(
-                    "input",
-                    estimate_tokens(
-                        json.dumps(
-                            {
-                                "system": request_system,
-                                "messages": request_messages,
-                                "tools": request_tools,
-                            },
-                            ensure_ascii=False,
-                            default=str,
-                        )
-                    ),
-                )
-            )
-            output_tokens = int(
-                metrics.get(
-                    "output",
-                    estimate_tokens(
-                        json.dumps(response.content, ensure_ascii=False, default=str)
-                    ),
-                )
-            )
-            self.store.record_turn_usage(turn_id, input_tokens, output_tokens)
+            response = model_round.response
+            request_tools = model_round.request_tools
+            call_id = model_round.call_id
+            history_messages = model_round.history_messages
+            remind_owner_bubbles = model_round.remind_owner_bubbles
             updates = (
                 await self._settle_owner_updates(current_events, delivery_channel.name)
                 if accept_owner_updates
