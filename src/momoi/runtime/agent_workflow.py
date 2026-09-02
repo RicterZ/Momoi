@@ -1,5 +1,6 @@
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from ..models import ToolCall
@@ -7,6 +8,53 @@ from ..models import ToolCall
 
 class WorkflowProtocolError(RuntimeError):
     pass
+
+
+END_TURN_STAGES = frozenset({"owner", "webhook", "heartbeat", "reply_followup"})
+
+
+@dataclass(frozen=True)
+class TurnExecutionSpec:
+    """Non-combinable execution contract for one shared Agent loop."""
+
+    stage: str
+    goal_id: str | None = None
+    allowed_capabilities: frozenset[str] | None = None
+    artifact_root: Path | None = None
+
+    def __post_init__(self) -> None:
+        if self.stage not in TURN_HARNESS_SPECS:
+            raise ValueError(f"missing Turn execution spec for stage: {self.stage}")
+        if (self.stage == "goal") != bool(self.goal_id):
+            raise ValueError("goal execution requires exactly one goal_id")
+
+    @property
+    def authority(self) -> str:
+        return self.stage if self.stage in {"owner", "webhook"} else "agent"
+
+    @property
+    def require_response(self) -> bool:
+        return self.stage in END_TURN_STAGES
+
+    @property
+    def allow_notify(self) -> bool:
+        return self.stage == "goal"
+
+    @property
+    def accept_owner_updates(self) -> bool:
+        return self.stage == "owner"
+
+    @property
+    def dynamic_tool_policies(self) -> bool:
+        return self.stage in {"owner", "heartbeat", "goal"}
+
+    @property
+    def heartbeat(self) -> bool:
+        return self.stage == "heartbeat"
+
+    @property
+    def reply_followup(self) -> bool:
+        return self.stage == "reply_followup"
 
 
 @dataclass(frozen=True)

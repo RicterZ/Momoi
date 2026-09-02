@@ -23,7 +23,12 @@ from ..logging_context import TRACE, compact_log_value, log_context, log_event, 
 from ..memory_tools import MEMORY_TOOL_SPECS
 from ..models import AgentReply, IncomingMessage, ToolCall, TurnDraft
 from ..storage import estimate_tokens
-from .agent_workflow import AgentWorkflow, TurnHarness, WorkflowProtocolError
+from .agent_workflow import (
+    AgentWorkflow,
+    TurnExecutionSpec,
+    TurnHarness,
+    WorkflowProtocolError,
+)
 from .parsing import parse_bubbles, parse_response, response_text
 from .progress_announce import (
     announce_field,
@@ -322,23 +327,28 @@ class ToolExecutionService:
         current_events: list[IncomingMessage],
         draft: TurnDraft,
         *,
-        authority: str,
+        execution: TurnExecutionSpec,
         source_event_id: str,
-        allow_notify: bool,
         turn_id: str,
-        require_response: bool,
-        autonomous_goal_id: str | None = None,
-        heartbeat_turn: bool = False,
-        reply_wait_turn: bool = False,
         heartbeat_owner_event_revision: int | None = None,
         heartbeat_notification_key: str = "heartbeat.chat",
-        allowed_capabilities: set[str] | None = None,
-        artifact_root: Path | None = None,
-        accept_owner_updates: bool = False,
-        dynamic_tool_policies: bool = False,
         delivery_channel: Channel,
         workflow: AgentWorkflow | None = None,
     ) -> AgentReply | dict[str, Any] | None:
+        authority = execution.authority
+        allow_notify = execution.allow_notify
+        require_response = execution.require_response
+        autonomous_goal_id = execution.goal_id
+        heartbeat_turn = execution.heartbeat
+        reply_wait_turn = execution.reply_followup
+        accept_owner_updates = execution.accept_owner_updates
+        dynamic_tool_policies = execution.dynamic_tool_policies
+        allowed_capabilities = (
+            set(execution.allowed_capabilities)
+            if execution.allowed_capabilities is not None
+            else None
+        )
+        artifact_root = execution.artifact_root
         external_tool_used = False
         force_autonomous_finish = False
         failed_tool_rounds = 0
@@ -360,15 +370,9 @@ class ToolExecutionService:
                 else {}
             )
         )
-        stage = workflow.stage if workflow is not None else (
-            "reply_followup"
-            if reply_wait_turn
-            else (
-                "heartbeat"
-                if heartbeat_turn
-                else ("goal" if autonomous_goal_id else authority)
-            )
-        )
+        stage = execution.stage
+        if workflow is not None and workflow.stage != stage:
+            raise ValueError("workflow and execution stages do not match")
         harness = TurnHarness.for_stage(stage)
         harness.validate_surface({str(tool["name"]) for tool in tools})
         while True:
@@ -1438,11 +1442,9 @@ class ToolExecutionService:
             tools,
             [],
             TurnDraft(),
-            authority=workflow.stage,
+            execution=TurnExecutionSpec(workflow.stage),
             source_event_id=turn_id,
-            allow_notify=False,
             turn_id=turn_id,
-            require_response=False,
             delivery_channel=self.channel,
             workflow=workflow,
         )

@@ -22,7 +22,7 @@ from .context_assembler import (
     assemble_recent_webhook_activity,
     recall_episode_context,
 )
-from .agent_workflow import AgentWorkflow, WorkflowProtocolError
+from .agent_workflow import AgentWorkflow, TurnExecutionSpec, WorkflowProtocolError
 from .transcript import (
     build_transcript,
     render_delivered_bubble_evidence,
@@ -377,12 +377,11 @@ class TurnOrchestrator:
             ],
             [],
             TurnDraft(),
-            authority="webhook",
+            execution=TurnExecutionSpec(
+                "webhook", allowed_capabilities=frozenset({"read"})
+            ),
             source_event_id=turn_id,
-            allow_notify=False,
             turn_id=turn_id,
-            require_response=True,
-            allowed_capabilities={"read"},
             delivery_channel=channel,
         )
         if not isinstance(reply, AgentReply):
@@ -1216,13 +1215,9 @@ class TurnOrchestrator:
             tools,
             batch,
             draft,
-            authority="owner",
+            execution=TurnExecutionSpec("owner"),
             source_event_id=batch[0].event_id,
-            allow_notify=False,
             turn_id=turn_id,
-            require_response=True,
-            accept_owner_updates=True,
-            dynamic_tool_policies=True,
             delivery_channel=channel,
         )
         if reply is None:
@@ -1338,12 +1333,9 @@ class TurnOrchestrator:
             ],
             [],
             TurnDraft(),
-            authority="agent",
+            execution=TurnExecutionSpec("reply_followup"),
             source_event_id=f"reply-followup:{turn_id}",
-            allow_notify=False,
             turn_id=turn_id,
-            require_response=True,
-            reply_wait_turn=True,
             heartbeat_owner_event_revision=owner_event_revision,
             heartbeat_notification_key=notification_key,
             delivery_channel=delivery_channel,
@@ -1493,17 +1485,17 @@ class TurnOrchestrator:
             tools,
             memory_events,
             draft,
-            authority="agent",
+            execution=TurnExecutionSpec(
+                "heartbeat",
+                allowed_capabilities=frozenset(
+                    {"read", "write", "external_effect"}
+                ),
+                artifact_root=artifact_root,
+            ),
             source_event_id=f"heartbeat:{turn_id}",
-            allow_notify=False,
             turn_id=turn_id,
-            require_response=True,
-            heartbeat_turn=True,
-            dynamic_tool_policies=True,
             heartbeat_owner_event_revision=owner_event_revision,
             heartbeat_notification_key=notification_key,
-            allowed_capabilities={"read", "write", "external_effect"},
-            artifact_root=artifact_root,
             delivery_channel=delivery_channel,
         )
         if not isinstance(reply, AgentReply) or reply.heartbeat is None:
@@ -1841,15 +1833,16 @@ class TurnOrchestrator:
             tools,
             [],
             draft,
-            authority="agent",
+            execution=TurnExecutionSpec(
+                "goal",
+                goal_id=goal_id,
+                allowed_capabilities=(
+                    frozenset({"read", "write"}) if agent_owned else None
+                ),
+                artifact_root=self._artifact_root() if agent_owned else None,
+            ),
             source_event_id=f"goal:{goal_id}",
-            allow_notify=True,
             turn_id=turn_id,
-            require_response=False,
-            autonomous_goal_id=goal_id,
-            dynamic_tool_policies=True,
-            allowed_capabilities={"read", "write"} if agent_owned else None,
-            artifact_root=self._artifact_root() if agent_owned else None,
             delivery_channel=self.channel,
         )
         self._commit_autonomous(goal_id, draft, turn_id=turn_id)

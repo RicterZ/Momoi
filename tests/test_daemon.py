@@ -28,6 +28,7 @@ from momoi.runtime import (
     MomoiDaemon,
 )
 from momoi.runtime.jobs import AutonomousJob
+from momoi.runtime.agent_workflow import TurnExecutionSpec
 from momoi.runtime.protocol import (
     ACTIVITY_DECISION_SCHEMA,
     CHANNEL_BUBBLE_SCHEMA,
@@ -1504,11 +1505,9 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 daemon._owner_tool_specs("napcat"),
                 [event],
                 TurnDraft(),
-                authority="owner",
+                execution=TurnExecutionSpec("owner"),
                 source_event_id=event.event_id,
-                allow_notify=False,
                 turn_id=turn_id,
-                require_response=True,
                 delivery_channel=daemon.channel,
             )
             self.assertIsInstance(reply, AgentReply)
@@ -1604,11 +1603,9 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 daemon._owner_tool_specs("napcat"),
                 [event],
                 TurnDraft(),
-                authority="owner",
+                execution=TurnExecutionSpec("owner"),
                 source_event_id=event.event_id,
-                allow_notify=False,
                 turn_id=turn_id,
-                require_response=True,
                 delivery_channel=daemon.channel,
             )
 
@@ -2295,13 +2292,9 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 daemon._owner_tool_specs(),
                 [event],
                 TurnDraft(),
-                authority="owner",
+                execution=TurnExecutionSpec("owner"),
                 source_event_id=event.event_id,
-                allow_notify=False,
                 turn_id=turn_id,
-                require_response=True,
-                accept_owner_updates=False,
-                dynamic_tool_policies=True,
                 delivery_channel=daemon.channel,
             )
 
@@ -2409,11 +2402,9 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 daemon._owner_tool_specs(),
                 [event],
                 TurnDraft(),
-                authority="owner",
+                execution=TurnExecutionSpec("owner"),
                 source_event_id=event.event_id,
-                allow_notify=False,
                 turn_id=turn_id,
-                require_response=True,
                 delivery_channel=daemon.channel,
             )
 
@@ -2541,13 +2532,9 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 daemon._owner_tool_specs(),
                 [event],
                 TurnDraft(),
-                authority="owner",
+                execution=TurnExecutionSpec("owner"),
                 source_event_id=event.event_id,
-                allow_notify=False,
                 turn_id=turn_id,
-                require_response=True,
-                accept_owner_updates=False,
-                dynamic_tool_policies=True,
                 delivery_channel=daemon.channel,
             )
 
@@ -2718,13 +2705,9 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 daemon._owner_tool_specs(),
                 [event],
                 TurnDraft(),
-                authority="owner",
+                execution=TurnExecutionSpec("owner"),
                 source_event_id=event.event_id,
-                allow_notify=False,
                 turn_id=turn_id,
-                require_response=True,
-                accept_owner_updates=False,
-                dynamic_tool_policies=True,
                 delivery_channel=daemon.channel,
             )
 
