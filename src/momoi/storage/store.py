@@ -41,6 +41,7 @@ from .episode_index import EpisodeIndexStore
 from .notifications import NotificationStore
 from .outbox import OutboxStore
 from .reconciliation import ReconciliationStore
+from .runtime_archives import RuntimeArchiveStore
 from .turn_commits import TurnCommitStore
 from .webhooks import WebhookStore
 from .lifecycle import LifecycleStore
@@ -58,6 +59,7 @@ class Store(
     DashboardStore,
     EpisodeMaintenanceStore,
     ConversationStore,
+    RuntimeArchiveStore,
     ConversationViewStore,
     TranscriptStore,
     EpisodeQueryStore,
