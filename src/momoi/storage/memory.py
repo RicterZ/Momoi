@@ -117,13 +117,13 @@ def memory_expires_at(
 
 
 def estimate_tokens(text: str) -> int:
-    from ..runtime.budget import TEXT_SIZER
+    from ..runtime.agent.budget import TEXT_SIZER
 
     return TEXT_SIZER.estimate(text)
 
 
 def truncate_tokens(text: str, token_budget: int) -> str:
-    from ..runtime.budget import MEMORY_TEXT_FITTER
+    from ..runtime.agent.budget import MEMORY_TEXT_FITTER
 
     return MEMORY_TEXT_FITTER.truncate(text, token_budget)
 

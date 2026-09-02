@@ -9,7 +9,7 @@ from momoi.config import AppConfig, LLMConfig
 from momoi.logging_context import current_log_context
 from momoi.models import IncomingMessage, ProviderResponse, ToolCall
 from momoi.runtime import MomoiDaemon
-from momoi.runtime.memory_maintenance import (
+from momoi.runtime.workflows.memory_maintenance import (
     MEMORY_MAINTENANCE_FINISH_SPEC,
     build_atomic_memory_groups,
     filter_owner_evidence_for_memories,

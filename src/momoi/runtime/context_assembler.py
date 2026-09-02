@@ -17,7 +17,7 @@ from ..storage import (
 )
 from ..storage.episode_ranking import EpisodeRecallQuery, rank_recall_items
 from ..storage.context_plan_adapter import CURRENT_RETRIEVAL_VERSION
-from .budget import SECTION_BUDGET_ALLOCATOR
+from .agent.budget import SECTION_BUDGET_ALLOCATOR
 
 if TYPE_CHECKING:
     from ..semantic import DenseRecallEvidence

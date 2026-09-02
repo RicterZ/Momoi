@@ -138,6 +138,31 @@ def _recall_context_lines(
 
 
 class ContextService:
+    def _context_compaction_tokens(self) -> int:
+        return max(
+            1,
+            round(
+                self.config.max_input_tokens
+                * float(getattr(self.config, "context_compaction_ratio", 1.0))
+            ),
+        )
+
+    def _episode_raw_token_budget(self) -> int:
+        return max(1000, self._context_compaction_tokens() // 2)
+
+    def _recent_conversation_rows(
+        self, before_timestamp: float | None = None
+    ) -> list[dict[str, object]]:
+        turn_limit = self.store.transcript_window_turn_limit(
+            self.config.transcript_turns_min,
+            self.config.transcript_turns_max,
+        )
+        return self.store.recent_conversation_messages(
+            turn_limit,
+            self._context_compaction_tokens(),
+            before_timestamp,
+        )
+
     def _plan_from_submission(
         self,
         events: list[IncomingMessage],

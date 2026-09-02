@@ -28,7 +28,7 @@ from momoi.runtime import (
     MomoiDaemon,
 )
 from momoi.runtime.jobs import AutonomousJob
-from momoi.runtime.agent_workflow import TurnExecutionSpec
+from momoi.runtime.agent import TurnExecutionSpec
 from momoi.runtime.protocol import (
     ACTIVITY_DECISION_SCHEMA,
     CHANNEL_BUBBLE_SCHEMA,
@@ -50,12 +50,12 @@ from momoi.runtime.turn_support import (
     SYSTEM_PROMPT_PATH,
     STYLE_CARD_SYSTEM_PROMPT,
 )
-from momoi.runtime.tool_execution import (
+from momoi.runtime.agent.loop import (
     OWNER_BUBBLE_REQUEST_REMINDER,
     _owner_request_messages,
 )
 from momoi.runtime.parsing import parse_mood_decision, parse_mood_update
-from momoi.runtime.daemon import _message_gap_bounds
+from momoi.runtime.dispatch.delivery import message_gap_bounds
 from momoi.runtime.turn_support import REPLY_WAIT_SYSTEM_PROMPT
 from momoi.storage import estimate_tokens
 from tests.support import (
@@ -125,9 +125,9 @@ class DaemonTest(unittest.TestCase):
         )
 
     def test_message_gap_scales_with_length_within_bounds(self) -> None:
-        self.assertEqual(_message_gap_bounds("短句"), (4.0, 5.0))
-        self.assertEqual(_message_gap_bounds("中等长度" * 8), (5.0, 6.0))
-        self.assertEqual(_message_gap_bounds("长消息" * 30), (6.0, 7.0))
+        self.assertEqual(message_gap_bounds("短句"), (4.0, 5.0))
+        self.assertEqual(message_gap_bounds("中等长度" * 8), (5.0, 6.0))
+        self.assertEqual(message_gap_bounds("长消息" * 30), (6.0, 7.0))
 
     def test_system_tool_policies_follow_available_tools(self) -> None:
         daemon = object.__new__(MomoiDaemon)
@@ -589,7 +589,7 @@ class DaemonTest(unittest.TestCase):
 
         with (
             patch(
-                "momoi.runtime.tool_execution._truncate_tool_result_json",
+                "momoi.runtime.agent.loop._truncate_tool_result_json",
                 side_effect=truncate,
             ) as truncator,
             self.assertLogs("momoi.runtime.turns", level="WARNING") as logs,
@@ -675,7 +675,7 @@ class DaemonTest(unittest.TestCase):
         ]
         with (
             patch(
-                "momoi.runtime.tool_execution._truncate_tool_result_json",
+                "momoi.runtime.agent.loop._truncate_tool_result_json",
                 side_effect=lambda value, _limit: value[:-1],
             ) as truncator,
             self.assertLogs("momoi.runtime.turns", level="WARNING") as logs,
@@ -3265,7 +3265,10 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     database=Path(directory) / "momoi.sqlite3",
                     log_level="INFO",
                 )
-                with patch("momoi.runtime.daemon.random.uniform", return_value=0):
+                with patch(
+                    "momoi.runtime.dispatch.delivery.random.uniform",
+                    return_value=0,
+                ):
                     await asyncio.wait_for(MomoiDaemon(config).run(stop), timeout=2)
         finally:
             await napcat_server.close()

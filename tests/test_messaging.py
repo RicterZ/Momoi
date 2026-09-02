@@ -984,8 +984,11 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
 
             daemon.channel.send_message = send_message  # type: ignore[method-assign]
             with (
-                patch("momoi.runtime.daemon.random.uniform", return_value=3),
-                patch("momoi.runtime.daemon.asyncio.sleep", new=sleep),
+                patch(
+                    "momoi.runtime.dispatch.delivery.random.uniform",
+                    return_value=3,
+                ),
+                patch("momoi.runtime.dispatch.delivery.asyncio.sleep", new=sleep),
             ):
                 await daemon._outbox_worker(stop)
 
@@ -1165,7 +1168,10 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                 self.fail("different turns must not inherit an outbox delay")
 
             daemon.channel.send_message = send_message  # type: ignore[method-assign]
-            with patch("momoi.runtime.daemon.asyncio.sleep", new=unexpected_sleep):
+            with patch(
+                "momoi.runtime.dispatch.delivery.asyncio.sleep",
+                new=unexpected_sleep,
+            ):
                 await daemon._outbox_worker(stop)
 
             self.assertEqual(sent, ["第一轮", "第二轮"])

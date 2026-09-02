@@ -1,7 +1,7 @@
 import json
 import unittest
 
-from momoi.runtime.budget import (
+from momoi.runtime.agent.budget import (
     MemoryTextFitter,
     SectionBudgetAllocator,
     TextSizer,

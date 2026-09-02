@@ -10,7 +10,7 @@ from ..context_time import context_timestamp
 from ..logging_context import log_event, safe_preview
 from ..models import TurnDraft
 from ..provider import ProviderError
-from .budget import TOOL_RESULT_FITTER
+from .agent.budget import TOOL_RESULT_FITTER
 
 logger = logging.getLogger(__name__)
 PROMPT_ROOT = files("momoi").joinpath("prompts")

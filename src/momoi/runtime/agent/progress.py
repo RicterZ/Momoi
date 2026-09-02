@@ -1,7 +1,7 @@
 import copy
 from typing import Any
 
-from ..contracts import OWNER_PROGRESS_BEFORE_FIRST_CALL, OWNER_PROGRESS_FIELD
+from ...contracts import OWNER_PROGRESS_BEFORE_FIRST_CALL, OWNER_PROGRESS_FIELD
 
 ANNOUNCE_FIELD = "say_to_owner"
 ANNOUNCE_DELIVERY_NOTE = "Delivered on the primary channel before this tool runs."

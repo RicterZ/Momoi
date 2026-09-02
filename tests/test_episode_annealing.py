@@ -11,11 +11,11 @@ from momoi.logging_context import current_log_context
 from momoi.models import AgentReply, IncomingMessage, ProviderResponse, ToolCall
 from momoi.runtime import MomoiDaemon
 from momoi.runtime.context_assembler import assemble_main_context
-from momoi.runtime.episode_prompt_renderer import (
+from momoi.runtime.workflows.episode import (
     render_episode_annealing_request,
     render_episode_consolidation_request,
 )
-from momoi.runtime.episode_tools import (
+from momoi.runtime.workflows.episode import (
     EPISODE_CLASSIFY_TURNS_SPEC,
     EPISODE_CONSOLIDATION_FINISH_SPEC,
     EPISODE_SUMMARY_FINISH_SPEC,

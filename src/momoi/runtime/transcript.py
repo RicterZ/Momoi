@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from .budget import TEXT_SIZER
+from .agent.budget import TEXT_SIZER
 
 VISIBLE_ASSISTANT_STATES = frozenset({"delivered", "uncertain"})
 DEFAULT_GAP_SECONDS = 30 * 60

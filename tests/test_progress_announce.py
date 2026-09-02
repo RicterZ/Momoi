@@ -9,7 +9,7 @@ from momoi.contracts import OWNER_PROGRESS_BEFORE_FIRST_CALL, OWNER_PROGRESS_FIE
 from momoi.mcp_client import MCP_TOOL_POLICY
 from momoi.models import ToolCall
 from momoi.runtime import MomoiDaemon
-from momoi.runtime.progress_announce import (
+from momoi.runtime.agent.progress import (
     ANNOUNCE_FIELD,
     ANNOUNCE_DELIVERY_NOTE,
     announce_field,

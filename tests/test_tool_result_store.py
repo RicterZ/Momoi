@@ -9,7 +9,7 @@ from momoi.channel.napcat import NapCatConfig
 from momoi.config import AppConfig, LLMConfig
 from momoi.models import ToolCall
 from momoi.runtime import MomoiDaemon
-from momoi.runtime.tool_result_store import ToolResultStore
+from momoi.runtime.agent.result_store import ToolResultStore
 
 
 class ToolResultStoreTest(unittest.TestCase):

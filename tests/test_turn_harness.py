@@ -1,7 +1,7 @@
 import unittest
 
 from momoi.models import ToolCall
-from momoi.runtime.agent_workflow import TURN_HARNESS_SPECS, TurnHarness
+from momoi.runtime.agent import TURN_HARNESS_SPECS, TurnHarness
 from momoi.runtime.turn_support import PROMPT_ROOT
 
 

@@ -9,28 +9,28 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
-from ..agenda_tools import AGENDA_TOOL_SPECS
-from ..builtin_tools import BUILTIN_TOOL_SPECS, SELF_DIRECTED_BUILTIN_TOOL_SPECS
-from ..channel import (
+from ...agenda_tools import AGENDA_TOOL_SPECS
+from ...builtin_tools import BUILTIN_TOOL_SPECS, SELF_DIRECTED_BUILTIN_TOOL_SPECS
+from ...channel import (
     Channel,
     ChannelMessage,
     normalize_channel_message,
     render_channel_message,
 )
-from ..contracts import ToolResult
-from ..emotions import EMOTION_PREFIX, emotion_slug
-from ..logging_context import TRACE, compact_log_value, log_context, log_event, new_trace_id, safe_preview
-from ..memory_tools import MEMORY_TOOL_SPECS
-from ..models import AgentReply, IncomingMessage, ToolCall, TurnDraft
-from ..storage import estimate_tokens
-from .agent_workflow import (
+from ...contracts import ToolResult
+from ...emotions import EMOTION_PREFIX, emotion_slug
+from ...logging_context import TRACE, compact_log_value, log_context, log_event, new_trace_id, safe_preview
+from ...memory_tools import MEMORY_TOOL_SPECS
+from ...models import AgentReply, IncomingMessage, ToolCall, TurnDraft
+from ...storage import estimate_tokens
+from . import (
     AgentWorkflow,
     TurnExecutionSpec,
     TurnHarness,
     WorkflowProtocolError,
 )
-from .parsing import parse_bubbles, parse_response, response_text
-from .progress_announce import (
+from ..parsing import parse_bubbles, parse_response, response_text
+from .progress import (
     announce_field,
     apply_tool_announce,
     decorate_tool_spec,
@@ -38,7 +38,7 @@ from .progress_announce import (
     public_tool_spec,
     requests_owner_progress,
 )
-from .protocol import (
+from ..protocol import (
     AUTONOMOUS_FINISH_SPEC,
     READ_TOOL_RESULT_SPEC,
     RECALL_TOOL_SPEC,
@@ -47,7 +47,7 @@ from .protocol import (
     send_bubbles_tool_spec,
     tool_enable_spec,
 )
-from .turn_support import (
+from ..turn_support import (
     ExternalToolTurnError,
     MAX_CONSECUTIVE_TOOL_FAILURES,
     OwnerMessagesChanged,
@@ -136,7 +136,7 @@ def _send_bubbles_similarity(
     ).ratio()
 
 
-class ToolExecutionService:
+class AgentLoop:
     @staticmethod
     def _mcp_tool_group(name: str) -> str:
         parts = str(name).split("__", 2)
