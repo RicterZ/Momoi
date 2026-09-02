@@ -1686,6 +1686,7 @@ class StorageMemoryTest(unittest.TestCase):
             database.execute(
                 "ALTER TABLE conversation_episodes DROP COLUMN archive_day"
             )
+            database.execute("PRAGMA user_version=0")
             database.commit()
             database.close()
 
@@ -1714,6 +1715,21 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertEqual(archive["archive_kind"], "heartbeat")
             self.assertEqual(archive["archive_day"], "2026-09-02")
             reopened.close()
+
+    def test_database_migrations_are_versioned_and_reject_newer_schema(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "momoi.sqlite3"
+            store = Store(path)
+            version = int(store._db.execute("PRAGMA user_version").fetchone()[0])
+            self.assertGreater(version, 0)
+            store.close()
+
+            database = sqlite3.connect(path)
+            database.execute(f"PRAGMA user_version={version + 1}")
+            database.close()
+
+            with self.assertRaisesRegex(RuntimeError, "newer than supported"):
+                Store(path)
 
     def test_recall_reuse_candidate_is_only_the_latest_effective_scope(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

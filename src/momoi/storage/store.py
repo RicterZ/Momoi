@@ -55,6 +55,7 @@ from .memory import (
     token_chunk,
     truncate_tokens,
 )
+from .migrations import apply_migrations
 from .semantic import SemanticStore
 from .scheduling import next_schedule_at, normalize_schedule, quiet_until
 from .thinking import ThinkingStore, month_bounds, parse_month
@@ -410,11 +411,7 @@ class Store(MemoryStore, DeliveryStore, SemanticStore):
 
     def _initialize_database(self) -> None:
         self._db.executescript(Path(__file__).with_name("schema.sql").read_text())
-        columns = {row[1] for row in self._db.execute("PRAGMA table_info(conversation_episodes)")}
-        if "archive_kind" not in columns:
-            self._db.execute("ALTER TABLE conversation_episodes ADD COLUMN archive_kind TEXT")
-        if "archive_day" not in columns:
-            self._db.execute("ALTER TABLE conversation_episodes ADD COLUMN archive_day TEXT")
+        apply_migrations(self._db)
         now = time.time()
         self._normalize_goal_schedules(now)
         self._db.execute(
