@@ -17,7 +17,7 @@ from . import (
     TurnHarness,
     WorkflowProtocolError,
 )
-from ..parsing import parse_bubbles, parse_response, response_text
+from ..parsing import parse_bubbles, response_text
 from .progress import (
     announce_field,
     apply_tool_announce,
@@ -25,6 +25,7 @@ from .progress import (
     missing_initial_work_announce,
 )
 from .delivery import SIMILAR_BUBBLES_THRESHOLD
+from .protocol import harness_correction, owner_request_messages, parse_end_turn
 from ..protocol import (
     AUTONOMOUS_FINISH_SPEC,
 )
@@ -37,57 +38,6 @@ from ..turn_support import (
 )
 
 logger = logging.getLogger("momoi.runtime.turns")
-OWNER_BUBBLE_REQUEST_REMINDER = (
-    "Native tool calls only: if bubbles are warranted, call send_bubbles with "
-    "them; otherwise call the next work or terminal tool."
-)
-
-
-def _owner_request_messages(
-    messages: list[dict[str, Any]], *, remind_bubbles: bool
-) -> list[dict[str, Any]]:
-    """Build an Owner-only wire copy without changing canonical Turn history."""
-
-    request_messages = copy.deepcopy(messages)
-    if not remind_bubbles:
-        return request_messages
-    user_message = next(
-        (
-            message
-            for message in reversed(request_messages)
-            if message.get("role") == "user"
-        ),
-        None,
-    )
-    if user_message is None:
-        return request_messages
-    content = user_message.get("content")
-    if isinstance(content, str):
-        user_message["content"] = (
-            f"{content}\n\n{OWNER_BUBBLE_REQUEST_REMINDER}".lstrip()
-        )
-        return request_messages
-    if not isinstance(content, list):
-        user_message["content"] = OWNER_BUBBLE_REQUEST_REMINDER
-        return request_messages
-    text_block = next(
-        (
-            block
-            for block in reversed(content)
-            if isinstance(block, dict) and block.get("type") == "text"
-        ),
-        None,
-    )
-    if text_block is None:
-        content.append({"type": "text", "text": OWNER_BUBBLE_REQUEST_REMINDER})
-    else:
-        text = str(text_block.get("text") or "")
-        text_block["text"] = (
-            f"{text}\n\n{OWNER_BUBBLE_REQUEST_REMINDER}".lstrip()
-        )
-    return request_messages
-
-
 class AgentLoop:
     async def _append_owner_updates(
         self,
@@ -216,7 +166,7 @@ class AgentLoop:
                     history_messages,
                 )
                 request_messages = (
-                    _owner_request_messages(
+                    owner_request_messages(
                         messages,
                         remind_bubbles=remind_owner_bubbles and harness.started,
                     )
@@ -457,39 +407,11 @@ class AgentLoop:
                         )
                     )
                     raise error_type(harness_error)
-                correction: list[dict[str, Any]] = [
-                    _tool_error_block(call.id, harness_error)
-                    for call in response.tool_calls
-                ]
-                if harness_error == "assistant_text_forbidden":
-                    if (
-                        require_response
-                        and len(response.tool_calls) == 1
-                        and response.tool_calls[0].name == "end_turn"
-                    ):
-                        correction.append(
-                            {
-                                "type": "text",
-                                "text": (
-                                    "[Trusted runtime protocol correction: plain "
-                                    "assistant text is not delivered. Call send_bubbles "
-                                    "with the owner-visible bubbles, without end_turn. "
-                                    "After its result, call end_turn alone on the next "
-                                    "step.]"
-                                ),
-                            }
-                        )
-                    else:
-                        correction.append(
-                            {
-                                "type": "text",
-                                "text": (
-                                    "[Trusted runtime protocol correction: assistant "
-                                    "text is forbidden. Repeat the intended action using "
-                                    "native tool calls only.]"
-                                ),
-                            }
-                        )
+                correction = harness_correction(
+                    response.tool_calls,
+                    harness_error,
+                    require_response=require_response,
+                )
                 messages.extend(
                     [
                         {"role": "assistant", "content": response.content},
@@ -536,47 +458,20 @@ class AgentLoop:
                     channel=delivery_channel.name,
                     arguments=safe_preview(response.tool_calls[0].arguments, 1000),
                 )
-                reply, error = parse_response(
+                reply, error = parse_end_turn(
                     response.tool_calls[0].arguments,
-                    require_heartbeat=heartbeat_turn,
-                    allow_activity_update=authority == "owner",
-                )
-                if reply is not None and heartbeat_turn and reply.heartbeat:
-                    minutes = int(reply.heartbeat["next_check_minutes"])
-                    seconds = minutes * 60
-                    if not (
+                    heartbeat_turn=heartbeat_turn,
+                    owner_turn=authority == "owner",
+                    reply_followup_turn=reply_wait_turn,
+                    visible_since_owner_update=visible_since_owner_update,
+                    heartbeat_min_interval_seconds=(
                         self.config.heartbeat.min_interval_seconds
-                        <= seconds
-                        <= self.config.heartbeat.max_interval_seconds
-                    ):
-                        reply = None
-                        error = "heartbeat_interval_out_of_range"
-                if reply is not None:
-                    error = self.delivery_policy.validate_emotions(reply.messages)
-                    if error is not None:
-                        reply = None
-                if (
-                    reply is not None
-                    and reply.expects_reply
-                    and not reply.messages
-                    and not visible_since_owner_update
-                ):
-                    reply = None
-                    error = "reply_expectation_without_visible_bubble"
-                if (
-                    reply is not None
-                    and reply_wait_turn
-                    and not visible_since_owner_update
-                ):
-                    reply = None
-                    error = "reply_followup_bubble_required"
-                if (
-                    reply is not None
-                    and reply_wait_turn
-                    and reply.should_schedule_reply_wait
-                ):
-                    reply = None
-                    error = "reply_followup_cannot_schedule_another_wait"
+                    ),
+                    heartbeat_max_interval_seconds=(
+                        self.config.heartbeat.max_interval_seconds
+                    ),
+                    validate_emotions=self.delivery_policy.validate_emotions,
+                )
                 if reply is not None:
                     log_event(
                         logger,

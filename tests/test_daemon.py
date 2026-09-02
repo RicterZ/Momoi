@@ -52,9 +52,9 @@ from momoi.runtime.turn_support import (
     SYSTEM_PROMPT_PATH,
     STYLE_CARD_SYSTEM_PROMPT,
 )
-from momoi.runtime.agent.loop import (
+from momoi.runtime.agent.protocol import (
     OWNER_BUBBLE_REQUEST_REMINDER,
-    _owner_request_messages,
+    owner_request_messages,
 )
 from momoi.runtime.parsing import parse_mood_decision, parse_mood_update
 from momoi.runtime.dispatch.delivery import message_gap_bounds
@@ -106,7 +106,7 @@ class DaemonTest(unittest.TestCase):
             }
         ]
 
-        request = _owner_request_messages(messages, remind_bubbles=True)
+        request = owner_request_messages(messages, remind_bubbles=True)
 
         self.assertEqual(messages[0]["content"][-1]["text"], "last")
         self.assertEqual(request[0]["content"][0]["text"], "first")
@@ -126,7 +126,7 @@ class DaemonTest(unittest.TestCase):
             }
         ]
 
-        request = _owner_request_messages(messages, remind_bubbles=True)
+        request = owner_request_messages(messages, remind_bubbles=True)
 
         self.assertEqual(len(messages[0]["content"]), 1)
         self.assertEqual(
