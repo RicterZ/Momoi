@@ -104,7 +104,9 @@ class AgentLoop:
             if reply_wait_turn and self.store.pending_owner_reply() is None:
                 return None
             updates = (
-                await self._settle_owner_updates(current_events, delivery_channel.name)
+                await self.owner_updates.settle(
+                    current_events, delivery_channel.name
+                )
                 if accept_owner_updates
                 else []
             )
@@ -146,13 +148,14 @@ class AgentLoop:
                 required: bool,
             ):
                 if accept_owner_updates:
-                    return await self._complete_with_owner_interrupt(
+                    return await self.owner_updates.complete(
                         request_system,
                         request_messages,
                         projected_tools,
                         require_tool=required,
                         current_events=current_events,
                         channel_name=delivery_channel.name,
+                        provider=self.provider,
                     )
                 return await self.provider.complete(
                     request_system,
@@ -186,7 +189,7 @@ class AgentLoop:
             except OwnerMessagesChanged as interruption:
                 updates = list(interruption.updates)
                 updates.extend(
-                    await self._settle_owner_updates(
+                    await self.owner_updates.settle(
                         current_events, delivery_channel.name
                     )
                 )
@@ -219,7 +222,9 @@ class AgentLoop:
             history_messages = model_round.history_messages
             remind_owner_bubbles = model_round.remind_owner_bubbles
             updates = (
-                await self._settle_owner_updates(current_events, delivery_channel.name)
+                await self.owner_updates.settle(
+                    current_events, delivery_channel.name
+                )
                 if accept_owner_updates
                 else []
             )
@@ -482,7 +487,7 @@ class AgentLoop:
                     progress_channel=self.channel.name,
                     prepare_heartbeat_context=self.prepare_heartbeat_context,
                     submit_owner_context=self.submit_owner_context,
-                    settle_owner_updates=self._settle_owner_updates,
+                    settle_owner_updates=self.owner_updates.settle,
                 )
             )
             results = batch.results

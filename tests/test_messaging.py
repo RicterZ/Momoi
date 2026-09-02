@@ -1729,7 +1729,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             daemon.incoming.put_nowait(qq_update)
             daemon.incoming.put_nowait(weixin_update)
-            self.assertEqual(daemon._drain_owner_updates([], "napcat"), [qq_update])
+            self.assertEqual(daemon.owner_updates.drain([], "napcat"), [qq_update])
             self.assertEqual(daemon._deferred_incoming.popleft(), weixin_update)
 
             older_qq = IncomingMessage(
@@ -1741,7 +1741,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             daemon._deferred_incoming.append(older_qq)
             daemon.incoming.put_nowait(newer_qq)
             self.assertEqual(
-                daemon._drain_owner_updates([], "napcat"), [older_qq, newer_qq]
+                daemon.owner_updates.drain([], "napcat"), [older_qq, newer_qq]
             )
             daemon.store.close()
 

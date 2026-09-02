@@ -4,24 +4,23 @@ import re
 from datetime import datetime
 from typing import Any
 
-from ...channel import Channel
-from ...context_time import context_timestamp
-from ...logging_context import log_event, safe_preview
-from ...models import AgentReply, IncomingMessage, ProviderResponse, TurnDraft
-from ...provider import ProviderError
-from ..agent import TurnExecutionSpec
-from ..transcript import (
+from ....channel import Channel
+from ....context_time import context_timestamp
+from ....logging_context import log_event, safe_preview
+from ....models import AgentReply, IncomingMessage, TurnDraft
+from ....provider import ProviderError
+from ...agent import TurnExecutionSpec
+from ...transcript import (
     build_transcript,
     render_delivered_bubble_evidence,
     render_messages,
     turn_labels,
 )
-from ..context_service import (
+from ...context_service import (
     _heartbeat_self_state_lines,
 )
-from ..turn_support import (
+from ...turn_support import (
     ExternalToolTurnError,
-    OwnerMessagesChanged,
     TurnBudgetExceeded,
     owner_content_blocks as _owner_content_blocks,
     owner_context_message as _owner_context_message,
@@ -35,133 +34,6 @@ logger = logging.getLogger("momoi.runtime.turns")
 
 
 class OwnerWorkflow:
-    def _drain_owner_updates(
-        self, current_events: list[IncomingMessage], channel_name: str
-    ) -> list[IncomingMessage]:
-        updates: list[IncomingMessage] = []
-        for _ in range(len(self._deferred_incoming)):
-            message = self._deferred_incoming.popleft()
-            if self._channel_for(message.channel).name == channel_name:
-                updates.append(message)
-            else:
-                self._deferred_incoming.append(message)
-        while True:
-            try:
-                message = self.incoming.get_nowait()
-            except asyncio.QueueEmpty:
-                break
-            if self._channel_for(message.channel).name == channel_name:
-                updates.append(message)
-            else:
-                self._deferred_incoming.append(message)
-        if updates:
-            current_events.extend(updates)
-            log_event(
-                logger,
-                logging.INFO,
-                "owner_updates_injected",
-                count=len(updates),
-                channel=channel_name,
-            )
-        return updates
-
-    async def _settle_owner_updates(
-        self, current_events: list[IncomingMessage], channel_name: str
-    ) -> list[IncomingMessage]:
-        channel = self._channel_for(channel_name)
-        loop = asyncio.get_running_loop()
-        hard_deadline = loop.time() + channel.max_batch_seconds
-        updates: list[IncomingMessage] = []
-        while True:
-            updates.extend(self._drain_owner_updates(current_events, channel.name))
-            deadline = min(
-                self._owner_quiet_until.get(channel.name, 0.0), hard_deadline
-            )
-            remaining = deadline - loop.time()
-            if remaining <= 0:
-                return updates
-            self._owner_activity_changed.clear()
-            try:
-                await asyncio.wait_for(
-                    self._owner_activity_changed.wait(), timeout=remaining
-                )
-            except TimeoutError:
-                pass
-
-    async def _complete_with_owner_interrupt(
-        self,
-        system: str | list[dict[str, Any]],
-        messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]],
-        *,
-        require_tool: bool,
-        current_events: list[IncomingMessage],
-        channel_name: str,
-    ) -> ProviderResponse:
-        initial = self._drain_owner_updates(current_events, channel_name)
-        if initial:
-            log_event(
-                logger,
-                logging.INFO,
-                "llm_skipped",
-                reason="owner_update",
-                updates=len(initial),
-            )
-            raise OwnerMessagesChanged(initial)
-
-        provider_task = asyncio.create_task(
-            self.provider.complete(
-                system,
-                messages,
-                tools,
-                require_tool=require_tool,
-            )
-        )
-        try:
-            while True:
-                self._owner_message_changed.clear()
-                updates = self._drain_owner_updates(current_events, channel_name)
-                if updates:
-                    provider_task.cancel()
-                    await asyncio.gather(provider_task, return_exceptions=True)
-                    log_event(
-                        logger,
-                        logging.INFO,
-                        "llm_cancelled",
-                        reason="owner_update",
-                        updates=len(updates),
-                    )
-                    raise OwnerMessagesChanged(updates)
-                if provider_task.done():
-                    return provider_task.result()
-
-                changed = asyncio.create_task(self._owner_message_changed.wait())
-                done, _ = await asyncio.wait(
-                    {provider_task, changed},
-                    return_when=asyncio.FIRST_COMPLETED,
-                )
-                if changed not in done:
-                    changed.cancel()
-                    await asyncio.gather(changed, return_exceptions=True)
-                updates = self._drain_owner_updates(current_events, channel_name)
-                if updates:
-                    provider_task.cancel()
-                    await asyncio.gather(provider_task, return_exceptions=True)
-                    log_event(
-                        logger,
-                        logging.INFO,
-                        "llm_cancelled",
-                        reason="owner_update",
-                        updates=len(updates),
-                    )
-                    raise OwnerMessagesChanged(updates)
-                if provider_task in done:
-                    return provider_task.result()
-        except asyncio.CancelledError:
-            provider_task.cancel()
-            await asyncio.gather(provider_task, return_exceptions=True)
-            raise
-
     def _owner_update_message(
         self,
         updates: list[IncomingMessage],

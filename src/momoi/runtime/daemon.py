@@ -32,6 +32,7 @@ from .agent.tool_executor import ToolExecutor, artifact_root, tool_result_root
 from .agent.tool_surface import ToolSurface
 from .dispatch import AgentWorker, CommandRouter, OutboxWorker, Scheduler
 from .turns import TurnRunner
+from .workflows.owner import OwnerUpdateController
 
 logger = logging.getLogger(__name__)
 class MomoiDaemon(
@@ -163,6 +164,14 @@ class MomoiDaemon(
         self._last_owner_activity_at = 0.0
         self._owner_activity_changed = asyncio.Event()
         self._owner_message_changed = asyncio.Event()
+        self.owner_updates = OwnerUpdateController(
+            self.incoming,
+            self._deferred_incoming,
+            self._owner_quiet_until,
+            self._owner_activity_changed,
+            self._owner_message_changed,
+            self._channel_for,
+        )
         self.webhook_requests: asyncio.Queue[
             tuple[str, str, asyncio.Future[AgentReply]]
         ] = asyncio.Queue()
