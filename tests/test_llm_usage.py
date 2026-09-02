@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 
 from momoi.extensions import load_usage_plugin
 from momoi.extensions.deepseek import DeepSeekPlugin
-from momoi.llm_usage import summarize_usage
+from momoi.llm.usage import summarize_usage
 
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")

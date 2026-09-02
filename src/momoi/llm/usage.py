@@ -1,3 +1,5 @@
+"""Aggregate persisted model usage for dashboard reporting."""
+
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Any, Mapping
@@ -37,7 +39,9 @@ def _add_row(
     estimate: EstimateCost | None,
 ) -> None:
     bucket["requests"] = int(bucket["requests"]) + 1
-    bucket["input_tokens"] = int(bucket["input_tokens"]) + _as_int(row.get("input_tokens"))
+    bucket["input_tokens"] = int(bucket["input_tokens"]) + _as_int(
+        row.get("input_tokens")
+    )
     bucket["uncached_tokens"] = int(bucket["uncached_tokens"]) + _as_int(
         row.get("uncached_tokens")
     )
@@ -124,8 +128,7 @@ def summarize_usage(
         "totals": _public_bucket(totals),
         "today": _public_bucket(today_bucket),
         "daily": [
-            {"date": day, **_public_bucket(bucket)}
-            for day, bucket in daily.items()
+            {"date": day, **_public_bucket(bucket)} for day, bucket in daily.items()
         ],
         "models": [
             {"model": name, **_public_bucket(bucket)}

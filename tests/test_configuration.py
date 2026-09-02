@@ -9,7 +9,8 @@ from zoneinfo import ZoneInfo
 import asyncio
 
 
-from momoi.__main__ import emotion as emotion_command, goal as goal_command, parse_args
+from momoi.cli.commands import emotion as emotion_command, goal as goal_command
+from momoi.cli.parser import parse_args
 from momoi.tools.agenda import AgendaTools
 from momoi.channel.napcat import NapCatConfig
 from momoi.channel.weixin import WeixinConfig
@@ -508,7 +509,7 @@ class ConfigurationTest(unittest.TestCase):
             )
             with self.assertRaisesRegex(ValueError, "dashboard.token is required"):
                 asyncio.run(
-                    __import__("momoi.__main__", fromlist=["run"]).run(
+                    __import__("momoi.cli.service", fromlist=["run"]).run(
                         path, dashboard=True
                     )
                 )
@@ -557,7 +558,7 @@ class ConfigurationTest(unittest.TestCase):
                     workspace=root,
                 )
                 with (
-                    patch("momoi.__main__.load_config", return_value=fake_config),
+                    patch("momoi.cli.commands.load_config", return_value=fake_config),
                     patch("builtins.print") as output,
                 ):
                     emotion_command(arguments)
@@ -589,7 +590,7 @@ class ConfigurationTest(unittest.TestCase):
             self.assertFalse(managed.exists())
 
     def test_cli_workspace_defaults_and_can_be_overridden(self) -> None:
-        with patch("momoi.__main__.version", return_value="0.1.0"):
+        with patch("momoi.cli.parser.version", return_value="0.1.0"):
             with patch("sys.argv", ["momoi", "run"]):
                 args = parse_args()
                 self.assertEqual(args.workspace, Path.home() / ".momoi")
@@ -651,7 +652,7 @@ class ConfigurationTest(unittest.TestCase):
                 fields.update(values)
                 arguments = SimpleNamespace(**fields)
                 with (
-                    patch("momoi.__main__.load_config", return_value=config),
+                    patch("momoi.cli.commands.load_config", return_value=config),
                     patch("builtins.print") as output,
                 ):
                     goal_command(arguments)
