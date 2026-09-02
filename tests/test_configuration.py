@@ -232,7 +232,7 @@ class ConfigurationTest(unittest.TestCase):
             with self.assertRaisesRegex(ConfigError, "must name an enabled channel"):
                 load_config(path)
 
-    def test_context_result_limits_are_capped(self) -> None:
+    def test_clamped_integer_settings_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "prompts").mkdir()
@@ -250,12 +250,34 @@ class ConfigurationTest(unittest.TestCase):
                 "logging": {},
             }
             path.write_text(json.dumps(value))
-            value["context"]["summary_results"] = 99  # type: ignore[index]
-            value["context"]["memory_results"] = 99  # type: ignore[index]
+            invalid = {
+                ("llm", "max_retries"): -1,
+                ("context", "max_input_tokens"): 999,
+                ("context", "transcript_turns_min"): 0,
+                ("context", "transcript_turns_max"): 47,
+                ("context", "episode_raw_tail_turns"): 0,
+                ("context", "memory_results"): 7,
+                ("context", "summary_results"): 13,
+                ("context", "summary_tokens"): -1,
+                ("tools", "result_max_chars"): 999,
+                ("turn", "max_total_tokens"): -1,
+            }
+            for (section, setting), invalid_value in invalid.items():
+                with self.subTest(setting=f"{section}.{setting}"):
+                    candidate = json.loads(json.dumps(value))
+                    candidate.setdefault(section, {})[setting] = invalid_value
+                    path.write_text(json.dumps(candidate))
+                    with self.assertRaisesRegex(
+                        ConfigError, rf"{section}\.{setting} must"
+                    ):
+                        load_config(path)
+
+            value["context"]["memory_results"] = 1.5  # type: ignore[index]
             path.write_text(json.dumps(value))
-            configured = load_config(path)
-            self.assertEqual(configured.summary_results, 12)
-            self.assertEqual(configured.memory_results, 6)
+            with self.assertRaisesRegex(
+                ConfigError, "context.memory_results must be an integer"
+            ):
+                load_config(path)
 
     def test_loads_primary_channel_configuration(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

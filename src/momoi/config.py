@@ -181,6 +181,22 @@ def _nonnegative(value: Any, name: str) -> float:
     return number
 
 
+def _integer(
+    value: Any,
+    name: str,
+    *,
+    minimum: int | None = None,
+    maximum: int | None = None,
+) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ConfigError(f"{name} must be an integer")
+    if minimum is not None and value < minimum:
+        raise ConfigError(f"{name} must be at least {minimum}")
+    if maximum is not None and value > maximum:
+        raise ConfigError(f"{name} must be at most {maximum}")
+    return value
+
+
 def _boolean(value: Any, name: str) -> bool:
     if not isinstance(value, bool):
         raise ConfigError(f"{name} must be boolean")
@@ -477,21 +493,62 @@ def load_config(path: str | Path) -> AppConfig:
         isinstance(item, str) and item.strip() for item in allowed_tools
     ):
         raise ConfigError("autonomy.allowed_tools must be an array of tool names")
-    max_input_tokens = max(
-        1000, int(context_raw.get("max_input_tokens", 142222))
+    max_input_tokens = _integer(
+        context_raw.get("max_input_tokens", 142222),
+        "context.max_input_tokens",
+        minimum=1000,
     )
     context_compaction_ratio = float(
         context_raw.get("context_compaction_ratio", 0.9)
     )
     if not 0 < context_compaction_ratio <= 1:
         raise ConfigError("context.context_compaction_ratio must be between 0 and 1")
-    transcript_turns_min = max(1, int(context_raw.get("transcript_turns_min", 48)))
-    transcript_turns_max = max(
-        transcript_turns_min,
-        int(context_raw.get("transcript_turns_max", 96)),
+    transcript_turns_min = _integer(
+        context_raw.get("transcript_turns_min", 48),
+        "context.transcript_turns_min",
+        minimum=1,
     )
-    episode_raw_tail_turns = max(
-        1, int(context_raw.get("episode_raw_tail_turns", 6))
+    transcript_turns_max = _integer(
+        context_raw.get("transcript_turns_max", 96),
+        "context.transcript_turns_max",
+        minimum=transcript_turns_min,
+    )
+    episode_raw_tail_turns = _integer(
+        context_raw.get("episode_raw_tail_turns", 6),
+        "context.episode_raw_tail_turns",
+        minimum=1,
+    )
+    memory_results = _integer(
+        context_raw.get("memory_results", 6),
+        "context.memory_results",
+        minimum=0,
+        maximum=6,
+    )
+    summary_results = _integer(
+        context_raw.get("summary_results", 8),
+        "context.summary_results",
+        minimum=0,
+        maximum=12,
+    )
+    summary_tokens = _integer(
+        context_raw.get("summary_tokens", 6000),
+        "context.summary_tokens",
+        minimum=0,
+    )
+    max_retries = _integer(
+        llm_raw.get("max_retries", 3),
+        "llm.max_retries",
+        minimum=0,
+    )
+    tool_result_max_chars = _integer(
+        tools_raw.get("result_max_chars", 12000),
+        "tools.result_max_chars",
+        minimum=1000,
+    )
+    turn_max_total_tokens = _integer(
+        turn_raw.get("max_total_tokens", 0),
+        "turn.max_total_tokens",
+        minimum=0,
     )
 
     return AppConfig(
@@ -502,7 +559,7 @@ def load_config(path: str | Path) -> AppConfig:
             max_tokens=int(llm_raw.get("max_tokens", 16384)),
             temperature=float(llm_raw.get("temperature", 0.6)),
             timeout_seconds=_positive(llm_raw.get("timeout_seconds", 300), "llm.timeout_seconds"),
-            max_retries=max(0, int(llm_raw.get("max_retries", 3))),
+            max_retries=max_retries,
             api_format=api_format,
             tool_choice=tool_choice,
             thinking=ThinkingConfig(
@@ -515,16 +572,14 @@ def load_config(path: str | Path) -> AppConfig:
         transcript_turns_min=transcript_turns_min,
         transcript_turns_max=transcript_turns_max,
         episode_raw_tail_turns=episode_raw_tail_turns,
-        memory_results=min(6, max(0, int(context_raw.get("memory_results", 6)))),
+        memory_results=memory_results,
         database=database,
         log_level=str(logging_raw.get("level", "DEBUG")).upper(),
         timezone=app_timezone,
         max_input_tokens=max_input_tokens,
         context_compaction_ratio=context_compaction_ratio,
-        summary_results=min(
-            12, max(0, int(context_raw.get("summary_results", 8)))
-        ),
-        summary_tokens=max(0, int(context_raw.get("summary_tokens", 6000))),
+        summary_results=summary_results,
+        summary_tokens=summary_tokens,
         soul_prompt=soul_prompt,
         heartbeat_prompt=heartbeat_prompt,
         mcp_config=mcp_config,
@@ -540,9 +595,7 @@ def load_config(path: str | Path) -> AppConfig:
                 "notifications.pending_owner_delay_seconds",
             ),
         ),
-        tool_result_max_chars=max(
-            1000, int(tools_raw.get("result_max_chars", 12000))
-        ),
+        tool_result_max_chars=tool_result_max_chars,
         tool_result_retention_days=_nonnegative(
             tools_raw.get("result_retention_days", 30),
             "tools.result_retention_days",
@@ -550,9 +603,7 @@ def load_config(path: str | Path) -> AppConfig:
         turn_max_seconds=_nonnegative(
             turn_raw.get("max_seconds", 0), "turn.max_seconds"
         ),
-        turn_max_total_tokens=max(
-            0, int(turn_raw.get("max_total_tokens", 0))
-        ),
+        turn_max_total_tokens=turn_max_total_tokens,
         webhooks=WebhookConfig(
             enabled=webhook_enabled,
             host=str(webhook_raw.get("host", "127.0.0.1")),
