@@ -561,6 +561,24 @@ class ProvidersToolsTest(unittest.TestCase):
 
 
 class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
+    async def test_required_mcp_connection_failure_stops_startup(self) -> None:
+        manager = MCPManager(None)
+        manager.configs = {"required": {"command": "missing"}}
+        with patch.object(manager, "_connect", side_effect=RuntimeError("offline")):
+            with self.assertRaisesRegex(RuntimeError, "required MCP server"):
+                await manager.__aenter__()
+        self.assertEqual(manager._workers, {})
+
+    async def test_optional_mcp_connection_failure_allows_startup(self) -> None:
+        manager = MCPManager(None)
+        manager.configs = {
+            "optional": {"command": "missing", "optional": True}
+        }
+        with patch.object(manager, "_connect", side_effect=RuntimeError("offline")):
+            entered = await manager.__aenter__()
+        self.assertIs(entered, manager)
+        await manager.__aexit__()
+
     async def test_mcp_result_reaches_normalization_without_pretruncation(self) -> None:
         class Result:
             isError = False

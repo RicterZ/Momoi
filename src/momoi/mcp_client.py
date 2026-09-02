@@ -86,6 +86,9 @@ def load_mcp_servers(path: Path | None) -> dict[str, dict[str, Any]]:
         if isinstance(config, dict) and not config.get("disabled", False)
     }
     for name, config in loaded.items():
+        optional = config.get("optional", False)
+        if not isinstance(optional, bool):
+            raise ValueError(f"MCP server {name} optional must be boolean")
         description = config.get("description")
         if description is not None and (
             not isinstance(description, str)
@@ -138,7 +141,13 @@ class MCPManager:
                     "mcp_connect_failure",
                     server=name,
                     error_type=type(error).__name__,
+                    optional=bool(config.get("optional", False)),
                 )
+                if not config.get("optional", False):
+                    await self.__aexit__()
+                    raise RuntimeError(
+                        f"required MCP server failed to connect: {name}"
+                    ) from error
         return self
 
     async def __aexit__(self, *_: object) -> None:

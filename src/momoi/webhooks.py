@@ -167,9 +167,12 @@ def load_catalog(
         item = _mapping(raw, f"executor {executor_id}")
         _only(
             item,
-            {"parameters", "argv", "env", "timeout_seconds"},
+            {"parameters", "argv", "env", "timeout_seconds", "optional"},
             f"executor {executor_id}",
         )
+        optional = item.get("optional", False)
+        if not isinstance(optional, bool):
+            raise WorkflowError(f"executor {executor_id}.optional must be boolean")
         parameters = {
             _identifier(key, f"executor {executor_id} parameter"): _input_schema(
                 value, f"executor {executor_id} parameter {key}"
@@ -191,6 +194,10 @@ def load_catalog(
         incompatible = False
         for index, arg in enumerate(argv):
             if not _executor_template_valid(arg, parameter_names, config_names):
+                if not optional:
+                    raise WorkflowError(
+                        f"executor {executor_id}.argv[{index}] is incompatible"
+                    )
                 log_event(
                     logger,
                     logging.WARNING,
@@ -212,6 +219,10 @@ def load_catalog(
                     f"executor {executor_id}.env has an invalid variable name"
                 )
             if not _executor_template_valid(value, parameter_names, config_names):
+                if not optional:
+                    raise WorkflowError(
+                        f"executor {executor_id}.env.{key} is incompatible"
+                    )
                 log_event(
                     logger,
                     logging.WARNING,
@@ -234,6 +245,7 @@ def load_catalog(
             "argv": argv,
             "env": env,
             "timeout_seconds": timeout,
+            "optional": optional,
         }
 
     if not workflows_path.is_dir():
@@ -244,10 +256,17 @@ def load_catalog(
         if path.resolve() == skipped_executors:
             continue
         root = _load_yaml(path)
-        _only(root, {"version", "id", "description", "inputs", "steps"}, str(path))
+        _only(
+            root,
+            {"version", "id", "description", "inputs", "steps", "optional"},
+            str(path),
+        )
         if root.get("version") != 1:
             raise WorkflowError(f"{path} requires version: 1")
         workflow_id = _identifier(root.get("id"), f"{path}.id")
+        optional = root.get("optional", False)
+        if not isinstance(optional, bool):
+            raise WorkflowError(f"workflow {workflow_id}.optional must be boolean")
         if workflow_id in workflows:
             raise WorkflowError(f"duplicate workflow id: {workflow_id}")
         inputs = {
@@ -306,6 +325,11 @@ def load_catalog(
             )
             executor = executors.get(executor_id)
             if executor is None:
+                if not optional:
+                    raise WorkflowError(
+                        f"workflow {workflow_id} requires unavailable executor "
+                        f"{executor_id}"
+                    )
                 log_event(
                     logger,
                     logging.WARNING,
@@ -347,7 +371,12 @@ def load_catalog(
             )
         if incompatible:
             continue
-        workflows[workflow_id] = {"id": workflow_id, "inputs": inputs, "steps": steps}
+        workflows[workflow_id] = {
+            "id": workflow_id,
+            "inputs": inputs,
+            "steps": steps,
+            "optional": optional,
+        }
         log_event(
             logger,
             logging.INFO,

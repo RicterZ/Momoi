@@ -698,3 +698,9 @@ class ConfigurationTest(unittest.TestCase):
             path.write_text(json.dumps(value))
             with self.assertRaisesRegex(ValueError, "description must be"):
                 load_mcp_servers(path)
+
+            value["mcpServers"]["search"]["description"] = "Search"
+            value["mcpServers"]["search"]["optional"] = "yes"
+            path.write_text(json.dumps(value))
+            with self.assertRaisesRegex(ValueError, "optional must be boolean"):
+                load_mcp_servers(path)

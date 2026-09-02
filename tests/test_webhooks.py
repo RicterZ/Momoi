@@ -129,6 +129,7 @@ steps:
                 """version: 1
 executors:
   napcat-send:
+    optional: true
     parameters: {}
     argv: [nap-msg, '${config.owner_qq}']
     env: {}
@@ -138,6 +139,7 @@ executors:
             (workflows_path / "camera.yaml").write_text(
                 """version: 1
 id: camera-event
+optional: true
 inputs: {}
 steps:
   - id: send
@@ -181,6 +183,25 @@ steps:
                     for record in logs.records
                 )
             )
+
+    def test_required_incompatible_executor_rejects_catalog(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            workflows = root / "workflows"
+            workflows.mkdir()
+            executors = root / "executors.yaml"
+            executors.write_text(
+                """version: 1
+executors:
+  required-send:
+    parameters: {}
+    argv: [send, '${config.missing}']
+    env: {}
+""",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(WorkflowError, "is incompatible"):
+                load_catalog(workflows, executors, {"available"})
 
 
 class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
