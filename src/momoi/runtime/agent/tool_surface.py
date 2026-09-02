@@ -4,11 +4,14 @@ import json
 import logging
 from typing import Any
 
-from ...tools.agenda import AGENDA_TOOL_SPECS
-from ...tools.builtin import BUILTIN_TOOL_SPECS, SELF_DIRECTED_BUILTIN_TOOL_SPECS
+from ...tools.contracts.agenda import AGENDA_TOOL_SPECS
+from ...tools.contracts.builtin import (
+    BUILTIN_TOOL_SPECS,
+    SELF_DIRECTED_BUILTIN_TOOL_SPECS,
+)
 from ...observability.events import TRACE, log_event
-from ...tools.memory import MEMORY_TOOL_SPECS
-from ...tools.thinking import THINKING_TOOL_SPECS
+from ...tools.contracts.memory import MEMORY_TOOL_SPECS
+from ...tools.contracts.thinking import THINKING_TOOL_SPECS
 from ...storage import estimate_tokens
 from ..tool_contracts.context import RECALL_TOOL_SPEC, heartbeat_begin_spec
 from ..tool_contracts.conversation import (

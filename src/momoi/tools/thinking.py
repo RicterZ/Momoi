@@ -11,105 +11,6 @@ logger = logging.getLogger(__name__)
 _DEFAULT_SEARCH_LIMIT = 5
 _READ_TOKENS = 1800
 
-THINKING_TOOL_POLICY = """### Thinking tools
-
-Use `thinking_search` and `thinking_read` when the owner asks why Momoi did
-or did not do something, or how a recent Turn decided. These records are
-fallible traces of past model calls, not current policy or owner-visible
-delivery. Outbox and conversation facts take precedence. Do not dump raw
-thinking to the owner; give conclusions and necessary evidence.
-"""
-
-THINKING_TOOL_SPECS: list[dict[str, Any]] = [
-    {
-        "name": "thinking_search",
-        "description": (
-            "Search Momoi's recorded model-call thinking. Supports turn_id, "
-            "keyword, and time_range. Monthly storage is resolved automatically. "
-            "Returns compact excerpts, not full reasoning."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "turn_id": {
-                    "type": "string",
-                    "description": "Exact Turn id when the owner refers to one Turn.",
-                },
-                "query": {
-                    "type": "string",
-                    "description": (
-                        "Optional exact keyword or `|`-separated OR alternatives "
-                        "likely to occur in recorded thinking."
-                    ),
-                },
-                "time_range": {
-                    "type": "object",
-                    "description": (
-                        "Optional search window. Default is the last 30 days "
-                        "when turn_id is omitted."
-                    ),
-                    "properties": {
-                        "kind": {
-                            "type": "string",
-                            "enum": ["recent", "range", "all"],
-                        },
-                        "days": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "maximum": 3650,
-                        },
-                        "from": {"type": "string"},
-                        "to": {"type": "string"},
-                    },
-                    "required": ["kind"],
-                    "additionalProperties": False,
-                },
-                "stage": {
-                    "type": "string",
-                    "description": (
-                        "Optional call stage such as owner, webhook, "
-                        "heartbeat, goal, or reflection."
-                    ),
-                },
-                "limit": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 10,
-                    "default": 5,
-                },
-                "cursor": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "description": "Offset returned as next_cursor.",
-                },
-            },
-            "additionalProperties": False,
-        },
-    },
-    {
-        "name": "thinking_read",
-        "description": (
-            "Read recorded thinking for one Turn returned by thinking_search. "
-            "Pass call_id to read one call; omit it to read every call in the Turn."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "turn_id": {
-                    "type": "string",
-                    "minLength": 1,
-                },
-                "call_id": {
-                    "type": "string",
-                    "description": "Optional call id from thinking_search.",
-                },
-            },
-            "required": ["turn_id"],
-            "additionalProperties": False,
-        },
-    },
-]
-
 
 class ThinkingTools:
     def __init__(self, store: Store) -> None:
@@ -132,9 +33,7 @@ class ThinkingTools:
                 "ok": False,
                 "error": code,
                 "message": (
-                    "time_range is invalid."
-                    if code == "invalid_time_range"
-                    else code
+                    "time_range is invalid." if code == "invalid_time_range" else code
                 ),
             }
         except Exception as error:
@@ -161,7 +60,11 @@ class ThinkingTools:
             else parse_history_time_range(arguments.get("time_range"))
         )
         limit = arguments.get("limit", _DEFAULT_SEARCH_LIMIT)
-        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 10:
+        if (
+            not isinstance(limit, int)
+            or isinstance(limit, bool)
+            or not 1 <= limit <= 10
+        ):
             limit = _DEFAULT_SEARCH_LIMIT
         cursor = arguments.get("cursor", 0)
         if not isinstance(cursor, int) or isinstance(cursor, bool) or cursor < 0:

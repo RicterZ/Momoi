@@ -8,8 +8,8 @@ from typing import Any
 from ...contracts import ToolResult
 from ...observability.events import log_event
 from ...observability.values import compact_log_value, safe_preview
-from ...tools.memory import MEMORY_TOOL_SPECS
-from ...tools.thinking import THINKING_TOOL_SPECS
+from ...tools.contracts.memory import MEMORY_TOOL_SPECS
+from ...tools.contracts.thinking import THINKING_TOOL_SPECS
 from ...models import ToolCall, TurnDraft
 from ..turn_support import truncate_tool_result_json
 

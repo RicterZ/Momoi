@@ -1,12 +1,12 @@
 import logging
 from typing import Any
 
-from ..tools.agenda import AGENDA_TOOL_POLICY
+from ..tools.contracts.agenda import AGENDA_TOOL_POLICY
 from ..observability.events import log_event
 from ..observability.values import safe_preview
 from ..mcp.prompt import MCP_TOOL_POLICY
-from ..tools.memory import MEMORY_TOOL_POLICY
-from ..tools.thinking import THINKING_TOOL_POLICY
+from ..tools.contracts.memory import MEMORY_TOOL_POLICY
+from ..tools.contracts.thinking import THINKING_TOOL_POLICY
 from .turn_support import (
     AGENDA_POLICY_TOOLS,
     HEARTBEAT_PROMPT_PATH,

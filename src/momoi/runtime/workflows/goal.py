@@ -3,12 +3,15 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from ...tools.agenda import AGENDA_TOOL_SPECS, AUTONOMOUS_SEND_BUBBLES_SPEC
-from ...tools.builtin import BUILTIN_TOOL_SPECS
+from ...tools.contracts.agenda import (
+    AGENDA_TOOL_SPECS,
+    AUTONOMOUS_SEND_BUBBLES_SPEC,
+)
+from ...tools.contracts.builtin import BUILTIN_TOOL_SPECS
 from ...context_time import context_timestamp
 from ...observability.events import log_event
 from ...observability.values import safe_preview
-from ...tools.memory import MEMORY_TOOL_SPECS
+from ...tools.contracts.memory import MEMORY_TOOL_SPECS
 from ...models import TurnDraft
 from ...llm.errors import ProviderError
 from ..agent import TurnExecutionSpec

@@ -5,11 +5,11 @@ import time
 from datetime import datetime
 from typing import Any
 
-from ...tools.agenda import AGENDA_TOOL_SPECS
+from ...tools.contracts.agenda import AGENDA_TOOL_SPECS
 from ...observability.events import log_event
 from ...observability.values import safe_preview
-from ...tools.memory import MEMORY_TOOL_SPECS
-from ...tools.thinking import THINKING_TOOL_SPECS
+from ...tools.contracts.memory import MEMORY_TOOL_SPECS
+from ...tools.contracts.thinking import THINKING_TOOL_SPECS
 from ...models import AgentReply, TurnDraft
 from ...reply_wait import REPLY_FOLLOWUP_RETRY_SECONDS
 from ...storage import estimate_tokens, truncate_tokens

@@ -10,10 +10,14 @@ def parse_history_time_range(
     now = time.time()
     if value is None:
         after = now - DEFAULT_HISTORY_LOOKBACK_DAYS * 86400
-        return after, None, {
-            "kind": "recent",
-            "days": DEFAULT_HISTORY_LOOKBACK_DAYS,
-        }
+        return (
+            after,
+            None,
+            {
+                "kind": "recent",
+                "days": DEFAULT_HISTORY_LOOKBACK_DAYS,
+            },
+        )
     if not isinstance(value, dict):
         raise ValueError("invalid_time_range")
     kind = value.get("kind")
@@ -38,13 +42,19 @@ def parse_history_time_range(
             )
         except (ValueError, TypeError):
             raise ValueError("invalid_time_range") from None
-        if after is None and before is None or (
-            after is not None and before is not None and after >= before
+        if (
+            after is None
+            and before is None
+            or (after is not None and before is not None and after >= before)
         ):
             raise ValueError("invalid_time_range")
-        return after, before, {
-            "kind": "range",
-            **({"from": str(value["from"])} if after is not None else {}),
-            **({"to": str(value["to"])} if before is not None else {}),
-        }
+        return (
+            after,
+            before,
+            {
+                "kind": "range",
+                **({"from": str(value["from"])} if after is not None else {}),
+                **({"to": str(value["to"])} if before is not None else {}),
+            },
+        )
     raise ValueError("invalid_time_range")

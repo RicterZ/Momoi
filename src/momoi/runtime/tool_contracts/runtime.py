@@ -1,6 +1,6 @@
 from typing import Any
 
-from ...tools.builtin import BUILTIN_TOOL_SPECS
+from ...tools.contracts.builtin import BUILTIN_TOOL_SPECS
 
 
 CURL_TOOL_SPEC = next(spec for spec in BUILTIN_TOOL_SPECS if spec["name"] == "curl")

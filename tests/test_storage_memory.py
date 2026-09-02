@@ -8,8 +8,10 @@ from pathlib import Path
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
-from momoi.tools.agenda import AGENDA_TOOL_POLICY, AGENDA_TOOL_SPECS, AgendaTools
+from momoi.tools.agenda import AgendaTools
 from momoi.tools.builtin import BuiltinTools
+from momoi.tools.contracts.agenda import AGENDA_TOOL_POLICY, AGENDA_TOOL_SPECS
+from momoi.tools.contracts.memory import MEMORY_TOOL_POLICY, MEMORY_TOOL_SPECS
 from momoi.channel.napcat import NapCatConfig
 from momoi.config.models import (
     AppConfig,
@@ -18,7 +20,7 @@ from momoi.config.models import (
     NotificationConfig,
 )
 from momoi.context_time import context_timestamp
-from momoi.tools.memory import MEMORY_TOOL_POLICY, MEMORY_TOOL_SPECS, MemoryTools
+from momoi.tools.memory import MemoryTools
 from momoi.models import (
     AgentReply,
     IncomingMessage,
@@ -178,9 +180,7 @@ class StorageMemoryTest(unittest.TestCase):
                 len([row for row in ranked if row["source"] == "confirmed"]),
                 5,
             )
-            self.assertFalse(
-                [row for row in ranked if row["source"] == "reflection"]
-            )
+            self.assertFalse([row for row in ranked if row["source"] == "reflection"])
             store.close()
 
     def test_fresh_confident_reflection_can_match_the_third_ranked_query(
@@ -256,9 +256,7 @@ class StorageMemoryTest(unittest.TestCase):
                 primary[0]["eligibility_score"],
                 tertiary[0]["eligibility_score"],
             )
-            self.assertGreater(
-                primary[0]["search_score"], tertiary[0]["search_score"]
-            )
+            self.assertGreater(primary[0]["search_score"], tertiary[0]["search_score"])
             store.close()
 
     def test_context_read_indexes_are_installed(self) -> None:
@@ -310,7 +308,9 @@ class StorageMemoryTest(unittest.TestCase):
                     turn_id="same-activity",
                 )
             continuing = store.self_state()
-            self.assertEqual(continuing["activity_result"], "和老师确认联动大概是日本限定")
+            self.assertEqual(
+                continuing["activity_result"], "和老师确认联动大概是日本限定"
+            )
             self.assertEqual(continuing["activity_since"], 500)
 
             with patch("momoi.storage.turn_commits.time.time", return_value=1100):
@@ -331,7 +331,9 @@ class StorageMemoryTest(unittest.TestCase):
                 changed["activity"],
                 "和老师聊清双人操控能力限制，停下今晚的合作准备",
             )
-            self.assertEqual(changed["activity_result"], "双人合作推迟到 agent 能力升级以后")
+            self.assertEqual(
+                changed["activity_result"], "双人合作推迟到 agent 能力升级以后"
+            )
             self.assertEqual(changed["activity_since"], 1100)
             self.assertEqual(changed["last_heartbeat_at"], 400)
             self.assertEqual(changed["next_heartbeat_at"], 2000)
@@ -462,9 +464,7 @@ class StorageMemoryTest(unittest.TestCase):
                 )
                 store._reindex_episode_terms("long-running")
 
-            old = store.search_episodes(
-                "七月旧暗号", 5, after=50, before=150
-            )
+            old = store.search_episodes("七月旧暗号", 5, after=50, before=150)
             self.assertEqual([item["id"] for item in old], ["long-running"])
             self.assertEqual(old[0]["last_activity_at"], 100)
             self.assertEqual(
@@ -491,7 +491,9 @@ class StorageMemoryTest(unittest.TestCase):
                 [],
                 TurnDraft(),
             )
-            self.assertEqual(searched["results"][0]["summary_quality"], "window_matches")
+            self.assertEqual(
+                searched["results"][0]["summary_quality"], "window_matches"
+            )
             self.assertIn("七月旧暗号", searched["results"][0]["summary"])
             self.assertNotIn("八月新内容", searched["results"][0]["summary"])
             self.assertEqual(searched["results"][0]["topics"], [])
@@ -665,12 +667,8 @@ class StorageMemoryTest(unittest.TestCase):
             store.commit_turn([], "较早的聊天", AgentReply([]), turn_id="older")
             store.commit_turn([], "后来才发生的聊天", AgentReply([]), turn_id="later")
             with store._db:
-                store._db.execute(
-                    "UPDATE turns SET updated_at=100 WHERE id='older'"
-                )
-                store._db.execute(
-                    "UPDATE turns SET updated_at=300 WHERE id='later'"
-                )
+                store._db.execute("UPDATE turns SET updated_at=100 WHERE id='older'")
+                store._db.execute("UPDATE turns SET updated_at=300 WHERE id='later'")
 
             messages = store.recent_conversation_messages(
                 10, 2000, before_timestamp=200
@@ -718,9 +716,7 @@ class StorageMemoryTest(unittest.TestCase):
 
             self.assertEqual(linked, 2)
             self.assertEqual(deferred, 0)
-            self.assertIsNone(
-                store.claim_episode_consolidation_candidate(minimum=1)
-            )
+            self.assertIsNone(store.claim_episode_consolidation_candidate(minimum=1))
             episode_id = store._db.execute(
                 """SELECT episode_id FROM episode_turns
                    WHERE turn_id='game-1'"""
@@ -750,9 +746,7 @@ class StorageMemoryTest(unittest.TestCase):
 
             self.assertIsNone(store.claim_episode_consolidation_candidate())
 
-            store.commit_turn(
-                [], "pending-6", AgentReply([]), turn_id="turn-6"
-            )
+            store.commit_turn([], "pending-6", AgentReply([]), turn_id="turn-6")
             candidate = store.claim_episode_consolidation_candidate()
             self.assertIsNotNone(candidate)
             self.assertEqual(
@@ -777,15 +771,11 @@ class StorageMemoryTest(unittest.TestCase):
                 "open_loops": [],
                 "salience": 0.5,
             }
-            with self.assertRaisesRegex(
-                ValueError, "unknown consolidation episode"
-            ):
+            with self.assertRaisesRegex(ValueError, "unknown consolidation episode"):
                 store.apply_episode_consolidation(["turn-1"], [decision], [])
 
             self.assertEqual(
-                store.apply_episode_consolidation(
-                    ["turn-1"], [decision], ["old-game"]
-                ),
+                store.apply_episode_consolidation(["turn-1"], [decision], ["old-game"]),
                 (1, 0),
             )
             store.close()
@@ -836,9 +826,15 @@ class StorageMemoryTest(unittest.TestCase):
             archive_ids = {webhook_archive_id, heartbeat_archive_id, goal_archive_id}
             self.assertEqual(store._runtime_archive_kind(goal_archive_id), "goal")
             self.assertEqual(store.episode(goal_archive_id)["archive_kind"], "goal")
-            self.assertEqual(store.episode(goal_archive_id)["archive_day"], "2026-08-26")
-            self.assertEqual(store.episode(webhook_archive_id)["archive_kind"], "webhook")
-            self.assertEqual(store.episode(heartbeat_archive_id)["archive_day"], "2026-08-25")
+            self.assertEqual(
+                store.episode(goal_archive_id)["archive_day"], "2026-08-26"
+            )
+            self.assertEqual(
+                store.episode(webhook_archive_id)["archive_kind"], "webhook"
+            )
+            self.assertEqual(
+                store.episode(heartbeat_archive_id)["archive_day"], "2026-08-25"
+            )
             heartbeat_title = store.episode(heartbeat_archive_id)["title"]
             self.assertEqual(heartbeat_title, "心跳 · 2026-08-25")
             dashboard = {
@@ -846,9 +842,7 @@ class StorageMemoryTest(unittest.TestCase):
                 for item in store.list_dashboard_conversations(8)
                 if item["record_type"] == "episode"
             }
-            self.assertEqual(
-                dashboard[goal_archive_id], "Goal night · 2026-08-26"
-            )
+            self.assertEqual(dashboard[goal_archive_id], "Goal night · 2026-08-26")
             self.assertLessEqual(
                 archive_ids,
                 {item["id"] for item in store.list_recent_episode_directory(8)},
@@ -1064,12 +1058,8 @@ class StorageMemoryTest(unittest.TestCase):
 
     def test_runtime_archive_day_uses_configured_timezone(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            store = Store(
-                Path(directory) / "momoi.sqlite3", timezone="Asia/Shanghai"
-            )
-            timestamp = datetime(
-                2026, 9, 1, 16, 30, tzinfo=ZoneInfo("UTC")
-            ).timestamp()
+            store = Store(Path(directory) / "momoi.sqlite3", timezone="Asia/Shanghai")
+            timestamp = datetime(2026, 9, 1, 16, 30, tzinfo=ZoneInfo("UTC")).timestamp()
 
             self.assertEqual(store._archive_day(timestamp), "2026-09-02")
             store.close()
@@ -1105,7 +1095,9 @@ class StorageMemoryTest(unittest.TestCase):
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
-            store.commit_turn([], "你在干嘛", AgentReply(["我在打游戏"]), turn_id="first")
+            store.commit_turn(
+                [], "你在干嘛", AgentReply(["我在打游戏"]), turn_id="first"
+            )
             first_outbox = store._db.execute(
                 "SELECT id FROM outbox WHERE turn_id='first'"
             ).fetchone()["id"]
@@ -1136,9 +1128,7 @@ class StorageMemoryTest(unittest.TestCase):
                 ).fetchone()["action"],
                 "deferred",
             )
-            self.assertIsNone(
-                store.claim_episode_consolidation_candidate(minimum=1)
-            )
+            self.assertIsNone(store.claim_episode_consolidation_candidate(minimum=1))
 
             store.commit_turn([], "在玩什么", AgentReply(["塞尔达"]), turn_id="second")
             second_outbox = store._db.execute(
@@ -1168,9 +1158,7 @@ class StorageMemoryTest(unittest.TestCase):
                 ),
                 (2, 0),
             )
-            self.assertIsNone(
-                store.claim_episode_consolidation_candidate(minimum=1)
-            )
+            self.assertIsNone(store.claim_episode_consolidation_candidate(minimum=1))
             store.close()
 
     def test_deferred_turn_reconsiders_with_already_linked_later_context(
@@ -1178,7 +1166,9 @@ class StorageMemoryTest(unittest.TestCase):
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
-            store.commit_turn([], "你在干嘛", AgentReply(["我在打游戏"]), turn_id="first")
+            store.commit_turn(
+                [], "你在干嘛", AgentReply(["我在打游戏"]), turn_id="first"
+            )
             first_outbox = store._db.execute(
                 "SELECT id FROM outbox WHERE turn_id='first'"
             ).fetchone()["id"]
@@ -1243,9 +1233,7 @@ class StorageMemoryTest(unittest.TestCase):
                 ],
                 [("first", 1), ("second", 2)],
             )
-            self.assertIsNone(
-                store.claim_episode_consolidation_candidate(minimum=1)
-            )
+            self.assertIsNone(store.claim_episode_consolidation_candidate(minimum=1))
             store.close()
 
     def test_deferred_latest_may_be_ignored_when_later_context_exists(
@@ -1294,9 +1282,7 @@ class StorageMemoryTest(unittest.TestCase):
                 ).fetchone()["action"],
                 "ignored",
             )
-            self.assertIsNone(
-                store.claim_episode_consolidation_candidate(minimum=1)
-            )
+            self.assertIsNone(store.claim_episode_consolidation_candidate(minimum=1))
             store.close()
 
     def test_latest_consolidation_turn_cannot_be_ignored(self) -> None:
@@ -1322,9 +1308,7 @@ class StorageMemoryTest(unittest.TestCase):
                     ],
                     [],
                 )
-            self.assertIsNotNone(
-                store.claim_episode_consolidation_candidate(minimum=1)
-            )
+            self.assertIsNotNone(store.claim_episode_consolidation_candidate(minimum=1))
             store.close()
 
     def test_episode_consolidation_skips_completed_turns_without_messages(
@@ -1356,9 +1340,7 @@ class StorageMemoryTest(unittest.TestCase):
                 "SELECT id FROM outbox WHERE turn_id='earlier'"
             ).fetchone()["id"]
             store.mark_sent(int(earlier_outbox))
-            store.commit_turn(
-                [], "在玩什么", AgentReply(["塞尔达"]), turn_id="later"
-            )
+            store.commit_turn([], "在玩什么", AgentReply(["塞尔达"]), turn_id="later")
             later_outbox = store._db.execute(
                 "SELECT id FROM outbox WHERE turn_id='later'"
             ).fetchone()["id"]
@@ -1463,9 +1445,7 @@ class StorageMemoryTest(unittest.TestCase):
                     "uncertainty": [],
                 },
             )
-            store.commit_turn(
-                [event], event.text, AgentReply([]), turn_id="next"
-            )
+            store.commit_turn([event], event.text, AgentReply([]), turn_id="next")
 
             successor = store._db.execute(
                 """SELECT from_episode_id FROM episode_links
@@ -1502,7 +1482,9 @@ class StorageMemoryTest(unittest.TestCase):
                     "episode_actions": [
                         {
                             "action": (
-                                "new" if store.episode(episode_id) is None else "continue"
+                                "new"
+                                if store.episode(episode_id) is None
+                                else "continue"
                             ),
                             "episode_id": episode_id,
                             "is_new": store.episode(episode_id) is None,
@@ -1560,7 +1542,9 @@ class StorageMemoryTest(unittest.TestCase):
         self.assertIn("times", daily["properties"])
         self.assertNotIn("at", daily["properties"])
         self.assertEqual(daily["required"], ["kind", "times"])
-        self.assertNotIn("reminder_create", {item["name"] for item in AGENDA_TOOL_SPECS})
+        self.assertNotIn(
+            "reminder_create", {item["name"] for item in AGENDA_TOOL_SPECS}
+        )
         self.assertIn("Use a Goal for every future action", AGENDA_TOOL_POLICY)
         self.assertIn("governed", AGENDA_TOOL_POLICY)
         self.assertIn("by the shared Style Card", AGENDA_TOOL_POLICY)
@@ -1573,7 +1557,10 @@ class StorageMemoryTest(unittest.TestCase):
         self.assertIn("native transcript tool", MEMORY_TOOL_POLICY)
         self.assertIn("replace_confirmed=true", MEMORY_TOOL_POLICY)
         self.assertIn("this is `recent`, never", MEMORY_TOOL_POLICY)
-        self.assertIn("A procedure you are afraid of forgetting is not `always`", MEMORY_TOOL_POLICY)
+        self.assertIn(
+            "A procedure you are afraid of forgetting is not `always`",
+            MEMORY_TOOL_POLICY,
+        )
         remember = next(
             spec for spec in MEMORY_TOOL_SPECS if spec["name"] == "memory_remember"
         )
@@ -1843,9 +1830,7 @@ class StorageMemoryTest(unittest.TestCase):
                     }
                 ]
             }
-            store.save_context_plan(
-                "recalled-turn", 1, ["event-1"], recalled_plan
-            )
+            store.save_context_plan("recalled-turn", 1, ["event-1"], recalled_plan)
             store.save_context_retrieval(
                 "recalled-turn",
                 1,
@@ -1857,13 +1842,9 @@ class StorageMemoryTest(unittest.TestCase):
                 },
             )
             store.link_turn_to_episode("trip", "recalled-turn", unit_ids=["u1"])
-            store.save_context_plan(
-                "planned-turn", 1, ["event-2"], recalled_plan
-            )
+            store.save_context_plan("planned-turn", 1, ["event-2"], recalled_plan)
             store.link_turn_to_episode("trip", "planned-turn", unit_ids=["u1"])
-            store.save_context_plan(
-                "missed-turn", 1, ["event-3"], recalled_plan
-            )
+            store.save_context_plan("missed-turn", 1, ["event-3"], recalled_plan)
             store.save_context_retrieval(
                 "missed-turn",
                 1,
@@ -2092,9 +2073,7 @@ class StorageMemoryTest(unittest.TestCase):
             payload = json.dumps(
                 {
                     "action": "message",
-                    "segments": [
-                        {"type": "image", "data": {"file": stored_path}}
-                    ],
+                    "segments": [{"type": "image", "data": {"file": stored_path}}],
                 }
             )
             store._db.execute(
@@ -2388,7 +2367,12 @@ class StorageMemoryTest(unittest.TestCase):
                         "notify",
                         "send_bubbles",
                         {
-                            "bubbles": ["检查完成", "目前正常", "没有数量上限", "继续观察"],
+                            "bubbles": [
+                                "检查完成",
+                                "目前正常",
+                                "没有数量上限",
+                                "继续观察",
+                            ],
                             "reason": "任务阶段结果",
                             "key": "service.check",
                         },
@@ -2479,9 +2463,7 @@ class StorageMemoryTest(unittest.TestCase):
             tempfile.TemporaryDirectory() as directory,
             patch("momoi.storage.heartbeat_commits.time.time", return_value=now),
         ):
-            store = Store(
-                Path(directory) / "momoi.sqlite3", timezone="Asia/Shanghai"
-            )
+            store = Store(Path(directory) / "momoi.sqlite3", timezone="Asia/Shanghai")
             self.assertEqual(store.self_state()["next_heartbeat_at"], 0)
             store.ensure_heartbeat(heartbeat, now)
             self.assertEqual(store.next_heartbeat_due_at(True), now + 60)
@@ -2595,13 +2577,9 @@ class StorageMemoryTest(unittest.TestCase):
                 initial_pending["expected_information"], "主人对晚餐的选择"
             )
             self.assertEqual(initial_pending["delay_minutes"], 5)
-            self.assertEqual(
-                initial_pending["reason"], "晚餐需要按主人的选择来准备"
-            )
+            self.assertEqual(initial_pending["reason"], "晚餐需要按主人的选择来准备")
             self.assertEqual(store.next_heartbeat_due_at(False), 1300)
-            self.assertIsNone(
-                store.claim_episode_consolidation_candidate(minimum=1)
-            )
+            self.assertIsNone(store.claim_episode_consolidation_candidate(minimum=1))
             self.assertIsNotNone(
                 store.claim_due_heartbeat(heartbeat, NotificationConfig(), now=1300)
             )
@@ -2790,9 +2768,7 @@ class StorageMemoryTest(unittest.TestCase):
                     "SELECT reply_expectation FROM outbox WHERE id=?", (outbox.id,)
                 ).fetchone()[0]
             )
-            self.assertEqual(
-                stored_wait["expected_information"], "老师想说的后续"
-            )
+            self.assertEqual(stored_wait["expected_information"], "老师想说的后续")
             pending = store.pending_owner_reply(1010)
             self.assertEqual(pending["expected_information"], "老师想说的后续")
             self.assertEqual(store.next_heartbeat_due_at(False), 1190)
@@ -2877,12 +2853,8 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertIsNone(state["pending_reply_next_check_at"])
             self.assertEqual(store.next_heartbeat_due_at(True), 4900)
             interrupted = json.loads(store.cooled_reply_expectation_context(1020))
-            self.assertEqual(
-                interrupted["state"], "owner_replied_before_deadline"
-            )
-            self.assertEqual(
-                interrupted["expected_information"], "主人的风险偏好"
-            )
+            self.assertEqual(interrupted["state"], "owner_replied_before_deadline")
+            self.assertEqual(interrupted["expected_information"], "主人的风险偏好")
             self.assertIn("风险机制", interrupted["reason"])
             store.close()
 
@@ -2912,9 +2884,7 @@ class StorageMemoryTest(unittest.TestCase):
             with patch("momoi.storage.delivery.time.time", return_value=1000):
                 store.mark_sent(store.due_outbox()[0].id)
             self.assertIsNotNone(
-                store.claim_due_heartbeat(
-                    heartbeat, NotificationConfig(), now=1060
-                )
+                store.claim_due_heartbeat(heartbeat, NotificationConfig(), now=1060)
             )
             store.begin_turn(
                 "claimed-followup",
@@ -3092,9 +3062,7 @@ class StorageMemoryTest(unittest.TestCase):
                    pending_reply_expectation='', pending_reply_next_check_at=NULL
                    WHERE id=1"""
             )
-            self.assertIsNotNone(
-                store.claim_episode_annealing_candidate(1, 10000)
-            )
+            self.assertIsNotNone(store.claim_episode_annealing_candidate(1, 10000))
             store.close()
 
     def test_new_owner_event_suppresses_heartbeat_visible_reply(self) -> None:
@@ -3548,9 +3516,7 @@ class StorageMemoryTest(unittest.TestCase):
 
         zone = ZoneInfo("Asia/Shanghai")
         with tempfile.TemporaryDirectory() as directory:
-            store = Store(
-                Path(directory) / "momoi.sqlite3", timezone="Asia/Shanghai"
-            )
+            store = Store(Path(directory) / "momoi.sqlite3", timezone="Asia/Shanghai")
             quiet = NotificationConfig(
                 quiet_start="23:00",
                 quiet_end="08:00",
@@ -3574,9 +3540,7 @@ class StorageMemoryTest(unittest.TestCase):
             store.close()
 
         with tempfile.TemporaryDirectory() as directory:
-            store = Store(
-                Path(directory) / "momoi.sqlite3", timezone="Asia/Shanghai"
-            )
+            store = Store(Path(directory) / "momoi.sqlite3", timezone="Asia/Shanghai")
             now = datetime(2030, 1, 2, 10, 0, tzinfo=zone).timestamp()
             pending = IncomingMessage("qq:pending", "pending", "主人消息", now, now)
             store.add_event(pending)
@@ -4211,9 +4175,7 @@ class StorageMemoryTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
             tools = MemoryTools(store)
-            event = IncomingMessage(
-                "qq:ttl", "ttl", "现在窝在沙发上", 1, 1
-            )
+            event = IncomingMessage("qq:ttl", "ttl", "现在窝在沙发上", 1, 1)
             store.add_event(event)
             draft = TurnDraft()
             result = tools.execute(
