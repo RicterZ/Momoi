@@ -83,6 +83,7 @@ class ToolBatchExecutor:
         bubble_delivery: Any,
         agenda_tools: Any,
         memory_tools: Any,
+        thinking_tools: Any,
         tool_results: Any,
         outbox_changed: Any,
     ) -> None:
@@ -93,6 +94,7 @@ class ToolBatchExecutor:
         self.bubble_delivery = bubble_delivery
         self.agenda_tools = agenda_tools
         self.memory_tools = memory_tools
+        self.thinking_tools = thinking_tools
         self.tool_results = tool_results
         self.outbox_changed = outbox_changed
 
@@ -330,10 +332,14 @@ class ToolBatchExecutor:
                     source_event_id=request.source_event_id,
                     allow_notify=execution.allow_notify,
                 )
-            else:
+            elif source == "memory":
                 result = await self.memory_tools.execute_async(
                     call, request.current_events, request.draft
                 )
+            elif source == "thinking":
+                result = self.thinking_tools.execute(call)
+            else:
+                result = {"ok": False, "error": "tool_not_allowed"}
 
             if "provenance" not in result:
                 result = self.tool_executor.normalize(call, result, source)

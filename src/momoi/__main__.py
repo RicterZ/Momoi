@@ -9,7 +9,7 @@ from importlib.metadata import version
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from .agenda_tools import AgendaTools
+from .tools.agenda import AgendaTools
 from .channel import login_channel
 from .config import ConfigError, load_config
 from .emotions import managed_emotion_path, remove_unreferenced_emotion_asset

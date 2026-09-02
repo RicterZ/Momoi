@@ -8,8 +8,8 @@ from pathlib import Path
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
-from momoi.agenda_tools import AGENDA_TOOL_POLICY, AGENDA_TOOL_SPECS, AgendaTools
-from momoi.builtin_tools import BuiltinTools
+from momoi.tools.agenda import AGENDA_TOOL_POLICY, AGENDA_TOOL_SPECS, AgendaTools
+from momoi.tools.builtin import BuiltinTools
 from momoi.channel.napcat import NapCatConfig
 from momoi.config import (
     AppConfig,
@@ -18,7 +18,7 @@ from momoi.config import (
     NotificationConfig,
 )
 from momoi.context_time import context_timestamp
-from momoi.memory_tools import MEMORY_TOOL_POLICY, MEMORY_TOOL_SPECS, MemoryTools
+from momoi.tools.memory import MEMORY_TOOL_POLICY, MEMORY_TOOL_SPECS, MemoryTools
 from momoi.models import (
     AgentReply,
     IncomingMessage,

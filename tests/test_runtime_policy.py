@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from momoi.memory_tools import MemoryTools
+from momoi.tools.memory import MemoryTools
 from momoi.models import IncomingMessage, ToolCall, TurnDraft
 from momoi.policies import (
     ContextPolicy,

@@ -5,9 +5,10 @@ import time
 from datetime import datetime
 from typing import Any
 
-from ...agenda_tools import AGENDA_TOOL_SPECS
+from ...tools.agenda import AGENDA_TOOL_SPECS
 from ...logging_context import log_event, safe_preview
-from ...memory_tools import MEMORY_TOOL_SPECS
+from ...tools.memory import MEMORY_TOOL_SPECS
+from ...tools.thinking import THINKING_TOOL_SPECS
 from ...models import AgentReply, TurnDraft
 from ...reply_wait import REPLY_FOLLOWUP_RETRY_SECONDS
 from ...storage import estimate_tokens, truncate_tokens
@@ -256,6 +257,7 @@ class HeartbeatWorkflow:
         ]
         tools = [
             *MEMORY_TOOL_SPECS,
+            *THINKING_TOOL_SPECS,
             *AGENDA_TOOL_SPECS,
             *self.tool_surface.heartbeat_external_specs(),
             self.tool_surface.send_bubbles_spec(delivery_channel.name),

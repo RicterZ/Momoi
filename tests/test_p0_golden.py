@@ -2,8 +2,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from momoi.agenda_tools import AgendaTools
-from momoi.memory_tools import MemoryTools
+from momoi.tools.agenda import AgendaTools
+from momoi.tools.memory import MemoryTools
 from momoi.models import AgentReply, IncomingMessage, ToolCall, TurnDraft
 from momoi.storage import Store
 

@@ -7,7 +7,8 @@ from typing import Any
 
 from ...contracts import ToolResult
 from ...logging_context import compact_log_value, log_event, safe_preview
-from ...memory_tools import MEMORY_TOOL_SPECS
+from ...tools.memory import MEMORY_TOOL_SPECS
+from ...tools.thinking import THINKING_TOOL_SPECS
 from ...models import ToolCall, TurnDraft
 from ..turn_support import truncate_tool_result_json
 
@@ -54,6 +55,9 @@ class ToolExecutor:
         self.agenda_tools = agenda_tools
         self.tool_results = tool_results
         self.memory_tool_names = {str(spec["name"]) for spec in MEMORY_TOOL_SPECS}
+        self.thinking_tool_names = {
+            str(spec["name"]) for spec in THINKING_TOOL_SPECS
+        }
         self.artifact_root = artifact_root(config)
         self.result_root = tool_result_root(config)
 
@@ -77,6 +81,8 @@ class ToolExecutor:
             return "agenda"
         if name in self.memory_tool_names:
             return "memory"
+        if name in self.thinking_tool_names:
+            return "thinking"
         return "unknown"
 
     def is_external(self, name: str) -> bool:
@@ -115,7 +121,14 @@ class ToolExecutor:
         round_number: int,
         channel: str,
     ) -> ToolCallTrace:
-        journaled = source in {"mcp", "builtin", "agenda", "memory", "workflow"}
+        journaled = source in {
+            "mcp",
+            "builtin",
+            "agenda",
+            "memory",
+            "thinking",
+            "workflow",
+        }
         if journaled:
             arguments = dict(call.arguments)
             arguments.pop("say_to_owner", None)

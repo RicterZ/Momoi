@@ -1,6 +1,6 @@
 from typing import Any
 
-from ...builtin_tools import BUILTIN_TOOL_SPECS
+from ...tools.builtin import BUILTIN_TOOL_SPECS
 
 
 CURL_TOOL_SPEC = next(spec for spec in BUILTIN_TOOL_SPECS if spec["name"] == "curl")
@@ -79,4 +79,3 @@ READ_TOOL_RESULT_SPEC: dict[str, Any] = {
         "additionalProperties": False,
     },
 }
-

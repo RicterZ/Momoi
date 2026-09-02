@@ -3,18 +3,18 @@ import logging
 import re
 from typing import Any
 
-from .history_time_range import parse_history_time_range
-from .logging_context import log_event
-from .models import (
+from .time_range import parse_history_time_range
+from ..logging_context import log_event
+from ..models import (
     IncomingMessage,
     MemoryCandidate,
     MemoryForgetCandidate,
     ToolCall,
     TurnDraft,
 )
-from .policies import MemoryPolicy
-from .search import SearchBackend, search_expression
-from .storage import (
+from ..policies import MemoryPolicy
+from ..search import SearchBackend, search_expression
+from ..storage import (
     ALWAYS_MEMORY_KINDS,
     MEMORY_ACTIVATIONS,
     MEMORY_KINDS,
@@ -22,9 +22,8 @@ from .storage import (
     MemoryRecallQuery,
     truncate_tokens,
 )
-from .storage.episode_ranking import EpisodeRecallQuery
-from .semantic import DenseRecallEvidence, SemanticRecallService
-from .thinking_tools import THINKING_TOOL_SPECS, ThinkingTools
+from ..storage.episode_ranking import EpisodeRecallQuery
+from ..semantic import DenseRecallEvidence, SemanticRecallService
 
 logger = logging.getLogger(__name__)
 _EPISODE_SEARCH_SUMMARY_TOKENS = 300
@@ -417,7 +416,7 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
             "additionalProperties": False,
         },
     },
-] + THINKING_TOOL_SPECS
+]
 
 
 _MEMORY_ERROR_MESSAGES = {
@@ -471,7 +470,6 @@ class MemoryTools:
     ) -> None:
         self.store = store
         self.policy = policy
-        self.thinking = ThinkingTools(store)
         self.semantic_recall = semantic_recall
 
     async def execute_async(
@@ -533,8 +531,6 @@ class MemoryTools:
         draft: TurnDraft,
     ) -> dict[str, Any]:
         try:
-            if call.name in {"thinking_search", "thinking_read"}:
-                return self.thinking.execute(call)
             if call.name == "memory_search":
                 return self._search(call.arguments, draft)
             if call.name == "episode_search":

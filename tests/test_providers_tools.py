@@ -11,7 +11,7 @@ from unittest.mock import patch
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
-from momoi.builtin_tools import BuiltinTools
+from momoi.tools.builtin import BuiltinTools
 from momoi.channel.napcat import NapCatConfig
 from momoi.config import (
     AppConfig,

@@ -3,9 +3,9 @@ import logging
 from collections import deque
 from typing import Any
 
-from ..agenda_tools import AgendaTools
+from ..tools.agenda import AgendaTools
 from ..asr import ASRProvider, load_asr_provider
-from ..builtin_tools import BuiltinTools
+from ..tools.builtin import BuiltinTools
 from ..channel import (
     Channel,
     ChannelDependencies,
@@ -15,7 +15,8 @@ from ..config import AppConfig
 from ..dashboard import DashboardService
 from ..extensions import load_usage_plugin
 from ..logging_context import log_event
-from ..memory_tools import MemoryTools
+from ..tools.memory import MemoryTools
+from ..tools.thinking import ThinkingTools
 from ..mcp_client import MCPManager
 from ..models import AgentReply, IncomingMessage
 from ..provider import AnthropicProvider, OpenAIProvider
@@ -99,6 +100,7 @@ class MomoiDaemon(
         self.memory_tools = MemoryTools(
             self.store, config.policies.memory, self.semantic_recall
         )
+        self.thinking_tools = ThinkingTools(self.store)
         self.builtin_tools = BuiltinTools(
             config.workspace or config.database.parent,
             private_roots=(tool_result_root(config),),
@@ -192,6 +194,7 @@ class MomoiDaemon(
             self.bubble_delivery,
             self.agenda_tools,
             self.memory_tools,
+            self.thinking_tools,
             self.tool_results,
             self.outbox_changed,
         )

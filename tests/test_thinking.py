@@ -7,7 +7,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 from momoi.config import load_config
 from momoi.logging_context import log_context
-from momoi.memory_tools import MemoryTools
+from momoi.tools.memory import MemoryTools
 from momoi.models import ToolCall, TurnDraft
 from momoi.provider import _anthropic_reasoning, _openai_reasoning, _persist_thinking
 from momoi.storage import Store
@@ -16,7 +16,7 @@ from momoi.storage.thinking import (
     encode_reasoning,
     month_key,
 )
-from momoi.thinking_tools import ThinkingTools
+from momoi.tools.thinking import ThinkingTools
 
 
 def _config(directory: Path, thinking: str | None = None) -> Path:
@@ -150,13 +150,16 @@ class ThinkingStoreTests(unittest.TestCase):
             )
             self.assertTrue(read["ok"])
             self.assertIn("静默", read["calls"][0]["reasoning"])
-            routed = MemoryTools(store).execute(
+            turn_scoped = tools.execute(
                 ToolCall("t3", "thinking_search", {"turn_id": "webhook:abc:0"}),
+            )
+            self.assertEqual(turn_scoped["time_range"], {"kind": "turn"})
+            memory_result = MemoryTools(store).execute(
+                ToolCall("t4", "thinking_search", {"turn_id": "webhook:abc:0"}),
                 [],
                 TurnDraft(),
             )
-            self.assertTrue(routed["ok"])
-            self.assertEqual(routed["time_range"], {"kind": "turn"})
+            self.assertEqual(memory_result["error"], "tool_not_allowed")
             store.close()
 
     def test_extracts_and_persists_provider_reasoning(self) -> None:

@@ -10,8 +10,8 @@ from typing import Any
 
 import aiohttp
 
-from .contracts import OWNER_PROGRESS_BEFORE_FIRST_CALL, OWNER_PROGRESS_FIELD
-from .models import ToolCall
+from ..contracts import OWNER_PROGRESS_BEFORE_FIRST_CALL, OWNER_PROGRESS_FIELD
+from ..models import ToolCall
 
 BUILTIN_TOOL_SPECS: list[dict[str, Any]] = [
     {

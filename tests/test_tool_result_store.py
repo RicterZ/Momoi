@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from momoi.builtin_tools import BuiltinTools
+from momoi.tools.builtin import BuiltinTools
 from momoi.channel.napcat import NapCatConfig
 from momoi.config import AppConfig, LLMConfig
 from momoi.models import ToolCall

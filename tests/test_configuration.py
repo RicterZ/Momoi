@@ -10,7 +10,7 @@ import asyncio
 
 
 from momoi.__main__ import emotion as emotion_command, goal as goal_command, parse_args
-from momoi.agenda_tools import AgendaTools
+from momoi.tools.agenda import AgendaTools
 from momoi.channel.napcat import NapCatConfig
 from momoi.channel.weixin import WeixinConfig
 from momoi.config import (

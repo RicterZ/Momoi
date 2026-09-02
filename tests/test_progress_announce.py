@@ -3,8 +3,8 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from momoi.agenda_tools import AGENDA_TOOL_SPECS
-from momoi.builtin_tools import BUILTIN_TOOL_SPECS
+from momoi.tools.agenda import AGENDA_TOOL_SPECS
+from momoi.tools.builtin import BUILTIN_TOOL_SPECS
 from momoi.contracts import OWNER_PROGRESS_BEFORE_FIRST_CALL, OWNER_PROGRESS_FIELD
 from momoi.mcp_client import MCP_TOOL_POLICY
 from momoi.models import ToolCall
