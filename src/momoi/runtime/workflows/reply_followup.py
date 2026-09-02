@@ -85,7 +85,7 @@ class ReplyFollowupWorkflow:
             system,
             messages,
             [
-                self._send_bubbles_tool_spec(delivery_channel.name),
+                self.tool_surface.send_bubbles_spec(delivery_channel.name),
                 END_TURN_TOOL_SPEC,
             ],
             [],
@@ -114,5 +114,4 @@ class ReplyFollowupWorkflow:
         )
         self.agenda_changed.set()
         self.outbox_changed.set()
-
 

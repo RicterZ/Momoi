@@ -24,6 +24,10 @@ from ..storage import Store
 from ..webhooks import WebhookService
 from .jobs import AutonomousJob
 from .agent.result_store import ToolResultStore
+from .agent.context_window import ContextWindow
+from .agent.delivery import DeliveryPolicy
+from .agent.tool_executor import ToolExecutor, artifact_root, tool_result_root
+from .agent.tool_surface import ToolSurface
 from .dispatch import AgentWorker, CommandRouter, OutboxWorker, Scheduler
 from .turns import TurnRunner
 
@@ -45,9 +49,9 @@ class MomoiDaemon(
         self.config = config
         self._loaded_workspace_prompts: dict[str, str] = {}
         self.daemon_policy = config.policies.daemon
-        self._artifact_root().mkdir(parents=True, exist_ok=True)
+        artifact_root(config).mkdir(parents=True, exist_ok=True)
         self.tool_results = ToolResultStore(
-            self._tool_result_root(),
+            tool_result_root(config),
             retention_days=config.tool_result_retention_days,
         )
         self.store = Store(
@@ -94,7 +98,7 @@ class MomoiDaemon(
         )
         self.builtin_tools = BuiltinTools(
             config.workspace or config.database.parent,
-            private_roots=(self._tool_result_root(),),
+            private_roots=(tool_result_root(config),),
         )
         self.asr_provider = asr_provider if config.asr.enabled else None
         if config.asr.enabled and self.asr_provider is None:
@@ -137,6 +141,19 @@ class MomoiDaemon(
         if usage_plugin is not None:
             self.provider.usage_parser = usage_plugin.parse_usage
         self.mcp = MCPManager(config.mcp_config)
+        self.tool_surface = ToolSurface(
+            config, self.mcp, self.channels, self.channel.name
+        )
+        self.delivery_policy = DeliveryPolicy(config, self.store)
+        self.tool_executor = ToolExecutor(
+            config,
+            self.store,
+            self.mcp,
+            self.builtin_tools,
+            self.agenda_tools,
+            self.tool_results,
+        )
+        self.context_window = ContextWindow(config, self.store, self.tool_results)
         self.incoming: asyncio.Queue[IncomingMessage] = asyncio.Queue()
         self._deferred_incoming: deque[IncomingMessage] = deque()
         self._owner_quiet_until: dict[str, float] = {}

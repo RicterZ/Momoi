@@ -197,7 +197,7 @@ class HeartbeatWorkflow:
             timezone=self.store.timezone,
             tool_activity=tool_activity,
         )
-        artifact_root = self._artifact_root().resolve()
+        artifact_root = self.tool_executor.artifact_root.resolve()
         minimum = max(1, int(self.config.heartbeat.min_interval_seconds / 60))
         maximum = max(minimum, int(self.config.heartbeat.max_interval_seconds / 60))
         heartbeat_event = (
@@ -256,8 +256,8 @@ class HeartbeatWorkflow:
         tools = [
             *MEMORY_TOOL_SPECS,
             *AGENDA_TOOL_SPECS,
-            *self._heartbeat_external_tool_specs(),
-            self._send_bubbles_tool_spec(delivery_channel.name),
+            *self.tool_surface.heartbeat_external_specs(),
+            self.tool_surface.send_bubbles_spec(delivery_channel.name),
             heartbeat_end_turn_tool_spec(),
         ]
         draft = TurnDraft()

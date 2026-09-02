@@ -126,7 +126,7 @@ class WebhookWorkflow:
             system,
             messages,
             [
-                self._send_bubbles_tool_spec(channel.name),
+                self.tool_surface.send_bubbles_spec(channel.name),
                 CURL_TOOL_SPEC,
                 READ_TOOL_RESULT_SPEC,
                 END_TURN_TOOL_SPEC,

@@ -1,27 +1,15 @@
 import copy
-import fnmatch
 import json
 import logging
-import re
 import time
-import unicodedata
-from difflib import SequenceMatcher
-from pathlib import Path
 from typing import Any
 
-from ...agenda_tools import AGENDA_TOOL_SPECS
-from ...builtin_tools import BUILTIN_TOOL_SPECS, SELF_DIRECTED_BUILTIN_TOOL_SPECS
 from ...channel import (
     Channel,
     ChannelMessage,
-    normalize_channel_message,
-    render_channel_message,
 )
-from ...contracts import ToolResult
-from ...emotions import EMOTION_PREFIX, emotion_slug
 from ...logging_context import TRACE, compact_log_value, log_context, log_event, new_trace_id, safe_preview
-from ...memory_tools import MEMORY_TOOL_SPECS
-from ...models import AgentReply, IncomingMessage, ToolCall, TurnDraft
+from ...models import AgentReply, IncomingMessage, TurnDraft
 from ...storage import estimate_tokens
 from . import (
     AgentWorkflow,
@@ -33,35 +21,22 @@ from ..parsing import parse_bubbles, parse_response, response_text
 from .progress import (
     announce_field,
     apply_tool_announce,
-    decorate_tool_spec,
     initial_announce_error_message,
-    public_tool_spec,
-    requests_owner_progress,
+    missing_initial_work_announce,
 )
+from .delivery import SIMILAR_BUBBLES_THRESHOLD
 from ..protocol import (
     AUTONOMOUS_FINISH_SPEC,
-    READ_TOOL_RESULT_SPEC,
-    RECALL_TOOL_SPEC,
-    heartbeat_begin_spec,
-    owner_end_turn_tool_spec,
-    send_bubbles_tool_spec,
-    tool_enable_spec,
 )
 from ..turn_support import (
     ExternalToolTurnError,
     MAX_CONSECUTIVE_TOOL_FAILURES,
     OwnerMessagesChanged,
-    TurnBudgetExceeded,
     tool_error_block as _tool_error_block,
     tool_result_block as _tool_result_block,
-    truncate_tool_result_json as _truncate_tool_result_json,
 )
 
 logger = logging.getLogger("momoi.runtime.turns")
-MAX_TOOL_RESULT_TRUNCATION_ATTEMPTS = 16
-# Room for the reference field appended to every serialized tool result.
-_RESULT_REF_OVERHEAD = 64
-SIMILAR_SEND_BUBBLES_THRESHOLD = 0.75
 OWNER_BUBBLE_REQUEST_REMINDER = (
     "Native tool calls only: if bubbles are warranted, call send_bubbles with "
     "them; otherwise call the next work or terminal tool."
@@ -113,195 +88,7 @@ def _owner_request_messages(
     return request_messages
 
 
-def _send_bubbles_text(bubbles: list[ChannelMessage]) -> str:
-    rendered = [
-        bubble
-        if isinstance(bubble, str)
-        else render_channel_message(normalize_channel_message(bubble))
-        for bubble in bubbles
-    ]
-    text = unicodedata.normalize("NFKC", "\n".join(rendered)).casefold()
-    return re.sub(r"[^\w]+", "", text)
-
-
-def _send_bubbles_similarity(
-    previous: list[ChannelMessage], current: list[ChannelMessage]
-) -> float:
-    previous_text = _send_bubbles_text(previous)
-    current_text = _send_bubbles_text(current)
-    if not previous_text or not current_text:
-        return 0.0
-    return SequenceMatcher(
-        None, previous_text, current_text, autojunk=False
-    ).ratio()
-
-
 class AgentLoop:
-    @staticmethod
-    def _mcp_tool_group(name: str) -> str:
-        parts = str(name).split("__", 2)
-        return parts[1] if len(parts) == 3 else "other"
-
-    def _mcp_server_groups(self) -> dict[str, list[dict[str, Any]]]:
-        groups: dict[str, list[dict[str, Any]]] = {}
-        for spec in self._owner_progress_tool_specs(
-            sorted(
-                self.mcp.tool_specs,
-                key=lambda item: str(item.get("name") or ""),
-            )
-        ):
-            group = self._mcp_tool_group(str(spec.get("name") or ""))
-            groups.setdefault(group, []).append(spec)
-        return dict(sorted(groups.items()))
-
-    def _mcp_group_description(self, group: str) -> str:
-        configs = getattr(self.mcp, "configs", {})
-        config = configs.get(group) if isinstance(configs, dict) else None
-        description = (
-            str(config.get("description") or "").strip()
-            if isinstance(config, dict)
-            else ""
-        )
-        return description or f"External MCP capabilities provided by {group}."
-
-    def _owner_internal_tool_surface(self) -> list[dict[str, Any]]:
-        return [
-            READ_TOOL_RESULT_SPEC,
-            *copy.deepcopy(MEMORY_TOOL_SPECS),
-            *self._owner_progress_tool_specs(AGENDA_TOOL_SPECS),
-            *self._owner_progress_tool_specs(BUILTIN_TOOL_SPECS),
-        ]
-
-    def _owner_enable_tool_groups(self) -> dict[str, list[dict[str, Any]]]:
-        return self._mcp_server_groups()
-
-    @staticmethod
-    def _append_visible_tool_specs(
-        tools: list[dict[str, Any]], specs: list[dict[str, Any]]
-    ) -> list[str]:
-        existing = {str(spec.get("name") or "") for spec in tools}
-        added: list[str] = []
-        for spec in specs:
-            name = str(spec.get("name") or "")
-            if not name or name in existing:
-                continue
-            tools.insert(max(0, len(tools) - 1), spec)
-            existing.add(name)
-            added.append(name)
-        return added
-
-    @staticmethod
-    def _tool_schema_tokens(specs: list[dict[str, Any]]) -> int:
-        return estimate_tokens(
-            json.dumps(
-                specs,
-                ensure_ascii=False,
-                separators=(",", ":"),
-                default=str,
-            )
-        )
-
-    def _log_owner_tool_projection(
-        self,
-        *,
-        visible: list[dict[str, Any]],
-        full: list[dict[str, Any]],
-    ) -> None:
-        visible_tokens = self._tool_schema_tokens(visible)
-        full_tokens = self._tool_schema_tokens(full)
-        log_event(
-            logger,
-            TRACE,
-            "tool_availability_projected",
-            stage="owner",
-            visible_tool_count=len(visible),
-            full_tool_count=len(full),
-            hidden_tool_count=max(0, len(full) - len(visible)),
-            visible_tool_schema_tokens=visible_tokens,
-            full_tool_schema_tokens=full_tokens,
-            estimated_tool_schema_tokens_saved=max(
-                0,
-                full_tokens - visible_tokens,
-            ),
-            visible_tool_names=[
-                str(spec.get("name") or "") for spec in visible
-            ],
-        )
-
-    def _self_directed_mcp_server_groups(self) -> dict[str, list[dict[str, Any]]]:
-        patterns = self.config.autonomy.allowed_tools
-        groups: dict[str, list[dict[str, Any]]] = {}
-        for spec in sorted(
-            self.mcp.tool_specs,
-            key=lambda item: str(item.get("name") or ""),
-        ):
-            if not any(
-                fnmatch.fnmatchcase(str(spec["name"]), pattern)
-                for pattern in patterns
-            ):
-                continue
-            server = self._mcp_tool_group(str(spec.get("name") or ""))
-            groups.setdefault(server, []).append(spec)
-        return dict(sorted(groups.items()))
-
-    def _heartbeat_external_tool_specs(self) -> list[dict[str, Any]]:
-        patterns = self.config.autonomy.allowed_tools
-        internal = [
-            READ_TOOL_RESULT_SPEC,
-            *[
-                spec
-                for spec in SELF_DIRECTED_BUILTIN_TOOL_SPECS
-                if any(
-                    fnmatch.fnmatchcase(str(spec["name"]), pattern)
-                    for pattern in patterns
-                )
-            ],
-        ]
-        groups = self._self_directed_mcp_server_groups()
-        group_catalog = {
-            server: self._mcp_group_description(server)
-            for server in groups
-        }
-        return [
-            heartbeat_begin_spec(group_catalog),
-            *internal,
-            tool_enable_spec(group_catalog),
-        ]
-
-    def _owner_tool_specs(
-        self, channel_name: str | None = None
-    ) -> list[dict[str, Any]]:
-        mcp_groups = self._mcp_server_groups()
-        all_internal = self._owner_internal_tool_surface()
-        group_catalog = {
-            group: self._mcp_group_description(group)
-            for group in mcp_groups
-        }
-        visible = [
-            RECALL_TOOL_SPEC,
-            self._send_bubbles_tool_spec(channel_name),
-            *all_internal,
-            tool_enable_spec(group_catalog),
-            owner_end_turn_tool_spec(),
-        ]
-        full = [
-            RECALL_TOOL_SPEC,
-            self._send_bubbles_tool_spec(channel_name),
-            *all_internal,
-            tool_enable_spec(group_catalog),
-            *[
-                spec
-                for specs in mcp_groups.values()
-                for spec in specs
-            ],
-            owner_end_turn_tool_spec(),
-        ]
-        self._log_owner_tool_projection(
-            visible=visible,
-            full=full,
-        )
-        return visible
-
     async def _append_owner_updates(
         self,
         updates: list[IncomingMessage],
@@ -362,10 +149,10 @@ class AgentLoop:
         llm_round = 0
         remind_owner_bubbles = False
         enable_tool_groups = (
-            self._owner_enable_tool_groups()
+            self.tool_surface.owner_enable_groups()
             if authority == "owner"
             else (
-                self._self_directed_mcp_server_groups()
+                self.tool_surface.self_directed_mcp_groups()
                 if heartbeat_turn
                 else {}
             )
@@ -420,8 +207,11 @@ class AgentLoop:
                 channel=delivery_channel.name,
                 goal_id=autonomous_goal_id,
             ):
-                history_messages = self._fit_context(
-                    request_system, messages, request_tools, history_messages
+                history_messages = self.context_window.fit(
+                    request_system,
+                    messages,
+                    request_tools,
+                    history_messages,
                 )
                 request_messages = (
                     _owner_request_messages(
@@ -431,7 +221,7 @@ class AgentLoop:
                     if authority == "owner"
                     else messages
                 )
-                self._check_turn_budget(
+                self.context_window.check_budget(
                     turn_id, request_system, request_messages, request_tools
                 )
             require_tool = bool(
@@ -760,7 +550,7 @@ class AgentLoop:
                         reply = None
                         error = "heartbeat_interval_out_of_range"
                 if reply is not None:
-                    error = self._validate_emotion_messages(reply.messages)
+                    error = self.delivery_policy.validate_emotions(reply.messages)
                     if error is not None:
                         reply = None
                 if (
@@ -821,7 +611,7 @@ class AgentLoop:
                     ]
                 )
                 continue
-            missing_announce = self._missing_initial_work_announce(
+            missing_announce = missing_initial_work_announce(
                 response.tool_calls,
                 request_tools,
                 owner_work_acknowledged=owner_work_acknowledged,
@@ -904,7 +694,9 @@ class AgentLoop:
                 source = (
                     "workflow"
                     if workflow is not None and call.name in workflow.tool_names
-                    else self._tool_source(call.name, allow_notify=allow_notify)
+                    else self.tool_executor.source(
+                        call.name, allow_notify=allow_notify
+                    )
                 )
                 journal_tool = source in {
                     "mcp",
@@ -916,7 +708,7 @@ class AgentLoop:
                 if journal_tool:
                     journal_arguments = dict(call.arguments)
                     journal_arguments.pop("say_to_owner", None)
-                    self._journal_turn_item(
+                    self.tool_executor.journal(
                         turn_id,
                         "tool_call",
                         {
@@ -987,7 +779,7 @@ class AgentLoop:
                                 "message": str(error),
                             }
                         else:
-                            enabled_tools = self._append_visible_tool_specs(
+                            enabled_tools = self.tool_surface.append_visible(
                                 tools,
                                 [
                                     spec
@@ -1068,7 +860,7 @@ class AgentLoop:
                     else:
                         progress, error = parse_bubbles(call.arguments)
                         if progress is not None:
-                            error = self._validate_emotion_messages(progress)
+                            error = self.delivery_policy.validate_emotions(progress)
                             if error is not None:
                                 progress = None
                         if not (require_response or heartbeat_turn):
@@ -1081,7 +873,7 @@ class AgentLoop:
                                 and heartbeat_owner_event_revision is not None
                             )
                             contact_error = (
-                                self._heartbeat_contact_error(
+                                self.delivery_policy.heartbeat_contact_error(
                                     heartbeat_owner_event_revision,
                                     heartbeat_notification_key,
                                 )
@@ -1101,7 +893,7 @@ class AgentLoop:
                                     result = {"ok": False, "error": "invalid_channel"}
                                 else:
                                     similarity = (
-                                        _send_bubbles_similarity(
+                                        self.delivery_policy.similarity(
                                             last_sent_messages, progress
                                         )
                                         if previous_tool_name == "send_bubbles"
@@ -1109,7 +901,7 @@ class AgentLoop:
                                         and last_sent_channel == target.name
                                         else 0.0
                                     )
-                                    if similarity >= SIMILAR_SEND_BUBBLES_THRESHOLD:
+                                    if similarity >= SIMILAR_BUBBLES_THRESHOLD:
                                         log_event(
                                             logger,
                                             logging.WARNING,
@@ -1120,7 +912,7 @@ class AgentLoop:
                                             channel=target.name,
                                             tool_call_id=call.id,
                                             similarity=round(similarity, 3),
-                                            threshold=SIMILAR_SEND_BUBBLES_THRESHOLD,
+                                            threshold=SIMILAR_BUBBLES_THRESHOLD,
                                         )
                                         result = {
                                             "ok": False,
@@ -1164,7 +956,7 @@ class AgentLoop:
                             "error": "invalid_tool_groups",
                         }
                     else:
-                        enabled_tools = self._append_visible_tool_specs(
+                        enabled_tools = self.tool_surface.append_visible(
                             tools,
                             [
                                 spec
@@ -1243,7 +1035,9 @@ class AgentLoop:
                         elif (
                             artifact_root is not None
                             and call.name in {"read_file", "write_file", "list_dir"}
-                            and not self._artifact_path_allowed(call, artifact_root)
+                            and not self.tool_executor.artifact_path_allowed(
+                                call, artifact_root
+                            )
                         ):
                             result = {
                                 "ok": False,
@@ -1276,7 +1070,7 @@ class AgentLoop:
                                         if self.mcp.has_tool(call.name)
                                         else await self.builtin_tools.execute(call)
                                     )
-                                result = self._normalize_tool_result(
+                                result = self.tool_executor.normalize(
                                     call, result, source
                                 )
                                 self.store.complete_tool_call(turn_id, call.id, result)
@@ -1293,7 +1087,7 @@ class AgentLoop:
                         call, current_events, draft
                     )
                 if "provenance" not in result:
-                    result = self._normalize_tool_result(call, result, source)
+                    result = self.tool_executor.normalize(call, result, source)
                 if result.get("ok"):
                     harness.accept(call.name)
                     last_tool_error = ""
@@ -1344,7 +1138,7 @@ class AgentLoop:
                     }
                 )
                 if journal_tool:
-                    self._journal_turn_item(
+                    self.tool_executor.journal(
                         turn_id,
                         "tool_result",
                         {
@@ -1451,363 +1245,3 @@ class AgentLoop:
         if not isinstance(result, dict):
             raise RuntimeError(f"{workflow.stage} ended without workflow state")
         return result
-
-    @staticmethod
-    def _missing_initial_work_announce(
-        calls: list[ToolCall],
-        request_tools: list[dict[str, Any]],
-        *,
-        owner_work_acknowledged: bool,
-    ) -> tuple[str, str] | None:
-        if owner_work_acknowledged:
-            return None
-        announce_fields = {
-            str(spec.get("name") or ""): announce_field(spec)
-            for spec in request_tools
-        }
-        for index, call in enumerate(calls):
-            field = announce_fields.get(call.name)
-            if not field:
-                continue
-            if any(
-                earlier.name == "send_bubbles"
-                and bool(earlier.arguments.get("bubbles"))
-                for earlier in calls[:index]
-            ):
-                return None
-            if str(call.arguments.get(field) or "").strip():
-                return None
-            return call.id, field
-        return None
-
-    def _journal_turn_item(
-        self,
-        turn_id: str,
-        item_type: str,
-        payload: dict[str, object],
-        *,
-        trust: str,
-    ) -> None:
-        try:
-            self.store.append_turn_journal(
-                turn_id,
-                item_type,
-                payload,
-                visibility="internal",
-                trust=trust,
-            )
-        except Exception:
-            log_event(
-                logger,
-                logging.WARNING,
-                "turn_journal_failed",
-                turn_id=turn_id,
-                item_type=item_type,
-                exc_info=True,
-            )
-
-    def _tool_source(self, name: str, *, allow_notify: bool) -> str:
-        if name == "send_bubbles" and allow_notify:
-            return "agenda"
-        if name in {
-            "end_turn",
-            "send_bubbles",
-            "tool_enable",
-            "read_tool_result",
-            "autonomous_finish",
-            "heartbeat_begin",
-        }:
-            return "runtime"
-        if self.mcp.has_tool(name):
-            return "mcp"
-        if self.builtin_tools.has_tool(name):
-            return "builtin"
-        if self.agenda_tools.has_tool(name, allow_notify=allow_notify):
-            return "agenda"
-        if name in {str(spec["name"]) for spec in MEMORY_TOOL_SPECS}:
-            return "memory"
-        return "unknown"
-
-    def _normalize_tool_result(
-        self, call: ToolCall, result: object, source: str
-    ) -> ToolResult:
-        raw = dict(result) if isinstance(result, dict) else {"value": result}
-        ok = raw.get("ok") is True
-        error = None if ok else str(raw.get("error") or "tool_failed")
-        payload = {
-            key: value
-            for key, value in raw.items()
-            if key not in {"ok", "error", "truncated", "provenance"}
-        }
-        provenance = {"source": source, "tool": call.name}
-        envelope: dict[str, Any] = {
-            "ok": ok,
-            "error": error,
-            "truncated": bool(raw.get("truncated", False)),
-            "provenance": provenance,
-            **payload,
-        }
-        serialized = json.dumps(envelope, ensure_ascii=False, default=str)
-        # Snapshot every result, not only the ones too large to return inline.
-        # A reference is what lets a later Turn reread what a call actually
-        # returned; without one, a modest result is gone from history the moment
-        # its Turn ends, leaving the reply that quoted it unverifiable.
-        result_ref = self.tool_results.save(serialized)
-        budget = self.config.tool_result_max_chars - _RESULT_REF_OVERHEAD
-        if len(serialized) <= budget:
-            return {**envelope, "result_ref": result_ref}
-        if (
-            call.name == "read_file"
-            and ok
-            and isinstance(payload.get("content"), str)
-        ):
-            return {
-                **json.loads(_truncate_tool_result_json(serialized, budget)),
-                "result_ref": result_ref,
-            }
-        status: dict[str, object] = {"ok": ok, "error": error}
-        if raw.get("message") is not None:
-            status["message"] = safe_preview(raw["message"], 1000)
-        return self.tool_results.read(
-            result_ref,
-            None,
-            max_chars=self.config.tool_result_max_chars,
-            provenance=provenance,
-            status=status,
-        )
-
-    def _artifact_path_allowed(self, call: ToolCall, root: Path) -> bool:
-        try:
-            self.builtin_tools.resolve_path(
-                call.arguments.get("path")
-            ).relative_to(root.resolve())
-            return True
-        except (OSError, ValueError):
-            return False
-
-    @staticmethod
-    def _owner_progress_tool_specs(
-        specs: list[dict[str, Any]],
-    ) -> list[dict[str, Any]]:
-        return [
-            decorate_tool_spec(spec)
-            if requests_owner_progress(spec)
-            else public_tool_spec(spec)
-            for spec in specs
-        ]
-
-    def _self_directed_tool_specs(self) -> list[dict[str, Any]]:
-        patterns = self.config.autonomy.allowed_tools
-        return [
-            spec
-            for spec in [
-                *SELF_DIRECTED_BUILTIN_TOOL_SPECS,
-                *self.mcp.tool_specs,
-            ]
-            if any(
-                fnmatch.fnmatchcase(str(spec["name"]), pattern)
-                for pattern in patterns
-            )
-        ]
-
-    def _send_bubbles_tool_spec(
-        self, channel_name: str | None = None
-    ) -> dict[str, Any]:
-        return send_bubbles_tool_spec(
-            list(self.channels), channel_name or self.channel.name
-        )
-
-    def _heartbeat_contact_error(
-        self, owner_event_revision: int, notification_key: str
-    ) -> str | None:
-        snapshot = self.store.heartbeat_conversation_snapshot()
-        if int(snapshot["owner_event_revision"]) != owner_event_revision:
-            return "heartbeat_superseded_by_owner_update"
-        if snapshot["owner_busy"]:
-            return "heartbeat_contact_unavailable"
-        window = self.store.heartbeat_contact_window(
-            notification_key,
-            self.config.notifications,
-            apply_cooldown=notification_key != "heartbeat.reply_followup",
-        )
-        return None if window["allowed"] else "heartbeat_contact_unavailable"
-
-    def _artifact_root(self) -> Path:
-        return Path(self.config.workspace or self.config.database.parent) / "artifacts"
-
-    def _tool_result_root(self) -> Path:
-        return self.config.database.parent / "tool-results"
-
-    def _check_turn_budget(
-        self,
-        turn_id: str,
-        system: object,
-        messages: object,
-        tools: object,
-    ) -> None:
-        usage = self.store.turn_usage(turn_id)
-        elapsed = time.time() - float(usage["started_at"])
-        if self.config.turn_max_seconds and elapsed >= self.config.turn_max_seconds:
-            raise TurnBudgetExceeded("time limit reached")
-        estimated_input = estimate_tokens(
-            json.dumps(
-                {"system": system, "messages": messages, "tools": tools},
-                ensure_ascii=False,
-                default=str,
-            )
-        )
-        total = int(usage["input"]) + int(usage["output"])
-        if (
-            self.config.turn_max_total_tokens
-            and total + estimated_input > self.config.turn_max_total_tokens
-        ):
-            raise TurnBudgetExceeded("token limit reached")
-
-    def _fit_context(
-        self,
-        system: list[dict[str, Any]],
-        messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]],
-        history_messages: int,
-    ) -> int:
-        def size() -> int:
-            return estimate_tokens(
-                json.dumps(
-                    {"system": system, "messages": messages, "tools": tools},
-                    ensure_ascii=False,
-                    default=str,
-                )
-            )
-
-        hard_limit = self.config.max_input_tokens
-        compaction_limit = min(hard_limit, self._context_compaction_tokens())
-        estimated = size()
-        dropped = 0
-        truncated = 0
-        compression_breakers = 0
-        # ponytail: repeated estimation is fine at single-user scale; profile before optimizing.
-        while estimated > compaction_limit and history_messages:
-            messages.pop(0)
-            history_messages -= 1
-            dropped += 1
-            # A reply left at the head would answer a message that is no longer
-            # present, and the Anthropic Messages API rejects a leading
-            # assistant message outright.
-            while history_messages and str(messages[0].get("role")) == "assistant":
-                messages.pop(0)
-                history_messages -= 1
-                dropped += 1
-            estimated = size()
-        if estimated > compaction_limit:
-            for message in messages:
-                content = message.get("content")
-                if not isinstance(content, list):
-                    continue
-                for block in content:
-                    if (
-                        estimated <= compaction_limit
-                        or not isinstance(block, dict)
-                        or block.get("type") != "tool_result"
-                    ):
-                        continue
-                    result = block.get("content")
-                    attempts = 0
-                    while (
-                        isinstance(result, str)
-                        and len(result) > 1000
-                        and estimated > compaction_limit
-                    ):
-                        if attempts >= MAX_TOOL_RESULT_TRUNCATION_ATTEMPTS:
-                            compression_breakers += 1
-                            log_event(
-                                logger,
-                                logging.WARNING,
-                                "tool_result_truncation_stalled",
-                                reason="attempt_limit",
-                                attempts=attempts,
-                                result_chars=len(result),
-                                estimated_input=estimated,
-                                input_limit=compaction_limit,
-                            )
-                            break
-                        attempts += 1
-                        target = max(1000, len(result) // 2)
-                        result_store = getattr(self, "tool_results", None)
-                        candidate = (
-                            result_store.refit(result, max_chars=target)
-                            if result_store is not None
-                            else None
-                        ) or _truncate_tool_result_json(result, target)
-                        if len(candidate) >= len(result):
-                            compression_breakers += 1
-                            log_event(
-                                logger,
-                                logging.WARNING,
-                                "tool_result_truncation_stalled",
-                                reason="non_shrinking_result",
-                                attempts=attempts,
-                                before_chars=len(result),
-                                after_chars=len(candidate),
-                                estimated_input=estimated,
-                                input_limit=compaction_limit,
-                            )
-                            break
-                        before_estimated = estimated
-                        block["content"] = candidate
-                        candidate_estimated = size()
-                        if candidate_estimated >= before_estimated:
-                            block["content"] = result
-                            compression_breakers += 1
-                            log_event(
-                                logger,
-                                logging.WARNING,
-                                "tool_result_truncation_stalled",
-                                reason="non_shrinking_input",
-                                attempts=attempts,
-                                before_chars=len(result),
-                                after_chars=len(candidate),
-                                before_estimated=before_estimated,
-                                after_estimated=candidate_estimated,
-                                input_limit=compaction_limit,
-                            )
-                            break
-                        result = candidate
-                        estimated = candidate_estimated
-                        truncated += 1
-        log_event(
-            logger,
-            TRACE,
-            "llm_context_fit",
-            estimated_input=estimated,
-            compaction_limit=compaction_limit,
-            input_limit=hard_limit,
-            history_dropped=dropped,
-            tool_results_truncated=truncated,
-            compression_breakers=compression_breakers,
-        )
-        if estimated > hard_limit:
-            log_event(
-                logger,
-                logging.WARNING,
-                "llm_context_oversize",
-                estimated_input=estimated,
-                input_limit=hard_limit,
-                single_turn_context=history_messages == 0,
-                proceeding=True,
-                history_dropped=dropped,
-                compression_breakers=compression_breakers,
-            )
-        return history_messages
-
-    def _validate_emotion_messages(self, messages: list[ChannelMessage]) -> str | None:
-        for message in messages:
-            if not isinstance(message, str):
-                continue
-            if not message.startswith(EMOTION_PREFIX):
-                continue
-            slug = emotion_slug(message)
-            if slug is None:
-                return "invalid_emotion_directive"
-            if self.store.emotion(slug) is None:
-                return "unknown_emotion_slug"
-        return None

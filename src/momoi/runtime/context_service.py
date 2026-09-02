@@ -10,6 +10,7 @@ from .context_assembler import (
     build_plan_retrieval,
     select_plan_recall_queries,
 )
+from .agent.context_window import context_compaction_tokens
 
 logger = logging.getLogger("momoi.runtime.turns")
 # Episode reference syntax the runtime already stores.
@@ -139,13 +140,7 @@ def _recall_context_lines(
 
 class ContextService:
     def _context_compaction_tokens(self) -> int:
-        return max(
-            1,
-            round(
-                self.config.max_input_tokens
-                * float(getattr(self.config, "context_compaction_ratio", 1.0))
-            ),
-        )
+        return context_compaction_tokens(self.config)
 
     def _episode_raw_token_budget(self) -> int:
         return max(1000, self._context_compaction_tokens() // 2)

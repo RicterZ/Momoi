@@ -161,6 +161,8 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                 configs = {"demo": {"description": "Demo tools."}}
 
             daemon.mcp = MCP()  # type: ignore[assignment]
+            daemon.tool_surface.mcp = daemon.mcp
+            daemon.tool_executor.mcp = daemon.mcp
             case = self
 
             class Provider:

@@ -93,7 +93,7 @@ class ToolResultStoreTest(unittest.TestCase):
                 log_level="INFO",
             )
             daemon = MomoiDaemon(config)
-            result = daemon._normalize_tool_result(
+            result = daemon.tool_executor.normalize(
                 ToolCall("small", "curl", {"url": "http://x"}),
                 {"ok": True, "status": 200, "body": "{\"pending\": []}"},
                 "builtin",

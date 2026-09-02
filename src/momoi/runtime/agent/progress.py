@@ -2,6 +2,7 @@ import copy
 from typing import Any
 
 from ...contracts import OWNER_PROGRESS_BEFORE_FIRST_CALL, OWNER_PROGRESS_FIELD
+from ...models import ToolCall
 
 ANNOUNCE_FIELD = "say_to_owner"
 ANNOUNCE_DELIVERY_NOTE = "Delivered on the primary channel before this tool runs."
@@ -65,6 +66,32 @@ def initial_announce_error_message(field: str) -> str:
         "send_bubbles before it. Do not caption the tool or promise success. "
         "Later tool rounds may omit the field and run silently."
     )
+
+
+def missing_initial_work_announce(
+    calls: list[ToolCall],
+    request_tools: list[dict[str, Any]],
+    *,
+    owner_work_acknowledged: bool,
+) -> tuple[str, str] | None:
+    if owner_work_acknowledged:
+        return None
+    announce_fields = {
+        str(spec.get("name") or ""): announce_field(spec) for spec in request_tools
+    }
+    for index, call in enumerate(calls):
+        field = announce_fields.get(call.name)
+        if not field:
+            continue
+        if any(
+            earlier.name == "send_bubbles" and bool(earlier.arguments.get("bubbles"))
+            for earlier in calls[:index]
+        ):
+            return None
+        if str(call.arguments.get(field) or "").strip():
+            return None
+        return call.id, field
+    return None
 
 
 def take_announce_message(

@@ -281,7 +281,11 @@ class GoalWorkflow:
             *agenda_specs,
             AUTONOMOUS_SEND_BUBBLES_SPEC,
             READ_TOOL_RESULT_SPEC,
-            *(self._self_directed_tool_specs() if agent_owned else BUILTIN_TOOL_SPECS),
+            *(
+                self.tool_surface.self_directed_specs()
+                if agent_owned
+                else BUILTIN_TOOL_SPECS
+            ),
             *([] if agent_owned else self.mcp.tool_specs),
             AUTONOMOUS_FINISH_SPEC,
         ]
@@ -298,7 +302,9 @@ class GoalWorkflow:
                 allowed_capabilities=(
                     frozenset({"read", "write"}) if agent_owned else None
                 ),
-                artifact_root=self._artifact_root() if agent_owned else None,
+                artifact_root=(
+                    self.tool_executor.artifact_root if agent_owned else None
+                ),
             ),
             source_event_id=f"goal:{goal_id}",
             turn_id=turn_id,

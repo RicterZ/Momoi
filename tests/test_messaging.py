@@ -1376,7 +1376,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn("真心高兴或庆祝时使用", request)
             self.assertNotIn(str(asset), request)
             self.assertEqual(
-                daemon._validate_emotion_messages(["emotion://missing"]),
+                daemon.delivery_policy.validate_emotions(["emotion://missing"]),
                 "unknown_emotion_slug",
             )
             first = daemon.store.due_outbox()[0]

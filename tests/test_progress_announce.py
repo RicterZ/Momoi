@@ -8,7 +8,6 @@ from momoi.builtin_tools import BUILTIN_TOOL_SPECS
 from momoi.contracts import OWNER_PROGRESS_BEFORE_FIRST_CALL, OWNER_PROGRESS_FIELD
 from momoi.mcp_client import MCP_TOOL_POLICY
 from momoi.models import ToolCall
-from momoi.runtime import MomoiDaemon
 from momoi.runtime.agent.progress import (
     ANNOUNCE_FIELD,
     ANNOUNCE_DELIVERY_NOTE,
@@ -16,9 +15,11 @@ from momoi.runtime.agent.progress import (
     apply_tool_announce,
     decorate_tool_spec,
     initial_announce_error_message,
+    missing_initial_work_announce,
     requests_owner_progress,
     take_announce_message,
 )
+from momoi.runtime.agent.tool_surface import ToolSurface
 from momoi.runtime.protocol import send_bubbles_tool_spec, tool_enable_spec
 from momoi.storage import estimate_tokens
 
@@ -111,14 +112,14 @@ class ProgressAnnounceTest(unittest.TestCase):
     def test_first_external_batch_requires_one_initial_acknowledgement(self) -> None:
         curl = next(spec for spec in BUILTIN_TOOL_SPECS if spec["name"] == "curl")
         tools = [decorate_tool_spec(curl)]
-        missing = MomoiDaemon._missing_initial_work_announce(
+        missing = missing_initial_work_announce(
             [ToolCall("first", "curl", {"url": "https://example.com"})],
             tools,
             owner_work_acknowledged=False,
         )
         self.assertEqual(missing, ("first", ANNOUNCE_FIELD))
 
-        announced = MomoiDaemon._missing_initial_work_announce(
+        announced = missing_initial_work_announce(
             [
                 ToolCall(
                     "first",
@@ -134,14 +135,14 @@ class ProgressAnnounceTest(unittest.TestCase):
         )
         self.assertIsNone(announced)
 
-        later_silent = MomoiDaemon._missing_initial_work_announce(
+        later_silent = missing_initial_work_announce(
             [ToolCall("later", "curl", {"url": "https://example.com"})],
             tools,
             owner_work_acknowledged=True,
         )
         self.assertIsNone(later_silent)
 
-        message_then_tool = MomoiDaemon._missing_initial_work_announce(
+        message_then_tool = missing_initial_work_announce(
             [
                 ToolCall("say", "send_bubbles", {"bubbles": ["我先看看"]}),
                 ToolCall("first", "curl", {"url": "https://example.com"}),
@@ -187,10 +188,8 @@ class ProgressAnnounceTest(unittest.TestCase):
         self.assertEqual(arguments, {"url": "https://example.com"})
 
     def test_only_owner_specs_advertise_say_to_owner(self) -> None:
-        daemon = object.__new__(MomoiDaemon)
-        daemon.channels = {"napcat": SimpleNamespace(name="napcat")}
-        daemon.channel = daemon.channels["napcat"]
-        daemon.mcp = SimpleNamespace(
+        channels = {"napcat": SimpleNamespace(name="napcat")}
+        mcp = SimpleNamespace(
             tool_specs=[
                 {
                     "name": "mcp__brave-search__brave_web_search",
@@ -204,16 +203,17 @@ class ProgressAnnounceTest(unittest.TestCase):
                 }
             ]
         )
-        daemon.config = SimpleNamespace(autonomy=SimpleNamespace(allowed_tools=["curl"]))
+        config = SimpleNamespace(autonomy=SimpleNamespace(allowed_tools=["curl"]))
+        surface = ToolSurface(config, mcp, channels, "napcat")
         owner = {
             spec["name"]: spec
-            for spec in daemon._owner_tool_specs()
+            for spec in surface.owner_specs()
         }
         mcp = {
             spec["name"]: spec
-            for spec in daemon._mcp_server_groups()["brave-search"]
+            for spec in surface.mcp_server_groups()["brave-search"]
         }
-        heartbeat = {spec["name"]: spec for spec in daemon._self_directed_tool_specs()}
+        heartbeat = {spec["name"]: spec for spec in surface.self_directed_specs()}
         self.assertEqual(announce_field(owner["curl"]), ANNOUNCE_FIELD)
         self.assertEqual(announce_field(owner["goal_create"]), ANNOUNCE_FIELD)
         self.assertEqual(announce_field(owner["goal_cancel"]), ANNOUNCE_FIELD)

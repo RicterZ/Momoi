@@ -301,7 +301,7 @@ class ProvidersToolsTest(unittest.TestCase):
             )
             daemon = MomoiDaemon(config)
             call = ToolCall("large", "read_file", {"path": "/tmp/x"})
-            result = daemon._normalize_tool_result(
+            result = daemon.tool_executor.normalize(
                 call,
                 {
                     "ok": True,
@@ -337,7 +337,7 @@ class ProvidersToolsTest(unittest.TestCase):
                 len(json.dumps(result, ensure_ascii=False)),
                 config.tool_result_max_chars,
             )
-            repeated = daemon._normalize_tool_result(
+            repeated = daemon.tool_executor.normalize(
                 call,
                 {
                     "ok": True,
@@ -360,7 +360,7 @@ class ProvidersToolsTest(unittest.TestCase):
                 {key: value for key, value in result.items() if key != "result_ref"},
                 {key: value for key, value in repeated.items() if key != "result_ref"},
             )
-            failed = daemon._normalize_tool_result(
+            failed = daemon.tool_executor.normalize(
                 call,
                 {
                     "ok": False,
@@ -394,11 +394,11 @@ class ProvidersToolsTest(unittest.TestCase):
             daemon = MomoiDaemon(config)
             raw = {"ok": True, "items": [{"text": "原文" * 1000}]}
             call = ToolCall("large", "mcp__demo__search", {"query": "x"})
-            first = daemon._normalize_tool_result(call, raw, "mcp")
+            first = daemon.tool_executor.normalize(call, raw, "mcp")
             self.assertTrue(first["truncated"])
             self.assertTrue(first["result_ref"].startswith("tr_"))
             self.assertTrue(
-                (daemon._tool_result_root() / f"{first['result_ref']}.json").is_file()
+                (daemon.tool_executor.result_root / f"{first['result_ref']}.json").is_file()
             )
             chunks = [str(first["content"])]
             cursor = first["next_cursor"]

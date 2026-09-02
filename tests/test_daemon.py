@@ -29,6 +29,8 @@ from momoi.runtime import (
 )
 from momoi.runtime.jobs import AutonomousJob
 from momoi.runtime.agent import TurnExecutionSpec
+from momoi.runtime.agent.context_window import ContextWindow
+from momoi.runtime.agent.tool_surface import ToolSurface
 from momoi.runtime.protocol import (
     ACTIVITY_DECISION_SCHEMA,
     CHANNEL_BUBBLE_SCHEMA,
@@ -62,6 +64,14 @@ from tests.support import (
     recall_response,
     with_owner_recall,
 )
+
+
+def context_window(config: object) -> ContextWindow:
+    return ContextWindow(
+        config,
+        None,
+        SimpleNamespace(refit=lambda _value, max_chars: None),
+    )
 
 
 class DaemonTest(unittest.TestCase):
@@ -178,9 +188,8 @@ class DaemonTest(unittest.TestCase):
                 {"name": "mcp__homeassistant__HassTurnOn"},
             ]
         )
-        names = {
-            spec["name"] for spec in daemon._self_directed_tool_specs()
-        }
+        surface = ToolSurface(daemon.config, daemon.mcp, {}, "napcat")
+        names = {spec["name"] for spec in surface.self_directed_specs()}
         self.assertEqual(
             names,
             {
@@ -541,7 +550,7 @@ class DaemonTest(unittest.TestCase):
                 ],
             },
         ]
-        remaining = daemon._fit_context(
+        remaining = context_window(daemon.config).fit(
             [{"type": "text", "text": "system"}], messages, [], 1
         )
         estimated = estimate_tokens(json.dumps(messages, ensure_ascii=False))
@@ -560,7 +569,7 @@ class DaemonTest(unittest.TestCase):
             {"role": "user", "content": "当前消息"},
         ]
 
-        remaining = daemon._fit_context(
+        remaining = context_window(daemon.config).fit(
             [{"type": "text", "text": "system"}], messages, [], 1
         )
 
@@ -589,12 +598,12 @@ class DaemonTest(unittest.TestCase):
 
         with (
             patch(
-                "momoi.runtime.agent.loop._truncate_tool_result_json",
+                "momoi.runtime.agent.context_window.truncate_tool_result_json",
                 side_effect=truncate,
             ) as truncator,
             self.assertLogs("momoi.runtime.turns", level="WARNING") as logs,
         ):
-            remaining = daemon._fit_context(
+            remaining = context_window(daemon.config).fit(
                 [{"type": "text", "text": "system"}],
                 messages,
                 [],
@@ -646,7 +655,7 @@ class DaemonTest(unittest.TestCase):
         ]
 
         with self.assertLogs("momoi.runtime.turns", level="WARNING") as logs:
-            remaining = daemon._fit_context(
+            remaining = context_window(daemon.config).fit(
                 [{"type": "text", "text": "system"}],
                 messages,
                 [],
@@ -675,12 +684,12 @@ class DaemonTest(unittest.TestCase):
         ]
         with (
             patch(
-                "momoi.runtime.agent.loop._truncate_tool_result_json",
+                "momoi.runtime.agent.context_window.truncate_tool_result_json",
                 side_effect=lambda value, _limit: value[:-1],
             ) as truncator,
             self.assertLogs("momoi.runtime.turns", level="WARNING") as logs,
         ):
-            daemon._fit_context(
+            context_window(daemon.config).fit(
                 [{"type": "text", "text": "system"}],
                 messages,
                 [],
@@ -704,7 +713,7 @@ class DaemonTest(unittest.TestCase):
         messages = [{"role": "user", "content": "current" * 1000}]
 
         with self.assertLogs("momoi.runtime.turns", level="WARNING") as logs:
-            remaining = daemon._fit_context(
+            remaining = context_window(daemon.config).fit(
                 [{"type": "text", "text": "system"}],
                 messages,
                 [],
@@ -1451,6 +1460,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     return {"ok": True, "value": "dynamic tool works"}
 
             daemon.mcp = MCP()  # type: ignore[assignment]
+            daemon.tool_surface.mcp = daemon.mcp
+            daemon.tool_executor.mcp = daemon.mcp
             event = IncomingMessage("owner-enable", "owner-enable", "读文件", 1, 1)
             daemon.store.add_event(event)
             turn_id = daemon._turn_id(event.event_id)
@@ -1501,7 +1512,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             reply = await daemon._run_tool_loop(
                 daemon._system(),
                 [{"role": "user", "content": "读文件"}],
-                daemon._owner_tool_specs("napcat"),
+                daemon.tool_surface.owner_specs("napcat"),
                 [event],
                 TurnDraft(),
                 execution=TurnExecutionSpec("owner"),
@@ -1599,7 +1610,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             reply = await daemon._run_tool_loop(
                 daemon._system(),
                 [{"role": "user", "content": "读文件"}],
-                daemon._owner_tool_specs("napcat"),
+                daemon.tool_surface.owner_specs("napcat"),
                 [event],
                 TurnDraft(),
                 execution=TurnExecutionSpec("owner"),
@@ -2288,7 +2299,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             reply = await daemon._run_tool_loop(
                 daemon._system(),
                 canonical_messages,
-                daemon._owner_tool_specs(),
+                daemon.tool_surface.owner_specs(),
                 [event],
                 TurnDraft(),
                 execution=TurnExecutionSpec("owner"),
@@ -2398,7 +2409,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             reply = await daemon._run_tool_loop(
                 daemon._system(),
                 canonical_messages,
-                daemon._owner_tool_specs(),
+                daemon.tool_surface.owner_specs(),
                 [event],
                 TurnDraft(),
                 execution=TurnExecutionSpec("owner"),
@@ -2528,7 +2539,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             reply = await daemon._run_tool_loop(
                 daemon._system(),
                 [{"role": "user", "content": event.text}],
-                daemon._owner_tool_specs(),
+                daemon.tool_surface.owner_specs(),
                 [event],
                 TurnDraft(),
                 execution=TurnExecutionSpec("owner"),
@@ -2701,7 +2712,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             reply = await daemon._run_tool_loop(
                 daemon._system(),
                 [{"role": "user", "content": event.text}],
-                daemon._owner_tool_specs(),
+                daemon.tool_surface.owner_specs(),
                 [event],
                 TurnDraft(),
                 execution=TurnExecutionSpec("owner"),
