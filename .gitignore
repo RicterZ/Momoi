@@ -14,5 +14,6 @@ mcp.json
 *.log
 var/
 dist
-src/momoi/dashboard/
+src/momoi/dashboard/*
+!src/momoi/dashboard/*.py
 docs/*-user-content-review.txt

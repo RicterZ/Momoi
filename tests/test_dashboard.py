@@ -10,9 +10,9 @@ from pathlib import Path
 from aiohttp import FormData
 from aiohttp.test_utils import TestClient, TestServer
 
-from momoi.dashboard import (
+from momoi.dashboard.app import create_dashboard_app
+from momoi.dashboard.auth import (
     JWT_TTL_SECONDS,
-    create_dashboard_app,
     issue_dashboard_jwt,
     verify_dashboard_jwt,
 )
@@ -204,15 +204,15 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
     def _auth(self, token: str | None = None) -> dict[str, str]:
         return {"Authorization": f"Bearer {token or self.access_token}"}
 
-    @unittest.skipUnless(
-        _dashboard_frontend_built(), "dashboard frontend is not built"
-    )
+    @unittest.skipUnless(_dashboard_frontend_built(), "dashboard frontend is not built")
     async def test_dashboard_serves_static_ui_with_security_headers(self) -> None:
         response = await self.client.get("/")
         self.assertEqual(response.status, 200)
         page = await response.text()
         self.assertIn("Momoi Dashboard", page)
-        self.assertIn("frame-ancestors 'none'", response.headers["Content-Security-Policy"])
+        self.assertIn(
+            "frame-ancestors 'none'", response.headers["Content-Security-Policy"]
+        )
 
         script_path = re.search(r'src="(/assets/[^"]+\.js)"', page)
         self.assertIsNotNone(script_path)
@@ -249,9 +249,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(overview["balance"]["source"], "unavailable")
         self.assertEqual(overview["balance"]["total_balance"], "0")
         self.assertGreater(overview["mood"]["updated_at"], 0)
-        health = await (
-            await self.client.get("/api/health", headers=auth)
-        ).json()
+        health = await (await self.client.get("/api/health", headers=auth)).json()
         self.assertTrue(health["ok"])
         self.assertTrue(str(health["version"]).strip())
         self.assertEqual(health["timezone"], "UTC")
@@ -403,9 +401,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
                     ),
                 )
         first = await (
-            await self.client.get(
-                "/api/reflections?limit=14", headers=self._auth()
-            )
+            await self.client.get("/api/reflections?limit=14", headers=self._auth())
         ).json()
         self.assertEqual(len(first["items"]), 14)
         self.assertEqual(first["items"][0]["local_date"], "2026-08-13")
@@ -437,9 +433,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
                 (now + 1800, now - 600, now + 300),
             )
         heartbeat = (
-            await (
-                await self.client.get("/api/overview", headers=self._auth())
-            ).json()
+            await (await self.client.get("/api/overview", headers=self._auth())).json()
         )["heartbeat"]
         self.assertAlmostEqual(heartbeat["next_at"], now + 1800, places=3)
         self.assertAlmostEqual(heartbeat["last_at"], now - 600, places=3)
@@ -454,9 +448,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
                 (now,),
             )
         heartbeat = (
-            await (
-                await self.client.get("/api/overview", headers=self._auth())
-            ).json()
+            await (await self.client.get("/api/overview", headers=self._auth())).json()
         )["heartbeat"]
         self.assertTrue(heartbeat["running"])
         self.assertEqual(heartbeat["kind"], "ordinary")
@@ -484,9 +476,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(listed["items"][0]["episode_title"], "一次测试聊天")
         self.assertIn("没有提醒", listed["items"][0]["excerpt"])
         detail = await (
-            await self.client.get(
-                "/api/thinking/turn-one", headers=self._auth()
-            )
+            await self.client.get("/api/thinking/turn-one", headers=self._auth())
         ).json()
         self.assertEqual(detail["items"][0]["reasoning"], "决定先说明为什么没有提醒。")
         self.assertEqual(detail["recall"]["revision"], 1)
@@ -519,9 +509,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             )
         ).json()
         self.assertEqual(call["item"]["turn_id"], "turn-one")
-        bad = await self.client.get(
-            "/api/thinking?month=2026-13", headers=self._auth()
-        )
+        bad = await self.client.get("/api/thinking?month=2026-13", headers=self._auth())
         self.assertEqual(bad.status, 400)
 
     async def test_dashboard_rejects_invalid_limits(self) -> None:
@@ -574,7 +562,12 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             (
                 "PATCH",
                 "/api/goals/goal-one",
-                {"title": "被改", "success_criteria": "x", "next_action": "y", "status": "active"},
+                {
+                    "title": "被改",
+                    "success_criteria": "x",
+                    "next_action": "y",
+                    "status": "active",
+                },
             ),
             ("DELETE", "/api/goals/goal-one", {"reason": "nope"}),
             ("DELETE", "/api/emotions/hello", None),
@@ -589,9 +582,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             raw_secret = await self.client.request(
                 method, path, json=body, headers=self._auth(self.secret)
             )
-            self.assertEqual(
-                raw_secret.status, 401, msg=f"{method} {path} raw secret"
-            )
+            self.assertEqual(raw_secret.status, 401, msg=f"{method} {path} raw secret")
 
         asset = await self.client.get("/api/emotions/hello/asset")
         self.assertEqual(asset.status, 200)
@@ -607,14 +598,10 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(emotions["items"][0]["slug"], "hello")
 
     async def test_auth_token_issues_year_long_jwt(self) -> None:
-        denied = await self.client.post(
-            "/api/auth/token", json={"token": "wrong"}
-        )
+        denied = await self.client.post("/api/auth/token", json={"token": "wrong"})
         self.assertEqual(denied.status, 401)
 
-        issued = await self.client.post(
-            "/api/auth/token", json={"token": self.secret}
-        )
+        issued = await self.client.post("/api/auth/token", json={"token": self.secret})
         self.assertEqual(issued.status, 200)
         payload = await issued.json()
         self.assertEqual(payload["token_type"], "Bearer")
@@ -630,18 +617,14 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             self.secret, ttl_seconds=1, now=int(time.time()) - 10
         )
         self.assertFalse(verify_dashboard_jwt(expired, self.secret))
-        rejected = await self.client.get(
-            "/api/overview", headers=self._auth(expired)
-        )
+        rejected = await self.client.get("/api/overview", headers=self._auth(expired))
         self.assertEqual(rejected.status, 401)
 
     async def test_empty_dashboard_token_rejects_all_api(self) -> None:
         bare = TestClient(TestServer(create_dashboard_app(self.store, token="")))
         await bare.start_server()
         try:
-            login = await bare.post(
-                "/api/auth/token", json={"token": "anything"}
-            )
+            login = await bare.post("/api/auth/token", json={"token": "anything"})
             self.assertEqual(login.status, 401)
             for method, path, body in (
                 ("GET", "/api/overview", None),
@@ -675,9 +658,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             )
         ).json()
         self.assertEqual(updated["content"], "主人非常不吃香菜。")
-        deleted = await self.client.delete(
-            f"/api/memories/{memory_id}", headers=auth
-        )
+        deleted = await self.client.delete(f"/api/memories/{memory_id}", headers=auth)
         self.assertEqual(deleted.status, 200)
         remaining = await (await self.client.get("/api/memories", headers=auth)).json()
         self.assertEqual(len(remaining["items"]), 2)
@@ -735,9 +716,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         ).json()
         self.assertEqual(patched["description"], "热情挥手")
 
-        deleted = await self.client.delete(
-            "/api/emotions/wave", headers=self._auth()
-        )
+        deleted = await self.client.delete("/api/emotions/wave", headers=self._auth())
         self.assertEqual(deleted.status, 200)
         listed = await (
             await self.client.get("/api/emotions", headers=self._auth())

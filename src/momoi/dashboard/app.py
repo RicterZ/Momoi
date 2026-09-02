@@ -1,36 +1,29 @@
-import asyncio
-import base64
-import hashlib
-import hmac
 import json
-import logging
 import mimetypes
 import re
-import time
 from importlib.metadata import PackageNotFoundError, version as package_version
 from importlib.resources import files
 from pathlib import Path
 
 from aiohttp import web
 
-from .emotions import (
+from .auth import (
+    DASHBOARD_TOKEN,
+    JWT_TTL_SECONDS,
+    _auth,
+    _token_matches,
+    issue_dashboard_jwt,
+)
+from ..emotions import (
     managed_emotion_bytes,
     remove_unreferenced_emotion_asset,
     valid_emotion_slug,
 )
-from .extensions.base import UsagePlugin
-from .logging_context import log_event
-from .storage import Store
+from ..extensions.base import UsagePlugin
+from ..storage import Store
 
-
-logger = logging.getLogger(__name__)
 ASSET_ROOT = files("momoi").joinpath("dashboard")
-DASHBOARD_TOKEN = web.AppKey("dashboard_token", str)
 USAGE_PLUGIN = web.AppKey("usage_plugin", UsagePlugin | None)
-JWT_TTL_SECONDS = 365 * 24 * 60 * 60
-JWT_SUBJECT = "momoi-dashboard"
-_PUBLIC_ASSET_PATH = re.compile(r"^/api/emotions/[^/]+/asset$")
-_AUTH_TOKEN_PATH = "/api/auth/token"
 
 
 def momoi_version() -> str:
@@ -73,107 +66,6 @@ def _optional_local_date(request: web.Request, name: str) -> str | None:
     if not _LOCAL_DATE.fullmatch(raw):
         raise web.HTTPBadRequest(text=f"invalid {name}")
     return raw
-
-
-def _bearer_token(request: web.Request) -> str:
-    authorization = request.headers.get("Authorization", "")
-    if authorization.startswith("Bearer "):
-        return authorization[7:].strip()
-    return ""
-
-
-def _b64url_encode(raw: bytes) -> str:
-    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
-
-
-def _b64url_decode(raw: str) -> bytes:
-    padding = "=" * (-len(raw) % 4)
-    return base64.urlsafe_b64decode(raw + padding)
-
-
-def _token_matches(provided: str, expected: str) -> bool:
-    if not provided or not expected:
-        return False
-    try:
-        return hmac.compare_digest(provided, expected)
-    except (TypeError, ValueError):
-        return False
-
-
-def issue_dashboard_jwt(
-    secret: str,
-    *,
-    ttl_seconds: int = JWT_TTL_SECONDS,
-    now: int | None = None,
-) -> str:
-    if not secret:
-        raise ValueError("dashboard token is required")
-    issued_at = int(time.time() if now is None else now)
-    header = _b64url_encode(
-        json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode()
-    )
-    payload = _b64url_encode(
-        json.dumps(
-            {
-                "sub": JWT_SUBJECT,
-                "iat": issued_at,
-                "exp": issued_at + max(1, int(ttl_seconds)),
-            },
-            separators=(",", ":"),
-        ).encode()
-    )
-    signing_input = f"{header}.{payload}".encode("ascii")
-    signature = _b64url_encode(
-        hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest()
-    )
-    return f"{header}.{payload}.{signature}"
-
-
-def verify_dashboard_jwt(
-    token: str, secret: str, *, now: int | None = None
-) -> bool:
-    if not token or not secret or token.count(".") != 2:
-        return False
-    header_segment, payload_segment, signature_segment = token.split(".", 2)
-    signing_input = f"{header_segment}.{payload_segment}".encode("ascii")
-    expected = _b64url_encode(
-        hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest()
-    )
-    if not hmac.compare_digest(signature_segment, expected):
-        return False
-    try:
-        header = json.loads(_b64url_decode(header_segment))
-        payload = json.loads(_b64url_decode(payload_segment))
-    except (ValueError, json.JSONDecodeError, UnicodeDecodeError):
-        return False
-    if not isinstance(header, dict) or not isinstance(payload, dict):
-        return False
-    if header.get("alg") != "HS256" or header.get("typ") != "JWT":
-        return False
-    if payload.get("sub") != JWT_SUBJECT:
-        return False
-    try:
-        expires_at = int(payload["exp"])
-    except (KeyError, TypeError, ValueError):
-        return False
-    current = int(time.time() if now is None else now)
-    return expires_at > current
-
-
-def _require_token(request: web.Request) -> None:
-    secret = str(request.app[DASHBOARD_TOKEN] or "")
-    if not verify_dashboard_jwt(_bearer_token(request), secret):
-        raise web.HTTPUnauthorized(
-            text="unauthorized",
-            headers={"WWW-Authenticate": 'Bearer realm="momoi-dashboard"'},
-        )
-
-
-def _is_public_api(request: web.Request) -> bool:
-    path = request.path
-    if _PUBLIC_ASSET_PATH.fullmatch(path):
-        return True
-    return request.method == "POST" and path == _AUTH_TOKEN_PATH
 
 
 async def _json_body(request: web.Request) -> dict[str, object]:
@@ -257,9 +149,7 @@ def _dashboard_recall(store: Store, turn_id: str) -> dict[str, object] | None:
             {
                 "action": str(action.get("action") or ""),
                 "episode_id": episode_id,
-                "title": str(
-                    (episode or {}).get("title") or action.get("title") or ""
-                ),
+                "title": str((episode or {}).get("title") or action.get("title") or ""),
             }
         )
     return {
@@ -281,15 +171,6 @@ def _dashboard_recall(store: Store, turn_id: str) -> dict[str, object] | None:
         "episodes": episodes,
         "semantic": semantic if isinstance(semantic, dict) else {},
     }
-
-
-@web.middleware
-async def _auth(
-    request: web.Request, handler: web.RequestHandler
-) -> web.StreamResponse:
-    if request.path.startswith("/api/") and not _is_public_api(request):
-        _require_token(request)
-    return await handler(request)
 
 
 @web.middleware
@@ -686,9 +567,7 @@ def create_dashboard_app(
     app.router.add_get("/api/thinking/calls/{call_id}", thinking_call)
     app.router.add_get("/api/thinking/{turn_id}", thinking_turn)
     app.router.add_get("/api/conversations", conversations)
-    app.router.add_get(
-        "/api/conversations/episode/{record_id}", episode_conversation
-    )
+    app.router.add_get("/api/conversations/episode/{record_id}", episode_conversation)
     app.router.add_get("/api/conversations/turn/{record_id}", turn_conversation)
     app.router.add_get("/api/reflections", reflections)
     app.router.add_get("/api/memories", memories)
@@ -703,42 +582,3 @@ def create_dashboard_app(
     app.router.add_delete("/api/emotions/{slug}", delete_emotion)
     app.router.add_get("/api/emotions/{slug}/asset", emotion_asset)
     return app
-
-
-class DashboardService:
-    def __init__(
-        self,
-        store: Store,
-        host: str = "0.0.0.0",
-        port: int = 8788,
-        *,
-        token: str = "",
-        usage_plugin: UsagePlugin | None = None,
-    ) -> None:
-        self.store = store
-        self.host = host
-        self.port = port
-        self.token = token
-        self.usage_plugin = usage_plugin
-
-    async def run(self, stop: asyncio.Event) -> None:
-        runner = web.AppRunner(
-            create_dashboard_app(
-                self.store, token=self.token, usage_plugin=self.usage_plugin
-            ),
-            access_log=None,
-        )
-        await runner.setup()
-        site = web.TCPSite(runner, self.host, self.port)
-        try:
-            await site.start()
-            log_event(
-                logger,
-                logging.INFO,
-                "dashboard_start",
-                host=self.host,
-                port=self.port,
-            )
-            await stop.wait()
-        finally:
-            await runner.cleanup()

@@ -12,7 +12,7 @@ from ..channel import (
     create_channel,
 )
 from ..config import AppConfig
-from ..dashboard import DashboardService
+from ..dashboard.service import DashboardService
 from ..extensions import load_usage_plugin
 from ..logging_context import log_event
 from ..tools.memory import MemoryTools
@@ -37,6 +37,8 @@ from .turns import TurnRunner
 from .workflows.owner import OwnerUpdateController
 
 logger = logging.getLogger(__name__)
+
+
 class MomoiDaemon(
     CommandRouter,
     AgentWorker,
