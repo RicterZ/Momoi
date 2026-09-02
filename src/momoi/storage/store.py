@@ -9,14 +9,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 from typing import TYPE_CHECKING
 
-from ..channel import (
-    ChannelMessage,
-    media_path,
-    normalize_channel_message,
-    render_channel_message,
-)
 from ..context_time import context_timestamp
-from ..emotions import emotion_slug
 from ..extensions.base import UsagePlugin
 from ..models import (
     AgentReply,
@@ -59,6 +52,7 @@ from .transcripts import TranscriptStore
 from .episode_queries import EpisodeQueryStore
 from .episode_index import EpisodeIndexStore
 from .notifications import NotificationStore
+from .outbox import OutboxStore
 from .reconciliation import ReconciliationStore
 
 logger = logging.getLogger(__name__)
@@ -111,6 +105,7 @@ class Store(
     EpisodeQueryStore,
     EpisodeIndexStore,
     NotificationStore,
+    OutboxStore,
     ReconciliationStore,
     MemoryMaintenanceStore,
     MemoryStore,
@@ -168,42 +163,6 @@ class Store(
     def close(self) -> None:
         self._thinking.close()
         self._db.close()
-
-    @staticmethod
-    def _message_delivery_state(
-        outbox_state: str, possible_duplicate: bool = False
-    ) -> str:
-        if possible_duplicate and outbox_state != "sent":
-            return "uncertain"
-        return {
-            "sent": "delivered",
-            "ambiguous": "uncertain",
-            "failed": "failed",
-            "superseded": "failed",
-        }.get(outbox_state, "queued")
-
-    def _sync_outbox_message(self, outbox_id: int, outbox_state: str) -> None:
-        episodes = self._db.execute(
-            """SELECT DISTINCT et.episode_id FROM messages AS m
-               JOIN episode_turns AS et ON et.turn_id=m.turn_id
-               WHERE m.outbox_id=?""",
-            (outbox_id,),
-        ).fetchall()
-        outbox = self._db.execute(
-            "SELECT possible_duplicate FROM outbox WHERE id=?", (outbox_id,)
-        ).fetchone()
-        self._db.execute(
-            "UPDATE messages SET delivery_state=? WHERE outbox_id=?",
-            (
-                self._message_delivery_state(
-                    outbox_state,
-                    bool(outbox and outbox["possible_duplicate"]),
-                ),
-                outbox_id,
-            ),
-        )
-        for row in episodes:
-            self._reindex_episode_terms(str(row["episode_id"]))
 
     def _initialize_database(self) -> None:
         self._db.executescript(Path(__file__).with_name("schema.sql").read_text())
@@ -365,68 +324,6 @@ class Store(
 
 
 
-
-    def _outbox_content(
-        self, message: ChannelMessage
-    ) -> tuple[str, str, str | None, dict[str, object]]:
-        slug = emotion_slug(message) if isinstance(message, str) else None
-        if slug is not None:
-            asset = self.emotion(slug)
-            if asset is None:
-                raise ValueError(f"unknown emotion slug: {slug}")
-            path = str(asset["path"])
-            path = self._stored_asset_path(path)
-            payload: dict[str, object] = {
-                "action": "message",
-                "segments": [{"type": "image", "data": {"file": path}}],
-            }
-            return message, "image", path, payload
-        payload = normalize_channel_message(message)
-        text = message if isinstance(message, str) else render_channel_message(payload)
-        if payload["action"] == "forward":
-            kind = "forward"
-        else:
-            segments = payload.get("segments") or []
-            kind = str(segments[0].get("type")) if len(segments) == 1 else "message"
-        return text, kind, media_path(payload), payload
-
-    def queue_progress(
-        self,
-        turn_id: str,
-        tool_call_id: str,
-        messages: list[ChannelMessage],
-        target_channel: str = "",
-    ) -> None:
-        now = time.time()
-        with self._db:
-            self._db.execute(
-                """UPDATE turns SET stage='message_dispatch', updated_at=?
-                   WHERE id=? AND state='running'""",
-                (now, turn_id),
-            )
-            for index, message in enumerate(messages):
-                text, kind, path, payload = self._outbox_content(message)
-                self._db.execute(
-                    """INSERT OR IGNORE INTO turn_progress
-                       (turn_id, tool_call_id, part_index, text, created_at)
-                       VALUES (?, ?, ?, ?, ?)""",
-                    (turn_id, tool_call_id, index, text, now),
-                )
-                self._db.execute(
-                    """INSERT OR IGNORE INTO outbox
-                       (turn_id, dedupe_key, text, kind, media_path, payload_json,
-                        target_channel)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                    (
-                        turn_id,
-                        f"turn:{turn_id}:progress:{tool_call_id}:{index}",
-                        text,
-                        kind,
-                        path,
-                        json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
-                        target_channel,
-                    ),
-                )
 
     def commit_turn(
         self,
