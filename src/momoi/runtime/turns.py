@@ -1,7 +1,7 @@
 import json
 import uuid
 
-from .context_service import ContextService
+from .context.service import ContextService
 from .prompt_renderer import PromptRenderer
 from .agent.loop import AgentLoop
 from .workflows import (

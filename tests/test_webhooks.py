@@ -21,7 +21,7 @@ from momoi.models import (
 from momoi.runtime import (
     MomoiDaemon,
 )
-from momoi.runtime.context_assembler import assemble_recent_external_events
+from momoi.runtime.context.rendering import assemble_recent_external_events
 from momoi.storage import Store
 from momoi.webhooks import WebhookService, WorkflowError, bind_workflow, load_catalog
 

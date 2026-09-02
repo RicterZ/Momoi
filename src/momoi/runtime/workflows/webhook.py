@@ -4,12 +4,12 @@ from typing import Any
 from ...channel import Channel
 from ...models import AgentReply, TurnDraft
 from ..agent import TurnExecutionSpec
-from ..context_assembler import (
+from ..context.rendering import (
     assemble_recent_external_events,
     assemble_recent_webhook_activity,
     recall_episode_context,
 )
-from ..context_service import _heartbeat_self_state_lines
+from ..context.presentation import heartbeat_self_state_lines
 from ..protocol import (
     CURL_TOOL_SPEC,
     END_TURN_TOOL_SPEC,
@@ -90,7 +90,7 @@ class WebhookWorkflow:
             ),
             (
                 "runtime_state",
-                f"{runtime_state}\n{_heartbeat_self_state_lines(self_state)}",
+                f"{runtime_state}\n{heartbeat_self_state_lines(self_state)}",
             ),
             (
                 "recent_external_events",

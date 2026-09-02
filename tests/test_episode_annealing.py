@@ -10,7 +10,7 @@ from momoi.config import AppConfig, EpisodeAnnealingConfig, LLMConfig
 from momoi.logging_context import current_log_context
 from momoi.models import AgentReply, IncomingMessage, ProviderResponse, ToolCall
 from momoi.runtime import MomoiDaemon
-from momoi.runtime.context_assembler import assemble_main_context
+from momoi.runtime.context.rendering import assemble_main_context
 from momoi.runtime.workflows.episode import (
     render_episode_annealing_request,
     render_episode_consolidation_request,

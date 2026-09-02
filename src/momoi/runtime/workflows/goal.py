@@ -11,7 +11,7 @@ from ...memory_tools import MEMORY_TOOL_SPECS
 from ...models import TurnDraft
 from ...provider import ProviderError
 from ..agent import TurnExecutionSpec
-from ..context_assembler import (
+from ..context.rendering import (
     assemble_recent_external_events,
     recall_episode_context,
 )

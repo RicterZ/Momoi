@@ -7,12 +7,14 @@ from momoi.channel.napcat import NapCatConfig
 from momoi.config import AppConfig, LLMConfig
 from momoi.context_time import context_timestamp
 from momoi.models import AgentReply, IncomingMessage
-from momoi.runtime.context_assembler import (
+from momoi.runtime.context.rendering import (
     _episode_header,
     assemble_main_context,
     assemble_recent_external_events,
-    build_plan_retrieval,
     recall_episode_context,
+)
+from momoi.runtime.context.retrieval import (
+    build_plan_retrieval,
     select_plan_recall_queries,
 )
 from momoi.runtime.transcript import build_transcript
@@ -1354,7 +1356,7 @@ class ContextAssemblerTest(unittest.TestCase):
             store._db.commit()
 
             with self.assertLogs(
-                "momoi.runtime.context_assembler", level="INFO"
+                "momoi.runtime.context.retrieval", level="INFO"
             ) as captured:
                 retrieval = build_plan_retrieval(
                     store, plan("项目邮件"), config(directory)

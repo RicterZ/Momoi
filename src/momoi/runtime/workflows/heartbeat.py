@@ -12,12 +12,12 @@ from ...models import AgentReply, TurnDraft
 from ...reply_wait import REPLY_FOLLOWUP_RETRY_SECONDS
 from ...storage import estimate_tokens, truncate_tokens
 from ..agent import TurnExecutionSpec
-from ..context_assembler import assemble_recent_external_events
-from ..context_service import (
-    _heartbeat_activity_lines,
-    _heartbeat_self_state_lines,
-    _heartbeat_topic_lines,
+from ..context.presentation import (
+    heartbeat_activity_lines,
+    heartbeat_self_state_lines,
+    heartbeat_topic_lines,
 )
+from ..context.rendering import assemble_recent_external_events
 from ..protocol import heartbeat_end_turn_tool_spec
 from ..transcript import build_transcript, render_messages
 from ..turn_support import (
@@ -215,17 +215,17 @@ class HeartbeatWorkflow:
                 "runtime_state",
                 (
                     f"Current local time: {datetime.now(self.store.timezone).isoformat(timespec='seconds')}\n"
-                    f"{_heartbeat_self_state_lines(self_context)}"
+                    f"{heartbeat_self_state_lines(self_context)}"
                 ),
             ),
             ("active_goals", goals),
             (
                 "recent_topic_reference",
-                _heartbeat_topic_lines(recent_topics),
+                heartbeat_topic_lines(recent_topics),
             ),
             (
                 "recent_heartbeat_activities",
-                _heartbeat_activity_lines(self.store.recent_heartbeat_activities()),
+                heartbeat_activity_lines(self.store.recent_heartbeat_activities()),
             ),
             (
                 "recent_external_events",

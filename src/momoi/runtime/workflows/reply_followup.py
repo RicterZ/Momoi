@@ -3,7 +3,7 @@ from typing import Any
 
 from ...models import AgentReply, TurnDraft
 from ..agent import TurnExecutionSpec
-from ..context_service import _heartbeat_self_state_lines
+from ..context.presentation import heartbeat_self_state_lines
 from ..protocol import END_TURN_TOOL_SPEC
 from ..transcript import build_transcript, render_messages
 from ..turn_support import (
@@ -56,7 +56,7 @@ class ReplyFollowupWorkflow:
                 "runtime_state",
                 (
                     f"Current local time: {datetime.now(self.store.timezone).isoformat(timespec='seconds')}\n"
-                    f"{_heartbeat_self_state_lines(self.store.self_state_context())}"
+                    f"{heartbeat_self_state_lines(self.store.self_state_context())}"
                 ),
             ),
         )
@@ -114,4 +114,3 @@ class ReplyFollowupWorkflow:
         )
         self.agenda_changed.set()
         self.outbox_changed.set()
-

@@ -16,9 +16,7 @@ from ...transcript import (
     render_messages,
     turn_labels,
 )
-from ...context_service import (
-    _heartbeat_self_state_lines,
-)
+from ...context.presentation import heartbeat_self_state_lines
 from ...turn_support import (
     ExternalToolTurnError,
     TurnBudgetExceeded,
@@ -287,7 +285,7 @@ class OwnerWorkflow:
                 "runtime_state",
                 "Current local time: "
                 f"{datetime.now(self.store.timezone).isoformat(timespec='seconds')}\n"
-                f"{_heartbeat_self_state_lines(self.store.self_state_context())}",
+                f"{heartbeat_self_state_lines(self.store.self_state_context())}",
             ),
             ("runtime_directives", "\n\n".join(directives)),
             ("goal_progress", recalled["goal_progress"]),

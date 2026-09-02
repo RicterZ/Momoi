@@ -6,8 +6,8 @@ from ...logging_context import log_event
 from ...models import ToolCall
 from ...text_replacement import cyber_keyword_pre_hook
 from ..agent import AgentWorkflow
-from ..context_assembler import recall_episode_context
-from ..context_service import _heartbeat_self_state_lines
+from ..context.presentation import heartbeat_self_state_lines
+from ..context.rendering import recall_episode_context
 from ..parsing import parse_reflection_finish
 from ..protocol import REFLECTION_FINISH_SPEC
 from ..turn_support import (
@@ -120,7 +120,7 @@ class ReflectionWorkflow:
             ("daily_reflection_record", reflection_record),
             (
                 "runtime_state",
-                _heartbeat_self_state_lines(self.store.self_state_context()),
+                heartbeat_self_state_lines(self.store.self_state_context()),
             ),
             ("episode_directory", episodes),
             ("open_conversations", self.store.open_conversation_inventory_context()),
