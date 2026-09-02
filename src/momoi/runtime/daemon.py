@@ -25,7 +25,7 @@ from ..webhooks import WebhookService
 from .jobs import AutonomousJob
 from .agent.result_store import ToolResultStore
 from .agent.context_window import ContextWindow
-from .agent.delivery import DeliveryPolicy
+from .agent.delivery import BubbleDelivery, DeliveryPolicy
 from .agent.tool_executor import ToolExecutor, artifact_root, tool_result_root
 from .agent.tool_surface import ToolSurface
 from .dispatch import AgentWorker, CommandRouter, OutboxWorker, Scheduler
@@ -166,6 +166,12 @@ class MomoiDaemon(
         self.autonomous: asyncio.Queue[AutonomousJob] = asyncio.Queue()
         self.episode_annealing_requested = asyncio.Event()
         self.outbox_changed = asyncio.Event()
+        self.bubble_delivery = BubbleDelivery(
+            self.store,
+            self.channels,
+            self.delivery_policy,
+            self.outbox_changed,
+        )
         self.agenda_changed = asyncio.Event()
         self._active_turn: asyncio.Task[Any] | None = None
         self._active_annealing: asyncio.Task[None] | None = None

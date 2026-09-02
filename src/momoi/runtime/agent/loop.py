@@ -17,14 +17,13 @@ from . import (
     TurnHarness,
     WorkflowProtocolError,
 )
-from ..parsing import parse_bubbles, response_text
+from ..parsing import response_text
 from .progress import (
     announce_field,
     apply_tool_announce,
     initial_announce_error_message,
     missing_initial_work_announce,
 )
-from .delivery import SIMILAR_BUBBLES_THRESHOLD
 from .protocol import harness_correction, owner_request_messages, parse_end_turn
 from ..protocol import (
     AUTONOMOUS_FINISH_SPEC,
@@ -752,91 +751,33 @@ class AgentLoop:
                             source_event_id=source_event_id,
                             allow_notify=True,
                         )
-                    elif not call.id:
-                        result = {"ok": False, "error": "missing_tool_call_id"}
                     else:
-                        progress, error = parse_bubbles(call.arguments)
-                        if progress is not None:
-                            error = self.delivery_policy.validate_emotions(progress)
-                            if error is not None:
-                                progress = None
-                        if not (require_response or heartbeat_turn):
-                            result = {"ok": False, "error": "tool_not_allowed"}
-                        elif progress is None:
-                            result = {"ok": False, "error": error}
-                        else:
-                            check_contact = (
-                                (heartbeat_turn or reply_wait_turn)
-                                and heartbeat_owner_event_revision is not None
+                        delivery = self.bubble_delivery.dispatch(
+                            call,
+                            turn_id=turn_id,
+                            stage=stage,
+                            round_number=llm_round,
+                            delivery_channel=delivery_channel,
+                            response_required=require_response,
+                            heartbeat_turn=heartbeat_turn,
+                            reply_followup_turn=reply_wait_turn,
+                            heartbeat_owner_event_revision=(
+                                heartbeat_owner_event_revision
+                            ),
+                            heartbeat_notification_key=heartbeat_notification_key,
+                            previous_tool_name=previous_tool_name,
+                            previous_bubbles=last_sent_messages,
+                            previous_channel=last_sent_channel,
+                        )
+                        result = delivery.result
+                        if delivery.bubbles is not None:
+                            visible_since_owner_update = True
+                            owner_work_acknowledged = (
+                                owner_work_acknowledged
+                                or delivery.acknowledges_work
                             )
-                            contact_error = (
-                                self.delivery_policy.heartbeat_contact_error(
-                                    heartbeat_owner_event_revision,
-                                    heartbeat_notification_key,
-                                )
-                                if check_contact
-                                else None
-                            )
-                            if contact_error is not None:
-                                result = {"ok": False, "error": contact_error}
-                            else:
-                                target = self.channels.get(
-                                    str(
-                                        call.arguments.get("channel")
-                                        or delivery_channel.name
-                                    )
-                                )
-                                if target is None:
-                                    result = {"ok": False, "error": "invalid_channel"}
-                                else:
-                                    similarity = (
-                                        self.delivery_policy.similarity(
-                                            last_sent_messages, progress
-                                        )
-                                        if previous_tool_name == "send_bubbles"
-                                        and last_sent_messages is not None
-                                        and last_sent_channel == target.name
-                                        else 0.0
-                                    )
-                                    if similarity >= SIMILAR_BUBBLES_THRESHOLD:
-                                        log_event(
-                                            logger,
-                                            logging.WARNING,
-                                            "similar_send_bubbles_skipped",
-                                            stage=stage,
-                                            turn_id=turn_id,
-                                            round=llm_round,
-                                            channel=target.name,
-                                            tool_call_id=call.id,
-                                            similarity=round(similarity, 3),
-                                            threshold=SIMILAR_BUBBLES_THRESHOLD,
-                                        )
-                                        result = {
-                                            "ok": False,
-                                            "error": "similar_bubbles_already_sent",
-                                            "message": (
-                                                "A very similar set of bubbles was "
-                                                "already sent successfully. Do not "
-                                                "repeat it; continue the work or end "
-                                                "the Turn."
-                                            ),
-                                        }
-                                    else:
-                                        self.store.queue_progress(
-                                            turn_id, call.id, progress, target.name
-                                        )
-                                        visible_since_owner_update = True
-                                        if not check_contact:
-                                            owner_work_acknowledged = True
-                                        last_sent_messages = copy.deepcopy(progress)
-                                        last_sent_channel = target.name
-                                        self.outbox_changed.set()
-                                        result = {
-                                            "ok": True,
-                                            "state": "committed",
-                                            "channel": target.name,
-                                            "bubbles": len(progress),
-                                        }
+                            last_sent_messages = copy.deepcopy(delivery.bubbles)
+                            last_sent_channel = delivery.channel
                 elif call.name == "tool_enable":
                     requested = call.arguments.get("groups")
                     if (
