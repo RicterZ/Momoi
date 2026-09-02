@@ -27,7 +27,9 @@ from .goals import GoalStore
 from .emotions import EmotionStore
 from .turns import TurnStore
 from .inbox import InboxStore
-from .heartbeat import HeartbeatStore
+from .heartbeat_commits import HeartbeatCommitStore
+from .heartbeat_schedule import HeartbeatScheduleStore
+from .heartbeat_state import HeartbeatStateStore
 from .semantic_queue import SemanticQueueStore
 from .semantic_sources import SemanticSourceStore
 from .thinking import ThinkingStore
@@ -56,7 +58,9 @@ class Store(
     ContextPlanStore,
     InboxStore,
     ReflectionStore,
-    HeartbeatStore,
+    HeartbeatStateStore,
+    HeartbeatScheduleStore,
+    HeartbeatCommitStore,
     DashboardStore,
     EpisodeConsolidationStore,
     EpisodeAnnealingStore,

@@ -2477,7 +2477,7 @@ class StorageMemoryTest(unittest.TestCase):
         notifications = NotificationConfig()
         with (
             tempfile.TemporaryDirectory() as directory,
-            patch("momoi.storage.heartbeat.time.time", return_value=now),
+            patch("momoi.storage.heartbeat_commits.time.time", return_value=now),
         ):
             store = Store(
                 Path(directory) / "momoi.sqlite3", timezone="Asia/Shanghai"
@@ -2615,7 +2615,7 @@ class StorageMemoryTest(unittest.TestCase):
                 ["还没想好的话，我可以帮你挑两个呀。"],
                 "weixin",
             )
-            with patch("momoi.storage.heartbeat.time.time", return_value=1300):
+            with patch("momoi.storage.heartbeat_commits.time.time", return_value=1300):
                 store.commit_reply_followup(
                     "reply-followup",
                     owner_event_revision=0,
@@ -2706,7 +2706,7 @@ class StorageMemoryTest(unittest.TestCase):
                 store.mark_sent(followup.id)
             self.assertIsNotNone(store.pending_owner_reply(1060))
 
-            with patch("momoi.storage.heartbeat.time.time", return_value=1061):
+            with patch("momoi.storage.heartbeat_commits.time.time", return_value=1061):
                 store.commit_reply_followup(
                     "early-followup",
                     owner_event_revision=0,
@@ -2938,7 +2938,7 @@ class StorageMemoryTest(unittest.TestCase):
                 ).fetchone()[0],
                 "superseded",
             )
-            with patch("momoi.storage.heartbeat.time.time", return_value=1061):
+            with patch("momoi.storage.heartbeat_commits.time.time", return_value=1061):
                 store.commit_reply_followup(
                     "claimed-followup",
                     owner_event_revision=1,
@@ -2980,7 +2980,7 @@ class StorageMemoryTest(unittest.TestCase):
                 ["还想听老师说说"],
                 "napcat",
             )
-            with patch("momoi.storage.heartbeat.time.time", return_value=1100):
+            with patch("momoi.storage.heartbeat_commits.time.time", return_value=1100):
                 store.commit_reply_followup(
                     "reply-followup",
                     owner_event_revision=0,
@@ -3046,7 +3046,7 @@ class StorageMemoryTest(unittest.TestCase):
                 ["老师还没回答呢"],
                 "napcat",
             )
-            with patch("momoi.storage.heartbeat.time.time", return_value=1100):
+            with patch("momoi.storage.heartbeat_commits.time.time", return_value=1100):
                 store.commit_reply_followup(
                     "single-followup",
                     owner_event_revision=0,
@@ -3199,7 +3199,7 @@ class StorageMemoryTest(unittest.TestCase):
                            'queued', 1000, 1000, 1000)"""
             )
             store.begin_turn("cooldown-heartbeat", "heartbeat", ["heartbeat:1100"])
-            with patch("momoi.storage.heartbeat.time.time", return_value=1100):
+            with patch("momoi.storage.heartbeat_commits.time.time", return_value=1100):
                 committed = store.commit_heartbeat(
                     "cooldown-heartbeat",
                     owner_event_revision=0,
@@ -3250,7 +3250,7 @@ class StorageMemoryTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
             store.begin_turn("heartbeat-chat", "heartbeat", ["heartbeat:1000"])
-            with patch("momoi.storage.heartbeat.time.time", return_value=1000):
+            with patch("momoi.storage.heartbeat_commits.time.time", return_value=1000):
                 committed = store.commit_heartbeat(
                     "heartbeat-chat",
                     owner_event_revision=0,

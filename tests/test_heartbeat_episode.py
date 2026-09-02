@@ -9,12 +9,12 @@ from zoneinfo import ZoneInfo
 from momoi.config import NotificationConfig
 from momoi.context_time import context_timestamp
 from momoi.storage import Store
-from momoi.storage.heartbeat import RECENT_HEARTBEAT_LIMIT
+from momoi.storage.heartbeat_state import RECENT_HEARTBEAT_LIMIT
 
 
 class HeartbeatEpisodeTests(unittest.TestCase):
     def _commit(self, store: Store, turn_id: str, now: float) -> str:
-        with patch("momoi.storage.heartbeat.time.time", return_value=now):
+        with patch("momoi.storage.heartbeat_commits.time.time", return_value=now):
             store.begin_turn(turn_id, "heartbeat", [f"heartbeat:{turn_id}"])
             store.commit_heartbeat(
                 turn_id,
@@ -81,7 +81,7 @@ class HeartbeatEpisodeTests(unittest.TestCase):
             ).timestamp()
             delivered_at = heartbeat_at + 120
             turn_id = "heartbeat-delayed"
-            with patch("momoi.storage.heartbeat.time.time", return_value=heartbeat_at):
+            with patch("momoi.storage.heartbeat_commits.time.time", return_value=heartbeat_at):
                 store.begin_turn(turn_id, "heartbeat", ["heartbeat:delayed"])
                 store.commit_heartbeat(
                     turn_id,
@@ -123,7 +123,7 @@ class RecentHeartbeatActivityTests(unittest.TestCase):
         now: float,
         activity: str,
     ) -> None:
-        with patch("momoi.storage.heartbeat.time.time", return_value=now):
+        with patch("momoi.storage.heartbeat_commits.time.time", return_value=now):
             store.begin_turn(turn_id, "heartbeat", [f"heartbeat:{turn_id}"])
             store.commit_heartbeat(
                 turn_id,
@@ -186,7 +186,7 @@ class RecentHeartbeatActivityTests(unittest.TestCase):
             store.begin_turn(
                 "reply-followup", "reply_followup", ["reply-followup:1"]
             )
-            with patch("momoi.storage.heartbeat.time.time", return_value=now + 60):
+            with patch("momoi.storage.heartbeat_commits.time.time", return_value=now + 60):
                 store.commit_reply_followup(
                     "reply-followup",
                     owner_event_revision=0,
