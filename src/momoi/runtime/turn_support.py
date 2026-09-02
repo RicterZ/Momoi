@@ -123,13 +123,6 @@ USER_CONTEXT_SECTION_ORDER = (
     "current_owner_bubbles",
 )
 
-# The two ordering rules sit in the last position because the live endpoint
-# follows them reliably there. Field semantics remain in the tool schemas.
-OWNER_TURN_PROTOCOL_REMINDER = (
-    "[Owner Turn: recall first; only send_bubbles sends bubbles.]"
-)
-
-
 def pack_user_context(*items: tuple[str, str]) -> str:
     """Render user context sections in prefix-cache order, skipping empties."""
     unknown = [name for name, _ in items if name not in USER_CONTEXT_SECTION_ORDER]
@@ -211,12 +204,7 @@ def owner_content_blocks(
         blocks.append({"type": "text", "text": f"{opening}{escape(line)}"})
         blocks.extend(content_blocks(event.segments))
     closing = "</current_owner_bubbles>" if events else ""
-    blocks.append(
-        {
-            "type": "text",
-            "text": f"{closing}\n\n{OWNER_TURN_PROTOCOL_REMINDER}".lstrip(),
-        }
-    )
+    blocks.append({"type": "text", "text": closing})
     return blocks
 
 

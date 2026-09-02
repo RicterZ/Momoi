@@ -47,7 +47,6 @@ from momoi.provider import (
 )
 from momoi.runtime.turn_support import (
     OWNER_PROMPT_PATH,
-    OWNER_TURN_PROTOCOL_REMINDER,
     SYSTEM_PROMPT_PATH,
     STYLE_CARD_SYSTEM_PROMPT,
 )
@@ -3328,7 +3327,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("</current_owner_bubbles>", current_text)
         self.assertIn("<workflow_contract>", current_text)
         self.assertIn("# Owner Turn contract", current_text)
-        self.assertIn(OWNER_TURN_PROTOCOL_REMINDER, current_text)
+        self.assertNotIn("Owner Turn: recall first", current_text)
+        self.assertTrue(current_text.endswith("</current_owner_bubbles>"))
         self.assertNotIn("Every response in this Turn", current_text)
         self.assertIn("<runtime_state>", current_text)
         self.assertLess(
