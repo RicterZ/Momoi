@@ -8,7 +8,8 @@ from typing import Any, Callable
 from .dumps import dump_response
 from ..config.models import LLMConfig
 from ..extensions.base import parse_protocol_usage
-from ..logging_context import TRACE, current_log_context, log_event
+from ..observability.context import current_log_context
+from ..observability.events import TRACE, log_event
 from ..storage import estimate_tokens
 from ..storage.thinking import persist_thinking_failure
 

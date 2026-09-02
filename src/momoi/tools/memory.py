@@ -4,7 +4,7 @@ import re
 from typing import Any
 
 from .time_range import parse_history_time_range
-from ..logging_context import log_event
+from ..observability.events import log_event
 from ..models import (
     IncomingMessage,
     MemoryCandidate,

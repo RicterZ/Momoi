@@ -5,7 +5,7 @@ from collections.abc import Callable
 from typing import Any
 
 from ....channel import Channel
-from ....logging_context import log_event
+from ....observability.events import log_event
 from ....models import IncomingMessage, ProviderResponse
 from ...turn_support import OwnerMessagesChanged
 

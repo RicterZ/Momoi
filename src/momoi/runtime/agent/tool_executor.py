@@ -6,7 +6,8 @@ from pathlib import Path
 from typing import Any
 
 from ...contracts import ToolResult
-from ...logging_context import compact_log_value, log_event, safe_preview
+from ...observability.events import log_event
+from ...observability.values import compact_log_value, safe_preview
 from ...tools.memory import MEMORY_TOOL_SPECS
 from ...tools.thinking import THINKING_TOOL_SPECS
 from ...models import ToolCall, TurnDraft

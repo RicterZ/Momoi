@@ -14,7 +14,7 @@ from ..channel import (
 from ..config.models import AppConfig
 from ..dashboard.service import DashboardService
 from ..extensions import load_usage_plugin
-from ..logging_context import log_event
+from ..observability.events import log_event
 from ..tools.memory import MemoryTools
 from ..tools.thinking import ThinkingTools
 from ..mcp.manager import MCPManager

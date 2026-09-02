@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 
-from ..logging_context import log_event
+from ..observability.events import log_event
 from .context_plan_adapter import normalize_context_plan
 from .episode_sql import runtime_archive_kind_sql
 

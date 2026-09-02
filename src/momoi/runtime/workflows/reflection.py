@@ -2,7 +2,7 @@ import asyncio
 import logging
 from typing import Any
 
-from ...logging_context import log_event
+from ...observability.events import log_event
 from ...models import ToolCall
 from ..agent import AgentWorkflow
 from ..context.presentation import heartbeat_self_state_lines

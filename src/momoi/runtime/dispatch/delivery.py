@@ -4,7 +4,8 @@ import random
 from time import monotonic
 
 from ...channel import AmbiguousSend, NotConnected, SendRejected
-from ...logging_context import TRACE, log_event, safe_preview
+from ...observability.events import TRACE, log_event
+from ...observability.values import safe_preview
 from ...policies import DaemonPolicy
 
 logger = logging.getLogger("momoi.runtime.daemon")

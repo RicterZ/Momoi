@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import uuid
 
-from ..logging_context import log_event
+from ..observability.events import log_event
 from .memory_values import estimate_tokens
 
 logger = logging.getLogger(__name__)

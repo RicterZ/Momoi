@@ -12,7 +12,7 @@ from urllib.parse import quote, urlparse
 import aiohttp
 
 from .. import AmbiguousSend, IncomingVoice, NotConnected, SendRejected
-from ...logging_context import log_event
+from ...observability.events import log_event
 from .api import WeixinAPI, WeixinHTTPError
 from .config import WeixinConfig, WeixinState
 from .media import (

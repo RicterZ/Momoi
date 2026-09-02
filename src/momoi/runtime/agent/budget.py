@@ -2,7 +2,7 @@ import json
 import math
 from collections.abc import Callable
 
-from ...logging_context import safe_preview
+from ...observability.values import safe_preview
 
 
 class TextSizer:

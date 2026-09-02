@@ -5,7 +5,8 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from ..config.loading import load_config
-from ..logging_context import configure_logging, log_event
+from ..observability.events import log_event
+from ..observability.formatting import configure_logging
 from ..runtime import MomoiDaemon
 
 

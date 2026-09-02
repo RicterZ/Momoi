@@ -21,7 +21,7 @@ from .. import (
     SendRejected,
 )
 from ...asr import ASRProvider, AudioInput
-from ...logging_context import log_event
+from ...observability.events import log_event
 from ...models import IncomingMessage, OwnerInputStatus
 from .face_names import QQ_FACE_NAMES
 

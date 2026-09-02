@@ -1,7 +1,8 @@
 import asyncio
 import logging
 
-from ...logging_context import TRACE, log_event, safe_preview
+from ...observability.events import TRACE, log_event
+from ...observability.values import safe_preview
 from ...models import IncomingMessage, OwnerInputStatus
 from ..jobs import AutonomousJob
 from ..workflows.memory_maintenance import MEMORY_MAINTENANCE_RUN_VERSION

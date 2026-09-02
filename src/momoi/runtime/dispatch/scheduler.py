@@ -2,7 +2,8 @@ import asyncio
 import logging
 from time import time
 
-from ...logging_context import log_event, safe_preview
+from ...observability.events import log_event
+from ...observability.values import safe_preview
 from ..jobs import AutonomousJob
 
 logger = logging.getLogger("momoi.runtime.daemon")

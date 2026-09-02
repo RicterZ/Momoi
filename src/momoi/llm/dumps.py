@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ..logging_context import TRACE, log_event
+from ..observability.events import TRACE, log_event
 
 logger = logging.getLogger(__name__)
 

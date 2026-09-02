@@ -7,7 +7,7 @@ from typing import Any
 
 from ...channel import Channel, ChannelMessage, normalize_channel_message, render_channel_message
 from ...emotions import EMOTION_PREFIX, emotion_slug
-from ...logging_context import log_event
+from ...observability.events import log_event
 from ...models import ToolCall
 from ..parsing import parse_bubbles
 

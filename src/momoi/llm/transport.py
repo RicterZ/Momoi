@@ -8,7 +8,8 @@ from urllib.parse import urlsplit
 import aiohttp
 
 from .errors import ProviderError, ProviderResponseError
-from ..logging_context import log_event, safe_preview
+from ..observability.events import log_event
+from ..observability.values import safe_preview
 from ..models import ProviderResponse
 
 logger = logging.getLogger(__name__)

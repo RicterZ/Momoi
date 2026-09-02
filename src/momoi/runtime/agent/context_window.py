@@ -3,7 +3,7 @@ import logging
 import time
 from typing import Any
 
-from ...logging_context import TRACE, log_event
+from ...observability.events import TRACE, log_event
 from ...storage import estimate_tokens
 from ..turn_support import TurnBudgetExceeded, truncate_tool_result_json
 

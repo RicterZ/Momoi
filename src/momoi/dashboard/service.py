@@ -5,7 +5,7 @@ from aiohttp import web
 
 from .app import create_dashboard_app
 from ..extensions.base import UsagePlugin
-from ..logging_context import log_event
+from ..observability.events import log_event
 from ..storage import Store
 
 logger = logging.getLogger(__name__)

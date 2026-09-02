@@ -12,7 +12,8 @@ from aiohttp import web
 
 from .catalog import WorkflowError, bind_workflow, load_catalog
 from ..config.models import WebhookConfig
-from ..logging_context import log_context, log_event
+from ..observability.context import log_context
+from ..observability.events import log_event
 from ..models import AgentReply
 from ..storage import Store
 

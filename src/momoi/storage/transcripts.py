@@ -2,7 +2,7 @@ import json
 import logging
 import time
 
-from ..logging_context import log_event
+from ..observability.events import log_event
 from .context_plan_adapter import normalize_context_plan
 from .integrity import decode_stored_json
 from .memory_values import estimate_tokens, truncate_tokens

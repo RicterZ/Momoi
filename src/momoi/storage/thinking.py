@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from ..logging_context import log_event
+from ..observability.events import log_event
 from ..search import (
     SearchBackend,
     StringSearchBackend,

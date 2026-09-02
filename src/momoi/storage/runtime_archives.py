@@ -3,7 +3,7 @@ import logging
 import uuid
 from datetime import datetime
 
-from ..logging_context import log_event
+from ..observability.events import log_event
 from .episode_sql import runtime_archive_kind_sql
 
 logger = logging.getLogger(__name__)

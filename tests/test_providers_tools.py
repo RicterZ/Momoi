@@ -24,7 +24,8 @@ from momoi.models import (
     ProviderResponse,
     ToolCall,
 )
-from momoi.logging_context import TRACE, log_context
+from momoi.observability.context import log_context
+from momoi.observability.events import TRACE
 from momoi.llm.anthropic import AnthropicProvider, merge_adjacent_roles
 from momoi.llm.dumps import redact_dump_media
 from momoi.llm.errors import ProviderError

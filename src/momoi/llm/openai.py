@@ -18,7 +18,8 @@ from .telemetry import (
 )
 from .transport import http_error, openai_url, retry_request
 from ..config.models import LLMConfig
-from ..logging_context import log_event, safe_preview
+from ..observability.events import log_event
+from ..observability.values import safe_preview
 from ..models import ProviderResponse, ToolCall
 
 logger = logging.getLogger(__name__)

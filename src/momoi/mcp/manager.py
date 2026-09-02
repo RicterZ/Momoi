@@ -14,13 +14,12 @@ from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamable_http_client
 
 from ..contracts import OWNER_PROGRESS_BEFORE_FIRST_CALL, OWNER_PROGRESS_FIELD
-from ..logging_context import (
-    TRACE,
+from ..observability.context import (
     captured_log_context,
     current_log_context,
-    log_event,
-    safe_preview,
 )
+from ..observability.events import TRACE, log_event
+from ..observability.values import safe_preview
 from .config import expand_mcp_value, load_mcp_servers
 
 logger = logging.getLogger(__name__)

@@ -8,7 +8,7 @@ from typing import Callable, Iterable
 import numpy as np
 
 from ..config.models import EmbeddingConfig
-from ..logging_context import log_event
+from ..observability.events import log_event
 from ..policies import SemanticPolicy
 from ..storage import MemoryRecallQuery, Store
 from ..storage.episode_ranking import EpisodeRecallQuery

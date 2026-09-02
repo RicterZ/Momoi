@@ -3,7 +3,8 @@ import logging
 import time
 from typing import Any
 
-from ....logging_context import log_event, safe_preview
+from ....observability.events import log_event
+from ....observability.values import safe_preview
 from ....models import ToolCall
 from ...agent import AgentWorkflow, WorkflowProtocolError
 from ...turn_support import MEMORY_MAINTENANCE_SYSTEM_PROMPT

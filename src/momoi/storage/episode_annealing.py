@@ -3,7 +3,7 @@ import logging
 import math
 import time
 
-from ..logging_context import log_event
+from ..observability.events import log_event
 from .memory_values import estimate_tokens
 
 EPISODE_ANNEAL_MAX_FAILURES = 3

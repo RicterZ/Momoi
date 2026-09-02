@@ -3,7 +3,8 @@ import logging
 import re
 import time
 
-from ..logging_context import log_event, safe_preview
+from ..observability.events import log_event
+from ..observability.values import safe_preview
 from .turn_workflow import turn_workflow_kind_sql
 
 logger = logging.getLogger(__name__)
@@ -144,4 +145,3 @@ class HeartbeatStateStore:
             intensity=round(float(update["intensity"]), 2),
             cause=safe_preview(update["cause"], 300),
         )
-

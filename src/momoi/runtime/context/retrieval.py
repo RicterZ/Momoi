@@ -5,7 +5,8 @@ import logging
 from typing import TYPE_CHECKING
 
 from ...config.models import AppConfig
-from ...logging_context import log_event, safe_preview
+from ...observability.events import log_event
+from ...observability.values import safe_preview
 from ...storage import MemoryRecallQuery, Store, truncate_tokens
 from ...storage.context_plan_adapter import CURRENT_RETRIEVAL_VERSION
 from ...storage.episode_ranking import EpisodeRecallQuery, rank_recall_items

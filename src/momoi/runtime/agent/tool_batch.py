@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from ...channel import Channel, ChannelMessage
-from ...logging_context import log_context
+from ...observability.context import log_context
 from ...models import IncomingMessage, ProviderResponse, TurnDraft
 from ..turn_support import (
     tool_error_block,

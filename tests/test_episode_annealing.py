@@ -7,7 +7,7 @@ from pathlib import Path
 
 from momoi.channel.napcat import NapCatConfig
 from momoi.config.models import AppConfig, EpisodeAnnealingConfig, LLMConfig
-from momoi.logging_context import current_log_context
+from momoi.observability.context import current_log_context
 from momoi.models import AgentReply, IncomingMessage, ProviderResponse, ToolCall
 from momoi.runtime import MomoiDaemon
 from momoi.runtime.context.rendering import assemble_main_context

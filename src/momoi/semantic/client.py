@@ -6,7 +6,7 @@ import httpx
 import numpy as np
 
 from ..config.models import EmbeddingConfig
-from ..logging_context import log_event
+from ..observability.events import log_event
 from ..policies import SemanticPolicy
 
 logger = logging.getLogger(__name__)

@@ -3,7 +3,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
-from ...logging_context import log_context, new_trace_id
+from ...observability.context import log_context, new_trace_id
 from ...models import ProviderResponse
 from ...storage import estimate_tokens
 from .context_window import ContextWindow

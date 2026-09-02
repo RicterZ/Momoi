@@ -1,7 +1,7 @@
 import json
 import logging
 
-from ...logging_context import log_event
+from ...observability.events import log_event
 from ...storage import (
     REFLECTION_MEMORY_CAUTION,
     Store,
