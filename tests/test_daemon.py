@@ -2382,6 +2382,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             turn_id = daemon._turn_id(event.event_id)
             daemon.store.begin_turn(turn_id, "owner", [event.event_id])
             provider = Provider()
+            provider.config = daemon.config.llm  # type: ignore[attr-defined]
             daemon.provider = provider  # type: ignore[assignment]
             canonical_messages = [{"role": "user", "content": event.text}]
 

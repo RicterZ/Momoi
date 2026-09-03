@@ -251,13 +251,9 @@ The published stack in `docker-compose.yml` runs Momoi, NapCat, and the private
 embedding service. The embedding container is available immediately, but
 semantic recall remains off until it is enabled in `config.json`.
 
-Set the required model and QQ owner values, then start the published stack
-explicitly:
+Set the QQ owner and start the published stack explicitly:
 
 ```bash
-export MOMOI_LLM_BASE_URL=https://api.example.com
-export MOMOI_LLM_API_KEY=replace-me
-export MOMOI_LLM_MODEL=model-name
 export MOMOI_OWNER_QQ=your-qq-number
 docker compose -f docker-compose.yml up -d
 ```
@@ -272,7 +268,8 @@ docker compose -f docker-compose.yml logs momoi
 
 For QQ, open `http://127.0.0.1:6099/webui`, get the NapCat login token from
 `docker logs napcat`, sign in, and enable its OneBot WebSocket service. The
-dashboard is at `http://127.0.0.1:8788`.
+dashboard is at `http://127.0.0.1:8788`; configure the model connection under
+Settings.
 
 For WeChat, authenticate the configured channel once (`weixin` is the internal
 channel identifier):

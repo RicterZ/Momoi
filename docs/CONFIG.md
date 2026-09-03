@@ -489,10 +489,6 @@ Environment values override `config.json` for the current process.
 
 | Variable | Configuration field |
 | --- | --- |
-| `MOMOI_LLM_API_FORMAT` | `llm.api_format` |
-| `MOMOI_LLM_BASE_URL` | `llm.base_url` |
-| `MOMOI_LLM_API_KEY` | `llm.api_key` |
-| `MOMOI_LLM_MODEL` | `llm.model` |
 | `MOMOI_NAPCAT_URL` | `channels.enabled.napcat.url` |
 | `MOMOI_OWNER_QQ` | `channels.enabled.napcat.owner_qq` |
 | `MOMOI_PRIMARY` | `channels.primary` |
@@ -505,6 +501,7 @@ Environment values override `config.json` for the current process.
 | `MOMOI_ASR_SECRET_ID` | `asr.settings.secret_id` |
 | `MOMOI_ASR_SECRET_KEY` | `asr.settings.secret_key` |
 
-Keep files containing credentials private. Restart `momoi run` after changing
-`config.json`, `mcp.json`, workflows, or executor definitions. Prompt files are
-reloaded before each new Turn.
+Keep files containing credentials private. Model connection fields edited in
+the Dashboard take effect immediately. Restart `momoi run` after changing other
+`config.json` fields, `mcp.json`, workflows, or executor definitions. Prompt
+files are reloaded before each new Turn.

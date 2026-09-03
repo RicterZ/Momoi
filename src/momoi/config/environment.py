@@ -20,17 +20,6 @@ def _env_bool(name: str) -> bool | None:
 
 
 def apply_env_overrides(raw: dict[str, Any]) -> None:
-    llm = raw.setdefault("llm", {})
-    if isinstance(llm, dict):
-        if value := _env("MOMOI_LLM_API_FORMAT"):
-            llm["api_format"] = value
-        if value := _env("MOMOI_LLM_BASE_URL"):
-            llm["base_url"] = value
-        if value := _env("MOMOI_LLM_API_KEY"):
-            llm["api_key"] = value
-        if value := _env("MOMOI_LLM_MODEL"):
-            llm["model"] = value
-
     channels = raw.get("channels")
     if isinstance(channels, dict):
         if value := _env("MOMOI_PRIMARY"):

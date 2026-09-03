@@ -137,7 +137,7 @@ class AgentLoop:
             require_tool = bool(
                 autonomous_goal_id or heartbeat_turn or reply_wait_turn or workflow
             ) or (
-                require_response and self.config.llm.api_format == "openai"
+                require_response and self.provider.config.api_format == "openai"
             )
 
             async def complete(

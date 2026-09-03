@@ -64,6 +64,10 @@ COPY --from=build /wheels /wheels
 RUN pip install --no-cache-dir --no-index /wheels/*.whl \
     && rm -rf /wheels
 
+COPY config.example /usr/share/momoi/example
+COPY docker/entrypoint.sh /usr/local/bin/momoi-entrypoint
+RUN chmod +x /usr/local/bin/momoi-entrypoint
+
 EXPOSE 8787 8788
-ENTRYPOINT ["momoi"]
+ENTRYPOINT ["momoi-entrypoint"]
 CMD ["run", "--dashboard"]

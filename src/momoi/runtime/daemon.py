@@ -20,8 +20,7 @@ from ..tools.memory import MemoryTools
 from ..tools.thinking import ThinkingTools
 from ..mcp.manager import MCPManager
 from ..models import AgentReply, IncomingMessage
-from ..llm.anthropic import AnthropicProvider
-from ..llm.openai import OpenAIProvider
+from ..llm.manager import ProviderManager
 from ..semantic.service import SemanticRecallService
 from ..storage import Store
 from ..webhooks.service import WebhookService
@@ -130,11 +129,7 @@ class MomoiDaemon(
             primary_name = str(getattr(config.channel, "plugin", ""))
             self.channel = self.channels[primary_name]
         dump_dir = config.workspace / "llm-dumps" if config.workspace else None
-        self.provider = (
-            OpenAIProvider(config.llm, dump_dir)
-            if config.llm.api_format == "openai"
-            else AnthropicProvider(config.llm, dump_dir)
-        )
+        self.provider = ProviderManager(config.llm, dump_dir)
         self.provider.usage_sink = self.store.record_llm_call
         self.provider.thinking_sink = self.store.record_thinking_call
         if usage_plugin is not None:

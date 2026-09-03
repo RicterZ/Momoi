@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from typing import Any
 
 from momoi.models import ProviderResponse, ToolCall
@@ -49,6 +50,10 @@ class ContextAwareProvider:
 
     def __init__(self, delegate: object) -> None:
         self.delegate = delegate
+
+    @property
+    def config(self) -> object:
+        return getattr(self.delegate, "config", SimpleNamespace(api_format="anthropic"))
 
     async def complete(
         self,

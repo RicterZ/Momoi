@@ -28,10 +28,6 @@ services:
       - host.docker.internal:host-gateway
     environment:
       TZ: ${TZ:-Asia/Shanghai}
-      MOMOI_LLM_API_FORMAT: ${MOMOI_LLM_API_FORMAT:-}
-      MOMOI_LLM_BASE_URL: ${MOMOI_LLM_BASE_URL}
-      MOMOI_LLM_API_KEY: ${MOMOI_LLM_API_KEY}
-      MOMOI_LLM_MODEL: ${MOMOI_LLM_MODEL}
       MOMOI_OWNER_QQ: ${MOMOI_OWNER_QQ:-}
       MOMOI_NAPCAT_URL: ${MOMOI_NAPCAT_URL:-ws://napcat:3001}
       MOMOI_PRIMARY: ${MOMOI_PRIMARY:-}

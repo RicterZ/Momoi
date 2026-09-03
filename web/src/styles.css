@@ -1447,7 +1447,7 @@ a.tag:hover {
 }
 .llm-field-grid {
   display: grid;
-  grid-template-columns: 1.25fr 1fr 1fr;
+  grid-template-columns: .8fr 1.4fr 1fr 1fr;
   gap: 16px;
 }
 .settings-field {
@@ -1462,7 +1462,8 @@ a.tag:hover {
   font-weight: 850;
   letter-spacing: .1em;
 }
-.settings-field input {
+.settings-field input,
+.settings-field select {
   min-width: 0;
   width: 100%;
   padding: 12px 14px;
@@ -1473,12 +1474,26 @@ a.tag:hover {
   box-shadow: 3px 3px 0 var(--blue);
   font: 12px/1.2 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
-.settings-field input:focus {
+.settings-field select {
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--ink) 50%),
+    linear-gradient(135deg, var(--ink) 50%, transparent 50%);
+  background-position:
+    calc(100% - 16px) calc(50% - 2px),
+    calc(100% - 11px) calc(50% - 2px);
+  background-repeat: no-repeat;
+  background-size: 5px 5px, 5px 5px;
+  padding-right: 32px;
+}
+.settings-field input:focus,
+.settings-field select:focus {
   outline: none;
   background: var(--surface);
   box-shadow: 2px 2px 0 var(--pink);
 }
-.settings-field input:disabled {
+.settings-field input:disabled,
+.settings-field select:disabled {
   color: var(--muted);
   background: var(--wash);
   box-shadow: 3px 3px 0 var(--line);
@@ -1516,7 +1531,6 @@ a.tag:hover {
   .emotion-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .prompt-grid { grid-template-columns: 1fr; }
   .llm-field-grid { grid-template-columns: 1fr 1fr; }
-  .settings-field:first-child { grid-column: 1 / -1; }
 }
 
 @media (max-width: 760px) {
@@ -1662,7 +1676,6 @@ a.tag:hover {
   .prompt-card-foot { align-items: stretch; flex-direction: column; }
   .prompt-card-foot .card-actions { justify-content: flex-end; }
   .llm-field-grid { grid-template-columns: 1fr; }
-  .settings-field:first-child { grid-column: auto; }
   .llm-settings-foot { align-items: stretch; flex-direction: column; }
   .llm-settings-foot .card-actions { justify-content: flex-end; }
   .stamp-meta {

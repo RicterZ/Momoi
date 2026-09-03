@@ -2437,9 +2437,9 @@ function PromptEditor({ item, token }) {
 }
 
 function LlmSettings({ item, token }) {
-  const managed = new Set(item.environment_fields || []);
   const [saved, setSaved] = useState(item);
   const [draft, setDraft] = useState({
+    api_format: item.api_format || "anthropic",
     base_url: item.base_url || "",
     model: item.model || "",
     api_key: "",
@@ -2447,17 +2447,20 @@ function LlmSettings({ item, token }) {
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState("");
   const dirty =
-    (!managed.has("base_url") && draft.base_url !== saved.base_url) ||
-    (!managed.has("model") && draft.model !== saved.model) ||
-    (!managed.has("api_key") && Boolean(draft.api_key));
+    draft.api_format !== saved.api_format ||
+    draft.base_url !== saved.base_url ||
+    draft.model !== saved.model ||
+    Boolean(draft.api_key);
 
   async function save(event) {
     event.preventDefault();
     if (!dirty || saving) return;
-    const body = {};
-    if (!managed.has("base_url")) body.base_url = draft.base_url;
-    if (!managed.has("model")) body.model = draft.model;
-    if (!managed.has("api_key") && draft.api_key) body.api_key = draft.api_key;
+    const body = {
+      api_format: draft.api_format,
+      base_url: draft.base_url,
+      model: draft.model,
+    };
+    if (draft.api_key) body.api_key = draft.api_key;
     setSaving(true);
     setStatus("");
     try {
@@ -2468,6 +2471,7 @@ function LlmSettings({ item, token }) {
       });
       setSaved(updated);
       setDraft({
+        api_format: updated.api_format || "anthropic",
         base_url: updated.base_url || "",
         model: updated.model || "",
         api_key: "",
@@ -2480,36 +2484,42 @@ function LlmSettings({ item, token }) {
     }
   }
 
-  const fieldNote = (name) =>
-    managed.has(name) ? "由环境变量管理，需在部署环境修改" : "";
-
   return (
     <form className="llm-settings-card" onSubmit={save}>
       <div className="llm-field-grid">
+        <label className="settings-field">
+          <span>接口协议</span>
+          <select
+            value={draft.api_format}
+            onChange={(event) => {
+              setDraft({ ...draft, api_format: event.target.value });
+              setStatus("");
+            }}
+          >
+            <option value="openai">OpenAI 兼容</option>
+            <option value="anthropic">Anthropic 兼容</option>
+          </select>
+        </label>
         <label className="settings-field">
           <span>API 地址</span>
           <input
             type="url"
             value={draft.base_url}
-            disabled={managed.has("base_url")}
             onChange={(event) => {
               setDraft({ ...draft, base_url: event.target.value });
               setStatus("");
             }}
           />
-          {fieldNote("base_url") ? <small>{fieldNote("base_url")}</small> : null}
         </label>
         <label className="settings-field">
           <span>模型</span>
           <input
             value={draft.model}
-            disabled={managed.has("model")}
             onChange={(event) => {
               setDraft({ ...draft, model: event.target.value });
               setStatus("");
             }}
           />
-          {fieldNote("model") ? <small>{fieldNote("model")}</small> : null}
         </label>
         <label className="settings-field">
           <span>API Key</span>
@@ -2517,14 +2527,12 @@ function LlmSettings({ item, token }) {
             type="password"
             autoComplete="new-password"
             value={draft.api_key}
-            disabled={managed.has("api_key")}
             placeholder={saved.api_key_configured ? "已配置 · 留空则不修改" : "输入 API Key"}
             onChange={(event) => {
               setDraft({ ...draft, api_key: event.target.value });
               setStatus("");
             }}
           />
-          {fieldNote("api_key") ? <small>{fieldNote("api_key")}</small> : null}
         </label>
       </div>
       <footer className="llm-settings-foot">
@@ -2539,7 +2547,12 @@ function LlmSettings({ item, token }) {
             type="button"
             disabled={!dirty || saving}
             onClick={() => {
-              setDraft({ base_url: saved.base_url, model: saved.model, api_key: "" });
+              setDraft({
+                api_format: saved.api_format || "anthropic",
+                base_url: saved.base_url,
+                model: saved.model,
+                api_key: "",
+              });
               setStatus("");
             }}
           >

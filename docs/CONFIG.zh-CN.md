@@ -485,10 +485,6 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
 
 | 环境变量 | 配置字段 |
 | --- | --- |
-| `MOMOI_LLM_API_FORMAT` | `llm.api_format` |
-| `MOMOI_LLM_BASE_URL` | `llm.base_url` |
-| `MOMOI_LLM_API_KEY` | `llm.api_key` |
-| `MOMOI_LLM_MODEL` | `llm.model` |
 | `MOMOI_NAPCAT_URL` | `channels.enabled.napcat.url` |
 | `MOMOI_OWNER_QQ` | `channels.enabled.napcat.owner_qq` |
 | `MOMOI_PRIMARY` | `channels.primary` |
@@ -501,5 +497,6 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
 | `MOMOI_ASR_SECRET_ID` | `asr.settings.secret_id` |
 | `MOMOI_ASR_SECRET_KEY` | `asr.settings.secret_key` |
 
-请妥善保护包含凭证的文件。修改 `config.json`、`mcp.json`、工作流或执行器
-定义后，需要重启 `momoi run`。每个新 Turn 开始前都会重新加载提示词文件。
+请妥善保护包含凭证的文件。Dashboard 中修改的模型连接字段会立即生效；修改
+其他 `config.json` 字段、`mcp.json`、工作流或执行器定义后，需要重启
+`momoi run`。每个新 Turn 开始前都会重新加载提示词文件。

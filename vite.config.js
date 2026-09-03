@@ -633,7 +633,6 @@ function previewUsageApi() {
     base_url: "https://api.deepseek.com/v1",
     model: "deepseek-v4-flash",
     api_key_configured: true,
-    environment_fields: [],
   };
   const prompts = new Map([
     [
@@ -765,6 +764,13 @@ function previewUsageApi() {
           req.on("end", () => {
             try {
               const body = JSON.parse(raw);
+              if (
+                body.api_format &&
+                !["openai", "anthropic"].includes(String(body.api_format))
+              ) {
+                json(res, { error: "llm.api_format must be anthropic or openai" }, 400);
+                return;
+              }
               if (!String(body.base_url || llm.base_url).startsWith("http")) {
                 json(res, { error: "llm.base_url must be an absolute HTTP URL" }, 400);
                 return;
@@ -775,6 +781,7 @@ function previewUsageApi() {
               }
               llm = {
                 ...llm,
+                api_format: String(body.api_format || llm.api_format),
                 base_url: String(body.base_url || llm.base_url).replace(/\/$/, ""),
                 model: String(body.model || llm.model).trim(),
                 api_key_configured: Boolean(body.api_key || llm.api_key_configured),

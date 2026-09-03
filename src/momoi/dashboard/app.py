@@ -475,7 +475,7 @@ def create_dashboard_app(
     async def update_llm_settings(request: web.Request) -> web.Response:
         payload = await _json_body(request)
         try:
-            item = settings.update_llm(payload)
+            item = await settings.update_llm(payload)
         except (OSError, ValueError, json.JSONDecodeError) as error:
             raise web.HTTPBadRequest(text=str(error)) from None
         return web.json_response(item)

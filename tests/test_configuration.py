@@ -409,7 +409,7 @@ class ConfigurationTest(unittest.TestCase):
                 },
             )
 
-    def test_environment_overrides_docker_fields(self) -> None:
+    def test_environment_overrides_deployment_fields_but_not_llm(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "prompts").mkdir()
@@ -468,10 +468,10 @@ class ConfigurationTest(unittest.TestCase):
                 clear=False,
             ):
                 config = load_config(path)
-            self.assertEqual(config.llm.api_format, "openai")
-            self.assertEqual(config.llm.base_url, "https://llm.example")
-            self.assertEqual(config.llm.api_key, "sk-from-env")
-            self.assertEqual(config.llm.model, "env-model")
+            self.assertEqual(config.llm.api_format, "anthropic")
+            self.assertEqual(config.llm.base_url, "https://example.com")
+            self.assertEqual(config.llm.api_key, "key")
+            self.assertEqual(config.llm.model, "model")
             self.assertEqual(config.channel.plugin, "weixin")
             napcat = next(
                 item for item in config.channel_configs if item.plugin == "napcat"

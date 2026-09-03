@@ -1308,6 +1308,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                     )
 
             fake = FakeProvider()
+            fake.config = config.llm  # type: ignore[attr-defined]
             daemon.provider = with_owner_recall(fake)  # type: ignore[assignment]
             event = IncomingMessage(
                 "qq:1:ignored-choice", "ignored-choice", "测试", 1, 1
@@ -1392,6 +1393,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
 
             self_test = self
             fake = FakeProvider()
+            fake.config = config.llm  # type: ignore[attr-defined]
             daemon.provider = with_owner_recall(fake)  # type: ignore[assignment]
             event = IncomingMessage("qq:1:bad-json", "bad-json", "测试", 1, 1)
             daemon.store.add_event(event)

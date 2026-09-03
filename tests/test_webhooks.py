@@ -347,6 +347,7 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                     }
 
             provider = Provider()
+            provider.config = daemon.config.llm  # type: ignore[attr-defined]
             tools = Tools()
             daemon.provider = provider  # type: ignore[assignment]
             daemon.builtin_tools = tools  # type: ignore[assignment]

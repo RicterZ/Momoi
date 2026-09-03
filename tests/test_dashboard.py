@@ -224,7 +224,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             api_format="openai",
         )
 
-        def activate_llm(config: LLMConfig) -> None:
+        async def activate_llm(config: LLMConfig) -> None:
             self.llm_config = config
 
         self.settings = DashboardSettings(
@@ -235,7 +235,6 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             config_path=self.config_path,
             llm_config=lambda: self.llm_config,
             activate_llm=activate_llm,
-            environment={},
         )
 
         self.client = TestClient(
@@ -412,17 +411,20 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             "/api/settings/llm",
             headers=auth,
             json={
+                "api_format": "anthropic",
                 "base_url": "https://new.example.com/v1/",
                 "model": "new-model",
                 "api_key": "new-key",
             },
         )
         self.assertEqual(response.status, 200)
+        self.assertEqual(self.llm_config.api_format, "anthropic")
         self.assertEqual(self.llm_config.base_url, "https://new.example.com/v1")
         self.assertEqual(self.llm_config.model, "new-model")
         self.assertEqual(self.llm_config.api_key, "new-key")
         saved = json.loads(self.config_path.read_text(encoding="utf-8"))["llm"]
         self.assertEqual(saved["base_url"], "https://new.example.com/v1")
+        self.assertEqual(saved["api_format"], "anthropic")
         self.assertEqual(saved["model"], "new-model")
         self.assertEqual(saved["api_key"], "new-key")
 
@@ -434,19 +436,29 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(invalid.status, 400)
         self.assertEqual(self.llm_config.base_url, "https://new.example.com/v1")
 
-    def test_environment_managed_llm_fields_cannot_be_overwritten(self) -> None:
+        invalid_protocol = await self.client.put(
+            "/api/settings/llm",
+            headers=auth,
+            json={"api_format": "responses"},
+        )
+        self.assertEqual(invalid_protocol.status, 400)
+        self.assertEqual(self.llm_config.api_format, "anthropic")
+
+    async def test_llm_activation_failure_restores_config_file(self) -> None:
+        original = self.config_path.read_text(encoding="utf-8")
+
+        async def fail_activation(_config: LLMConfig) -> None:
+            raise ValueError("activation failed")
+
         settings = DashboardSettings(
             (),
             config_path=self.config_path,
             llm_config=lambda: self.llm_config,
-            activate_llm=lambda config: None,
-            environment={"MOMOI_LLM_MODEL": "environment-model"},
+            activate_llm=fail_activation,
         )
-        self.assertEqual(settings.llm()["environment_fields"], ["model"])
-        with self.assertRaisesRegex(ValueError, "managed by environment"):
-            settings.update_llm({"model": "dashboard-model"})
-        saved = json.loads(self.config_path.read_text(encoding="utf-8"))["llm"]
-        self.assertEqual(saved["model"], "old-model")
+        with self.assertRaisesRegex(ValueError, "activation failed"):
+            await settings.update_llm({"api_format": "anthropic"})
+        self.assertEqual(self.config_path.read_text(encoding="utf-8"), original)
 
     async def test_chat_log_includes_ignored_and_deferred_turns(self) -> None:
         now = time.time()

@@ -221,12 +221,9 @@ Always/Recent memory、正在进行的近期 Turn、Goal、情绪与活动、思
 `docker-compose.yml` 中的发布栈会运行 Momoi、NapCat 和私有 Embedding 服务。Embedding
 容器会一起启动，但只有在 `config.json` 中启用后才会参与语义召回。
 
-设置模型和 QQ 主人所需的环境变量，然后明确启动发布栈：
+设置 QQ 主人并启动发布栈：
 
 ```bash
-export MOMOI_LLM_BASE_URL=https://api.example.com
-export MOMOI_LLM_API_KEY=replace-me
-export MOMOI_LLM_MODEL=model-name
 export MOMOI_OWNER_QQ=your-qq-number
 docker compose -f docker-compose.yml up -d
 ```
@@ -240,7 +237,7 @@ docker compose -f docker-compose.yml logs momoi
 
 QQ 用户打开 `http://127.0.0.1:6099/webui`，从 `docker logs napcat` 获取 NapCat 登录
 token，完成登录并启用 OneBot WebSocket。Dashboard 默认位于
-`http://127.0.0.1:8788`。
+`http://127.0.0.1:8788`，模型连接可在“设置”中修改。
 
 WeChat 渠道只需在同一 workspace 中认证一次（`weixin` 是内部渠道标识）：
 

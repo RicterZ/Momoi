@@ -24,7 +24,7 @@ if owner := os.environ.get("MOMOI_OWNER_QQ", "").strip():
     napcat["owner_qq"] = owner
 
 timezone = os.environ.get("MOMOI_TIMEZONE") or os.environ.get("TZ") or "UTC"
-config.setdefault("notifications", {})["timezone"] = timezone
+config["timezone"] = timezone
 
 dashboard = config.setdefault("dashboard", {})
 dashboard_token = os.environ.get("MOMOI_DASHBOARD_TOKEN", "").strip() or secrets.token_urlsafe(24)
@@ -41,8 +41,8 @@ print(f"Momoi workspace created at {path.parent}", flush=True)
 print(f"Dashboard token: {dashboard_token}", flush=True)
 print(f"Webhook token: {webhook_token}", flush=True)
 print(
-    "Set MOMOI_LLM_BASE_URL, MOMOI_LLM_API_KEY, MOMOI_LLM_MODEL"
-    " and MOMOI_OWNER_QQ — or run: momoi channel login weixin",
+    "Open the Dashboard to configure the model connection; set MOMOI_OWNER_QQ"
+    " for NapCat or run: momoi channel login weixin",
     flush=True,
 )
 PY
