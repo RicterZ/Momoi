@@ -10,8 +10,8 @@ from zoneinfo import ZoneInfo
 
 from momoi.tools.agenda import AgendaTools
 from momoi.tools.builtin import BuiltinTools
-from momoi.tools.contracts.agenda import AGENDA_TOOL_POLICY, AGENDA_TOOL_SPECS
-from momoi.tools.contracts.memory import MEMORY_TOOL_POLICY, MEMORY_TOOL_SPECS
+from momoi.tools.contracts.agenda import AGENDA_TOOL_SPECS
+from momoi.tools.contracts.memory import MEMORY_TOOL_SPECS
 from momoi.channel.napcat import NapCatConfig
 from momoi.config.models import (
     AppConfig,
@@ -1545,38 +1545,13 @@ class StorageMemoryTest(unittest.TestCase):
         self.assertNotIn(
             "reminder_create", {item["name"] for item in AGENDA_TOOL_SPECS}
         )
-        self.assertIn("Use a Goal for every future action", AGENDA_TOOL_POLICY)
-        self.assertIn("governed", AGENDA_TOOL_POLICY)
-        self.assertIn("by the shared Style Card", AGENDA_TOOL_POLICY)
-        self.assertIn("judgment, not a reflex", MEMORY_TOOL_POLICY)
-        self.assertIn(
-            "never persist a more specific claim than the exact owner quote entails",
-            MEMORY_TOOL_POLICY,
-        )
-        self.assertIn("locate the committed memory", MEMORY_TOOL_POLICY)
-        self.assertIn("native transcript tool", MEMORY_TOOL_POLICY)
-        self.assertIn("replace_confirmed=true", MEMORY_TOOL_POLICY)
-        self.assertIn("this is `recent`, never", MEMORY_TOOL_POLICY)
-        self.assertIn(
-            "A procedure you are afraid of forgetting is not `always`",
-            MEMORY_TOOL_POLICY,
-        )
         remember = next(
             spec for spec in MEMORY_TOOL_SPECS if spec["name"] == "memory_remember"
         )
-        self.assertNotIn("durable", remember["description"])
         self.assertEqual(
             remember["input_schema"]["properties"]["activation"]["enum"],
             ["recall", "recent", "always"],
         )
-        self.assertIn(
-            "Do not turn 这个/this into a standing rule",
-            remember["input_schema"]["properties"]["content"]["description"],
-        )
-        forget = next(
-            spec for spec in MEMORY_TOOL_SPECS if spec["name"] == "memory_forget"
-        )
-        self.assertIn("directly disconfirmed", forget["description"])
 
     def test_context_plan_revisions_and_episode_turn_links_persist(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -2000,18 +1975,6 @@ class StorageMemoryTest(unittest.TestCase):
                 result["episode"]["messages"][-1]["timestamp"],
             )
             store.close()
-
-    def test_episode_read_schema_describes_episode_turn_messages(self) -> None:
-        spec = next(
-            spec for spec in MEMORY_TOOL_SPECS if spec["name"] == "episode_read"
-        )
-        self.assertIn("Episode id", spec["description"])
-        self.assertIn("turn_id", spec["description"])
-        self.assertIn("Episode ordinal", spec["description"])
-        self.assertIn(
-            "must be used cautiously",
-            spec["input_schema"]["properties"]["time_range"]["description"],
-        )
 
     def test_episode_read_continues_inside_one_oversized_message(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

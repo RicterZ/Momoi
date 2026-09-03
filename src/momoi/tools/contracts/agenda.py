@@ -47,7 +47,7 @@ def _schedule_schema(description: str | None = None) -> dict[str, Any]:
                     "kind": {"type": "string", "enum": ["daily"]},
                     "times": {
                         "type": "array",
-                        "description": "One or more distinct local times in HH:MM format.",
+                        "description": "Distinct local HH:MM times.",
                         "items": {
                             "type": "string",
                             "pattern": r"^(?:[01]\d|2[0-3]):[0-5]\d$",
@@ -84,8 +84,7 @@ AGENDA_TOOL_SPECS: list[dict[str, Any]] = [
                     "description": "ISO 8601 timestamp with timezone.",
                 },
                 "schedule": _schedule_schema(
-                    "Recurring interval or daily schedule in the configured app "
-                    "timezone. Use instead of next_review_at."
+                    "Recurring interval or local daily times; replaces next_review_at."
                 ),
             },
             "required": ["title", "success_criteria", "next_action"],
@@ -107,13 +106,9 @@ AGENDA_TOOL_SPECS: list[dict[str, Any]] = [
                 "latest_result": {
                     "type": "string",
                     "description": (
-                        "What this execution did: what you checked, what you "
-                        "sent, and which angle you used so the next run can "
-                        "vary it. Keep it to your own actions and wording. The "
-                        "owner's situation reaches every review fresh through "
-                        "memory and conversation, so leave it out here; a copy "
-                        "stored on the Goal keeps its own age and outlives the "
-                        "situation it described."
+                        "This execution's checks, actions, sent wording, and angle, "
+                        "so the next run can vary it. Exclude owner state supplied "
+                        "fresh by memory or conversation."
                     ),
                 },
                 "next_review_at": {"type": "string"},
@@ -127,8 +122,7 @@ AGENDA_TOOL_SPECS: list[dict[str, Any]] = [
     {
         "name": "goal_finish",
         "description": (
-            "Permanently close a goal as successfully completed because its overall "
-            "success criteria are fully achieved."
+            "Close a goal successfully only when all success criteria are achieved."
         ),
         "input_schema": {
             "type": "object",
@@ -141,8 +135,7 @@ AGENDA_TOOL_SPECS: list[dict[str, Any]] = [
         "name": "goal_cancel",
         OWNER_PROGRESS_FIELD: OWNER_PROGRESS_BEFORE_FIRST_CALL,
         "description": (
-            "Permanently close a goal without success because it is abandoned, "
-            "obsolete, or explicitly stopped."
+            "Close a goal without success when abandoned, obsolete, or stopped."
         ),
         "input_schema": {
             "type": "object",
@@ -156,11 +149,9 @@ AGENDA_TOOL_SPECS: list[dict[str, Any]] = [
 AUTONOMOUS_SEND_BUBBLES_SPEC: dict[str, Any] = {
     "name": "send_bubbles",
     "description": (
-        "Send one useful notification to the owner from an autonomous Turn. "
-        "Check the supplied current conversation first; do not notify when the "
-        "result is already covered or stale. "
-        "Use bubbles as separate short conversational beats; do not "
-        "pack independent sentences into one item."
+        "Send one useful autonomous notification after checking current conversation. "
+        "Stay silent if covered or stale. Separate distinct conversational beats "
+        "into bubbles."
     ),
     "input_schema": {
         "type": "object",
@@ -173,7 +164,7 @@ AUTONOMOUS_SEND_BUBBLES_SPEC: dict[str, Any] = {
             "reason": {"type": "string"},
             "key": {
                 "type": "string",
-                "description": "Stable lowercase category used for notification cooldown.",
+                "description": "Stable lowercase cooldown category.",
             },
             "priority": {
                 "type": "string",

@@ -53,9 +53,8 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
     {
         "name": "memory_search",
         "description": (
-            "Search Momoi's committed long-term memory. Use when the user refers "
-            "to prior facts, people, preferences, events, or vague earlier context "
-            "that is not already present in the supplied context."
+            "Search committed memory for earlier facts, people, preferences, events, "
+            "or vague references not already resolved by supplied context."
         ),
         "input_schema": {
             "type": "object",
@@ -63,8 +62,7 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
                 "query": {
                     "type": "string",
                     "description": (
-                        "Concise subject or phrase to retrieve. Use `|`-separated "
-                        "parallel aliases when the same subject may be worded differently."
+                        "Concise subject; use `|` for alternative names of the same subject."
                     ),
                 },
                 "limit": {
@@ -81,9 +79,8 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
     {
         "name": "episode_search",
         "description": (
-            "Search archived conversation Episodes. Supports keyword search, "
-            "time-range browsing with an empty query, and paginated results. "
-            "Returns compact summaries and evidence locations, not raw messages."
+            "Search archived Episodes by keyword or time; empty query browses by time. "
+            "Returns paginated summaries and evidence locations, not raw messages."
         ),
         "input_schema": {
             "type": "object",
@@ -91,17 +88,14 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
                 "query": {
                     "type": "string",
                     "description": (
-                        "Optional concise subject or phrase, with `|`-separated "
-                        "parallel aliases when useful. "
-                        "Use an empty string to browse Episodes chronologically "
-                        "within time_range."
+                        "Concise subject, optionally with `|` aliases; empty browses "
+                        "time_range chronologically."
                     ),
                 },
                 "time_range": {
                     "type": "object",
                     "description": (
-                        "Optional search window. Default is the last 30 days. "
-                        "Use kind=all only when older history is necessary."
+                        "Window; defaults to 30 days. Use all only when older history matters."
                     ),
                     "properties": {
                         "kind": {
@@ -138,12 +132,10 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
     {
         "name": "episode_read",
         "description": (
-            "Given an Episode id, return a paginated raw message list for its linked "
-            "Turns. Each message includes turn_id, Episode ordinal, role, timestamp, "
-            "delivery state, and content. Use an id from automatic Episode recall or "
-            "episode_search. Narrow time_range to the smallest useful window: "
-            "raw messages are verbose. Read broader or older pages only when the "
-            "Episode summary is insufficient or exact wording is needed."
+            "Read paginated raw messages for an Episode id from recall or episode_search. "
+            "Returns turn_id, Episode ordinal, role, time, delivery state, and content. Use the "
+            "smallest time range; expand only when its summary cannot settle exact "
+            "wording, chronology, or evidence."
         ),
         "input_schema": {
             "type": "object",
@@ -152,24 +144,20 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 200,
-                    "description": (
-                        "Episode id returned by automatic recall or episode_search."
-                    ),
+                    "description": "Episode id from recall or episode_search.",
                 },
                 "before_ordinal": {
                     "type": "integer",
                     "minimum": 2,
                     "description": (
-                        "For an older page, pass next_before_ordinal from the "
-                        "previous result. Omit it for the newest page."
+                        "next_before_ordinal for an older page; omit for newest."
                     ),
                 },
                 "time_range": {
                     "type": "object",
                     "description": (
-                        "Optional exact message-time window. Prefer kind=range with "
-                        "a narrow from/to interval. recent/all or a wide range may "
-                        "return many raw messages and must be used cautiously."
+                        "Exact message-time window; prefer a narrow range because raw "
+                        "messages are verbose."
                     ),
                     "properties": {
                         "kind": {
@@ -191,16 +179,14 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
                     "type": "integer",
                     "minimum": 1,
                     "description": (
-                        "Read another chunk of one oversized archived message. Use "
-                        "the id returned with next_content_offset."
+                        "Message id returned with next_content_offset."
                     ),
                 },
                 "content_offset": {
                     "type": "integer",
                     "minimum": 0,
                     "description": (
-                        "Character offset returned as next_content_offset for the "
-                        "same message_id."
+                        "next_content_offset for the same message_id."
                     ),
                 },
             },
@@ -211,12 +197,9 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
     {
         "name": "memory_remember",
         "description": (
-            "Stage one memory supported by an exact quote from authenticated owner "
-            "evidence available to this Turn. Default activation is recall. Use "
-            "always only for a standing "
-            "rule that should color ordinary chat even off-topic; 记住 and how-to "
-            "playbooks are recall. The write commits only when this turn finishes "
-            "successfully."
+            "Stage one memory from an exact authenticated-owner quote. Commits only "
+            "if this Turn succeeds. activation defaults to recall; always is only for "
+            "standing interpersonal rules, not 记住 or how-to instructions."
         ),
         "input_schema": {
             "type": "object",
@@ -224,33 +207,26 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
                 "kind": {
                     "type": "string",
                     "enum": sorted(MEMORY_KINDS),
-                    "description": (
-                        "Topic category such as episodic, preference, or routine. "
-                        "This is not duration. Use activation for recall, recent, or always."
-                    ),
+                    "description": "Topic category, not duration.",
                 },
                 "key": {
                     "type": "string",
-                    "description": "Stable lowercase dot-separated key; reuse it for corrections.",
+                    "description": "Stable lowercase dotted key; reuse for corrections.",
                 },
                 "content": {
                     "type": "string",
                     "description": (
-                        "Faithful concise restatement of what they pointed at. "
-                        "Keep the specific object, polarity, and conditions. "
-                        "Do not turn 这个/this into a standing rule about all similar cases."
+                        "Faithful concise restatement preserving the specific object, "
+                        "polarity, and conditions; never broaden 这个/this into a standing rule."
                     ),
                 },
                 "activation": {
                     "type": "string",
                     "enum": ["recall", "recent", "always"],
                     "description": (
-                        "Where this sits, not how important it feels. "
-                        "recall (default): keep for later search; how-to, device/API, "
-                        "and 记住怎么用. recent: time-bounded state or this-item "
-                        "situation; required when they say short-term or it will expire. "
-                        "always: standing interpersonal rule that should color every "
-                        "Turn even off-topic. 记住 / 以后要用 is not always."
+                        "Storage scope, not importance: recall=topic-matched (default, "
+                        "including how-to/记住); recent=time-bounded state; always=standing "
+                        "interpersonal rule affecting unrelated Turns."
                     ),
                 },
                 "ttl_hours": {
@@ -258,17 +234,13 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
                     "minimum": 0,
                     "maximum": 720,
                     "description": (
-                        "Required. For recent, hours this state should stay active "
-                        "(1 to 720), read from the content: a few days is about 72-96. "
-                        "For always or recall, send 0; the value is ignored."
+                        "Required: recent lifetime in hours (1-720, inferred from the "
+                        "owner's wording); send 0 for recall/always."
                     ),
                 },
                 "evidence": {
                     "type": "string",
-                    "description": (
-                        "Exact contiguous quote from one authenticated owner message "
-                        "available to this Turn."
-                    ),
+                    "description": "Exact contiguous quote from one authenticated owner message.",
                 },
                 "importance": {
                     "type": "number",
@@ -280,8 +252,7 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
                     "type": "boolean",
                     "default": False,
                     "description": (
-                        "True only when the current user message explicitly confirms "
-                        "this value replaces any existing value for the same key."
+                        "True only when current owner evidence explicitly replaces the key."
                     ),
                 },
             },
@@ -299,9 +270,8 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
     {
         "name": "memory_forget",
         "description": (
-            "Forget one committed long-term memory when the authenticated user "
-            "explicitly requested it or directly disconfirmed that stored fact in "
-            "owner evidence available to this Turn."
+            "Forget one committed memory only when current authenticated-owner evidence "
+            "requests deletion or directly disproves it."
         ),
         "input_schema": {
             "type": "object",
@@ -310,10 +280,7 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
                 "key": {"type": "string"},
                 "evidence": {
                     "type": "string",
-                    "description": (
-                        "Exact contiguous quote from one authenticated owner message "
-                        "available to this Turn."
-                    ),
+                    "description": "Exact contiguous quote from one authenticated owner message.",
                 },
             },
             "required": ["kind", "key", "evidence"],

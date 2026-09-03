@@ -45,15 +45,12 @@ def decorate_tool_spec(spec: dict[str, Any]) -> dict[str, Any]:
         "minLength": 1,
         "maxLength": 300,
         "description": (
-            "Conditionally required owner-visible sentence before this tool. The "
-            "first external-work batch after a new owner request MUST include it on "
-            "the first tool unless send_bubbles already acknowledged the work. "
-            "Ordinary assistant content is discarded and does not satisfy this "
-            "requirement. Later tool rounds may omit it. Use only an evidence-backed "
-            "reaction, result, "
-            "progress, failure, or route change—not a tool caption, retry narration, "
-            "request recap, or promise of success. "
-            f"{ANNOUNCE_DELIVERY_NOTE} Do not also send_bubbles for the same action."
+            "Owner-visible sentence required on the first external-work tool unless "
+            "send_bubbles already acknowledged it; assistant text never counts and "
+            "later rounds may omit it. Give an evidence-backed reaction, result, "
+            "progress, failure, or route change—not a tool caption, retry, recap, or "
+            f"success promise. {ANNOUNCE_DELIVERY_NOTE} Do not duplicate it with "
+            "send_bubbles."
         ),
     }
     return decorated

@@ -6,11 +6,10 @@ NEW_EPISODE_REF = "new:<slug>"
 RECALL_TOOL_SPEC: dict[str, Any] = {
     "name": "recall",
     "description": (
-        "Mandatory first action of every Owner Turn. Submit the minimum complete "
-        "historical scope for each independent intent and its Episode disposition. "
-        "The runtime returns confirmed memory, dated reflection and Episode "
-        "summaries. This call selects context; it does not answer the owner or "
-        "perform the requested work."
+        "Mandatory first and only action at the start of every Owner Turn. Submit "
+        "each independent intent's minimum historical scope and Episode decision. "
+        "Returns confirmed memory, dated reflection, and Episode summaries; it does "
+        "not answer the owner or perform the work."
     ),
     "input_schema": {
         "type": "object",
@@ -26,17 +25,16 @@ RECALL_TOOL_SPEC: dict[str, Any] = {
                             "type": "string",
                             "maxLength": 160,
                             "description": (
-                                "Brief operative outcome for this independent unit. "
-                                "Fold corrections into the final intended outcome."
+                                "Operative outcome for this unit, with corrections "
+                                "folded into the final intent."
                             ),
                         },
                         "recall_mode": {
                             "type": "string",
                             "enum": ["search", "reuse"],
                             "description": (
-                                "search for a new or changed historical scope; reuse "
-                                "only a displayed prior scope that already covers this "
-                                "one completely."
+                                "search for new/changed scope; reuse only a displayed "
+                                "prior scope that fully covers this unit."
                             ),
                         },
                         "recall_queries": {
@@ -44,8 +42,8 @@ RECALL_TOOL_SPEC: dict[str, Any] = {
                             "minItems": 0,
                             "maxItems": 3,
                             "description": (
-                                "Required and non-empty for search; empty for reuse. "
-                                "Use the fewest non-overlapping evidence needs."
+                                "Fewest non-overlapping evidence needs; non-empty for "
+                                "search, empty for reuse."
                             ),
                             "items": {
                                 "type": "object",
@@ -55,16 +53,13 @@ RECALL_TOOL_SPEC: dict[str, Any] = {
                                         "minLength": 1,
                                         "maxLength": 240,
                                         "description": (
-                                            "One self-contained declarative retrieval "
-                                            "need using canonical subjects supported by "
-                                            "the conversation. If an identity remains "
-                                            "unresolved, describe that missing referent "
-                                            "without assigning a guessed identity. Name "
-                                            "the missing fact, "
-                                            "relationship, convention, preference, prior "
-                                            "interaction or task state. Do not write a "
-                                            "question, copy conversational wording, or "
-                                            "include a guessed answer."
+                                            "Self-contained declarative retrieval need "
+                                            "using conversation-supported canonical "
+                                            "subjects. Name the missing fact, relationship, "
+                                            "convention, preference, interaction, or task "
+                                            "state. Describe unresolved referents without "
+                                            "guessing identity. No questions, copied chat, "
+                                            "or guessed answers."
                                         ),
                                     },
                                     "keywords": {
@@ -73,11 +68,10 @@ RECALL_TOOL_SPEC: dict[str, Any] = {
                                         "maxItems": 6,
                                         "items": {"type": "string", "maxLength": 60},
                                         "description": (
-                                            "Independent sparse OR anchors: literal "
-                                            "canonical names, identifiers, titles or "
-                                            "exact phrases only. Omit verbs, pronouns, "
-                                            "generic words and inferred answer terms; "
-                                            "leave empty when no reliable anchor exists."
+                                            "Sparse OR anchors: literal canonical names, "
+                                            "IDs, titles, or exact phrases. No verbs, "
+                                            "pronouns, generic words, or inferred answers; "
+                                            "empty if no reliable anchor exists."
                                         ),
                                     },
                                 },
@@ -88,43 +82,36 @@ RECALL_TOOL_SPEC: dict[str, Any] = {
                         "recall_from_turn_id": {
                             "type": "string",
                             "description": (
-                                "Required for reuse and empty for search. Must be a "
-                                "Turn shown in recent_recall_context."
+                                "For reuse: a Turn in recent_recall_context. Empty for search."
                             ),
                         },
                         "episode": {
                             "type": "object",
                             "description": (
-                                "Independent archival decision for this unit; it never "
-                                "changes whether recall is search or reuse."
+                                "Independent archival decision; does not affect recall_mode."
                             ),
                             "properties": {
                                 "action": {
                                     "type": "string",
                                     "enum": ["none", "continue", "new"],
                                     "description": (
-                                        "none by default; continue only when this Turn "
-                                        "directly advances the same concrete experience; "
-                                        "new only for a distinct experience worth retaining. "
-                                        "Conversation proximity, shared mood, time or "
-                                        "setting do not establish continuity."
+                                        "none by default; continue only if this Turn advances "
+                                        "the same concrete experience; new only for a distinct "
+                                        "experience worth retaining. Proximity, mood, time, or "
+                                        "setting alone never establishes continuity."
                                     ),
                                 },
                                 "ref": {
                                     "type": "string",
                                     "description": (
-                                        "Existing candidate Episode id for continue; "
-                                        f"{NEW_EPISODE_REF} chosen for new; empty for "
-                                        "none."
+                                        "Candidate Episode id for continue; "
+                                        f"{NEW_EPISODE_REF} for new; empty for none."
                                     ),
                                 },
                                 "title": {
                                     "type": "string",
                                     "maxLength": 80,
-                                    "description": (
-                                        "Specific experience title for new; empty "
-                                        "otherwise."
-                                    ),
+                                    "description": "Specific title for new; otherwise empty.",
                                 },
                             },
                             "required": ["action"],
@@ -252,4 +239,3 @@ def heartbeat_begin_spec(group_descriptions: dict[str, str]) -> dict[str, Any]:
             "additionalProperties": False,
         },
     }
-

@@ -18,9 +18,8 @@ def tool_enable_spec(group_descriptions: dict[str, str]) -> dict[str, Any]:
     return {
         "name": "tool_enable",
         "description": (
-            "Load omitted MCP tool groups when required. Loaded tools "
-            "become callable on the next model step. "
-            f"Group examples: {catalog}"
+            "Enable required MCP groups for the next model step. "
+            f"Groups: {catalog}"
         ),
         "input_schema": {
             "type": "object",
@@ -56,10 +55,9 @@ AUTONOMOUS_FINISH_SPEC: dict[str, Any] = {
 READ_TOOL_RESULT_SPEC: dict[str, Any] = {
     "name": "read_tool_result",
     "description": (
-        "Continue reading an exact private snapshot when a tool result returned "
-        "truncated=true, result_ref, and next_cursor. Pass result_ref unchanged "
-        "and the latest next_cursor; omit cursor only for the first chunk. This "
-        "does not call the original tool again and cannot read workspace files."
+        "Continue a truncated tool-result snapshot without rerunning the tool. Pass "
+        "result_ref unchanged and latest next_cursor; omit cursor for the first chunk. "
+        "Cannot read workspace files."
     ),
     "input_schema": {
         "type": "object",
@@ -67,12 +65,12 @@ READ_TOOL_RESULT_SPEC: dict[str, Any] = {
             "result_ref": {
                 "type": "string",
                 "pattern": "^tr_[0-9a-f]{32}$",
-                "description": "Opaque result_ref returned by a truncated tool result.",
+                "description": "result_ref from the truncated result.",
             },
             "cursor": {
                 "type": "string",
                 "minLength": 1,
-                "description": "Opaque next_cursor from the preceding chunk.",
+                "description": "next_cursor from the preceding chunk.",
             },
         },
         "required": ["result_ref"],

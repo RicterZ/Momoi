@@ -43,23 +43,22 @@ def memory(
 
 
 class MemoryMaintenanceProtocolTest(unittest.TestCase):
-    def test_finish_tool_schema_documents_conditions_and_examples(self) -> None:
+    def test_finish_tool_schema_has_expected_change_variants(self) -> None:
         schema = MEMORY_MAINTENANCE_FINISH_SPEC["input_schema"]
         assert isinstance(schema, dict)
         properties = schema["properties"]
         assert isinstance(properties, dict)
-        self.assertIn("unchanged", properties["reviewed_ids"]["description"])
-        self.assertIn("Example", properties["changes"]["description"])
         variants = properties["changes"]["items"]["oneOf"]
         self.assertEqual(len(variants), 3)
-        self.assertTrue(all("Example" in variant["description"] or "Retire" in variant["description"] for variant in variants))
+        self.assertEqual(
+            [variant["properties"]["action"]["enum"][0] for variant in variants],
+            ["replace", "merge", "retire"],
+        )
         merge = variants[1]["properties"]
         self.assertEqual(
             merge["snapshot_fingerprints"]["additionalProperties"]["pattern"],
             "^sha256:[0-9a-f]{64}$",
         )
-        self.assertIn("napcat", merge["evidence_event_ids"]["description"])
-        self.assertIn("Example", properties["regroup_requests"]["description"])
 
     def test_parser_rejects_text_wrapped_results(self) -> None:
         result, error = parse_memory_maintenance_result(

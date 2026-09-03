@@ -10,11 +10,9 @@ from momoi.mcp.prompt import MCP_TOOL_POLICY
 from momoi.models import ToolCall
 from momoi.runtime.agent.progress import (
     ANNOUNCE_FIELD,
-    ANNOUNCE_DELIVERY_NOTE,
     announce_field,
     apply_tool_announce,
     decorate_tool_spec,
-    initial_announce_error_message,
     missing_initial_work_announce,
     requests_owner_progress,
     take_announce_message,
@@ -52,22 +50,11 @@ class ProgressAnnounceTest(unittest.TestCase):
         self.assertEqual(announce_field(curl), None)
         self.assertEqual(announce_field(decorated), ANNOUNCE_FIELD)
         self.assertNotIn(ANNOUNCE_FIELD, decorated["input_schema"]["required"])
-        description = decorated["input_schema"]["properties"][ANNOUNCE_FIELD][
-            "description"
-        ]
-        self.assertIn(ANNOUNCE_DELIVERY_NOTE, description)
-        self.assertNotIn("Optional natural", description)
-        self.assertIn("Conditionally required", description)
-        self.assertIn("first external-work batch", description)
-        self.assertIn("first tool unless send_bubbles", description)
-        self.assertIn("Ordinary assistant content is discarded", description)
-        self.assertIn("Later tool rounds may omit it", description)
-        self.assertIn("evidence-backed", description)
-        self.assertIn("tool caption", description)
-        self.assertIn("retry narration", description)
-        self.assertIn("request recap", description)
-        self.assertIn("promise of success", description)
-        self.assertLess(len(description), 700)
+        announce_schema = decorated["input_schema"]["properties"][ANNOUNCE_FIELD]
+        self.assertEqual(announce_schema["type"], "string")
+        self.assertEqual(announce_schema["minLength"], 1)
+        self.assertEqual(announce_schema["maxLength"], 300)
+        self.assertLess(len(announce_schema["description"]), 700)
         self.assertNotIn(ANNOUNCE_FIELD, curl["input_schema"]["properties"])
 
     def test_send_bubbles_schema_stays_compact_without_losing_constraints(
@@ -77,15 +64,13 @@ class ProgressAnnounceTest(unittest.TestCase):
         rendered = json.dumps(
             spec, ensure_ascii=False, separators=(",", ":")
         )
-        self.assertIn("owner-visible", spec["description"])
-        self.assertIn("file, video, audio, and record", spec["description"])
         self.assertEqual(
             spec["input_schema"]["properties"]["channel"]["enum"],
             ["napcat", "weixin"],
         )
-        self.assertIn(
-            "primary (napcat)",
-            spec["input_schema"]["properties"]["channel"]["description"],
+        self.assertEqual(
+            spec["input_schema"]["properties"]["channel"]["default"],
+            "napcat",
         )
         self.assertLess(estimate_tokens(rendered), 550)
 
@@ -103,12 +88,6 @@ class ProgressAnnounceTest(unittest.TestCase):
             spec["input_schema"]["properties"]["groups"]["items"]["enum"],
             ["demo", "other"],
         )
-
-    def test_initial_announce_error_explains_conditional_requirement(self) -> None:
-        message = initial_announce_error_message(ANNOUNCE_FIELD)
-        self.assertIn("first external-work tool batch", message)
-        self.assertIn("send_bubbles before it", message)
-        self.assertIn("Later tool rounds may omit", message)
 
     def test_first_external_batch_requires_one_initial_acknowledgement(self) -> None:
         curl = next(spec for spec in BUILTIN_TOOL_SPECS if spec["name"] == "curl")

@@ -8,15 +8,15 @@ SEGMENT_SCHEMA: dict[str, Any] = {
             "type": "string",
             "minLength": 1,
             "description": (
-                "Channel-neutral type such as text, image, file, video, audio, "
-                "reply, link, location, or mention."
+                "Channel-neutral type: text, image, file, video, audio, reply, "
+                "link, location, or mention."
             ),
         },
         "data": {
             "type": "object",
             "description": (
-                "Segment data: text uses text, reply uses id, and media uses file "
-                "with a local path, HTTP(S) URL, or base64 resource."
+                "Payload: text uses text; reply uses id; media uses file with a "
+                "local path, HTTP(S) URL, or base64 resource."
             ),
         },
     },
@@ -30,11 +30,9 @@ CHANNEL_BUBBLE_SCHEMA: dict[str, Any] = {
             "type": "string",
             "minLength": 1,
             "description": (
-                "A bubble is an item in send_bubbles.bubbles; producing it means "
-                "calling send_bubbles. Must be non-empty; split blank lines into "
-                "items. An item with emotion:// must equal "
-                "emotion://<listed-slug> from <emotion_catalog>; sends a standalone "
-                "reaction image."
+                "One non-empty owner-visible bubble; split blank lines into items. "
+                "emotion:// must exactly match emotion://<listed-slug> from "
+                "<emotion_catalog> and sends a standalone reaction image."
             ),
         },
         {
@@ -89,11 +87,10 @@ MOOD_UPDATE_SCHEMA: dict[str, Any] = {
             "type": "string",
             "pattern": "^[a-z][a-z0-9_-]{0,31}$",
             "description": (
-                "Short lowercase mood label. Familiar choices include cheerful, "
+                "Concise lowercase mood. Examples: cheerful, "
                 "excited, playful, affectionate, content, proud, hopeful, relieved, "
                 "curious, thoughtful, calm, focused, tired, down, frustrated, "
-                "worried, anxious, embarrassed, lonely, bored, restless, and angry; "
-                "use another concise label when it fits better."
+                "worried, anxious, embarrassed, lonely, bored, restless, angry."
             ),
         },
         "intensity": {"type": "number", "minimum": 0, "maximum": 1},
@@ -105,22 +102,14 @@ MOOD_UPDATE_SCHEMA: dict[str, Any] = {
 
 MOOD_DECISION_SCHEMA: dict[str, Any] = {
     "description": (
-        "Persistent but evolving mood state. Reassess the Current self state mood "
-        "at every end_turn using its age and this Turn's emotional context. Update "
-        "when the state meaningfully shifts, intensity changes, the recorded cause "
-        "no longer has continuing influence, or the mood naturally settles as time "
-        "and context move on. Keep it unchanged only while its existing state, "
-        "intensity, and cause all remain accurate. A truly momentary reaction that "
-        "leaves the underlying mood intact does not by itself require an update; do "
-        "not otherwise favor unchanged over updated."
+        "Reassess the persistent mood from its age and this Turn. Update when state, "
+        "intensity, or continuing cause changes, including natural settling. Keep it "
+        "only while all three remain accurate; ignore a reaction that is truly momentary."
     ),
     "oneOf": [
         {
             "type": "object",
-            "description": (
-                "Keep the existing mood only when its state, intensity, and cause "
-                "still accurately describe the current persistent mood."
-            ),
+            "description": "Keep only while state, intensity, and cause remain accurate.",
             "properties": {
                 "decision": {"type": "string", "enum": ["unchanged"]}
             },
@@ -130,8 +119,7 @@ MOOD_DECISION_SCHEMA: dict[str, Any] = {
         {
             "type": "object",
             "description": (
-                "Replace the mood when its state, intensity, or continuing cause "
-                "has changed, including natural settling over time."
+                "Replace when state, intensity, or continuing cause changed or settled."
             ),
             "properties": {
                 "decision": {"type": "string", "enum": ["updated"]},
@@ -163,18 +151,12 @@ ACTIVITY_DECISION_SCHEMA: dict[str, Any] = {
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 300,
-                    "description": (
-                        "Concise corrected activity snapshot with the same meaning as "
-                        "Current self state activity."
-                    ),
+                    "description": "Concise corrected Current self state activity.",
                 },
                 "result": {
                     "type": "string",
                     "maxLength": 2000,
-                    "description": (
-                        "Corrected concrete outcome. It may be empty when no result "
-                        "is now true."
-                    ),
+                    "description": "Corrected outcome; empty if none is now true.",
                 },
             },
             "required": ["decision", "text", "result"],
@@ -185,18 +167,15 @@ ACTIVITY_DECISION_SCHEMA: dict[str, Any] = {
 
 REPLY_WAIT_DECISION_SCHEMA: dict[str, Any] = {
     "description": (
-        "Whether this conversational beat remains open after the last visible "
-        "bubble. Use wait=false when it is complete, nothing remains open, or "
-        "another scheduler owns the work. Use wait=true when a reply, reaction, "
-        "information still coming, or a later continuation is genuinely expected; "
-        "do not default to false merely because the close feels routine. wait=true "
-        "requires a visible bubble in this Turn and schedules one follow-up Turn "
-        "if the owner stays silent."
+        "Whether the last visible bubble leaves a real open beat. false when complete "
+        "or another scheduler owns the work. true only while awaiting a reply, "
+        "reaction, incoming information, or Momoi's later continuation; it requires "
+        "a visible bubble and schedules one follow-up Turn after silence."
     ),
     "oneOf": [
         {
             "type": "object",
-            "description": "The beat is complete; no later follow-up from this remainder.",
+            "description": "Complete; no follow-up for this beat.",
             "properties": {
                 "wait": {"type": "boolean", "enum": [False]},
             },
@@ -205,29 +184,22 @@ REPLY_WAIT_DECISION_SCHEMA: dict[str, Any] = {
         },
         {
             "type": "object",
-            "description": (
-                "The beat is still open. If it stays quiet, the runtime sends "
-                "one follow-up Turn after delay_minutes."
-            ),
+            "description": "Open; after delay_minutes of silence, run one follow-up Turn.",
             "properties": {
                 "wait": {"type": "boolean", "enum": [True]},
                 "delay_minutes": {
                     "type": "integer",
                     "minimum": 1,
                     "maximum": 10,
-                    "description": (
-                        "Whole minutes to wait after the last visible bubble is "
-                        "successfully delivered."
-                    ),
+                    "description": "Whole minutes after successful bubble delivery.",
                 },
                 "expected_information": {
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 300,
                     "description": (
-                        "What would complete this open beat: a reply, a reaction, "
-                        "information still coming, or the later continuation Momoi "
-                        "intends to make."
+                        "The reply, reaction, incoming information, or Momoi "
+                        "continuation that would complete this beat."
                     ),
                 },
                 "reason": {
@@ -235,9 +207,8 @@ REPLY_WAIT_DECISION_SCHEMA: dict[str, Any] = {
                     "minLength": 1,
                     "maxLength": 500,
                     "description": (
-                        "Concrete direction for the one follow-up Momoi should add "
-                        "after her last sent bubble if the owner stays quiet; describe "
-                        "the new conversational move, not merely the reply being awaited."
+                        "Concrete new conversational move for the one silent-owner "
+                        "follow-up; do not merely restate what is awaited."
                     ),
                 },
             },
@@ -255,17 +226,13 @@ REPLY_WAIT_DECISION_SCHEMA: dict[str, Any] = {
 END_TURN_TOOL_SPEC: dict[str, Any] = {
     "name": "end_turn",
     "description": (
-        "Terminal action that commits private conversational Turn state; it cannot "
-        "send owner-visible content. Call it exactly once and alone after all work "
-        "and delivery are complete. After send_bubbles, wait for its result and call "
-        "end_turn alone on the next step."
+        "Terminal action: commit private conversational Turn state, never visible "
+        "content. Call once and alone after work and delivery. After send_bubbles, "
+        "wait for its result, then call end_turn alone on the next step."
     ),
     "input_schema": {
         "type": "object",
-        "description": (
-            "Private Turn state only. Visible bubbles and delivery fields are not "
-            "valid here."
-        ),
+        "description": "Private state only; no visible content or delivery fields.",
         "properties": {
             "reply_wait": REPLY_WAIT_DECISION_SCHEMA,
             "mood": MOOD_DECISION_SCHEMA,
@@ -283,17 +250,14 @@ def owner_end_turn_tool_spec() -> dict[str, Any]:
     return {
         **END_TURN_TOOL_SPEC,
         "description": (
-            "Terminal action for this Owner Turn. It commits private state and "
-            "cannot send owner-visible content. Call it exactly once and alone after "
-            "all work and delivery are complete. After send_bubbles, wait for its "
-            "result and call end_turn alone on the next step. "
-            "For activity, compare Current self state with authenticated owner input "
-            "and reliable evidence from this Turn. Correct it only when this Turn "
-            "completes, cancels, replaces, proves impossible, invalidates a premise "
-            "of the activity, or disproves its result. A different topic, ordinary "
-            "conversation, requested work, or a compatible new activity or outcome "
-            "is not a conflict. If only the result is wrong, preserve the activity "
-            "text; without a conflict, leave both unchanged."
+            "Terminal action for this Owner Turn: commit private state, never visible "
+            "content. Call once and alone after work and delivery; after send_bubbles, "
+            "wait for its result, then call this on the next step. For activity, use "
+            "authenticated owner input and reliable Turn evidence. Update only when "
+            "this Turn completes, cancels, replaces, disproves, or proves it impossible, "
+            "or invalidates its premise/result. A new topic or compatible activity is "
+            "not a conflict. If only the result is wrong, preserve the activity text; "
+            "without conflict, leave both unchanged."
         ),
         "input_schema": {
             **schema,
@@ -331,11 +295,9 @@ def heartbeat_end_turn_tool_spec() -> dict[str, Any]:
     return {
         **END_TURN_TOOL_SPEC,
         "description": (
-            "Terminal action for this autonomous heartbeat Turn. It commits private "
-            "state and cannot send owner-visible content. After any send_bubbles "
-            "result and completed work, call end_turn exactly once and alone in a "
-            "later step. The heartbeat object records Momoi's activity and "
-            "schedules her next Turn."
+            "Terminal heartbeat action: commit private state, record activity, and "
+            "schedule the next Turn. Never sends visible content. After work and any "
+            "send_bubbles result, call end_turn once and alone on the next step."
         ),
         "input_schema": {
             **schema,
@@ -350,10 +312,9 @@ def heartbeat_end_turn_tool_spec() -> dict[str, Any]:
 SEND_BUBBLES_TOOL_SPEC: dict[str, Any] = {
     "name": "send_bubbles",
     "description": (
-        "Produces owner-visible bubbles; assistant text delivers none. Call when "
-        "warranted. After result and work, call end_turn alone next "
-        "step. Text may "
-        "accompany images; file, video, audio, and record items must stand alone."
+        "Send owner-visible bubbles; assistant text sends nothing. After its result "
+        "and all work, call end_turn alone next step. Text may accompany images; "
+        "file, video, audio, and record items must stand alone."
     ),
     "input_schema": {
         "type": "object",

@@ -13,29 +13,26 @@ THINKING_TOOL_SPECS: list[dict[str, Any]] = [
     {
         "name": "thinking_search",
         "description": (
-            "Search Momoi's recorded model-call thinking. Supports turn_id, "
-            "keyword, and time_range. Monthly storage is resolved automatically. "
-            "Returns compact excerpts, not full reasoning."
+            "Search recorded model thinking by Turn, keyword, or time. Returns "
+            "compact excerpts, not full reasoning."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "turn_id": {
                     "type": "string",
-                    "description": "Exact Turn id when the owner refers to one Turn.",
+                    "description": "Exact Turn id.",
                 },
                 "query": {
                     "type": "string",
                     "description": (
-                        "Optional exact keyword or `|`-separated OR alternatives "
-                        "likely to occur in recorded thinking."
+                        "Exact keyword or `|`-separated alternatives."
                     ),
                 },
                 "time_range": {
                     "type": "object",
                     "description": (
-                        "Optional search window. Default is the last 30 days "
-                        "when turn_id is omitted."
+                        "Window; defaults to 30 days without turn_id."
                     ),
                     "properties": {
                         "kind": {
@@ -56,8 +53,7 @@ THINKING_TOOL_SPECS: list[dict[str, Any]] = [
                 "stage": {
                     "type": "string",
                     "description": (
-                        "Optional call stage such as owner, webhook, "
-                        "heartbeat, goal, or reflection."
+                        "Call stage, e.g. owner, webhook, heartbeat, goal, reflection."
                     ),
                 },
                 "limit": {
@@ -78,8 +74,8 @@ THINKING_TOOL_SPECS: list[dict[str, Any]] = [
     {
         "name": "thinking_read",
         "description": (
-            "Read recorded thinking for one Turn returned by thinking_search. "
-            "Pass call_id to read one call; omit it to read every call in the Turn."
+            "Read thinking for a Turn from thinking_search; pass call_id for one call, "
+            "or omit it for all calls."
         ),
         "input_schema": {
             "type": "object",
@@ -90,7 +86,7 @@ THINKING_TOOL_SPECS: list[dict[str, Any]] = [
                 },
                 "call_id": {
                     "type": "string",
-                    "description": "Optional call id from thinking_search.",
+                    "description": "Call id from thinking_search.",
                 },
             },
             "required": ["turn_id"],

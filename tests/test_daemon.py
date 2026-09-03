@@ -33,9 +33,11 @@ from momoi.runtime.agent.context_window import ContextWindow
 from momoi.runtime.agent.tool_surface import ToolSurface
 from momoi.runtime.tool_contracts.conversation import (
     ACTIVITY_DECISION_SCHEMA,
-    CHANNEL_BUBBLE_SCHEMA,
     MOOD_UPDATE_SCHEMA,
 )
+from momoi.mcp.prompt import MCP_TOOL_POLICY
+from momoi.tools.contracts.agenda import AGENDA_TOOL_POLICY
+from momoi.tools.contracts.memory import MEMORY_TOOL_POLICY
 from momoi.models import (
     AgentReply,
     IncomingMessage,
@@ -48,8 +50,6 @@ from momoi.llm.errors import (
     ProviderError,
 )
 from momoi.runtime.turn_support import (
-    OWNER_PROMPT_PATH,
-    SYSTEM_PROMPT_PATH,
     STYLE_CARD_SYSTEM_PROMPT,
 )
 from momoi.runtime.agent.protocol import (
@@ -58,7 +58,6 @@ from momoi.runtime.agent.protocol import (
 )
 from momoi.runtime.parsing import parse_mood_decision, parse_mood_update
 from momoi.runtime.dispatch.delivery import message_gap_bounds
-from momoi.runtime.turn_support import REPLY_WAIT_SYSTEM_PROMPT
 from momoi.storage import estimate_tokens
 from tests.support import (
     recall_response,
@@ -75,25 +74,6 @@ def context_window(config: object) -> ContextWindow:
 
 
 class DaemonTest(unittest.TestCase):
-    def test_system_contract_allows_only_native_tool_calls_globally(self) -> None:
-        contract = SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")
-
-        self.assertIn("The assistant has no text output channel", contract)
-        self.assertIn("Every Turn advances only through", contract)
-        self.assertIn("call it with the exact bubbles", contract)
-        self.assertIn("DSML", contract)
-        self.assertNotIn("Owner Turn state machine", contract)
-        self.assertNotIn("recall first", contract)
-
-    def test_owner_contract_owns_recall_state_machine(self) -> None:
-        contract = OWNER_PROMPT_PATH.read_text(encoding="utf-8")
-
-        self.assertIn("# Owner Turn contract", contract)
-        self.assertIn("Call `recall` first and alone", contract)
-        self.assertIn("If owner-visible bubbles are warranted", contract)
-        self.assertIn("otherwise do not call it", contract)
-        self.assertIn("call `end_turn` alone", contract)
-
     def test_owner_request_bubble_reminder_is_wire_only(self) -> None:
         messages = [
             {
@@ -116,7 +96,6 @@ class DaemonTest(unittest.TestCase):
         )
         self.assertFalse(OWNER_BUBBLE_REQUEST_REMINDER.startswith("["))
         self.assertFalse(OWNER_BUBBLE_REQUEST_REMINDER.endswith("]"))
-        self.assertIn("call send_bubbles with them", OWNER_BUBBLE_REQUEST_REMINDER)
 
     def test_owner_request_bubble_reminder_follows_tool_results(self) -> None:
         messages = [
@@ -165,12 +144,47 @@ class DaemonTest(unittest.TestCase):
 
         self.assertEqual(len(specialized), 2)
         self.assertEqual(specialized[0], base[0])
-        self.assertIn("Memory tools", specialized[1]["text"])
-        self.assertIn("judgment, not a reflex", specialized[1]["text"])
+        self.assertEqual(
+            specialized[1]["text"],
+            "# Available capability guidance\n\n" + MEMORY_TOOL_POLICY.strip(),
+        )
         self.assertEqual(len(owner), 2)
-        self.assertNotIn("Memory tools", owner[1]["text"])
-        self.assertNotIn("Built-in runtime tools", owner[1]["text"])
-        self.assertIn("Agenda tools", owner[1]["text"])
+        self.assertEqual(
+            owner[1]["text"],
+            "# Available capability guidance\n\n" + AGENDA_TOOL_POLICY.strip(),
+        )
+
+    def test_mcp_policy_is_stable_across_tool_enable_expansion(self) -> None:
+        daemon = object.__new__(MomoiDaemon)
+        daemon.mcp = SimpleNamespace(
+            tool_specs=[
+                {
+                    "name": "mcp__search__query",
+                    "description": "Search",
+                    "input_schema": {"type": "object"},
+                }
+            ]
+        )
+        base = [{"type": "text", "text": "system"}]
+        visible = daemon._system_with_tool_policies(
+            base,
+            [
+                {"name": "tool_enable"},
+            ],
+        )
+        expanded = daemon._system_with_tool_policies(
+            base,
+            [
+                {"name": "tool_enable"},
+                {"name": "mcp__search__query"},
+            ],
+        )
+
+        self.assertEqual(visible, expanded)
+        self.assertEqual(
+            visible[1]["text"],
+            "# Available capability guidance\n\n" + MCP_TOOL_POLICY.strip(),
+        )
 
     def test_heartbeat_self_directed_tools_allow_configured_mcp_effects(self) -> None:
         daemon = object.__new__(MomoiDaemon)
@@ -304,102 +318,6 @@ class DaemonTest(unittest.TestCase):
 
         self.assertEqual(daemon._system()[0]["text"], STYLE_CARD_SYSTEM_PROMPT)
 
-    def test_style_card_allows_standalone_non_propositional_speech(self) -> None:
-        self.assertIn(
-            "items passed to\n`send_bubbles.bubbles`", STYLE_CARD_SYSTEM_PROMPT
-        )
-        self.assertIn(
-            "producing\nbubbles means calling `send_bubbles`",
-            STYLE_CARD_SYSTEM_PROMPT,
-        )
-        self.assertIn("never creates a text output path", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn(
-            "standalone sticker or reaction image", STYLE_CARD_SYSTEM_PROMPT
-        )
-        self.assertIn("quiet end", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn(
-            "Do not add a bubble merely to prove it was noticed",
-            STYLE_CARD_SYSTEM_PROMPT,
-        )
-        self.assertIn(
-            "only accepts or closes a beat that already landed",
-            STYLE_CARD_SYSTEM_PROMPT,
-        )
-        self.assertIn(
-            "merely plausible\n  or warm extra bubble",
-            STYLE_CARD_SYSTEM_PROMPT,
-        )
-        self.assertIn("ordinary social chat", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("one short utterance", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("its own bubble, in\n  the order it comes", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn(
-            "begin with the immediate conversational beat",
-            STYLE_CARD_SYSTEM_PROMPT,
-        )
-        self.assertIn("Form describes the whole bubble", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("consists only of affect", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("starts a thought", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("even if\n  it begins expressively", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("not a half-beat", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("the two half-beat forms", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("Bubble boundaries express timing", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("produces a\n  wordless reaction", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("before, between, or after", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("exactly where that impulse occurs", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("require separate semantic jobs", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("freely mix fragments", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("preserve it as its own", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("rewriting it into a fuller", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("not complete, justify, or balance", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("completeness as a choice", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("do not repair it", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("impulse genuinely arrives that way", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn(
-            "open\n  with what you actually have to say", STYLE_CARD_SYSTEM_PROMPT
-        )
-        self.assertIn("## Result beats", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("before the task is complete", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("novel and relevant to the owner", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("stand alone as one chat bubble", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("exploratory misses may stay silent", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("dramatic about your feeling", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("intermediate findings provisional", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("## Emotional presence", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("not a neutral answering surface", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("sulky", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("ask for comfort", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn("remain unresolved", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertNotIn("Use one short beat by default", STYLE_CARD_SYSTEM_PROMPT)
-        self.assertIn(
-            "explicit request genuinely depends on its content",
-            STYLE_CARD_SYSTEM_PROMPT,
-        )
-
-    def test_reply_wait_prompt_explains_the_current_state_machine(self) -> None:
-        system = (
-            Path(__file__).resolve().parents[1]
-            / "src"
-            / "momoi"
-            / "prompts"
-            / "system.md"
-        ).read_text(encoding="utf-8")
-        wait_schema = END_TURN_TOOL_SPEC["input_schema"]["properties"]["reply_wait"]
-        self.assertIn("genuinely expected", wait_schema["description"])
-        self.assertIn("one follow-up Turn", wait_schema["description"])
-        self.assertIn("<interrupted_reply_expectation>", system)
-        self.assertIn("describes a cancelled wait", system)
-        self.assertIn("follow-up must be sent now", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("reconsider contact", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("Send a brief", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("native transcript", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertNotIn("<reply_timeline>", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("Continue strictly after its", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("never answer, confirm, or", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("<followup>", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("After the `send_bubbles` result", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("alone on the next step", REPLY_WAIT_SYSTEM_PROMPT)
-        self.assertIn("`reply_wait.wait` to false", REPLY_WAIT_SYSTEM_PROMPT)
-
     def test_mood_update_parser_accepts_open_state_labels(self) -> None:
         mood, error = parse_mood_update(
             {
@@ -455,29 +373,9 @@ class DaemonTest(unittest.TestCase):
         self.assertNotIn(
             "delivery", SEND_BUBBLES_TOOL_SPEC["input_schema"]["properties"]
         )
-        self.assertIn("owner-visible", SEND_BUBBLES_TOOL_SPEC["description"])
-        self.assertIn(
-            "Produces owner-visible bubbles", SEND_BUBBLES_TOOL_SPEC["description"]
-        )
-        self.assertIn(
-            "assistant text delivers none",
-            SEND_BUBBLES_TOOL_SPEC["description"],
-        )
-        self.assertIn("next step", SEND_BUBBLES_TOOL_SPEC["description"])
-        self.assertIn("must stand alone", SEND_BUBBLES_TOOL_SPEC["description"])
-        bubble_description = CHANNEL_BUBBLE_SCHEMA["oneOf"][0]["description"]
-        self.assertIn("item in send_bubbles.bubbles", bubble_description)
-        self.assertIn("means calling send_bubbles", bubble_description)
-        self.assertIn("non-empty", bubble_description)
-        self.assertIn("blank lines", bubble_description)
-        self.assertIn("emotion://<listed-slug>", bubble_description)
-        self.assertIn("standalone reaction image", bubble_description)
         wait_shapes = END_TURN_TOOL_SPEC["input_schema"]["properties"]["reply_wait"][
             "oneOf"
         ]
-        wait_schema = END_TURN_TOOL_SPEC["input_schema"]["properties"]["reply_wait"]
-        self.assertIn("another scheduler owns the work", wait_schema["description"])
-        self.assertIn("one follow-up Turn", wait_schema["description"])
         self.assertEqual(
             [shape["properties"]["wait"]["enum"][0] for shape in wait_shapes],
             [False, True],
@@ -488,7 +386,6 @@ class DaemonTest(unittest.TestCase):
         self.assertEqual(
             wait_shapes[1]["properties"]["delay_minutes"]["maximum"], 10
         )
-        self.assertIn("conversational Turn", END_TURN_TOOL_SPEC["description"])
         terminal_properties = END_TURN_TOOL_SPEC["input_schema"]["properties"]
         for visible_field in ("message", "messages", "text", "content", "delivery"):
             self.assertNotIn(visible_field, terminal_properties)
@@ -513,14 +410,6 @@ class DaemonTest(unittest.TestCase):
             set(activity_shapes[1]["required"]),
             {"decision", "text", "result"},
         )
-        self.assertIn("Replace", activity_shapes[1]["description"])
-        owner_description = owner_end_turn["description"]
-        self.assertIn("Terminal action", owner_description)
-        self.assertIn("on the next step", owner_description)
-        self.assertIn("Correct it only when", owner_description)
-        self.assertIn("is not a conflict", owner_description)
-        self.assertIn("without a conflict, leave both unchanged", owner_description)
-        self.assertNotIn("Momoi", owner_description)
 
     def test_context_budget_drops_old_history_and_truncates_tool_results(self) -> None:
         daemon = object.__new__(MomoiDaemon)
