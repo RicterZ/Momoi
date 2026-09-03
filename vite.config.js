@@ -628,6 +628,42 @@ function previewRecords() {
 }
 
 function previewUsageApi() {
+  let llm = {
+    api_format: "openai",
+    base_url: "https://api.deepseek.com/v1",
+    model: "deepseek-v4-flash",
+    api_key_configured: true,
+    environment_fields: [],
+  };
+  const prompts = new Map([
+    [
+      "soul",
+      {
+        id: "soul",
+        filename: "SOUL.md",
+        content: [
+          "# Momoi",
+          "",
+          "你是 Momoi，和老师一起生活、聊天、做事的个人 Agent。",
+          "",
+          "保持自然、敏锐和真诚。记得共同经历，但不要为了展示记忆而复述档案。",
+          "遇到需要行动的事情，先理解真正的目标，再选择合适的工具。",
+        ].join("\n"),
+      },
+    ],
+    [
+      "heartbeat",
+      {
+        id: "heartbeat",
+        filename: "HEARTBEAT.md",
+        content: [
+          "留意老师最近在推进的事情。",
+          "空闲时可以整理游戏灵感、检查等待中的任务，或安静休息。",
+          "只有真的值得打扰时才主动发气泡。",
+        ].join("\n"),
+      },
+    ],
+  ]);
   const days = 30;
   const today = new Date();
   const daily = Array.from({ length: days }, (_, index) => {
@@ -707,7 +743,77 @@ function previewUsageApi() {
           return;
         }
         if (req.method === "GET" && path === "/api/health") {
-          json(res, { ok: true, version: "0.4.0" });
+          json(res, { ok: true, version: "0.5.2" });
+          return;
+        }
+        if (req.method === "GET" && path === "/api/settings/prompts") {
+          json(res, { items: [...prompts.values()] });
+          return;
+        }
+        if (req.method === "GET" && path === "/api/settings") {
+          json(res, { llm, prompts: [...prompts.values()] });
+          return;
+        }
+        if (req.method === "GET" && path === "/api/settings/llm") {
+          json(res, llm);
+          return;
+        }
+        if (req.method === "PUT" && path === "/api/settings/llm") {
+          let raw = "";
+          req.setEncoding("utf8");
+          req.on("data", (chunk) => { raw += chunk; });
+          req.on("end", () => {
+            try {
+              const body = JSON.parse(raw);
+              if (!String(body.base_url || llm.base_url).startsWith("http")) {
+                json(res, { error: "llm.base_url must be an absolute HTTP URL" }, 400);
+                return;
+              }
+              if (!String(body.model || llm.model).trim()) {
+                json(res, { error: "llm.model must not be empty" }, 400);
+                return;
+              }
+              llm = {
+                ...llm,
+                base_url: String(body.base_url || llm.base_url).replace(/\/$/, ""),
+                model: String(body.model || llm.model).trim(),
+                api_key_configured: Boolean(body.api_key || llm.api_key_configured),
+              };
+              json(res, llm);
+            } catch {
+              json(res, { error: "invalid json" }, 400);
+            }
+          });
+          return;
+        }
+        if (req.method === "PUT" && path.startsWith("/api/settings/prompts/")) {
+          const id = decodeURIComponent(path.slice("/api/settings/prompts/".length));
+          const item = prompts.get(id);
+          if (!item) {
+            json(res, { error: "prompt not found" }, 404);
+            return;
+          }
+          let raw = "";
+          req.setEncoding("utf8");
+          req.on("data", (chunk) => { raw += chunk; });
+          req.on("end", () => {
+            try {
+              const body = JSON.parse(raw);
+              if (typeof body.content !== "string") {
+                json(res, { error: "content must be a string" }, 400);
+                return;
+              }
+              if (id === "soul" && !body.content.trim()) {
+                json(res, { error: `${id} prompt must not be empty` }, 400);
+                return;
+              }
+              const updated = { ...item, content: body.content };
+              prompts.set(id, updated);
+              json(res, updated);
+            } catch {
+              json(res, { error: "invalid json" }, 400);
+            }
+          });
           return;
         }
         const records = previewRecords();

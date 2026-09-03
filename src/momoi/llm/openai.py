@@ -111,9 +111,7 @@ def openai_messages(
                 continue
             if source.get("type") == "url" and isinstance(source.get("url"), str):
                 url = source["url"]
-            elif source.get("type") == "base64" and isinstance(
-                source.get("data"), str
-            ):
+            elif source.get("type") == "base64" and isinstance(source.get("data"), str):
                 url = (
                     f"data:{source.get('media_type') or 'image/jpeg'};"
                     f"base64,{source['data']}"
@@ -180,6 +178,11 @@ class OpenAIProvider:
         if self._session:
             await self._session.close()
 
+    def update_config(self, config: LLMConfig) -> None:
+        if config.api_format != "openai":
+            raise ValueError("changing llm.api_format requires a restart")
+        self.config = config
+
     async def complete(
         self,
         system: str | list[dict[str, Any]],
@@ -190,13 +193,14 @@ class OpenAIProvider:
     ) -> ProviderResponse:
         if self._session is None:
             raise RuntimeError("provider is not started")
+        config = self.config
         payload: dict[str, Any] = {
-            "model": self.config.model,
+            "model": config.model,
             "messages": openai_messages(system, messages),
-            "max_tokens": self.config.max_tokens,
-            "temperature": self.config.temperature,
+            "max_tokens": config.max_tokens,
+            "temperature": config.temperature,
         }
-        effort = thinking_effort(self.config)
+        effort = thinking_effort(config)
         if effort:
             payload.pop("temperature", None)
             payload["thinking"] = {"type": "enabled"}
@@ -213,12 +217,12 @@ class OpenAIProvider:
                 }
                 for tool in tools
             ]
-            if require_tool and self.config.tool_choice:
+            if require_tool and config.tool_choice:
                 payload["tool_choice"] = "required"
         log_tool_schema("openai", payload.get("tools"))
         dump_path = dump_request(self.dump_dir, "openai", payload, require_tool)
         headers = {
-            "authorization": f"Bearer {self.config.api_key}",
+            "authorization": f"Bearer {config.api_key}",
             "content-type": "application/json",
         }
 
@@ -226,7 +230,7 @@ class OpenAIProvider:
             billed_at = time()
             assert self._session is not None
             async with self._session.post(
-                openai_url(self.config.base_url),
+                openai_url(config.base_url),
                 json=payload,
                 headers=headers,
             ) as response:
@@ -252,7 +256,7 @@ class OpenAIProvider:
                     attempt_started=attempt_started,
                     dump_path=dump_path,
                     usage_sink=self.usage_sink,
-                    model=self.config.model,
+                    model=config.model,
                     parse_usage=self.usage_parser,
                     created_at=billed_at,
                 )
@@ -312,7 +316,7 @@ class OpenAIProvider:
                     self.thinking_sink,
                     reasoning=reasoning,
                     tools=[call.name for call in tool_calls],
-                    model=self.config.model,
+                    model=config.model,
                 )
                 if tool_calls:
                     log_event(
@@ -348,9 +352,9 @@ class OpenAIProvider:
 
         return await retry_request(
             protocol="openai",
-            max_retries=self.config.max_retries,
+            max_retries=config.max_retries,
             request_fields={
-                "model": self.config.model,
+                "model": config.model,
                 "messages": len(messages),
                 "tools": len(tools or []),
                 "require_tool": require_tool,

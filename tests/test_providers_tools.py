@@ -93,9 +93,7 @@ class OwnerAttachmentOrderTest(unittest.TestCase):
 
     def test_anthropic_keeps_each_attachment_in_place(self) -> None:
         blocks = merge_adjacent_roles(MIXED_OWNER_MESSAGE)[0]["content"]
-        self.assertEqual(
-            [block["type"] for block in blocks], ["text", "image", "text"]
-        )
+        self.assertEqual([block["type"] for block in blocks], ["text", "image", "text"])
 
     def test_merging_same_role_messages_preserves_block_order(self) -> None:
         merged = merge_adjacent_roles(
@@ -181,7 +179,7 @@ class ProvidersToolsTest(unittest.TestCase):
                             "id": "plan-1",
                             "name": "recall",
                             "input": {},
-                        }
+                        },
                     ],
                 },
                 {
@@ -327,9 +325,7 @@ class ProvidersToolsTest(unittest.TestCase):
             self.assertEqual(result["total_lines"], 1)
             self.assertEqual(result["sha256"], "file-sha")
             self.assertEqual(result["content_offset"], 0)
-            self.assertEqual(
-                result["next_content_offset"], len(result["content"])
-            )
+            self.assertEqual(result["next_content_offset"], len(result["content"]))
             self.assertGreater(len(result["content"]), 0)
             self.assertLess(len(result["content"]), 1000)
             self.assertLessEqual(
@@ -397,7 +393,9 @@ class ProvidersToolsTest(unittest.TestCase):
             self.assertTrue(first["truncated"])
             self.assertTrue(first["result_ref"].startswith("tr_"))
             self.assertTrue(
-                (daemon.tool_executor.result_root / f"{first['result_ref']}.json").is_file()
+                (
+                    daemon.tool_executor.result_root / f"{first['result_ref']}.json"
+                ).is_file()
             )
             chunks = [str(first["content"])]
             cursor = first["next_cursor"]
@@ -560,6 +558,56 @@ class ProvidersToolsTest(unittest.TestCase):
 
 
 class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
+    async def test_openai_provider_switches_config_between_requests(self) -> None:
+        entered = asyncio.Event()
+        release = asyncio.Event()
+        requests: list[tuple[str, dict[str, object]]] = []
+
+        async def completion(request: web.Request) -> web.Response:
+            requests.append((request.headers["Authorization"], await request.json()))
+            if len(requests) == 1:
+                entered.set()
+                await release.wait()
+            return web.json_response(
+                {"choices": [{"message": {"role": "assistant", "content": "ok"}}]}
+            )
+
+        server = TestServer(web.Application())
+        server.app.router.add_post("/v1/chat/completions", completion)
+        await server.start_server()
+        base_url = str(server.make_url("/")).rstrip("/")
+        old = LLMConfig(
+            base_url, "old-key", "old-model", 100, 0, 1, 0, api_format="openai"
+        )
+        provider = OpenAIProvider(old)
+        try:
+            async with provider:
+                first = asyncio.create_task(
+                    provider.complete("system", [{"role": "user", "content": "one"}])
+                )
+                await entered.wait()
+                provider.update_config(
+                    LLMConfig(
+                        base_url,
+                        "new-key",
+                        "new-model",
+                        100,
+                        0,
+                        1,
+                        0,
+                        api_format="openai",
+                    )
+                )
+                release.set()
+                await first
+                await provider.complete("system", [{"role": "user", "content": "two"}])
+        finally:
+            await server.close()
+        self.assertEqual(requests[0][0], "Bearer old-key")
+        self.assertEqual(requests[0][1]["model"], "old-model")
+        self.assertEqual(requests[1][0], "Bearer new-key")
+        self.assertEqual(requests[1][1]["model"], "new-model")
+
     async def test_required_mcp_connection_failure_stops_startup(self) -> None:
         manager = MCPManager(None)
         manager.configs = {"required": {"command": "missing"}}
@@ -570,9 +618,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_optional_mcp_connection_failure_allows_startup(self) -> None:
         manager = MCPManager(None)
-        manager.configs = {
-            "optional": {"command": "missing", "optional": True}
-        }
+        manager.configs = {"optional": {"command": "missing", "optional": True}}
         with patch.object(manager, "_connect", side_effect=RuntimeError("offline")):
             entered = await manager.__aenter__()
         self.assertIs(entered, manager)
@@ -906,9 +952,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                 )
 
         manager = MCPManager(None)
-        manager.configs = {
-            "search": {"command": "fake", "readOnlyTools": ["zeta"]}
-        }
+        manager.configs = {"search": {"command": "fake", "readOnlyTools": ["zeta"]}}
         with (
             patch("momoi.mcp.manager.stdio_client", return_value=Transport()),
             patch("momoi.mcp.manager.ClientSession", Session),
@@ -921,9 +965,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
             ["mcp__search__alpha", "mcp__search__zeta"],
         )
         self.assertEqual(manager.capability("mcp__search__zeta"), "read")
-        self.assertEqual(
-            manager.capability("mcp__search__alpha"), "external_effect"
-        )
+        self.assertEqual(manager.capability("mcp__search__alpha"), "external_effect")
 
     async def test_mcp_enabled_tools_filters_registered_surface(self) -> None:
         class Transport:
@@ -1193,8 +1235,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                 unusable = [
                     record
                     for record in logs.records
-                    if getattr(record, "momoi_event", "")
-                    == "llm_response_unusable"
+                    if getattr(record, "momoi_event", "") == "llm_response_unusable"
                 ]
                 self.assertEqual(len(unusable), 3)
                 self.assertIn("upstream overloaded", unusable[0].momoi_fields["body"])
@@ -1287,9 +1328,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                 llm=LLMConfig(
                     "http://127.0.0.1", "test", "test", 100, 0, 1, 0, "openai"
                 ),
-                channel=NapCatConfig(
-                    "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
-                ),
+                channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
                 transcript_turns_min=4,
                 transcript_turns_max=4,
@@ -1320,9 +1359,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "invalid_tool_arguments_json",
                         )
                     elif self.calls == 2:
-                        self_test.assertIn(
-                            "invalid_tool_arguments_json", rendered
-                        )
+                        self_test.assertIn("invalid_tool_arguments_json", rendered)
                         self_test.assertIn("reasoning", rendered)
                         self_test.assertIn("先纠正参数", rendered)
                         call = ToolCall(
@@ -1350,11 +1387,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                             }
                         ],
                         [call],
-                        reasoning=(
-                            "先纠正参数"
-                            if self.calls == 1
-                            else ""
-                        ),
+                        reasoning=("先纠正参数" if self.calls == 1 else ""),
                     )
 
             self_test = self

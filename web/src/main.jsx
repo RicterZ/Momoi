@@ -14,6 +14,7 @@ const pages = {
   emotions: ["表情包", "MOMOI // STICKERS"],
   goals: ["任务列表", "MOMOI // QUESTS"],
   thinking: ["思考记录", "MOMOI // THINKING"],
+  settings: ["设置", "MOMOI // SETTINGS"],
 };
 
 const navItems = [
@@ -24,6 +25,7 @@ const navItems = [
   ["emotions", "05", "表情包"],
   ["goals", "06", "任务列表"],
   ["thinking", "07", "思考"],
+  ["settings", "08", "设置"],
 ];
 
 const thinkingStageLabels = {
@@ -2334,6 +2336,259 @@ function ThinkingDetail({ item, calls, recall }) {
   );
 }
 
+const promptDetails = {
+  soul: {
+    code: "01 / PERSONA",
+    title: "人格设定",
+    description: "定义 Momoi 的身份、性格和与你相处的方式。",
+  },
+  heartbeat: {
+    code: "02 / HEARTBEAT",
+    title: "心跳指引",
+    description: "告诉 Momoi 在空闲时可以主动关注、思考或探索什么。",
+  },
+};
+
+function PromptEditor({ item, token }) {
+  const details = promptDetails[item.id];
+  const [saved, setSaved] = useState(item.content || "");
+  const [draft, setDraft] = useState(item.content || "");
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState("");
+  const dirty = draft !== saved;
+
+  useEffect(() => {
+    const content = item.content || "";
+    setSaved(content);
+    setDraft(content);
+    setStatus("");
+  }, [item.id, item.content]);
+
+  async function save(event) {
+    event.preventDefault();
+    if (!dirty || saving) return;
+    setSaving(true);
+    setStatus("");
+    try {
+      const updated = await api(
+        `/api/settings/prompts/${encodeURIComponent(item.id)}`,
+        { method: "PUT", token, body: { content: draft } },
+      );
+      const content = updated?.content ?? draft;
+      setSaved(content);
+      setDraft(content);
+      setStatus("已保存");
+    } catch (error) {
+      setStatus(`保存失败 · ${error.message}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form className="prompt-card" onSubmit={save}>
+      <header className="prompt-card-head">
+        <div>
+          <p className="prompt-code">{details.code}</p>
+          <h2>{details.title}</h2>
+        </div>
+      </header>
+      <p className="prompt-description">{details.description}</p>
+      <label className="prompt-field">
+        <span>{item.filename}</span>
+        <textarea
+          value={draft}
+          rows={item.id === "soul" ? 18 : 10}
+          onChange={(event) => {
+            setDraft(event.target.value);
+            setStatus("");
+          }}
+        />
+      </label>
+      <div className="prompt-card-foot">
+        {status ? (
+          <span className={status.startsWith("保存失败") ? "is-error" : ""} aria-live="polite">
+            {status}
+          </span>
+        ) : null}
+        <div className="card-actions">
+          <button
+            className="quiet-button"
+            type="button"
+            disabled={!dirty || saving}
+            onClick={() => {
+              setDraft(saved);
+              setStatus("");
+            }}
+          >
+            撤销修改
+          </button>
+          <button
+            className="quiet-button pink"
+            type="submit"
+            disabled={!dirty || saving}
+          >
+            {saving ? "保存中…" : "保存提示词"}
+          </button>
+        </div>
+      </div>
+    </form>
+  );
+}
+
+function LlmSettings({ item, token }) {
+  const managed = new Set(item.environment_fields || []);
+  const [saved, setSaved] = useState(item);
+  const [draft, setDraft] = useState({
+    base_url: item.base_url || "",
+    model: item.model || "",
+    api_key: "",
+  });
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState("");
+  const dirty =
+    (!managed.has("base_url") && draft.base_url !== saved.base_url) ||
+    (!managed.has("model") && draft.model !== saved.model) ||
+    (!managed.has("api_key") && Boolean(draft.api_key));
+
+  async function save(event) {
+    event.preventDefault();
+    if (!dirty || saving) return;
+    const body = {};
+    if (!managed.has("base_url")) body.base_url = draft.base_url;
+    if (!managed.has("model")) body.model = draft.model;
+    if (!managed.has("api_key") && draft.api_key) body.api_key = draft.api_key;
+    setSaving(true);
+    setStatus("");
+    try {
+      const updated = await api("/api/settings/llm", {
+        method: "PUT",
+        token,
+        body,
+      });
+      setSaved(updated);
+      setDraft({
+        base_url: updated.base_url || "",
+        model: updated.model || "",
+        api_key: "",
+      });
+      setStatus("已保存");
+    } catch (error) {
+      setStatus(`保存失败 · ${error.message}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const fieldNote = (name) =>
+    managed.has(name) ? "由环境变量管理，需在部署环境修改" : "";
+
+  return (
+    <form className="llm-settings-card" onSubmit={save}>
+      <div className="llm-field-grid">
+        <label className="settings-field">
+          <span>API 地址</span>
+          <input
+            type="url"
+            value={draft.base_url}
+            disabled={managed.has("base_url")}
+            onChange={(event) => {
+              setDraft({ ...draft, base_url: event.target.value });
+              setStatus("");
+            }}
+          />
+          {fieldNote("base_url") ? <small>{fieldNote("base_url")}</small> : null}
+        </label>
+        <label className="settings-field">
+          <span>模型</span>
+          <input
+            value={draft.model}
+            disabled={managed.has("model")}
+            onChange={(event) => {
+              setDraft({ ...draft, model: event.target.value });
+              setStatus("");
+            }}
+          />
+          {fieldNote("model") ? <small>{fieldNote("model")}</small> : null}
+        </label>
+        <label className="settings-field">
+          <span>API Key</span>
+          <input
+            type="password"
+            autoComplete="new-password"
+            value={draft.api_key}
+            disabled={managed.has("api_key")}
+            placeholder={saved.api_key_configured ? "已配置 · 留空则不修改" : "输入 API Key"}
+            onChange={(event) => {
+              setDraft({ ...draft, api_key: event.target.value });
+              setStatus("");
+            }}
+          />
+          {fieldNote("api_key") ? <small>{fieldNote("api_key")}</small> : null}
+        </label>
+      </div>
+      <footer className="llm-settings-foot">
+        {status ? (
+          <p className={status.startsWith("保存失败") ? "is-error" : ""} aria-live="polite">
+            {status}
+          </p>
+        ) : null}
+        <div className="card-actions">
+          <button
+            className="quiet-button"
+            type="button"
+            disabled={!dirty || saving}
+            onClick={() => {
+              setDraft({ base_url: saved.base_url, model: saved.model, api_key: "" });
+              setStatus("");
+            }}
+          >
+            撤销修改
+          </button>
+          <button className="quiet-button pink" type="submit" disabled={!dirty || saving}>
+            {saving ? "保存中…" : "保存模型设置"}
+          </button>
+        </div>
+      </footer>
+    </form>
+  );
+}
+
+function Settings({ refreshKey, token }) {
+  return (
+    <DataView path="/api/settings" refreshKey={refreshKey} token={token}>
+      {(data) => (
+        <div className="settings-page">
+          <section className="settings-section">
+            <header className="settings-section-head">
+              <div>
+                <p className="eyebrow">CONFIG // MODEL</p>
+                <h2>模型连接</h2>
+              </div>
+              <p>更新 Momoi 使用的模型与连接凭据。</p>
+            </header>
+            <LlmSettings item={data.llm} token={token} />
+          </section>
+          <section className="settings-section">
+            <header className="settings-section-head">
+              <div>
+                <p className="eyebrow">CONFIG // PROMPTS</p>
+                <h2>提示词</h2>
+              </div>
+              <p>调整 Momoi 的人格和空闲时关注的事情。</p>
+            </header>
+            <div className="prompt-grid">
+              {(data.prompts || []).map((item) => (
+                <PromptEditor item={item} token={token} key={item.id} />
+              ))}
+            </div>
+          </section>
+        </div>
+      )}
+    </DataView>
+  );
+}
+
 const viewComponents = {
   overview: Overview,
   conversations: Conversations,
@@ -2342,6 +2597,7 @@ const viewComponents = {
   emotions: Emotions,
   goals: Goals,
   thinking: Thinking,
+  settings: Settings,
 };
 
 function TokenGate({ value, onChange, onUnlock }) {
@@ -2502,7 +2758,7 @@ function App() {
               tabIndex={locked ? -1 : undefined}
               onClick={() => setRefreshKey((value) => value + 1)}
             >
-              ↻ 刷新
+              ↻ 重载
             </button>
           </header>
           <div id="content">

@@ -16,6 +16,8 @@ from momoi.dashboard.auth import (
     issue_dashboard_jwt,
     verify_dashboard_jwt,
 )
+from momoi.config.models import LLMConfig
+from momoi.dashboard.settings import DashboardSettings, PromptFile
 from momoi.storage import Store
 
 
@@ -191,8 +193,59 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         image.write_bytes(b"GIF89a")
         self.store.add_emotion("hello", image, "打招呼")
 
+        prompt_root = self.root / "prompts"
+        prompt_root.mkdir()
+        self.soul_prompt = prompt_root / "SOUL.md"
+        self.heartbeat_prompt = prompt_root / "HEARTBEAT.md"
+        self.soul_prompt.write_text("原来的人格", encoding="utf-8")
+        self.heartbeat_prompt.write_text("原来的心跳指引", encoding="utf-8")
+        self.config_path = self.root / "config.json"
+        self.config_path.write_text(
+            json.dumps(
+                {
+                    "llm": {
+                        "api_format": "openai",
+                        "base_url": "https://old.example.com/v1",
+                        "api_key": "old-key",
+                        "model": "old-model",
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        self.llm_config = LLMConfig(
+            "https://old.example.com/v1",
+            "old-key",
+            "old-model",
+            100,
+            0.5,
+            30,
+            1,
+            api_format="openai",
+        )
+
+        def activate_llm(config: LLMConfig) -> None:
+            self.llm_config = config
+
+        self.settings = DashboardSettings(
+            (
+                PromptFile("soul", self.soul_prompt, True),
+                PromptFile("heartbeat", self.heartbeat_prompt, False),
+            ),
+            config_path=self.config_path,
+            llm_config=lambda: self.llm_config,
+            activate_llm=activate_llm,
+            environment={},
+        )
+
         self.client = TestClient(
-            TestServer(create_dashboard_app(self.store, token=self.secret))
+            TestServer(
+                create_dashboard_app(
+                    self.store,
+                    token=self.secret,
+                    settings=self.settings,
+                )
+            )
         )
         await self.client.start_server()
 
@@ -299,6 +352,101 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         asset = await self.client.get(emotions["items"][0]["asset_url"])
         self.assertEqual(asset.status, 200)
         self.assertEqual(await asset.read(), b"GIF89a")
+
+    async def test_dashboard_reads_and_updates_workspace_prompts(self) -> None:
+        auth = self._auth()
+        response = await self.client.get("/api/settings/prompts", headers=auth)
+        self.assertEqual(response.status, 200)
+        items = {item["id"]: item for item in (await response.json())["items"]}
+        self.assertEqual(items["soul"]["content"], "原来的人格")
+        self.assertEqual(items["soul"]["filename"], "SOUL.md")
+        self.assertNotIn("required", items["soul"])
+
+        updated = await self.client.put(
+            "/api/settings/prompts/soul",
+            headers=auth,
+            json={"content": "新的人格\n会在下一轮生效。"},
+        )
+        self.assertEqual(updated.status, 200)
+        self.assertEqual(
+            self.soul_prompt.read_text(encoding="utf-8"),
+            "新的人格\n会在下一轮生效。",
+        )
+
+        cleared = await self.client.put(
+            "/api/settings/prompts/heartbeat",
+            headers=auth,
+            json={"content": ""},
+        )
+        self.assertEqual(cleared.status, 200)
+        self.assertEqual(self.heartbeat_prompt.read_text(encoding="utf-8"), "")
+
+        empty_soul = await self.client.put(
+            "/api/settings/prompts/soul",
+            headers=auth,
+            json={"content": "  \n"},
+        )
+        self.assertEqual(empty_soul.status, 400)
+        self.assertEqual(
+            self.soul_prompt.read_text(encoding="utf-8"),
+            "新的人格\n会在下一轮生效。",
+        )
+        missing = await self.client.put(
+            "/api/settings/prompts/unknown",
+            headers=auth,
+            json={"content": "test"},
+        )
+        self.assertEqual(missing.status, 404)
+
+    async def test_dashboard_persists_and_activates_llm_settings(self) -> None:
+        auth = self._auth()
+        current = await (
+            await self.client.get("/api/settings/llm", headers=auth)
+        ).json()
+        self.assertEqual(current["api_format"], "openai")
+        self.assertEqual(current["model"], "old-model")
+        self.assertTrue(current["api_key_configured"])
+        self.assertNotIn("api_key", current)
+
+        response = await self.client.put(
+            "/api/settings/llm",
+            headers=auth,
+            json={
+                "base_url": "https://new.example.com/v1/",
+                "model": "new-model",
+                "api_key": "new-key",
+            },
+        )
+        self.assertEqual(response.status, 200)
+        self.assertEqual(self.llm_config.base_url, "https://new.example.com/v1")
+        self.assertEqual(self.llm_config.model, "new-model")
+        self.assertEqual(self.llm_config.api_key, "new-key")
+        saved = json.loads(self.config_path.read_text(encoding="utf-8"))["llm"]
+        self.assertEqual(saved["base_url"], "https://new.example.com/v1")
+        self.assertEqual(saved["model"], "new-model")
+        self.assertEqual(saved["api_key"], "new-key")
+
+        invalid = await self.client.put(
+            "/api/settings/llm",
+            headers=auth,
+            json={"base_url": "not-a-url"},
+        )
+        self.assertEqual(invalid.status, 400)
+        self.assertEqual(self.llm_config.base_url, "https://new.example.com/v1")
+
+    def test_environment_managed_llm_fields_cannot_be_overwritten(self) -> None:
+        settings = DashboardSettings(
+            (),
+            config_path=self.config_path,
+            llm_config=lambda: self.llm_config,
+            activate_llm=lambda config: None,
+            environment={"MOMOI_LLM_MODEL": "environment-model"},
+        )
+        self.assertEqual(settings.llm()["environment_fields"], ["model"])
+        with self.assertRaisesRegex(ValueError, "managed by environment"):
+            settings.update_llm({"model": "dashboard-model"})
+        saved = json.loads(self.config_path.read_text(encoding="utf-8"))["llm"]
+        self.assertEqual(saved["model"], "old-model")
 
     async def test_chat_log_includes_ignored_and_deferred_turns(self) -> None:
         now = time.time()
@@ -557,6 +705,11 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             ("GET", "/api/health", None),
             ("GET", "/api/memories", None),
             ("GET", "/api/emotions", None),
+            ("GET", "/api/settings/prompts", None),
+            ("GET", "/api/settings", None),
+            ("PUT", "/api/settings/prompts/soul", {"content": "被改"}),
+            ("GET", "/api/settings/llm", None),
+            ("PUT", "/api/settings/llm", {"model": "被改"}),
             ("PATCH", f"/api/memories/{memory_id}", {"content": "改掉"}),
             ("DELETE", f"/api/memories/{memory_id}", None),
             (
@@ -621,7 +774,15 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(rejected.status, 401)
 
     async def test_empty_dashboard_token_rejects_all_api(self) -> None:
-        bare = TestClient(TestServer(create_dashboard_app(self.store, token="")))
+        bare = TestClient(
+            TestServer(
+                create_dashboard_app(
+                    self.store,
+                    token="",
+                    settings=self.settings,
+                )
+            )
+        )
         await bare.start_server()
         try:
             login = await bare.post("/api/auth/token", json={"token": "anything"})

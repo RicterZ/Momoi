@@ -4,6 +4,7 @@ import logging
 from aiohttp import web
 
 from .app import create_dashboard_app
+from .settings import DashboardSettings
 from ..extensions.base import UsagePlugin
 from ..observability.events import log_event
 from ..storage import Store
@@ -20,17 +21,22 @@ class DashboardService:
         *,
         token: str = "",
         usage_plugin: UsagePlugin | None = None,
+        settings: DashboardSettings,
     ) -> None:
         self.store = store
         self.host = host
         self.port = port
         self.token = token
         self.usage_plugin = usage_plugin
+        self.settings = settings
 
     async def run(self, stop: asyncio.Event) -> None:
         runner = web.AppRunner(
             create_dashboard_app(
-                self.store, token=self.token, usage_plugin=self.usage_plugin
+                self.store,
+                token=self.token,
+                usage_plugin=self.usage_plugin,
+                settings=self.settings,
             ),
             access_log=None,
         )

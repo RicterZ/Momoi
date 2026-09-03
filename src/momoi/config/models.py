@@ -148,6 +148,7 @@ class AppConfig:
     policies: RuntimePolicies = RuntimePolicies()
     asr: ASRConfig = ASRConfig()
     embedding: EmbeddingConfig = EmbeddingConfig()
+    config_path: Path | None = None
 
     @property
     def channel_configs(self) -> tuple[object, ...]:

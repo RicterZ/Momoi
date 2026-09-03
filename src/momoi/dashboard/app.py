@@ -14,6 +14,7 @@ from .auth import (
     _token_matches,
     issue_dashboard_jwt,
 )
+from .settings import DashboardSettings
 from ..emotions import (
     managed_emotion_bytes,
     remove_unreferenced_emotion_asset,
@@ -192,7 +193,11 @@ async def _headers(
 
 
 def create_dashboard_app(
-    store: Store, *, token: str = "", usage_plugin: UsagePlugin | None = None
+    store: Store,
+    *,
+    token: str = "",
+    usage_plugin: UsagePlugin | None = None,
+    settings: DashboardSettings,
 ) -> web.Application:
     app = web.Application(middlewares=[_auth, _headers])
     app[DASHBOARD_TOKEN] = token
@@ -445,6 +450,36 @@ def create_dashboard_app(
             raise web.HTTPNotFound(text="goal not found")
         return web.json_response(item)
 
+    async def prompts(_request: web.Request) -> web.Response:
+        return web.json_response({"items": settings.prompts()})
+
+    async def dashboard_settings(_request: web.Request) -> web.Response:
+        return web.json_response({"prompts": settings.prompts(), "llm": settings.llm()})
+
+    async def update_prompt(request: web.Request) -> web.Response:
+        payload = await _json_body(request)
+        content = payload.get("content")
+        if not isinstance(content, str):
+            raise web.HTTPBadRequest(text="content must be a string")
+        try:
+            item = settings.update(request.match_info["prompt_id"], content)
+        except KeyError:
+            raise web.HTTPNotFound(text="prompt not found") from None
+        except ValueError as error:
+            raise web.HTTPBadRequest(text=str(error)) from None
+        return web.json_response(item)
+
+    async def llm_settings(_request: web.Request) -> web.Response:
+        return web.json_response(settings.llm())
+
+    async def update_llm_settings(request: web.Request) -> web.Response:
+        payload = await _json_body(request)
+        try:
+            item = settings.update_llm(payload)
+        except (OSError, ValueError, json.JSONDecodeError) as error:
+            raise web.HTTPBadRequest(text=str(error)) from None
+        return web.json_response(item)
+
     async def emotions(_request: web.Request) -> web.Response:
         items = [_public_emotion(item) for item in store.list_emotions()]
         return web.json_response({"items": items})
@@ -576,6 +611,11 @@ def create_dashboard_app(
     app.router.add_get("/api/goals", goals)
     app.router.add_patch("/api/goals/{goal_id}", update_goal)
     app.router.add_delete("/api/goals/{goal_id}", delete_goal)
+    app.router.add_get("/api/settings", dashboard_settings)
+    app.router.add_get("/api/settings/prompts", prompts)
+    app.router.add_put("/api/settings/prompts/{prompt_id}", update_prompt)
+    app.router.add_get("/api/settings/llm", llm_settings)
+    app.router.add_put("/api/settings/llm", update_llm_settings)
     app.router.add_get("/api/emotions", emotions)
     app.router.add_post("/api/emotions", create_emotion)
     app.router.add_patch("/api/emotions/{slug}", update_emotion)

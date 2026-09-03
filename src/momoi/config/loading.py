@@ -415,4 +415,5 @@ def load_config(path: str | Path) -> AppConfig:
             ),
             document_batch_size=document_batch_size,
         ),
+        config_path=config_path,
     )

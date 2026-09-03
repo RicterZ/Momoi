@@ -13,6 +13,7 @@ from ..channel import (
 )
 from ..config.models import AppConfig
 from ..dashboard.service import DashboardService
+from ..dashboard.settings import DashboardSettings
 from ..extensions import load_usage_plugin
 from ..observability.events import log_event
 from ..tools.memory import MemoryTools
@@ -88,16 +89,6 @@ class MomoiDaemon(
                 "usage_plugin_loaded",
                 provider=config.usage.provider,
             )
-        self.dashboard = (
-            DashboardService(
-                self.store,
-                *dashboard,
-                token=config.dashboard.token,
-                usage_plugin=usage_plugin,
-            )
-            if dashboard is not None
-            else None
-        )
         self.store.ensure_heartbeat(config.heartbeat)
         self.agenda_tools = AgendaTools(self.store)
         self.memory_tools = MemoryTools(
@@ -148,6 +139,21 @@ class MomoiDaemon(
         self.provider.thinking_sink = self.store.record_thinking_call
         if usage_plugin is not None:
             self.provider.usage_parser = usage_plugin.parse_usage
+        self.dashboard = (
+            DashboardService(
+                self.store,
+                *dashboard,
+                token=config.dashboard.token,
+                usage_plugin=usage_plugin,
+                settings=DashboardSettings.from_config(
+                    config,
+                    llm_config=lambda: self.provider.config,
+                    activate_llm=self.provider.update_config,
+                ),
+            )
+            if dashboard is not None
+            else None
+        )
         self.mcp = MCPManager(config.mcp_config)
         self.tool_surface = ToolSurface(
             config, self.mcp, self.channels, self.channel.name

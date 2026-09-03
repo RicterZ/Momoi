@@ -43,11 +43,7 @@ def merge_adjacent_roles(
                 if isinstance(before, list)
                 else [{"type": "text", "text": before}]
             ),
-            *(
-                after
-                if isinstance(after, list)
-                else [{"type": "text", "text": after}]
-            ),
+            *(after if isinstance(after, list) else [{"type": "text", "text": after}]),
         ]
     return merged
 
@@ -72,6 +68,11 @@ class AnthropicProvider:
         if self._session:
             await self._session.close()
 
+    def update_config(self, config: LLMConfig) -> None:
+        if config.api_format != "anthropic":
+            raise ValueError("changing llm.api_format requires a restart")
+        self.config = config
+
     async def complete(
         self,
         system: str | list[dict[str, Any]],
@@ -82,14 +83,15 @@ class AnthropicProvider:
     ) -> ProviderResponse:
         if self._session is None:
             raise RuntimeError("provider is not started")
+        config = self.config
         payload: dict[str, Any] = {
-            "model": self.config.model,
+            "model": config.model,
             "system": system,
             "messages": merge_adjacent_roles(messages),
-            "max_tokens": self.config.max_tokens,
-            "temperature": self.config.temperature,
+            "max_tokens": config.max_tokens,
+            "temperature": config.temperature,
         }
-        effort = thinking_effort(self.config)
+        effort = thinking_effort(config)
         if effort:
             payload.pop("temperature", None)
             payload["output_config"] = {"effort": effort}
@@ -105,11 +107,9 @@ class AnthropicProvider:
             if require_tool:
                 payload["tool_choice"] = {"type": "any"}
         log_tool_schema("anthropic", payload.get("tools"))
-        dump_path = dump_request(
-            self.dump_dir, "anthropic", payload, require_tool
-        )
+        dump_path = dump_request(self.dump_dir, "anthropic", payload, require_tool)
         headers = {
-            "x-api-key": self.config.api_key,
+            "x-api-key": config.api_key,
             "anthropic-version": "2023-06-01",
             "content-type": "application/json",
         }
@@ -118,7 +118,7 @@ class AnthropicProvider:
             billed_at = time()
             assert self._session is not None
             async with self._session.post(
-                anthropic_url(self.config.base_url, "/messages"),
+                anthropic_url(config.base_url, "/messages"),
                 json=payload,
                 headers=headers,
             ) as response:
@@ -140,7 +140,7 @@ class AnthropicProvider:
                     attempt_started=attempt_started,
                     dump_path=dump_path,
                     usage_sink=self.usage_sink,
-                    model=self.config.model,
+                    model=config.model,
                     parse_usage=self.usage_parser,
                     created_at=billed_at,
                 )
@@ -170,7 +170,7 @@ class AnthropicProvider:
                     self.thinking_sink,
                     reasoning=anthropic_reasoning(content),
                     tools=[call.name for call in tool_calls],
-                    model=self.config.model,
+                    model=config.model,
                 )
                 if tool_calls:
                     log_event(
@@ -206,9 +206,9 @@ class AnthropicProvider:
 
         return await retry_request(
             protocol="anthropic",
-            max_retries=self.config.max_retries,
+            max_retries=config.max_retries,
             request_fields={
-                "model": self.config.model,
+                "model": config.model,
                 "messages": len(messages),
                 "tools": len(tools or []),
                 "require_tool": require_tool,
