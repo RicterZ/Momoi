@@ -742,7 +742,7 @@ function previewUsageApi() {
           return;
         }
         if (req.method === "GET" && path === "/api/health") {
-          json(res, { ok: true, version: "0.5.2" });
+          json(res, { ok: true, version: "0.5.4" });
           return;
         }
         if (req.method === "GET" && path === "/api/settings/prompts") {
