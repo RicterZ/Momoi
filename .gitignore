@@ -4,6 +4,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 node_modules/
+scripts/
 config.json
 !config.example/config.json
 mcp.json
