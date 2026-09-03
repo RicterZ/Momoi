@@ -30,10 +30,11 @@ CHANNEL_BUBBLE_SCHEMA: dict[str, Any] = {
             "type": "string",
             "minLength": 1,
             "description": (
-                "A bubble is one item in send_bubbles.bubbles; producing it means "
-                "calling send_bubbles. It must be non-empty; split blank lines into "
-                "items. Exact emotion://<listed-slug> from <emotion_catalog> sends "
-                "a standalone reaction image."
+                "A bubble is an item in send_bubbles.bubbles; producing it means "
+                "calling send_bubbles. Must be non-empty; split blank lines into "
+                "items. An item with emotion:// must equal "
+                "emotion://<listed-slug> from <emotion_catalog>; sends a standalone "
+                "reaction image."
             ),
         },
         {
@@ -349,9 +350,9 @@ def heartbeat_end_turn_tool_spec() -> dict[str, Any]:
 SEND_BUBBLES_TOOL_SPEC: dict[str, Any] = {
     "name": "send_bubbles",
     "description": (
-        "Produces owner-visible bubbles; assistant text delivers none. Call only "
-        "when warranted. After its result and all work, call end_turn alone on the "
-        "next step. Text may "
+        "Produces owner-visible bubbles; assistant text delivers none. Call when "
+        "warranted. After result and work, call end_turn alone next "
+        "step. Text may "
         "accompany images; file, video, audio, and record items must stand alone."
     ),
     "input_schema": {
@@ -388,4 +389,3 @@ def send_bubbles_tool_spec(
             },
         },
     }
-

@@ -2384,6 +2384,23 @@ class StorageMemoryTest(unittest.TestCase):
                 )["ok"]
             )
             self.assertEqual(len(autonomous.notification_messages or []), 4)
+            mixed_emotion = tools.execute(
+                ToolCall(
+                    "notify-mixed-emotion",
+                    "send_bubbles",
+                    {
+                        "bubbles": ["完成啦 emotion://happy"],
+                        "reason": "任务阶段结果",
+                        "key": "service.check",
+                    },
+                ),
+                autonomous,
+                authority="agent",
+                source_event_id=f"goal:{goal_id}",
+                allow_notify=True,
+            )
+            self.assertFalse(mixed_emotion["ok"])
+            self.assertIn("standalone bubble", mixed_emotion["message"])
             store.commit_autonomous_turn(goal_id, autonomous)
             self.assertEqual(store.goal(goal_id)["status"], "waiting")
             first = store.due_outbox()[0]

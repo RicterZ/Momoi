@@ -210,10 +210,13 @@ class AgendaTools:
             raise ValueError("priority must be normal or urgent")
         bubbles = [item.strip() for item in raw_bubbles]
         for bubble in bubbles:
-            if bubble.startswith(EMOTION_PREFIX):
-                slug = emotion_slug(bubble)
-                if slug is None or self.store.emotion(slug) is None:
-                    raise ValueError("notification contains an unknown emotion slug")
+            if EMOTION_PREFIX not in bubble:
+                continue
+            slug = emotion_slug(bubble)
+            if slug is None:
+                raise ValueError("emotion directive must be a standalone bubble")
+            if self.store.emotion(slug) is None:
+                raise ValueError("notification contains an unknown emotion slug")
         draft.notification_messages = bubbles
         draft.notification_key = key
         draft.notification_priority = priority

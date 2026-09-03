@@ -1379,6 +1379,18 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                 daemon.delivery_policy.validate_emotions(["emotion://missing"]),
                 "unknown_emotion_slug",
             )
+            self.assertEqual(
+                daemon.delivery_policy.validate_emotions(
+                    ["你好呀\nemotion://happy-1"]
+                ),
+                "emotion_directive_must_be_a_standalone_bubble",
+            )
+            self.assertEqual(
+                daemon.delivery_policy.validate_emotions(
+                    ["emotion://happy-1 真的假的"]
+                ),
+                "emotion_directive_must_be_a_standalone_bubble",
+            )
             first = daemon.store.due_outbox()[0]
             self.assertEqual(first.kind, "text")
             daemon.store.mark_sent(first.id)

@@ -62,11 +62,17 @@ class DeliveryPolicy:
 
     def validate_emotions(self, messages: list[ChannelMessage]) -> str | None:
         for message in messages:
-            if not isinstance(message, str) or not message.startswith(EMOTION_PREFIX):
+            if not isinstance(message, str):
+                if EMOTION_PREFIX in render_channel_message(
+                    normalize_channel_message(message)
+                ):
+                    return "emotion_directive_must_be_a_standalone_bubble"
+                continue
+            if EMOTION_PREFIX not in message:
                 continue
             slug = emotion_slug(message)
             if slug is None:
-                return "invalid_emotion_directive"
+                return "emotion_directive_must_be_a_standalone_bubble"
             if self.store.emotion(slug) is None:
                 return "unknown_emotion_slug"
         return None
