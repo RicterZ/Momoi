@@ -72,6 +72,12 @@ class ProgressAnnounceTest(unittest.TestCase):
             spec["input_schema"]["properties"]["channel"]["default"],
             "napcat",
         )
+        bubble_description = spec["input_schema"]["properties"]["bubbles"]["items"][
+            "oneOf"
+        ][0]["description"]
+        self.assertIn("passed in send_bubbles.bubbles", bubble_description)
+        self.assertIn("never output it as assistant text", bubble_description)
+        self.assertIn("Only way to send owner-visible content", spec["description"])
         self.assertLess(estimate_tokens(rendered), 550)
 
     def test_tool_enable_catalog_uses_group_descriptions(self) -> None:
