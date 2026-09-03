@@ -735,3 +735,8 @@ class ConfigurationTest(unittest.TestCase):
             path.write_text(json.dumps(value))
             with self.assertRaisesRegex(ValueError, "optional must be boolean"):
                 load_mcp_servers(path)
+
+    def test_bundled_brave_search_is_optional(self) -> None:
+        path = Path(__file__).resolve().parents[1] / "config.example" / "mcp.json"
+        loaded = load_mcp_servers(path)
+        self.assertTrue(loaded["brave-search"]["optional"])
