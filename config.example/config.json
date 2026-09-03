@@ -9,7 +9,7 @@
     "temperature": 0.6,
     "timeout_seconds": 300,
     "max_retries": 3,
-    "tool_choice": true,
+    "tool_choice": false,
     "thinking": {
       "effort": "high",
       "stages": {

@@ -243,43 +243,135 @@ incrementally without blocking owner conversation.
 | Observability | Local dashboard for conversations, recall decisions and evidence, reflections, memories, Goals, image reactions, token usage, and per-Turn thinking records |
 | External events | Authenticated Webhooks with YAML workflows and predefined command executors |
 
-## Quick start
+## Deployment
 
-### Docker Compose
+### Docker Compose: Weixin with semantic recall
 
-The published stack in `docker-compose.yml` runs Momoi, NapCat, and the private
-embedding service. The embedding container is available immediately, but
-semantic recall remains off until it is enabled in `config.json`.
+This deployment runs only Momoi and the private embedding service. It uses
+Weixin as the sole and primary channel, enables semantic recall, persists all
+state under `./workspace`, and does not install or run NapCat.
 
-Set the QQ owner and start the published stack explicitly:
+Before starting, install Docker with Compose v2 and have an Anthropic Messages-
+compatible or OpenAI Chat Completions-compatible endpoint and credential ready.
+The host also needs outbound HTTPS access for Weixin login and messaging.
 
-```bash
-export MOMOI_OWNER_QQ=your-qq-number
-docker compose -f docker-compose.yml up -d
-```
-
-On first start, the image creates `$HOME/.momoi` unless `MOMOI_WORKSPACE` is
-set, generates a dashboard token, and writes it to the Momoi container log.
-Webhooks remain disabled until enabled explicitly in `config.json`:
+Create a new deployment directory and the required prompt directory:
 
 ```bash
-docker compose -f docker-compose.yml logs momoi
+mkdir momoi-deploy && cd momoi-deploy
+mkdir -p workspace/prompts
+chmod 700 workspace
 ```
 
-For QQ, open `http://127.0.0.1:6099/webui`, get the NapCat login token from
-`docker logs napcat`, sign in, and enable its OneBot WebSocket service. The
-dashboard is at `http://127.0.0.1:8788`; configure the model connection under
-Settings.
+Create `workspace/config.json` with the smallest practical configuration.
+Replace the four LLM values with a real connection before starting:
 
-For WeChat, authenticate the configured channel once (`weixin` is the internal
-channel identifier):
+```json
+{
+  "timezone": "Asia/Shanghai",
+  "llm": {
+    "api_format": "openai",
+    "base_url": "https://api.example.com/v1",
+    "api_key": "replace-me",
+    "model": "model-name",
+    "tool_choice": false
+  },
+  "channels": {
+    "primary": "weixin",
+    "enabled": {
+      "weixin": {}
+    }
+  },
+  "context": {},
+  "storage": {
+    "database": "data/momoi.sqlite3"
+  },
+  "logging": {},
+  "tools": {
+    "mcp_config": null
+  },
+  "embedding": {
+    "enabled": true
+  }
+}
+```
+
+`context` and `logging` are intentionally empty but required configuration
+sections. Setting `mcp_config` to `null` disables MCP loading instead of using
+the implicit `mcp.json` path. The omitted embedding fields use the bundled
+service's matching endpoint, model, dimensions, and calibration profile.
+
+Create `workspace/prompts/SOUL.md`. It must be non-empty and should describe
+the identity and relationship you want Momoi to preserve. A minimal starting
+point is:
+
+```markdown
+# Soul
+
+You are Momoi, a persistent personal companion. Speak naturally with your
+owner and preserve continuity across conversations.
+```
+
+Generate the Dashboard secret in `.env`:
 
 ```bash
-docker compose -f docker-compose.yml run --rm momoi channel login weixin
+printf 'MOMOI_DASHBOARD_TOKEN=%s\n' "$(openssl rand -hex 24)" > .env
 ```
 
-Set `MOMOI_PRIMARY=weixin` on the next `up` when WeChat should receive proactive
-messages. One channel is enough; both may stay enabled.
+Create `compose.yaml`:
+
+```yaml
+services:
+  embedding:
+    image: ricterz/momoi-embedding:0.5.5
+    restart: unless-stopped
+
+  momoi:
+    image: ricterz/momoi:0.5.5
+    restart: unless-stopped
+    depends_on:
+      - embedding
+    environment:
+      MOMOI_DASHBOARD_TOKEN: ${MOMOI_DASHBOARD_TOKEN:?set it in .env}
+    ports:
+      - "127.0.0.1:8788:8788"
+    volumes:
+      - ./workspace:/home/momoi/.momoi
+```
+
+Authenticate Weixin once in the foreground. The QR code appears in this
+terminal, and the resulting credentials remain in the mounted workspace:
+
+```bash
+docker compose run --rm momoi channel login weixin
+```
+
+Then start Momoi and follow its logs:
+
+```bash
+docker compose up -d
+docker compose logs -f momoi
+```
+
+Open `http://127.0.0.1:8788` and sign in with the value from `.env`. Check the
+embedding index from the running container with:
+
+```bash
+docker compose exec momoi momoi embedding status
+```
+
+Keep `workspace` private and backed up. It contains the Weixin credential,
+LLM credential, conversation database, memories, prompts, and generated
+artifacts.
+
+Common startup failures are deliberate and local to the configuration:
+
+- `channels.primary must name an enabled channel` means the identifier is not
+  exactly `weixin`, or `channels.enabled.weixin` is missing.
+- A Weixin QR code appears only in the foreground `channel login` command, not
+  in `docker compose logs`.
+- `required MCP server failed to connect` means `mcp_config` was not set to
+  `null`, or another MCP configuration was mounted intentionally.
 
 ### Run from source
 
@@ -352,10 +444,10 @@ installation with:
 momoi embedding status
 ```
 
-For the published Docker Compose stack, run the same CLI inside the container:
+For the Docker Compose deployment above, run the same CLI inside the container:
 
 ```bash
-docker compose -f docker-compose.yml exec momoi momoi embedding status
+docker compose exec momoi momoi embedding status
 ```
 
 For a controlled offline migration, `momoi embedding build --wait` prepares a
