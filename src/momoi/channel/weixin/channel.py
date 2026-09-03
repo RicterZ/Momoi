@@ -392,7 +392,9 @@ class WeixinChannel:
         uploaded = await self._upload(api, session, content, upload_type)
         media = {
             "encrypt_query_param": uploaded["parameter"],
-            "aes_key": base64.b64encode(uploaded["key"]).decode("ascii"),
+            "aes_key": base64.b64encode(
+                uploaded["key"].hex().encode("ascii")
+            ).decode("ascii"),
             "encrypt_type": 1,
         }
         if wire_kind == "image":

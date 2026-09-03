@@ -389,7 +389,10 @@ class WeixinTest(unittest.TestCase):
                     key = bytes.fromhex(str(upload_request["aeskey"]))
                     self.assertEqual(decrypt(upload_body, key), b"image bytes")
                     image_media = sent[1]["msg"]["item_list"][0]["image_item"]["media"]  # type: ignore[index]
-                    self.assertEqual(base64.b64decode(image_media["aes_key"]), key)
+                    self.assertEqual(
+                        base64.b64decode(image_media["aes_key"]),
+                        key.hex().encode("ascii"),
+                    )
             finally:
                 await runner.cleanup()
 
