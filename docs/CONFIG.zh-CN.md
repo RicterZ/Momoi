@@ -444,6 +444,7 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
 ```json
 {
   "usage": {
+    "enabled": true,
     "provider": "momoi.extensions.deepseek.DeepSeekPlugin",
     "api_key": "replace-me",
     "base_url": "https://api.deepseek.com",
@@ -454,13 +455,15 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
 
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
+| `enabled` | `true` | 是否估算金额并查询账户余额；关闭后仍会统计 token 消耗 |
 | `provider` | 空 | `UsagePlugin` 类的点分名称 |
 | `api_key` | 空 | 传给插件构造函数的 `api_key` 参数 |
 | `base_url` | `https://api.deepseek.com` | 内置 DeepSeek 插件使用的 API 根地址 |
 | `timeout_seconds` | `10` | 内置 DeepSeek 插件的请求超时，限制在 `1`–`20` 秒 |
 | 其他字段 | — | 传给插件构造函数的其他关键字参数 |
 
-将 `provider` 留空时仍会记录 token 数量，但不查询 Provider 价格或余额。
+将 `enabled` 设为 `false` 后仍会记录 token 数量，但不会估算金额或查询账户余额。
+将 `provider` 留空也有相同效果，并使用协议通用的 token 解析器。
 
 ## 日志
 

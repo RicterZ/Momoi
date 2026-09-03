@@ -23,7 +23,7 @@ from ..emotions import (
 from ..extensions.base import UsagePlugin
 from ..storage import Store
 
-ASSET_ROOT = files("momoi").joinpath("dashboard")
+ASSET_ROOT = files("momoi.dashboard").joinpath("static")
 USAGE_PLUGIN = web.AppKey("usage_plugin", UsagePlugin | None)
 
 

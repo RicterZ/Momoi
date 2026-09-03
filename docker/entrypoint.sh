@@ -30,16 +30,9 @@ dashboard = config.setdefault("dashboard", {})
 dashboard_token = os.environ.get("MOMOI_DASHBOARD_TOKEN", "").strip() or secrets.token_urlsafe(24)
 dashboard["token"] = dashboard_token
 
-webhooks = config.setdefault("webhooks", {})
-webhooks["enabled"] = True
-webhooks["host"] = os.environ.get("MOMOI_WEBHOOKS_HOST", "0.0.0.0")
-webhook_token = os.environ.get("MOMOI_WEBHOOKS_TOKEN", "").strip() or secrets.token_urlsafe(24)
-webhooks["token"] = webhook_token
-
 path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
 print(f"Momoi workspace created at {path.parent}", flush=True)
 print(f"Dashboard token: {dashboard_token}", flush=True)
-print(f"Webhook token: {webhook_token}", flush=True)
 print(
     "Open the Dashboard to configure the model connection; set MOMOI_OWNER_QQ"
     " for NapCat or run: momoi channel login weixin",

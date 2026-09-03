@@ -18,7 +18,7 @@ docker run -d --name momoi --restart unless-stopped \
   ricterz/momoi:latest
 ```
 
-The first start copies a workspace into the volume, turns on webhooks at `0.0.0.0:8787`, and prints the dashboard and webhook tokens in `docker logs momoi`. Open `http://127.0.0.1:8788` and configure the model connection under Settings. Pin a version tag from the Tags tab if you do not want `latest`.
+The first start copies a workspace into the volume and prints the generated dashboard token in `docker logs momoi`. Webhooks remain disabled until enabled explicitly in `config.json`. Open `http://127.0.0.1:8788` and configure the model connection under Settings. Pin a version tag from the Tags tab if you do not want `latest`.
 
 For Weixin instead of QQ, omit `MOMOI_OWNER_QQ` and run:
 
@@ -39,8 +39,8 @@ Then set `MOMOI_PRIMARY=weixin` on the next start.
 | `MOMOI_PRIMARY` | `napcat` or `weixin` |
 | `MOMOI_TIMEZONE` | Notification timezone. Falls back to `TZ` |
 | `MOMOI_DASHBOARD_TOKEN` | Dashboard passphrase. Generated on first start if omitted |
-| `MOMOI_WEBHOOKS_ENABLED` | Default `true` on first start |
-| `MOMOI_WEBHOOKS_TOKEN` | Webhook bearer token. Generated on first start if omitted |
+| `MOMOI_WEBHOOKS_ENABLED` | Override `webhooks.enabled`; webhooks are disabled by default |
+| `MOMOI_WEBHOOKS_TOKEN` | Override the configured Webhook bearer token |
 | `MOMOI_USAGE_API_KEY` | Optional Usage plugin key |
 
 Source and compose file: https://github.com/RicterZ/Momoi

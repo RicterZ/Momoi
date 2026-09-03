@@ -147,10 +147,11 @@ def load_config(path: str | Path) -> AppConfig:
     webhook_raw = mapping(raw.get("webhooks", {}), "webhooks")
     dashboard_raw = mapping(raw.get("dashboard", {}), "dashboard")
     usage_raw = mapping(raw.get("usage", {}), "usage")
+    usage_enabled = boolean(usage_raw.get("enabled", True), "usage.enabled")
     usage_settings = {
         key: value
         for key, value in usage_raw.items()
-        if key not in {"provider", "api_key"}
+        if key not in {"enabled", "provider", "api_key"}
     }
     asr_raw = mapping(raw.get("asr", {}), "asr")
     asr_enabled = boolean(asr_raw.get("enabled", False), "asr.enabled")
@@ -350,6 +351,7 @@ def load_config(path: str | Path) -> AppConfig:
         ),
         dashboard=DashboardConfig(token=dashboard_token),
         usage=UsageConfig(
+            enabled=usage_enabled,
             provider=str(usage_raw.get("provider") or ""),
             api_key=str(usage_raw.get("api_key") or ""),
             settings=usage_settings or None,

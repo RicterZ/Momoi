@@ -213,6 +213,32 @@ class DeepSeekPluginTest(unittest.TestCase):
         self.assertEqual(summary["today"]["requests"], 1)
         self.assertGreater(summary["totals"]["estimated_cost"], 0)
 
+    def test_summarize_usage_without_pricing_keeps_tokens_and_omits_cost(self) -> None:
+        now = datetime(2026, 8, 15, 20, 0, tzinfo=SHANGHAI).timestamp()
+        summary = summarize_usage(
+            [
+                {
+                    "created_at": now,
+                    "model": "deepseek-v4-flash",
+                    "stage": "owner",
+                    "input_tokens": 120,
+                    "uncached_tokens": 20,
+                    "cache_read_tokens": 100,
+                    "cache_write_tokens": 0,
+                    "output_tokens": 15,
+                    "cache_reported": 1,
+                }
+            ],
+            days=1,
+            now=now,
+            zone=SHANGHAI,
+        )
+        self.assertFalse(summary["cost_available"])
+        self.assertEqual(summary["today"]["input_tokens"], 120)
+        self.assertEqual(summary["today"]["output_tokens"], 15)
+        self.assertIsNone(summary["today"]["estimated_cost"])
+        self.assertIsNone(summary["daily"][0]["estimated_cost"])
+
 
 class StoreUsageTest(unittest.TestCase):
     def test_record_llm_call_feeds_dashboard(self) -> None:
@@ -243,5 +269,6 @@ class StoreUsageTest(unittest.TestCase):
             usage = store.dashboard_usage(days=1, now=now)
             self.assertEqual(usage["today"]["requests"], 1)
             self.assertEqual(usage["today"]["cache_read_tokens"], 150)
+            self.assertTrue(usage["cost_available"])
             self.assertEqual(store.dashboard_overview()["usage"]["today"]["requests"], 1)
             store.close()

@@ -8,6 +8,7 @@ from typing import Any, Mapping
 DEFAULT_MODEL = "deepseek-v4-flash"
 CURRENCY = "CNY"
 PRICING_NOTE = "只统计接入后的新调用。估算金额由当前用量扩展按官方单价计算。"
+TOKEN_ONLY_NOTE = "只统计接入后的新调用。金额统计已关闭。"
 
 EstimateCost = Callable[..., float]
 
@@ -69,7 +70,9 @@ def _add_row(
         )
 
 
-def _public_bucket(bucket: Mapping[str, float | int]) -> dict[str, float | int]:
+def _public_bucket(
+    bucket: Mapping[str, float | int], *, cost_available: bool
+) -> dict[str, float | int | None]:
     input_tokens = int(bucket["input_tokens"])
     reported = int(bucket["cache_reported_input"])
     cache_read = int(bucket["cache_read_tokens"])
@@ -82,7 +85,9 @@ def _public_bucket(bucket: Mapping[str, float | int]) -> dict[str, float | int]:
         "cache_write_tokens": int(bucket["cache_write_tokens"]),
         "output_tokens": int(bucket["output_tokens"]),
         "cache_hit_rate": round(hit_rate, 1),
-        "estimated_cost": round(float(bucket["estimated_cost"]), 4),
+        "estimated_cost": (
+            round(float(bucket["estimated_cost"]), 4) if cost_available else None
+        ),
     }
 
 
@@ -95,6 +100,7 @@ def summarize_usage(
     estimate: EstimateCost | None = None,
     note: str = PRICING_NOTE,
 ) -> dict[str, Any]:
+    cost_available = estimate is not None
     today = datetime.fromtimestamp(now, zone).date()
     start = today - timedelta(days=max(1, days) - 1)
     totals = _empty_bucket()
@@ -121,23 +127,34 @@ def summarize_usage(
         _add_row(stages[stage], row, estimate)
     return {
         "source": "local",
+        "cost_available": cost_available,
         "currency": CURRENCY,
         "timezone": getattr(zone, "key", None) or str(zone),
         "days": max(1, days),
-        "note": note,
-        "totals": _public_bucket(totals),
-        "today": _public_bucket(today_bucket),
+        "note": note if cost_available else TOKEN_ONLY_NOTE,
+        "totals": _public_bucket(totals, cost_available=cost_available),
+        "today": _public_bucket(today_bucket, cost_available=cost_available),
         "daily": [
-            {"date": day, **_public_bucket(bucket)} for day, bucket in daily.items()
+            {
+                "date": day,
+                **_public_bucket(bucket, cost_available=cost_available),
+            }
+            for day, bucket in daily.items()
         ],
         "models": [
-            {"model": name, **_public_bucket(bucket)}
+            {
+                "model": name,
+                **_public_bucket(bucket, cost_available=cost_available),
+            }
             for name, bucket in sorted(
                 models.items(), key=lambda item: item[1]["estimated_cost"], reverse=True
             )
         ],
         "stages": [
-            {"stage": name, **_public_bucket(bucket)}
+            {
+                "stage": name,
+                **_public_bucket(bucket, cost_available=cost_available),
+            }
             for name, bucket in sorted(
                 stages.items(), key=lambda item: item[1]["estimated_cost"], reverse=True
             )

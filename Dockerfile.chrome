@@ -38,9 +38,9 @@ FROM python-dependencies AS build
 
 COPY README.md ./
 COPY src ./src
-RUN find ./src/momoi/dashboard -mindepth 1 -type f ! -name '*.py' -delete \
-    && find ./src/momoi/dashboard -depth -mindepth 1 -type d -empty -delete
-COPY --from=dashboard-build /build/src/momoi/dashboard ./src/momoi/dashboard
+RUN mkdir -p ./src/momoi/dashboard/static \
+    && find ./src/momoi/dashboard/static -mindepth 1 -delete
+COPY --from=dashboard-build /build/src/momoi/dashboard/static ./src/momoi/dashboard/static
 RUN pip wheel --no-deps --wheel-dir /wheels .
 
 

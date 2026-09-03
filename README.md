@@ -259,8 +259,8 @@ docker compose -f docker-compose.yml up -d
 ```
 
 On first start, the image creates `$HOME/.momoi` unless `MOMOI_WORKSPACE` is
-set, generates dashboard and Webhook tokens, and writes them to the Momoi
-container log:
+set, generates a dashboard token, and writes it to the Momoi container log.
+Webhooks remain disabled until enabled explicitly in `config.json`:
 
 ```bash
 docker compose -f docker-compose.yml logs momoi

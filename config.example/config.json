@@ -132,6 +132,7 @@
     "token": "replace-with-a-long-random-secret"
   },
   "usage": {
+    "enabled": true,
     "provider": "momoi.extensions.deepseek.DeepSeekPlugin",
     "api_key": "replace-me",
     "base_url": "https://api.deepseek.com",

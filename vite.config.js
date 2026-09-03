@@ -980,7 +980,7 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: "../src/momoi/dashboard",
+    outDir: "../src/momoi/dashboard/static",
     emptyOutDir: true,
   },
 });

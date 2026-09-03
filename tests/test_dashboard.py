@@ -22,7 +22,9 @@ from momoi.storage import Store
 
 
 def _dashboard_frontend_built() -> bool:
-    return package_files("momoi").joinpath("dashboard", "index.html").is_file()
+    return (
+        package_files("momoi.dashboard").joinpath("static", "index.html").is_file()
+    )
 
 
 class DashboardTest(unittest.IsolatedAsyncioTestCase):
@@ -537,8 +539,10 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             await self.client.get("/api/usage?days=7", headers=self._auth())
         ).json()
         self.assertEqual(usage["source"], "local")
+        self.assertFalse(usage["cost_available"])
         self.assertEqual(usage["today"]["requests"], 1)
         self.assertEqual(usage["today"]["cache_read_tokens"], 100)
+        self.assertIsNone(usage["today"]["estimated_cost"])
         self.assertEqual(len(usage["daily"]), 7)
 
     async def test_reflections_paginate_older_pages(self) -> None:

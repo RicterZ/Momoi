@@ -56,6 +56,7 @@ class DashboardConfig:
 
 @dataclass(frozen=True)
 class UsageConfig:
+    enabled: bool = True
     provider: str = ""
     api_key: str = ""
     settings: dict[str, object] | None = None

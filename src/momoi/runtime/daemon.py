@@ -81,12 +81,14 @@ class MomoiDaemon(
                 api_key=config.usage.api_key,
                 **(config.usage.settings or {}),
             )
-            self.store.set_usage_plugin(usage_plugin)
+            if config.usage.enabled:
+                self.store.set_usage_plugin(usage_plugin)
             log_event(
                 logger,
                 logging.INFO,
                 "usage_plugin_loaded",
                 provider=config.usage.provider,
+                billing_enabled=config.usage.enabled,
             )
         self.store.ensure_heartbeat(config.heartbeat)
         self.agenda_tools = AgendaTools(self.store)
@@ -134,12 +136,13 @@ class MomoiDaemon(
         self.provider.thinking_sink = self.store.record_thinking_call
         if usage_plugin is not None:
             self.provider.usage_parser = usage_plugin.parse_usage
+        billing_plugin = usage_plugin if config.usage.enabled else None
         self.dashboard = (
             DashboardService(
                 self.store,
                 *dashboard,
                 token=config.dashboard.token,
-                usage_plugin=usage_plugin,
+                usage_plugin=billing_plugin,
                 settings=DashboardSettings.from_config(
                     config,
                     llm_config=lambda: self.provider.config,

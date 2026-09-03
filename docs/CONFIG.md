@@ -447,6 +447,7 @@ Dashboard bind address and port are CLI options, not `config.json` fields.
 ```json
 {
   "usage": {
+    "enabled": true,
     "provider": "momoi.extensions.deepseek.DeepSeekPlugin",
     "api_key": "replace-me",
     "base_url": "https://api.deepseek.com",
@@ -457,14 +458,16 @@ Dashboard bind address and port are CLI options, not `config.json` fields.
 
 | Field | Default | Description |
 | --- | --- | --- |
+| `enabled` | `true` | Calculate estimated cost and query account balance; token counts remain available when disabled |
 | `provider` | empty | Dotted name of a `UsagePlugin` class |
 | `api_key` | empty | Plugin constructor's `api_key` argument |
 | `base_url` | `https://api.deepseek.com` | API root for the bundled DeepSeek plugin |
 | `timeout_seconds` | `10` | Request timeout for the bundled DeepSeek plugin, clamped to `1`–`20` seconds |
 | other fields | — | Additional plugin constructor keyword arguments |
 
-Leave `provider` empty to record token counts without provider pricing or
-balance lookup.
+Set `enabled` to `false` to keep recording token counts without calculating
+cost or querying account balance. Leaving `provider` empty has the same effect,
+using the protocol's generic token parser.
 
 ## Logging
 

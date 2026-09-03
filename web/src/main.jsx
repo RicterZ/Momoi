@@ -329,7 +329,7 @@ function useNarrowScreen() {
   return narrow;
 }
 
-function summarizeDaily(rows) {
+function summarizeDaily(rows, costAvailable) {
   const list = rows || [];
   const requests = list.reduce((sum, row) => sum + (Number(row.requests) || 0), 0);
   const input = list.reduce((sum, row) => sum + (Number(row.input_tokens) || 0), 0);
@@ -340,7 +340,7 @@ function summarizeDaily(rows) {
   );
   return {
     requests,
-    estimated_cost: estimatedCost,
+    estimated_cost: costAvailable ? estimatedCost : null,
     cache_hit_rate: input ? (cacheRead / input) * 100 : 0,
   };
 }
@@ -549,6 +549,7 @@ function OverviewBody({ data }) {
           totals={usage.totals}
           today={usage.today}
           balance={data.balance}
+          costAvailable={usage.cost_available === true}
           days={narrow ? 7 : 30}
         />
       </OverviewSection>
@@ -628,11 +629,11 @@ function linePath(points) {
     .join(" ");
 }
 
-function UsageChart({ rows, totals, today, balance, days = 30 }) {
+function UsageChart({ rows, totals, today, balance, costAvailable, days = 30 }) {
   const [hover, setHover] = useState(null);
   const compact = days <= 7;
   const daily = (rows || []).slice(-days);
-  const shown = compact ? summarizeDaily(daily) : totals;
+  const shown = compact ? summarizeDaily(daily, costAvailable) : totals;
   const todayStats = today || daily.at(-1) || {};
   const width = compact ? 390 : 720;
   const height = compact ? 220 : 176;
@@ -668,14 +669,16 @@ function UsageChart({ rows, totals, today, balance, days = 30 }) {
     <section className={`usage-chart-card${compact ? " is-compact" : ""}`}>
       <div className="usage-chart-head">
         <div className="usage-legend">
-          <span className="usage-legend-item pink">估算金额</span>
+          {costAvailable && (
+            <span className="usage-legend-item pink">估算金额</span>
+          )}
           <span className="usage-legend-item blue bar">请求次数</span>
         </div>
       </div>
       <div className="usage-home-stats">
         <div>
           <span>账户余额</span>
-          <strong>{formatYuan(balance?.total_balance)}</strong>
+          <strong>{costAvailable ? formatYuan(balance?.total_balance) : "-"}</strong>
         </div>
         <div>
           <span>请求</span>
@@ -688,7 +691,7 @@ function UsageChart({ rows, totals, today, balance, days = 30 }) {
         </div>
         <div>
           <span>今日估算金额</span>
-          <strong>{formatYuan(todayStats.estimated_cost)}</strong>
+          <strong>{costAvailable ? formatYuan(todayStats.estimated_cost) : "-"}</strong>
         </div>
       </div>
       <div className="usage-chart-frame">
@@ -735,10 +738,12 @@ function UsageChart({ rows, totals, today, balance, days = 30 }) {
               />
             );
           })}
-          <path className="usage-line pink" d={linePath(costPoints)} />
+          {costAvailable && (
+            <path className="usage-line pink" d={linePath(costPoints)} />
+          )}
           {daily.map((row, index) => (
             <g key={row.date}>
-              {costPoints[index].cost > 0 && (
+              {costAvailable && costPoints[index].cost > 0 && (
                 <circle
                   className="usage-dot pink"
                   cx={costPoints[index].x}
@@ -772,7 +777,7 @@ function UsageChart({ rows, totals, today, balance, days = 30 }) {
         {active && (
           <div className="usage-tooltip">
             <span className="panel-label">{active.date}</span>
-            <strong>{formatYuan(active.estimated_cost)}</strong>
+            <strong>{costAvailable ? formatYuan(active.estimated_cost) : "-"}</strong>
             <p>
               {active.requests} 次 · 输入 {formatTokens(active.input_tokens)} · 输出{" "}
               {formatTokens(active.output_tokens)}

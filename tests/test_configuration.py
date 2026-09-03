@@ -396,6 +396,7 @@ class ConfigurationTest(unittest.TestCase):
             )
             config = load_config(path)
             self.assertIsInstance(config.usage, UsageConfig)
+            self.assertTrue(config.usage.enabled)
             self.assertEqual(
                 config.usage.provider,
                 "momoi.extensions.deepseek.DeepSeekPlugin",
@@ -408,6 +409,13 @@ class ConfigurationTest(unittest.TestCase):
                     "timeout_seconds": 8,
                 },
             )
+
+            value = json.loads(path.read_text())
+            value["usage"]["enabled"] = False
+            path.write_text(json.dumps(value))
+            disabled = load_config(path).usage
+            self.assertFalse(disabled.enabled)
+            self.assertNotIn("enabled", disabled.settings or {})
 
     def test_environment_overrides_deployment_fields_but_not_llm(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -527,7 +535,7 @@ class ConfigurationTest(unittest.TestCase):
                 "storage": {"database": "momoi.sqlite3"},
                 "logging": {},
             }
-            for section in ("webhooks", "heartbeat", "reflection"):
+            for section in ("webhooks", "heartbeat", "reflection", "usage"):
                 config[section] = {"enabled": "false"}
                 path.write_text(json.dumps(config))
                 with self.assertRaisesRegex(ConfigError, rf"{section}\.enabled must be boolean"):
