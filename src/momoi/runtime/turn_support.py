@@ -93,7 +93,7 @@ USER_CONTEXT_SECTION_ORDER = (
     "long_term_memories",
     "recent_memories",
     "goal_directory",
-    "goal_progress",
+    # "goal_progress",
     "active_goals",
     # "interrupted_reply_expectation",
     "delivered_proactive_bubbles",

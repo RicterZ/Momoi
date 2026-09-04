@@ -61,7 +61,7 @@ class OwnerWorkflow:
                 "Current local time: "
                 f"{datetime.now(self.store.timezone).isoformat(timespec='seconds')}",
             ),
-            ("goal_progress", recalled["goal_progress"]),
+            # ("goal_progress", recalled["goal_progress"]),
             ("recall_memories", recalled["recall_memories"]),
             ("recall_status", recalled["query_recall"]),
             ("reflection_memories", recalled["reflection_memories"]),
@@ -289,7 +289,7 @@ class OwnerWorkflow:
                 f"{heartbeat_self_state_lines(self.store.self_state_context())}",
             ),
             ("runtime_directives", "\n\n".join(directives)),
-            ("goal_progress", recalled["goal_progress"]),
+            # ("goal_progress", recalled["goal_progress"]),
             ("delivered_proactive_bubbles", delivered_proactive_bubbles),
             ("candidate_episodes", candidates["candidate_episodes"]),
             ("recent_recall_context", candidates["recent_recall_context"]),
