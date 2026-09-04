@@ -318,14 +318,17 @@ class OwnerWorkflow:
                 bubbles=sum(len(group.parts) for group in transcript.orphaned),
             )
         draft = TurnDraft()
-        tools = self.tool_surface.owner_specs(channel.name)
+        tools = self.tool_surface.conversation_specs()
         reply = await self._run_tool_loop(
             system,
             messages,
             tools,
             batch,
             draft,
-            execution=TurnExecutionSpec("owner"),
+            execution=TurnExecutionSpec(
+                "owner",
+                permitted_tools=self.tool_surface.permitted_names("owner"),
+            ),
             source_event_id=batch[0].event_id,
             turn_id=turn_id,
             delivery_channel=channel,

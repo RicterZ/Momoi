@@ -947,7 +947,10 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                         )
                         if provider_self.consolidation_round == 2:
                             assistant = messages[-2]["content"]
-                            self.assertEqual(assistant[0]["type"], "reasoning")
+                            self.assertNotIn(
+                                "reasoning",
+                                [block.get("type") for block in assistant],
+                            )
                             return workflow_response(
                                 "episode_consolidation_finish", {}
                             )

@@ -12,7 +12,8 @@ from ..turn_support import (
     tool_result_block,
 )
 from .harness import TurnHarness
-from .runtime_tools import begin_heartbeat, enable_tools, recall_owner_context
+from .protocol import assistant_history_content
+from .runtime_tools import begin_heartbeat, recall_owner_context
 from .workflow import AgentWorkflow, TurnExecutionSpec
 
 
@@ -105,16 +106,12 @@ class ToolBatchExecutor:
         last_tool_error = ""
         external_effect = False
 
-        # Tool execution strips harness-only arguments in place. Keep an
-        # independent history copy containing exactly what the owner heard.
-        assistant_history_content = copy.deepcopy(request.response.content)
-        if request.response.reasoning and request.response.tool_calls:
-            assistant_history_content.insert(
-                0,
-                {"type": "reasoning", "text": request.response.reasoning},
-            )
+        # Keep protocol output for the next round, excluding private reasoning.
         request.messages.append(
-            {"role": "assistant", "content": assistant_history_content}
+            {
+                "role": "assistant",
+                "content": assistant_history_content(request.response.content),
+            }
         )
         results: list[dict[str, Any]] = []
         owner_updates: list[IncomingMessage] = []
@@ -155,8 +152,6 @@ class ToolBatchExecutor:
                     heartbeat_turn=execution.heartbeat,
                     harness_started=request.harness.started,
                     enable_tool_groups=request.enable_tool_groups,
-                    tools=request.tools,
-                    tool_surface=self.tool_surface,
                     prepare_context=request.prepare_heartbeat_context,
                 )
             elif call.name == "recall":
@@ -220,13 +215,6 @@ class ToolBatchExecutor:
                         visible = True
                         last_sent_bubbles = copy.deepcopy(delivery.bubbles)
                         last_sent_channel = delivery.channel
-            elif call.name == "tool_enable":
-                result = enable_tools(
-                    call,
-                    enable_tool_groups=request.enable_tool_groups,
-                    tools=request.tools,
-                    tool_surface=self.tool_surface,
-                )
             elif call.name == "read_tool_result":
                 result = self.tool_results.read(
                     call.arguments.get("result_ref"),

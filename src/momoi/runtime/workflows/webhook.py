@@ -10,8 +10,6 @@ from ..context.rendering import (
     recall_episode_context,
 )
 from ..context.presentation import heartbeat_self_state_lines
-from ..tool_contracts.conversation import END_TURN_TOOL_SPEC
-from ..tool_contracts.runtime import CURL_TOOL_SPEC, READ_TOOL_RESULT_SPEC
 from ..transcript.building import build_transcript
 from ..transcript.rendering import render_messages
 from ..turn_support import (
@@ -123,16 +121,13 @@ class WebhookWorkflow:
         reply = await self._run_tool_loop(
             system,
             messages,
-            [
-                self.tool_surface.send_bubbles_spec(channel.name),
-                CURL_TOOL_SPEC,
-                READ_TOOL_RESULT_SPEC,
-                END_TURN_TOOL_SPEC,
-            ],
+            self.tool_surface.conversation_specs(),
             [],
             TurnDraft(),
             execution=TurnExecutionSpec(
-                "webhook", allowed_capabilities=frozenset({"read"})
+                "webhook",
+                allowed_capabilities=frozenset({"read"}),
+                permitted_tools=self.tool_surface.permitted_names("webhook"),
             ),
             source_event_id=turn_id,
             turn_id=turn_id,

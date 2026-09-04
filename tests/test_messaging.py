@@ -1655,10 +1655,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                             channel["enum"],  # type: ignore[index]
                             ["napcat", "weixin"],
                         )
-                        case.assertEqual(
-                            channel["default"],
-                            "weixin",  # type: ignore[index]
-                        )
+                        case.assertNotIn("default", channel)
                     if self.calls in {1, 3, 4, 5}:
                         text = {
                             1: "QQ 回复",

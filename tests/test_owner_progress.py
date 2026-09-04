@@ -10,7 +10,6 @@ from momoi.runtime.agent.progress import (
 )
 from momoi.runtime.agent.tool_surface import ToolSurface
 from momoi.runtime.tool_contracts.conversation import send_bubbles_tool_spec
-from momoi.runtime.tool_contracts.runtime import tool_enable_spec
 
 
 class OwnerProgressPolicyTest(unittest.TestCase):
@@ -46,14 +45,13 @@ class OwnerProgressPolicyTest(unittest.TestCase):
     def test_send_bubbles_schema_preserves_delivery_contract(
         self,
     ) -> None:
-        spec = send_bubbles_tool_spec(["napcat", "weixin"], "napcat")
+        spec = send_bubbles_tool_spec(["napcat", "weixin"])
         self.assertEqual(
             spec["input_schema"]["properties"]["channel"]["enum"],
             ["napcat", "weixin"],
         )
-        self.assertEqual(
-            spec["input_schema"]["properties"]["channel"]["default"],
-            "napcat",
+        self.assertNotIn(
+            "default", spec["input_schema"]["properties"]["channel"]
         )
         bubbles = spec["input_schema"]["properties"]["bubbles"]
         self.assertIn(
@@ -63,21 +61,6 @@ class OwnerProgressPolicyTest(unittest.TestCase):
         text_description = bubbles["items"]["oneOf"][0]["description"]
         self.assertIn("Assistant text is not delivered", text_description)
         self.assertIn("Only way to send owner-visible content", spec["description"])
-
-    def test_tool_enable_catalog_uses_group_descriptions(self) -> None:
-        spec = tool_enable_spec(
-            {
-                "demo": "Operate demo records.",
-                "other": "Look up external records.",
-            }
-        )
-        description = spec["description"]
-        self.assertIn("demo: Operate demo records.", description)
-        self.assertIn("other: Look up external records.", description)
-        self.assertEqual(
-            spec["input_schema"]["properties"]["groups"]["items"]["enum"],
-            ["demo", "other"],
-        )
 
     def test_public_schema_keeps_native_message_argument(self) -> None:
         spec = {
@@ -113,10 +96,10 @@ class OwnerProgressPolicyTest(unittest.TestCase):
                 }
             ]
         )
-        surface = ToolSurface(mcp, channels, "napcat")
+        surface = ToolSurface(mcp, channels)
         owner = {
             spec["name"]: spec
-            for spec in surface.owner_specs()
+            for spec in surface.conversation_specs()
         }
         mcp_specs = {
             spec["name"]: spec

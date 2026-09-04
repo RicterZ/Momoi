@@ -210,8 +210,8 @@ class ConfigurationTest(unittest.TestCase):
             self.assertEqual(config.llm.max_tokens, 16384)
             self.assertEqual(config.llm.timeout_seconds, 300)
             self.assertEqual(config.summary_results, 8)
-            self.assertEqual(config.transcript_turns_min, 48)
-            self.assertEqual(config.transcript_turns_max, 96)
+            self.assertEqual(config.transcript_turns_min, 32)
+            self.assertEqual(config.transcript_turns_max, 80)
             self.assertEqual(config.episode_raw_tail_turns, 6)
             self.assertEqual(config.max_input_tokens, 142222)
             self.assertEqual(config.context_compaction_ratio, 0.9)
@@ -255,7 +255,7 @@ class ConfigurationTest(unittest.TestCase):
                 ("llm", "max_retries"): -1,
                 ("context", "max_input_tokens"): 999,
                 ("context", "transcript_turns_min"): 0,
-                ("context", "transcript_turns_max"): 47,
+                ("context", "transcript_turns_max"): 31,
                 ("context", "episode_raw_tail_turns"): 0,
                 ("context", "memory_results"): 7,
                 ("context", "summary_results"): 13,

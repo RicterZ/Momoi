@@ -57,8 +57,8 @@
   "context": {
     "soul_prompt": "prompts/SOUL.md",
     "heartbeat_prompt": "prompts/HEARTBEAT.md",
-    "transcript_turns_min": 48,
-    "transcript_turns_max": 96,
+    "transcript_turns_min": 32,
+    "transcript_turns_max": 80,
     "episode_raw_tail_turns": 6,
     "memory_results": 6,
     "max_input_tokens": 142222,

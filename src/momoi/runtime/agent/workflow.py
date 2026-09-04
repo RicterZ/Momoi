@@ -22,6 +22,7 @@ class TurnExecutionSpec:
     goal_id: str | None = None
     allowed_capabilities: frozenset[str] | None = None
     artifact_root: Path | None = None
+    permitted_tools: frozenset[str] | None = None
 
     def __post_init__(self) -> None:
         if self.stage not in TURN_HARNESS_SPECS:
@@ -47,7 +48,13 @@ class TurnExecutionSpec:
 
     @property
     def dynamic_tool_policies(self) -> bool:
-        return self.stage in {"owner", "heartbeat", "goal"}
+        return self.stage in {
+            "owner",
+            "heartbeat",
+            "webhook",
+            "goal",
+            "reply_followup",
+        }
 
     @property
     def heartbeat(self) -> bool:

@@ -82,13 +82,7 @@ class AgentLoop:
         llm_round = 0
         remind_owner_bubbles = False
         enable_tool_groups = (
-            self.tool_surface.owner_enable_groups()
-            if authority == "owner"
-            else (
-                self.tool_surface.mcp_server_groups()
-                if heartbeat_turn
-                else {}
-            )
+            self.tool_surface.mcp_server_groups() if heartbeat_turn else {}
         )
         stage = execution.stage
         if workflow is not None and workflow.stage != stage:
@@ -100,6 +94,7 @@ class AgentLoop:
                 if stage == "owner"
                 else frozenset()
             ),
+            permitted_tool_names=execution.permitted_tools,
         )
         harness.validate_surface({str(tool["name"]) for tool in tools})
         while True:
@@ -269,7 +264,6 @@ class AgentLoop:
                 resolution = handle_no_tool_response(
                     messages,
                     response.content,
-                    response.reasoning,
                     workflow_correction=(
                         workflow.no_tool_correction if workflow is not None else None
                     ),

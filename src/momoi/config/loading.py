@@ -230,12 +230,12 @@ def load_config(path: str | Path) -> AppConfig:
     if not 0 < context_compaction_ratio <= 1:
         raise ConfigError("context.context_compaction_ratio must be between 0 and 1")
     transcript_turns_min = integer(
-        context_raw.get("transcript_turns_min", 48),
+        context_raw.get("transcript_turns_min", 32),
         "context.transcript_turns_min",
         minimum=1,
     )
     transcript_turns_max = integer(
-        context_raw.get("transcript_turns_max", 96),
+        context_raw.get("transcript_turns_max", 80),
         "context.transcript_turns_max",
         minimum=transcript_turns_min,
     )

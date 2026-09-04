@@ -224,52 +224,6 @@ REPLY_WAIT_DECISION_SCHEMA: dict[str, Any] = {
     ]
 }
 
-END_TURN_TOOL_SPEC: dict[str, Any] = {
-    "name": "end_turn",
-    "description": (
-        "Terminal action: commit private conversational Turn state, never visible "
-        "content. Call once and alone after work and delivery. After send_bubbles, "
-        "wait for its result, then call end_turn alone on the next step."
-    ),
-    "input_schema": {
-        "type": "object",
-        "description": "Private state only; no visible content or delivery fields.",
-        "properties": {
-            "reply_wait": REPLY_WAIT_DECISION_SCHEMA,
-            "mood": MOOD_DECISION_SCHEMA,
-        },
-        "required": [
-            "reply_wait",
-            "mood",
-        ],
-        "additionalProperties": False,
-    },
-}
-
-def owner_end_turn_tool_spec() -> dict[str, Any]:
-    schema = END_TURN_TOOL_SPEC["input_schema"]
-    return {
-        **END_TURN_TOOL_SPEC,
-        "description": (
-            "Terminal action for this Owner Turn: commit private state, never visible "
-            "content. Call once and alone after work and delivery; after send_bubbles, "
-            "wait for its result, then call this on the next step. For activity, use "
-            "authenticated owner input and reliable Turn evidence. Update only when "
-            "this Turn completes, cancels, replaces, disproves, or proves it impossible, "
-            "or invalidates its premise/result. A new topic or compatible activity is "
-            "not a conflict. If only the result is wrong, preserve the activity text; "
-            "without conflict, leave both unchanged."
-        ),
-        "input_schema": {
-            **schema,
-            "properties": {
-                **schema["properties"],
-                "activity": ACTIVITY_DECISION_SCHEMA,
-            },
-            "required": [*schema["required"], "activity"],
-        },
-    }
-
 HEARTBEAT_STATE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
@@ -291,24 +245,30 @@ HEARTBEAT_STATE_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 
-def heartbeat_end_turn_tool_spec() -> dict[str, Any]:
-    schema = END_TURN_TOOL_SPEC["input_schema"]
-    return {
-        **END_TURN_TOOL_SPEC,
-        "description": (
-            "Terminal heartbeat action: commit private state, record activity, and "
-            "schedule the next Turn. Never sends visible content. After work and any "
-            "send_bubbles result, call end_turn once and alone on the next step."
-        ),
-        "input_schema": {
-            **schema,
-            "properties": {
-                **schema["properties"],
-                "heartbeat": HEARTBEAT_STATE_SCHEMA,
-            },
-            "required": [*schema["required"], "heartbeat"],
+END_TURN_TOOL_SPEC: dict[str, Any] = {
+    "name": "end_turn",
+    "description": (
+        "Terminal action for Owner, Heartbeat, Webhook, and Reply Follow-up Turns. "
+        "Commit private state only; never visible content. Call once and alone after "
+        "work and delivery. Owner requires activity; Heartbeat requires heartbeat; "
+        "other workflows must omit both."
+    ),
+    "input_schema": {
+        "type": "object",
+        "description": "Private state only; no visible content or delivery fields.",
+        "properties": {
+            "reply_wait": REPLY_WAIT_DECISION_SCHEMA,
+            "mood": MOOD_DECISION_SCHEMA,
+            "activity": ACTIVITY_DECISION_SCHEMA,
+            "heartbeat": HEARTBEAT_STATE_SCHEMA,
         },
-    }
+        "required": [
+            "reply_wait",
+            "mood",
+        ],
+        "additionalProperties": False,
+    },
+}
 
 SEND_BUBBLES_TOOL_SPEC: dict[str, Any] = {
     "name": "send_bubbles",
@@ -336,9 +296,7 @@ SEND_BUBBLES_TOOL_SPEC: dict[str, Any] = {
     },
 }
 
-def send_bubbles_tool_spec(
-    channel_names: list[str], primary_channel: str
-) -> dict[str, Any]:
+def send_bubbles_tool_spec(channel_names: list[str]) -> dict[str, Any]:
     return {
         **SEND_BUBBLES_TOOL_SPEC,
         "input_schema": {
@@ -348,10 +306,25 @@ def send_bubbles_tool_spec(
                 "channel": {
                     "type": "string",
                     "enum": channel_names,
-                    "default": primary_channel,
                     "description": (
-                        f"Delivery channel; omit for primary ({primary_channel})."
+                        "Delivery channel; omit to use this Turn's channel."
                     ),
+                },
+                "reason": {
+                    "type": "string",
+                    "description": "Required only for an autonomous Goal notification.",
+                },
+                "key": {
+                    "type": "string",
+                    "description": (
+                        "Stable lowercase cooldown category; required only for an "
+                        "autonomous Goal notification."
+                    ),
+                },
+                "priority": {
+                    "type": "string",
+                    "enum": ["normal", "urgent"],
+                    "default": "normal",
                 },
             },
         },

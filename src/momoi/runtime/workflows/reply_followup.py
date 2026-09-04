@@ -4,7 +4,6 @@ from typing import Any
 from ...models import AgentReply, TurnDraft
 from ..agent import TurnExecutionSpec
 from ..context.presentation import heartbeat_self_state_lines
-from ..tool_contracts.conversation import END_TURN_TOOL_SPEC
 from ..transcript.building import build_transcript
 from ..transcript.rendering import render_messages
 from ..turn_support import (
@@ -85,13 +84,13 @@ class ReplyFollowupWorkflow:
         reply = await self._run_tool_loop(
             system,
             messages,
-            [
-                self.tool_surface.send_bubbles_spec(delivery_channel.name),
-                END_TURN_TOOL_SPEC,
-            ],
+            self.tool_surface.conversation_specs(),
             [],
             TurnDraft(),
-            execution=TurnExecutionSpec("reply_followup"),
+            execution=TurnExecutionSpec(
+                "reply_followup",
+                permitted_tools=self.tool_surface.permitted_names("reply_followup"),
+            ),
             source_event_id=f"reply-followup:{turn_id}",
             turn_id=turn_id,
             heartbeat_owner_event_revision=owner_event_revision,

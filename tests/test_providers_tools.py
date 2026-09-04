@@ -1367,8 +1367,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                         )
                     elif self.calls == 2:
                         self_test.assertIn("invalid_tool_arguments_json", rendered)
-                        self_test.assertIn("reasoning", rendered)
-                        self_test.assertIn("先纠正参数", rendered)
+                        self_test.assertNotIn("先纠正参数", rendered)
                         call = ToolCall(
                             "corrected-message",
                             "send_bubbles",

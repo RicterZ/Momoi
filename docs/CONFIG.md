@@ -170,8 +170,8 @@ All fields must be positive.
   "context": {
     "soul_prompt": "prompts/SOUL.md",
     "heartbeat_prompt": "prompts/HEARTBEAT.md",
-    "transcript_turns_min": 48,
-    "transcript_turns_max": 96,
+    "transcript_turns_min": 32,
+    "transcript_turns_max": 80,
     "episode_raw_tail_turns": 6,
     "memory_results": 6,
     "max_input_tokens": 142222,
@@ -186,8 +186,8 @@ All fields must be positive.
 | --- | --- | --- |
 | `soul_prompt` | `prompts/SOUL.md` | Required, non-empty persona file |
 | `heartbeat_prompt` | `prompts/HEARTBEAT.md` | Optional heartbeat guidance file |
-| `transcript_turns_min` | `48` | Recent completed Turns retained after the transcript window slides; minimum `1` |
-| `transcript_turns_max` | `96` | High watermark at which the transcript window slides back to `transcript_turns_min`; cannot be lower than the minimum |
+| `transcript_turns_min` | `32` | Recent completed Turns retained after the transcript window slides; minimum `1` |
+| `transcript_turns_max` | `80` | High watermark at which the transcript window slides back to `transcript_turns_min`; cannot be lower than the minimum |
 | `episode_raw_tail_turns` | `6` | Raw tail Turns retained outside the summary for an open Episode; its normal annealing threshold is twice this value; minimum `1` |
 | `memory_results` | `6` | Per-category top-k for confirmed recall memory and reflection memory; range `0`–`6`, and `0` disables both (combined maximum `12`) |
 | `max_input_tokens` | `142222` | Upper budget for the complete model input; minimum `1000` |

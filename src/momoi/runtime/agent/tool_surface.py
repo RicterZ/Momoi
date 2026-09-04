@@ -10,13 +10,10 @@ from ...tools.contracts.memory import MEMORY_TOOL_SPECS
 from ...tools.contracts.thinking import THINKING_TOOL_SPECS
 from ...storage import estimate_tokens
 from ..tool_contracts.context import RECALL_TOOL_SPEC, heartbeat_begin_spec
-from ..tool_contracts.conversation import (
-    owner_end_turn_tool_spec,
-    send_bubbles_tool_spec,
-)
+from ..tool_contracts.conversation import END_TURN_TOOL_SPEC, send_bubbles_tool_spec
 from ..tool_contracts.runtime import (
+    AUTONOMOUS_FINISH_SPEC,
     READ_TOOL_RESULT_SPEC,
-    tool_enable_spec,
 )
 from .progress import public_tool_spec, requires_owner_progress
 
@@ -26,10 +23,9 @@ logger = logging.getLogger("momoi.runtime.turns")
 class ToolSurface:
     """Projects the tool catalog exposed to each workflow."""
 
-    def __init__(self, mcp: Any, channels: dict[str, Any], primary: str):
+    def __init__(self, mcp: Any, channels: dict[str, Any]):
         self.mcp = mcp
         self.channel_names = list(channels)
-        self.primary = primary
 
     @staticmethod
     def mcp_tool_group(name: str) -> str:
@@ -67,101 +63,89 @@ class ToolSurface:
         )
         return description or f"External MCP capabilities provided by {group}."
 
-    def owner_internal_specs(self) -> list[dict[str, Any]]:
-        return [
-            READ_TOOL_RESULT_SPEC,
-            *copy.deepcopy(MEMORY_TOOL_SPECS),
-            *copy.deepcopy(THINKING_TOOL_SPECS),
-            *self.public_specs(AGENDA_TOOL_SPECS),
-            *self.public_specs(BUILTIN_TOOL_SPECS),
-        ]
-
-    def owner_enable_groups(self) -> dict[str, list[dict[str, Any]]]:
-        return self.mcp_server_groups()
-
-    @staticmethod
-    def append_visible(
-        tools: list[dict[str, Any]], specs: list[dict[str, Any]]
-    ) -> list[str]:
-        existing = {str(spec.get("name") or "") for spec in tools}
-        added: list[str] = []
-        for spec in specs:
-            name = str(spec.get("name") or "")
-            if not name or name in existing:
-                continue
-            tools.insert(max(0, len(tools) - 1), spec)
-            existing.add(name)
-            added.append(name)
-        return added
-
     @staticmethod
     def _schema_tokens(specs: list[dict[str, Any]]) -> int:
         return estimate_tokens(
             json.dumps(specs, ensure_ascii=False, separators=(",", ":"), default=str)
         )
 
-    def _log_owner_projection(
-        self, *, visible: list[dict[str, Any]], full: list[dict[str, Any]]
-    ) -> None:
-        visible_tokens = self._schema_tokens(visible)
-        full_tokens = self._schema_tokens(full)
+    def _log_conversation_surface(self, tools: list[dict[str, Any]]) -> None:
         log_event(
             logger,
             TRACE,
-            "tool_availability_projected",
-            stage="owner",
-            visible_tool_count=len(visible),
-            full_tool_count=len(full),
-            hidden_tool_count=max(0, len(full) - len(visible)),
-            visible_tool_schema_tokens=visible_tokens,
-            full_tool_schema_tokens=full_tokens,
-            estimated_tool_schema_tokens_saved=max(0, full_tokens - visible_tokens),
-            visible_tool_names=[str(spec.get("name") or "") for spec in visible],
+            "conversation_tool_surface",
+            tool_count=len(tools),
+            tool_schema_tokens=self._schema_tokens(tools),
+            tool_names=[str(spec.get("name") or "") for spec in tools],
         )
 
-    def heartbeat_external_specs(self) -> list[dict[str, Any]]:
-        internal = [
-            READ_TOOL_RESULT_SPEC,
-            *self.public_specs(BUILTIN_TOOL_SPECS),
-        ]
+    def conversation_specs(self) -> list[dict[str, Any]]:
         groups = self.mcp_server_groups()
         catalog = {
-            server: self.mcp_group_description(server) for server in groups
+            group: self.mcp_group_description(group) for group in groups
         }
-        return [heartbeat_begin_spec(catalog), *internal, tool_enable_spec(catalog)]
-
-    def owner_specs(self, channel_name: str | None = None) -> list[dict[str, Any]]:
-        mcp_groups = self.mcp_server_groups()
-        internal = self.owner_internal_specs()
-        catalog = {
-            group: self.mcp_group_description(group) for group in mcp_groups
-        }
-        bubbles = self.send_bubbles_spec(channel_name)
-        visible = [
-            RECALL_TOOL_SPEC,
-            bubbles,
-            *internal,
-            tool_enable_spec(catalog),
-            owner_end_turn_tool_spec(),
-        ]
-        full = [
-            RECALL_TOOL_SPEC,
-            bubbles,
-            *internal,
-            tool_enable_spec(catalog),
-            *[spec for specs in mcp_groups.values() for spec in specs],
-            owner_end_turn_tool_spec(),
-        ]
-        self._log_owner_projection(visible=visible, full=full)
-        return visible
-
-    def self_directed_specs(self) -> list[dict[str, Any]]:
-        return [
+        tools = [
+            copy.deepcopy(RECALL_TOOL_SPEC),
+            heartbeat_begin_spec(catalog),
+            self.send_bubbles_spec(),
+            READ_TOOL_RESULT_SPEC,
+            *copy.deepcopy(MEMORY_TOOL_SPECS),
+            *copy.deepcopy(THINKING_TOOL_SPECS),
+            *self.public_specs(AGENDA_TOOL_SPECS),
             *self.public_specs(BUILTIN_TOOL_SPECS),
-            *self.public_specs(self.mcp.tool_specs),
+            *[spec for specs in groups.values() for spec in specs],
+            copy.deepcopy(AUTONOMOUS_FINISH_SPEC),
+            copy.deepcopy(END_TURN_TOOL_SPEC),
         ]
+        self._log_conversation_surface(tools)
+        return tools
 
-    def send_bubbles_spec(self, channel_name: str | None = None) -> dict[str, Any]:
-        return send_bubbles_tool_spec(
-            self.channel_names, channel_name or self.primary
-        )
+    def permitted_names(self, stage: str, *, agent_owned_goal: bool = False) -> frozenset[str]:
+        external = {
+            str(spec.get("name") or "")
+            for spec in [*BUILTIN_TOOL_SPECS, *self.mcp.tool_specs]
+        }
+        agenda = {str(spec["name"]) for spec in AGENDA_TOOL_SPECS}
+        memory = {str(spec["name"]) for spec in MEMORY_TOOL_SPECS}
+        thinking = {str(spec["name"]) for spec in THINKING_TOOL_SPECS}
+        shared = {"send_bubbles", "read_tool_result"}
+        if stage == "owner":
+            return frozenset(
+                {"recall", "end_turn", *shared, *agenda, *memory, *thinking, *external}
+            )
+        if stage == "heartbeat":
+            return frozenset(
+                {
+                    "heartbeat_begin",
+                    "end_turn",
+                    *shared,
+                    *agenda,
+                    *memory,
+                    *thinking,
+                    *external,
+                }
+            )
+        if stage == "webhook":
+            return frozenset({"send_bubbles", "curl", "read_tool_result", "end_turn"})
+        if stage == "reply_followup":
+            return frozenset({"send_bubbles", "end_turn"})
+        if stage == "goal":
+            goal_agenda = (
+                agenda
+                if not agent_owned_goal
+                else {"goal_update", "goal_finish", "goal_cancel"}
+            )
+            return frozenset(
+                {
+                    "memory_search",
+                    "send_bubbles",
+                    "read_tool_result",
+                    "autonomous_finish",
+                    *goal_agenda,
+                    *external,
+                }
+            )
+        raise ValueError(f"stage does not use the conversation tool surface: {stage}")
+
+    def send_bubbles_spec(self) -> dict[str, Any]:
+        return send_bubbles_tool_spec(self.channel_names)

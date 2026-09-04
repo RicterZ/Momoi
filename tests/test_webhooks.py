@@ -357,9 +357,16 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(reply.messages, [])
             self.assertEqual(provider.calls, 3)
+            expected_surface = [
+                str(tool["name"])
+                for tool in daemon.tool_surface.conversation_specs()
+            ]
             self.assertEqual(
                 provider.tool_names[0],
-                ["send_bubbles", "curl", "read_tool_result", "end_turn"],
+                expected_surface,
+            )
+            self.assertTrue(
+                all(names == expected_surface for names in provider.tool_names)
             )
             self.assertEqual(tools.last_call.name, "curl")
             self.assertEqual(

@@ -2,6 +2,7 @@ import unittest
 
 from momoi.models import ToolCall
 from momoi.runtime.agent import TURN_HARNESS_SPECS, TurnHarness
+from momoi.runtime.agent.protocol import assistant_history_content
 from momoi.runtime.turn_support import PROMPT_ROOT
 
 
@@ -17,6 +18,19 @@ class TurnHarnessTest(unittest.TestCase):
         "episode_consolidate": "episode_consolidation.md",
         "episode_anneal": "episode_summary.md",
     }
+
+    def test_private_reasoning_is_not_replayed_between_rounds(self) -> None:
+        content = [
+            {"type": "reasoning", "text": "openai private thought"},
+            {"type": "thinking", "thinking": "anthropic private thought"},
+            {"type": "redacted_thinking", "data": "opaque"},
+            {"type": "tool_use", "id": "1", "name": "curl", "input": {}},
+        ]
+
+        self.assertEqual(
+            assistant_history_content(content),
+            [{"type": "tool_use", "id": "1", "name": "curl", "input": {}}],
+        )
 
     def test_every_model_turn_stage_has_an_explicit_harness(self) -> None:
         self.assertEqual(

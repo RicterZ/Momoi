@@ -121,6 +121,13 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn("apply_patch", provider.first_tools)
             self.assertIn("delete_file", provider.first_tools)
             self.assertIn("sleep", provider.first_tools)
+            self.assertEqual(
+                provider.first_tools,
+                [
+                    str(tool["name"])
+                    for tool in daemon.tool_surface.conversation_specs()
+                ],
+            )
             self.assertEqual(provider.calls, 2)
             self.assertEqual(
                 [message["role"] for message in provider.first_messages],
@@ -130,7 +137,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn("终于回来了", str(provider.first_messages[2]["content"]))
             daemon.store.close()
 
-    async def test_begin_loads_selected_mcp_group_for_the_next_round(self) -> None:
+    async def test_selected_mcp_group_is_resident_and_callable(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(
                 AppConfig(
@@ -194,7 +201,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                     names = [str(tool["name"]) for tool in tools]
                     self.surfaces.append(names)
                     if self.calls == 1:
-                        case.assertNotIn("mcp__demo__read", names)
+                        case.assertIn("mcp__demo__read", names)
                         begin = next(
                             tool for tool in tools if tool["name"] == "heartbeat_begin"
                         )
@@ -262,7 +269,9 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                 owner_event_revision=0,
             )
             self.assertEqual(provider.calls, 3)
-            self.assertEqual(provider.surfaces[1], provider.surfaces[2])
+            self.assertTrue(
+                all(surface == provider.surfaces[0] for surface in provider.surfaces)
+            )
             daemon.store.close()
 
 

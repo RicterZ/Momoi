@@ -23,8 +23,6 @@ from momoi.config.models import (
 from momoi.runtime import (
     END_TURN_TOOL_SPEC,
     SEND_BUBBLES_TOOL_SPEC,
-    heartbeat_end_turn_tool_spec,
-    owner_end_turn_tool_spec,
     MomoiDaemon,
 )
 from momoi.runtime.jobs import AutonomousJob
@@ -154,7 +152,7 @@ class DaemonTest(unittest.TestCase):
             "# Available capability guidance\n\n" + AGENDA_TOOL_POLICY.strip(),
         )
 
-    def test_mcp_policy_is_stable_across_tool_enable_expansion(self) -> None:
+    def test_mcp_policy_is_present_for_the_common_surface(self) -> None:
         daemon = object.__new__(MomoiDaemon)
         daemon.mcp = SimpleNamespace(
             tool_specs=[
@@ -166,23 +164,15 @@ class DaemonTest(unittest.TestCase):
             ]
         )
         base = [{"type": "text", "text": "system"}]
-        visible = daemon._system_with_tool_policies(
+        rendered = daemon._system_with_tool_policies(
             base,
             [
-                {"name": "tool_enable"},
-            ],
-        )
-        expanded = daemon._system_with_tool_policies(
-            base,
-            [
-                {"name": "tool_enable"},
                 {"name": "mcp__search__query"},
             ],
         )
 
-        self.assertEqual(visible, expanded)
         self.assertEqual(
-            visible[1]["text"],
+            rendered[1]["text"],
             "# Available capability guidance\n\n" + MCP_TOOL_POLICY.strip(),
         )
 
@@ -194,10 +184,9 @@ class DaemonTest(unittest.TestCase):
                 {"name": "mcp__homeassistant__HassTurnOn"},
             ]
         )
-        surface = ToolSurface(daemon.mcp, {}, "napcat")
-        names = {spec["name"] for spec in surface.self_directed_specs()}
-        self.assertEqual(
-            names,
+        surface = ToolSurface(daemon.mcp, {})
+        names = {spec["name"] for spec in surface.conversation_specs()}
+        self.assertTrue(
             {
                 "apply_patch",
                 "curl",
@@ -210,7 +199,7 @@ class DaemonTest(unittest.TestCase):
                 "write_file",
                 "mcp__homeassistant__GetLiveContext",
                 "mcp__homeassistant__HassTurnOn",
-            },
+            }.issubset(names),
         )
 
     def test_emotion_catalog_is_cached_system_block(self) -> None:
@@ -390,17 +379,16 @@ class DaemonTest(unittest.TestCase):
         for visible_field in ("message", "messages", "text", "content", "delivery"):
             self.assertNotIn(visible_field, terminal_properties)
         self.assertFalse(END_TURN_TOOL_SPEC["input_schema"]["additionalProperties"])
-        heartbeat_end_turn = heartbeat_end_turn_tool_spec()
-        self.assertEqual(heartbeat_end_turn["name"], "end_turn")
-        self.assertIn("heartbeat", heartbeat_end_turn["input_schema"]["required"])
-        self.assertIn("mood", heartbeat_end_turn["input_schema"]["required"])
+        self.assertEqual(END_TURN_TOOL_SPEC["name"], "end_turn")
+        self.assertNotIn("heartbeat", END_TURN_TOOL_SPEC["input_schema"]["required"])
+        self.assertIn("heartbeat", END_TURN_TOOL_SPEC["input_schema"]["properties"])
+        self.assertIn("mood", END_TURN_TOOL_SPEC["input_schema"]["required"])
         self.assertNotIn(
             "continue_waiting_for_reply",
-            heartbeat_end_turn["input_schema"]["properties"]["heartbeat"]["properties"],
+            END_TURN_TOOL_SPEC["input_schema"]["properties"]["heartbeat"]["properties"],
         )
-        owner_end_turn = owner_end_turn_tool_spec()
-        self.assertIn("activity", owner_end_turn["input_schema"]["required"])
-        self.assertNotIn("heartbeat", owner_end_turn["input_schema"]["properties"])
+        self.assertNotIn("activity", END_TURN_TOOL_SPEC["input_schema"]["required"])
+        self.assertIn("activity", END_TURN_TOOL_SPEC["input_schema"]["properties"])
         activity_shapes = ACTIVITY_DECISION_SCHEMA["oneOf"]
         self.assertEqual(
             [shape["properties"]["decision"]["enum"][0] for shape in activity_shapes],
@@ -1304,7 +1292,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(daemon.store.pending_owner_reply())
             daemon.store.close()
 
-    async def test_owner_can_enable_a_dynamic_tool_group(self) -> None:
+    async def test_owner_mcp_tool_is_resident_from_the_first_round(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             daemon = MomoiDaemon(
@@ -1370,13 +1358,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     names = [str(tool["name"]) for tool in tools]
                     if provider_self.calls == 1:
                         self.assertIn("read_file", names)
-                        self.assertNotIn("mcp__demo__read", names)
-                        call = ToolCall(
-                            "enable-demo",
-                            "tool_enable",
-                            {"groups": ["demo"]},
-                        )
-                    elif provider_self.calls == 2:
                         self.assertIn("mcp__demo__read", names)
                         call = ToolCall(
                             "read-demo",
@@ -1384,6 +1365,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             {},
                         )
                     else:
+                        self.assertIn("mcp__demo__read", names)
                         self.assertIn("dynamic tool works", json.dumps(messages))
                         call = ToolCall(
                             "finish",
@@ -1401,7 +1383,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             reply = await daemon._run_tool_loop(
                 daemon._system(),
                 [{"role": "user", "content": "读文件"}],
-                daemon.tool_surface.owner_specs("napcat"),
+                daemon.tool_surface.conversation_specs(),
                 [event],
                 TurnDraft(),
                 execution=TurnExecutionSpec("owner"),
@@ -1410,7 +1392,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 delivery_channel=daemon.channel,
             )
             self.assertIsInstance(reply, AgentReply)
-            self.assertEqual(provider.calls, 3)
+            self.assertEqual(provider.calls, 2)
             daemon.store.close()
 
     async def test_owner_keeps_resident_internal_tools(self) -> None:
@@ -1472,7 +1454,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     names = [str(tool["name"]) for tool in tools]
                     if provider_self.calls == 1:
                         self.assertIn("read_file", names)
-                        self.assertIn("tool_enable", names)
                         call = ToolCall(
                             "read-note",
                             "read_file",
@@ -1499,7 +1480,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             reply = await daemon._run_tool_loop(
                 daemon._system(),
                 [{"role": "user", "content": "读文件"}],
-                daemon.tool_surface.owner_specs("napcat"),
+                daemon.tool_surface.conversation_specs(),
                 [event],
                 TurnDraft(),
                 execution=TurnExecutionSpec("owner"),
@@ -2191,7 +2172,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             reply = await daemon._run_tool_loop(
                 daemon._system(),
                 canonical_messages,
-                daemon.tool_surface.owner_specs(),
+                daemon.tool_surface.conversation_specs(),
                 [event],
                 TurnDraft(),
                 execution=TurnExecutionSpec("owner"),
@@ -2302,7 +2283,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             reply = await daemon._run_tool_loop(
                 daemon._system(),
                 canonical_messages,
-                daemon.tool_surface.owner_specs(),
+                daemon.tool_surface.conversation_specs(),
                 [event],
                 TurnDraft(),
                 execution=TurnExecutionSpec("owner"),
@@ -2432,7 +2413,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             reply = await daemon._run_tool_loop(
                 daemon._system(),
                 [{"role": "user", "content": event.text}],
-                daemon.tool_surface.owner_specs(),
+                daemon.tool_surface.conversation_specs(),
                 [event],
                 TurnDraft(),
                 execution=TurnExecutionSpec("owner"),
@@ -2597,7 +2578,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             reply = await daemon._run_tool_loop(
                 daemon._system(),
                 [{"role": "user", "content": event.text}],
-                daemon.tool_surface.owner_specs(),
+                daemon.tool_surface.conversation_specs(),
                 [event],
                 TurnDraft(),
                 execution=TurnExecutionSpec("owner"),

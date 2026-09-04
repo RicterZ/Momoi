@@ -114,10 +114,7 @@ class PromptRenderer:
         if names & THINKING_POLICY_TOOLS:
             policies.append(THINKING_TOOL_POLICY.strip())
         mcp_names = {str(tool.get("name") or "") for tool in self.mcp.tool_specs}
-        # Keep MCP guidance identical before and after tool_enable expands the
-        # schema. Otherwise the first enabled MCP call changes the system
-        # prefix and forfeits the cached conversation for one full round.
-        if mcp_names and ("tool_enable" in names or names & mcp_names):
+        if mcp_names and names & mcp_names:
             policies.append(MCP_TOOL_POLICY.strip())
         if not policies:
             return system

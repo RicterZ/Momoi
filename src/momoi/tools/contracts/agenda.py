@@ -145,37 +145,3 @@ AGENDA_TOOL_SPECS: list[dict[str, Any]] = [
         },
     },
 ]
-
-AUTONOMOUS_SEND_BUBBLES_SPEC: dict[str, Any] = {
-    "name": "send_bubbles",
-    "description": (
-        "Send one useful autonomous notification after checking current conversation. "
-        "Stay silent if covered or stale."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "bubbles": {
-                "type": "array",
-                "minItems": 1,
-                "description": (
-                    "Ordered notification messages; each item is delivered as one "
-                    "separate chat bubble."
-                ),
-                "items": {"type": "string", "minLength": 1, "maxLength": 500},
-            },
-            "reason": {"type": "string"},
-            "key": {
-                "type": "string",
-                "description": "Stable lowercase cooldown category.",
-            },
-            "priority": {
-                "type": "string",
-                "enum": ["normal", "urgent"],
-                "default": "normal",
-            },
-        },
-        "required": ["bubbles", "reason", "key"],
-        "additionalProperties": False,
-    },
-}

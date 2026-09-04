@@ -16,6 +16,25 @@ OWNER_BUBBLE_REQUEST_REMINDER = (
     "them; otherwise call the next work or terminal tool."
 )
 
+_PRIVATE_REASONING_BLOCK_TYPES = frozenset(
+    {"reasoning", "thinking", "redacted_thinking"}
+)
+
+
+def assistant_history_content(content: object) -> object:
+    """Keep protocol output for the next round without replaying private thought."""
+
+    if not isinstance(content, list):
+        return copy.deepcopy(content)
+    return [
+        copy.deepcopy(block)
+        for block in content
+        if not (
+            isinstance(block, dict)
+            and block.get("type") in _PRIVATE_REASONING_BLOCK_TYPES
+        )
+    ]
+
 
 @dataclass(frozen=True)
 class NoToolResolution:
@@ -27,7 +46,6 @@ class NoToolResolution:
 def handle_no_tool_response(
     messages: list[dict[str, Any]],
     content: object,
-    reasoning: str | None,
     *,
     workflow_correction: str | None,
     heartbeat_turn: bool,
@@ -44,9 +62,7 @@ def handle_no_tool_response(
             raise WorkflowProtocolError(
                 last_tool_error or "repeated workflow protocol failures"
             )
-        assistant_content = copy.deepcopy(content)
-        if reasoning:
-            assistant_content.insert(0, {"type": "reasoning", "text": reasoning})
+        assistant_content = assistant_history_content(content)
         messages.extend(
             [
                 {"role": "assistant", "content": assistant_content},
@@ -60,7 +76,10 @@ def handle_no_tool_response(
             raise ExternalToolTurnError("heartbeat_not_started")
         messages.extend(
             [
-                {"role": "assistant", "content": content},
+                {
+                    "role": "assistant",
+                    "content": assistant_history_content(content),
+                },
                 {
                     "role": "user",
                     "content": (
@@ -75,7 +94,10 @@ def handle_no_tool_response(
     if goal_turn:
         messages.extend(
             [
-                {"role": "assistant", "content": content},
+                {
+                    "role": "assistant",
+                    "content": assistant_history_content(content),
+                },
                 {
                     "role": "user",
                     "content": (
@@ -101,7 +123,10 @@ def handle_no_tool_response(
     )
     messages.extend(
         [
-            {"role": "assistant", "content": content},
+            {
+                "role": "assistant",
+                "content": assistant_history_content(content),
+            },
             {"role": "user", "content": correction},
         ]
     )

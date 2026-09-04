@@ -3,15 +3,9 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from ...tools.contracts.agenda import (
-    AGENDA_TOOL_SPECS,
-    AUTONOMOUS_SEND_BUBBLES_SPEC,
-)
-from ...tools.contracts.builtin import BUILTIN_TOOL_SPECS
 from ...context_time import context_timestamp
 from ...observability.events import log_event
 from ...observability.values import safe_preview
-from ...tools.contracts.memory import MEMORY_TOOL_SPECS
 from ...models import TurnDraft
 from ...llm.errors import ProviderError
 from ..agent import TurnExecutionSpec
@@ -19,7 +13,6 @@ from ..context.rendering import (
     assemble_recent_external_events,
     recall_episode_context,
 )
-from ..tool_contracts.runtime import AUTONOMOUS_FINISH_SPEC, READ_TOOL_RESULT_SPEC
 from ..transcript.building import build_transcript
 from ..transcript.rendering import render_messages
 from ..turn_support import (
@@ -268,32 +261,8 @@ class GoalWorkflow:
                 ],
             },
         ]
-        memory_search = [
-            spec for spec in MEMORY_TOOL_SPECS if spec["name"] == "memory_search"
-        ]
         agent_owned = goal["authority"] == "agent"
-        agenda_specs = (
-            [
-                spec
-                for spec in AGENDA_TOOL_SPECS
-                if spec["name"] in {"goal_update", "goal_finish", "goal_cancel"}
-            ]
-            if agent_owned
-            else AGENDA_TOOL_SPECS
-        )
-        tools = [
-            *memory_search,
-            *agenda_specs,
-            AUTONOMOUS_SEND_BUBBLES_SPEC,
-            READ_TOOL_RESULT_SPEC,
-            *(
-                self.tool_surface.self_directed_specs()
-                if agent_owned
-                else BUILTIN_TOOL_SPECS
-            ),
-            *([] if agent_owned else self.mcp.tool_specs),
-            AUTONOMOUS_FINISH_SPEC,
-        ]
+        tools = self.tool_surface.conversation_specs()
         draft = TurnDraft()
         await self._run_tool_loop(
             self._system(),
@@ -309,6 +278,9 @@ class GoalWorkflow:
                 ),
                 artifact_root=(
                     self.tool_executor.artifact_root if agent_owned else None
+                ),
+                permitted_tools=self.tool_surface.permitted_names(
+                    "goal", agent_owned_goal=agent_owned
                 ),
             ),
             source_event_id=f"goal:{goal_id}",

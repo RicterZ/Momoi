@@ -5,11 +5,8 @@ import time
 from datetime import datetime
 from typing import Any
 
-from ...tools.contracts.agenda import AGENDA_TOOL_SPECS
 from ...observability.events import log_event
 from ...observability.values import safe_preview
-from ...tools.contracts.memory import MEMORY_TOOL_SPECS
-from ...tools.contracts.thinking import THINKING_TOOL_SPECS
 from ...models import AgentReply, TurnDraft
 from ...reply_wait import REPLY_FOLLOWUP_RETRY_SECONDS
 from ...storage import estimate_tokens, truncate_tokens
@@ -20,7 +17,6 @@ from ..context.presentation import (
     heartbeat_topic_lines,
 )
 from ..context.rendering import assemble_recent_external_events
-from ..tool_contracts.conversation import heartbeat_end_turn_tool_spec
 from ..transcript.building import build_transcript
 from ..transcript.rendering import render_messages
 from ..turn_support import (
@@ -256,14 +252,7 @@ class HeartbeatWorkflow:
                 ],
             },
         ]
-        tools = [
-            *MEMORY_TOOL_SPECS,
-            *THINKING_TOOL_SPECS,
-            *AGENDA_TOOL_SPECS,
-            *self.tool_surface.heartbeat_external_specs(),
-            self.tool_surface.send_bubbles_spec(delivery_channel.name),
-            heartbeat_end_turn_tool_spec(),
-        ]
+        tools = self.tool_surface.conversation_specs()
         draft = TurnDraft()
         memory_events = self.store.recent_owner_events(
             max(20, self.config.transcript_turns_max)
@@ -278,6 +267,7 @@ class HeartbeatWorkflow:
                 "heartbeat",
                 allowed_capabilities=frozenset({"read", "write", "external_effect"}),
                 artifact_root=artifact_root,
+                permitted_tools=self.tool_surface.permitted_names("heartbeat"),
             ),
             source_event_id=f"heartbeat:{turn_id}",
             turn_id=turn_id,

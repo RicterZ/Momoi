@@ -135,8 +135,12 @@ class GoalNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn("继续检查", str(provider.first_messages[1]["content"]))
             self.assertIn("好", str(provider.first_messages[2]["content"]))
             self.assertEqual(provider.calls, 4)
+            expected_surface = [
+                str(tool["name"])
+                for tool in daemon.tool_surface.conversation_specs()
+            ]
             self.assertTrue(
-                all(surface == provider.surfaces[0] for surface in provider.surfaces)
+                all(surface == expected_surface for surface in provider.surfaces)
             )
             self.assertEqual(
                 provider.required_tools,

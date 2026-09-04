@@ -68,6 +68,7 @@ class ReplyWaitNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
 
             system = str(run.await_args.args[0])
             messages = run.await_args.args[1]
+            tools = run.await_args.args[2]
             rendered = json.dumps(messages, ensure_ascii=False)
             self.assertNotIn("Required reply follow-up", system)
             self.assertIn("<workflow_contract>", rendered)
@@ -82,6 +83,10 @@ class ReplyWaitNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             )
             self.assertIn("晚上选个游戏吧", str(messages[1]["content"]))
             self.assertIn("那你想玩解谜还是动作呀", str(messages[2]["content"]))
+            self.assertEqual(
+                tools,
+                daemon.tool_surface.conversation_specs(),
+            )
             daemon.store.close()
 
 

@@ -47,6 +47,7 @@ class TurnHarness:
 
     spec: TurnHarnessSpec
     progress_tool_names: frozenset[str] = frozenset()
+    permitted_tool_names: frozenset[str] | None = None
     started: bool = False
     progress_bubbles_seen: bool = False
 
@@ -59,11 +60,13 @@ class TurnHarness:
         stage: str,
         *,
         progress_tool_names: frozenset[str] = frozenset(),
+        permitted_tool_names: frozenset[str] | None = None,
     ) -> "TurnHarness":
         try:
             return cls(
                 TURN_HARNESS_SPECS[stage],
                 progress_tool_names=progress_tool_names,
+                permitted_tool_names=permitted_tool_names,
             )
         except KeyError as error:
             raise ValueError(f"missing Turn harness for stage: {stage}") from error
@@ -108,8 +111,13 @@ class TurnHarness:
         terminal = self.spec.terminal_tool
         if terminal in names and (len(names) != 1 or names[0] != terminal):
             return f"{terminal}_must_be_alone"
-        if self.spec.permitted_tools is not None and any(
-            name not in self.spec.permitted_tools for name in names
+        permitted = (
+            self.permitted_tool_names
+            if self.permitted_tool_names is not None
+            else self.spec.permitted_tools
+        )
+        if permitted is not None and any(
+            name not in permitted for name in names
         ):
             return "tool_not_allowed"
         if (

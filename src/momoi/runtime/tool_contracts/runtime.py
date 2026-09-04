@@ -1,44 +1,5 @@
 from typing import Any
 
-from ...tools.contracts.builtin import BUILTIN_TOOL_SPECS
-
-
-CURL_TOOL_SPEC = next(spec for spec in BUILTIN_TOOL_SPECS if spec["name"] == "curl")
-
-def tool_enable_spec(group_descriptions: dict[str, str]) -> dict[str, Any]:
-    ordered_groups = {
-        group: str(description).strip()
-        for group, description in sorted(group_descriptions.items())
-    }
-    group_ids = list(ordered_groups)
-    catalog = "; ".join(
-        f"{group}: {description}"
-        for group, description in ordered_groups.items()
-    )
-    return {
-        "name": "tool_enable",
-        "description": (
-            "Enable required MCP groups for the next model step. "
-            f"Groups: {catalog}"
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "groups": {
-                    "type": "array",
-                    "minItems": 1,
-                    "maxItems": max(1, len(group_ids)),
-                    "items": {
-                        "type": "string",
-                        "enum": group_ids,
-                    },
-                }
-            },
-            "required": ["groups"],
-            "additionalProperties": False,
-        },
-    }
-
 AUTONOMOUS_FINISH_SPEC: dict[str, Any] = {
     "name": "autonomous_finish",
     "description": (
