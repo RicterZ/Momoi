@@ -11,6 +11,7 @@ class TurnHarnessSpec:
     first_tool: str | None
     terminal_tool: str
     require_bubbles_before_progress_work: bool = False
+    permitted_tools: frozenset[str] | None = None
 
 
 TURN_HARNESS_SPECS = {
@@ -19,7 +20,14 @@ TURN_HARNESS_SPECS = {
         TurnHarnessSpec("owner", "recall", "end_turn", True),
         TurnHarnessSpec("heartbeat", "heartbeat_begin", "end_turn"),
         TurnHarnessSpec("reply_followup", "send_bubbles", "end_turn"),
-        TurnHarnessSpec("webhook", None, "end_turn"),
+        TurnHarnessSpec(
+            "webhook",
+            None,
+            "end_turn",
+            permitted_tools=frozenset(
+                {"send_bubbles", "curl", "read_tool_result", "end_turn"}
+            ),
+        ),
         TurnHarnessSpec("goal", None, "autonomous_finish"),
         TurnHarnessSpec("reflection", None, "reflection_finish"),
         TurnHarnessSpec(
@@ -76,7 +84,11 @@ class TurnHarness:
             )
 
     def validate(
-        self, calls: list[ToolCall], *, has_assistant_text: bool = False
+        self,
+        calls: list[ToolCall],
+        *,
+        has_assistant_text: bool = False,
+        required_tool: str | None = None,
     ) -> str | None:
         if has_assistant_text:
             return "assistant_text_forbidden"
@@ -87,9 +99,19 @@ class TurnHarness:
                 return f"{first}_must_be_first_and_alone"
         elif first is not None and first in names:
             return f"{first}_already_completed"
+        if (
+            required_tool is not None
+            and required_tool != first
+            and names != [required_tool]
+        ):
+            return f"{required_tool}_required"
         terminal = self.spec.terminal_tool
         if terminal in names and (len(names) != 1 or names[0] != terminal):
             return f"{terminal}_must_be_alone"
+        if self.spec.permitted_tools is not None and any(
+            name not in self.spec.permitted_tools for name in names
+        ):
+            return "tool_not_allowed"
         if (
             self.spec.require_bubbles_before_progress_work
             and not self.progress_bubbles_seen

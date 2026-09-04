@@ -186,28 +186,28 @@ class DaemonTest(unittest.TestCase):
             "# Available capability guidance\n\n" + MCP_TOOL_POLICY.strip(),
         )
 
-    def test_heartbeat_self_directed_tools_allow_configured_mcp_effects(self) -> None:
+    def test_autonomous_tools_include_all_builtins_and_mcp(self) -> None:
         daemon = object.__new__(MomoiDaemon)
-        daemon.config = SimpleNamespace(
-            autonomy=SimpleNamespace(
-                allowed_tools=(
-                    "list_dir",
-                    "mcp__homeassistant*",
-                )
-            )
-        )
         daemon.mcp = SimpleNamespace(
             tool_specs=[
                 {"name": "mcp__homeassistant__GetLiveContext"},
                 {"name": "mcp__homeassistant__HassTurnOn"},
             ]
         )
-        surface = ToolSurface(daemon.config, daemon.mcp, {}, "napcat")
+        surface = ToolSurface(daemon.mcp, {}, "napcat")
         names = {spec["name"] for spec in surface.self_directed_specs()}
         self.assertEqual(
             names,
             {
+                "apply_patch",
+                "curl",
+                "delete_file",
                 "list_dir",
+                "makedirs",
+                "move_file",
+                "read_file",
+                "sleep",
+                "write_file",
                 "mcp__homeassistant__GetLiveContext",
                 "mcp__homeassistant__HassTurnOn",
             },

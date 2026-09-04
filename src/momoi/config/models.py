@@ -80,11 +80,6 @@ class HeartbeatConfig:
 
 
 @dataclass(frozen=True)
-class AutonomyConfig:
-    allowed_tools: tuple[str, ...] = ("curl", "read_file", "write_file", "list_dir")
-
-
-@dataclass(frozen=True)
 class ReflectionConfig:
     enabled: bool = False
     at: str = "03:00"
@@ -137,7 +132,6 @@ class AppConfig:
     dashboard: DashboardConfig = DashboardConfig()
     usage: UsageConfig = UsageConfig()
     heartbeat: HeartbeatConfig = HeartbeatConfig()
-    autonomy: AutonomyConfig = AutonomyConfig()
     reflection: ReflectionConfig = ReflectionConfig()
     episode_annealing: EpisodeAnnealingConfig = EpisodeAnnealingConfig()
     workspace: Path | None = None

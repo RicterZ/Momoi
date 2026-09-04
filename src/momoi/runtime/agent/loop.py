@@ -85,7 +85,7 @@ class AgentLoop:
             self.tool_surface.owner_enable_groups()
             if authority == "owner"
             else (
-                self.tool_surface.self_directed_mcp_groups()
+                self.tool_surface.mcp_server_groups()
                 if heartbeat_turn
                 else {}
             )
@@ -130,14 +130,12 @@ class AgentLoop:
                 force_autonomous_finish = False
                 failed_tool_rounds = 0
                 remind_owner_bubbles = False
-            request_tools = (
-                [AUTONOMOUS_FINISH_SPEC]
-                if force_autonomous_finish
-                else tools
-            )
             required_tool = (
-                harness.spec.first_tool if not harness.started else None
+                AUTONOMOUS_FINISH_SPEC["name"]
+                if force_autonomous_finish
+                else (harness.spec.first_tool if not harness.started else None)
             )
+            request_tools = tools
             llm_round += 1
             require_tool = bool(
                 autonomous_goal_id or heartbeat_turn or reply_wait_turn or workflow
@@ -303,6 +301,7 @@ class AgentLoop:
             harness_error = harness.validate(
                 response.tool_calls,
                 has_assistant_text=bool(response_text(response.content)),
+                required_tool=required_tool,
             )
             if harness_error is not None:
                 failed_tool_rounds += 1

@@ -67,18 +67,28 @@ class GoalNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                 calls = 0
                 first_system: object = None
                 first_messages: list[dict[str, object]] = []
+                surfaces: list[list[str]] = []
+                required_tools: list[object] = []
 
                 async def complete(
                     self,
                     _system: object,
                     messages: list[dict[str, object]],
                     _tools: list[dict[str, object]],
-                    **_kwargs: object,
+                    **kwargs: object,
                 ) -> ProviderResponse:
                     self.calls += 1
+                    self.surfaces.append([str(tool["name"]) for tool in _tools])
+                    self.required_tools.append(kwargs.get("required_tool"))
                     if self.calls == 1:
                         self.first_system = copy.deepcopy(_system)
                         self.first_messages = copy.deepcopy(messages)
+                        return ProviderResponse(
+                            [{"type": "text", "text": "plain text is invalid"}], []
+                        )
+                    if self.calls == 2:
+                        call = ToolCall("premature-finish", "autonomous_finish", {})
+                    elif self.calls == 3:
                         call = ToolCall(
                             "update",
                             "goal_update",
@@ -124,6 +134,14 @@ class GoalNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             )
             self.assertIn("继续检查", str(provider.first_messages[1]["content"]))
             self.assertIn("好", str(provider.first_messages[2]["content"]))
+            self.assertEqual(provider.calls, 4)
+            self.assertTrue(
+                all(surface == provider.surfaces[0] for surface in provider.surfaces)
+            )
+            self.assertEqual(
+                provider.required_tools,
+                [None, "autonomous_finish", None, None],
+            )
             daemon.store.close()
 
 

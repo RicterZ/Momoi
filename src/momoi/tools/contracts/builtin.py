@@ -1,4 +1,3 @@
-import copy
 from typing import Any
 
 from ...contracts import OWNER_PROGRESS_BEFORE_FIRST_CALL, OWNER_PROGRESS_FIELD
@@ -214,17 +213,4 @@ BUILTIN_TOOL_SPECS: list[dict[str, Any]] = [
             "additionalProperties": False,
         },
     },
-]
-
-SELF_DIRECTED_BUILTIN_TOOL_SPECS = [
-    copy.deepcopy(spec)
-    for spec in BUILTIN_TOOL_SPECS
-    if spec["name"] in {"curl", "read_file", "write_file", "list_dir"}
-]
-next(spec for spec in SELF_DIRECTED_BUILTIN_TOOL_SPECS if spec["name"] == "curl")[
-    "input_schema"
-]["properties"]["method"]["enum"] = [
-    "GET",
-    "HEAD",
-    "OPTIONS",
 ]

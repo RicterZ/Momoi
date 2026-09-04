@@ -113,8 +113,7 @@ class OwnerProgressPolicyTest(unittest.TestCase):
                 }
             ]
         )
-        config = SimpleNamespace(autonomy=SimpleNamespace(allowed_tools=["curl"]))
-        surface = ToolSurface(config, mcp, channels, "napcat")
+        surface = ToolSurface(mcp, channels, "napcat")
         owner = {
             spec["name"]: spec
             for spec in surface.owner_specs()

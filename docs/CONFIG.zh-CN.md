@@ -349,20 +349,6 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
 
 `max_interval_seconds` 必须大于或等于 `min_interval_seconds`。
 
-## 自主工具
-
-```json
-{
-  "autonomy": {
-    "allowed_tools": ["curl", "read_file", "write_file", "list_dir"]
-  }
-}
-```
-
-| 字段 | 默认值 | 说明 |
-| --- | --- | --- |
-| `allowed_tools` | `curl`、`read_file`、`write_file`、`list_dir` | 自主 Turn 可用的非空工具名；MCP 工具使用完整的 `mcp__<server>__<tool>` 名称 |
-
 ## 复盘
 
 ```json

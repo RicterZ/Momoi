@@ -154,7 +154,7 @@ class MomoiDaemon(
         )
         self.mcp = MCPManager(config.mcp_config)
         self.tool_surface = ToolSurface(
-            config, self.mcp, self.channels, self.channel.name
+            self.mcp, self.channels, self.channel.name
         )
         self.delivery_policy = DeliveryPolicy(config, self.store)
         self.tool_executor = ToolExecutor(

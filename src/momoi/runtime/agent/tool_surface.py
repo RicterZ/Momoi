@@ -1,14 +1,10 @@
 import copy
-import fnmatch
 import json
 import logging
 from typing import Any
 
 from ...tools.contracts.agenda import AGENDA_TOOL_SPECS
-from ...tools.contracts.builtin import (
-    BUILTIN_TOOL_SPECS,
-    SELF_DIRECTED_BUILTIN_TOOL_SPECS,
-)
+from ...tools.contracts.builtin import BUILTIN_TOOL_SPECS
 from ...observability.events import TRACE, log_event
 from ...tools.contracts.memory import MEMORY_TOOL_SPECS
 from ...tools.contracts.thinking import THINKING_TOOL_SPECS
@@ -30,8 +26,7 @@ logger = logging.getLogger("momoi.runtime.turns")
 class ToolSurface:
     """Projects the tool catalog exposed to each workflow."""
 
-    def __init__(self, config: Any, mcp: Any, channels: dict[str, Any], primary: str):
-        self.config = config
+    def __init__(self, mcp: Any, channels: dict[str, Any], primary: str):
         self.mcp = mcp
         self.channel_names = list(channels)
         self.primary = primary
@@ -124,35 +119,12 @@ class ToolSurface:
             visible_tool_names=[str(spec.get("name") or "") for spec in visible],
         )
 
-    def self_directed_mcp_groups(self) -> dict[str, list[dict[str, Any]]]:
-        patterns = self.config.autonomy.allowed_tools
-        groups: dict[str, list[dict[str, Any]]] = {}
-        for spec in sorted(
-            self.mcp.tool_specs, key=lambda item: str(item.get("name") or "")
-        ):
-            if not any(
-                fnmatch.fnmatchcase(str(spec["name"]), pattern)
-                for pattern in patterns
-            ):
-                continue
-            server = self.mcp_tool_group(str(spec.get("name") or ""))
-            groups.setdefault(server, []).append(spec)
-        return dict(sorted(groups.items()))
-
     def heartbeat_external_specs(self) -> list[dict[str, Any]]:
-        patterns = self.config.autonomy.allowed_tools
         internal = [
             READ_TOOL_RESULT_SPEC,
-            *[
-                spec
-                for spec in SELF_DIRECTED_BUILTIN_TOOL_SPECS
-                if any(
-                    fnmatch.fnmatchcase(str(spec["name"]), pattern)
-                    for pattern in patterns
-                )
-            ],
+            *self.public_specs(BUILTIN_TOOL_SPECS),
         ]
-        groups = self.self_directed_mcp_groups()
+        groups = self.mcp_server_groups()
         catalog = {
             server: self.mcp_group_description(server) for server in groups
         }
@@ -184,14 +156,9 @@ class ToolSurface:
         return visible
 
     def self_directed_specs(self) -> list[dict[str, Any]]:
-        patterns = self.config.autonomy.allowed_tools
         return [
-            spec
-            for spec in [*SELF_DIRECTED_BUILTIN_TOOL_SPECS, *self.mcp.tool_specs]
-            if any(
-                fnmatch.fnmatchcase(str(spec["name"]), pattern)
-                for pattern in patterns
-            )
+            *self.public_specs(BUILTIN_TOOL_SPECS),
+            *self.public_specs(self.mcp.tool_specs),
         ]
 
     def send_bubbles_spec(self, channel_name: str | None = None) -> dict[str, Any]:

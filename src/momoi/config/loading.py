@@ -8,7 +8,6 @@ from .environment import apply_env_overrides
 from .models import (
     ASRConfig,
     AppConfig,
-    AutonomyConfig,
     ConfigError,
     DashboardConfig,
     EmbeddingConfig,
@@ -171,9 +170,8 @@ def load_config(path: str | Path) -> AppConfig:
         if not str(asr_settings.get("secret_key") or "").strip():
             raise ConfigError(
                 "asr.settings.secret_key is required when Tencent ASR is enabled"
-            )
+    )
     heartbeat_raw = mapping(raw.get("heartbeat", {}), "heartbeat")
-    autonomy_raw = mapping(raw.get("autonomy", {}), "autonomy")
     reflection_raw = mapping(raw.get("reflection", {}), "reflection")
     annealing_raw = mapping(raw.get("episode_annealing", {}), "episode_annealing")
     embedding_raw = mapping(raw.get("embedding", {}), "embedding")
@@ -223,13 +221,6 @@ def load_config(path: str | Path) -> AppConfig:
         raise ConfigError(
             "heartbeat.max_interval_seconds must be at least min_interval_seconds"
         )
-    allowed_tools = autonomy_raw.get(
-        "allowed_tools", ["curl", "read_file", "write_file", "list_dir"]
-    )
-    if not isinstance(allowed_tools, list) or not all(
-        isinstance(item, str) and item.strip() for item in allowed_tools
-    ):
-        raise ConfigError("autonomy.allowed_tools must be an array of tool names")
     max_input_tokens = integer(
         context_raw.get("max_input_tokens", 142222),
         "context.max_input_tokens",
@@ -364,9 +355,6 @@ def load_config(path: str | Path) -> AppConfig:
             ),
             min_interval_seconds=heartbeat_min,
             max_interval_seconds=heartbeat_max,
-        ),
-        autonomy=AutonomyConfig(
-            tuple(dict.fromkeys(item.strip() for item in allowed_tools))
         ),
         reflection=ReflectionConfig(
             enabled=boolean(reflection_raw.get("enabled", False), "reflection.enabled"),

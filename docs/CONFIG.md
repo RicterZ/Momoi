@@ -352,20 +352,6 @@ omitted. Overnight windows are supported.
 
 `max_interval_seconds` must be at least `min_interval_seconds`.
 
-## Autonomous tools
-
-```json
-{
-  "autonomy": {
-    "allowed_tools": ["curl", "read_file", "write_file", "list_dir"]
-  }
-}
-```
-
-| Field | Default | Description |
-| --- | --- | --- |
-| `allowed_tools` | `curl`, `read_file`, `write_file`, `list_dir` | Non-empty tool names available to autonomous Turns; MCP tools use full `mcp__<server>__<tool>` names |
-
 ## Reflection
 
 ```json

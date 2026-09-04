@@ -102,15 +102,6 @@
     "min_interval_seconds": 1800,
     "max_interval_seconds": 5400
   },
-  "autonomy": {
-    "allowed_tools": [
-      "curl",
-      "read_file",
-      "write_file",
-      "list_dir",
-      "mcp__brave-search__brave_web_search"
-    ]
-  },
   "reflection": {
     "enabled": true,
     "at": "03:00"

@@ -125,6 +125,34 @@ class TurnHarnessTest(unittest.TestCase):
             )
         )
 
+    def test_webhook_harness_rejects_tools_outside_its_contract(self) -> None:
+        harness = TurnHarness.for_stage("webhook")
+
+        self.assertEqual(
+            harness.validate([ToolCall("memory", "memory_search", {"query": "x"})]),
+            "tool_not_allowed",
+        )
+        self.assertIsNone(
+            harness.validate([ToolCall("curl", "curl", {"url": "https://x"})])
+        )
+
+    def test_required_tool_is_enforced_without_surface_projection(self) -> None:
+        harness = TurnHarness.for_stage("goal")
+
+        self.assertEqual(
+            harness.validate(
+                [ToolCall("work", "goal_update", {})],
+                required_tool="autonomous_finish",
+            ),
+            "autonomous_finish_required",
+        )
+        self.assertIsNone(
+            harness.validate(
+                [ToolCall("finish", "autonomous_finish", {})],
+                required_tool="autonomous_finish",
+            )
+        )
+
     def test_assistant_text_invalidates_an_otherwise_valid_tool_call(self) -> None:
         harness = TurnHarness.for_stage("owner")
         recall = ToolCall("recall", "recall", {})

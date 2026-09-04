@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from momoi.channel.napcat import NapCatConfig
-from momoi.config.models import AppConfig, AutonomyConfig, LLMConfig
+from momoi.config.models import AppConfig, LLMConfig
 from momoi.models import AgentReply, IncomingMessage, ProviderResponse, ToolCall
 from momoi.runtime import MomoiDaemon
 
@@ -118,6 +118,9 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn("<autonomous_heartbeat>", rendered)
             self.assertNotIn("<heartbeat_plan>", rendered)
             self.assertIn("heartbeat_begin", provider.first_tools)
+            self.assertIn("apply_patch", provider.first_tools)
+            self.assertIn("delete_file", provider.first_tools)
+            self.assertIn("sleep", provider.first_tools)
             self.assertEqual(provider.calls, 2)
             self.assertEqual(
                 [message["role"] for message in provider.first_messages],
@@ -142,7 +145,6 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                     memory_results=2,
                     database=Path(directory) / "momoi.sqlite3",
                     log_level="INFO",
-                    autonomy=AutonomyConfig(("mcp__demo__read",)),
                 )
             )
 
@@ -160,6 +162,18 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                 ]
                 configs = {"demo": {"description": "Demo tools."}}
 
+                @staticmethod
+                def has_tool(name: str) -> bool:
+                    return name == "mcp__demo__read"
+
+                @staticmethod
+                def capability(_: str) -> str:
+                    return "read"
+
+                @staticmethod
+                async def call(_: str, __: dict[str, object]) -> dict[str, object]:
+                    return {"ok": True, "value": "dynamic heartbeat tool works"}
+
             daemon.mcp = MCP()  # type: ignore[assignment]
             daemon.tool_surface.mcp = daemon.mcp
             daemon.tool_executor.mcp = daemon.mcp
@@ -167,6 +181,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
 
             class Provider:
                 calls = 0
+                surfaces: list[list[str]] = []
 
                 async def complete(
                     self,
@@ -177,6 +192,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                 ) -> ProviderResponse:
                     self.calls += 1
                     names = [str(tool["name"]) for tool in tools]
+                    self.surfaces.append(names)
                     if self.calls == 1:
                         case.assertNotIn("mcp__demo__read", names)
                         begin = next(
@@ -204,9 +220,13 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                                 ],
                             },
                         )
-                    else:
+                    elif self.calls == 2:
                         case.assertIn("mcp__demo__read", names)
                         case.assertIn('"state": "started"', str(messages[-1]))
+                        call = ToolCall("read-demo", "mcp__demo__read", {})
+                    else:
+                        case.assertIn("mcp__demo__read", names)
+                        case.assertIn("dynamic heartbeat tool works", str(messages[-1]))
                         call = ToolCall(
                             "finish",
                             "end_turn",
@@ -241,7 +261,8 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                 turn_id,
                 owner_event_revision=0,
             )
-            self.assertEqual(provider.calls, 2)
+            self.assertEqual(provider.calls, 3)
+            self.assertEqual(provider.surfaces[1], provider.surfaces[2])
             daemon.store.close()
 
 

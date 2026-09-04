@@ -298,12 +298,6 @@ class ConfigurationTest(unittest.TestCase):
                         "channels": _napcat_channels(),
                         "context": {},
                         "tools": {"result_retention_days": 14},
-                        "autonomy": {
-                            "allowed_tools": [
-                                "curl",
-                                "mcp__brave-search__brave_web_search",
-                            ]
-                        },
                         "storage": {"database": "momoi.sqlite3"},
                         "logging": {},
                     }
@@ -314,16 +308,13 @@ class ConfigurationTest(unittest.TestCase):
             self.assertEqual(config.channel.owner_qq, "123")
             self.assertFalse(config.reflection.enabled)
             self.assertEqual(config.reflection.at, "03:00")
-            self.assertEqual(
-                config.autonomy.allowed_tools,
-                ("curl", "mcp__brave-search__brave_web_search"),
-            )
             self.assertEqual(config.heartbeat_prompt, "偶尔整理自己的摄影兴趣。")
             self.assertEqual(
                 config.heartbeat_prompt_path,
                 (root / "prompts" / "HEARTBEAT.md").resolve(),
             )
             self.assertEqual(config.heartbeat.max_interval_seconds, 5400)
+            self.assertFalse(hasattr(config, "autonomy"))
             self.assertFalse(hasattr(config.heartbeat, "reply_initial_interval_seconds"))
             self.assertFalse(hasattr(config.heartbeat, "reply_followup_interval_seconds"))
             self.assertEqual(config.dashboard.token, "")
