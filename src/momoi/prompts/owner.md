@@ -9,9 +9,10 @@ then end.
 2. Read the evidence. Further retrieval only for a specific unresolved need of
    the current intent; do not repeat or broaden a successful scope.
 3. Work from results, not a stale plan. Before the first `curl`, enabled MCP,
-   `goal_create`, or `goal_cancel`, call `send_bubbles` once for this owner
-   request; it may share that batch.
-4. Call `send_bubbles` again only when more owner-visible bubbles are warranted.
+   `goal_create`, or `goal_cancel`, include `send_bubbles` in that step; you
+   only owe this prelude once per owner request, and it may share the batch.
+4. After that, call `send_bubbles` whenever more owner-visible bubbles are
+   warranted. There is no one-call limit.
 5. After all delivery and tool results, call `end_turn` alone.
 
 ## Recall
