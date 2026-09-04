@@ -83,6 +83,61 @@ class TurnHarnessTest(unittest.TestCase):
         harness.accept("recall")
         self.assertIs(harness.project_surface(tools), tools)
 
+    def test_owner_progress_tools_require_preceding_bubbles_once(self) -> None:
+        harness = TurnHarness.for_stage(
+            "owner",
+            progress_tool_names=frozenset(
+                {"curl", "goal_create", "mcp__demo__lookup"}
+            ),
+        )
+        harness.accept("recall")
+        bubbles = ToolCall("say", "send_bubbles", {"bubbles": ["我看看"]})
+        curl = ToolCall("curl", "curl", {"url": "https://example.com"})
+
+        self.assertEqual(
+            harness.validate([curl]),
+            "send_bubbles_required_before_progress_work",
+        )
+        self.assertEqual(
+            harness.validate([curl, bubbles]),
+            "send_bubbles_required_before_progress_work",
+        )
+        self.assertIsNone(harness.validate([bubbles, curl]))
+        harness.observe([bubbles, curl])
+        self.assertIsNone(harness.validate([curl]))
+        harness.reset()
+        harness.accept("recall")
+        self.assertEqual(
+            harness.validate([curl]),
+            "send_bubbles_required_before_progress_work",
+        )
+
+    def test_owner_progress_rule_uses_calls_not_delivery_results(self) -> None:
+        harness = TurnHarness.for_stage(
+            "owner", progress_tool_names=frozenset({"curl"})
+        )
+        harness.accept("recall")
+        bubbles = ToolCall("say", "send_bubbles", {"bubbles": []})
+
+        self.assertIsNone(harness.validate([bubbles]))
+        harness.observe([bubbles])
+        self.assertTrue(harness.work_acknowledged)
+        self.assertIsNone(
+            harness.validate(
+                [ToolCall("curl", "curl", {"url": "https://example.com"})]
+            )
+        )
+
+    def test_progress_rule_is_owner_harness_only(self) -> None:
+        webhook = TurnHarness.for_stage(
+            "webhook", progress_tool_names=frozenset({"curl"})
+        )
+        self.assertIsNone(
+            webhook.validate(
+                [ToolCall("curl", "curl", {"url": "https://example.com"})]
+            )
+        )
+
     def test_assistant_text_invalidates_an_otherwise_valid_tool_call(self) -> None:
         harness = TurnHarness.for_stage("owner")
         recall = ToolCall("recall", "recall", {})

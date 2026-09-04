@@ -132,7 +132,6 @@ class ToolExecutor:
         }
         if journaled:
             arguments = dict(call.arguments)
-            arguments.pop("say_to_owner", None)
             self.journal(
                 turn_id,
                 "tool_call",

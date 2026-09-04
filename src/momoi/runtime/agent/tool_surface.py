@@ -22,7 +22,7 @@ from ..tool_contracts.runtime import (
     READ_TOOL_RESULT_SPEC,
     tool_enable_spec,
 )
-from .progress import decorate_tool_spec, public_tool_spec, requests_owner_progress
+from .progress import public_tool_spec, requests_owner_progress
 
 logger = logging.getLogger("momoi.runtime.turns")
 
@@ -43,12 +43,15 @@ class ToolSurface:
 
     @staticmethod
     def owner_progress_specs(specs: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        return [
-            decorate_tool_spec(spec)
-            if requests_owner_progress(spec)
-            else public_tool_spec(spec)
+        return [public_tool_spec(spec) for spec in specs]
+
+    def owner_progress_tool_names(self) -> frozenset[str]:
+        specs = [*AGENDA_TOOL_SPECS, *BUILTIN_TOOL_SPECS, *self.mcp.tool_specs]
+        return frozenset(
+            str(spec.get("name") or "")
             for spec in specs
-        ]
+            if requests_owner_progress(spec)
+        )
 
     def mcp_server_groups(self) -> dict[str, list[dict[str, Any]]]:
         groups: dict[str, list[dict[str, Any]]] = {}

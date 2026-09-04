@@ -1381,7 +1381,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         call = ToolCall(
                             "read-demo",
                             "mcp__demo__read",
-                            {"say_to_owner": "我看看这个值"},
+                            {},
                         )
                     else:
                         self.assertIn("dynamic tool works", json.dumps(messages))
@@ -1578,33 +1578,46 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "next_action": "测试",
                             "next_review_at": "",
                         }
+                        calls = []
                         if self.calls == 1:
-                            arguments["say_to_owner"] = "我先试着创建这个任务"
-                        call = ToolCall(
-                            f"bad-goal-{self.calls}",
-                            "goal_create",
-                            arguments,
+                            calls.append(
+                                ToolCall(
+                                    "start-message",
+                                    "send_bubbles",
+                                    {"bubbles": []},
+                                )
+                            )
+                        calls.append(
+                            ToolCall(
+                                f"bad-goal-{self.calls}",
+                                "goal_create",
+                                arguments,
+                            )
                         )
                     elif self.calls == 4:
                         self.assert_terminal_tools(tools)
-                        call = ToolCall(
-                            "failed-message",
-                            "send_bubbles",
-                            {
-                                "bubbles": ["创建任务失败：缺少有效的执行时间。"],
-                            },
-                        )
+                        calls = [
+                            ToolCall(
+                                "failed-message",
+                                "send_bubbles",
+                                {
+                                    "bubbles": ["创建任务失败：缺少有效的执行时间。"],
+                                },
+                            )
+                        ]
                     else:
                         self.assert_terminal_tools(tools)
-                        call = ToolCall(
-                            "failed-response",
-                            "end_turn",
-                            {
-                                "reply_wait": {"wait": False},
-                                "mood": {"decision": "unchanged"},
-                                "activity": {"decision": "unchanged"},
-                            },
-                        )
+                        calls = [
+                            ToolCall(
+                                "failed-response",
+                                "end_turn",
+                                {
+                                    "reply_wait": {"wait": False},
+                                    "mood": {"decision": "unchanged"},
+                                    "activity": {"decision": "unchanged"},
+                                },
+                            )
+                        ]
                     return ProviderResponse(
                         [
                             {
@@ -1613,8 +1626,9 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "name": call.name,
                                 "input": call.arguments,
                             }
+                            for call in calls
                         ],
-                        [call],
+                        calls,
                     )
 
                 @staticmethod
@@ -1634,7 +1648,12 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     [event], asyncio.Event(), daemon._turn_id(event.event_id)
                 )
             self.assertEqual(provider.calls, 5)
-            self.assertIn("缺少有效的执行时间", daemon.store.due_outbox()[0].text)
+            self.assertTrue(
+                any(
+                    "缺少有效的执行时间" in row.text
+                    for row in daemon.store.due_outbox()
+                )
+            )
             self.assertTrue(
                 any(
                     "Invalid isoformat string"
@@ -2437,7 +2456,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             daemon.store.close()
 
-    async def test_optional_tool_announce_preserves_history_and_limits_parallel_batch(
+    async def test_owner_harness_requires_bubbles_before_first_progress_tool(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -2494,9 +2513,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     if self.calls == 1:
                         curl = next(tool for tool in tools if tool["name"] == "curl")
                         schema = curl["input_schema"]
-                        if "say_to_owner" not in schema["properties"]:
-                            raise AssertionError(schema)
-                        if "say_to_owner" in schema.get("required", []):
+                        if "say_to_owner" in schema["properties"]:
                             raise AssertionError(schema)
                         calls = [
                             ToolCall(
@@ -2507,31 +2524,29 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         ]
                     elif self.calls == 2:
                         history = json.dumps(messages, ensure_ascii=False)
-                        if "owner_work_acknowledgement_required" not in history:
+                        if "send_bubbles_required_before_progress_work" not in history:
                             raise AssertionError(messages)
                         calls = [
                             ToolCall(
+                                "start-message",
+                                "send_bubbles",
+                                {"bubbles": ["先说这一句"]},
+                            ),
+                            ToolCall(
                                 "curl-one",
                                 "curl",
-                                {
-                                    "url": "https://one.example",
-                                    "say_to_owner": "先说这一句",
-                                },
+                                {"url": "https://one.example"},
                             ),
                             ToolCall(
                                 "curl-two",
                                 "curl",
-                                {
-                                    "url": "https://two.example",
-                                    "say_to_owner": "同批这句不应投递",
-                                },
+                                {"url": "https://two.example"},
                             ),
                         ]
                     elif self.calls == 3:
                         history = json.dumps(messages, ensure_ascii=False)
                         if (
                             "先说这一句" not in history
-                            or "同批这句不应投递" in history
                             or "first-result" not in history
                             or "second-result" not in history
                         ):
@@ -2593,17 +2608,15 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(provider.calls, 5)
             self.assertEqual(reply.messages, [])
             self.assertEqual(execute.await_count, 3)
-            for await_call in execute.await_args_list:
-                self.assertNotIn("say_to_owner", await_call.args[0].arguments)
             progress = daemon.store._db.execute(
                 """SELECT tool_call_id, text FROM turn_progress
-                   WHERE turn_id=? AND tool_call_id LIKE 'curl-%'
+                   WHERE turn_id=? AND tool_call_id='start-message'
                    ORDER BY created_at""",
                 (turn_id,),
             ).fetchall()
             self.assertEqual(
                 [(row["tool_call_id"], row["text"]) for row in progress],
-                [("curl-one", "先说这一句")],
+                [("start-message", "先说这一句")],
             )
             journal = [
                 json.loads(row["payload_json"])
@@ -2613,10 +2626,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     (turn_id,),
                 ).fetchall()
             ]
-            self.assertEqual(
-                [item["name"] for item in journal],
-                ["curl", "curl", "curl", "curl", "curl", "curl"],
-            )
             self.assertNotIn("say_to_owner", json.dumps(journal, ensure_ascii=False))
             self.assertIn("first-result", json.dumps(journal, ensure_ascii=False))
             daemon.store.close()

@@ -12,7 +12,6 @@ from ..turn_support import (
     tool_result_block,
 )
 from .harness import TurnHarness
-from .progress import announce_field, apply_tool_announce
 from .runtime_tools import begin_heartbeat, enable_tools, recall_owner_context
 from .workflow import AgentWorkflow, TurnExecutionSpec
 
@@ -30,7 +29,6 @@ SubmitOwnerContext = Callable[
 @dataclass(frozen=True)
 class ToolBatchState:
     visible_since_owner_update: bool = False
-    owner_work_acknowledged: bool = False
     previous_tool_name: str | None = None
     last_sent_bubbles: list[ChannelMessage] | None = None
     last_sent_channel: str = ""
@@ -56,7 +54,6 @@ class ToolBatchRequest:
     heartbeat_notification_key: str
     workflow: AgentWorkflow | None
     state: ToolBatchState
-    progress_channel: str
     prepare_heartbeat_context: PrepareHeartbeatContext
     submit_owner_context: SubmitOwnerContext
     settle_owner_updates: SettleOwnerUpdates
@@ -102,7 +99,6 @@ class ToolBatchExecutor:
         execution = request.execution
         state = request.state
         visible = state.visible_since_owner_update
-        acknowledged = state.owner_work_acknowledged
         previous_tool_name = state.previous_tool_name
         last_sent_bubbles = state.last_sent_bubbles
         last_sent_channel = state.last_sent_channel
@@ -120,21 +116,9 @@ class ToolBatchExecutor:
         request.messages.append(
             {"role": "assistant", "content": assistant_history_content}
         )
-        history_tool_inputs = {
-            str(block.get("id") or ""): block.get("input")
-            for block in (
-                assistant_history_content
-                if isinstance(assistant_history_content, list)
-                else []
-            )
-            if isinstance(block, dict)
-            and block.get("type") == "tool_use"
-            and isinstance(block.get("input"), dict)
-        }
         results: list[dict[str, Any]] = []
         owner_updates: list[IncomingMessage] = []
         allowed_tool_names = {str(spec["name"]) for spec in request.request_tools}
-        announce_delivered = False
 
         for index, call in enumerate(request.response.tool_calls):
             source = (
@@ -234,7 +218,6 @@ class ToolBatchExecutor:
                     result = delivery.result
                     if delivery.bubbles is not None:
                         visible = True
-                        acknowledged = acknowledged or delivery.acknowledges_work
                         last_sent_bubbles = copy.deepcopy(delivery.bubbles)
                         last_sent_channel = delivery.channel
             elif call.name == "tool_enable":
@@ -263,36 +246,6 @@ class ToolBatchExecutor:
                 result = None
                 if not call.id:
                     result = {"ok": False, "error": "missing_tool_call_id"}
-                else:
-                    announce = next(
-                        (
-                            announce_field(spec)
-                            for spec in request.request_tools
-                            if spec.get("name") == call.name
-                        ),
-                        None,
-                    )
-                    if announce:
-                        text = apply_tool_announce(call.arguments, announce)
-                        if announce_delivered:
-                            text = None
-                        history_arguments = history_tool_inputs.get(call.id)
-                        if isinstance(history_arguments, dict):
-                            if text is None:
-                                history_arguments.pop(announce, None)
-                            else:
-                                history_arguments[announce] = text
-                        if text is not None:
-                            self.store.queue_progress(
-                                request.turn_id,
-                                call.id,
-                                [text],
-                                request.progress_channel,
-                            )
-                            announce_delivered = True
-                            visible = True
-                            acknowledged = True
-                            self.outbox_changed.set()
                 if result is None:
                     with log_context(
                         stage=execution.stage,
@@ -378,7 +331,6 @@ class ToolBatchExecutor:
             external_effect=external_effect,
             state=ToolBatchState(
                 visible_since_owner_update=visible,
-                owner_work_acknowledged=acknowledged,
                 previous_tool_name=previous_tool_name,
                 last_sent_bubbles=last_sent_bubbles,
                 last_sent_channel=last_sent_channel,

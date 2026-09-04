@@ -7,15 +7,9 @@ from momoi.tools.contracts.agenda import AGENDA_TOOL_SPECS
 from momoi.tools.contracts.builtin import BUILTIN_TOOL_SPECS
 from momoi.contracts import OWNER_PROGRESS_BEFORE_FIRST_CALL, OWNER_PROGRESS_FIELD
 from momoi.mcp.prompt import MCP_TOOL_POLICY
-from momoi.models import ToolCall
 from momoi.runtime.agent.progress import (
-    ANNOUNCE_FIELD,
-    announce_field,
-    apply_tool_announce,
-    decorate_tool_spec,
-    missing_initial_work_announce,
+    public_tool_spec,
     requests_owner_progress,
-    take_announce_message,
 )
 from momoi.runtime.agent.tool_surface import ToolSurface
 from momoi.runtime.tool_contracts.conversation import send_bubbles_tool_spec
@@ -44,18 +38,14 @@ class ProgressAnnounceTest(unittest.TestCase):
             )
         )
 
-    def test_adds_say_to_owner_to_curl_schema(self) -> None:
+    def test_public_schema_removes_progress_metadata_without_adding_arguments(
+        self,
+    ) -> None:
         curl = next(spec for spec in BUILTIN_TOOL_SPECS if spec["name"] == "curl")
-        decorated = decorate_tool_spec(curl)
-        self.assertEqual(announce_field(curl), None)
-        self.assertEqual(announce_field(decorated), ANNOUNCE_FIELD)
-        self.assertNotIn(ANNOUNCE_FIELD, decorated["input_schema"]["required"])
-        announce_schema = decorated["input_schema"]["properties"][ANNOUNCE_FIELD]
-        self.assertEqual(announce_schema["type"], "string")
-        self.assertEqual(announce_schema["minLength"], 1)
-        self.assertEqual(announce_schema["maxLength"], 300)
-        self.assertLess(len(announce_schema["description"]), 700)
-        self.assertNotIn(ANNOUNCE_FIELD, curl["input_schema"]["properties"])
+        public = public_tool_spec(curl)
+        self.assertNotIn(OWNER_PROGRESS_FIELD, public)
+        self.assertNotIn("say_to_owner", public["input_schema"]["properties"])
+        self.assertIn(OWNER_PROGRESS_FIELD, curl)
 
     def test_send_bubbles_schema_stays_compact_without_losing_constraints(
         self,
@@ -95,52 +85,10 @@ class ProgressAnnounceTest(unittest.TestCase):
             ["demo", "other"],
         )
 
-    def test_first_external_batch_requires_one_initial_acknowledgement(self) -> None:
-        curl = next(spec for spec in BUILTIN_TOOL_SPECS if spec["name"] == "curl")
-        tools = [decorate_tool_spec(curl)]
-        missing = missing_initial_work_announce(
-            [ToolCall("first", "curl", {"url": "https://example.com"})],
-            tools,
-            owner_work_acknowledged=False,
-        )
-        self.assertEqual(missing, ("first", ANNOUNCE_FIELD))
-
-        announced = missing_initial_work_announce(
-            [
-                ToolCall(
-                    "first",
-                    "curl",
-                    {
-                        "url": "https://example.com",
-                        ANNOUNCE_FIELD: "嗯，我看看",
-                    },
-                )
-            ],
-            tools,
-            owner_work_acknowledged=False,
-        )
-        self.assertIsNone(announced)
-
-        later_silent = missing_initial_work_announce(
-            [ToolCall("later", "curl", {"url": "https://example.com"})],
-            tools,
-            owner_work_acknowledged=True,
-        )
-        self.assertIsNone(later_silent)
-
-        message_then_tool = missing_initial_work_announce(
-            [
-                ToolCall("say", "send_bubbles", {"bubbles": ["我先看看"]}),
-                ToolCall("first", "curl", {"url": "https://example.com"}),
-            ],
-            tools,
-            owner_work_acknowledged=False,
-        )
-        self.assertIsNone(message_then_tool)
-
-    def test_keeps_native_message_argument(self) -> None:
+    def test_public_schema_keeps_native_message_argument(self) -> None:
         spec = {
             "name": "mcp__demo__post",
+            OWNER_PROGRESS_FIELD: OWNER_PROGRESS_BEFORE_FIRST_CALL,
             "description": "demo",
             "input_schema": {
                 "type": "object",
@@ -148,32 +96,14 @@ class ProgressAnnounceTest(unittest.TestCase):
                 "required": ["message"],
             },
         }
-        decorated = decorate_tool_spec(spec)
-        self.assertEqual(announce_field(decorated), ANNOUNCE_FIELD)
-        self.assertEqual(decorated["input_schema"]["required"], ["message"])
+        public = public_tool_spec(spec)
+        self.assertEqual(public["input_schema"]["required"], ["message"])
         self.assertEqual(
-            decorated["input_schema"]["properties"]["message"],
+            public["input_schema"]["properties"]["message"],
             {"type": "string"},
         )
 
-    def test_take_announce_message_strips_field(self) -> None:
-        arguments = {"url": "https://example.com", ANNOUNCE_FIELD: "我去查一下快递"}
-        text = take_announce_message(arguments, ANNOUNCE_FIELD)
-        self.assertEqual(text, "我去查一下快递")
-        self.assertEqual(arguments, {"url": "https://example.com"})
-
-    def test_take_announce_message_allows_silence(self) -> None:
-        arguments = {"url": "https://example.com", ANNOUNCE_FIELD: "  "}
-        text = take_announce_message(arguments, ANNOUNCE_FIELD)
-        self.assertIsNone(text)
-        self.assertNotIn(ANNOUNCE_FIELD, arguments)
-
-        arguments = {"url": "https://example.com"}
-        text = take_announce_message(arguments, ANNOUNCE_FIELD)
-        self.assertIsNone(text)
-        self.assertEqual(arguments, {"url": "https://example.com"})
-
-    def test_only_owner_specs_advertise_say_to_owner(self) -> None:
+    def test_surface_keeps_progress_list_private_to_harness(self) -> None:
         channels = {"napcat": SimpleNamespace(name="napcat")}
         mcp = SimpleNamespace(
             tool_specs=[
@@ -195,31 +125,29 @@ class ProgressAnnounceTest(unittest.TestCase):
             spec["name"]: spec
             for spec in surface.owner_specs()
         }
-        mcp = {
+        mcp_specs = {
             spec["name"]: spec
             for spec in surface.mcp_server_groups()["brave-search"]
         }
         heartbeat = {spec["name"]: spec for spec in surface.self_directed_specs()}
-        self.assertEqual(announce_field(owner["curl"]), ANNOUNCE_FIELD)
-        self.assertEqual(announce_field(owner["goal_create"]), ANNOUNCE_FIELD)
-        self.assertEqual(announce_field(owner["goal_cancel"]), ANNOUNCE_FIELD)
         self.assertEqual(
-            announce_field(mcp["mcp__brave-search__brave_web_search"]),
-            ANNOUNCE_FIELD,
+            surface.owner_progress_tool_names(),
+            frozenset(
+                {
+                    "curl",
+                    "goal_create",
+                    "goal_cancel",
+                    "mcp__brave-search__brave_web_search",
+                }
+            ),
         )
-        self.assertIsNone(announce_field(owner["goal_update"]))
-        self.assertIsNone(announce_field(owner["write_file"]))
-        self.assertIsNone(announce_field(owner["read_file"]))
-        self.assertIsNone(announce_field(heartbeat["curl"]))
-
-    def test_announce_hook_extracts_owner_progress(self) -> None:
-        arguments = {"url": "https://example.com", ANNOUNCE_FIELD: "我去搜一下"}
-        text = apply_tool_announce(
-            arguments,
-            ANNOUNCE_FIELD,
-        )
-        self.assertEqual(text, "我去搜一下")
-        self.assertEqual(arguments, {"url": "https://example.com"})
+        for spec in [*owner.values(), *mcp_specs.values()]:
+            self.assertNotIn(OWNER_PROGRESS_FIELD, spec)
+        for spec in [*owner.values(), *mcp_specs.values(), *heartbeat.values()]:
+            self.assertNotIn(
+                "say_to_owner",
+                spec.get("input_schema", {}).get("properties", {}),
+            )
 
     def test_prompts_do_not_teach_announce_field(self) -> None:
         root = Path(__file__).resolve().parents[1] / "src" / "momoi" / "prompts"
@@ -231,7 +159,7 @@ class ProgressAnnounceTest(unittest.TestCase):
         ]
         for text in texts:
             self.assertNotIn("HassTurnOn", text)
-            self.assertNotIn(ANNOUNCE_FIELD, text)
+            self.assertNotIn("say_to_owner", text)
             self.assertNotIn("owner_progress", text)
             self.assertNotIn("require a `message`", text)
             self.assertNotIn("Each MCP tool requires `message`", text)

@@ -83,7 +83,6 @@ class BubbleDeliveryResult:
     result: dict[str, object]
     bubbles: list[ChannelMessage] | None = None
     channel: str = ""
-    acknowledges_work: bool = False
 
 
 class BubbleDelivery:
@@ -191,5 +190,4 @@ class BubbleDelivery:
             },
             bubbles=bubbles,
             channel=target.name,
-            acknowledges_work=not check_contact,
         )

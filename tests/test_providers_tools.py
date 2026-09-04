@@ -18,6 +18,7 @@ from momoi.config.models import (
     LLMConfig,
     ThinkingConfig,
 )
+from momoi.contracts import OWNER_PROGRESS_BEFORE_FIRST_CALL, OWNER_PROGRESS_FIELD
 from momoi.mcp.manager import MCPManager
 from momoi.models import (
     IncomingMessage,
@@ -872,7 +873,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "name": "lookup",
                                 "description": "Look up a record.",
                                 "input_schema": {"type": "object"},
-                                "x-momoi-owner-progress-hook": "say_to_owner",
+                                OWNER_PROGRESS_FIELD: OWNER_PROGRESS_BEFORE_FIRST_CALL,
                             }
                         ],
                     )

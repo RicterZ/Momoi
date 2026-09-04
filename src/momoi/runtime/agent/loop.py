@@ -1,4 +1,3 @@
-import copy
 import logging
 from typing import Any
 
@@ -15,7 +14,6 @@ from . import (
     WorkflowProtocolError,
 )
 from ..parsing import response_text
-from .progress import initial_announce_error_message, missing_initial_work_announce
 from .protocol import (
     handle_no_tool_response,
     harness_correction,
@@ -28,7 +26,6 @@ from ..turn_support import (
     MAX_CONSECUTIVE_TOOL_FAILURES,
     OwnerMessagesChanged,
     tool_error_block as _tool_error_block,
-    tool_result_block as _tool_result_block,
 )
 
 logger = logging.getLogger("momoi.runtime.turns")
@@ -79,7 +76,6 @@ class AgentLoop:
         last_tool_error = ""
         history_messages = max(0, len(messages) - 1)
         visible_since_owner_update = False
-        owner_work_acknowledged = False
         previous_tool_name: str | None = None
         last_sent_messages = None
         last_sent_channel = ""
@@ -97,7 +93,14 @@ class AgentLoop:
         stage = execution.stage
         if workflow is not None and workflow.stage != stage:
             raise ValueError("workflow and execution stages do not match")
-        harness = TurnHarness.for_stage(stage)
+        harness = TurnHarness.for_stage(
+            stage,
+            progress_tool_names=(
+                self.tool_surface.owner_progress_tool_names()
+                if stage == "owner"
+                else frozenset()
+            ),
+        )
         harness.validate_surface({str(tool["name"]) for tool in tools})
         while True:
             if reply_wait_turn and self.store.pending_owner_reply() is None:
@@ -111,7 +114,6 @@ class AgentLoop:
             )
             if updates:
                 visible_since_owner_update = False
-                owner_work_acknowledged = False
                 previous_tool_name = None
                 last_sent_messages = None
                 last_sent_channel = ""
@@ -193,7 +195,6 @@ class AgentLoop:
                     )
                 )
                 visible_since_owner_update = False
-                owner_work_acknowledged = False
                 previous_tool_name = None
                 last_sent_messages = None
                 last_sent_channel = ""
@@ -229,7 +230,6 @@ class AgentLoop:
             )
             if updates:
                 visible_since_owner_update = False
-                owner_work_acknowledged = False
                 previous_tool_name = None
                 last_sent_messages = None
                 last_sent_channel = ""
@@ -320,6 +320,7 @@ class AgentLoop:
                     ]
                 )
                 continue
+            harness.observe(response.tool_calls)
             if (
                 autonomous_goal_id
                 and len(response.tool_calls) == 1
@@ -409,54 +410,6 @@ class AgentLoop:
                     ]
                 )
                 continue
-            missing_announce = missing_initial_work_announce(
-                response.tool_calls,
-                request_tools,
-                owner_work_acknowledged=owner_work_acknowledged,
-            )
-            if missing_announce is not None:
-                missing_call_id, field = missing_announce
-                messages.append(
-                    {"role": "assistant", "content": copy.deepcopy(response.content)}
-                )
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": [
-                            (
-                                _tool_result_block(
-                                    call.id,
-                                    {
-                                        "ok": False,
-                                        "error": "owner_work_acknowledgement_required",
-                                        "message": initial_announce_error_message(field),
-                                    },
-                                )
-                                if call.id == missing_call_id
-                                else _tool_error_block(
-                                    call.id,
-                                    "superseded_by_owner_work_acknowledgement",
-                                )
-                            )
-                            for call in response.tool_calls
-                        ],
-                    }
-                )
-                failed_tool_rounds += 1
-                if failed_tool_rounds >= MAX_CONSECUTIVE_TOOL_FAILURES:
-                    messages.append(
-                        {
-                            "role": "user",
-                            "content": (
-                                "[Trusted runtime protocol stop. Tool calls failed "
-                                "validation three consecutive times. Do not retry tools "
-                                "in this Turn. Use send_bubbles for the last concrete "
-                                "failure reason without end_turn. After its result, call "
-                                "end_turn alone on the next step.]"
-                            ),
-                        }
-                    )
-                continue
             batch = await self.tool_batch.execute(
                 ToolBatchRequest(
                     response=response,
@@ -478,12 +431,10 @@ class AgentLoop:
                     workflow=workflow,
                     state=ToolBatchState(
                         visible_since_owner_update=visible_since_owner_update,
-                        owner_work_acknowledged=owner_work_acknowledged,
                         previous_tool_name=previous_tool_name,
                         last_sent_bubbles=last_sent_messages,
                         last_sent_channel=last_sent_channel,
                     ),
-                    progress_channel=self.channel.name,
                     prepare_heartbeat_context=self.prepare_heartbeat_context,
                     submit_owner_context=self.submit_owner_context,
                     settle_owner_updates=self.owner_updates.settle,
@@ -493,7 +444,6 @@ class AgentLoop:
             updates = batch.owner_updates
             external_tool_used = external_tool_used or batch.external_effect
             visible_since_owner_update = batch.state.visible_since_owner_update
-            owner_work_acknowledged = batch.state.owner_work_acknowledged
             previous_tool_name = batch.state.previous_tool_name
             last_sent_messages = batch.state.last_sent_bubbles
             last_sent_channel = batch.state.last_sent_channel

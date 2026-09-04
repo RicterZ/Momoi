@@ -11,12 +11,13 @@ class TurnHarnessSpec:
     stage: str
     first_tool: str | None
     terminal_tool: str
+    require_bubbles_before_progress_work: bool = False
 
 
 TURN_HARNESS_SPECS = {
     spec.stage: spec
     for spec in (
-        TurnHarnessSpec("owner", "recall", "end_turn"),
+        TurnHarnessSpec("owner", "recall", "end_turn", True),
         TurnHarnessSpec("heartbeat", "heartbeat_begin", "end_turn"),
         TurnHarnessSpec("reply_followup", "send_bubbles", "end_turn"),
         TurnHarnessSpec("webhook", None, "end_turn"),
@@ -38,20 +39,31 @@ class TurnHarness:
     """Mutable protocol phase for a single Turn execution."""
 
     spec: TurnHarnessSpec
+    progress_tool_names: frozenset[str] = frozenset()
     started: bool = False
+    work_acknowledged: bool = False
 
     def __post_init__(self) -> None:
         self.reset()
 
     @classmethod
-    def for_stage(cls, stage: str) -> "TurnHarness":
+    def for_stage(
+        cls,
+        stage: str,
+        *,
+        progress_tool_names: frozenset[str] = frozenset(),
+    ) -> "TurnHarness":
         try:
-            return cls(TURN_HARNESS_SPECS[stage])
+            return cls(
+                TURN_HARNESS_SPECS[stage],
+                progress_tool_names=progress_tool_names,
+            )
         except KeyError as error:
             raise ValueError(f"missing Turn harness for stage: {stage}") from error
 
     def reset(self) -> None:
         self.started = self.spec.first_tool is None
+        self.work_acknowledged = False
 
     def validate_surface(self, tool_names: set[str]) -> None:
         required = {self.spec.terminal_tool}
@@ -88,7 +100,25 @@ class TurnHarness:
         terminal = self.spec.terminal_tool
         if terminal in names and (len(names) != 1 or names[0] != terminal):
             return f"{terminal}_must_be_alone"
+        if (
+            self.spec.require_bubbles_before_progress_work
+            and not self.work_acknowledged
+        ):
+            bubbles_seen = False
+            for name in names:
+                if name == "send_bubbles":
+                    bubbles_seen = True
+                elif name in self.progress_tool_names and not bubbles_seen:
+                    return "send_bubbles_required_before_progress_work"
         return None
+
+    def observe(self, calls: list[ToolCall]) -> None:
+        """Record protocol-visible calls without interpreting tool results."""
+
+        if self.spec.require_bubbles_before_progress_work and any(
+            call.name == "send_bubbles" for call in calls
+        ):
+            self.work_acknowledged = True
 
     def accept(self, tool_name: str) -> None:
         if tool_name == self.spec.first_tool:
