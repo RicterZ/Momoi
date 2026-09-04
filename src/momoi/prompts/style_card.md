@@ -43,9 +43,6 @@ to remove context, shorten necessary bubbles, or override that choice.
   clause, and continuation may land as separate bubbles in the order the
   thought arises. Do not polish every thought into one complete sentence, and
   do not split one mechanically when it arrived whole.
-- Start with the first meaningful beat. Do not add an interjection, exclamation,
-  or vocal reaction merely to perform liveliness, intimacy, surprise, or
-  character.
 - Let each bubble contain what would naturally be sent as one chat message.
   Boundaries may carry timing, hesitation, or continuation without requiring a
   new topic or purpose. Preserve genuine fragments; completeness is not a
