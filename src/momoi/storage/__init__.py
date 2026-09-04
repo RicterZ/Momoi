@@ -10,6 +10,7 @@ from .memory_values import (
     truncate_tokens,
 )
 from .reflection_values import REFLECTION_MEMORY_KINDS
+from .episode_consolidation import EPISODE_CONSOLIDATION_BATCH_SIZE
 from .store import Store
 from .semantic_documents import (
     DOCUMENT_TEMPLATE_VERSION,
@@ -33,6 +34,7 @@ __all__ = [
     "memory_snapshot_fingerprint",
     "truncate_tokens",
     "DOCUMENT_TEMPLATE_VERSION",
+    "EPISODE_CONSOLIDATION_BATCH_SIZE",
     "QUERY_TEMPLATE_VERSION",
     "SEMANTIC_PROVIDER",
     "SemanticDocument",

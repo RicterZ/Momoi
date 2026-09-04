@@ -7,6 +7,7 @@ import uuid
 from .episode_sql import runtime_archive_kind_sql
 
 EPISODE_CONSOLIDATION_LOOKBACK_SECONDS = 30 * 24 * 60 * 60
+EPISODE_CONSOLIDATION_BATCH_SIZE = 12
 
 
 class EpisodeConsolidationStore:
@@ -110,11 +111,16 @@ class EpisodeConsolidationStore:
             (limit,),
         ).fetchall()
 
-    def episode_consolidation_pending_count(self, limit: int = 6) -> int:
+    def episode_consolidation_pending_count(
+        self, limit: int = EPISODE_CONSOLIDATION_BATCH_SIZE
+    ) -> int:
         return len(self._episode_consolidation_pending_rows(limit))
 
     def claim_episode_consolidation_candidate(
-        self, limit: int = 6, *, minimum: int = 6
+        self,
+        limit: int = EPISODE_CONSOLIDATION_BATCH_SIZE,
+        *,
+        minimum: int = EPISODE_CONSOLIDATION_BATCH_SIZE,
     ) -> dict[str, object] | None:
         limit = max(1, limit)
         minimum = max(1, min(minimum, limit))

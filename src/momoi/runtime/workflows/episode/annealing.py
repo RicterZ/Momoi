@@ -4,7 +4,7 @@ from typing import Any
 
 from ....observability.events import log_event
 from ....models import ToolCall
-from ....storage import estimate_tokens
+from ....storage import EPISODE_CONSOLIDATION_BATCH_SIZE, estimate_tokens
 from ...agent import AgentWorkflow
 from ...turn_support import EPISODE_SUMMARY_SYSTEM_PROMPT
 from .contracts import EPISODE_SUMMARY_FINISH_SPEC
@@ -17,7 +17,11 @@ class EpisodeAnnealingWorkflow:
     async def _run_episode_annealing_once(
         self, *, allow_partial_consolidation: bool = False
     ) -> bool:
-        minimum = 1 if allow_partial_consolidation else 6
+        minimum = (
+            1
+            if allow_partial_consolidation
+            else EPISODE_CONSOLIDATION_BATCH_SIZE
+        )
         pending_count = self.store.episode_consolidation_pending_count()
         log_event(
             logger,
@@ -186,4 +190,3 @@ class EpisodeAnnealingWorkflow:
         except Exception:
             self.store.release_episode_annealing(episode_id)
             raise
-

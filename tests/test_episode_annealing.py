@@ -252,7 +252,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                     ),
                 )
             )
-            for ordinal in range(1, 7):
+            for ordinal in range(1, 13):
                 daemon.store.commit_turn(
                     [],
                     f"pending-{ordinal}",
@@ -844,7 +844,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
             daemon.store.create_episode("长期项目", episode_id="episode-main")
             for ordinal in range(1, 6):
                 add_turn(daemon, ordinal)
-            for ordinal in range(1, 7):
+            for ordinal in range(1, 13):
                 daemon.store.commit_turn(
                     [],
                     f"ping-{ordinal}",
@@ -888,7 +888,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                             ),
                             re.MULTILINE,
                         )
-                        self.assertEqual(len(ids), 6)
+                        self.assertEqual(len(ids), 12)
                         response = workflow_calls_response(
                             [
                                 (
@@ -897,7 +897,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                                         "decisions": [
                                             {
                                                 "action": "ignore",
-                                                "turn_ids": ids[:3],
+                                                "turn_ids": ids[:6],
                                                 "reason": "low information",
                                             }
                                         ]
@@ -909,7 +909,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                                         "decisions": [
                                             {
                                                 "action": "ignore",
-                                                "turn_ids": ids[3:5],
+                                                "turn_ids": ids[6:-1],
                                                 "reason": "low information",
                                             },
                                             {
@@ -975,7 +975,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 daemon.store._db.execute(
                     """SELECT action FROM episode_consolidation_decisions
-                       WHERE turn_id='pending-6'"""
+                       WHERE turn_id='pending-12'"""
                 ).fetchone()["action"],
                 "deferred",
             )
@@ -991,7 +991,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(config(directory))
-            for ordinal in range(1, 7):
+            for ordinal in range(1, 13):
                 daemon.store.commit_turn(
                     [],
                     f"pending-{ordinal}",
@@ -1018,11 +1018,11 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                         EPISODE_CONSOLIDATION_FINISH_SPEC,
                     ]
                     assert kwargs["require_tool"] is True
-                    if calls == 7:
+                    if calls == 13:
                         return workflow_response(
                             "episode_consolidation_finish", {}
                         )
-                    action = "defer" if calls == 6 else "ignore"
+                    action = "defer" if calls == 12 else "ignore"
                     return workflow_response(
                         "episode_classify_turns",
                         {
@@ -1039,7 +1039,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
 
             daemon.provider = Provider()  # type: ignore[assignment]
             self.assertTrue(await daemon._consolidate_episode_turns(candidate))
-            self.assertEqual(calls, 7)
+            self.assertEqual(calls, 13)
             self.assertEqual(
                 daemon.store.episode_consolidation_remaining(turn_ids), []
             )

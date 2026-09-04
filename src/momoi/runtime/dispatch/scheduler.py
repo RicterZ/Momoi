@@ -4,6 +4,7 @@ from time import time
 
 from ...observability.events import log_event
 from ...observability.values import safe_preview
+from ...storage import EPISODE_CONSOLIDATION_BATCH_SIZE
 from ..jobs import AutonomousJob
 
 logger = logging.getLogger("momoi.runtime.daemon")
@@ -33,7 +34,10 @@ class Scheduler:
         while not stop.is_set():
             quiet_for = loop.time() - self._last_owner_activity_at
             if self._episode_annealing_is_idle():
-                if self.store.episode_consolidation_pending_count() >= 6:
+                if (
+                    self.store.episode_consolidation_pending_count()
+                    >= EPISODE_CONSOLIDATION_BATCH_SIZE
+                ):
                     return False
                 if quiet_for >= self.config.episode_annealing.idle_seconds:
                     return True
