@@ -11,7 +11,13 @@ from .protocol import owner_request_messages
 
 
 Complete = Callable[
-    [list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], bool],
+    [
+        list[dict[str, Any]],
+        list[dict[str, Any]],
+        list[dict[str, Any]],
+        bool,
+        str | None,
+    ],
     Awaitable[ProviderResponse],
 ]
 SystemPolicy = Callable[
@@ -47,6 +53,7 @@ class ModelRoundRunner:
         remind_owner_bubbles: bool,
         harness_started: bool,
         require_tool: bool,
+        required_tool: str | None,
         history_messages: int,
         stage: str,
         turn_id: str,
@@ -90,6 +97,7 @@ class ModelRoundRunner:
                 request_messages,
                 request_tools,
                 require_tool,
+                required_tool,
             )
 
         metrics = response.usage or {}

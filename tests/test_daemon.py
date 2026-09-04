@@ -1870,8 +1870,13 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             or "reply_wait" in system_request
                         ):
                             raise AssertionError(__)
-                        expected = {"heartbeat_begin"}
-                        if names != expected:
+                        expected = {
+                            "heartbeat_begin",
+                            "curl",
+                            "send_bubbles",
+                            "end_turn",
+                        }
+                        if not expected.issubset(names):
                             raise AssertionError(names)
                         call = ToolCall(
                             "heartbeat-begin-one",
@@ -3161,17 +3166,21 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sent, ["我先处理一下", "测试回复一", "测试回复二"])
         self.assertEqual(len(llm_requests), 8)
         initial_tools = [tool["name"] for tool in llm_requests[0]["tools"]]
-        self.assertEqual(initial_tools, ["recall"])
         second_tools = [tool["name"] for tool in llm_requests[1]["tools"]]
+        self.assertEqual(initial_tools, second_tools)
         self.assertIn("send_bubbles", second_tools)
         self.assertIn("end_turn", second_tools)
-        self.assertNotIn("tool_choice", llm_requests[0])
+        self.assertEqual(
+            llm_requests[0]["tool_choice"],
+            {"type": "tool", "name": "recall"},
+        )
         self.assertNotIn("Context planning protocol", str(llm_requests[0]["system"]))
         self.assertIn("send_bubbles", second_tools)
         final_tools = [tool["name"] for tool in llm_requests[7]["tools"]]
         self.assertIn("send_bubbles", final_tools)
         self.assertIn("end_turn", final_tools)
         self.assertIn("memory_search", final_tools)
+        self.assertEqual(final_tools, initial_tools)
         self.assertNotIn("tool_choice", llm_requests[7])
         self.assertEqual(
             llm_requests[0]["system"][0]["cache_control"], {"type": "ephemeral"}
@@ -3180,13 +3189,11 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(
             llm_requests[0]["system"][0]["text"].rstrip().endswith("You are Momoi.")
         )
-        self.assertEqual(len(llm_requests[0]["system"]), 1)
+        self.assertEqual(len(llm_requests[0]["system"]), 2)
+        self.assertIn("Memory tools", llm_requests[0]["system"][1]["text"])
         self.assertEqual(len(llm_requests[7]["system"]), 2)
         self.assertIn("Memory tools", llm_requests[7]["system"][1]["text"])
-        self.assertEqual(
-            llm_requests[0]["system"][0]["text"],
-            llm_requests[7]["system"][0]["text"],
-        )
+        self.assertEqual(llm_requests[0]["system"], llm_requests[7]["system"])
         self.assertEqual(
             llm_requests[1]["messages"][-1]["content"][0]["type"], "tool_result"
         )

@@ -80,6 +80,7 @@ class AnthropicProvider:
         tools: list[dict[str, Any]] | None = None,
         *,
         require_tool: bool = False,
+        required_tool: str | None = None,
     ) -> ProviderResponse:
         if self._session is None:
             raise RuntimeError("provider is not started")
@@ -104,7 +105,12 @@ class AnthropicProvider:
                 }
                 for tool in tools
             ]
-            if require_tool:
+            if config.tool_choice and required_tool:
+                payload["tool_choice"] = {
+                    "type": "tool",
+                    "name": required_tool,
+                }
+            elif require_tool and config.tool_choice:
                 payload["tool_choice"] = {"type": "any"}
         log_tool_schema("anthropic", payload.get("tools"))
         dump_path = dump_request(self.dump_dir, "anthropic", payload, require_tool)

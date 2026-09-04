@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import Any
 
 from ...models import ToolCall
 
@@ -75,15 +74,6 @@ class TurnHarness:
                 f"Turn harness {self.spec.stage} is missing tools: "
                 + ", ".join(sorted(missing))
             )
-
-    def project_surface(
-        self, tools: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
-        """Expose only the required opening tool until it succeeds."""
-
-        if self.started or self.spec.first_tool is None:
-            return tools
-        return [tool for tool in tools if tool.get("name") == self.spec.first_tool]
 
     def validate(
         self, calls: list[ToolCall], *, has_assistant_text: bool = False

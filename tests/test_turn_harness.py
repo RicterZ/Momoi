@@ -70,19 +70,6 @@ class TurnHarnessTest(unittest.TestCase):
         harness.accept("recall")
         self.assertEqual(harness.validate([recall]), "recall_already_completed")
 
-    def test_first_tool_is_the_only_tool_visible_until_it_succeeds(self) -> None:
-        harness = TurnHarness.for_stage("owner")
-        tools = [
-            {"name": "recall"},
-            {"name": "send_bubbles"},
-            {"name": "curl"},
-            {"name": "end_turn"},
-        ]
-
-        self.assertEqual(harness.project_surface(tools), [{"name": "recall"}])
-        harness.accept("recall")
-        self.assertIs(harness.project_surface(tools), tools)
-
     def test_owner_progress_tools_require_preceding_bubbles_once(self) -> None:
         harness = TurnHarness.for_stage(
             "owner",

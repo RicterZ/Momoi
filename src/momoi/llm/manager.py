@@ -92,6 +92,7 @@ class ProviderManager:
         tools: list[dict[str, Any]] | None = None,
         *,
         require_tool: bool = False,
+        required_tool: str | None = None,
     ) -> ProviderResponse:
         async with self._state_lock:
             state = self._current
@@ -102,6 +103,7 @@ class ProviderManager:
                 messages,
                 tools,
                 require_tool=require_tool,
+                required_tool=required_tool,
             )
         finally:
             await self._release(state)

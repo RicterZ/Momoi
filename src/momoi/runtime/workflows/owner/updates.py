@@ -87,6 +87,7 @@ class OwnerUpdateController:
         tools: list[dict[str, Any]],
         *,
         require_tool: bool,
+        required_tool: str | None,
         current_events: list[IncomingMessage],
         channel_name: str,
         provider: Any,
@@ -103,7 +104,13 @@ class OwnerUpdateController:
             raise OwnerMessagesChanged(initial)
 
         provider_task = asyncio.create_task(
-            provider.complete(system, messages, tools, require_tool=require_tool)
+            provider.complete(
+                system,
+                messages,
+                tools,
+                require_tool=require_tool,
+                required_tool=required_tool,
+            )
         )
         try:
             while True:

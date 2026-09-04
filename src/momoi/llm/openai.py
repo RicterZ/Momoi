@@ -190,6 +190,7 @@ class OpenAIProvider:
         tools: list[dict[str, Any]] | None = None,
         *,
         require_tool: bool = False,
+        required_tool: str | None = None,
     ) -> ProviderResponse:
         if self._session is None:
             raise RuntimeError("provider is not started")
@@ -217,7 +218,12 @@ class OpenAIProvider:
                 }
                 for tool in tools
             ]
-            if require_tool and config.tool_choice:
+            if config.tool_choice and required_tool:
+                payload["tool_choice"] = {
+                    "type": "function",
+                    "function": {"name": required_tool},
+                }
+            elif require_tool and config.tool_choice:
                 payload["tool_choice"] = "required"
         log_tool_schema("openai", payload.get("tools"))
         dump_path = dump_request(self.dump_dir, "openai", payload, require_tool)

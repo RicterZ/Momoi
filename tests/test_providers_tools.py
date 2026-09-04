@@ -876,6 +876,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 OWNER_PROGRESS_FIELD: OWNER_PROGRESS_BEFORE_FIRST_CALL,
                             }
                         ],
+                        required_tool="lookup",
                     )
                 self.assertEqual(response.content[0]["text"], "ok")
                 with self.assertRaisesRegex(ProviderError, "invalid request"):
@@ -899,6 +900,10 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                     "input_schema": {"type": "object"},
                 }
             ],
+        )
+        self.assertEqual(
+            requests[0]["tool_choice"],
+            {"type": "tool", "name": "lookup"},
         )
         self.assertEqual(
             requests[0]["messages"][0]["content"][0]["text"],  # type: ignore[index]
@@ -1541,6 +1546,33 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                         }
                     ],
                     require_tool=True,
+                    required_tool="end_turn",
+                )
+            provider_with_named_tool_choice = OpenAIProvider(
+                LLMConfig(
+                    base_url=str(server.make_url("/")).rstrip("/"),
+                    api_key="openai-test-key",
+                    model="named-tool-model",
+                    max_tokens=100,
+                    temperature=0,
+                    timeout_seconds=1,
+                    max_retries=0,
+                    api_format="openai",
+                )
+            )
+            async with provider_with_named_tool_choice:
+                await provider_with_named_tool_choice.complete(
+                    "system",
+                    [{"role": "user", "content": "测试"}],
+                    [
+                        {
+                            "name": "end_turn",
+                            "description": "Finish the Turn.",
+                            "input_schema": {"type": "object"},
+                        }
+                    ],
+                    require_tool=True,
+                    required_tool="end_turn",
                 )
         finally:
             await server.close()
@@ -1571,6 +1603,10 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["tools"][0]["function"]["name"], "end_turn")
         self.assertEqual(payload["tool_choice"], "required")
         self.assertNotIn("tool_choice", requests[1][0])
+        self.assertEqual(
+            requests[2][0]["tool_choice"],
+            {"type": "function", "function": {"name": "end_turn"}},
+        )
 
     async def test_openai_invalid_tool_arguments_keep_parse_error(self) -> None:
         async def completion(_: web.Request) -> web.Response:

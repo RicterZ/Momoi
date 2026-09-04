@@ -133,7 +133,10 @@ class AgentLoop:
             request_tools = (
                 [AUTONOMOUS_FINISH_SPEC]
                 if force_autonomous_finish
-                else harness.project_surface(tools)
+                else tools
+            )
+            required_tool = (
+                harness.spec.first_tool if not harness.started else None
             )
             llm_round += 1
             require_tool = bool(
@@ -147,6 +150,7 @@ class AgentLoop:
                 request_messages: list[dict[str, Any]],
                 projected_tools: list[dict[str, Any]],
                 required: bool,
+                selected_tool: str | None,
             ):
                 if accept_owner_updates:
                     return await self.owner_updates.complete(
@@ -154,6 +158,7 @@ class AgentLoop:
                         request_messages,
                         projected_tools,
                         require_tool=required,
+                        required_tool=selected_tool,
                         current_events=current_events,
                         channel_name=delivery_channel.name,
                         provider=self.provider,
@@ -163,6 +168,7 @@ class AgentLoop:
                     request_messages,
                     projected_tools,
                     require_tool=required,
+                    required_tool=selected_tool,
                 )
 
             try:
@@ -180,6 +186,7 @@ class AgentLoop:
                     remind_owner_bubbles=remind_owner_bubbles,
                     harness_started=harness.started,
                     require_tool=require_tool,
+                    required_tool=required_tool,
                     history_messages=history_messages,
                     stage=stage,
                     turn_id=turn_id,
