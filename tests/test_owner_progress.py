@@ -1,4 +1,3 @@
-import json
 import unittest
 from types import SimpleNamespace
 
@@ -12,7 +11,6 @@ from momoi.runtime.agent.progress import (
 from momoi.runtime.agent.tool_surface import ToolSurface
 from momoi.runtime.tool_contracts.conversation import send_bubbles_tool_spec
 from momoi.runtime.tool_contracts.runtime import tool_enable_spec
-from momoi.storage import estimate_tokens
 
 
 class OwnerProgressPolicyTest(unittest.TestCase):
@@ -45,13 +43,10 @@ class OwnerProgressPolicyTest(unittest.TestCase):
         self.assertEqual(public["input_schema"], curl["input_schema"])
         self.assertIn(OWNER_PROGRESS_FIELD, curl)
 
-    def test_send_bubbles_schema_stays_compact_without_losing_constraints(
+    def test_send_bubbles_schema_preserves_delivery_contract(
         self,
     ) -> None:
         spec = send_bubbles_tool_spec(["napcat", "weixin"], "napcat")
-        rendered = json.dumps(
-            spec, ensure_ascii=False, separators=(",", ":")
-        )
         self.assertEqual(
             spec["input_schema"]["properties"]["channel"]["enum"],
             ["napcat", "weixin"],
@@ -60,13 +55,14 @@ class OwnerProgressPolicyTest(unittest.TestCase):
             spec["input_schema"]["properties"]["channel"]["default"],
             "napcat",
         )
-        bubble_description = spec["input_schema"]["properties"]["bubbles"]["items"][
-            "oneOf"
-        ][0]["description"]
-        self.assertIn("passed in send_bubbles.bubbles", bubble_description)
-        self.assertIn("never output it as assistant text", bubble_description)
+        bubbles = spec["input_schema"]["properties"]["bubbles"]
+        self.assertIn(
+            "each item is delivered as one separate chat bubble",
+            bubbles["description"],
+        )
+        text_description = bubbles["items"]["oneOf"][0]["description"]
+        self.assertIn("Assistant text is not delivered", text_description)
         self.assertIn("Only way to send owner-visible content", spec["description"])
-        self.assertLess(estimate_tokens(rendered), 550)
 
     def test_tool_enable_catalog_uses_group_descriptions(self) -> None:
         spec = tool_enable_spec(

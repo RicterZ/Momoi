@@ -30,10 +30,10 @@ CHANNEL_BUBBLE_SCHEMA: dict[str, Any] = {
             "type": "string",
             "minLength": 1,
             "description": (
-                "One non-empty item passed in send_bubbles.bubbles; never output it "
-                "as assistant text. Split blank lines into items. emotion:// must "
-                "exactly match emotion://<listed-slug> from <emotion_catalog> and "
-                "sends a standalone reaction image."
+                "Non-empty text content. Assistant text is not delivered. Put "
+                "blank-line-separated text in separate bubbles. An emotion:// value "
+                "must exactly match emotion://<listed-slug> from <emotion_catalog>; "
+                "it sends a standalone reaction image."
             ),
         },
         {
@@ -313,10 +313,10 @@ def heartbeat_end_turn_tool_spec() -> dict[str, Any]:
 SEND_BUBBLES_TOOL_SPEC: dict[str, Any] = {
     "name": "send_bubbles",
     "description": (
-        "Only way to send owner-visible content. Call it with the exact bubbles; "
-        "assistant text sends nothing. After its result and all work, call end_turn "
-        "alone next step. Text may accompany images; file, video, audio, and record "
-        "items must stand alone."
+        "Only way to send owner-visible content. Call with the exact bubbles; "
+        "assistant text is not delivered. After delivery and all work, call end_turn "
+        "alone. Text may accompany images; files, video, audio, and records must "
+        "stand alone."
     ),
     "input_schema": {
         "type": "object",
@@ -324,6 +324,10 @@ SEND_BUBBLES_TOOL_SPEC: dict[str, Any] = {
             "bubbles": {
                 "type": "array",
                 "minItems": 1,
+                "description": (
+                    "Ordered owner-visible messages; each item is delivered as one "
+                    "separate chat bubble."
+                ),
                 "items": CHANNEL_BUBBLE_SCHEMA,
             },
         },

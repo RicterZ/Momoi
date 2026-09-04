@@ -150,8 +150,7 @@ AUTONOMOUS_SEND_BUBBLES_SPEC: dict[str, Any] = {
     "name": "send_bubbles",
     "description": (
         "Send one useful autonomous notification after checking current conversation. "
-        "Stay silent if covered or stale. Separate distinct conversational beats "
-        "into bubbles."
+        "Stay silent if covered or stale."
     ),
     "input_schema": {
         "type": "object",
@@ -159,6 +158,10 @@ AUTONOMOUS_SEND_BUBBLES_SPEC: dict[str, Any] = {
             "bubbles": {
                 "type": "array",
                 "minItems": 1,
+                "description": (
+                    "Ordered notification messages; each item is delivered as one "
+                    "separate chat bubble."
+                ),
                 "items": {"type": "string", "minLength": 1, "maxLength": 500},
             },
             "reason": {"type": "string"},
