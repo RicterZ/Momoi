@@ -733,10 +733,10 @@ class StorageMemoryTest(unittest.TestCase):
             )
             store.close()
 
-    def test_episode_consolidation_waits_for_twelve_eligible_turns(self) -> None:
+    def test_episode_consolidation_waits_for_six_eligible_turns(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
-            for ordinal in range(1, 12):
+            for ordinal in range(1, 6):
                 store.commit_turn(
                     [],
                     f"pending-{ordinal}",
@@ -746,12 +746,12 @@ class StorageMemoryTest(unittest.TestCase):
 
             self.assertIsNone(store.claim_episode_consolidation_candidate())
 
-            store.commit_turn([], "pending-12", AgentReply([]), turn_id="turn-12")
+            store.commit_turn([], "pending-6", AgentReply([]), turn_id="turn-6")
             candidate = store.claim_episode_consolidation_candidate()
             self.assertIsNotNone(candidate)
             self.assertEqual(
                 [turn["turn_id"] for turn in candidate["turns"]],
-                [f"turn-{ordinal}" for ordinal in range(1, 13)],
+                [f"turn-{ordinal}" for ordinal in range(1, 7)],
             )
             store.close()
 

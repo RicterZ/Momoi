@@ -5,7 +5,6 @@ from time import time
 from ...observability.events import log_event
 from ...observability.values import safe_preview
 from ...storage import (
-    EPISODE_CONSOLIDATION_BATCH_SIZE,
     EPISODE_CONSOLIDATION_DEFER_TIMEOUT_SECONDS,
 )
 from ..jobs import AutonomousJob
@@ -36,14 +35,11 @@ class Scheduler:
         loop = asyncio.get_running_loop()
         while not stop.is_set():
             quiet_for = loop.time() - self._last_owner_activity_at
-            if self._episode_annealing_is_idle():
-                if (
-                    self.store.episode_consolidation_pending_count()
-                    >= EPISODE_CONSOLIDATION_BATCH_SIZE
-                ):
-                    return False
-                if quiet_for >= self.config.episode_annealing.idle_seconds:
-                    return True
+            if (
+                self._episode_annealing_is_idle()
+                and quiet_for >= self.config.episode_annealing.idle_seconds
+            ):
+                return True
             remaining = max(
                 0.05,
                 self.config.episode_annealing.idle_seconds - quiet_for,
@@ -78,14 +74,10 @@ class Scheduler:
             self.episode_annealing_requested.clear()
             if not self.config.episode_annealing.enabled:
                 continue
-            allow_partial = await self._wait_for_episode_annealing_ready(stop)
-            if allow_partial is None:
+            ready = await self._wait_for_episode_annealing_ready(stop)
+            if ready is None:
                 return
-            task = asyncio.create_task(
-                self._run_episode_annealing_once(
-                    allow_partial_consolidation=allow_partial
-                )
-            )
+            task = asyncio.create_task(self._run_episode_annealing_once())
             self._active_annealing = task
             try:
                 completed = await task

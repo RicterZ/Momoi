@@ -286,7 +286,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(revived["failure_reason"])
             recovered.store.close()
 
-    async def test_partial_consolidation_uses_owner_idle_timeout(self) -> None:
+    async def test_episode_maintenance_uses_owner_idle_timeout(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(
                 replace(
@@ -304,16 +304,16 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
             daemon._last_owner_activity_at = loop.time()
 
             started_at = loop.time()
-            allow_partial = await asyncio.wait_for(
+            ready = await asyncio.wait_for(
                 daemon._wait_for_episode_annealing_ready(asyncio.Event()),
                 timeout=0.2,
             )
 
-            self.assertTrue(allow_partial)
+            self.assertTrue(ready)
             self.assertGreaterEqual(loop.time() - started_at, 0.015)
             daemon.store.close()
 
-    async def test_full_consolidation_batch_bypasses_owner_idle_timeout(
+    async def test_full_consolidation_batch_uses_owner_idle_timeout(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -321,12 +321,12 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                 replace(
                     config(directory),
                     episode_annealing=EpisodeAnnealingConfig(
-                        idle_seconds=60,
+                        idle_seconds=0.02,
                         max_seconds=1,
                     ),
                 )
             )
-            for ordinal in range(1, 13):
+            for ordinal in range(1, 7):
                 daemon.store.commit_turn(
                     [],
                     f"pending-{ordinal}",
@@ -335,15 +335,20 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                 )
             daemon._last_owner_activity_at = asyncio.get_running_loop().time()
 
-            allow_partial = await asyncio.wait_for(
+            started_at = asyncio.get_running_loop().time()
+            ready = await asyncio.wait_for(
                 daemon._wait_for_episode_annealing_ready(asyncio.Event()),
-                timeout=0.1,
+                timeout=0.2,
             )
 
-            self.assertFalse(allow_partial)
+            self.assertTrue(ready)
+            self.assertGreaterEqual(
+                asyncio.get_running_loop().time() - started_at,
+                0.015,
+            )
             daemon.store.close()
 
-    async def test_partial_consolidation_requires_explicit_idle_permission(
+    async def test_partial_consolidation_is_never_claimed(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -361,15 +366,6 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
 
             self.assertFalse(await daemon._run_episode_annealing_once())
             self.assertEqual(candidates, [])
-            self.assertTrue(
-                await daemon._run_episode_annealing_once(
-                    allow_partial_consolidation=True
-                )
-            )
-            self.assertEqual(
-                [turn["turn_id"] for turn in candidates[0]["turns"]],
-                ["pending-1"],
-            )
             daemon.store.close()
 
     def test_consolidation_prompt_is_human_readable_and_drops_storage_metadata(
@@ -918,7 +914,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
             daemon.store.create_episode("长期项目", episode_id="episode-main")
             for ordinal in range(1, 6):
                 add_turn(daemon, ordinal)
-            for ordinal in range(1, 13):
+            for ordinal in range(1, 7):
                 daemon.store.commit_turn(
                     [],
                     f"ping-{ordinal}",
@@ -962,7 +958,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                             ),
                             re.MULTILINE,
                         )
-                        self.assertEqual(len(ids), 12)
+                        self.assertEqual(len(ids), 6)
                         response = workflow_calls_response(
                             [
                                 (
@@ -971,7 +967,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                                         "decisions": [
                                             {
                                                 "action": "ignore",
-                                                "turn_ids": ids[:6],
+                                                "turn_ids": ids[:3],
                                                 "reason": "low information",
                                             }
                                         ]
@@ -983,7 +979,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                                         "decisions": [
                                             {
                                                 "action": "ignore",
-                                                "turn_ids": ids[6:-1],
+                                                "turn_ids": ids[3:-1],
                                                 "reason": "low information",
                                             },
                                             {
@@ -1049,7 +1045,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 daemon.store._db.execute(
                     """SELECT action FROM episode_consolidation_decisions
-                       WHERE turn_id='pending-12'"""
+                       WHERE turn_id='pending-6'"""
                 ).fetchone()["action"],
                 "deferred",
             )
@@ -1065,7 +1061,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(config(directory))
-            for ordinal in range(1, 13):
+            for ordinal in range(1, 7):
                 daemon.store.commit_turn(
                     [],
                     f"pending-{ordinal}",
@@ -1092,11 +1088,11 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                         EPISODE_CONSOLIDATION_FINISH_SPEC,
                     ]
                     assert kwargs["require_tool"] is True
-                    if calls == 13:
+                    if calls == 7:
                         return workflow_response(
                             "episode_consolidation_finish", {}
                         )
-                    action = "defer" if calls == 12 else "ignore"
+                    action = "defer" if calls == 6 else "ignore"
                     return workflow_response(
                         "episode_classify_turns",
                         {
@@ -1113,7 +1109,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
 
             daemon.provider = Provider()  # type: ignore[assignment]
             self.assertTrue(await daemon._consolidate_episode_turns(candidate))
-            self.assertEqual(calls, 13)
+            self.assertEqual(calls, 7)
             self.assertEqual(
                 daemon.store.episode_consolidation_remaining(turn_ids), []
             )
