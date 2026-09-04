@@ -320,7 +320,7 @@ class AgentLoop:
                     ]
                 )
                 continue
-            harness.observe(response.tool_calls)
+            harness.observe_calls(response.tool_calls)
             if (
                 autonomous_goal_id
                 and len(response.tool_calls) == 1

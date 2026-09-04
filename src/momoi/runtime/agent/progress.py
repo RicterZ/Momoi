@@ -4,7 +4,7 @@ from typing import Any
 from ...contracts import OWNER_PROGRESS_BEFORE_FIRST_CALL, OWNER_PROGRESS_FIELD
 
 
-def requests_owner_progress(spec: dict[str, Any]) -> bool:
+def requires_owner_progress(spec: dict[str, Any]) -> bool:
     return spec.get(OWNER_PROGRESS_FIELD) == OWNER_PROGRESS_BEFORE_FIRST_CALL
 
 

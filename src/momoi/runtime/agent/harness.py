@@ -41,7 +41,7 @@ class TurnHarness:
     spec: TurnHarnessSpec
     progress_tool_names: frozenset[str] = frozenset()
     started: bool = False
-    work_acknowledged: bool = False
+    progress_bubbles_seen: bool = False
 
     def __post_init__(self) -> None:
         self.reset()
@@ -63,7 +63,7 @@ class TurnHarness:
 
     def reset(self) -> None:
         self.started = self.spec.first_tool is None
-        self.work_acknowledged = False
+        self.progress_bubbles_seen = False
 
     def validate_surface(self, tool_names: set[str]) -> None:
         required = {self.spec.terminal_tool}
@@ -102,7 +102,7 @@ class TurnHarness:
             return f"{terminal}_must_be_alone"
         if (
             self.spec.require_bubbles_before_progress_work
-            and not self.work_acknowledged
+            and not self.progress_bubbles_seen
         ):
             bubbles_seen = False
             for name in names:
@@ -112,13 +112,13 @@ class TurnHarness:
                     return "send_bubbles_required_before_progress_work"
         return None
 
-    def observe(self, calls: list[ToolCall]) -> None:
+    def observe_calls(self, calls: list[ToolCall]) -> None:
         """Record protocol-visible calls without interpreting tool results."""
 
         if self.spec.require_bubbles_before_progress_work and any(
             call.name == "send_bubbles" for call in calls
         ):
-            self.work_acknowledged = True
+            self.progress_bubbles_seen = True
 
     def accept(self, tool_name: str) -> None:
         if tool_name == self.spec.first_tool:

@@ -7,10 +7,11 @@ delivery and completion.
 
 1. Call `recall` first and alone. The harness rejects any other opening round.
 2. Read the returned evidence. Perform further retrieval only for a specific unresolved facet required by the current intent; never repeat a successful scope or broaden it speculatively.
-3. Execute and verify the work. Before the first `curl`, enabled MCP, `goal_create`, or `goal_cancel` call, call `send_bubbles` first; it may immediately precede the work in the same native tool-call batch. Later work calls may run silently. Adapt to results, corrections and external effects rather than following a stale plan.
-4. If owner-visible bubbles are warranted, call `send_bubbles` with them;
+3. Before the first `curl`, enabled MCP, `goal_create`, or `goal_cancel`, call `send_bubbles`; it may precede the tool in the same batch. Do this once per current owner request.
+4. Execute and verify the work. Adapt to results, corrections and external effects rather than following a stale plan.
+5. If other owner-visible bubbles are warranted, call `send_bubbles` with them;
    otherwise do not call it.
-5. After all delivery and tool results, call `end_turn` alone.
+6. After all delivery and tool results, call `end_turn` alone.
 
 ## Recall invariants
 

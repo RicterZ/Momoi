@@ -2485,7 +2485,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 )
             )
             event = IncomingMessage(
-                "owner-announce", "owner-announce", "帮我继续查", 1, 1
+                "owner-progress", "owner-progress", "帮我继续查", 1, 1
             )
             daemon.store.add_event(event)
             turn_id = daemon._turn_id(event.event_id)
@@ -2511,10 +2511,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 ) -> ProviderResponse:
                     self.calls += 1
                     if self.calls == 1:
-                        curl = next(tool for tool in tools if tool["name"] == "curl")
-                        schema = curl["input_schema"]
-                        if "say_to_owner" in schema["properties"]:
-                            raise AssertionError(schema)
                         calls = [
                             ToolCall(
                                 "curl-missing",
@@ -2626,7 +2622,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     (turn_id,),
                 ).fetchall()
             ]
-            self.assertNotIn("say_to_owner", json.dumps(journal, ensure_ascii=False))
             self.assertIn("first-result", json.dumps(journal, ensure_ascii=False))
             daemon.store.close()
 

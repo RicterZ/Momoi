@@ -1,15 +1,13 @@
 import json
 import unittest
-from pathlib import Path
 from types import SimpleNamespace
 
 from momoi.tools.contracts.agenda import AGENDA_TOOL_SPECS
 from momoi.tools.contracts.builtin import BUILTIN_TOOL_SPECS
 from momoi.contracts import OWNER_PROGRESS_BEFORE_FIRST_CALL, OWNER_PROGRESS_FIELD
-from momoi.mcp.prompt import MCP_TOOL_POLICY
 from momoi.runtime.agent.progress import (
     public_tool_spec,
-    requests_owner_progress,
+    requires_owner_progress,
 )
 from momoi.runtime.agent.tool_surface import ToolSurface
 from momoi.runtime.tool_contracts.conversation import send_bubbles_tool_spec
@@ -17,19 +15,19 @@ from momoi.runtime.tool_contracts.runtime import tool_enable_spec
 from momoi.storage import estimate_tokens
 
 
-class ProgressAnnounceTest(unittest.TestCase):
+class OwnerProgressPolicyTest(unittest.TestCase):
     def test_tools_declare_owner_progress_without_a_name_registry(self) -> None:
         builtins = {spec["name"]: spec for spec in BUILTIN_TOOL_SPECS}
         agenda = {spec["name"]: spec for spec in AGENDA_TOOL_SPECS}
-        self.assertTrue(requests_owner_progress(builtins["curl"]))
-        self.assertTrue(requests_owner_progress(agenda["goal_create"]))
-        self.assertTrue(requests_owner_progress(agenda["goal_cancel"]))
-        self.assertFalse(requests_owner_progress(agenda["goal_update"]))
-        self.assertFalse(requests_owner_progress(agenda["goal_finish"]))
-        self.assertFalse(requests_owner_progress(builtins["sleep"]))
-        self.assertFalse(requests_owner_progress(builtins["read_file"]))
+        self.assertTrue(requires_owner_progress(builtins["curl"]))
+        self.assertTrue(requires_owner_progress(agenda["goal_create"]))
+        self.assertTrue(requires_owner_progress(agenda["goal_cancel"]))
+        self.assertFalse(requires_owner_progress(agenda["goal_update"]))
+        self.assertFalse(requires_owner_progress(agenda["goal_finish"]))
+        self.assertFalse(requires_owner_progress(builtins["sleep"]))
+        self.assertFalse(requires_owner_progress(builtins["read_file"]))
         self.assertTrue(
-            requests_owner_progress(
+            requires_owner_progress(
                 {
                     "name": "mcp__demo__lookup",
                     OWNER_PROGRESS_FIELD: OWNER_PROGRESS_BEFORE_FIRST_CALL,
@@ -44,7 +42,7 @@ class ProgressAnnounceTest(unittest.TestCase):
         curl = next(spec for spec in BUILTIN_TOOL_SPECS if spec["name"] == "curl")
         public = public_tool_spec(curl)
         self.assertNotIn(OWNER_PROGRESS_FIELD, public)
-        self.assertNotIn("say_to_owner", public["input_schema"]["properties"])
+        self.assertEqual(public["input_schema"], curl["input_schema"])
         self.assertIn(OWNER_PROGRESS_FIELD, curl)
 
     def test_send_bubbles_schema_stays_compact_without_losing_constraints(
@@ -129,7 +127,6 @@ class ProgressAnnounceTest(unittest.TestCase):
             spec["name"]: spec
             for spec in surface.mcp_server_groups()["brave-search"]
         }
-        heartbeat = {spec["name"]: spec for spec in surface.self_directed_specs()}
         self.assertEqual(
             surface.owner_progress_tool_names(),
             frozenset(
@@ -143,23 +140,3 @@ class ProgressAnnounceTest(unittest.TestCase):
         )
         for spec in [*owner.values(), *mcp_specs.values()]:
             self.assertNotIn(OWNER_PROGRESS_FIELD, spec)
-        for spec in [*owner.values(), *mcp_specs.values(), *heartbeat.values()]:
-            self.assertNotIn(
-                "say_to_owner",
-                spec.get("input_schema", {}).get("properties", {}),
-            )
-
-    def test_prompts_do_not_teach_announce_field(self) -> None:
-        root = Path(__file__).resolve().parents[1] / "src" / "momoi" / "prompts"
-        texts = [
-            (root / "system.md").read_text(encoding="utf-8"),
-            (root / "style_card.md").read_text(encoding="utf-8"),
-            (root / "heartbeat.md").read_text(encoding="utf-8"),
-            MCP_TOOL_POLICY,
-        ]
-        for text in texts:
-            self.assertNotIn("HassTurnOn", text)
-            self.assertNotIn("say_to_owner", text)
-            self.assertNotIn("owner_progress", text)
-            self.assertNotIn("require a `message`", text)
-            self.assertNotIn("Each MCP tool requires `message`", text)

@@ -22,7 +22,7 @@ from ..tool_contracts.runtime import (
     READ_TOOL_RESULT_SPEC,
     tool_enable_spec,
 )
-from .progress import public_tool_spec, requests_owner_progress
+from .progress import public_tool_spec, requires_owner_progress
 
 logger = logging.getLogger("momoi.runtime.turns")
 
@@ -42,7 +42,7 @@ class ToolSurface:
         return parts[1] if len(parts) == 3 else "other"
 
     @staticmethod
-    def owner_progress_specs(specs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def public_specs(specs: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return [public_tool_spec(spec) for spec in specs]
 
     def owner_progress_tool_names(self) -> frozenset[str]:
@@ -50,12 +50,12 @@ class ToolSurface:
         return frozenset(
             str(spec.get("name") or "")
             for spec in specs
-            if requests_owner_progress(spec)
+            if requires_owner_progress(spec)
         )
 
     def mcp_server_groups(self) -> dict[str, list[dict[str, Any]]]:
         groups: dict[str, list[dict[str, Any]]] = {}
-        for spec in self.owner_progress_specs(
+        for spec in self.public_specs(
             sorted(self.mcp.tool_specs, key=lambda item: str(item.get("name") or ""))
         ):
             group = self.mcp_tool_group(str(spec.get("name") or ""))
@@ -77,8 +77,8 @@ class ToolSurface:
             READ_TOOL_RESULT_SPEC,
             *copy.deepcopy(MEMORY_TOOL_SPECS),
             *copy.deepcopy(THINKING_TOOL_SPECS),
-            *self.owner_progress_specs(AGENDA_TOOL_SPECS),
-            *self.owner_progress_specs(BUILTIN_TOOL_SPECS),
+            *self.public_specs(AGENDA_TOOL_SPECS),
+            *self.public_specs(BUILTIN_TOOL_SPECS),
         ]
 
     def owner_enable_groups(self) -> dict[str, list[dict[str, Any]]]:

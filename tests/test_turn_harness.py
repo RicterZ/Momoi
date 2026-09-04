@@ -103,7 +103,7 @@ class TurnHarnessTest(unittest.TestCase):
             "send_bubbles_required_before_progress_work",
         )
         self.assertIsNone(harness.validate([bubbles, curl]))
-        harness.observe([bubbles, curl])
+        harness.observe_calls([bubbles, curl])
         self.assertIsNone(harness.validate([curl]))
         harness.reset()
         harness.accept("recall")
@@ -120,8 +120,8 @@ class TurnHarnessTest(unittest.TestCase):
         bubbles = ToolCall("say", "send_bubbles", {"bubbles": []})
 
         self.assertIsNone(harness.validate([bubbles]))
-        harness.observe([bubbles])
-        self.assertTrue(harness.work_acknowledged)
+        harness.observe_calls([bubbles])
+        self.assertTrue(harness.progress_bubbles_seen)
         self.assertIsNone(
             harness.validate(
                 [ToolCall("curl", "curl", {"url": "https://example.com"})]

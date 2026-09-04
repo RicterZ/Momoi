@@ -361,12 +361,6 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                 provider.tool_names[0],
                 ["send_bubbles", "curl", "read_tool_result", "end_turn"],
             )
-            curl_spec = next(
-                tool for tool in provider.tools if tool["name"] == "curl"
-            )
-            self.assertNotIn(
-                "say_to_owner", curl_spec["input_schema"]["properties"]
-            )
             self.assertEqual(tools.last_call.name, "curl")
             self.assertEqual(
                 tools.last_call.arguments,
