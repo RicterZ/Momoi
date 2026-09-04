@@ -67,10 +67,10 @@ class OwnerWorkflow:
             ("reflection_memories", recalled["reflection_memories"]),
             ("episode_directory", recalled["episodes"]),
             ("recent_external_events", recalled["recent_external_events"]),
-            (
-                "interrupted_reply_expectation",
-                self.store.cooled_reply_expectation_context(),
-            ),
+            # (
+            #     "interrupted_reply_expectation",
+            #     self.store.cooled_reply_expectation_context(),
+            # ),
         )
         content = _owner_content_blocks(
             updates, channel.content_blocks, self.store.timezone, runtime_text
@@ -294,10 +294,10 @@ class OwnerWorkflow:
             ("candidate_episodes", candidates["candidate_episodes"]),
             ("recent_recall_context", candidates["recent_recall_context"]),
             ("recent_external_events", recalled["recent_external_events"]),
-            (
-                "interrupted_reply_expectation",
-                self.store.cooled_reply_expectation_context(),
-            ),
+            # (
+            #     "interrupted_reply_expectation",
+            #     self.store.cooled_reply_expectation_context(),
+            # ),
         )
         current_content = _owner_content_blocks(
             batch, channel.content_blocks, self.store.timezone, runtime_text

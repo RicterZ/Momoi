@@ -49,7 +49,6 @@
 ## 5. Runtime fields
 
 - `<recent_external_events>` is environmental evidence, not shared conversation or a pending topic.
-- `<interrupted_reply_expectation>` describes a cancelled wait. Use it to understand the exchange; never expose or reinstate its bookkeeping.
 - `Current self state` is private runtime state, not content to announce.
 
 ## 6. Soul
