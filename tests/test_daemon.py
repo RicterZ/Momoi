@@ -454,6 +454,38 @@ class DaemonTest(unittest.TestCase):
         self.assertEqual(remaining, 0)
         self.assertEqual(messages, [{"role": "user", "content": "当前消息"}])
 
+    def test_context_budget_ignores_embedded_image_bytes(self) -> None:
+        daemon = object.__new__(MomoiDaemon)
+        daemon.config = SimpleNamespace(max_input_tokens=1000)
+        messages = [
+            {"role": "user", "content": "需要保留的历史"},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "看看这张图"},
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "image/png",
+                            "data": "A" * 1_000_000,
+                        },
+                    },
+                ],
+            },
+        ]
+
+        remaining = context_window(daemon.config).fit(
+            [{"type": "text", "text": "system"}], messages, [], 1
+        )
+
+        self.assertEqual(remaining, 1)
+        self.assertEqual(len(messages), 2)
+        self.assertEqual(
+            messages[1]["content"][1]["source"]["data"],  # type: ignore[index]
+            "A" * 1_000_000,
+        )
+
     def test_context_budget_breaks_expanding_compression_and_keeps_going(
         self,
     ) -> None:

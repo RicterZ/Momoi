@@ -11,6 +11,39 @@ logger = logging.getLogger("momoi.runtime.turns")
 MAX_TOOL_RESULT_TRUNCATION_ATTEMPTS = 16
 
 
+def _without_embedded_image_data(value: Any) -> Any:
+    """Remove transport-only image bytes from context token estimates."""
+    if isinstance(value, list):
+        return [_without_embedded_image_data(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+
+    embedded_source = value.get("type") == "base64" and isinstance(
+        value.get("data"), str
+    )
+    sanitized: dict[Any, Any] = {}
+    for key, item in value.items():
+        if embedded_source and key == "data":
+            sanitized[key] = ""
+        elif (
+            key in {"url", "file"}
+            and isinstance(item, str)
+            and item.startswith("data:image/")
+            and ";base64," in item[:100]
+        ):
+            sanitized[key] = item.split(";base64,", 1)[0] + ";base64,"
+        else:
+            sanitized[key] = _without_embedded_image_data(item)
+    return sanitized
+
+
+def _estimate_context_tokens(system: object, messages: object, tools: object) -> int:
+    value = _without_embedded_image_data(
+        {"system": system, "messages": messages, "tools": tools}
+    )
+    return estimate_tokens(json.dumps(value, ensure_ascii=False, default=str))
+
+
 def context_compaction_tokens(config: Any) -> int:
     return max(
         1,
@@ -36,13 +69,7 @@ class ContextWindow:
         elapsed = time.time() - float(usage["started_at"])
         if self.config.turn_max_seconds and elapsed >= self.config.turn_max_seconds:
             raise TurnBudgetExceeded("time limit reached")
-        estimated_input = estimate_tokens(
-            json.dumps(
-                {"system": system, "messages": messages, "tools": tools},
-                ensure_ascii=False,
-                default=str,
-            )
-        )
+        estimated_input = _estimate_context_tokens(system, messages, tools)
         total = int(usage["input"]) + int(usage["output"])
         if (
             self.config.turn_max_total_tokens
@@ -58,13 +85,7 @@ class ContextWindow:
         history_messages: int,
     ) -> int:
         def size() -> int:
-            return estimate_tokens(
-                json.dumps(
-                    {"system": system, "messages": messages, "tools": tools},
-                    ensure_ascii=False,
-                    default=str,
-                )
-            )
+            return _estimate_context_tokens(system, messages, tools)
 
         hard_limit = self.config.max_input_tokens
         compaction_limit = min(hard_limit, context_compaction_tokens(self.config))
