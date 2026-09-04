@@ -1,6 +1,7 @@
 import asyncio
 import re
 import tempfile
+import time
 import unittest
 from dataclasses import replace
 from pathlib import Path
@@ -24,7 +25,10 @@ from momoi.runtime.turn_support import (
     EPISODE_CONSOLIDATION_SYSTEM_PROMPT,
     EPISODE_SUMMARY_SYSTEM_PROMPT,
 )
-from momoi.storage import estimate_tokens
+from momoi.storage import (
+    EPISODE_CONSOLIDATION_DEFER_TIMEOUT_SECONDS,
+    estimate_tokens,
+)
 
 
 def prompt_section(prompt: str, name: str) -> str:
@@ -142,6 +146,76 @@ def add_turn(daemon: MomoiDaemon, ordinal: int) -> None:
 
 
 class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
+    async def test_scheduler_ignores_deferrals_after_eight_hours_without_llm(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(config(directory))
+            daemon.store.commit_turn(
+                [], "expired", AgentReply([]), turn_id="deferred-expired"
+            )
+            daemon.store.commit_turn(
+                [], "fresh", AgentReply([]), turn_id="deferred-fresh"
+            )
+            now = time.time()
+            with daemon.store._db:
+                daemon.store._db.executemany(
+                    """INSERT INTO episode_consolidation_decisions
+                       (turn_id, action, reason, processed_at)
+                       VALUES (?, 'deferred', ?, ?)""",
+                    [
+                        (
+                            "deferred-expired",
+                            "waiting for context",
+                            now - EPISODE_CONSOLIDATION_DEFER_TIMEOUT_SECONDS,
+                        ),
+                        (
+                            "deferred-fresh",
+                            "still waiting for context",
+                            now - EPISODE_CONSOLIDATION_DEFER_TIMEOUT_SECONDS + 60,
+                        ),
+                    ],
+                )
+
+            stop = asyncio.Event()
+            worker = asyncio.create_task(daemon._scheduler_worker(stop))
+            for _ in range(100):
+                expired = daemon.store._db.execute(
+                    """SELECT action FROM episode_consolidation_decisions
+                       WHERE turn_id='deferred-expired'"""
+                ).fetchone()
+                if expired["action"] == "ignored":
+                    break
+                await asyncio.sleep(0.01)
+            stop.set()
+            daemon.agenda_changed.set()
+            await worker
+
+            decisions = {
+                str(row["turn_id"]): (str(row["action"]), str(row["reason"]))
+                for row in daemon.store._db.execute(
+                    """SELECT turn_id, action, reason
+                       FROM episode_consolidation_decisions"""
+                ).fetchall()
+            }
+            self.assertEqual(
+                decisions["deferred-expired"],
+                ("ignored", "defer_timeout_8h"),
+            )
+            self.assertEqual(
+                decisions["deferred-fresh"],
+                ("deferred", "still waiting for context"),
+            )
+            self.assertTrue(daemon.episode_annealing_requested.is_set())
+            self.assertEqual(
+                daemon.store._db.execute(
+                    """SELECT COUNT(*) FROM turns
+                       WHERE workflow_kind='episode_consolidate'"""
+                ).fetchone()[0],
+                0,
+            )
+            daemon.store.close()
+
     async def test_restart_recovers_interrupted_episode_maintenance(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             first = MomoiDaemon(config(directory))

@@ -10,7 +10,10 @@ from .memory_values import (
     truncate_tokens,
 )
 from .reflection_values import REFLECTION_MEMORY_KINDS
-from .episode_consolidation import EPISODE_CONSOLIDATION_BATCH_SIZE
+from .episode_consolidation import (
+    EPISODE_CONSOLIDATION_BATCH_SIZE,
+    EPISODE_CONSOLIDATION_DEFER_TIMEOUT_SECONDS,
+)
 from .store import Store
 from .semantic_documents import (
     DOCUMENT_TEMPLATE_VERSION,
@@ -35,6 +38,7 @@ __all__ = [
     "truncate_tokens",
     "DOCUMENT_TEMPLATE_VERSION",
     "EPISODE_CONSOLIDATION_BATCH_SIZE",
+    "EPISODE_CONSOLIDATION_DEFER_TIMEOUT_SECONDS",
     "QUERY_TEMPLATE_VERSION",
     "SEMANTIC_PROVIDER",
     "SemanticDocument",

@@ -8,9 +8,31 @@ from .episode_sql import runtime_archive_kind_sql
 
 EPISODE_CONSOLIDATION_LOOKBACK_SECONDS = 30 * 24 * 60 * 60
 EPISODE_CONSOLIDATION_BATCH_SIZE = 12
+EPISODE_CONSOLIDATION_DEFER_TIMEOUT_SECONDS = 8 * 60 * 60
+EPISODE_CONSOLIDATION_DEFER_TIMEOUT_REASON = "defer_timeout_8h"
 
 
 class EpisodeConsolidationStore:
+    def cleanup_expired_episode_consolidation_deferrals(
+        self, *, now: float | None = None
+    ) -> int:
+        """Ignore deferred Turns after their bounded context-wait window."""
+
+        now = time.time() if now is None else now
+        cutoff = now - EPISODE_CONSOLIDATION_DEFER_TIMEOUT_SECONDS
+        with self._db:
+            cursor = self._db.execute(
+                """UPDATE episode_consolidation_decisions
+                   SET action='ignored', episode_id=NULL, reason=?, processed_at=?
+                   WHERE action='deferred' AND processed_at<=?""",
+                (
+                    EPISODE_CONSOLIDATION_DEFER_TIMEOUT_REASON,
+                    now,
+                    cutoff,
+                ),
+            )
+        return max(0, cursor.rowcount)
+
     def _consolidation_turn_messages(
         self, turn_ids: list[str]
     ) -> dict[str, list[dict[str, object]]]:

@@ -109,6 +109,7 @@ _EVENT_GROUPS = {
     "mcp_config_missing": "MCP",
     "usage_plugin_loaded": "SERVICE",
     "reflection_queued": "AGENDA",
+    "episode_deferred_cleanup": "ANNEALING",
     "prompt_reload_failed": "SERVICE",
 }
 

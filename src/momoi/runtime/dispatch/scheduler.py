@@ -4,7 +4,10 @@ from time import time
 
 from ...observability.events import log_event
 from ...observability.values import safe_preview
-from ...storage import EPISODE_CONSOLIDATION_BATCH_SIZE
+from ...storage import (
+    EPISODE_CONSOLIDATION_BATCH_SIZE,
+    EPISODE_CONSOLIDATION_DEFER_TIMEOUT_SECONDS,
+)
 from ..jobs import AutonomousJob
 
 logger = logging.getLogger("momoi.runtime.daemon")
@@ -121,6 +124,19 @@ class Scheduler:
     async def _scheduler_worker(self, stop: asyncio.Event) -> None:
         while not stop.is_set():
             self.agenda_changed.clear()
+            expired_deferrals = (
+                self.store.cleanup_expired_episode_consolidation_deferrals()
+            )
+            if expired_deferrals:
+                log_event(
+                    logger,
+                    logging.INFO,
+                    "episode_deferred_cleanup",
+                    stage="scheduler",
+                    ignored=expired_deferrals,
+                    timeout_seconds=EPISODE_CONSOLIDATION_DEFER_TIMEOUT_SECONDS,
+                )
+                self.episode_annealing_requested.set()
             notification = self.store.claim_due_notification(self.config.notifications)
             if notification is not None:
                 if self.store.queue_notification(

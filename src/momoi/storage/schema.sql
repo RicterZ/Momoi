@@ -329,6 +329,8 @@ CREATE TABLE IF NOT EXISTS episode_consolidation_decisions (
     FOREIGN KEY (episode_id) REFERENCES conversation_episodes(id)
         ON DELETE SET NULL
 );
+CREATE INDEX IF NOT EXISTS episode_consolidation_decisions_by_action_time
+    ON episode_consolidation_decisions(action, processed_at);
 CREATE TABLE IF NOT EXISTS context_plans (
     turn_id TEXT NOT NULL,
     revision INTEGER NOT NULL CHECK (revision > 0),
