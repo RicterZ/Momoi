@@ -81,9 +81,7 @@ class AgentLoop:
         last_sent_channel = ""
         llm_round = 0
         remind_owner_bubbles = False
-        enable_tool_groups = (
-            self.tool_surface.mcp_server_groups() if heartbeat_turn else {}
-        )
+        enable_tool_groups = self.tool_surface.mcp_server_groups()
         stage = execution.stage
         if workflow is not None and workflow.stage != stage:
             raise ValueError("workflow and execution stages do not match")

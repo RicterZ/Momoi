@@ -201,7 +201,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                     names = [str(tool["name"]) for tool in tools]
                     self.surfaces.append(names)
                     if self.calls == 1:
-                        case.assertIn("mcp__demo__read", names)
+                        case.assertNotIn("mcp__demo__read", names)
                         begin = next(
                             tool for tool in tools if tool["name"] == "heartbeat_begin"
                         )
@@ -269,9 +269,8 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                 owner_event_revision=0,
             )
             self.assertEqual(provider.calls, 3)
-            self.assertTrue(
-                all(surface == provider.surfaces[0] for surface in provider.surfaces)
-            )
+            self.assertNotEqual(provider.surfaces[0], provider.surfaces[1])
+            self.assertEqual(provider.surfaces[1], provider.surfaces[2])
             daemon.store.close()
 
 

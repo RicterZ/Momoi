@@ -14,6 +14,7 @@ from ..tool_contracts.conversation import END_TURN_TOOL_SPEC, send_bubbles_tool_
 from ..tool_contracts.runtime import (
     AUTONOMOUS_FINISH_SPEC,
     READ_TOOL_RESULT_SPEC,
+    tool_enable_spec,
 )
 from .progress import public_tool_spec, requires_owner_progress
 
@@ -79,6 +80,21 @@ class ToolSurface:
             tool_names=[str(spec.get("name") or "") for spec in tools],
         )
 
+    @staticmethod
+    def append_visible(
+        tools: list[dict[str, Any]], specs: list[dict[str, Any]]
+    ) -> list[str]:
+        existing = {str(spec.get("name") or "") for spec in tools}
+        added: list[str] = []
+        for spec in specs:
+            name = str(spec.get("name") or "")
+            if not name or name in existing:
+                continue
+            tools.insert(max(0, len(tools) - 2), spec)
+            existing.add(name)
+            added.append(name)
+        return added
+
     def conversation_specs(self) -> list[dict[str, Any]]:
         groups = self.mcp_server_groups()
         catalog = {
@@ -93,7 +109,7 @@ class ToolSurface:
             *copy.deepcopy(THINKING_TOOL_SPECS),
             *self.public_specs(AGENDA_TOOL_SPECS),
             *self.public_specs(BUILTIN_TOOL_SPECS),
-            *[spec for specs in groups.values() for spec in specs],
+            tool_enable_spec(catalog),
             copy.deepcopy(AUTONOMOUS_FINISH_SPEC),
             copy.deepcopy(END_TURN_TOOL_SPEC),
         ]
@@ -111,7 +127,16 @@ class ToolSurface:
         shared = {"send_bubbles", "read_tool_result"}
         if stage == "owner":
             return frozenset(
-                {"recall", "end_turn", *shared, *agenda, *memory, *thinking, *external}
+                {
+                    "recall",
+                    "tool_enable",
+                    "end_turn",
+                    *shared,
+                    *agenda,
+                    *memory,
+                    *thinking,
+                    *external,
+                }
             )
         if stage == "heartbeat":
             return frozenset(
@@ -140,6 +165,7 @@ class ToolSurface:
                     "memory_search",
                     "send_bubbles",
                     "read_tool_result",
+                    "tool_enable",
                     "autonomous_finish",
                     *goal_agenda,
                     *external,

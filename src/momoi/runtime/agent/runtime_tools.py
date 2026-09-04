@@ -2,6 +2,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from ...models import IncomingMessage, ToolCall
+from .tool_surface import ToolSurface
 
 
 async def begin_heartbeat(
@@ -10,6 +11,8 @@ async def begin_heartbeat(
     heartbeat_turn: bool,
     harness_started: bool,
     enable_tool_groups: dict[str, list[dict[str, Any]]],
+    tools: list[dict[str, Any]],
+    tool_surface: ToolSurface,
     prepare_context: Callable[[dict[str, Any]], Awaitable[dict[str, object]]],
 ) -> dict[str, object]:
     requested = call.arguments.get("tool_groups")
@@ -31,11 +34,14 @@ async def begin_heartbeat(
             "error": "invalid_heartbeat_begin",
             "message": str(error),
         }
-    selected_tools = [
-        str(spec["name"])
-        for group in dict.fromkeys(requested)
-        for spec in enable_tool_groups[group]
-    ]
+    selected_tools = tool_surface.append_visible(
+        tools,
+        [
+            spec
+            for group in dict.fromkeys(requested)
+            for spec in enable_tool_groups[group]
+        ],
+    )
     recalled = prepared["context"]
     assert isinstance(recalled, dict)
     return {
@@ -74,3 +80,28 @@ async def recall_owner_context(
         "reflection": recalled["reflection_memories"],
         "episodes": recalled["episodes"],
     }
+
+
+def enable_tools(
+    call: ToolCall,
+    *,
+    enable_tool_groups: dict[str, list[dict[str, Any]]],
+    tools: list[dict[str, Any]],
+    tool_surface: ToolSurface,
+) -> dict[str, object]:
+    requested = call.arguments.get("groups")
+    if (
+        not isinstance(requested, list)
+        or not requested
+        or any(
+            not isinstance(group, str) or group not in enable_tool_groups
+            for group in requested
+        )
+    ):
+        return {"ok": False, "error": "invalid_tool_groups"}
+    groups = list(dict.fromkeys(requested))
+    enabled = tool_surface.append_visible(
+        tools,
+        [spec for group in groups for spec in enable_tool_groups[group]],
+    )
+    return {"ok": True, "state": "enabled", "groups": groups, "tools": enabled}

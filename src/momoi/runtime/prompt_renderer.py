@@ -114,7 +114,7 @@ class PromptRenderer:
         if names & THINKING_POLICY_TOOLS:
             policies.append(THINKING_TOOL_POLICY.strip())
         mcp_names = {str(tool.get("name") or "") for tool in self.mcp.tool_specs}
-        if mcp_names and names & mcp_names:
+        if mcp_names and ("tool_enable" in names or names & mcp_names):
             policies.append(MCP_TOOL_POLICY.strip())
         if not policies:
             return system

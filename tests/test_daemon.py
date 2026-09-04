@@ -167,7 +167,7 @@ class DaemonTest(unittest.TestCase):
         rendered = daemon._system_with_tool_policies(
             base,
             [
-                {"name": "mcp__search__query"},
+                {"name": "tool_enable"},
             ],
         )
 
@@ -176,7 +176,7 @@ class DaemonTest(unittest.TestCase):
             "# Available capability guidance\n\n" + MCP_TOOL_POLICY.strip(),
         )
 
-    def test_autonomous_tools_include_all_builtins_and_mcp(self) -> None:
+    def test_conversation_surface_keeps_builtins_resident_and_mcp_lazy(self) -> None:
         daemon = object.__new__(MomoiDaemon)
         daemon.mcp = SimpleNamespace(
             tool_specs=[
@@ -197,10 +197,11 @@ class DaemonTest(unittest.TestCase):
                 "read_file",
                 "sleep",
                 "write_file",
-                "mcp__homeassistant__GetLiveContext",
-                "mcp__homeassistant__HassTurnOn",
+                "tool_enable",
             }.issubset(names),
         )
+        self.assertNotIn("mcp__homeassistant__GetLiveContext", names)
+        self.assertNotIn("mcp__homeassistant__HassTurnOn", names)
 
     def test_emotion_catalog_is_cached_system_block(self) -> None:
         daemon = object.__new__(MomoiDaemon)
@@ -1358,6 +1359,13 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     names = [str(tool["name"]) for tool in tools]
                     if provider_self.calls == 1:
                         self.assertIn("read_file", names)
+                        self.assertNotIn("mcp__demo__read", names)
+                        call = ToolCall(
+                            "enable-demo",
+                            "tool_enable",
+                            {"groups": ["demo"]},
+                        )
+                    elif provider_self.calls == 2:
                         self.assertIn("mcp__demo__read", names)
                         call = ToolCall(
                             "read-demo",
@@ -1392,7 +1400,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 delivery_channel=daemon.channel,
             )
             self.assertIsInstance(reply, AgentReply)
-            self.assertEqual(provider.calls, 2)
+            self.assertEqual(provider.calls, 3)
             daemon.store.close()
 
     async def test_owner_keeps_resident_internal_tools(self) -> None:

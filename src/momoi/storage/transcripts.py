@@ -16,6 +16,7 @@ TRANSCRIPT_PROTOCOL_TOOLS = frozenset(
         "end_turn",
         "autonomous_finish",
         "heartbeat_end_turn",
+        "tool_enable",
         "read_tool_result",
     }
 )

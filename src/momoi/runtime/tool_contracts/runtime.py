@@ -1,5 +1,36 @@
 from typing import Any
 
+
+def tool_enable_spec(group_descriptions: dict[str, str]) -> dict[str, Any]:
+    groups = {
+        group: str(description).strip()
+        for group, description in sorted(group_descriptions.items())
+    }
+    return {
+        "name": "tool_enable",
+        "description": (
+            "Enable only the MCP groups needed for the next action. Groups: "
+            + "; ".join(
+                f"{group}: {description}" for group, description in groups.items()
+            )
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "groups": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": max(1, len(groups)),
+                    "uniqueItems": True,
+                    "items": {"type": "string", "enum": list(groups)},
+                }
+            },
+            "required": ["groups"],
+            "additionalProperties": False,
+        },
+    }
+
+
 AUTONOMOUS_FINISH_SPEC: dict[str, Any] = {
     "name": "autonomous_finish",
     "description": (

@@ -68,6 +68,7 @@ class ToolExecutor:
         if name in {
             "end_turn",
             "send_bubbles",
+            "tool_enable",
             "read_tool_result",
             "autonomous_finish",
             "heartbeat_begin",

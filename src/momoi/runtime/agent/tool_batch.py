@@ -13,7 +13,7 @@ from ..turn_support import (
 )
 from .harness import TurnHarness
 from .protocol import assistant_history_content
-from .runtime_tools import begin_heartbeat, recall_owner_context
+from .runtime_tools import begin_heartbeat, enable_tools, recall_owner_context
 from .workflow import AgentWorkflow, TurnExecutionSpec
 
 
@@ -152,6 +152,8 @@ class ToolBatchExecutor:
                     heartbeat_turn=execution.heartbeat,
                     harness_started=request.harness.started,
                     enable_tool_groups=request.enable_tool_groups,
+                    tools=request.tools,
+                    tool_surface=self.tool_surface,
                     prepare_context=request.prepare_heartbeat_context,
                 )
             elif call.name == "recall":
@@ -215,6 +217,13 @@ class ToolBatchExecutor:
                         visible = True
                         last_sent_bubbles = copy.deepcopy(delivery.bubbles)
                         last_sent_channel = delivery.channel
+            elif call.name == "tool_enable":
+                result = enable_tools(
+                    call,
+                    enable_tool_groups=request.enable_tool_groups,
+                    tools=request.tools,
+                    tool_surface=self.tool_surface,
+                )
             elif call.name == "read_tool_result":
                 result = self.tool_results.read(
                     call.arguments.get("result_ref"),
