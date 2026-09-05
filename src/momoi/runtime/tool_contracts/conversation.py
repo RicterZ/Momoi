@@ -276,9 +276,9 @@ SEND_BUBBLES_TOOL_SPEC: dict[str, Any] = {
     "name": "send_bubbles",
     "description": (
         "Only way to send owner-visible content. Call with the exact bubbles; "
-        "assistant text is not delivered. After delivery and all work, call end_turn "
-        "alone. Text may accompany images; files, video, audio, and records must "
-        "stand alone."
+        "assistant text is not delivered. After all work, call the current workflow's "
+        "terminal tool alone. Text may accompany images; files, video, audio, and "
+        "records must stand alone."
     ),
     "input_schema": {
         "type": "object",

@@ -34,7 +34,8 @@ def tool_enable_spec(group_descriptions: dict[str, str]) -> dict[str, Any]:
 AUTONOMOUS_FINISH_SPEC: dict[str, Any] = {
     "name": "autonomous_finish",
     "description": (
-        "Required terminal marker for a Goal review. Call it alone after updating, "
+        "Ends a Goal review without sending a notification; use send_bubbles to notify. "
+        "Call it alone after updating, "
         "finishing, or cancelling the Goal and after any optional send_bubbles call."
     ),
     "input_schema": {

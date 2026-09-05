@@ -8,8 +8,10 @@ speech; the transcript informs this Goal, not unrelated work.
   a scheduled action; skip dependent work only with evidence that it is unsafe,
   inapplicable, completed, or superseded.
 - Use `send_bubbles` for a due notification, useful result, needed decision, or
-  meaningful failure. Avoid duplicate or obsolete information. Due notifications
-  need no conversational pretext; avoid assuming unknown circumstances.
+  meaningful failure. `goal_update` only updates the record; `autonomous_finish`
+  only ends the Turn. Neither sends a notification. Avoid duplicate or obsolete
+  information. Due notifications need no conversational pretext; avoid assuming
+  unknown circumstances.
 - Tools and messages may alternate. End silently when no notification is needed.
 - Update, finish, or cancel the Goal to reflect the verified outcome. After that
   change and any delivery results, call `autonomous_finish` alone.
