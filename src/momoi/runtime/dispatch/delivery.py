@@ -30,6 +30,18 @@ def message_gap_bounds(
 
 
 class OutboxWorker:
+    async def _wait_outbox_gap(self, outbox_id: int, delay: float) -> None:
+        deadline = monotonic() + delay
+        while self.store.outbox_dispatchable(outbox_id):
+            remaining = deadline - monotonic()
+            if remaining <= 0:
+                return
+            self.outbox_changed.clear()
+            try:
+                await asyncio.wait_for(self.outbox_changed.wait(), timeout=remaining)
+            except TimeoutError:
+                return
+
     async def _outbox_worker(self, stop: asyncio.Event) -> None:
         previous_delivery: tuple[str, str] | None = None
         while not stop.is_set():
@@ -72,7 +84,9 @@ class OutboxWorker:
                         outbox_id=row.id,
                         delay_ms=int(delay * 1000),
                     )
-                    await asyncio.sleep(delay)
+                    await self._wait_outbox_gap(row.id, delay)
+                if not self.store.outbox_dispatchable(row.id):
+                    continue
                 audio = None
                 if row.kind == "voice":
                     try:
@@ -81,14 +95,16 @@ class OutboxWorker:
                         provider = self.bubble_delivery.tts_provider
                         if provider is None:
                             raise TTSError("tts_not_configured")
-                        audio = await provider.synthesize(row.text)
+                        audio = self.bubble_delivery.voice_audio.get((row.turn_id, row.text))
+                        if audio is None:
+                            audio = await provider.synthesize(row.text)
                     except TTSError as error:
                         if self.store.mark_sending(row.id):
                             self.store.mark_failed(row.id, str(error))
                         log_event(
                             logger, logging.WARNING, "voice_synthesis_failure",
                             stage="delivery", turn_id=row.turn_id, channel=channel.name,
-                            outbox_id=row.id, error_type=type(error).__name__,
+                            outbox_id=row.id, error_type=type(error).__name__, reason=str(error),
                         )
                         continue
                 # Synthesis may take time; respect messages cancelled during it.
@@ -151,6 +167,8 @@ class OutboxWorker:
                         duration_ms=int((monotonic() - send_started) * 1000),
                     )
                 except SendRejected as error:
+                    if row.kind == "voice":
+                        self.bubble_delivery.voice_audio.pop((row.turn_id, row.text), None)
                     self.store.mark_failed(row.id, str(error))
                     log_event(
                         logger,
@@ -166,6 +184,8 @@ class OutboxWorker:
                         duration_ms=int((monotonic() - send_started) * 1000),
                     )
                 else:
+                    if row.kind == "voice":
+                        self.bubble_delivery.voice_audio.pop((row.turn_id, row.text), None)
                     reply_waiting = self.store.mark_sent(row.id)
                     if reply_waiting:
                         self.agenda_changed.set()

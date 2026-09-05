@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock
 
 from momoi.channel import SendRejected
 from momoi.channel.napcat import NapCatChannel, NapCatConfig
-from momoi.models import ToolCall, AgentReply, ProviderResponse, TurnDraft
+from momoi.models import ToolCall, AgentReply, IncomingMessage, ProviderResponse, TurnDraft
 from momoi.config.models import AppConfig, LLMConfig
 from momoi.runtime import MomoiDaemon
 from momoi.runtime.agent import TurnExecutionSpec
@@ -78,7 +78,7 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.result["ok"])
         self.assertEqual(result.bubbles, [self.text])
         self.assertTrue((await self.dispatch()).result["ok"])
-        self.provider.synthesize.assert_not_awaited()
+        self.provider.synthesize.assert_awaited_once_with(self.text)
         rows = self.store.due_outbox()
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0].kind, "voice")
@@ -137,6 +137,8 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_pending_voice_survives_restart_without_audio_on_disk(self):
         await self.dispatch()
+        self.delivery.voice_audio.clear()
+        self.provider.synthesize.reset_mock()
         reopened = Store(self.root / "momoi.sqlite3")
         self.addCleanup(reopened.close)
         worker, stop = self.worker(reopened)
@@ -152,19 +154,15 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(list(self.root.glob("*.mp3")))
 
     async def test_synthesis_failure_does_not_claim_channel_delivery(self):
-        await self.dispatch()
-        worker, stop = self.worker()
-        original = self.store.mark_failed
-        def fail(outbox_id, reason):
-            original(outbox_id, reason)
-            stop.set()
-        self.store.mark_failed = fail
         self.provider.synthesize.side_effect = TTSError("failed")
-        self.channel.send_voice = AsyncMock()
-        await worker._outbox_worker(stop)
-        self.channel.send_voice.assert_not_awaited()
-        row = self.store._db.execute("SELECT state, last_error FROM outbox").fetchone()
-        self.assertEqual(tuple(row), ("failed", "failed"))
+        result = await self.dispatch()
+        self.assertFalse(result.result["ok"])
+        self.assertEqual(result.result["error"], "voice_synthesis_failed")
+        self.assertEqual(result.result["detail"], "failed")
+        self.assertIn("send_bubbles", result.result["message"])
+        self.assertIsNone(result.bubbles)
+        self.assertEqual(self.store.due_outbox(), [])
+        self.assertFalse(self.changed.is_set())
 
     async def test_contact_policy_rejects_before_queueing(self):
         self.policy.heartbeat_contact_error = lambda *_: "heartbeat_contact_unavailable"
@@ -174,17 +172,38 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.store.due_outbox(), [])
 
     async def test_cancellation_during_synthesis_prevents_channel_send(self):
-        await self.dispatch()
-        worker, stop = self.worker()
         async def synthesize(text):
-            self.store.cancel_pending_outbox(self.channel.name, "cancelled")
-            stop.set()
+            self.store.add_event(IncomingMessage("new", "new", "等一下", 1, 1, channel=self.channel.name))
             return self.audio
         self.provider.synthesize.side_effect = synthesize
-        self.channel.send_voice = AsyncMock()
-        await worker._outbox_worker(stop)
-        self.channel.send_voice.assert_not_awaited()
-        self.assertEqual(self.store._db.execute("SELECT state FROM outbox").fetchone()[0], "superseded")
+        result = await self.dispatch()
+        self.assertEqual(result.result["error"], "superseded_by_owner_update")
+        self.assertEqual(self.store.due_outbox(), [])
+        self.assertFalse(self.delivery.voice_audio)
+
+    async def test_tool_waits_for_synthesis_and_propagates_cancellation(self):
+        started = asyncio.Event()
+        async def synthesize(text):
+            started.set()
+            await asyncio.Event().wait()
+        self.provider.synthesize.side_effect = synthesize
+        task = asyncio.create_task(self.dispatch())
+        await asyncio.wait_for(started.wait(), 1)
+        self.assertFalse(task.done())
+        self.assertEqual(self.store.due_outbox(), [])
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+        self.assertEqual(self.store.due_outbox(), [])
+
+    async def test_repeated_tool_id_does_not_claim_failed_delivery_succeeded(self):
+        await self.dispatch()
+        row = self.store.due_outbox()[0]
+        self.store.mark_failed(row.id, "send rejected")
+        result = await self.dispatch()
+        self.assertFalse(result.result["ok"])
+        self.assertEqual(result.result["detail"], "send rejected")
+        self.provider.synthesize.assert_awaited_once_with(self.text)
 
     def test_disabled_voice_is_hidden_and_harness_rejects_it(self):
         surface = ToolSurface(SimpleNamespace(tool_specs=[], configs={}), {"napcat": self.channel})
@@ -335,3 +354,68 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
             self.provider.synthesize.assert_not_awaited()
         finally:
             daemon.store.close()
+
+    async def test_model_receives_synthesis_error_and_can_fall_back_to_text(self):
+        for stage in ("webhook", "reply_followup", "goal"):
+            with self.subTest(stage=stage):
+                config = AppConfig(
+                    llm=LLMConfig("http://localhost", "test", "test", 100, 0, 1, 0),
+                    channel=self.channel.config, system_prompt="test",
+                    transcript_turns_min=4, transcript_turns_max=4,
+                    episode_raw_tail_turns=2, memory_results=2,
+                    database=self.root / f"fallback-{stage}.sqlite3", log_level="INFO",
+                )
+                provider = AsyncMock(spec=TTSProvider)
+                provider.synthesize.side_effect = TTSError("connection refused (failed after 4 attempts)")
+                daemon = MomoiDaemon(config, tts_provider=provider)
+                try:
+                    turn_id = f"fallback-{stage}"
+                    daemon.store.begin_turn(turn_id, stage, [])
+                    daemon.store.pending_owner_reply = lambda: {"turn_id": "previous"}
+                    rounds = 0
+                    draft = TurnDraft()
+                    if stage == "goal":
+                        draft.goals["goal-id"] = {}
+
+                    async def complete(_system, messages, tools, **kwargs):
+                        nonlocal rounds
+                        rounds += 1
+                        if rounds == 1:
+                            call = ToolCall("voice", "send_voice", {"text": "老师你好"})
+                        elif rounds == 2:
+                            block = messages[-1]["content"][0]
+                            result = json.loads(block["content"])
+                            self.assertFalse(result["ok"])
+                            self.assertEqual(result["error"], "voice_synthesis_failed")
+                            self.assertIn("connection refused", result["detail"])
+                            self.assertIn("send_bubbles", result["message"])
+                            self.assertEqual(daemon.store.due_outbox(), [])
+                            self.assertFalse(draft.notification_messages)
+                            call = ToolCall("fallback", "send_bubbles", {
+                                "bubbles": ["老师你好"], "reason": "voice failed", "key": "goal.test",
+                            })
+                        else:
+                            self.assertEqual(rounds, 3)
+                            call = ToolCall("end", "autonomous_finish" if stage == "goal" else "end_turn", {
+                                "reply_wait": {"wait": False}, "mood": {"decision": "unchanged"},
+                            })
+                        return ProviderResponse([{
+                            "type": "tool_use", "id": call.id, "name": call.name, "input": call.arguments,
+                        }], [call])
+
+                    daemon.provider = SimpleNamespace(config=SimpleNamespace(api_format="anthropic"), complete=complete)
+                    await daemon._run_tool_loop(
+                        [], [{"role": "user", "content": "test"}], daemon.tool_surface.conversation_specs(), [], draft,
+                        execution=TurnExecutionSpec(stage, goal_id="goal-id" if stage == "goal" else None,
+                                                    permitted_tools=daemon.tool_surface.permitted_names(stage)),
+                        source_event_id="test", turn_id=turn_id, delivery_channel=daemon.channel,
+                    )
+                    provider.synthesize.assert_awaited_once()
+                    self.assertEqual(rounds, 3)
+                    if stage == "goal":
+                        self.assertEqual(draft.notification_messages, ["老师你好"])
+                    else:
+                        self.assertEqual([(row.kind, row.text) for row in daemon.store.due_outbox()],
+                                         [("text", "老师你好")])
+                finally:
+                    daemon.store.close()

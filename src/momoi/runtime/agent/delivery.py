@@ -1,12 +1,13 @@
 import logging
 import re
 import unicodedata
+from collections import OrderedDict
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from typing import Any
 
 from ...channel import Channel, ChannelMessage, normalize_channel_message, render_channel_message
-from ...tts import TTSProvider
+from ...tts import AudioOutput, TTSError, TTSProvider
 from ...emotions import EMOTION_PREFIX, emotion_slug
 from ...observability.events import log_event
 from ...models import ToolCall
@@ -102,6 +103,36 @@ class BubbleDelivery:
         self.policy = policy
         self.outbox_changed = outbox_changed
         self.tts_provider = tts_provider
+        self.voice_audio: OrderedDict[tuple[str, str], AudioOutput] = OrderedDict()
+
+    async def prepare_voice(self, turn_id: str, text: str, channel: str) -> dict[str, object] | None:
+        revision = self.store.owner_channel_revision(channel)
+        try:
+            if self.tts_provider is None:
+                raise TTSError("tts_not_configured")
+            audio = await self.tts_provider.synthesize(text)
+        except TTSError as error:
+            log_event(
+                logger, logging.WARNING, "voice_synthesis_failure",
+                turn_id=turn_id, error_type=type(error).__name__, reason=str(error),
+            )
+            return {
+                "ok": False, "error": "voice_synthesis_failed", "detail": str(error),
+                "message": (
+                    "Voice synthesis failed; no voice message was queued or delivered. "
+                    "Use send_bubbles to reply in text instead. Do not repeat send_voice "
+                    "for this reply; TTS retries have already been handled."
+                ),
+            }
+        if self.store.owner_channel_revision(channel) != revision:
+            return {"ok": False, "error": "superseded_by_owner_update"}
+        self.voice_audio[(turn_id, text)] = audio
+        self.voice_audio.move_to_end((turn_id, text))
+        # Bound memory for staged or subsequently cancelled messages. Evicted
+        # audio can be synthesized again by the durable outbox, as on restart.
+        while len(self.voice_audio) > 8:
+            self.voice_audio.popitem(last=False)
+        return None
 
     async def send_voice(
         self, text: str, *, tool_call_id: str, turn_id: str,
@@ -142,7 +173,20 @@ class BubbleDelivery:
             if (existing["text"] != text or existing["target_channel"] != delivery_channel.name
                     or existing["kind"] != "voice"):
                 return failure("tool_call_id_conflict")
+            if existing["state"] in {"failed", "superseded"}:
+                return BubbleDeliveryResult({
+                    "ok": False, "error": "voice_delivery_failed",
+                    "detail": str(existing["last_error"] or existing["state"]),
+                    "message": "This voice message failed or was cancelled; do not report it as sent.",
+                })
         else:
+            synthesis_error = await self.prepare_voice(turn_id, text, delivery_channel.name)
+            if synthesis_error is not None:
+                return BubbleDeliveryResult(synthesis_error)
+            error = contact_error()
+            if error:
+                self.voice_audio.pop((turn_id, text), None)
+                return failure(error)
             self.store.queue_progress(
                 turn_id, tool_call_id, [text], delivery_channel.name, voice=True,
             )

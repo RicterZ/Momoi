@@ -1,13 +1,18 @@
 import asyncio
+import json
+import logging
 import math
 from urllib.parse import urlsplit
 
 import aiohttp
 
 from .base import AudioOutput, TTSError, TTSProvider
+from ..observability.events import log_event
 
 
 FISH_MODELS = frozenset({"s1", "s2-pro", "s2.1-pro", "s2.1-pro-free"})
+TTS_RETRY_DELAYS = (1, 2, 4)
+logger = logging.getLogger(__name__)
 
 
 class FishAudioTTSProvider(TTSProvider):
@@ -59,6 +64,29 @@ class FishAudioTTSProvider(TTSProvider):
     async def synthesize(self, text: str) -> AudioOutput:
         if not isinstance(text, str) or not text.strip():
             raise TTSError("Fish TTS requires nonempty text")
+        attempts = len(TTS_RETRY_DELAYS) + 1
+        for attempt in range(1, attempts + 1):
+            try:
+                return await self._synthesize_once(text)
+            except TTSError as error:
+                log_event(
+                    logger, logging.WARNING, "tts_request_failed",
+                    attempt=attempt, attempt_max=attempts,
+                    endpoint=f"{self.base_url}/v1/tts",
+                    reason=str(error), retry=attempt < attempts,
+                )
+                if attempt == attempts:
+                    raise TTSError(f"{error} (failed after {attempts} attempts)") from error
+                await asyncio.sleep(TTS_RETRY_DELAYS[attempt - 1])
+
+    def _error_detail(self, detail: str, text: str) -> str:
+        for private in (self.api_key, self.reference_id, text):
+            for value in (private, json.dumps(private, ensure_ascii=True)[1:-1],
+                          json.dumps(private, ensure_ascii=False)[1:-1]):
+                detail = detail.replace(value, "[redacted]")
+        return detail[:2000]
+
+    async def _synthesize_once(self, text: str) -> AudioOutput:
         try:
             timeout = aiohttp.ClientTimeout(total=self.timeout_seconds)
             async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -70,11 +98,16 @@ class FishAudioTTSProvider(TTSProvider):
                     allow_redirects=False,
                 ) as response:
                     if response.status != 200:
-                        # Do not echo response bodies: they may contain text or credentials.
-                        raise TTSError(f"Fish TTS returned HTTP {response.status}")
+                        body = (await response.content.read(8192)).decode("utf-8", errors="replace")
+                        detail = self._error_detail(body, text)
+                        raise TTSError(f"Fish TTS returned HTTP {response.status}: {detail}")
                     content_type = response.content_type
                     if not (content_type.startswith("audio/") or content_type == "application/octet-stream"):
-                        raise TTSError("Fish TTS returned a non-audio response")
+                        body = (await response.content.read(8192)).decode("utf-8", errors="replace")
+                        raise TTSError(
+                            f"Fish TTS returned a non-audio response ({content_type}): "
+                            f"{self._error_detail(body, text)}"
+                        )
                     if response.content_length and response.content_length > self.max_audio_bytes:
                         raise TTSError("Fish TTS audio exceeds max_audio_bytes")
                     audio = bytearray()
@@ -86,4 +119,7 @@ class FishAudioTTSProvider(TTSProvider):
                         raise TTSError("Fish TTS returned empty audio")
             return AudioOutput(bytes(audio), self.format)
         except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as error:
-            raise TTSError(f"Fish TTS request failed: {type(error).__name__}") from error
+            detail = f"{type(error).__name__}: {error}"
+            if isinstance(error, aiohttp.ClientConnectorError):
+                detail += f"; host={error.host}; port={error.port}; os_error={error.os_error!r}"
+            raise TTSError(f"Fish TTS request failed: {self._error_detail(detail, text)}") from error

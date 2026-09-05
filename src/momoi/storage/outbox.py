@@ -13,7 +13,7 @@ from ..emotions import emotion_slug
 class OutboxStore:
     def progress_delivery(self, turn_id: str, tool_call_id: str) -> dict[str, object] | None:
         row = self._db.execute(
-            "SELECT text, target_channel, kind FROM outbox WHERE dedupe_key=?",
+            "SELECT text, target_channel, kind, state, last_error FROM outbox WHERE dedupe_key=?",
             (f"turn:{turn_id}:progress:{tool_call_id}:0",),
         ).fetchone()
         return dict(row) if row else None

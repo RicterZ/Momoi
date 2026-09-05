@@ -11,6 +11,12 @@ from .turn_workflow import turn_workflow_kind_sql
 class InboxStore:
     """Owner event ingestion, pending inbox, and interrupted reply state."""
 
+    def owner_channel_revision(self, channel: str) -> int:
+        return int(self._db.execute(
+            "SELECT COALESCE(MAX(rowid), 0) FROM events WHERE kind=?",
+            (f"{channel}.message",),
+        ).fetchone()[0])
+
     def add_event(self, message: IncomingMessage) -> bool:
         payload = {"channel": message.channel, "segments": message.segments}
         with self._db:

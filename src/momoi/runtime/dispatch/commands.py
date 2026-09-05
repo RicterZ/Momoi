@@ -143,6 +143,11 @@ class CommandRouter:
                 )
             return
         if self.store.add_event(message):
+            self.store.cancel_pending_outbox(
+                self._channel_for(message.channel).name,
+                "owner_message_superseded_outbox",
+            )
+            self.outbox_changed.set()
             await self.incoming.put(message)
             annealing = self._active_annealing
             if annealing is not None and not annealing.done():

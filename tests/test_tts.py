@@ -3,7 +3,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from aiohttp import web
 from aiohttp.test_utils import TestServer
@@ -25,6 +25,9 @@ class FishTTSTest(unittest.IsolatedAsyncioTestCase):
         self.audio = b"ID3-test-audio"
         self.delay = 0
         self.stream = False
+        retries = patch("momoi.tts.fish.TTS_RETRY_DELAYS", (0, 0, 0))
+        retries.start()
+        self.addCleanup(retries.stop)
 
         async def handle(request):
             self.requests.append((dict(request.headers), await request.json()))
@@ -66,16 +69,57 @@ class FishTTSTest(unittest.IsolatedAsyncioTestCase):
         second = await self.provider().synthesize(text)
         self.assertEqual(second.data, self.audio)
 
-    async def test_http_errors_do_not_retry_or_leak_response(self):
+    async def test_http_errors_retry_three_times_and_redact_sensitive_details(self):
         for status in (302, 401, 429, 500):
             with self.subTest(status=status):
                 self.status = status
-                self.audio = b"test-key private spoken text"
-                with self.assertRaises(TTSError) as caught:
-                    await self.provider().synthesize("private spoken text")
-                self.assertEqual(str(caught.exception), f"Fish TTS returned HTTP {status}")
-        self.assertEqual(len(self.requests), 4)
+                self.audio = b'{"error":"backend unavailable", "key":"test-key", "text":"private spoken text"}'
+                with self.assertLogs("momoi.tts.fish", level="WARNING") as logs:
+                    with self.assertRaises(TTSError) as caught:
+                        await self.provider().synthesize("private spoken text")
+                self.assertIn(f"Fish TTS returned HTTP {status}", str(caught.exception))
+                self.assertIn("backend unavailable", str(caught.exception))
+                self.assertIn("failed after 4 attempts", str(caught.exception))
+                self.assertEqual(len(logs.output), 4)
+                reasons = [record.momoi_fields["reason"] for record in logs.records]
+                self.assertTrue(all("backend unavailable" in reason for reason in reasons))
+                for output in [str(caught.exception), *logs.output, *reasons]:
+                    self.assertNotIn("test-key", output)
+                    self.assertNotIn("private spoken text", output)
+        self.assertEqual(len(self.requests), 16)
         self.assertFalse((self.root / "audio").exists())
+
+    async def test_transient_http_error_recovers_on_retry(self):
+        self.status = 503
+        provider = self.provider()
+        original = provider._synthesize_once
+        async def attempt(text):
+            if self.requests:
+                self.status = 200
+            return await original(text)
+        provider._synthesize_once = attempt
+        audio = await provider.synthesize("hello")
+        self.assertEqual(audio.data, self.audio)
+        self.assertEqual(len(self.requests), 2)
+
+    async def test_connection_error_preserves_host_port_and_os_error(self):
+        provider = self.provider()
+        await self.server.close()
+        with self.assertRaises(TTSError) as caught:
+            await provider.synthesize("hello")
+        detail = str(caught.exception)
+        self.assertIn("ClientConnectorError", detail)
+        self.assertIn("host=127.0.0.1", detail)
+        self.assertIn("port=", detail)
+        self.assertIn("os_error=", detail)
+        self.assertIn("failed after 4 attempts", detail)
+
+    async def test_cancellation_is_not_retried(self):
+        provider = self.provider()
+        provider._synthesize_once = AsyncMock(side_effect=asyncio.CancelledError())
+        with self.assertRaises(asyncio.CancelledError):
+            await provider.synthesize("hello")
+        provider._synthesize_once.assert_awaited_once()
 
     async def test_bad_or_oversized_audio_is_rejected(self):
         for content_type, audio, limit, stream in (

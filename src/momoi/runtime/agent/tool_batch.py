@@ -199,11 +199,17 @@ class ToolBatchExecutor:
                 elif self.bubble_delivery.tts_provider is None:
                     result = {"ok": False, "error": "tts_not_configured"}
                 else:
-                    request.draft.notification_messages = [{"action": "voice", "text": text}]
-                    request.draft.notification_key = f"goal.{execution.goal_id}"
-                    request.draft.notification_priority = "normal"
-                    request.draft.notification_reason = "Goal voice update"
-                    result = {"ok": True, "state": "staged", "bubbles": 1}
+                    synthesis_error = await self.bubble_delivery.prepare_voice(
+                        request.turn_id, text, request.delivery_channel.name,
+                    )
+                    if synthesis_error is not None:
+                        result = synthesis_error
+                    else:
+                        request.draft.notification_messages = [{"action": "voice", "text": text}]
+                        request.draft.notification_key = f"goal.{execution.goal_id}"
+                        request.draft.notification_priority = "normal"
+                        request.draft.notification_reason = "Goal voice update"
+                        result = {"ok": True, "state": "staged", "bubbles": 1}
             elif call.name in {"send_bubbles", "send_voice"}:
                 if execution.goal_id and execution.allow_notify:
                     result = self.agenda_tools.execute(

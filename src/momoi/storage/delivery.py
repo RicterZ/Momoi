@@ -8,6 +8,12 @@ from .turn_workflow import turn_workflow_kind_sql
 
 
 class DeliveryStore:
+    def outbox_dispatchable(self, outbox_id: int) -> bool:
+        return self._db.execute(
+            "SELECT 1 FROM outbox WHERE id=? AND state IN ('pending', 'ambiguous')",
+            (outbox_id,),
+        ).fetchone() is not None
+
     def due_outbox(self) -> list[OutboxMessage]:
         rows = self._db.execute(
             """SELECT o.id, o.turn_id, o.text, o.state, o.attempts,

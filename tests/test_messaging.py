@@ -980,7 +980,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                 if text == "第三条":
                     stop.set()
 
-            async def sleep(delay: float) -> None:
+            async def sleep(outbox_id: int, delay: float) -> None:
                 timeline.append(("sleep", delay))
 
             daemon.channel.send_message = send_message  # type: ignore[method-assign]
@@ -989,7 +989,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
                     "momoi.runtime.dispatch.delivery.random.uniform",
                     return_value=3,
                 ),
-                patch("momoi.runtime.dispatch.delivery.asyncio.sleep", new=sleep),
+                patch.object(daemon, "_wait_outbox_gap", new=sleep),
             ):
                 await daemon._outbox_worker(stop)
 

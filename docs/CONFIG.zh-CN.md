@@ -56,17 +56,22 @@ TTS 默认关闭，关闭时不暴露 `send_voice`。启用后微信和 NapCat �
 
 示例 ID 对应[该 Fish 音色](https://fish.audio/m/9bb8ad542dc44d148c21c73a0884e9ae/)。
 音色和免费模型的可用性以 Fish 账号实际情况为准。Fish 文档说明未知模型名会回退到付费模型，
-因此 Momoi 会提前拒绝模型名拼写错误，不自动切换模型，也不自动重试合成请求。
+因此 Momoi 会提前拒绝模型名拼写错误，不自动切换模型。合成请求失败后额外重试三次，
+间隔为 1、2、4 秒（含首次请求共四次）。
 参考：[TTS API](https://docs.fish.audio/api-reference/endpoint/openapi-v1/text-to-speech)、
 [价格和限制](https://docs.fish.audio/developer-guide/models-pricing/pricing-and-rate-limits)。
 
-HTTP 失败只输出状态码，不输出密钥或服务端响应正文。空音频、非音频响应和超出大小上限时
+每次失败都记录详情：HTTP 状态及限长响应内容，或连接异常类型、主机、端口和底层 OS 错误。
+详情中的 API 密钥、音色 ID 和提交的原文会脱敏。空音频、非音频响应和超出大小上限时
 会抛出 `TTSError`，不会写入音频文件。
 
 语音工具只接收完整 `text` 字符串，频道由当前对话决定。数据库会话内容和 transcript 保留原文；
-outbox 只持久化原文和语音投递标记。投递 worker 调用 TTS，收到完整音频后以 base64 交给 NapCat。
+工具等待合成完成后才入队或暂存通知；失败时返回工具错误，建议模型用 `send_bubbles` 降级文字。
+成功调用的返回结构与 `send_bubbles` 一致。
+outbox 只持久化原文和语音投递标记；合成音频通过有容量上限的内存缓存交给投递 worker，
+再以 base64 交给 NapCat。
 Momoi 不保存音频文件或音频数据库字段；NapCat 自身的临时文件行为由其服务实现决定。
-重启后未发送的消息根据原文重新合成。合成失败会标记投递失败，不伪装成已送达。
+重启或缓存淘汰后，未发送的消息根据原文重新合成；恢复期间合成失败会标记投递失败。
 Weixin 的工具 schema 保持一致，harness 拒绝执行 `send_voice`；直接内部调用返回 `voice_not_supported`。
 Owner、Heartbeat、Webhook、Goal、后续回复工作流均支持语音；Goal 沿用原有通知调度和冷却规则。
 

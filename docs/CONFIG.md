@@ -63,20 +63,27 @@ in-memory `AudioOutput(data: bytes, format: str)`. No CLI entry point is added.
 The example uses [this Fish voice](https://fish.audio/m/9bb8ad542dc44d148c21c73a0884e9ae/).
 Voice availability and free-tier access depend on Fish. Momoi validates model
 names because Fish documents a paid-model fallback for unknown names; it never
-automatically changes the configured model or retries synthesis requests.
+automatically changes the configured model. Failed synthesis requests receive
+three retries after the initial attempt, with delays of 1, 2, and 4 seconds.
 See [Fish TTS API](https://docs.fish.audio/api-reference/endpoint/openapi-v1/text-to-speech)
 and [pricing](https://docs.fish.audio/developer-guide/models-pricing/pricing-and-rate-limits).
 
-HTTP errors report the status code without printing credentials or response bodies.
+Errors include the HTTP status and bounded response details, or connection exception,
+host, port, and OS error when available. API keys, voice IDs, and the submitted text
+are redacted from these details. Each failed attempt is logged.
 Empty, non-audio, and oversized responses raise `TTSError`. No audio files are written.
 
 The voice tool accepts only the complete `text` string and selects the
 current channel internally. Conversation history and recall retain the original
-text. The outbox persists only that text and a voice delivery marker. The worker
-synthesizes complete audio in memory and sends it to NapCat as base64. Momoi does
+text. The tool waits for synthesis before queueing or staging a notification;
+on failure it returns a tool error recommending `send_bubbles` for a text reply.
+Successful calls use the same result structure as `send_bubbles`.
+The outbox persists only the text and a voice delivery marker. A bounded memory
+cache passes the synthesized audio to the worker, which sends it to NapCat as base64. Momoi does
 not persist audio files or audio bytes in SQLite; NapCat controls its own internal
-temporary-file behavior. Pending messages are synthesized again after a restart.
-Synthesis failures mark delivery failed, not delivered. On Weixin the harness rejects `send_voice` without changing the tool schema;
+temporary-file behavior. Pending messages are synthesized again after a restart
+or cache eviction; failures during this recovery mark delivery failed.
+On Weixin the harness rejects `send_voice` without changing the tool schema;
 direct internal calls return `voice_not_supported`.
 Owner, Heartbeat, Webhook, Goal and reply-followup workflows support voice output.
 Goal voice messages retain the existing notification scheduling and cooldown.
