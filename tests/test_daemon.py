@@ -48,6 +48,7 @@ from momoi.llm.errors import (
     ProviderError,
 )
 from momoi.runtime.turn_support import (
+    HEARTBEAT_PROMPT_PATH,
     STYLE_CARD_SYSTEM_PROMPT,
 )
 from momoi.runtime.agent.protocol import (
@@ -249,19 +250,13 @@ class DaemonTest(unittest.TestCase):
             heartbeat.write_text("New heartbeat")
             self.assertIn("New soul", daemon._system()[0]["text"])
             rendered = daemon._heartbeat_system_prompt()
-            self.assertIn("New heartbeat", rendered)
-            self.assertLess(
-                rendered.index("Call `heartbeat_begin` first"),
-                rendered.index("# Workspace heartbeat guidance"),
+            base_heartbeat = HEARTBEAT_PROMPT_PATH.read_text(encoding="utf-8").strip()
+            self.assertEqual(
+                rendered,
+                base_heartbeat + "\n\n# Workspace heartbeat guidance\n\nNew heartbeat",
             )
-            self.assertNotIn("heartbeat_handoff", rendered)
-            self.assertIn("A `rest` activity is complete", rendered)
-            self.assertIn("follow the shared Style Card", rendered)
-            self.assertNotIn("<recalled_turns>", rendered)
             heartbeat.unlink()
-            self.assertNotIn(
-                "# Workspace heartbeat guidance", daemon._heartbeat_system_prompt()
-            )
+            self.assertEqual(daemon._heartbeat_system_prompt(), base_heartbeat)
 
             daemon._loaded_workspace_prompts = {}
             heartbeat.write_text("偶尔整理自己的摄影兴趣。")

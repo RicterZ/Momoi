@@ -1,5 +1,6 @@
 from typing import Any
 
+from ...reply_wait import REPLY_WAIT_MAX_MINUTES, REPLY_WAIT_MIN_MINUTES
 
 SEGMENT_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -190,8 +191,8 @@ REPLY_WAIT_DECISION_SCHEMA: dict[str, Any] = {
                 "wait": {"type": "boolean", "enum": [True]},
                 "delay_minutes": {
                     "type": "integer",
-                    "minimum": 1,
-                    "maximum": 10,
+                    "minimum": REPLY_WAIT_MIN_MINUTES,
+                    "maximum": REPLY_WAIT_MAX_MINUTES,
                     "description": "Whole minutes after successful bubble delivery.",
                 },
                 "expected_information": {
@@ -251,7 +252,8 @@ END_TURN_TOOL_SPEC: dict[str, Any] = {
         "Terminal action for Owner, Heartbeat, Webhook, and Reply Follow-up Turns. "
         "Commit private state only; never visible content. Call once and alone after "
         "work and delivery. Owner requires activity; Heartbeat requires heartbeat; "
-        "other workflows must omit both."
+        "other workflows must omit both. Reply Follow-up must set reply_wait.wait "
+        "to false; other chat Turns may wait only after visible bubbles."
     ),
     "input_schema": {
         "type": "object",

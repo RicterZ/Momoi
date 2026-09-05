@@ -11,9 +11,6 @@ class WorkflowProtocolError(RuntimeError):
     pass
 
 
-END_TURN_STAGES = frozenset({"owner", "webhook", "heartbeat", "reply_followup"})
-
-
 @dataclass(frozen=True)
 class TurnExecutionSpec:
     """Non-combinable execution contract for one shared Agent loop."""
@@ -36,7 +33,7 @@ class TurnExecutionSpec:
 
     @property
     def require_response(self) -> bool:
-        return self.stage in END_TURN_STAGES
+        return TURN_HARNESS_SPECS[self.stage].terminal_tool == "end_turn"
 
     @property
     def allow_notify(self) -> bool:

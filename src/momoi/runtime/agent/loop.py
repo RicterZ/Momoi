@@ -360,9 +360,7 @@ class AgentLoop:
                 )
                 reply, error = parse_end_turn(
                     response.tool_calls[0].arguments,
-                    heartbeat_turn=heartbeat_turn,
-                    owner_turn=authority == "owner",
-                    reply_followup_turn=reply_wait_turn,
+                    execution=execution,
                     visible_since_owner_update=visible_since_owner_update,
                     heartbeat_min_interval_seconds=(
                         self.config.heartbeat.min_interval_seconds
@@ -370,7 +368,6 @@ class AgentLoop:
                     heartbeat_max_interval_seconds=(
                         self.config.heartbeat.max_interval_seconds
                     ),
-                    validate_emotions=self.delivery_policy.validate_emotions,
                 )
                 if reply is not None:
                     log_event(

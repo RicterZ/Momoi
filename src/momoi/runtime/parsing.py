@@ -9,6 +9,7 @@ from ..channel import (
 )
 from ..emotions import EMOTION_PREFIX
 from ..models import AgentReply
+from ..reply_wait import REPLY_WAIT_MAX_MINUTES, REPLY_WAIT_MIN_MINUTES
 from ..storage import REFLECTION_MEMORY_KINDS
 
 
@@ -76,7 +77,7 @@ def parse_reply_wait_decision(
     if (
         not isinstance(delay, int)
         or isinstance(delay, bool)
-        or not 1 <= delay <= 10
+        or not REPLY_WAIT_MIN_MINUTES <= delay <= REPLY_WAIT_MAX_MINUTES
         or not isinstance(expected, str)
         or not expected.strip()
         or len(expected) > 300

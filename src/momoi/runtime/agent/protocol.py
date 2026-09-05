@@ -1,15 +1,13 @@
 import copy
-from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
 from typing import Any
 
-from ...channel import ChannelMessage
 from ...models import AgentReply, ToolCall
 from ..parsing import parse_response
 from ..turn_support import tool_error_block
 from ..turn_support import ExternalToolTurnError, MAX_CONSECUTIVE_TOOL_FAILURES
-from .workflow import WorkflowProtocolError
+from .workflow import TurnExecutionSpec, WorkflowProtocolError
 
 OWNER_BUBBLE_REQUEST_REMINDER = (
     "Native tool calls only: if bubbles are warranted, call send_bubbles with "
@@ -204,44 +202,33 @@ def harness_correction(
 def parse_end_turn(
     arguments: dict[str, Any],
     *,
-    heartbeat_turn: bool,
-    owner_turn: bool,
-    reply_followup_turn: bool,
+    execution: TurnExecutionSpec,
     visible_since_owner_update: bool,
     heartbeat_min_interval_seconds: int,
     heartbeat_max_interval_seconds: int,
-    validate_emotions: Callable[[list[ChannelMessage]], str | None],
 ) -> tuple[AgentReply | None, str | None]:
+    if not execution.require_response:
+        return None, "end_turn_not_allowed"
     reply, error = parse_response(
         arguments,
-        require_heartbeat=heartbeat_turn,
-        allow_activity_update=owner_turn,
+        require_heartbeat=execution.heartbeat,
+        allow_activity_update=execution.stage == "owner",
     )
-    if reply is not None and heartbeat_turn and reply.heartbeat:
+    if reply is None:
+        return None, error
+    if execution.heartbeat and reply.heartbeat:
         seconds = int(reply.heartbeat["next_check_minutes"]) * 60
         if not (
             heartbeat_min_interval_seconds
             <= seconds
             <= heartbeat_max_interval_seconds
         ):
-            reply = None
-            error = "heartbeat_interval_out_of_range"
-    if reply is not None:
-        error = validate_emotions(reply.messages)
-        if error is not None:
-            reply = None
-    if (
-        reply is not None
-        and reply.expects_reply
-        and not reply.messages
-        and not visible_since_owner_update
-    ):
-        reply = None
-        error = "reply_expectation_without_visible_bubble"
-    if reply is not None and reply_followup_turn and not visible_since_owner_update:
-        reply = None
-        error = "reply_followup_bubble_required"
-    if reply is not None and reply_followup_turn and reply.should_schedule_reply_wait:
-        reply = None
-        error = "reply_followup_cannot_schedule_another_wait"
-    return reply, error
+            return None, "heartbeat_interval_out_of_range"
+    if reply.expects_reply and not visible_since_owner_update:
+        return None, "reply_expectation_without_visible_bubble"
+    if execution.reply_followup:
+        if not visible_since_owner_update:
+            return None, "reply_followup_bubble_required"
+        if reply.should_schedule_reply_wait:
+            return None, "reply_followup_cannot_schedule_another_wait"
+    return reply, None
