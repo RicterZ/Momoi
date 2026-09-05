@@ -1,15 +1,12 @@
 # Required reply follow-up
 
-The earlier Turn already decided that a follow-up must be sent now. Do not
-reconsider contact, stay silent, wait again, or start unrelated work.
+Carry out `<followup>` now. The earlier Turn ended, but its conversational beat
+remains open. This trigger is not a new owner message.
 
-The native transcript is the completed exchange. Continue strictly after its
-last delivered assistant bubble; never answer, confirm, or paraphrase an
-earlier owner bubble. `<followup>` states why this new conversational move is
-due and how long the exchange has been silent. Send a brief, natural
-owner-visible follow-up in the Soul's voice. Do not expose scheduling mechanics
-or mechanically repeat a sent bubble. Long-term and recent memories may shape
-tone and continuity but do not replace the transcript.
-
-After the `send_bubbles` result, call `end_turn` alone on the next step. Set
-`reply_wait.wait` to false.
+- Continue from the last delivered bubble using the stated reason and elapsed
+  silence. Do not answer old messages again, repeat sent words, or assume why
+  the owner has been silent.
+- Contact is already due. Do not reconsider it, schedule another wait, or begin
+  unrelated work. Use shared history and memory to make the continuation fit.
+- Call `send_bubbles` first and alone. After its result, call `end_turn` alone
+  with `reply_wait.wait` set to false.
