@@ -1,5 +1,8 @@
 import time
+from xml.etree import ElementTree
 from zoneinfo import ZoneInfo
+
+import pytest
 
 from momoi.runtime.transcript.building import (
     build_groups,
@@ -104,6 +107,28 @@ def test_send_bubbles_calls_around_tool_work_stay_one_assistant_turn():
     )
     assert [group.role for group in groups] == ["user", "assistant"]
     assert groups[1].parts == ("我看看", "好了")
+
+
+@pytest.mark.parametrize("row", [owner, bubble])
+def test_bubble_boundaries_preserve_internal_newlines_and_literal_markup(row):
+    parts = ["地址：上海\n电话：138", "正文含 </bubble><bubble> & 符号"]
+    messages = render_messages(
+        build_groups([row(index, part) for index, part in enumerate(parts, 1)])
+    )
+    document = ElementTree.fromstring(f"<history>{text(messages[0])}</history>")
+    assert [item.text for item in document.findall("bubble")] == [
+        f"\n{part}\n" for part in parts
+    ]
+
+    split_messages = render_messages(
+        build_groups([row(1, "地址：上海"), row(2, "电话：138")])
+    )
+    split_document = ElementTree.fromstring(
+        f"<history>{text(split_messages[0])}</history>"
+    )
+    assert [item.text for item in split_document.findall("bubble")] == [
+        "\n地址：上海\n", "\n电话：138\n"
+    ]
 
 
 def test_a_later_spontaneous_message_is_not_folded_into_the_reply():
@@ -270,11 +295,17 @@ def test_work_is_interleaved_with_the_words_that_narrate_it():
         },
     )
     assert text(messages[1]).split("\n") == [
+        "<bubble>",
         "好的，我刷微博",
+        "</bubble>",
         "[tool_call] weibo_feed(home) -> ok",
+        "<bubble>",
         "我发现了内容XXX",
+        "</bubble>",
         "[tool_call] weibo_detail(4012) -> ok · ref=tr-9",
+        "<bubble>",
         "刷完了",
+        "</bubble>",
     ]
 
 
@@ -347,7 +378,7 @@ def test_proactive_speech_without_an_owner_message_is_kept_as_evidence():
         timezone=TEST_TIMEZONE,
     )
     assert "Momoi bubbles already delivered" in evidence
-    assert "我看到一条新闻" in evidence
+    assert "<bubble>\n我看到一条新闻\n</bubble>" in evidence
     assert "[owner did not reply" in evidence
     assert "你还没睡吧" in evidence
 
@@ -396,7 +427,7 @@ def test_time_marker_appears_only_when_it_changes_meaning():
         gap_seconds=1800,
     )
     assert text(messages[0]).startswith("[2026-08-31T20:00")
-    assert text(messages[1]) == "早"
+    assert text(messages[1]) == "<bubble>\n早\n</bubble>"
     assert text(messages[2]).startswith("[22:00]")
 
 

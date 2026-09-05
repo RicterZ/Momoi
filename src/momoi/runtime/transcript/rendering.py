@@ -1,5 +1,6 @@
 from collections.abc import Mapping, Sequence
 from datetime import datetime
+from xml.sax.saxutils import escape
 from zoneinfo import ZoneInfo
 
 from .models import (
@@ -68,6 +69,10 @@ def _silence(
         waited = max(0.0, group.started_at - previous.ended_at)
         return _message("user", f"[owner did not reply · {_elapsed(waited)} later]")
     return _message("assistant", "[ended the Turn without replying]")
+
+def render_bubble(text: str) -> str:
+    return f"<bubble>\n{escape(text)}\n</bubble>"
+
 
 def _message(role: str, text: str) -> dict[str, object]:
     """Build a message in the block form both provider adapters already take.
@@ -145,7 +150,7 @@ def _assistant_body(
     for _at, _kind, item in events:
         if isinstance(item, str):
             flush_run()
-            lines.append(item)
+            lines.append(render_bubble(item))
             continue
         if run and text_value(run[0].get("name")) != text_value(item.get("name")):
             flush_run()
@@ -205,7 +210,7 @@ def render_messages(
         if records:
             lines.extend(_assistant_body(group, records, action_limit))
         else:
-            lines.extend(group.parts)
+            lines.extend(render_bubble(part) for part in group.parts)
         messages.append(_message(group.role, "\n".join(lines)))
         previous = group
     return messages

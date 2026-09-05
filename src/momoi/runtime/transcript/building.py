@@ -10,7 +10,7 @@ from .models import (
     TranscriptGroup,
     text_value,
 )
-from .rendering import render_messages
+from .rendering import render_bubble, render_messages
 
 
 def _visible(row: Mapping[str, object]) -> bool:
@@ -60,7 +60,7 @@ def build_groups(rows: Iterable[Mapping[str, object]]) -> list[TranscriptGroup]:
         nonlocal parts, part_times, message_ids, turn_ids, role, turn, uncertain
         if not parts:
             return
-        text = "\n".join(parts)
+        text = "\n".join(render_bubble(part) for part in parts)
         groups.append(
             TranscriptGroup(
                 role=role,
