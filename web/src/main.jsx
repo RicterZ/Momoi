@@ -856,7 +856,7 @@ function UsageChart({ rows, today, balance, costAvailable, days = 30, token, sel
               y={height - (compact ? 14 : 10)}
               textAnchor="middle"
             >
-              {hourly ? `${String(row.hour).padStart(2, "0")}时` : shortDate(row.date)}
+              {hourly ? `${String(row.hour).padStart(2, "0")}:00` : shortDate(row.date)}
             </text>
           ))}
         </svg>
