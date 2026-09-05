@@ -701,6 +701,7 @@ function previewUsageApi() {
   };
   const usage = {
     source: "preview",
+    cost_available: true,
     currency: "CNY",
     timezone: "Asia/Shanghai",
     days,
@@ -869,6 +870,31 @@ function previewUsageApi() {
           return;
         }
         if (req.method === "GET" && path === "/api/usage") {
+          const date = new URL(req.url, "http://127.0.0.1").searchParams.get("date");
+          if (date) {
+            const selected = daily.find((row) => row.date === date);
+            const hourWeights = Array.from({ length: 24 }, (_, hour) =>
+              hour < 7 ? 0 : 1 + (hour % 5));
+            const weightTotal = hourWeights.reduce((a, b) => a + b, 0);
+            let before = 0;
+            const hourly = hourWeights.map((weight, hour) => {
+              const bucket = { hour };
+              for (const key of ["requests", "input_tokens", "uncached_tokens",
+                "cache_read_tokens", "cache_write_tokens", "output_tokens"]) {
+                const total = selected?.[key] || 0;
+                bucket[key] = Math.round(total * (before + weight) / weightTotal)
+                  - Math.round(total * before / weightTotal);
+              }
+              bucket.estimated_cost = (selected?.estimated_cost || 0) * weight / weightTotal;
+              bucket.cache_hit_rate = bucket.input_tokens
+                ? 100 * bucket.cache_read_tokens / bucket.input_tokens : 0;
+              before += weight;
+              return bucket;
+            });
+            json(res, { date, hourly, totals: selected || hourly[0],
+              timezone: usage.timezone, cost_available: true });
+            return;
+          }
           json(res, usage);
           return;
         }

@@ -284,6 +284,11 @@ def create_dashboard_app(
         return web.json_response(data)
 
     async def usage(request: web.Request) -> web.Response:
+        if "date" in request.query:
+            try:
+                return web.json_response(store.dashboard_hourly_usage(request.query["date"]))
+            except (ValueError, OverflowError):
+                raise web.HTTPBadRequest(text="date must be a valid YYYY-MM-DD")
         days = _bounded_int(request, "days", 30, 1, 366)
         return web.json_response(store.dashboard_usage(days=days))
 

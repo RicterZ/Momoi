@@ -1,6 +1,6 @@
 import time
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from momoi.extensions import load_usage_plugin
@@ -241,6 +241,63 @@ class DeepSeekPluginTest(unittest.TestCase):
 
 
 class StoreUsageTest(unittest.TestCase):
+    def test_hourly_usage_matches_daily_totals_and_local_day_boundaries(self) -> None:
+        import tempfile
+        from pathlib import Path
+        from momoi.storage import Store
+
+        with tempfile.TemporaryDirectory() as raw:
+            store = Store(Path(raw) / "momoi.sqlite3", timezone="Asia/Shanghai")
+            store.set_usage_plugin(_plugin())
+            start = datetime(2026, 9, 5, tzinfo=SHANGHAI)
+            for offset in (-1, 0, 3599, 3600, 86399, 86400):
+                store.record_llm_call(
+                    created_at=(start + timedelta(seconds=offset)).timestamp(),
+                    turn_id=f"hour-{offset}", stage="owner", model="deepseek-v4-flash",
+                    metrics={"input": 200, "uncached": 50, "cache_read": 150,
+                             "output": 30, "cache_reported": True},
+                )
+            hourly = store.dashboard_hourly_usage("2026-09-05")
+            daily = store.dashboard_usage(days=1, now=(start + timedelta(hours=12)).timestamp())
+            self.assertEqual(hourly["totals"], daily["totals"])
+            self.assertEqual(hourly["totals"]["requests"], 4)
+            self.assertEqual(hourly["timezone"], "Asia/Shanghai")
+            self.assertEqual(hourly["hourly"][0]["requests"], 2)
+            self.assertEqual(hourly["hourly"][1]["requests"], 1)
+            self.assertEqual(hourly["hourly"][23]["requests"], 1)
+            self.assertEqual(hourly["hourly"][2]["requests"], 0)
+            self.assertEqual(hourly["totals"]["cache_hit_rate"], 75.0)
+            empty = store.dashboard_hourly_usage("2026-09-03")
+            self.assertEqual(len(empty["hourly"]), 24)
+            self.assertEqual(empty["totals"]["requests"], 0)
+            store.close()
+
+    def test_hourly_usage_keeps_24_clock_hours_across_dst(self) -> None:
+        import tempfile
+        from pathlib import Path
+        from momoi.storage import Store
+
+        zone = ZoneInfo("America/New_York")
+        with tempfile.TemporaryDirectory() as raw:
+            store = Store(Path(raw) / "momoi.sqlite3", timezone=zone.key)
+            moments = [
+                datetime(2026, 11, 1, 1, 30, tzinfo=zone, fold=0),
+                datetime(2026, 11, 1, 1, 30, tzinfo=zone, fold=1),
+                datetime(2026, 11, 1, 23, 59, tzinfo=zone),
+                datetime(2026, 11, 2, 0, 0, tzinfo=zone),
+            ]
+            for index, moment in enumerate(moments):
+                store.record_llm_call(
+                    created_at=moment.timestamp(), turn_id=f"dst-{index}",
+                    stage="owner", model="test", metrics={"input": 10},
+                )
+            hourly = store.dashboard_hourly_usage("2026-11-01")
+            self.assertEqual(len(hourly["hourly"]), 24)
+            self.assertEqual(hourly["hourly"][1]["requests"], 2)
+            self.assertEqual(hourly["totals"]["requests"], 3)
+            self.assertEqual(len(store.dashboard_hourly_usage("2026-03-08")["hourly"]), 24)
+            store.close()
+
     def test_record_llm_call_feeds_dashboard(self) -> None:
         import tempfile
         from pathlib import Path

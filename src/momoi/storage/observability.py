@@ -1,7 +1,7 @@
 import time
-from datetime import datetime, timedelta
+from datetime import date, datetime, time as local_time, timedelta
 
-from ..llm.usage import PRICING_NOTE, summarize_usage
+from ..llm.usage import PRICING_NOTE, summarize_hourly_usage, summarize_usage
 from .thinking import month_bounds, parse_month
 
 
@@ -219,4 +219,25 @@ class ObservabilityStore:
             zone=self._timezone,
             estimate=None if plugin is None else plugin.estimate_cost,
             note=PRICING_NOTE,
+        )
+
+    def dashboard_hourly_usage(self, day: str) -> dict[str, object]:
+        selected = date.fromisoformat(day)
+        if selected.isoformat() != day:
+            raise ValueError("date must use YYYY-MM-DD")
+        start = datetime.combine(selected, local_time.min, self._timezone)
+        end = datetime.combine(selected + timedelta(days=1), local_time.min, self._timezone)
+        rows = self._db.execute(
+            """SELECT created_at, model, input_tokens, uncached_tokens,
+                      cache_read_tokens, cache_write_tokens, output_tokens, cache_reported
+               FROM llm_usage WHERE created_at >= ? AND created_at < ?
+               ORDER BY created_at""",
+            (start.timestamp(), end.timestamp()),
+        ).fetchall()
+        plugin = self._usage_plugin
+        return summarize_hourly_usage(
+            [dict(row) for row in rows],
+            day=selected,
+            zone=self._timezone,
+            estimate=None if plugin is None else plugin.estimate_cost,
         )

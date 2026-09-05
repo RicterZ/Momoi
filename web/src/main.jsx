@@ -499,15 +499,15 @@ function DataView({ path, refreshKey, token, children }) {
   return children(state.data);
 }
 
-function Overview({ refreshKey, token }) {
+function Overview({ refreshKey, token, routeParam }) {
   return (
     <DataView path="/api/overview" refreshKey={refreshKey} token={token}>
-      {(data) => <OverviewBody data={data} />}
+      {(data) => <OverviewBody data={data} token={token} routeParam={routeParam} />}
     </DataView>
   );
 }
 
-function OverviewBody({ data }) {
+function OverviewBody({ data, token, routeParam }) {
   const narrow = useNarrowScreen();
   const usage = data.usage || {};
   const groups = [
@@ -542,9 +542,12 @@ function OverviewBody({ data }) {
     <>
       <OverviewSection
         label="Usage"
-        note={narrow ? "账户余额与近 7 日调用" : "账户余额与近 30 日调用"}
+        note="账户余额与调用统计"
       >
         <UsageChart
+          token={token}
+          selectedDate={/^\d{4}-\d{2}-\d{2}$/.test(routeParam || "") ? routeParam : ""}
+          timezone={usage.timezone}
           rows={usage.daily}
           totals={usage.totals}
           today={usage.today}
@@ -629,12 +632,80 @@ function linePath(points) {
     .join(" ");
 }
 
-function UsageChart({ rows, totals, today, balance, costAvailable, days = 30 }) {
+function UsageChart({ rows, totals, today, balance, costAvailable, days = 30, token, selectedDate, timezone }) {
   const [hover, setHover] = useState(null);
+  const [detail, setDetail] = useState({});
+  const [retry, setRetry] = useState(0);
+  const savedDate = useRef("");
+  const gesture = useRef(null);
+  const suppressClick = useRef(false);
+  const hourly = Boolean(selectedDate);
+  const hourData = detail.date === selectedDate ? detail.data : null;
+  const loading = hourly && (!detail.date || detail.date !== selectedDate || detail.loading);
+  const error = hourly && detail.date === selectedDate && detail.error;
+  useEffect(() => {
+    setHover(null);
+    if (!selectedDate) return undefined;
+    savedDate.current = selectedDate;
+    const controller = new AbortController();
+    setDetail({ date: selectedDate, loading: true });
+    api(`/api/usage?date=${encodeURIComponent(selectedDate)}`, { token, signal: controller.signal })
+      .then((data) => setDetail({ date: selectedDate, data }))
+      .catch((error) => {
+        if (error.name !== "AbortError") setDetail({ date: selectedDate, error });
+      });
+    return () => controller.abort();
+  }, [selectedDate, token, retry]);
+  useEffect(() => () => clearTimeout(gesture.current?.timer), []);
+  function returnToDays() {
+    setHover(null);
+    window.location.hash = "overview";
+  }
+  function openDay(date) {
+    savedDate.current = date;
+    setHover(null);
+    window.location.hash = `overview/${date}`;
+  }
+  function cancelGesture() {
+    clearTimeout(gesture.current?.timer);
+    gesture.current = null;
+  }
+  function startGesture(event) {
+    suppressClick.current = false;
+    if (!hourly || event.pointerType === "mouse") return;
+    cancelGesture();
+    const rect = event.currentTarget.getBoundingClientRect();
+    const index = Math.max(0, Math.min(23, Math.floor(
+      ((event.clientX - rect.left) / rect.width * width - pad.left) / innerW * 24,
+    )));
+    gesture.current = {
+      x: event.clientX, y: event.clientY,
+      timer: setTimeout(() => {
+        suppressClick.current = true;
+        setHover(index);
+      }, 450),
+    };
+  }
+  function moveGesture(event) {
+    const start = gesture.current;
+    if (start && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 10) {
+      suppressClick.current = true;
+      cancelGesture();
+    }
+  }
   const compact = days <= 7;
   const daily = (rows || []).slice(-days);
-  const shown = compact ? summarizeDaily(daily, costAvailable) : totals;
-  const todayStats = today || daily.at(-1) || {};
+  const series = hourly
+    ? hourData?.hourly || Array.from({ length: 24 }, (_, hour) => ({ hour }))
+    : daily;
+  const shown = hourly ? hourData?.totals : compact ? summarizeDaily(daily, costAvailable) : totals;
+  const todayStats = hourly ? hourData?.totals || {} : today || daily.at(-1) || {};
+  const hasStats = !hourly || Boolean(hourData);
+  const showCost = hourly ? hourData?.cost_available ?? costAvailable : costAvailable;
+  const label = hourly ? `${selectedDate} · 24 小时` : `近 ${days} 日`;
+  const rowLabel = (row) => hourly
+    ? `${selectedDate} ${String(row.hour).padStart(2, "0")}:00–${String(row.hour + 1).padStart(2, "0")}:00`
+    : row.date;
   const width = compact ? 390 : 720;
   const height = compact ? 220 : 176;
   const pad = compact
@@ -642,34 +713,38 @@ function UsageChart({ rows, totals, today, balance, costAvailable, days = 30 }) 
     : { top: 16, right: 18, bottom: 30, left: 18 };
   const innerW = width - pad.left - pad.right;
   const innerH = height - pad.top - pad.bottom;
-  const costs = daily.map((row) => Number(row.estimated_cost) || 0);
-  const requests = daily.map((row) => Number(row.requests) || 0);
+  const costs = series.map((row) => Number(row.estimated_cost) || 0);
+  const requests = series.map((row) => Number(row.requests) || 0);
   const maxCost = Math.max(...costs, 0);
   const maxReq = Math.max(...requests, 0);
-  const count = Math.max(daily.length, 1);
+  const count = Math.max(series.length, 1);
   const xAt = (index) =>
-    pad.left + (count === 1 ? innerW / 2 : (index / (count - 1)) * innerW);
+    pad.left + ((index + 0.5) / count) * innerW;
   const yAt = (value, max, ratio) =>
     pad.top + innerH - (max ? (value / max) * innerH * ratio : 0);
-  const costPoints = daily.map((row, index) => ({
+  const costPoints = series.map((row, index) => ({
     x: xAt(index),
     y: yAt(Number(row.estimated_cost) || 0, maxCost, 0.92),
     cost: Number(row.estimated_cost) || 0,
   }));
-  const ticks = daily
+  const ticks = series
     .map((row, index) => ({ row, index }))
     .filter(({ index }) => {
       if (count <= 8) return true;
       const step = Math.ceil((count - 1) / 6);
       return index === 0 || index === count - 1 || index % step === 0;
     });
-  const active = hover == null ? null : daily[hover];
+  const active = hover == null || loading || error ? null : series[hover];
 
   return (
     <section className={`usage-chart-card${compact ? " is-compact" : ""}`}>
       <div className="usage-chart-head">
+        <div className="usage-chart-caption" aria-live="polite">
+          <strong>{label}</strong>
+          <span>{hourly ? `点击图表返回近 ${days} 日${compact ? " · 长按查看详情" : ""}` : "点击某一天查看小时分布"}</span>
+        </div>
         <div className="usage-legend">
-          {costAvailable && (
+          {showCost && (
             <span className="usage-legend-item pink">估算金额</span>
           )}
           <span className="usage-legend-item blue bar">请求次数</span>
@@ -681,24 +756,45 @@ function UsageChart({ rows, totals, today, balance, costAvailable, days = 30 }) 
           <strong>{costAvailable ? formatYuan(balance?.total_balance) : "-"}</strong>
         </div>
         <div>
-          <span>请求</span>
-          <strong>{shown?.requests ?? 0}</strong>
+          <span>{hourly ? "当日请求" : "请求"}</span>
+          <strong>{hasStats ? shown?.requests ?? 0 : "—"}</strong>
         </div>
         <div>
-          <span>今日缓存命中</span>
-          <strong>{formatRate(todayStats.cache_hit_rate)}</strong>
+          <span>{hourly ? "当日缓存命中" : "今日缓存命中"}</span>
+          <strong>{hasStats ? formatRate(todayStats.cache_hit_rate) : "—"}</strong>
           <PixelMeter value={(Number(todayStats.cache_hit_rate) || 0) / 100} />
         </div>
         <div>
-          <span>今日估算金额</span>
-          <strong>{costAvailable ? formatYuan(todayStats.estimated_cost) : "-"}</strong>
+          <span>{hourly ? "当日估算金额" : "今日估算金额"}</span>
+          <strong>{hasStats && showCost ? formatYuan(todayStats.estimated_cost) : "-"}</strong>
         </div>
       </div>
-      <div className="usage-chart-frame">
+      <div className="usage-chart-status" aria-live="polite">
+        {loading ? "正在加载小时分布…" : error ? <>
+          加载失败 · <button type="button" onClick={() => setRetry((value) => value + 1)}>重试</button>
+        </> : null}
+      </div>
+      <div className={`usage-chart-frame${hourly ? " is-hourly" : ""}`}>
         <svg
           viewBox={`0 0 ${width} ${height}`}
-          role="img"
-          aria-label={`近 ${days} 日用量图`}
+          role={hourly ? "button" : "group"}
+          tabIndex={hourly ? 0 : undefined}
+          aria-label={hourly ? `${label}用量图，点击返回近 ${days} 日` : `${label}用量图，选择日期查看小时分布`}
+          onPointerDown={startGesture}
+          onPointerMove={moveGesture}
+          onPointerUp={cancelGesture}
+          onPointerCancel={() => { suppressClick.current = true; cancelGesture(); }}
+          onContextMenu={(event) => { if (hourly) event.preventDefault(); }}
+          onClick={() => {
+            if (hourly && !suppressClick.current) returnToDays();
+            suppressClick.current = false;
+          }}
+          onKeyDown={(event) => {
+            if (hourly && ["Enter", " ", "Escape"].includes(event.key)) {
+              event.preventDefault();
+              returnToDays();
+            }
+          }}
           onMouseLeave={() => {
             if (!compact) setHover(null);
           }}
@@ -713,13 +809,13 @@ function UsageChart({ rows, totals, today, balance, costAvailable, days = 30 }) 
               y2={pad.top + innerH * (1 - step)}
             />
           ))}
-          {daily.map((row, index) => {
+          {series.map((row, index) => {
             const req = Number(row.requests) || 0;
             if (!req || !maxReq) return null;
             const slot = innerW / count;
             const barW = Math.round(
               compact
-                ? Math.min(28, Math.max(slot * 0.62, 12))
+                ? Math.min(28, Math.max(slot * 0.62, 3))
                 : Math.min(14, Math.max(slot * 0.55, 3)),
             );
             const barH = Math.max(
@@ -728,7 +824,7 @@ function UsageChart({ rows, totals, today, balance, costAvailable, days = 30 }) 
             );
             return (
               <rect
-                key={`bar-${row.date}`}
+                key={`bar-${row.date ?? row.hour}`}
                 className="usage-req-bar"
                 x={Math.round(xAt(index) - barW / 2)}
                 y={Math.round(pad.top + innerH - barH)}
@@ -738,12 +834,12 @@ function UsageChart({ rows, totals, today, balance, costAvailable, days = 30 }) 
               />
             );
           })}
-          {costAvailable && (
+          {showCost && (
             <path className="usage-line pink" d={linePath(costPoints)} />
           )}
-          {daily.map((row, index) => (
-            <g key={row.date}>
-              {costAvailable && costPoints[index].cost > 0 && (
+          {series.map((row, index) => (
+            <g key={row.date ?? row.hour}>
+              {showCost && costPoints[index].cost > 0 && (
                 <circle
                   className="usage-dot pink"
                   cx={costPoints[index].x}
@@ -752,32 +848,43 @@ function UsageChart({ rows, totals, today, balance, costAvailable, days = 30 }) 
                 />
               )}
               <rect
-                className="usage-hit"
+                className={`usage-hit${!hourly && savedDate.current === row.date ? " is-selected" : ""}`}
+                role={hourly ? undefined : "button"}
+                tabIndex={hourly ? undefined : 0}
+                aria-label={hourly ? undefined : `${row.date}，${row.requests || 0} 次请求，查看小时分布`}
+                onClick={hourly ? undefined : (event) => { event.stopPropagation(); openDay(row.date); }}
+                onKeyDown={hourly ? undefined : (event) => {
+                  if (["Enter", " "].includes(event.key)) {
+                    event.preventDefault();
+                    openDay(row.date);
+                  }
+                }}
+                onFocus={() => setHover(index)}
                 x={xAt(index) - innerW / count / 2}
                 y={pad.top}
-                width={Math.max(innerW / count, compact ? 28 : 12)}
+                width={innerW / count}
                 height={innerH}
                 onMouseEnter={() => setHover(index)}
-                onPointerDown={() => setHover(index)}
+                onPointerDown={(event) => { if (event.pointerType === "mouse" || !hourly) setHover(index); }}
               />
             </g>
           ))}
           {ticks.map(({ row, index }) => (
             <text
-              key={row.date}
+              key={row.date ?? row.hour}
               className="usage-tick"
               x={xAt(index)}
               y={height - (compact ? 14 : 10)}
               textAnchor="middle"
             >
-              {shortDate(row.date)}
+              {hourly ? `${String(row.hour).padStart(2, "0")}时` : shortDate(row.date)}
             </text>
           ))}
         </svg>
         {active && (
           <div className="usage-tooltip">
-            <span className="panel-label">{active.date}</span>
-            <strong>{costAvailable ? formatYuan(active.estimated_cost) : "-"}</strong>
+            <span className="panel-label">{rowLabel(active)}</span>
+            <strong>{showCost ? formatYuan(active.estimated_cost) : "-"}</strong>
             <p>
               {active.requests} 次 · 输入 {formatTokens(active.input_tokens)} · 输出{" "}
               {formatTokens(active.output_tokens)}
@@ -786,6 +893,7 @@ function UsageChart({ rows, totals, today, balance, costAvailable, days = 30 }) 
           </div>
         )}
       </div>
+      <p className="usage-timezone">{hourData?.timezone || timezone}</p>
     </section>
   );
 }

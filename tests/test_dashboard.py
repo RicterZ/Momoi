@@ -3,6 +3,7 @@ import re
 import tempfile
 import time
 import unittest
+from datetime import datetime
 from importlib.resources import files as package_files
 from io import BytesIO
 from pathlib import Path
@@ -544,6 +545,30 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(usage["today"]["cache_read_tokens"], 100)
         self.assertIsNone(usage["today"]["estimated_cost"])
         self.assertEqual(len(usage["daily"]), 7)
+
+    async def test_hourly_usage_endpoint_returns_24_hours_and_validates_date(self) -> None:
+        now = time.time()
+        local = datetime.fromtimestamp(now, self.store.timezone)
+        self.store.record_llm_call(
+            created_at=now, turn_id="hourly", stage="owner", model="test",
+            metrics={"input": 100, "uncached": 20, "cache_read": 80,
+                     "output": 5, "cache_reported": True},
+        )
+        response = await self.client.get(
+            f"/api/usage?date={local.date().isoformat()}", headers=self._auth()
+        )
+        self.assertEqual(response.status, 200)
+        usage = await response.json()
+        self.assertEqual([row["hour"] for row in usage["hourly"]], list(range(24)))
+        self.assertEqual(usage["totals"]["requests"], 1)
+        self.assertEqual(usage["hourly"][local.hour]["cache_hit_rate"], 80.0)
+        self.assertIsNone(usage["totals"]["estimated_cost"])
+        for day in ("", "2026-02-30", "20260905", "9999-12-31", "bad-date"):
+            with self.subTest(day=day):
+                response = await self.client.get(
+                    f"/api/usage?date={day}", headers=self._auth()
+                )
+                self.assertEqual(response.status, 400)
 
     async def test_reflections_paginate_older_pages(self) -> None:
         now = time.time()

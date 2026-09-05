@@ -1,7 +1,7 @@
 """Aggregate persisted model usage for dashboard reporting."""
 
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any, Mapping
 
 
@@ -158,5 +158,36 @@ def summarize_usage(
             for name, bucket in sorted(
                 stages.items(), key=lambda item: item[1]["estimated_cost"], reverse=True
             )
+        ],
+    }
+
+
+def summarize_hourly_usage(
+    rows: list[Mapping[str, Any]],
+    *,
+    day: date,
+    zone: datetime.tzinfo,
+    estimate: EstimateCost | None = None,
+) -> dict[str, Any]:
+    """Use 24 local clock-hour buckets, merging repeated DST hours."""
+    buckets = [_empty_bucket() for _ in range(24)]
+    totals = _empty_bucket()
+    for row in rows:
+        local = datetime.fromtimestamp(float(row["created_at"]), zone)
+        if local.date() != day:
+            continue
+        _add_row(buckets[local.hour], row, estimate)
+        _add_row(totals, row, estimate)
+    available = estimate is not None
+    return {
+        "source": "local",
+        "date": day.isoformat(),
+        "timezone": getattr(zone, "key", None) or str(zone),
+        "currency": CURRENCY,
+        "cost_available": available,
+        "totals": _public_bucket(totals, cost_available=available),
+        "hourly": [
+            {"hour": hour, **_public_bucket(bucket, cost_available=available)}
+            for hour, bucket in enumerate(buckets)
         ],
     }

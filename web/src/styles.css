@@ -828,10 +828,34 @@ main.is-record .error {
 .usage-chart-head {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
   gap: 16px;
   margin-bottom: 4px;
 }
+.usage-chart-caption { display: grid; gap: 4px; }
+.usage-chart-caption strong { font-size: 14px; }
+.usage-chart-caption span,
+.usage-chart-status,
+.usage-timezone { color: var(--muted); font-size: 11px; }
+.usage-chart-status { min-height: 22px; padding-top: 4px; }
+.usage-chart-status button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.usage-timezone { margin: 0; text-align: right; }
+.usage-chart-frame.is-hourly { cursor: pointer; }
+.usage-chart-frame svg { touch-action: pan-y; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+.usage-chart-frame svg:focus:not(:focus-visible),
+.usage-hit:focus:not(:focus-visible) { outline: none; }
+.usage-hit.is-selected { fill: rgba(67, 184, 245, .08); }
+.usage-hit:focus-visible { fill: rgba(67, 184, 245, .16); outline: 2px solid var(--blue); }
+.usage-chart-frame svg:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
 .usage-legend {
   display: flex;
   flex-wrap: nowrap;
@@ -897,7 +921,7 @@ main.is-record .error {
 .usage-dot.blue { fill: var(--blue); }
 .usage-hit {
   fill: transparent;
-  cursor: crosshair;
+  cursor: pointer;
 }
 .usage-tick {
   fill: var(--muted);
@@ -1616,8 +1640,9 @@ a.tag:hover {
   .usage-home-stats > div { padding: 12px; }
   .usage-home-stats strong { font-size: 20px; }
   .usage-chart-head {
-    align-items: center;
-    justify-content: flex-end;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
   }
   .usage-legend-item { font-size: 13px; }
   .usage-chart-card { padding: 14px 12px 10px; }
