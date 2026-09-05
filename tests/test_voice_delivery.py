@@ -118,6 +118,13 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.store.due_outbox(), [])
         self.assertFalse(self.changed.is_set())
 
+    async def test_voice_rejects_stickers_before_synthesis(self):
+        for text in ("emotion://happy", "老师你好 emotion://happy"):
+            result = await self.dispatch({"text": text})
+            self.assertEqual(result.result["error"], "voice_cannot_include_emotion")
+        self.assertEqual(self.store.due_outbox(), [])
+        self.provider.synthesize.assert_not_awaited()
+
     def worker(self, store=None):
         worker = OutboxWorker()
         worker.store = store or self.store

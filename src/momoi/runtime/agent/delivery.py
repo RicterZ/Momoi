@@ -116,6 +116,8 @@ class BubbleDelivery:
 
         if not isinstance(text, str) or not text.strip():
             return failure("invalid_voice_text")
+        if EMOTION_PREFIX in text:
+            return failure("voice_cannot_include_emotion")
         if not tool_call_id:
             return failure("missing_tool_call_id")
         if not (response_required or heartbeat_turn):

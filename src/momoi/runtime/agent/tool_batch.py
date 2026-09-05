@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from ...channel import Channel, ChannelMessage
+from ...emotions import EMOTION_PREFIX
 from ...observability.context import log_context
 from ...models import IncomingMessage, ProviderResponse, TurnDraft
 from ..turn_support import (
@@ -191,6 +192,8 @@ class ToolBatchExecutor:
                     result = {"ok": False, "error": "missing_tool_call_id"}
                 elif set(call.arguments) != {"text"} or not isinstance(text, str) or not text.strip():
                     result = {"ok": False, "error": "invalid_voice_arguments"}
+                elif EMOTION_PREFIX in text:
+                    result = {"ok": False, "error": "voice_cannot_include_emotion"}
                 elif not callable(getattr(request.delivery_channel, "send_voice", None)):
                     result = {"ok": False, "error": "voice_not_supported"}
                 elif self.bubble_delivery.tts_provider is None:
