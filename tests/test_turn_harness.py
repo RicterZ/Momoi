@@ -8,9 +8,51 @@ from momoi.runtime.agent.protocol import (
     harness_correction,
 )
 from momoi.runtime.turn_support import PROMPT_ROOT
+from momoi.runtime.turn_support import ExternalToolTurnError, MAX_CONSECUTIVE_TOOL_FAILURES
+from momoi.runtime.agent.workflow import WorkflowProtocolError
 
 
 class TurnHarnessTest(unittest.TestCase):
+    def test_no_tool_failures_stop_at_the_shared_limit(self) -> None:
+        for stage in TURN_HARNESS_SPECS:
+            for started in (False, True):
+                for external_effect in (False, True):
+                    with self.subTest(stage=stage, started=started, external_effect=external_effect):
+                        workflow = stage in {
+                            "reflection", "memory_maintenance",
+                            "episode_consolidate", "episode_anneal",
+                        }
+                        messages = []
+                        failed_rounds = 0
+                        error_type = (
+                            ExternalToolTurnError
+                            if external_effect and not workflow
+                            else WorkflowProtocolError
+                        )
+                        for attempt in range(1, MAX_CONSECUTIVE_TOOL_FAILURES + 1):
+                            arguments = dict(
+                                workflow_correction="Use native tools" if workflow else None,
+                                heartbeat_turn=stage == "heartbeat",
+                                harness_started=started,
+                                goal_turn=stage == "goal",
+                                require_response=stage in {
+                                    "owner", "heartbeat", "webhook", "reply_followup",
+                                },
+                                owner_turn=stage == "owner",
+                                failed_rounds=failed_rounds,
+                                last_tool_error="",
+                                external_effect=external_effect,
+                            )
+                            if attempt == MAX_CONSECUTIVE_TOOL_FAILURES:
+                                with self.assertRaises(error_type):
+                                    handle_no_tool_response(messages, "hello", **arguments)
+                            else:
+                                resolution = handle_no_tool_response(
+                                    messages, "hello", **arguments,
+                                )
+                                failed_rounds = resolution.failed_rounds
+                                self.assertEqual(failed_rounds, attempt)
+
     def test_owner_text_corrections_preserve_opening_and_delivery_rules(self) -> None:
         for started, expected in ((False, "recall first and alone"),
                                   (True, "Call send_bubbles")):

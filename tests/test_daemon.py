@@ -2694,6 +2694,75 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             daemon.store.close()
 
+    async def test_protocol_failures_only_reconcile_after_external_effect(self) -> None:
+        for response_kind in ("text", "text_with_tool", "mixed"):
+            for external_effect in (False, True):
+                with self.subTest(response_kind=response_kind, external_effect=external_effect):
+                    with tempfile.TemporaryDirectory() as directory:
+                        config = AppConfig(
+                            llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
+                            channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                            system_prompt="You are Momoi.",
+                            transcript_turns_min=4,
+                            transcript_turns_max=4,
+                            episode_raw_tail_turns=2,
+                            memory_results=2,
+                            database=Path(directory) / "momoi.sqlite3",
+                            log_level="INFO",
+                        )
+                        daemon = MomoiDaemon(config)
+                        try:
+                            event = IncomingMessage("qq:protocol", "protocol", "测试", 1, 1)
+                            daemon.store.add_event(event)
+                            turn_id = daemon._turn_id(event.event_id)
+
+                            class Provider:
+                                calls = 0
+                                config = SimpleNamespace(api_format="anthropic")
+
+                                async def complete(self, *_args, **_kwargs):
+                                    self.calls += 1
+                                    if self.calls > 3:
+                                        raise AssertionError("protocol retry limit was exceeded")
+                                    if external_effect and self.calls == 1:
+                                        daemon.store.begin_tool_call(
+                                            turn_id, "external", "write_file", {}, "write",
+                                        )
+                                    content = [{"type": "text", "text": "hello"}]
+                                    calls = []
+                                    if response_kind == "text_with_tool" or (
+                                        response_kind == "mixed" and self.calls % 2 == 0
+                                    ):
+                                        calls = [ToolCall("recall", "recall", {})]
+                                        content.append({
+                                            "type": "tool_use", "id": "recall",
+                                            "name": "recall", "input": {},
+                                        })
+                                    return ProviderResponse(content, calls)
+
+                            provider = Provider()
+                            daemon.provider = provider
+                            await asyncio.wait_for(
+                                daemon._complete_batch_turn([event], asyncio.Event(), turn_id),
+                                timeout=2,
+                            )
+                            self.assertEqual(provider.calls, 3)
+                            reconciliations = daemon.store._db.execute(
+                                "SELECT status FROM reconciliations WHERE turn_id=?", (turn_id,),
+                            ).fetchall()
+                            self.assertEqual(len(reconciliations), int(external_effect))
+                            failure = daemon.store.due_outbox()[0].text
+                            if external_effect:
+                                self.assertEqual(reconciliations[0]["status"], "open")
+                                self.assertIn("/resolve", failure)
+                            else:
+                                self.assertNotIn("/resolve", failure)
+                                self.assertEqual(daemon.store._db.execute(
+                                    "SELECT failure_reason FROM turns WHERE id=?", (turn_id,),
+                                ).fetchone()["failure_reason"], "WorkflowProtocolError")
+                        finally:
+                            daemon.store.close()
+
     async def test_fatal_error_after_external_effect_requires_reconciliation(
         self,
     ) -> None:

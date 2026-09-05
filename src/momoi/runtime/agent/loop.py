@@ -272,6 +272,7 @@ class AgentLoop:
                     owner_turn=authority == "owner",
                     failed_rounds=failed_tool_rounds,
                     last_tool_error=last_tool_error,
+                    external_effect=external_tool_used,
                 )
                 failed_tool_rounds = resolution.failed_rounds
                 if resolution.log_rejection:
@@ -302,7 +303,9 @@ class AgentLoop:
                         WorkflowProtocolError
                         if workflow is not None
                         else (
-                            ExternalToolTurnError if require_response else RuntimeError
+                            ExternalToolTurnError
+                            if external_tool_used
+                            else WorkflowProtocolError
                         )
                     )
                     raise error_type(harness_error)

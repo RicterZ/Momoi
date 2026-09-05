@@ -53,13 +53,24 @@ def handle_no_tool_response(
     owner_turn: bool,
     failed_rounds: int,
     last_tool_error: str,
+    external_effect: bool = False,
 ) -> NoToolResolution:
-    if workflow_correction is not None:
+    if workflow_correction is not None or heartbeat_turn or goal_turn or require_response:
         failed_rounds += 1
         if failed_rounds >= MAX_CONSECUTIVE_TOOL_FAILURES:
-            raise WorkflowProtocolError(
-                last_tool_error or "repeated workflow protocol failures"
+            error_type = (
+                ExternalToolTurnError
+                if external_effect and workflow_correction is None
+                else WorkflowProtocolError
             )
+            raise error_type(
+                last_tool_error or (
+                    "repeated workflow protocol failures"
+                    if workflow_correction is not None
+                    else "native_tool_call_required"
+                )
+            )
+    if workflow_correction is not None:
         assistant_content = assistant_history_content(content)
         messages.extend(
             [
@@ -69,9 +80,6 @@ def handle_no_tool_response(
         )
         return NoToolResolution("retry", failed_rounds)
     if heartbeat_turn and not harness_started:
-        failed_rounds += 1
-        if failed_rounds >= MAX_CONSECUTIVE_TOOL_FAILURES:
-            raise ExternalToolTurnError("heartbeat_not_started")
         messages.extend(
             [
                 {
