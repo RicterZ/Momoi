@@ -309,7 +309,7 @@ class AgentLoop:
                 correction = harness_correction(
                     response.tool_calls,
                     harness_error,
-                    require_response=require_response,
+                    owner_turn=authority == "owner",
                 )
                 messages.extend(
                     [

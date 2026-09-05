@@ -81,8 +81,8 @@ def handle_no_tool_response(
                 {
                     "role": "user",
                     "content": (
-                        "[Trusted runtime protocol error. The previous text was not "
-                        "delivered. Call heartbeat_begin alone before any other "
+                        "[Trusted runtime protocol error: no native tool call was "
+                        "returned. Call heartbeat_begin alone before any other "
                         "Heartbeat action.]"
                     ),
                 },
@@ -108,17 +108,23 @@ def handle_no_tool_response(
         return NoToolResolution("force_finish", failed_rounds)
     if not require_response:
         return NoToolResolution("return", failed_rounds)
-    correction = (
-        "[Trusted runtime protocol error. The previous text was not delivered. Call "
-        "recall first and alone as a native tool call; never write or imitate tool "
-        "syntax in text.]"
-        if owner_turn and not harness_started
-        else (
-            "[Trusted runtime protocol error. The previous text was not delivered. "
+    if owner_turn and not harness_started:
+        correction = (
+            "[Trusted runtime protocol error: no native tool call was returned. Call "
+            "recall first and alone as a native tool call; never write or imitate tool "
+            "syntax in text.]"
+        )
+    elif owner_turn:
+        correction = (
+            "[Trusted runtime protocol error: no native tool call was returned. "
             "Call send_bubbles with the owner-visible bubbles, without end_turn. "
             "After its result, call end_turn alone on the next step.]"
         )
-    )
+    else:
+        correction = (
+            "[Trusted runtime protocol error: no native tool call was returned. "
+            "Retry using native tool calls only, following the current workflow.]"
+        )
     messages.extend(
         [
             {
@@ -177,22 +183,22 @@ def owner_request_messages(
 
 
 def harness_correction(
-    calls: list[ToolCall], error: str, *, require_response: bool
+    calls: list[ToolCall], error: str, *, owner_turn: bool
 ) -> list[dict[str, Any]]:
     correction: list[dict[str, Any]] = [
         tool_error_block(call.id, error) for call in calls
     ]
     if error != "assistant_text_forbidden":
         return correction
-    if require_response and len(calls) == 1 and calls[0].name == "end_turn":
+    if owner_turn and len(calls) == 1 and calls[0].name == "end_turn":
         text = (
-            "[Trusted runtime protocol correction: plain assistant text is not "
-            "delivered. Call send_bubbles with the owner-visible bubbles, without "
+            "[Trusted runtime protocol error: assistant text accompanied tool calls. "
+            "Call send_bubbles with the owner-visible bubbles, without "
             "end_turn. After its result, call end_turn alone on the next step.]"
         )
     else:
         text = (
-            "[Trusted runtime protocol correction: assistant text is forbidden. "
+            "[Trusted runtime protocol error: assistant text accompanied tool calls. "
             "Repeat the intended action using native tool calls only.]"
         )
     correction.append({"type": "text", "text": text})

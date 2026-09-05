@@ -10,6 +10,70 @@ from momoi.runtime import MomoiDaemon
 
 
 class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
+    async def test_rest_recovers_from_text_without_requesting_a_message(self) -> None:
+        for with_terminal in (False, True):
+            with self.subTest(with_terminal=with_terminal), tempfile.TemporaryDirectory() as directory:
+                daemon = MomoiDaemon(AppConfig(
+                    llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
+                    channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                    system_prompt="test",
+                    transcript_turns_min=4,
+                    transcript_turns_max=4,
+                    episode_raw_tail_turns=2,
+                    memory_results=2,
+                    database=Path(directory) / "momoi.sqlite3",
+                    log_level="INFO",
+                ))
+                self.addCleanup(daemon.store.close)
+                case = self
+                begin = ToolCall("begin", "heartbeat_begin", {
+                    "activity": "resting", "mode": "rest", "recall_mode": "skip",
+                    "recall_queries": [], "tool_groups": [], "strategy": [],
+                })
+                finish = ToolCall("finish", "end_turn", {
+                    "reply_wait": {"wait": False}, "mood": {"decision": "unchanged"},
+                    "heartbeat": {
+                        "activity": "resting", "result": "", "next_check_minutes": 30,
+                        "reason": "No activity was needed.",
+                    },
+                })
+
+                class Provider:
+                    calls = 0
+
+                    async def complete(self, _system, messages, _tools, **_kwargs):
+                        self.calls += 1
+                        call = begin if self.calls == 1 else finish
+                        content = [{"type": "tool_use", "id": call.id,
+                                    "name": call.name, "input": call.arguments}]
+                        if self.calls == 2:
+                            text = {"type": "text", "text": "I will rest and end this turn."}
+                            return ProviderResponse(
+                                [text, *content] if with_terminal else [text],
+                                [call] if with_terminal else [],
+                            )
+                        if self.calls == 3:
+                            correction = str(messages[-1]["content"])
+                            case.assertNotIn("send_bubbles", correction)
+                            case.assertIn("native tool calls", correction)
+                            case.assertIn(
+                                "assistant text accompanied tool calls" if with_terminal
+                                else "no native tool call was returned",
+                                correction,
+                            )
+                        case.assertLessEqual(self.calls, 3)
+                        return ProviderResponse(content, [call])
+
+                provider = Provider()
+                daemon.provider = provider
+                turn_id = daemon._turn_id("heartbeat-text-recovery")
+                daemon.store.begin_turn(turn_id, "heartbeat", [f"heartbeat:{turn_id}"])
+                await daemon._complete_heartbeat(turn_id, owner_event_revision=0)
+                self.assertEqual(provider.calls, 3)
+                self.assertEqual(daemon.store._db.execute(
+                    "SELECT COUNT(*) FROM outbox WHERE turn_id=?", (turn_id,),
+                ).fetchone()[0], 0)
+
     async def test_execution_reads_shared_conversation_as_native_messages(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(

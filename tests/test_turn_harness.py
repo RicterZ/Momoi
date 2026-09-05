@@ -2,11 +2,33 @@ import unittest
 
 from momoi.models import ToolCall
 from momoi.runtime.agent import TURN_HARNESS_SPECS, TurnHarness
-from momoi.runtime.agent.protocol import assistant_history_content
+from momoi.runtime.agent.protocol import (
+    assistant_history_content,
+    handle_no_tool_response,
+    harness_correction,
+)
 from momoi.runtime.turn_support import PROMPT_ROOT
 
 
 class TurnHarnessTest(unittest.TestCase):
+    def test_owner_text_corrections_preserve_opening_and_delivery_rules(self) -> None:
+        for started, expected in ((False, "recall first and alone"),
+                                  (True, "Call send_bubbles")):
+            with self.subTest(started=started):
+                messages = []
+                resolution = handle_no_tool_response(
+                    messages, "hello", workflow_correction=None, heartbeat_turn=False,
+                    harness_started=started, goal_turn=False, require_response=True,
+                    owner_turn=True, failed_rounds=0, last_tool_error="",
+                )
+                self.assertEqual(resolution.action, "retry")
+                self.assertIn(expected, messages[-1]["content"])
+        correction = harness_correction(
+            [ToolCall("end", "end_turn", {})], "assistant_text_forbidden",
+            owner_turn=True,
+        )
+        self.assertIn("Call send_bubbles", correction[-1]["text"])
+
     WORKFLOW_PROMPTS = {
         "owner": "owner.md",
         "heartbeat": "heartbeat.md",
