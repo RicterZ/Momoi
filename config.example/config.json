@@ -31,6 +31,20 @@
       "engine": "16k_zh"
     }
   },
+  "tts": {
+    "enabled": false,
+    "provider": "fish",
+    "timeout_seconds": 60,
+    "max_audio_bytes": 20971520,
+    "settings": {
+      "api_key": "",
+      "base_url": "https://api.fish.audio",
+      "model": "s2.1-pro-free",
+      "reference_id": "9bb8ad542dc44d148c21c73a0884e9ae",
+      "format": "mp3",
+      "latency": "normal"
+    }
+  },
   "channels": {
     "primary": "napcat",
     "enabled": {

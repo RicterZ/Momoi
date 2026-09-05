@@ -83,6 +83,11 @@ class AgentLoop:
         remind_owner_bubbles = False
         enable_tool_groups = self.tool_surface.mcp_server_groups()
         stage = execution.stage
+        permitted_tools = execution.permitted_tools
+        voice_allowed = (
+            self.bubble_delivery.tts_provider is not None
+            and callable(getattr(delivery_channel, "send_voice", None))
+        )
         if workflow is not None and workflow.stage != stage:
             raise ValueError("workflow and execution stages do not match")
         harness = TurnHarness.for_stage(
@@ -92,7 +97,8 @@ class AgentLoop:
                 if stage == "owner"
                 else frozenset()
             ),
-            permitted_tool_names=execution.permitted_tools,
+            permitted_tool_names=permitted_tools,
+            blocked_tool_names=frozenset() if voice_allowed else frozenset({"send_voice"}),
         )
         harness.validate_surface({str(tool["name"]) for tool in tools})
         while True:
@@ -128,6 +134,10 @@ class AgentLoop:
                 if force_autonomous_finish
                 else (harness.spec.first_tool if not harness.started else None)
             )
+            if (required_tool == "send_bubbles" and voice_allowed
+                    and (permitted_tools is None or "send_voice" in permitted_tools)):
+                # The harness accepts either delivery form for the opening reply.
+                required_tool = None
             request_tools = tools
             llm_round += 1
             require_tool = bool(

@@ -185,7 +185,23 @@ class ToolBatchExecutor:
                     "ok": False,
                     "error": "autonomous_finish_must_be_the_only_terminal_tool",
                 }
-            elif call.name == "send_bubbles":
+            elif call.name == "send_voice" and execution.goal_id:
+                text = call.arguments.get("text")
+                if not call.id:
+                    result = {"ok": False, "error": "missing_tool_call_id"}
+                elif set(call.arguments) != {"text"} or not isinstance(text, str) or not text.strip():
+                    result = {"ok": False, "error": "invalid_voice_arguments"}
+                elif not callable(getattr(request.delivery_channel, "send_voice", None)):
+                    result = {"ok": False, "error": "voice_not_supported"}
+                elif self.bubble_delivery.tts_provider is None:
+                    result = {"ok": False, "error": "tts_not_configured"}
+                else:
+                    request.draft.notification_messages = [{"action": "voice", "text": text}]
+                    request.draft.notification_key = f"goal.{execution.goal_id}"
+                    request.draft.notification_priority = "normal"
+                    request.draft.notification_reason = "Goal voice update"
+                    result = {"ok": True, "state": "staged", "bubbles": 1}
+            elif call.name in {"send_bubbles", "send_voice"}:
                 if execution.goal_id and execution.allow_notify:
                     result = self.agenda_tools.execute(
                         call,
@@ -195,7 +211,12 @@ class ToolBatchExecutor:
                         allow_notify=True,
                     )
                 else:
-                    delivery = self.bubble_delivery.dispatch(
+                    dispatch = (
+                        self.bubble_delivery.dispatch_voice
+                        if call.name == "send_voice"
+                        else self.bubble_delivery.dispatch
+                    )
+                    delivery = dispatch(
                         call,
                         turn_id=request.turn_id,
                         stage=execution.stage,
@@ -212,6 +233,8 @@ class ToolBatchExecutor:
                         previous_bubbles=last_sent_bubbles,
                         previous_channel=last_sent_channel,
                     )
+                    if call.name == "send_voice":
+                        delivery = await delivery
                     result = delivery.result
                     if delivery.bubbles is not None:
                         visible = True

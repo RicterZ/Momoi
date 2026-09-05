@@ -11,7 +11,7 @@ from urllib.parse import quote, urlparse
 
 import aiohttp
 
-from .. import AmbiguousSend, IncomingVoice, NotConnected, SendRejected
+from .. import AmbiguousSend, IncomingVoice, NotConnected, SendRejected, VOICE_MESSAGE_PREFIX
 from ...observability.events import log_event
 from .api import WeixinAPI, WeixinHTTPError
 from .config import WeixinConfig, WeixinState
@@ -273,7 +273,7 @@ class WeixinChannel:
                 {
                     "type": "text",
                     "data": {
-                        "text": converted,
+                        "text": VOICE_MESSAGE_PREFIX + converted,
                         "source": "weixin_voice_transcription",
                     },
                 }
@@ -621,7 +621,8 @@ def render_segments(segments: tuple[dict[str, Any], ...] | list[dict[str, Any]])
             state = " unavailable" if data.get("unavailable") else ""
             path = str(data.get("file") or "")
             parts.append(
-                f"[Weixin {kind}{state}: name={name}{' path=' + path if path else ''}]"
+                (VOICE_MESSAGE_PREFIX if kind == "record" else "")
+                + f"[Weixin {kind}{state}: name={name}{' path=' + path if path else ''}]"
             )
     return "\n".join(parts).strip()
 

@@ -1,3 +1,5 @@
+from ...tts.base import AudioOutput
+from .. import VOICE_MESSAGE_PREFIX
 import asyncio
 import base64
 import json
@@ -218,7 +220,7 @@ class NapCatChannel:
             converted.append(
                 {
                     "type": "text",
-                    "data": {"text": text or VOICE_UNAVAILABLE_TEXT},
+                    "data": {"text": VOICE_MESSAGE_PREFIX + (text or VOICE_UNAVAILABLE_TEXT)},
                 }
             )
         return tuple(converted)
@@ -425,6 +427,17 @@ class NapCatChannel:
             )
         if rendered:
             segment["data"]["_forward"] = rendered
+
+    async def send_voice(self, audio: AudioOutput) -> str:
+        """Send in-memory audio as a standalone OneBot record."""
+        if not isinstance(audio, AudioOutput) or not isinstance(audio.data, bytes) or not audio.data:
+            raise SendRejected("voice requires nonempty audio bytes")
+        if audio.format not in {"mp3", "wav", "opus", "silk"}:
+            raise SendRejected("unsupported voice audio format")
+        return await self._send_segments([{
+            "type": "record",
+            "data": {"file": "base64://" + base64.b64encode(audio.data).decode("ascii")},
+        }])
 
     async def send_message(self, payload: dict[str, Any]) -> str:
         if payload.get("action") == "forward":

@@ -6,6 +6,7 @@ from difflib import SequenceMatcher
 from typing import Any
 
 from ...channel import Channel, ChannelMessage, normalize_channel_message, render_channel_message
+from ...tts import TTSProvider
 from ...emotions import EMOTION_PREFIX, emotion_slug
 from ...observability.events import log_event
 from ...models import ToolCall
@@ -94,11 +95,77 @@ class BubbleDelivery:
         channels: dict[str, Channel],
         policy: DeliveryPolicy,
         outbox_changed: Any,
+        tts_provider: TTSProvider | None = None,
     ) -> None:
         self.store = store
         self.channels = channels
         self.policy = policy
         self.outbox_changed = outbox_changed
+        self.tts_provider = tts_provider
+
+    async def send_voice(
+        self, text: str, *, tool_call_id: str, turn_id: str,
+        delivery_channel: Channel, response_required: bool,
+        heartbeat_turn: bool, reply_followup_turn: bool,
+        heartbeat_owner_event_revision: int | None,
+        heartbeat_notification_key: str,
+    ) -> BubbleDeliveryResult:
+        """Speak a complete string; only the channel payload is audio."""
+        def failure(error: str) -> BubbleDeliveryResult:
+            return BubbleDeliveryResult({"ok": False, "error": error})
+
+        if not isinstance(text, str) or not text.strip():
+            return failure("invalid_voice_text")
+        if not tool_call_id:
+            return failure("missing_tool_call_id")
+        if not (response_required or heartbeat_turn):
+            return failure("tool_not_allowed")
+        if not callable(getattr(delivery_channel, "send_voice", None)):
+            return failure("voice_not_supported")
+        if self.tts_provider is None:
+            return failure("tts_not_configured")
+
+        def contact_error() -> str | None:
+            if (heartbeat_turn or reply_followup_turn) and heartbeat_owner_event_revision is not None:
+                return self.policy.heartbeat_contact_error(
+                    heartbeat_owner_event_revision, heartbeat_notification_key,
+                )
+            return None
+
+        error = contact_error()
+        if error:
+            return failure(error)
+        existing = self.store.progress_delivery(turn_id, tool_call_id)
+        if existing is not None:
+            if (existing["text"] != text or existing["target_channel"] != delivery_channel.name
+                    or existing["kind"] != "voice"):
+                return failure("tool_call_id_conflict")
+        else:
+            self.store.queue_progress(
+                turn_id, tool_call_id, [text], delivery_channel.name, voice=True,
+            )
+            self.outbox_changed.set()
+        return BubbleDeliveryResult(
+            {"ok": True, "state": "committed", "channel": delivery_channel.name, "bubbles": 1},
+            bubbles=[text], channel=delivery_channel.name,
+        )
+
+    async def dispatch_voice(self, call: ToolCall, **context: Any) -> BubbleDeliveryResult:
+        if set(call.arguments) != {"text"}:
+            return BubbleDeliveryResult({"ok": False, "error": "invalid_voice_arguments"})
+        text = call.arguments["text"]
+        if (isinstance(text, str) and context.get("previous_tool_name") in {"send_bubbles", "send_voice"}
+                and context.get("previous_bubbles") is not None
+                and context.get("previous_channel") == context["delivery_channel"].name
+                and self.policy.similarity(context["previous_bubbles"], [text]) >= SIMILAR_BUBBLES_THRESHOLD):
+            return BubbleDeliveryResult({"ok": False, "error": "similar_bubbles_already_sent"})
+        return await self.send_voice(
+            call.arguments["text"], tool_call_id=call.id,
+            **{key: context[key] for key in (
+                "turn_id", "delivery_channel", "response_required", "heartbeat_turn",
+                "reply_followup_turn", "heartbeat_owner_event_revision", "heartbeat_notification_key",
+            )},
+        )
 
     def dispatch(
         self,
@@ -151,7 +218,7 @@ class BubbleDelivery:
             return BubbleDeliveryResult({"ok": False, "error": "invalid_channel"})
         similarity = (
             self.policy.similarity(previous_bubbles, bubbles)
-            if previous_tool_name == "send_bubbles"
+            if previous_tool_name in {"send_bubbles", "send_voice"}
             and previous_bubbles is not None
             and previous_channel == target.name
             else 0.0

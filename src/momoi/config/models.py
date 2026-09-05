@@ -72,6 +72,15 @@ class ASRConfig:
 
 
 @dataclass(frozen=True)
+class TTSConfig:
+    enabled: bool = False
+    provider: str = "fish"
+    timeout_seconds: float = 60
+    max_audio_bytes: int = 20 * 1024 * 1024
+    settings: dict[str, object] | None = None
+
+
+@dataclass(frozen=True)
 class HeartbeatConfig:
     enabled: bool = False
     initial_delay_seconds: float = 900
@@ -142,6 +151,7 @@ class AppConfig:
     channels: tuple[object, ...] = ()
     policies: RuntimePolicies = RuntimePolicies()
     asr: ASRConfig = ASRConfig()
+    tts: TTSConfig = TTSConfig()
     embedding: EmbeddingConfig = EmbeddingConfig()
     config_path: Path | None = None
 

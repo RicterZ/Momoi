@@ -17,6 +17,7 @@ from ..tool_contracts.runtime import (
     tool_enable_spec,
 )
 from .progress import public_tool_spec, requires_owner_progress
+from ..tool_contracts.voice import SEND_VOICE_TOOL_SPEC
 
 logger = logging.getLogger("momoi.runtime.turns")
 
@@ -24,9 +25,10 @@ logger = logging.getLogger("momoi.runtime.turns")
 class ToolSurface:
     """Projects the tool catalog exposed to each workflow."""
 
-    def __init__(self, mcp: Any, channels: dict[str, Any]):
+    def __init__(self, mcp: Any, channels: dict[str, Any], *, voice_enabled: bool = False):
         self.mcp = mcp
         self.channel_names = list(channels)
+        self.voice_enabled = voice_enabled
 
     @staticmethod
     def mcp_tool_group(name: str) -> str:
@@ -104,6 +106,7 @@ class ToolSurface:
             copy.deepcopy(RECALL_TOOL_SPEC),
             heartbeat_begin_spec(catalog),
             self.send_bubbles_spec(),
+            *([copy.deepcopy(SEND_VOICE_TOOL_SPEC)] if self.voice_enabled else []),
             READ_TOOL_RESULT_SPEC,
             *copy.deepcopy(MEMORY_TOOL_SPECS),
             *copy.deepcopy(THINKING_TOOL_SPECS),
@@ -125,6 +128,8 @@ class ToolSurface:
         memory = {str(spec["name"]) for spec in MEMORY_TOOL_SPECS}
         thinking = {str(spec["name"]) for spec in THINKING_TOOL_SPECS}
         shared = {"send_bubbles", "read_tool_result"}
+        voice = {"send_voice"} if self.voice_enabled else set()
+        shared.update(voice)
         if stage == "owner":
             return frozenset(
                 {
@@ -151,9 +156,9 @@ class ToolSurface:
                 }
             )
         if stage == "webhook":
-            return frozenset({"send_bubbles", "curl", "read_tool_result", "end_turn"})
+            return frozenset({"send_bubbles", "curl", "read_tool_result", "end_turn", *voice})
         if stage == "reply_followup":
-            return frozenset({"send_bubbles", "end_turn"})
+            return frozenset({"send_bubbles", "end_turn", *voice})
         if stage == "goal":
             goal_agenda = (
                 agenda
@@ -163,6 +168,7 @@ class ToolSurface:
             return frozenset(
                 {
                     "memory_search",
+                    *voice,
                     "send_bubbles",
                     "read_tool_result",
                     "tool_enable",

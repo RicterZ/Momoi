@@ -12,6 +12,7 @@ from ..models import IncomingMessage, OwnerInputStatus
 
 
 ChannelMessage = str | dict[str, Any]
+VOICE_MESSAGE_PREFIX = "[语音消息] "
 _SEGMENT_TYPE = re.compile(r"^[a-zA-Z0-9_-]{1,40}$")
 _MEDIA_TYPES = {"image", "file", "video", "audio", "record"}
 # QQ/NapCat can attach a caption to images, but file/video/audio drop sibling

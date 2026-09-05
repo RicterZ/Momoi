@@ -21,6 +21,7 @@ from .models import (
     WebhookConfig,
 )
 from .validation import boolean, clock, integer, mapping, nonnegative, positive
+from .tts import load_tts_config
 
 
 def load_config(path: str | Path) -> AppConfig:
@@ -386,6 +387,7 @@ def load_config(path: str | Path) -> AppConfig:
             max_audio_bytes=asr_max_audio_bytes,
             settings=dict(asr_settings) or None,
         ),
+        tts=load_tts_config(raw.get("tts", {})),
         embedding=EmbeddingConfig(
             enabled=embedding_enabled,
             endpoint=str(

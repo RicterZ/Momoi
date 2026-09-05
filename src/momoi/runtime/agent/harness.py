@@ -25,7 +25,7 @@ TURN_HARNESS_SPECS = {
             None,
             "end_turn",
             permitted_tools=frozenset(
-                {"send_bubbles", "curl", "read_tool_result", "end_turn"}
+                {"send_bubbles", "send_voice", "curl", "read_tool_result", "end_turn"}
             ),
         ),
         TurnHarnessSpec("goal", None, "autonomous_finish"),
@@ -50,6 +50,7 @@ class TurnHarness:
     permitted_tool_names: frozenset[str] | None = None
     started: bool = False
     progress_bubbles_seen: bool = False
+    blocked_tool_names: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
         self.reset()
@@ -61,12 +62,14 @@ class TurnHarness:
         *,
         progress_tool_names: frozenset[str] = frozenset(),
         permitted_tool_names: frozenset[str] | None = None,
+        blocked_tool_names: frozenset[str] = frozenset(),
     ) -> "TurnHarness":
         try:
             return cls(
                 TURN_HARNESS_SPECS[stage],
                 progress_tool_names=progress_tool_names,
                 permitted_tool_names=permitted_tool_names,
+                blocked_tool_names=blocked_tool_names,
             )
         except KeyError as error:
             raise ValueError(f"missing Turn harness for stage: {stage}") from error
@@ -96,11 +99,18 @@ class TurnHarness:
         if has_assistant_text:
             return "assistant_text_forbidden"
         names = [call.name for call in calls]
+        if any(name in self.blocked_tool_names for name in names):
+            return "tool_not_allowed"
         first = self.spec.first_tool
+        first_names = {first}
+        if first == "send_bubbles" and (
+            self.permitted_tool_names is None or "send_voice" in self.permitted_tool_names
+        ) and "send_voice" not in self.blocked_tool_names:
+            first_names.add("send_voice")
         if first is not None and not self.started:
-            if len(names) != 1 or names[0] != first:
+            if len(names) != 1 or names[0] not in first_names:
                 return f"{first}_must_be_first_and_alone"
-        elif first is not None and first in names:
+        elif first is not None and any(name in first_names for name in names):
             return f"{first}_already_completed"
         if (
             required_tool is not None
@@ -126,7 +136,7 @@ class TurnHarness:
         ):
             bubbles_seen = False
             for name in names:
-                if name == "send_bubbles":
+                if name in {"send_bubbles", "send_voice"}:
                     bubbles_seen = True
                 elif name in self.progress_tool_names and not bubbles_seen:
                     return "send_bubbles_required_before_progress_work"
@@ -136,10 +146,12 @@ class TurnHarness:
         """Record protocol-visible calls without interpreting tool results."""
 
         if self.spec.require_bubbles_before_progress_work and any(
-            call.name == "send_bubbles" for call in calls
+            call.name in {"send_bubbles", "send_voice"} for call in calls
         ):
             self.progress_bubbles_seen = True
 
     def accept(self, tool_name: str) -> None:
-        if tool_name == self.spec.first_tool:
+        if tool_name == self.spec.first_tool or (
+            self.spec.first_tool == "send_bubbles" and tool_name == "send_voice"
+        ):
             self.started = True

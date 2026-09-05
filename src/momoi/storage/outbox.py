@@ -11,6 +11,13 @@ from ..emotions import emotion_slug
 
 
 class OutboxStore:
+    def progress_delivery(self, turn_id: str, tool_call_id: str) -> dict[str, object] | None:
+        row = self._db.execute(
+            "SELECT text, target_channel, kind FROM outbox WHERE dedupe_key=?",
+            (f"turn:{turn_id}:progress:{tool_call_id}:0",),
+        ).fetchone()
+        return dict(row) if row else None
+
     @staticmethod
     def _message_delivery_state(
         outbox_state: str, possible_duplicate: bool = False
@@ -76,7 +83,11 @@ class OutboxStore:
         tool_call_id: str,
         messages: list[ChannelMessage],
         target_channel: str = "",
+        *,
+        voice: bool = False,
     ) -> None:
+        if voice and (len(messages) != 1 or not isinstance(messages[0], str) or not messages[0].strip()):
+            raise ValueError("voice progress requires one nonempty text string")
         now = time.time()
         with self._db:
             self._db.execute(
@@ -85,7 +96,12 @@ class OutboxStore:
                 (now, turn_id),
             )
             for index, message in enumerate(messages):
-                text, kind, path, payload = self._outbox_content(message)
+                if voice:
+                    # Keep only the original text and delivery mode in SQLite.
+                    # The worker synthesizes audio in memory before sending.
+                    text, kind, path, payload = message, "voice", None, {"action": "voice"}
+                else:
+                    text, kind, path, payload = self._outbox_content(message)
                 self._db.execute(
                     """INSERT OR IGNORE INTO turn_progress
                        (turn_id, tool_call_id, part_index, text, created_at)

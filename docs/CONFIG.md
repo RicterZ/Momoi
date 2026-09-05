@@ -11,6 +11,80 @@ Relative paths are resolved from the directory containing `config.json`.
 Absolute paths are accepted for every path field. `config.json` does not expand
 `${VAR}` placeholders.
 
+## Fish Audio speech synthesis
+
+TTS is disabled by default and `send_voice` is hidden while disabled. When TTS
+is enabled, both NapCat and Weixin requests include the same `send_voice` schema
+to preserve the shared tool prefix for caching. The harness permits execution
+only on channels supporting voice output (currently NapCat).
+Prompts and automatic voice-versus-text reply rules are unchanged.
+
+Add this section to your workspace `config.json`:
+
+```json
+{
+  "tts": {
+    "enabled": true,
+    "provider": "fish",
+    "timeout_seconds": 60,
+    "max_audio_bytes": 20971520,
+    "settings": {
+      "api_key": "",
+      "base_url": "https://api.fish.audio",
+      "model": "s2.1-pro-free",
+      "reference_id": "9bb8ad542dc44d148c21c73a0884e9ae",
+      "format": "mp3",
+      "latency": "normal"
+    }
+  }
+}
+```
+
+Create a key on the [Fish API key page](https://fish.audio/app/api-keys) and
+put it in `tts.settings.api_key`. TTS settings are read only from `config.json`.
+Restart Momoi after updating
+configuration. The initialized provider is available internally through
+`daemon.bubble_delivery.tts_provider`; its `synthesize(text)` method returns the
+in-memory `AudioOutput(data: bytes, format: str)`. No CLI entry point is added.
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `enabled` | `false` | Initialize the internal TTS provider |
+| `provider` | `fish` | Currently the only configured TTS provider |
+| `timeout_seconds` | `60` | Finite positive timeout for the complete HTTP response |
+| `max_audio_bytes` | `20971520` | Maximum downloaded audio size, including chunked responses |
+| `settings.api_key` | — | Fish API credential; required when enabled |
+| `settings.base_url` | `https://api.fish.audio` | API base URL; Momoi appends `/v1/tts` |
+| `settings.model` | `s2.1-pro-free` | One of `s2.1-pro-free`, `s2.1-pro`, `s2-pro`, `s1` |
+| `settings.reference_id` | — | Required Fish voice ID, taken from the voice page URL |
+| `settings.format` | `mp3` | `mp3`, `wav`, or `opus`; raw PCM is not supported |
+| `settings.latency` | `normal` | `normal` for quality, `balanced`, or `low` |
+
+The example uses [this Fish voice](https://fish.audio/m/9bb8ad542dc44d148c21c73a0884e9ae/).
+Voice availability and free-tier access depend on Fish. Momoi validates model
+names because Fish documents a paid-model fallback for unknown names; it never
+automatically changes the configured model or retries synthesis requests.
+See [Fish TTS API](https://docs.fish.audio/api-reference/endpoint/openapi-v1/text-to-speech)
+and [pricing](https://docs.fish.audio/developer-guide/models-pricing/pricing-and-rate-limits).
+
+HTTP errors report the status code without printing credentials or response bodies.
+Empty, non-audio, and oversized responses raise `TTSError`. No audio files are written.
+
+The voice tool accepts only the complete `text` string and selects the
+current channel internally. Conversation history and recall retain the original
+text. The outbox persists only that text and a voice delivery marker. The worker
+synthesizes complete audio in memory and sends it to NapCat as base64. Momoi does
+not persist audio files or audio bytes in SQLite; NapCat controls its own internal
+temporary-file behavior. Pending messages are synthesized again after a restart.
+Synthesis failures mark delivery failed, not delivered. On Weixin the harness rejects `send_voice` without changing the tool schema;
+direct internal calls return `voice_not_supported`.
+Owner, Heartbeat, Webhook, Goal and reply-followup workflows support voice output.
+Goal voice messages retain the existing notification scheduling and cooldown.
+
+Incoming voice transcriptions on NapCat and Weixin are prefixed with
+`[语音消息] ` before storage and transcript assembly. Plain text is unchanged;
+untranscribed voice placeholders are also marked.
+
 ## Timezone
 
 ```json

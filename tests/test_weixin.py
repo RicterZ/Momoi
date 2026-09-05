@@ -45,6 +45,14 @@ class WeixinTest(unittest.TestCase):
                 "平台转写",
             )
             self.assertIsNone(await channel.convert_voice(IncomingVoice()))
+            segments = await channel._item_segment(
+                {"type": 3, "voice_item": {"text": " 平台转写 "}}, None, "voice",
+            )
+            self.assertEqual(segments[0]["data"]["text"], "[语音消息] 平台转写")
+            plain = await channel._item_segment(
+                {"type": 1, "text_item": {"text": "普通文字"}}, None, "text",
+            )
+            self.assertEqual(plain[0]["data"]["text"], "普通文字")
 
         asyncio.run(run())
 
@@ -287,6 +295,7 @@ class WeixinTest(unittest.TestCase):
                         ["reply", "text", "record", "file", "video"],
                     )
                     self.assertIn("quoted body", render_segments(segments))
+                    self.assertIn("[语音消息] [Weixin record", render_segments(segments))
                     self.assertEqual(segments[3]["data"]["name"], "notes.txt")
                     for item in segments[2:]:
                         self.assertTrue(Path(item["data"]["file"]).is_file())

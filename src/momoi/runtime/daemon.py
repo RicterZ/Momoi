@@ -5,6 +5,7 @@ from typing import Any
 
 from ..tools.agenda import AgendaTools
 from ..asr import ASRProvider, load_asr_provider
+from ..tts import TTSProvider, create_tts_provider
 from ..tools.builtin import BuiltinTools
 from ..channel import (
     Channel,
@@ -52,6 +53,7 @@ class MomoiDaemon(
         channel: Channel | None = None,
         dashboard: tuple[str, int] | None = None,
         asr_provider: ASRProvider | None = None,
+        tts_provider: TTSProvider | None = None,
     ) -> None:
         self.config = config
         self._loaded_workspace_prompts: dict[str, str] = {}
@@ -153,7 +155,9 @@ class MomoiDaemon(
             else None
         )
         self.mcp = MCPManager(config.mcp_config)
-        self.tool_surface = ToolSurface(self.mcp, self.channels)
+        self.tool_surface = ToolSurface(
+            self.mcp, self.channels, voice_enabled=tts_provider is not None or config.tts.enabled,
+        )
         self.delivery_policy = DeliveryPolicy(config, self.store)
         self.tool_executor = ToolExecutor(
             config,
@@ -190,6 +194,7 @@ class MomoiDaemon(
             self.channels,
             self.delivery_policy,
             self.outbox_changed,
+            tts_provider=tts_provider if tts_provider is not None else create_tts_provider(config),
         )
         self.tool_batch = ToolBatchExecutor(
             config,

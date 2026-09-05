@@ -7,6 +7,7 @@ from ...channel import AmbiguousSend, NotConnected, SendRejected
 from ...observability.events import TRACE, log_event
 from ...observability.values import safe_preview
 from ...policies import DaemonPolicy
+from ...tts import TTSError
 
 logger = logging.getLogger("momoi.runtime.daemon")
 _DEFAULT_DAEMON_POLICY = DaemonPolicy()
@@ -72,6 +73,27 @@ class OutboxWorker:
                         delay_ms=int(delay * 1000),
                     )
                     await asyncio.sleep(delay)
+                audio = None
+                if row.kind == "voice":
+                    try:
+                        if not callable(getattr(channel, "send_voice", None)):
+                            raise TTSError("voice_not_supported")
+                        provider = self.bubble_delivery.tts_provider
+                        if provider is None:
+                            raise TTSError("tts_not_configured")
+                        audio = await provider.synthesize(row.text)
+                    except TTSError as error:
+                        if self.store.mark_sending(row.id):
+                            self.store.mark_failed(row.id, str(error))
+                        log_event(
+                            logger, logging.WARNING, "voice_synthesis_failure",
+                            stage="delivery", turn_id=row.turn_id, channel=channel.name,
+                            outbox_id=row.id, error_type=type(error).__name__,
+                        )
+                        continue
+                # Synthesis may take time; respect messages cancelled during it.
+                if stop.is_set():
+                    return
                 if not self.store.mark_sending(row.id):
                     continue
                 attempt = row.attempts + 1
@@ -89,13 +111,16 @@ class OutboxWorker:
                         kind=row.kind,
                         content=safe_preview(row.text, 500),
                     )
-                    await channel.send_message(
-                        row.payload
-                        or {
-                            "action": "message",
-                            "segments": [{"type": "text", "data": {"text": row.text}}],
-                        }
-                    )
+                    if row.kind == "voice":
+                        await channel.send_voice(audio)
+                    else:
+                        await channel.send_message(
+                            row.payload
+                            or {
+                                "action": "message",
+                                "segments": [{"type": "text", "data": {"text": row.text}}],
+                            }
+                        )
                 except NotConnected as error:
                     self.store.mark_not_dispatched(row.id, type(error).__name__)
                     log_event(

@@ -109,7 +109,10 @@ class NotificationStore:
         )
         visible_messages: list[str] = []
         for index, message in enumerate(messages):
-            visible, kind, path, payload = self._outbox_content(message)
+            if isinstance(message, dict) and message.get("action") == "voice":
+                visible, kind, path, payload = message["text"], "voice", None, {"action": "voice"}
+            else:
+                visible, kind, path, payload = self._outbox_content(message)
             visible_messages.append(visible)
             dedupe_key = f"notification:{row['id']}:{index}"
             outbox = self._db.execute(

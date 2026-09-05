@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from momoi.asr import ASRProvider, AudioInput
 from momoi.channel import (
+    VOICE_MESSAGE_PREFIX,
     NotConnected,
     SendRejected,
 )
@@ -96,10 +97,10 @@ class MessagingTest(unittest.TestCase):
                 [("get_record", {"file": "voice.silk", "out_format": "mp3"})],
             )
             self.assertEqual(provider.inputs, [AudioInput(b"voice", "mp3")])
-            self.assertEqual(accepted[0].text, "语音转写结果")
+            self.assertEqual(accepted[0].text, VOICE_MESSAGE_PREFIX + "语音转写结果")
             self.assertEqual(
                 accepted[0].segments,
-                ({"type": "text", "data": {"text": "语音转写结果"}},),
+                ({"type": "text", "data": {"text": VOICE_MESSAGE_PREFIX + "语音转写结果"}},),
             )
 
             disabled = NapCatChannel(
@@ -111,7 +112,7 @@ class MessagingTest(unittest.TestCase):
                 placeholders.append(message)
 
             await disabled._handle_payload(payload, receive_disabled)
-            self.assertEqual(placeholders[0].text, VOICE_UNAVAILABLE_TEXT)
+            self.assertEqual(placeholders[0].text, VOICE_MESSAGE_PREFIX + VOICE_UNAVAILABLE_TEXT)
             self.assertEqual(placeholders[0].segments[0]["type"], "text")
             self.assertNotIn("voice.silk", str(placeholders[0].segments))
 

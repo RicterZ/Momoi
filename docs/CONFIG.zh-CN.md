@@ -9,6 +9,70 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
 相对路径以 `config.json` 所在目录为基准解析。所有路径字段均可使用绝对路径。
 `config.json` 不会展开 `${VAR}` 占位符。
 
+## Fish Audio 语音合成
+
+TTS 默认关闭，关闭时不暴露 `send_voice`。启用后微信和 NapCat 请求使用相同的语音工具 schema，
+保留工具前缀缓存。harness 只允许支持语音发送的频道（目前为 NapCat）执行。不会修改提示词，也不会强制
+“语音输入用语音回复”的规则。
+
+在工作区 `config.json` 增加：
+
+```json
+{
+  "tts": {
+    "enabled": true,
+    "provider": "fish",
+    "timeout_seconds": 60,
+    "max_audio_bytes": 20971520,
+    "settings": {
+      "api_key": "",
+      "base_url": "https://api.fish.audio",
+      "model": "s2.1-pro-free",
+      "reference_id": "9bb8ad542dc44d148c21c73a0884e9ae",
+      "format": "mp3",
+      "latency": "normal"
+    }
+  }
+}
+```
+
+从 [Fish API key 页面](https://fish.audio/app/api-keys) 创建密钥，填写到
+`tts.settings.api_key`。TTS 所有设置只从 `config.json` 读取。
+修改后重启 Momoi，内部可通过 `daemon.bubble_delivery.tts_provider` 访问初始化后的 provider，
+调用 `synthesize(text)` 返回 `AudioOutput(data: bytes, format: str)`，音频只在内存中传递。不增加 CLI 入口。
+
+| 字段 | 默认值 | 说明 |
+| --- | --- | --- |
+| `enabled` | `false` | 是否初始化内部 TTS provider |
+| `provider` | `fish` | 当前唯一支持配置的 TTS provider |
+| `timeout_seconds` | `60` | 完整 HTTP 响应超时，必须是有限正数 |
+| `max_audio_bytes` | `20971520` | 最大音频下载字节数，也限制分块响应 |
+| `settings.api_key` | — | 开启时必填 |
+| `settings.base_url` | `https://api.fish.audio` | API 基址，程序追加 `/v1/tts` |
+| `settings.model` | `s2.1-pro-free` | 可选 `s2.1-pro-free`、`s2.1-pro`、`s2-pro`、`s1` |
+| `settings.reference_id` | — | 必填，Fish 音色页面 URL 中的 ID |
+| `settings.format` | `mp3` | 支持 `mp3`、`wav`、`opus`，不支持裸 PCM |
+| `settings.latency` | `normal` | `normal` 优先音质；也支持 `balanced`、`low` |
+
+示例 ID 对应[该 Fish 音色](https://fish.audio/m/9bb8ad542dc44d148c21c73a0884e9ae/)。
+音色和免费模型的可用性以 Fish 账号实际情况为准。Fish 文档说明未知模型名会回退到付费模型，
+因此 Momoi 会提前拒绝模型名拼写错误，不自动切换模型，也不自动重试合成请求。
+参考：[TTS API](https://docs.fish.audio/api-reference/endpoint/openapi-v1/text-to-speech)、
+[价格和限制](https://docs.fish.audio/developer-guide/models-pricing/pricing-and-rate-limits)。
+
+HTTP 失败只输出状态码，不输出密钥或服务端响应正文。空音频、非音频响应和超出大小上限时
+会抛出 `TTSError`，不会写入音频文件。
+
+语音工具只接收完整 `text` 字符串，频道由当前对话决定。数据库会话内容和 transcript 保留原文；
+outbox 只持久化原文和语音投递标记。投递 worker 调用 TTS，收到完整音频后以 base64 交给 NapCat。
+Momoi 不保存音频文件或音频数据库字段；NapCat 自身的临时文件行为由其服务实现决定。
+重启后未发送的消息根据原文重新合成。合成失败会标记投递失败，不伪装成已送达。
+Weixin 的工具 schema 保持一致，harness 拒绝执行 `send_voice`；直接内部调用返回 `voice_not_supported`。
+Owner、Heartbeat、Webhook、Goal、后续回复工作流均支持语音；Goal 沿用原有通知调度和冷却规则。
+
+NapCat 和 Weixin 的语音转写前统一添加 `[语音消息] `，随后进入数据库和 transcript。
+普通文字不加标记，无法转写的语音占位内容也带此标记。
+
 ## 时区
 
 ```json
