@@ -853,7 +853,6 @@ main.is-record .error {
 .usage-chart-frame svg { touch-action: pan-y; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
 .usage-chart-frame svg:focus:not(:focus-visible),
 .usage-hit:focus:not(:focus-visible) { outline: none; }
-.usage-hit.is-selected { fill: rgba(67, 184, 245, .08); }
 .usage-hit:focus-visible { fill: rgba(67, 184, 245, .16); outline: 2px solid var(--blue); }
 .usage-chart-frame svg:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
 .usage-legend {

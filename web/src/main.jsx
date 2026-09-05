@@ -329,22 +329,6 @@ function useNarrowScreen() {
   return narrow;
 }
 
-function summarizeDaily(rows, costAvailable) {
-  const list = rows || [];
-  const requests = list.reduce((sum, row) => sum + (Number(row.requests) || 0), 0);
-  const input = list.reduce((sum, row) => sum + (Number(row.input_tokens) || 0), 0);
-  const cacheRead = list.reduce((sum, row) => sum + (Number(row.cache_read_tokens) || 0), 0);
-  const estimatedCost = list.reduce(
-    (sum, row) => sum + (Number(row.estimated_cost) || 0),
-    0,
-  );
-  return {
-    requests,
-    estimated_cost: costAvailable ? estimatedCost : null,
-    cache_hit_rate: input ? (cacheRead / input) * 100 : 0,
-  };
-}
-
 function memoryKindLabel(kind) {
   return (
     {
@@ -549,7 +533,6 @@ function OverviewBody({ data, token, routeParam }) {
           selectedDate={/^\d{4}-\d{2}-\d{2}$/.test(routeParam || "") ? routeParam : ""}
           timezone={usage.timezone}
           rows={usage.daily}
-          totals={usage.totals}
           today={usage.today}
           balance={data.balance}
           costAvailable={usage.cost_available === true}
@@ -632,11 +615,10 @@ function linePath(points) {
     .join(" ");
 }
 
-function UsageChart({ rows, totals, today, balance, costAvailable, days = 30, token, selectedDate, timezone }) {
+function UsageChart({ rows, today, balance, costAvailable, days = 30, token, selectedDate, timezone }) {
   const [hover, setHover] = useState(null);
   const [detail, setDetail] = useState({});
   const [retry, setRetry] = useState(0);
-  const savedDate = useRef("");
   const gesture = useRef(null);
   const suppressClick = useRef(false);
   const hourly = Boolean(selectedDate);
@@ -646,7 +628,6 @@ function UsageChart({ rows, totals, today, balance, costAvailable, days = 30, to
   useEffect(() => {
     setHover(null);
     if (!selectedDate) return undefined;
-    savedDate.current = selectedDate;
     const controller = new AbortController();
     setDetail({ date: selectedDate, loading: true });
     api(`/api/usage?date=${encodeURIComponent(selectedDate)}`, { token, signal: controller.signal })
@@ -662,7 +643,6 @@ function UsageChart({ rows, totals, today, balance, costAvailable, days = 30, to
     window.location.hash = "overview";
   }
   function openDay(date) {
-    savedDate.current = date;
     setHover(null);
     window.location.hash = `overview/${date}`;
   }
@@ -698,7 +678,6 @@ function UsageChart({ rows, totals, today, balance, costAvailable, days = 30, to
   const series = hourly
     ? hourData?.hourly || Array.from({ length: 24 }, (_, hour) => ({ hour }))
     : daily;
-  const shown = hourly ? hourData?.totals : compact ? summarizeDaily(daily, costAvailable) : totals;
   const todayStats = hourly ? hourData?.totals || {} : today || daily.at(-1) || {};
   const hasStats = !hourly || Boolean(hourData);
   const showCost = hourly ? hourData?.cost_available ?? costAvailable : costAvailable;
@@ -756,8 +735,8 @@ function UsageChart({ rows, totals, today, balance, costAvailable, days = 30, to
           <strong>{costAvailable ? formatYuan(balance?.total_balance) : "-"}</strong>
         </div>
         <div>
-          <span>{hourly ? "当日请求" : "请求"}</span>
-          <strong>{hasStats ? shown?.requests ?? 0 : "—"}</strong>
+          <span>{hourly ? "当日请求" : "今日请求"}</span>
+          <strong>{hasStats ? todayStats.requests ?? 0 : "—"}</strong>
         </div>
         <div>
           <span>{hourly ? "当日缓存命中" : "今日缓存命中"}</span>
@@ -848,7 +827,7 @@ function UsageChart({ rows, totals, today, balance, costAvailable, days = 30, to
                 />
               )}
               <rect
-                className={`usage-hit${!hourly && savedDate.current === row.date ? " is-selected" : ""}`}
+                className="usage-hit"
                 role={hourly ? undefined : "button"}
                 tabIndex={hourly ? undefined : 0}
                 aria-label={hourly ? undefined : `${row.date}，${row.requests || 0} 次请求，查看小时分布`}
