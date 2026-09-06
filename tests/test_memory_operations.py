@@ -481,7 +481,7 @@ def test_optional_private_search_can_resolve_missing_target(daemon):
 
 
 @pytest.mark.parametrize("rejected_rounds", [1, 3])
-def test_assistant_text_rejection_is_logged_before_retry_or_abort(
+def test_forbidden_tool_rejection_is_logged_before_retry_or_abort(
     daemon, caplog, rejected_rounds
 ):
     source = event(daemon.store)
@@ -495,12 +495,10 @@ def test_assistant_text_rejection_is_logged_before_retry_or_abort(
         result = response(
             ToolCall(
                 f"finish-{count}",
-                "memory_operation_finish",
+                "send_bubbles" if count <= rejected_rounds else "memory_operation_finish",
                 {"decisions": [write(source)]},
             )
         )
-        if count <= rejected_rounds:
-            result.content.insert(0, {"type": "text", "text": "I'll apply this change."})
         return result
 
     daemon.provider = type("Provider", (), {"complete": staticmethod(complete)})()
@@ -514,14 +512,14 @@ def test_assistant_text_rejection_is_logged_before_retry_or_abort(
     ]
     assert len(rejections) == rejected_rounds
     for index, fields in enumerate(rejections, start=1):
-        assert fields["reason"] == "assistant_text_forbidden"
+        assert fields["reason"] == "tool_not_allowed"
         assert fields["stage"] == "memory_operation"
         assert fields["turn_id"] == "memory-operation:source:1"
         assert fields["call_id"]
         assert fields["round"] == index
         assert fields["consecutive_failures"] == index
         assert fields["failure_limit"] == 3
-        assert fields["tool_names"] == ["memory_operation_finish"]
+        assert fields["tool_names"] == ["send_bubbles"]
     batch = daemon.store._db.execute("SELECT * FROM memory_operation_batches").fetchone()
     if rejected_rounds == 1:
         assert count == 2
@@ -530,7 +528,7 @@ def test_assistant_text_rejection_is_logged_before_retry_or_abort(
     else:
         assert count == 3
         assert batch["state"] == "pending"
-        assert batch["error"] == "assistant_text_forbidden"
+        assert batch["error"] == "tool_not_allowed"
         assert not daemon.store.active_memory("preference", "drink")
 
 
@@ -759,3 +757,49 @@ def test_owner_recall_snapshot_reaches_private_queue(daemon):
     assert batch["context"][0]["id"] == target
     assert batch["context"][0]["content"] == old.text
     assert count == 3
+
+
+def test_assistant_text_can_accompany_private_finish(daemon):
+    source = event(daemon.store)
+    submit(daemon.store, source)
+    calls = 0
+
+    async def complete(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        result = response(ToolCall('finish', 'memory_operation_finish', {'decisions': [write(source)]}))
+        result.content.insert(0, {'type': 'text', 'text': 'I will apply this decision.'})
+        return result
+
+    daemon.provider = type('Provider', (), {'complete': staticmethod(complete)})()
+    asyncio.run(daemon._complete_memory_operation_turn('source', asyncio.Event()))
+    assert calls == 1
+    assert daemon.store.active_memory('preference', 'drink')
+    assert not daemon.store.due_outbox()
+
+
+def test_owner_assistant_text_never_becomes_a_delivered_bubble(daemon):
+    from types import SimpleNamespace
+    from tests.support import recall_response
+
+    source = event(daemon.store)
+    replies = [
+        recall_response(),
+        response(ToolCall('send', 'send_bubbles', {'bubbles': ['这是气泡']})),
+        response(ToolCall('end', 'end_turn', {
+            'reply_wait': {'wait': False}, 'mood': {'decision': 'unchanged'},
+            'activity': {'decision': 'unchanged'},
+        })),
+    ]
+    for reply in replies:
+        reply.content.insert(0, {'type': 'text', 'text': '正文不投递'})
+
+    async def complete(*args, **kwargs):
+        assert replies, 'Unexpected protocol retry'
+        return replies.pop(0)
+
+    daemon.provider = SimpleNamespace(complete=complete, config=SimpleNamespace(api_format='anthropic'))
+    asyncio.run(daemon._complete_batch_turn([source], asyncio.Event(), 'source'))
+    assert not replies
+    assert [row.text for row in daemon.store.due_outbox()] == ['这是气泡']
+    assert daemon.store._db.execute("SELECT state FROM turns WHERE id='source'").fetchone()[0] == 'completed'

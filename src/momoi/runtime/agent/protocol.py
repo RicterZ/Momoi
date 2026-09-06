@@ -3,15 +3,14 @@ from dataclasses import dataclass
 from typing import Literal
 from typing import Any
 
-from ...models import AgentReply, ToolCall
+from ...models import AgentReply
 from ..parsing import parse_response
-from ..turn_support import tool_error_block
 from ..turn_support import ExternalToolTurnError, MAX_CONSECUTIVE_TOOL_FAILURES
 from .workflow import TurnExecutionSpec, WorkflowProtocolError
 
 OWNER_BUBBLE_REQUEST_REMINDER = (
-    "Native tool calls only: if bubbles are warranted, call send_bubbles with "
-    "them; otherwise call the next work or terminal tool."
+    "Assistant text is not delivered to the owner. Use send_bubbles or send_voice "
+    "for owner-visible messages; otherwise call the next work or terminal tool."
 )
 
 _PRIVATE_REASONING_BLOCK_TYPES = frozenset(
@@ -132,7 +131,7 @@ def handle_no_tool_response(
     else:
         correction = (
             "[Trusted runtime protocol error: no native tool call was returned. "
-            "Retry using native tool calls only, following the current workflow.]"
+            "Continue with native tool calls following the current workflow; assistant text is not delivered.]"
         )
     messages.extend(
         [
@@ -189,29 +188,6 @@ def owner_request_messages(
             f"{text}\n\n{OWNER_BUBBLE_REQUEST_REMINDER}".lstrip()
         )
     return request_messages
-
-
-def harness_correction(
-    calls: list[ToolCall], error: str, *, owner_turn: bool
-) -> list[dict[str, Any]]:
-    correction: list[dict[str, Any]] = [
-        tool_error_block(call.id, error) for call in calls
-    ]
-    if error != "assistant_text_forbidden":
-        return correction
-    if owner_turn and len(calls) == 1 and calls[0].name == "end_turn":
-        text = (
-            "[Trusted runtime protocol error: assistant text accompanied tool calls. "
-            "Call send_bubbles with the owner-visible bubbles, without "
-            "end_turn. After its result, call end_turn alone on the next step.]"
-        )
-    else:
-        text = (
-            "[Trusted runtime protocol error: assistant text accompanied tool calls. "
-            "Repeat the intended action using native tool calls only.]"
-        )
-    correction.append({"type": "text", "text": text})
-    return correction
 
 
 def parse_end_turn(

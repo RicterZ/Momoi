@@ -13,10 +13,8 @@ from . import (
     TurnHarness,
     WorkflowProtocolError,
 )
-from ..parsing import response_text
 from .protocol import (
     handle_no_tool_response,
-    harness_correction,
     parse_end_turn,
 )
 from .tool_batch import ToolBatchRequest, ToolBatchState
@@ -291,7 +289,6 @@ class AgentLoop:
                 continue
             harness_error = harness.validate(
                 response.tool_calls,
-                has_assistant_text=bool(response_text(response.content)),
                 required_tool=required_tool,
             )
             if harness_error is not None:
@@ -321,11 +318,10 @@ class AgentLoop:
                         )
                     )
                     raise error_type(harness_error)
-                correction = harness_correction(
-                    response.tool_calls,
-                    harness_error,
-                    owner_turn=authority == "owner",
-                )
+                correction = [
+                    _tool_error_block(call.id, harness_error)
+                    for call in response.tool_calls
+                ]
                 messages.extend(
                     [
                         {"role": "assistant", "content": response.content},

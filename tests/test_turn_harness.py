@@ -5,7 +5,6 @@ from momoi.runtime.agent import TURN_HARNESS_SPECS, TurnHarness
 from momoi.runtime.agent.protocol import (
     assistant_history_content,
     handle_no_tool_response,
-    harness_correction,
 )
 from momoi.runtime.turn_support import PROMPT_ROOT
 from momoi.runtime.turn_support import ExternalToolTurnError, MAX_CONSECUTIVE_TOOL_FAILURES
@@ -65,12 +64,6 @@ class TurnHarnessTest(unittest.TestCase):
                 )
                 self.assertEqual(resolution.action, "retry")
                 self.assertIn(expected, messages[-1]["content"])
-        correction = harness_correction(
-            [ToolCall("end", "end_turn", {})], "assistant_text_forbidden",
-            owner_turn=True,
-        )
-        self.assertIn("Call send_bubbles", correction[-1]["text"])
-
     WORKFLOW_PROMPTS = {
         "owner": "owner.md",
         "heartbeat": "heartbeat.md",
@@ -229,15 +222,6 @@ class TurnHarnessTest(unittest.TestCase):
                 [ToolCall("finish", "end_turn", {"goal": {"status": "done", "result": "done"}})],
                 required_tool="end_turn",
             )
-        )
-
-    def test_assistant_text_invalidates_an_otherwise_valid_tool_call(self) -> None:
-        harness = TurnHarness.for_stage("owner")
-        recall = ToolCall("recall", "recall", {})
-
-        self.assertEqual(
-            harness.validate([recall], has_assistant_text=True),
-            "assistant_text_forbidden",
         )
 
     def test_harness_requires_its_boundary_tools_on_the_surface(self) -> None:

@@ -283,9 +283,10 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
                             self.assertEqual(sent["state"], "committed")
                             self.assertEqual(daemon.store.due_outbox()[0].kind, "voice")
                             self.assertTrue(daemon.outbox_changed.is_set())
-                        return ProviderResponse([{
-                            "type": "tool_use", "id": call.id, "name": call.name, "input": call.arguments,
-                        }], [call])
+                        return ProviderResponse([
+                            {"type": "text", "text": "Assistant commentary must not be delivered."},
+                            {"type": "tool_use", "id": call.id, "name": call.name, "input": call.arguments},
+                        ], [call])
 
                     daemon.provider = SimpleNamespace(config=SimpleNamespace(api_format="anthropic"), complete=complete)
                     draft = TurnDraft()
@@ -301,6 +302,7 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
                     self.assertFalse(draft.notification_messages)
                     if stage != "goal":
                         self.assertIsInstance(result, AgentReply)
+                    self.assertEqual(len(daemon.store.due_outbox()), 1)
                     row = daemon.store.due_outbox()[0]
                     self.assertEqual((row.text, row.kind, row.media_path), (self.text, "voice", None))
                     self.assertEqual(row.payload, {"action": "voice"})

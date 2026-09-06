@@ -90,11 +90,8 @@ class TurnHarness:
         self,
         calls: list[ToolCall],
         *,
-        has_assistant_text: bool = False,
         required_tool: str | None = None,
     ) -> str | None:
-        if has_assistant_text:
-            return "assistant_text_forbidden"
         names = [call.name for call in calls]
         if any(name in self.blocked_tool_names for name in names):
             return "tool_not_allowed"
