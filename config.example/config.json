@@ -51,9 +51,7 @@
   },
   "notifications": {
     "quiet_start": null,
-    "quiet_end": null,
-    "cooldown_seconds": 1800,
-    "pending_owner_delay_seconds": 30
+    "quiet_end": null
   },
   "heartbeat": {
     "enabled": false,

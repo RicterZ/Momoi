@@ -452,7 +452,6 @@ class ConfigurationTest(unittest.TestCase):
                 TurnDraft(),
                 authority="owner",
                 source_event_id="test",
-                allow_notify=False,
             )
             self.assertTrue(result["ok"], result)
             store.close()

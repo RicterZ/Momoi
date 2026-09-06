@@ -232,14 +232,6 @@ def load_config(path: str | Path) -> AppConfig:
         notifications=NotificationConfig(
             quiet_start=quiet_start,
             quiet_end=quiet_end,
-            cooldown_seconds=nonnegative(
-                notification_raw.get("cooldown_seconds", 1800),
-                "notifications.cooldown_seconds",
-            ),
-            pending_owner_delay_seconds=nonnegative(
-                notification_raw.get("pending_owner_delay_seconds", 30),
-                "notifications.pending_owner_delay_seconds",
-            ),
         ),
         tool_result_max_chars=tool_result_max_chars,
         tool_result_retention_days=nonnegative(

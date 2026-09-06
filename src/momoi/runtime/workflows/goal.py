@@ -295,7 +295,10 @@ class GoalWorkflow:
             stage="goal",
             turn_id=turn_id,
             goal_id=goal_id,
-            notified=bool(draft.notification_messages),
+            notified=any(
+                call["tool"] in {"send_bubbles", "send_voice"} and call["ok"]
+                for call in draft.tool_calls
+            ),
             tools=_turn_tool_names(draft),
             tool_calls=len(draft.tool_calls),
             goals=len(draft.goals),

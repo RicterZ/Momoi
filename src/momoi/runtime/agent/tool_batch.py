@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Any
 
 from ...channel import Channel, ChannelMessage
-from ...emotions import EMOTION_PREFIX
 from ...observability.context import log_context
 from ...models import IncomingMessage, ProviderResponse, TurnDraft
 from ..turn_support import (
@@ -53,7 +52,6 @@ class ToolBatchRequest:
     round_number: int
     delivery_channel: Channel
     heartbeat_owner_event_revision: int | None
-    heartbeat_notification_key: str
     workflow: AgentWorkflow | None
     state: ToolBatchState
     prepare_heartbeat_context: PrepareHeartbeatContext
@@ -124,7 +122,7 @@ class ToolBatchExecutor:
                 if request.workflow is not None
                 and call.name in request.workflow.tool_names
                 else self.tool_executor.source(
-                    call.name, allow_notify=execution.allow_notify
+                    call.name
                 )
             )
             trace = self.tool_executor.begin_trace(
@@ -172,6 +170,10 @@ class ToolBatchExecutor:
                         "Call recall first to decide what history this input depends on."
                     ),
                 }
+            elif call.name == "end_turn" and execution.goal_id:
+                result = self.agenda_tools.finish_review(
+                    execution.goal_id, call.arguments["goal"], request.draft,
+                )
             elif call.name == "end_turn":
                 result = {
                     "ok": False,
@@ -181,74 +183,34 @@ class ToolBatchExecutor:
                         else "tool_not_allowed"
                     ),
                 }
-            elif call.name == "autonomous_finish":
-                result = {
-                    "ok": False,
-                    "error": "autonomous_finish_must_be_the_only_terminal_tool",
-                }
-            elif call.name == "send_voice" and execution.goal_id:
-                text = call.arguments.get("text")
-                if not call.id:
-                    result = {"ok": False, "error": "missing_tool_call_id"}
-                elif set(call.arguments) != {"text"} or not isinstance(text, str) or not text.strip():
-                    result = {"ok": False, "error": "invalid_voice_arguments"}
-                elif EMOTION_PREFIX in text:
-                    result = {"ok": False, "error": "voice_cannot_include_emotion"}
-                elif not callable(getattr(request.delivery_channel, "send_voice", None)):
-                    result = {"ok": False, "error": "voice_not_supported"}
-                elif self.bubble_delivery.tts_provider is None:
-                    result = {"ok": False, "error": "tts_not_configured"}
-                else:
-                    synthesis_error = await self.bubble_delivery.prepare_voice(
-                        request.turn_id, text, request.delivery_channel.name,
-                    )
-                    if synthesis_error is not None:
-                        result = synthesis_error
-                    else:
-                        request.draft.notification_messages = [{"action": "voice", "text": text}]
-                        request.draft.notification_key = f"goal.{execution.goal_id}"
-                        request.draft.notification_priority = "normal"
-                        request.draft.notification_reason = "Goal voice update"
-                        result = {"ok": True, "state": "staged", "bubbles": 1}
             elif call.name in {"send_bubbles", "send_voice"}:
-                if execution.goal_id and execution.allow_notify:
-                    result = self.agenda_tools.execute(
-                        call,
-                        request.draft,
-                        authority=execution.authority,
-                        source_event_id=request.source_event_id,
-                        allow_notify=True,
-                    )
-                else:
-                    dispatch = (
-                        self.bubble_delivery.dispatch_voice
-                        if call.name == "send_voice"
-                        else self.bubble_delivery.dispatch
-                    )
-                    delivery = dispatch(
-                        call,
-                        turn_id=request.turn_id,
-                        stage=execution.stage,
-                        round_number=request.round_number,
-                        delivery_channel=request.delivery_channel,
-                        response_required=execution.require_response,
-                        heartbeat_turn=execution.heartbeat,
-                        reply_followup_turn=execution.reply_followup,
-                        heartbeat_owner_event_revision=(
-                            request.heartbeat_owner_event_revision
-                        ),
-                        heartbeat_notification_key=request.heartbeat_notification_key,
-                        previous_tool_name=previous_tool_name,
-                        previous_bubbles=last_sent_bubbles,
-                        previous_channel=last_sent_channel,
-                    )
-                    if call.name == "send_voice":
-                        delivery = await delivery
-                    result = delivery.result
-                    if delivery.bubbles is not None:
-                        visible = True
-                        last_sent_bubbles = copy.deepcopy(delivery.bubbles)
-                        last_sent_channel = delivery.channel
+                dispatch = (
+                    self.bubble_delivery.dispatch_voice
+                    if call.name == "send_voice"
+                    else self.bubble_delivery.dispatch
+                )
+                delivery = dispatch(
+                    call,
+                    turn_id=request.turn_id,
+                    stage=execution.stage,
+                    round_number=request.round_number,
+                    delivery_channel=request.delivery_channel,
+                    heartbeat_turn=execution.heartbeat,
+                    reply_followup_turn=execution.reply_followup,
+                    heartbeat_owner_event_revision=(
+                        request.heartbeat_owner_event_revision
+                    ),
+                    previous_tool_name=previous_tool_name,
+                    previous_bubbles=last_sent_bubbles,
+                    previous_channel=last_sent_channel,
+                )
+                if call.name == "send_voice":
+                    delivery = await delivery
+                result = delivery.result
+                if delivery.bubbles is not None:
+                    visible = True
+                    last_sent_bubbles = copy.deepcopy(delivery.bubbles)
+                    last_sent_channel = delivery.channel
             elif call.name == "tool_enable":
                 result = enable_tools(
                     call,
@@ -305,14 +267,13 @@ class ToolBatchExecutor:
                         )
                     external_effect = external_effect or call_has_external_effect
             elif self.agenda_tools.has_tool(
-                call.name, allow_notify=execution.allow_notify
+                call.name
             ):
                 result = self.agenda_tools.execute(
                     call,
                     request.draft,
                     authority=execution.authority,
                     source_event_id=request.source_event_id,
-                    allow_notify=execution.allow_notify,
                 )
             elif source == "memory":
                 result = await self.memory_tools.execute_async(

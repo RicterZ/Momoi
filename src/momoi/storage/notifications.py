@@ -9,59 +9,32 @@ from .scheduling import quiet_until
 
 
 class NotificationStore:
-    def _notification_key_not_before(
+    def _notification_eligible_at(
         self,
         priority: str,
-        notification_key: str,
         config: NotificationConfig,
         now: float,
-        *,
-        apply_cooldown: bool = True,
     ) -> float:
         eligible = now
         if priority == "normal":
             eligible = max(eligible, quiet_until(now, self._timezone, config))
-            last = self._db.execute(
-                """SELECT MAX(n.queued_at) FROM notifications AS n
-                   WHERE n.notification_key=? AND (
-                       n.state='queued' OR EXISTS (
-                           SELECT 1 FROM outbox AS o
-                           WHERE o.turn_id=n.turn_id
-                             AND (o.state='sent' OR o.possible_duplicate=1)
-                       )
-                   )""",
-                (notification_key,),
-            ).fetchone()[0]
-            if apply_cooldown and last is not None:
-                eligible = max(eligible, float(last) + config.cooldown_seconds)
-            if self._db.execute(
-                "SELECT 1 FROM events WHERE processed=0 LIMIT 1"
-            ).fetchone():
-                eligible = max(eligible, now + config.pending_owner_delay_seconds)
         return eligible
 
     def _notification_not_before(
         self, row: sqlite3.Row, config: NotificationConfig, now: float
     ) -> float:
-        return self._notification_key_not_before(
-            str(row["priority"]), str(row["notification_key"]), config, now
-        )
+        return self._notification_eligible_at(str(row["priority"]), config, now)
 
     def heartbeat_contact_window(
         self,
-        notification_key: str,
         config: NotificationConfig,
         now: float | None = None,
-        *,
-        apply_cooldown: bool = True,
     ) -> dict[str, object]:
         now = time.time() if now is None else now
-        eligible_at = self._notification_key_not_before(
+        eligible_at = self._notification_eligible_at(
             "normal",
-            notification_key,
             config,
             now,
-            apply_cooldown=apply_cooldown,
         )
         return {"allowed": eligible_at <= now, "eligible_at": eligible_at}
 
@@ -110,7 +83,12 @@ class NotificationStore:
         visible_messages: list[str] = []
         for index, message in enumerate(messages):
             if isinstance(message, dict) and message.get("action") == "voice":
-                visible, kind, path, payload = message["text"], "voice", None, {"action": "voice"}
+                visible, kind, path, payload = (
+                    message["text"],
+                    "voice",
+                    None,
+                    {"action": "voice"},
+                )
             else:
                 visible, kind, path, payload = self._outbox_content(message)
             visible_messages.append(visible)
@@ -168,9 +146,7 @@ class NotificationStore:
             title = (
                 "心跳"
                 if archive_kind == "heartbeat"
-                else self._episode_title(
-                    visible_messages[0], "Autonomous conversation"
-                )
+                else self._episode_title(visible_messages[0], "Autonomous conversation")
             )
             self._ensure_runtime_archive(
                 archive_kind=archive_kind,

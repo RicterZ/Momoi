@@ -20,7 +20,6 @@ from .protocol import (
     parse_end_turn,
 )
 from .tool_batch import ToolBatchRequest, ToolBatchState
-from ..tool_contracts.runtime import AUTONOMOUS_FINISH_SPEC
 from ..turn_support import (
     ExternalToolTurnError,
     MAX_CONSECUTIVE_TOOL_FAILURES,
@@ -59,7 +58,6 @@ class AgentLoop:
         source_event_id: str,
         turn_id: str,
         heartbeat_owner_event_revision: int | None = None,
-        heartbeat_notification_key: str = "heartbeat.chat",
         delivery_channel: Channel,
         workflow: AgentWorkflow | None = None,
     ) -> AgentReply | dict[str, Any] | None:
@@ -71,7 +69,6 @@ class AgentLoop:
         accept_owner_updates = execution.accept_owner_updates
         dynamic_tool_policies = execution.dynamic_tool_policies
         external_tool_used = False
-        force_autonomous_finish = False
         failed_tool_rounds = 0
         last_tool_error = ""
         history_messages = max(0, len(messages) - 1)
@@ -126,14 +123,9 @@ class AgentLoop:
                     delivery_channel,
                 )
                 harness.reset()
-                force_autonomous_finish = False
                 failed_tool_rounds = 0
                 remind_owner_bubbles = False
-            required_tool = (
-                AUTONOMOUS_FINISH_SPEC["name"]
-                if force_autonomous_finish
-                else (harness.spec.first_tool if not harness.started else None)
-            )
+            required_tool = harness.spec.first_tool if not harness.started else None
             if (required_tool == "send_bubbles" and voice_allowed
                     and (permitted_tools is None or "send_voice" in permitted_tools)):
                 # The harness accepts either delivery form for the opening reply.
@@ -216,7 +208,6 @@ class AgentLoop:
                     delivery_channel,
                 )
                 harness.reset()
-                force_autonomous_finish = False
                 failed_tool_rounds = 0
                 remind_owner_bubbles = False
                 continue
@@ -264,7 +255,6 @@ class AgentLoop:
                     delivery_channel,
                 )
                 harness.reset()
-                force_autonomous_finish = False
                 failed_tool_rounds = 0
                 remind_owner_bubbles = False
                 continue
@@ -298,8 +288,6 @@ class AgentLoop:
                     )
                 if resolution.action == "return":
                     return None
-                if resolution.action == "force_finish":
-                    force_autonomous_finish = True
                 continue
             harness_error = harness.validate(
                 response.tool_calls,
@@ -332,29 +320,6 @@ class AgentLoop:
                 )
                 continue
             harness.observe_calls(response.tool_calls)
-            if (
-                autonomous_goal_id
-                and len(response.tool_calls) == 1
-                and response.tool_calls[0].name == "autonomous_finish"
-            ):
-                if autonomous_goal_id in draft.goals:
-                    return None
-                messages.extend(
-                    [
-                        {"role": "assistant", "content": response.content},
-                        {
-                            "role": "user",
-                            "content": [
-                                _tool_error_block(
-                                    response.tool_calls[0].id,
-                                    "goal_must_be_updated_before_finish",
-                                )
-                            ],
-                        },
-                    ]
-                )
-                force_autonomous_finish = False
-                continue
             if (
                 require_response
                 and len(response.tool_calls) == 1
@@ -435,7 +400,6 @@ class AgentLoop:
                     round_number=llm_round,
                     delivery_channel=delivery_channel,
                     heartbeat_owner_event_revision=heartbeat_owner_event_revision,
-                    heartbeat_notification_key=heartbeat_notification_key,
                     workflow=workflow,
                     state=ToolBatchState(
                         visible_since_owner_update=visible_since_owner_update,
@@ -473,6 +437,13 @@ class AgentLoop:
                 harness.reset()
                 failed_tool_rounds = 0
                 continue
+            if (
+                autonomous_goal_id
+                and len(response.tool_calls) == 1
+                and response.tool_calls[0].name == "end_turn"
+                and results and not results[0]["is_error"]
+            ):
+                return None
             if workflow is not None and workflow.is_complete():
                 return workflow.completion_result() or {"ok": True}
             if any(not block["is_error"] for block in results):

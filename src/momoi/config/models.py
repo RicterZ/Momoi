@@ -16,8 +16,6 @@ class ConfigError(ValueError):
 class NotificationConfig:
     quiet_start: str | None = None
     quiet_end: str | None = None
-    cooldown_seconds: float = 1800
-    pending_owner_delay_seconds: float = 30
 
 
 @dataclass(frozen=True)

@@ -1,5 +1,6 @@
 from typing import Any
 
+from ...tools.contracts.agenda import GOAL_REVIEW_SCHEMA
 from ...reply_wait import REPLY_WAIT_MAX_MINUTES, REPLY_WAIT_MIN_MINUTES
 
 SEGMENT_SCHEMA: dict[str, Any] = {
@@ -112,9 +113,7 @@ MOOD_DECISION_SCHEMA: dict[str, Any] = {
         {
             "type": "object",
             "description": "Keep only while state, intensity, and cause remain accurate.",
-            "properties": {
-                "decision": {"type": "string", "enum": ["unchanged"]}
-            },
+            "properties": {"decision": {"type": "string", "enum": ["unchanged"]}},
             "required": ["decision"],
             "additionalProperties": False,
         },
@@ -130,7 +129,7 @@ MOOD_DECISION_SCHEMA: dict[str, Any] = {
             "required": ["decision", *MOOD_UPDATE_SCHEMA["required"]],
             "additionalProperties": False,
         },
-    ]
+    ],
 }
 
 ACTIVITY_DECISION_SCHEMA: dict[str, Any] = {
@@ -138,9 +137,7 @@ ACTIVITY_DECISION_SCHEMA: dict[str, Any] = {
         {
             "type": "object",
             "description": "Keep the current activity text and result unchanged.",
-            "properties": {
-                "decision": {"type": "string", "enum": ["unchanged"]}
-            },
+            "properties": {"decision": {"type": "string", "enum": ["unchanged"]}},
             "required": ["decision"],
             "additionalProperties": False,
         },
@@ -222,7 +219,7 @@ REPLY_WAIT_DECISION_SCHEMA: dict[str, Any] = {
             ],
             "additionalProperties": False,
         },
-    ]
+    ],
 }
 
 HEARTBEAT_STATE_SCHEMA: dict[str, Any] = {
@@ -249,8 +246,11 @@ HEARTBEAT_STATE_SCHEMA: dict[str, Any] = {
 END_TURN_TOOL_SPEC: dict[str, Any] = {
     "name": "end_turn",
     "description": (
-        "Terminal action for Owner, Heartbeat, Webhook, and Reply Follow-up Turns. "
-        "Commit private state only; never visible content. Call once and alone after "
+        "Terminal action for Owner, Heartbeat, Webhook, Reply Follow-up, and Goal Turns. "
+        "Goal requires only goal: submit status and result, plus next steps when open; "
+        "it commits the current Goal outcome and ends the review. Other Turns must "
+        "omit goal or set it to null. Commit private state only; never visible content. "
+        "Call once and alone after "
         "work and delivery. Owner requires activity; Heartbeat requires heartbeat; "
         "other workflows must omit both. Reply Follow-up must set reply_wait.wait "
         "to false; other chat Turns may wait only after visible bubbles."
@@ -263,10 +263,23 @@ END_TURN_TOOL_SPEC: dict[str, Any] = {
             "mood": MOOD_DECISION_SCHEMA,
             "activity": ACTIVITY_DECISION_SCHEMA,
             "heartbeat": HEARTBEAT_STATE_SCHEMA,
+            "goal": {"default": None, "oneOf": [{"type": "null"}, GOAL_REVIEW_SCHEMA]},
         },
-        "required": [
-            "reply_wait",
-            "mood",
+        "oneOf": [
+            {
+                "required": ["reply_wait", "mood"],
+                "properties": {"goal": {"type": "null"}},
+            },
+            {
+                "required": ["goal"],
+                "properties": {
+                    "goal": GOAL_REVIEW_SCHEMA,
+                    "reply_wait": False,
+                    "mood": False,
+                    "activity": False,
+                    "heartbeat": False,
+                },
+            },
         ],
         "additionalProperties": False,
     },
@@ -298,6 +311,7 @@ SEND_BUBBLES_TOOL_SPEC: dict[str, Any] = {
     },
 }
 
+
 def send_bubbles_tool_spec(channel_names: list[str]) -> dict[str, Any]:
     return {
         **SEND_BUBBLES_TOOL_SPEC,
@@ -311,22 +325,6 @@ def send_bubbles_tool_spec(channel_names: list[str]) -> dict[str, Any]:
                     "description": (
                         "Delivery channel; omit to use this Turn's channel."
                     ),
-                },
-                "reason": {
-                    "type": "string",
-                    "description": "Required only for an autonomous Goal notification.",
-                },
-                "key": {
-                    "type": "string",
-                    "description": (
-                        "Stable lowercase cooldown category; required only for an "
-                        "autonomous Goal notification."
-                    ),
-                },
-                "priority": {
-                    "type": "string",
-                    "enum": ["normal", "urgent"],
-                    "default": "normal",
                 },
             },
         },

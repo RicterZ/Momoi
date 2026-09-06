@@ -77,6 +77,35 @@ class OutboxStore:
             kind = str(segments[0].get("type")) if len(segments) == 1 else "message"
         return text, kind, media_path(payload), payload
 
+    def _archive_progress_messages(self, turn_id: str, source_json: str) -> None:
+        rows = self._db.execute(
+            """SELECT p.text, p.created_at, o.id AS outbox_id,
+                      o.state, o.possible_duplicate
+               FROM turn_progress AS p
+               LEFT JOIN outbox AS o
+                 ON o.dedupe_key = 'turn:' || p.turn_id || ':progress:' ||
+                    p.tool_call_id || ':' || p.part_index
+               WHERE p.turn_id=?
+               ORDER BY p.created_at, p.tool_call_id, p.part_index""",
+            (turn_id,),
+        ).fetchall()
+        for row in rows:
+            self._db.execute(
+                """INSERT INTO messages
+                   (turn_id, role, content, created_at, source_event_ids_json,
+                    outbox_id, delivery_state)
+                   SELECT ?, 'assistant', ?, ?, ?, ?, ?
+                   WHERE NOT EXISTS (SELECT 1 FROM messages WHERE outbox_id=?)""",
+                (
+                    turn_id, row["text"], row["created_at"], source_json,
+                    row["outbox_id"],
+                    self._message_delivery_state(
+                        str(row["state"]), bool(row["possible_duplicate"])
+                    ) if row["outbox_id"] is not None else "uncertain",
+                    row["outbox_id"],
+                ),
+            )
+
     def queue_progress(
         self,
         turn_id: str,

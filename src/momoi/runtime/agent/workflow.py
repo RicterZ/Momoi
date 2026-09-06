@@ -33,11 +33,7 @@ class TurnExecutionSpec:
 
     @property
     def require_response(self) -> bool:
-        return TURN_HARNESS_SPECS[self.stage].terminal_tool == "end_turn"
-
-    @property
-    def allow_notify(self) -> bool:
-        return self.stage == "goal"
+        return self.stage in {"owner", "heartbeat", "webhook", "reply_followup"}
 
     @property
     def accept_owner_updates(self) -> bool:

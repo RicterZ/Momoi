@@ -11,20 +11,19 @@ AGENDA_TOOL_POLICY = """### Agenda tools
 - `goal_update` keeps a Goal open with its latest state. `goal_finish` closes it as
   successfully completed when its success criteria are satisfied. `goal_cancel`
   closes it without claiming success when it should no longer be pursued.
-- When reviewing a due goal, update, finish, or cancel it before the Turn ends.
+- During a due Goal review, submit its outcome once using `end_turn.goal`; do not
+  separately call goal_update, goal_finish, or goal_cancel.
 - Use a Goal for every future action, including a one-time or recurring owner
   notification. Use `next_review_at` once or a recurring `schedule`; describe the
   intended notification in its success criteria and next action. At review time,
-  use current context and `send_bubbles`, then finish a one-time Goal or update a
-  recurring one. Never use `sleep` to cross Turns.
+  use current context and `send_bubbles`, then call `end_turn` with goal.status
+  set to done for a completed one-time Goal or active to keep a recurring one. Never use `sleep` to cross Turns.
 - During autonomous Goal review, `send_bubbles` is available only for a useful
   result, a needed decision, or a meaningful failure; otherwise finish the
   autonomous Turn silently. Use separate short `bubbles` when the notification
   has distinct parts; use a single item when it is one thought. Treat each item
   as an owner-visible private-chat bubble governed
-  by the shared Style Card and system bubble rules. Give it a stable category
-  `key`; use urgent priority only for a decision or failure that should bypass
-  normal quiet rules.
+  by the shared Style Card and system bubble rules.
 """
 
 
@@ -145,3 +144,28 @@ AGENDA_TOOL_SPECS: list[dict[str, Any]] = [
         },
     },
 ]
+
+
+GOAL_REVIEW_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "description": "Outcome of the current Goal review; the runtime supplies the Goal ID.",
+    "properties": {
+        **{
+            key: value
+            for key, value in AGENDA_TOOL_SPECS[1]["input_schema"]["properties"].items()
+            if key not in {"goal_id", "status", "latest_result"}
+        },
+        "status": {
+            "type": "string",
+            "enum": ["active", "waiting", "blocked", "done", "cancelled"],
+        },
+        "result": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "Verified result of this review, or the reason for cancellation.",
+        },
+    },
+    "required": ["status", "result"],
+    "additionalProperties": False,
+}

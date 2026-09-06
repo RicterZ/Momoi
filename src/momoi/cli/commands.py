@@ -110,7 +110,6 @@ def goal(args: argparse.Namespace) -> None:
                 draft,
                 authority="owner",
                 source_event_id="cli:goal",
-                allow_notify=False,
             )
         else:
             matches = [
@@ -129,7 +128,6 @@ def goal(args: argparse.Namespace) -> None:
                 draft,
                 authority="owner",
                 source_event_id="cli:goal",
-                allow_notify=False,
             )
         if not result.get("ok"):
             raise ValueError(str(result.get("message") or result.get("error")))

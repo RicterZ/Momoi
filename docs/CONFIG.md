@@ -91,7 +91,7 @@ or cache eviction; failures during this recovery mark delivery failed.
 On Weixin the harness rejects `send_voice` without changing the tool schema;
 direct internal calls return `voice_not_supported`.
 Owner, Heartbeat, Webhook, Goal and reply-followup workflows support voice output.
-Goal voice messages retain the existing notification scheduling and cooldown.
+Goal voice messages retain the existing notification scheduling.
 
 Incoming voice transcriptions on NapCat and Weixin are prefixed with
 `[语音消息] ` before storage and transcript assembly. Plain text is unchanged;
@@ -298,9 +298,7 @@ Both values must be non-negative.
 {
   "notifications": {
     "quiet_start": null,
-    "quiet_end": null,
-    "cooldown_seconds": 1800,
-    "pending_owner_delay_seconds": 30
+    "quiet_end": null
   }
 }
 ```
@@ -309,11 +307,14 @@ Both values must be non-negative.
 | --- | --- | --- |
 | `quiet_start` | unset | Quiet-window start in local `HH:MM` |
 | `quiet_end` | unset | Quiet-window end in local `HH:MM` |
-| `cooldown_seconds` | `1800` | Non-negative interval between proactive contacts with the same key |
-| `pending_owner_delay_seconds` | `30` | Non-negative delivery delay while an owner message is pending |
 
 `quiet_start` and `quiet_end` must be distinct and either both set or both
 omitted. Overnight windows are supported.
+
+Heartbeat contact and queued system notifications observe quiet hours; urgent
+system notifications bypass them. Goal `send_bubbles` / `send_voice` calls use
+the normal delivery path immediately. Heartbeat owner-busy checks and interruption
+by new messages remain in place.
 
 ## Heartbeat
 

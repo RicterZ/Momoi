@@ -31,20 +31,6 @@ def tool_enable_spec(group_descriptions: dict[str, str]) -> dict[str, Any]:
     }
 
 
-AUTONOMOUS_FINISH_SPEC: dict[str, Any] = {
-    "name": "autonomous_finish",
-    "description": (
-        "Ends a Goal review without sending a notification; use send_bubbles to notify. "
-        "Call it alone after updating, "
-        "finishing, or cancelling the Goal and after any optional send_bubbles call."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {},
-        "additionalProperties": False,
-    },
-}
-
 READ_TOOL_RESULT_SPEC: dict[str, Any] = {
     "name": "read_tool_result",
     "description": (

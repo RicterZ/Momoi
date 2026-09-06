@@ -78,7 +78,7 @@ outbox 只持久化原文和语音投递标记；合成音频通过有容量上�
 Momoi 不保存音频文件或音频数据库字段；NapCat 自身的临时文件行为由其服务实现决定。
 重启或缓存淘汰后，未发送的消息根据原文重新合成；恢复期间合成失败会标记投递失败。
 Weixin 的工具 schema 保持一致，harness 拒绝执行 `send_voice`；直接内部调用返回 `voice_not_supported`。
-Owner、Heartbeat、Webhook、Goal、后续回复工作流均支持语音；Goal 沿用原有通知调度和冷却规则。
+Owner、Heartbeat、Webhook、Goal、后续回复工作流均支持语音；Goal 沿用原有通知调度规则。
 
 NapCat 和 Weixin 的语音转写前统一添加 `[语音消息] `，随后进入数据库和 transcript。
 普通文字不加标记，无法转写的语音占位内容也带此标记。
@@ -283,9 +283,7 @@ NapCat 和 Weixin 的语音转写前统一添加 `[语音消息] `，随后进�
 {
   "notifications": {
     "quiet_start": null,
-    "quiet_end": null,
-    "cooldown_seconds": 1800,
-    "pending_owner_delay_seconds": 30
+    "quiet_end": null
   }
 }
 ```
@@ -294,11 +292,13 @@ NapCat 和 Weixin 的语音转写前统一添加 `[语音消息] `，随后进�
 | --- | --- | --- |
 | `quiet_start` | 未设置 | 本地免打扰时间段的开始时间，格式为 `HH:MM` |
 | `quiet_end` | 未设置 | 本地免打扰时间段的结束时间，格式为 `HH:MM` |
-| `cooldown_seconds` | `1800` | 相同标识主动联系之间的非负间隔 |
-| `pending_owner_delay_seconds` | `30` | 有主人消息待处理时的非负投递延迟 |
 
 `quiet_start` 和 `quiet_end` 必须不同，并且必须同时设置或同时省略。支持跨夜
 时间段。
+
+静默时段用于心跳联系和系统通知队列，紧急系统通知可跳过。
+Goal 的 `send_bubbles` / `send_voice` 调用后立即进入通用发送流程。
+心跳本身的主人忙碌状态检查和新消息打断仍保留。
 
 ## 心跳
 

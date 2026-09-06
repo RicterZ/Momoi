@@ -119,10 +119,8 @@ class HeartbeatCommitStore:
                 else "heartbeat.chat"
             )
             if not self.heartbeat_contact_window(
-                notification_key,
                 notification_config,
                 now,
-                apply_cooldown=not pending_reply_is_current,
             )["allowed"]:
                 messages = []
             source_json = json.dumps(

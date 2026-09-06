@@ -220,14 +220,14 @@ class TurnHarnessTest(unittest.TestCase):
         self.assertEqual(
             harness.validate(
                 [ToolCall("work", "goal_update", {})],
-                required_tool="autonomous_finish",
+                required_tool="end_turn",
             ),
-            "autonomous_finish_required",
+            "end_turn_required",
         )
         self.assertIsNone(
             harness.validate(
-                [ToolCall("finish", "autonomous_finish", {})],
-                required_tool="autonomous_finish",
+                [ToolCall("finish", "end_turn", {"goal": {"status": "done", "result": "done"}})],
+                required_tool="end_turn",
             )
         )
 

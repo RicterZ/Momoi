@@ -238,7 +238,7 @@ incrementally without blocking owner conversation.
 | Context | Native shared transcript, mandatory Owner search/reuse recall, Episode routing, runtime re-search, and bounded model input |
 | Tools | Built-in file/HTTP tools plus dynamically discovered MCP servers and per-server tool allowlists |
 | Long-running work | Tool loops, progress messages, interruption, token/time budgets, large-result snapshots, and recovery for uncertain external effects |
-| Time and initiative | Persistent Goals, multiple daily trigger times, Heartbeats, quiet hours, cooldowns, and pending-owner delivery protection |
+| Time and initiative | Persistent Goals, multiple daily trigger times, Heartbeats, quiet hours, and interruption by new owner messages |
 | Memory maintenance | Daily Reflection, confirmed-memory reconciliation, Episode annealing, incremental semantic indexing, and keyword fallback |
 | Observability | Local dashboard for conversations, recall decisions and evidence, reflections, memories, Goals, image reactions, token usage, and per-Turn thinking records |
 | External events | Authenticated Webhooks with YAML workflows and predefined command executors |
@@ -530,6 +530,26 @@ curl -X POST http://127.0.0.1:8787/webhooks/event-message \
 Webhook Turns receive the same native shared transcript and memory as Momoi's
 other active workflows, but they may finish silently when the event adds
 nothing useful.
+
+### Completing a Goal review
+
+A Goal review uses one sequence: work → optional `send_bubbles` / `send_voice` →
+`end_turn`. Its `goal` object records the result, updates the task and ends the
+review in one call. `active`, `waiting` and `blocked` keep the Goal; `done` and
+`cancelled` close it. The runtime supplies the current Goal ID. For example:
+
+```json
+{"goal": {"status": "done", "result": "Downloaded and verified the file"}}
+```
+
+Continuing requires `next_action` and a future `next_review_at`; recurring active
+Goals may reuse their schedule. Waiting requires `waiting_for` and a future review;
+blocked requires `blocked_reason`. `send_bubbles` and `send_voice` use the normal
+delivery path immediately, independently of Goal completion. Invalid outcomes
+return tool errors for correction.
+Other Turns must omit `goal` or pass `null`; the harness rejects cross-workflow
+arguments before execution. Normal conversations retain `goal_update`, `goal_finish`
+and `goal_cancel` for task management; Goal reviews use the terminal outcome instead.
 
 ## Owner controls
 

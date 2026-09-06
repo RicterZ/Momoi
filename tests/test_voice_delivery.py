@@ -2,7 +2,6 @@ from tests.support import provider_catalog
 import asyncio
 import base64
 import json
-import time
 import tempfile
 import unittest
 from pathlib import Path
@@ -52,9 +51,9 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
         self.text = "完整的一段话。\n\n这里也要讲出来。"
         self.context = dict(
             turn_id="voice-turn", stage="owner", round_number=1,
-            delivery_channel=self.channel, response_required=True,
+            delivery_channel=self.channel,
             heartbeat_turn=False, reply_followup_turn=False,
-            heartbeat_owner_event_revision=None, heartbeat_notification_key="heartbeat.chat",
+            heartbeat_owner_event_revision=None,
             previous_tool_name=None, previous_bubbles=None, previous_channel="",
         )
 
@@ -268,7 +267,9 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
                         end["activity"] = {"decision": "unchanged"}
                     if stage == "heartbeat":
                         end["heartbeat"] = {"activity": "resting", "result": "", "next_check_minutes": 30, "reason": "rest"}
-                    calls.append(ToolCall("end", "autonomous_finish" if stage == "goal" else "end_turn", end))
+                    if stage == "goal":
+                        end = {"goal": {"status": "done", "result": "voice delivered"}}
+                    calls.append(ToolCall("end", "end_turn", end))
 
                     async def complete(_system, _messages, tools, **kwargs):
                         self.assertIn("send_voice", {tool["name"] for tool in tools})
@@ -276,6 +277,12 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
                             self.assertIsNone(kwargs.get("required_tool"))
                         self.assertTrue(calls, "unexpected protocol retry")
                         call = calls.pop(0)
+                        if call.name == "end_turn":
+                            sent = json.loads(_messages[-1]["content"][0]["content"])
+                            self.assertTrue(sent["ok"])
+                            self.assertEqual(sent["state"], "committed")
+                            self.assertEqual(daemon.store.due_outbox()[0].kind, "voice")
+                            self.assertTrue(daemon.outbox_changed.is_set())
                         return ProviderResponse([{
                             "type": "tool_use", "id": call.id, "name": call.name, "input": call.arguments,
                         }], [call])
@@ -283,7 +290,7 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
                     daemon.provider = SimpleNamespace(config=SimpleNamespace(api_format="anthropic"), complete=complete)
                     draft = TurnDraft()
                     if stage == "goal":
-                        draft.goals["goal-id"] = {}
+                        draft.goals["goal-id"] = {"id": "goal-id", "status": "active"}
                     result = await daemon._run_tool_loop(
                         [], [{"role": "user", "content": "test"}], daemon.tool_surface.conversation_specs(), [], draft,
                         execution=TurnExecutionSpec(stage, goal_id="goal-id" if stage == "goal" else None,
@@ -291,29 +298,12 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
                         source_event_id="test", turn_id=turn_id, delivery_channel=daemon.channel,
                     )
                     self.assertEqual(calls, [])
-                    if stage == "goal":
-                        self.assertEqual(draft.notification_messages, [{"action": "voice", "text": self.text}])
-                        self.assertEqual(draft.notification_priority, "normal")
-                        self.assertEqual(daemon.store.due_outbox(), [])
-                        with daemon.store._db:
-                            daemon.store._db.execute(
-                                """INSERT INTO notifications
-                                   (id, turn_id, goal_id, notification_key, priority, reason,
-                                    messages_json, state, not_before, created_at, target_channel)
-                                   VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)""",
-                                ("voice-notification", turn_id, "goal-id", draft.notification_key,
-                                 draft.notification_priority, draft.notification_reason,
-                                 json.dumps(draft.notification_messages), time.time(), time.time(), daemon.channel.name),
-                            )
-                            notification = daemon.store._db.execute("SELECT * FROM notifications").fetchone()
-                            daemon.store._queue_notification_row(notification, time.time(), daemon.channel.name)
-                        row = daemon.store.due_outbox()[0]
-                        self.assertEqual((row.text, row.kind, row.media_path), (self.text, "voice", None))
-                        self.assertEqual(row.payload, {"action": "voice"})
-                    else:
+                    self.assertFalse(draft.notification_messages)
+                    if stage != "goal":
                         self.assertIsInstance(result, AgentReply)
-                        row = daemon.store.due_outbox()[0]
-                        self.assertEqual((row.text, row.kind), (self.text, "voice"))
+                    row = daemon.store.due_outbox()[0]
+                    self.assertEqual((row.text, row.kind, row.media_path), (self.text, "voice", None))
+                    self.assertEqual(row.payload, {"action": "voice"})
                 finally:
                     daemon.store.close()
 
@@ -376,7 +366,7 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
                     rounds = 0
                     draft = TurnDraft()
                     if stage == "goal":
-                        draft.goals["goal-id"] = {}
+                        draft.goals["goal-id"] = {"id": "goal-id", "status": "active"}
 
                     async def complete(_system, messages, tools, **kwargs):
                         nonlocal rounds
@@ -393,13 +383,13 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
                             self.assertEqual(daemon.store.due_outbox(), [])
                             self.assertFalse(draft.notification_messages)
                             call = ToolCall("fallback", "send_bubbles", {
-                                "bubbles": ["老师你好"], "reason": "voice failed", "key": "goal.test",
+                                "bubbles": ["老师你好"],
                             })
                         else:
                             self.assertEqual(rounds, 3)
-                            call = ToolCall("end", "autonomous_finish" if stage == "goal" else "end_turn", {
-                                "reply_wait": {"wait": False}, "mood": {"decision": "unchanged"},
-                            })
+                            end = ({"goal": {"status": "done", "result": "text fallback prepared"}}
+                                   if stage == "goal" else {"reply_wait": {"wait": False}, "mood": {"decision": "unchanged"}})
+                            call = ToolCall("end", "end_turn", end)
                         return ProviderResponse([{
                             "type": "tool_use", "id": call.id, "name": call.name, "input": call.arguments,
                         }], [call])
@@ -413,10 +403,8 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
                     )
                     provider.synthesize.assert_awaited_once()
                     self.assertEqual(rounds, 3)
-                    if stage == "goal":
-                        self.assertEqual(draft.notification_messages, ["老师你好"])
-                    else:
-                        self.assertEqual([(row.kind, row.text) for row in daemon.store.due_outbox()],
-                                         [("text", "老师你好")])
+                    self.assertFalse(draft.notification_messages)
+                    self.assertEqual([(row.kind, row.text) for row in daemon.store.due_outbox()],
+                                     [("text", "老师你好")])
                 finally:
                     daemon.store.close()

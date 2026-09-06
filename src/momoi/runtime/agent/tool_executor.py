@@ -62,16 +62,13 @@ class ToolExecutor:
         self.artifact_root = artifact_root(config)
         self.result_root = tool_result_root(config)
 
-    def source(self, name: str, *, allow_notify: bool) -> str:
-        if name == "send_bubbles" and allow_notify:
-            return "agenda"
+    def source(self, name: str) -> str:
         if name in {
             "end_turn",
             "send_bubbles",
             "send_voice",
             "tool_enable",
             "read_tool_result",
-            "autonomous_finish",
             "heartbeat_begin",
         }:
             return "runtime"
@@ -79,7 +76,7 @@ class ToolExecutor:
             return "mcp"
         if self.builtin_tools.has_tool(name):
             return "builtin"
-        if self.agenda_tools.has_tool(name, allow_notify=allow_notify):
+        if self.agenda_tools.has_tool(name):
             return "agenda"
         if name in self.memory_tool_names:
             return "memory"

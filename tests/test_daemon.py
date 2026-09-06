@@ -344,8 +344,8 @@ class DaemonTest(unittest.TestCase):
             parse_mood_decision('{"decision": "unchanged"}'),
             (None, "invalid_mood_decision"),
         )
-        self.assertIn("mood", END_TURN_TOOL_SPEC["input_schema"]["required"])
-        self.assertIn("reply_wait", END_TURN_TOOL_SPEC["input_schema"]["required"])
+        self.assertIn("mood", END_TURN_TOOL_SPEC["input_schema"]["oneOf"][0]["required"])
+        self.assertIn("reply_wait", END_TURN_TOOL_SPEC["input_schema"]["oneOf"][0]["required"])
         self.assertNotIn("continuity", END_TURN_TOOL_SPEC["input_schema"]["properties"])
         self.assertNotIn("delivery", END_TURN_TOOL_SPEC["input_schema"]["properties"])
         self.assertNotIn("expects_reply", END_TURN_TOOL_SPEC["input_schema"]["properties"])
@@ -372,14 +372,14 @@ class DaemonTest(unittest.TestCase):
             self.assertNotIn(visible_field, terminal_properties)
         self.assertFalse(END_TURN_TOOL_SPEC["input_schema"]["additionalProperties"])
         self.assertEqual(END_TURN_TOOL_SPEC["name"], "end_turn")
-        self.assertNotIn("heartbeat", END_TURN_TOOL_SPEC["input_schema"]["required"])
+        self.assertNotIn("heartbeat", END_TURN_TOOL_SPEC["input_schema"]["oneOf"][0]["required"])
         self.assertIn("heartbeat", END_TURN_TOOL_SPEC["input_schema"]["properties"])
-        self.assertIn("mood", END_TURN_TOOL_SPEC["input_schema"]["required"])
+        self.assertIn("mood", END_TURN_TOOL_SPEC["input_schema"]["oneOf"][0]["required"])
         self.assertNotIn(
             "continue_waiting_for_reply",
             END_TURN_TOOL_SPEC["input_schema"]["properties"]["heartbeat"]["properties"],
         )
-        self.assertNotIn("activity", END_TURN_TOOL_SPEC["input_schema"]["required"])
+        self.assertNotIn("activity", END_TURN_TOOL_SPEC["input_schema"]["oneOf"][0]["required"])
         self.assertIn("activity", END_TURN_TOOL_SPEC["input_schema"]["properties"])
         activity_shapes = ACTIVITY_DECISION_SCHEMA["oneOf"]
         self.assertEqual(
@@ -1754,7 +1754,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 draft,
                 authority="owner",
                 source_event_id=event.event_id,
-                allow_notify=False,
             )["goal"]
             daemon.store.commit_turn([event], event.text, AgentReply(["好"]), draft)
             await asyncio.sleep(0.03)
@@ -1812,8 +1811,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 log_level="INFO",
                 timezone="Asia/Shanghai",
                 notifications=NotificationConfig(
-                    cooldown_seconds=0,
-                    pending_owner_delay_seconds=0,
                 ),
                 heartbeat=HeartbeatConfig(
                     enabled=True,
@@ -2812,8 +2809,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 database=Path(directory) / "momoi.sqlite3",
                 log_level="INFO",
                 notifications=NotificationConfig(
-                    cooldown_seconds=0,
-                    pending_owner_delay_seconds=0,
                 ),
             )
             daemon = MomoiDaemon(config)
@@ -2909,7 +2904,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 draft,
                 authority="owner",
                 source_event_id=source.event_id,
-                allow_notify=False,
             )
             goal_id = created["goal"]["id"]
             daemon.store.commit_turn(

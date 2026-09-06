@@ -153,9 +153,8 @@ class HeartbeatWorkflow:
     ) -> None:
         delivery_channel = self._channel_for(target_channel or self.channel.name)
         self_context = self.store.self_state_context()
-        notification_key = "heartbeat.chat"
         contact_window = self.store.heartbeat_contact_window(
-            notification_key, self.config.notifications
+            self.config.notifications
         )
         recent_topics: list[dict[str, object]] = []
         topic_tokens = 0
@@ -272,7 +271,6 @@ class HeartbeatWorkflow:
             source_event_id=f"heartbeat:{turn_id}",
             turn_id=turn_id,
             heartbeat_owner_event_revision=owner_event_revision,
-            heartbeat_notification_key=notification_key,
             delivery_channel=delivery_channel,
         )
         if not isinstance(reply, AgentReply) or reply.heartbeat is None:

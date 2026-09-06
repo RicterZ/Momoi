@@ -48,7 +48,7 @@ class DeliveryPolicy:
         ).ratio()
 
     def heartbeat_contact_error(
-        self, owner_event_revision: int, notification_key: str
+        self, owner_event_revision: int
     ) -> str | None:
         snapshot = self.store.heartbeat_conversation_snapshot()
         if int(snapshot["owner_event_revision"]) != owner_event_revision:
@@ -56,9 +56,7 @@ class DeliveryPolicy:
         if snapshot["owner_busy"]:
             return "heartbeat_contact_unavailable"
         window = self.store.heartbeat_contact_window(
-            notification_key,
             self.config.notifications,
-            apply_cooldown=notification_key != "heartbeat.reply_followup",
         )
         return None if window["allowed"] else "heartbeat_contact_unavailable"
 
@@ -128,7 +126,7 @@ class BubbleDelivery:
             return {"ok": False, "error": "superseded_by_owner_update"}
         self.voice_audio[(turn_id, text)] = audio
         self.voice_audio.move_to_end((turn_id, text))
-        # Bound memory for staged or subsequently cancelled messages. Evicted
+        # Bound memory for queued or subsequently cancelled messages. Evicted
         # audio can be synthesized again by the durable outbox, as on restart.
         while len(self.voice_audio) > 8:
             self.voice_audio.popitem(last=False)
@@ -136,10 +134,9 @@ class BubbleDelivery:
 
     async def send_voice(
         self, text: str, *, tool_call_id: str, turn_id: str,
-        delivery_channel: Channel, response_required: bool,
+        delivery_channel: Channel,
         heartbeat_turn: bool, reply_followup_turn: bool,
         heartbeat_owner_event_revision: int | None,
-        heartbeat_notification_key: str,
     ) -> BubbleDeliveryResult:
         """Speak a complete string; only the channel payload is audio."""
         def failure(error: str) -> BubbleDeliveryResult:
@@ -151,8 +148,6 @@ class BubbleDelivery:
             return failure("voice_cannot_include_emotion")
         if not tool_call_id:
             return failure("missing_tool_call_id")
-        if not (response_required or heartbeat_turn):
-            return failure("tool_not_allowed")
         if not callable(getattr(delivery_channel, "send_voice", None)):
             return failure("voice_not_supported")
         if self.tts_provider is None:
@@ -161,7 +156,7 @@ class BubbleDelivery:
         def contact_error() -> str | None:
             if (heartbeat_turn or reply_followup_turn) and heartbeat_owner_event_revision is not None:
                 return self.policy.heartbeat_contact_error(
-                    heartbeat_owner_event_revision, heartbeat_notification_key,
+                    heartbeat_owner_event_revision,
                 )
             return None
 
@@ -208,8 +203,8 @@ class BubbleDelivery:
         return await self.send_voice(
             call.arguments["text"], tool_call_id=call.id,
             **{key: context[key] for key in (
-                "turn_id", "delivery_channel", "response_required", "heartbeat_turn",
-                "reply_followup_turn", "heartbeat_owner_event_revision", "heartbeat_notification_key",
+                "turn_id", "delivery_channel", "heartbeat_turn",
+                "reply_followup_turn", "heartbeat_owner_event_revision",
             )},
         )
 
@@ -221,11 +216,9 @@ class BubbleDelivery:
         stage: str,
         round_number: int,
         delivery_channel: Channel,
-        response_required: bool,
         heartbeat_turn: bool,
         reply_followup_turn: bool,
         heartbeat_owner_event_revision: int | None,
-        heartbeat_notification_key: str,
         previous_tool_name: str | None,
         previous_bubbles: list[ChannelMessage] | None,
         previous_channel: str,
@@ -239,8 +232,6 @@ class BubbleDelivery:
             error = self.policy.validate_emotions(bubbles)
             if error is not None:
                 bubbles = None
-        if not (response_required or heartbeat_turn):
-            return BubbleDeliveryResult({"ok": False, "error": "tool_not_allowed"})
         if bubbles is None:
             return BubbleDeliveryResult({"ok": False, "error": error})
         check_contact = (
@@ -250,7 +241,6 @@ class BubbleDelivery:
         contact_error = (
             self.policy.heartbeat_contact_error(
                 heartbeat_owner_event_revision,
-                heartbeat_notification_key,
             )
             if check_contact
             else None

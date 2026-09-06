@@ -28,7 +28,6 @@ class ReplyFollowupWorkflow:
         delivery_channel = self._channel_for(
             target_channel or str(pending.get("channel") or self.channel.name)
         )
-        notification_key = "heartbeat.reply_followup"
         long_term_memories = self.store.always_memory_context()
         recent_memories = self.store.recent_memory_context()
         conversation_rows = self._recent_conversation_rows()
@@ -94,7 +93,6 @@ class ReplyFollowupWorkflow:
             source_event_id=f"reply-followup:{turn_id}",
             turn_id=turn_id,
             heartbeat_owner_event_revision=owner_event_revision,
-            heartbeat_notification_key=notification_key,
             delivery_channel=delivery_channel,
         )
         if reply is None:

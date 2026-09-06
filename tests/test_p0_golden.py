@@ -48,7 +48,6 @@ class P0GoldenTests(unittest.TestCase):
                     draft,
                     authority="owner",
                     source_event_id=event.event_id,
-                    allow_notify=False,
                 )["ok"]
             )
             store.commit_turn(

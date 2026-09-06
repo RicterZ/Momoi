@@ -12,7 +12,6 @@ from ...storage import estimate_tokens
 from ..tool_contracts.context import RECALL_TOOL_SPEC, heartbeat_begin_spec
 from ..tool_contracts.conversation import END_TURN_TOOL_SPEC, send_bubbles_tool_spec
 from ..tool_contracts.runtime import (
-    AUTONOMOUS_FINISH_SPEC,
     READ_TOOL_RESULT_SPEC,
     tool_enable_spec,
 )
@@ -92,7 +91,7 @@ class ToolSurface:
             name = str(spec.get("name") or "")
             if not name or name in existing:
                 continue
-            tools.insert(max(0, len(tools) - 2), spec)
+            tools.insert(max(0, len(tools) - 1), spec)
             existing.add(name)
             added.append(name)
         return added
@@ -113,7 +112,6 @@ class ToolSurface:
             *self.public_specs(AGENDA_TOOL_SPECS),
             *self.public_specs(BUILTIN_TOOL_SPECS),
             tool_enable_spec(catalog),
-            copy.deepcopy(AUTONOMOUS_FINISH_SPEC),
             copy.deepcopy(END_TURN_TOOL_SPEC),
         ]
         self._log_conversation_surface(tools)
@@ -160,11 +158,7 @@ class ToolSurface:
         if stage == "reply_followup":
             return frozenset({"send_bubbles", "end_turn", *voice})
         if stage == "goal":
-            goal_agenda = (
-                agenda
-                if not agent_owned_goal
-                else {"goal_update", "goal_finish", "goal_cancel"}
-            )
+            goal_agenda = {"goal_create"} if not agent_owned_goal else set()
             return frozenset(
                 {
                     "memory_search",
@@ -172,7 +166,7 @@ class ToolSurface:
                     "send_bubbles",
                     "read_tool_result",
                     "tool_enable",
-                    "autonomous_finish",
+                    "end_turn",
                     *goal_agenda,
                     *external,
                 }

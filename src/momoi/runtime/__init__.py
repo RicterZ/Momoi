@@ -5,10 +5,8 @@ from .tool_contracts.conversation import (
     SEND_BUBBLES_TOOL_SPEC,
 )
 from .tool_contracts.reflection import REFLECTION_FINISH_SPEC
-from .tool_contracts.runtime import AUTONOMOUS_FINISH_SPEC
 
 __all__ = [
-    "AUTONOMOUS_FINISH_SPEC",
     "AutonomousJob",
     "REFLECTION_FINISH_SPEC",
     "END_TURN_TOOL_SPEC",

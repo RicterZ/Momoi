@@ -10,7 +10,13 @@ from zoneinfo import ZoneInfo
 from momoi.channel.napcat import NapCatConfig
 from momoi.config.models import AppConfig
 from momoi.integrations.models import LLMConfig
-from momoi.models import AgentReply, IncomingMessage, ProviderResponse, ToolCall, TurnDraft
+from momoi.models import (
+    AgentReply,
+    IncomingMessage,
+    ProviderResponse,
+    ToolCall,
+    TurnDraft,
+)
 from momoi.runtime import MomoiDaemon
 
 
@@ -19,10 +25,10 @@ class GoalNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(
                 AppConfig(
-                    providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
-                    channel=NapCatConfig(
-                        "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
+                    providers=provider_catalog(
+                        LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)
                     ),
+                    channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                     system_prompt="contract\n{{SOUL}}\n{{CAPABILITY_POLICIES}}",
                     transcript_turns_min=4,
                     transcript_turns_max=4,
@@ -51,7 +57,6 @@ class GoalNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                 draft,
                 authority="agent",
                 source_event_id=event.event_id,
-                allow_notify=False,
             )
             goal_id = str(created["goal"]["id"])
             owner_turn = daemon.store.commit_turn(
@@ -89,24 +94,23 @@ class GoalNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                             [{"type": "text", "text": "plain text is invalid"}], []
                         )
                     if self.calls == 2:
-                        call = ToolCall("premature-finish", "autonomous_finish", {})
-                    elif self.calls == 3:
+                        call = ToolCall("premature-finish", "end_turn", {})
+                    else:
                         call = ToolCall(
-                            "update",
-                            "goal_update",
+                            "finish",
+                            "end_turn",
                             {
-                                "goal_id": goal_id,
-                                "status": "waiting",
-                                "waiting_for": "下一次检查",
-                                "latest_result": "本次检查正常",
-                                "next_review_at": (
-                                    datetime.now(ZoneInfo("UTC"))
-                                    + timedelta(hours=1)
-                                ).isoformat(),
+                                "goal": {
+                                    "status": "waiting",
+                                    "waiting_for": "下一次检查",
+                                    "result": "本次检查正常",
+                                    "next_review_at": (
+                                        datetime.now(ZoneInfo("UTC"))
+                                        + timedelta(hours=1)
+                                    ).isoformat(),
+                                }
                             },
                         )
-                    else:
-                        call = ToolCall("finish", "autonomous_finish", {})
                     return ProviderResponse(
                         [
                             {
@@ -136,17 +140,20 @@ class GoalNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             )
             self.assertIn("继续检查", str(provider.first_messages[1]["content"]))
             self.assertIn("好", str(provider.first_messages[2]["content"]))
-            self.assertEqual(provider.calls, 4)
+            self.assertEqual(provider.calls, 3)
             expected_surface = [
-                str(tool["name"])
-                for tool in daemon.tool_surface.conversation_specs()
+                str(tool["name"]) for tool in daemon.tool_surface.conversation_specs()
             ]
             self.assertTrue(
                 all(surface == expected_surface for surface in provider.surfaces)
             )
             self.assertEqual(
                 provider.required_tools,
-                [None, "autonomous_finish", None, None],
+                [None, None, None],
+            )
+            self.assertEqual(daemon.store.goal(goal_id)["status"], "waiting")
+            self.assertEqual(
+                daemon.store.goal(goal_id)["latest_result"], "本次检查正常"
             )
             daemon.store.close()
 

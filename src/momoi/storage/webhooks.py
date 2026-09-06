@@ -236,34 +236,7 @@ class WebhookStore:
                    WHERE turn_id=? ORDER BY created_at, tool_call_id, part_index""",
                 (turn_id,),
             ).fetchall()
-            for row in progress:
-                outbox = self._db.execute(
-                    """SELECT id, state, possible_duplicate FROM outbox
-                       WHERE dedupe_key=?""",
-                    (
-                        f"turn:{turn_id}:progress:{row['tool_call_id']}:"
-                        f"{row['part_index']}",
-                    ),
-                ).fetchone()
-                self._db.execute(
-                    """INSERT INTO messages
-                       (turn_id, role, content, created_at, source_event_ids_json,
-                        outbox_id, delivery_state)
-                       VALUES (?, 'assistant', ?, ?, ?, ?, ?)""",
-                    (
-                        turn_id,
-                        row["text"],
-                        row["created_at"],
-                        source,
-                        outbox["id"] if outbox else None,
-                        self._message_delivery_state(
-                            str(outbox["state"]),
-                            bool(outbox["possible_duplicate"]),
-                        )
-                        if outbox
-                        else "uncertain",
-                    ),
-                )
+            self._archive_progress_messages(turn_id, source)
             for index, (text, kind, path, payload) in enumerate(normalized):
                 outbox = self._db.execute(
                     """INSERT INTO outbox

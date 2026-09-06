@@ -36,7 +36,7 @@ def assistant_history_content(content: object) -> object:
 
 @dataclass(frozen=True)
 class NoToolResolution:
-    action: Literal["retry", "return", "force_finish"]
+    action: Literal["retry", "return"]
     failed_rounds: int
     log_rejection: bool = False
 
@@ -108,12 +108,13 @@ def handle_no_tool_response(
                     "role": "user",
                     "content": (
                         "[Trusted runtime protocol error. Plain text was not stored. "
-                        "Finish now by calling autonomous_finish alone.]"
+                        "Continue with native tools, or call end_turn alone with the "
+                        "current Goal outcome in goal when ready.]"
                     ),
                 },
             ]
         )
-        return NoToolResolution("force_finish", failed_rounds)
+        return NoToolResolution("retry", failed_rounds)
     if not require_response:
         return NoToolResolution("return", failed_rounds)
     if owner_turn and not harness_started:

@@ -209,7 +209,7 @@ Always/Recent memory、正在进行的近期 Turn、Goal、情绪与活动、思
 | 上下文 | 原生共享对话、Owner 强制 search/reuse 召回、Episode 路由、运行时二次搜索和有上限的模型输入 |
 | 工具 | 内置文件/HTTP 工具、动态发现的 MCP Server，以及按 Server 配置的工具白名单 |
 | 长任务 | 工具循环、进度消息、中断、token/时间预算、大结果快照和不确定外部操作恢复 |
-| 时间与主动性 | 持久 Goal、每日多个触发时间、Heartbeat、静默时段、冷却和待处理主人消息保护 |
+| 时间与主动性 | 持久 Goal、每日多个触发时间、Heartbeat、静默时段和新主人消息打断 |
 | 记忆维护 | 每日 Reflection、Confirmed memory 整理、Episode annealing、增量语义索引和关键词降级 |
 | 可观测性 | 本地 Dashboard 可查看对话、每个 Turn 的召回决策与证据、复盘、记忆、Goal、图片反应、token 用量和思考记录 |
 | 外部事件 | 带认证的 Webhook、YAML 工作流和预定义命令执行器 |
@@ -378,6 +378,24 @@ curl -X POST http://127.0.0.1:8787/webhooks/event-message \
 
 Webhook Turn 与其他 Momoi 工作流共享同一份原生对话和记忆；如果事件没有增加有用信息，
 也可以安静结束。
+
+### Goal 如何收尾
+
+Goal 自主执行只需「工作 → 可选 `send_bubbles` / `send_voice` → `end_turn`」。
+`end_turn` 的 `goal` 对象同时记录结果、更新任务状态并结束本轮：`active`、`waiting`、
+`blocked` 保留 Goal，`done`、`cancelled` 关闭 Goal。模型无需提供 Goal ID。
+例如完成任务时调用：
+
+```json
+{"goal": {"status": "done", "result": "文件已下载并校验"}}
+```
+
+继续执行需要 `next_action` 和未来的 `next_review_at`，周期 Goal 可以沿用 schedule；
+等待需要 `waiting_for` 和未来检查时间；阻塞需要 `blocked_reason`。
+`send_bubbles` / `send_voice` 调用后立即进入通用发送流程，不等待 Goal 收尾。
+收尾校验失败会返回工具错误并留在本轮修正。
+其他 Turn 必须省略 `goal` 或传 `null`，harness 会拒绝越界参数。
+普通对话仍可通过 `goal_update`、`goal_finish`、`goal_cancel` 管理任务；这些工具不用于 Goal 自主收尾。
 
 ## 主人控制
 

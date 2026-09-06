@@ -129,9 +129,9 @@ class EndTurnTest(unittest.TestCase):
                 self.assertIsNone(reply)
                 self.assertEqual(error, "heartbeat_interval_out_of_range")
 
-    def test_goal_and_maintenance_keep_their_own_terminal_tools(self):
+    def test_private_maintenance_keeps_its_own_terminal_tools(self):
         for stage in (
-            "goal", "reflection", "memory_maintenance",
+            "reflection", "memory_maintenance",
             "episode_consolidate", "episode_anneal",
         ):
             with self.subTest(stage=stage):

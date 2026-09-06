@@ -28,14 +28,10 @@ TURN_HARNESS_SPECS = {
                 {"send_bubbles", "send_voice", "curl", "read_tool_result", "end_turn"}
             ),
         ),
-        TurnHarnessSpec("goal", None, "autonomous_finish"),
+        TurnHarnessSpec("goal", None, "end_turn"),
         TurnHarnessSpec("reflection", None, "reflection_finish"),
-        TurnHarnessSpec(
-            "memory_maintenance", None, "memory_maintenance_finish"
-        ),
-        TurnHarnessSpec(
-            "episode_consolidate", None, "episode_consolidation_finish"
-        ),
+        TurnHarnessSpec("memory_maintenance", None, "memory_maintenance_finish"),
+        TurnHarnessSpec("episode_consolidate", None, "episode_consolidation_finish"),
         TurnHarnessSpec("episode_anneal", None, "episode_summary_finish"),
     )
 }
@@ -103,9 +99,14 @@ class TurnHarness:
             return "tool_not_allowed"
         first = self.spec.first_tool
         first_names = {first}
-        if first == "send_bubbles" and (
-            self.permitted_tool_names is None or "send_voice" in self.permitted_tool_names
-        ) and "send_voice" not in self.blocked_tool_names:
+        if (
+            first == "send_bubbles"
+            and (
+                self.permitted_tool_names is None
+                or "send_voice" in self.permitted_tool_names
+            )
+            and "send_voice" not in self.blocked_tool_names
+        ):
             first_names.add("send_voice")
         if first is not None and not self.started:
             if len(names) != 1 or names[0] not in first_names:
@@ -126,10 +127,21 @@ class TurnHarness:
             if self.permitted_tool_names is not None
             else self.spec.permitted_tools
         )
-        if permitted is not None and any(
-            name not in permitted for name in names
-        ):
+        if permitted is not None and any(name not in permitted for name in names):
             return "tool_not_allowed"
+        for call in calls:
+            if call.name != "end_turn":
+                continue
+            if call.argument_error or not isinstance(call.arguments, dict):
+                return "invalid_end_turn_arguments"
+            goal = call.arguments.get("goal")
+            if self.spec.stage == "goal":
+                if not isinstance(goal, dict):
+                    return "goal_required_in_end_turn"
+                if set(call.arguments) != {"goal"}:
+                    return "goal_end_turn_only_accepts_goal"
+            elif goal is not None:
+                return "goal_not_allowed_in_end_turn"
         if (
             self.spec.require_bubbles_before_progress_work
             and not self.progress_bubbles_seen

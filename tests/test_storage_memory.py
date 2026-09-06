@@ -2269,7 +2269,7 @@ class StorageMemoryTest(unittest.TestCase):
                 )
             daemon.store.close()
 
-    def test_goal_is_persisted_claimed_and_rescheduled_with_notification(self) -> None:
+    def test_goal_is_persisted_claimed_and_rescheduled_with_direct_messages(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
             tools = AgendaTools(store)
@@ -2292,7 +2292,6 @@ class StorageMemoryTest(unittest.TestCase):
                 draft,
                 authority="owner",
                 source_event_id=event.event_id,
-                allow_notify=False,
             )
             self.assertTrue(created["ok"])
             goal_id = created["goal"]["id"]
@@ -2318,62 +2317,22 @@ class StorageMemoryTest(unittest.TestCase):
                 autonomous,
                 authority="agent",
                 source_event_id=f"goal:{goal_id}",
-                allow_notify=True,
             )
             self.assertTrue(updated["ok"])
-            self.assertTrue(
-                tools.execute(
-                    ToolCall(
-                        "notify",
-                        "send_bubbles",
-                        {
-                            "bubbles": [
-                                "检查完成",
-                                "目前正常",
-                                "没有数量上限",
-                                "继续观察",
-                            ],
-                            "reason": "任务阶段结果",
-                            "key": "service.check",
-                        },
-                    ),
-                    autonomous,
-                    authority="agent",
-                    source_event_id=f"goal:{goal_id}",
-                    allow_notify=True,
-                )["ok"]
+            turn_id = "goal-review"
+            store.begin_turn(turn_id, "goal", [f"goal:{goal_id}"])
+            store.queue_progress(
+                turn_id, "notify", ["检查完成", "目前正常", "没有数量上限", "继续观察"]
             )
-            self.assertEqual(len(autonomous.notification_messages or []), 4)
-            mixed_emotion = tools.execute(
-                ToolCall(
-                    "notify-mixed-emotion",
-                    "send_bubbles",
-                    {
-                        "bubbles": ["完成啦 emotion://happy"],
-                        "reason": "任务阶段结果",
-                        "key": "service.check",
-                    },
-                ),
-                autonomous,
-                authority="agent",
-                source_event_id=f"goal:{goal_id}",
-                allow_notify=True,
-            )
-            self.assertFalse(mixed_emotion["ok"])
-            self.assertIn("standalone bubble", mixed_emotion["message"])
-            store.commit_autonomous_turn(goal_id, autonomous)
-            self.assertEqual(store.goal(goal_id)["status"], "waiting")
-            first = store.due_outbox()[0]
-            store.mark_sent(first.id)
-            notification = store.claim_due_notification(NotificationConfig())
-            self.assertIsNotNone(notification)
-            self.assertTrue(store.queue_notification(str(notification["id"])))
+            store.mark_sent(store.due_outbox()[0].id)
             self.assertEqual(store.due_outbox()[0].text, "检查完成")
+            store.commit_autonomous_turn(goal_id, autonomous, turn_id=turn_id)
+            self.assertEqual(store.goal(goal_id)["status"], "waiting")
+            self.assertIsNone(store.claim_due_notification(NotificationConfig()))
             notification_message = store._db.execute(
-                """SELECT turn_id FROM messages
-                   WHERE content='检查完成' ORDER BY id DESC LIMIT 1"""
+                "SELECT turn_id FROM messages WHERE content='检查完成'"
             ).fetchone()
-            self.assertEqual(notification_message["turn_id"], notification["turn_id"])
+            self.assertEqual(notification_message["turn_id"], turn_id)
             store.mark_sent(store.due_outbox()[0].id)
             self.assertEqual(store.due_outbox()[0].text, "目前正常")
             episode = store.search_episodes("本次检查正常", 3)[0]
@@ -3087,7 +3046,7 @@ class StorageMemoryTest(unittest.TestCase):
             committed = store.commit_heartbeat(
                 "heartbeat-live",
                 owner_event_revision=0,
-                notification_config=NotificationConfig(cooldown_seconds=0),
+                notification_config=NotificationConfig(),
                 activity="整理自己的关卡灵感",
                 result="留下一个新点子",
                 next_heartbeat_at=2000,
@@ -3132,7 +3091,7 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertEqual(snapshot["blocked_by"], "pending_owner_event")
             store.close()
 
-    def test_heartbeat_cooldown_suppresses_instead_of_delaying_chat(self) -> None:
+    def test_heartbeat_can_contact_again_after_recent_chat(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
             store._db.execute(
@@ -3143,52 +3102,26 @@ class StorageMemoryTest(unittest.TestCase):
                            'heartbeat.chat', 'normal', 'previous', '["旧消息"]',
                            'queued', 1000, 1000, 1000)"""
             )
-            store.begin_turn("cooldown-heartbeat", "heartbeat", ["heartbeat:1100"])
+            store.begin_turn("next-heartbeat", "heartbeat", ["heartbeat:1100"])
             with patch("momoi.storage.heartbeat_commits.time.time", return_value=1100):
                 committed = store.commit_heartbeat(
-                    "cooldown-heartbeat",
+                    "next-heartbeat",
                     owner_event_revision=0,
-                    notification_config=NotificationConfig(cooldown_seconds=1800),
+                    notification_config=NotificationConfig(),
                     activity="继续想游戏机制",
                     result="形成了一点看法",
                     next_heartbeat_at=2000,
                     mood_update=None,
-                    messages=["这句现在不能发。"],
+                    messages=["这次有新的进展。"],
                     reason="继续话题",
                 )
 
-            self.assertEqual(committed, 0)
+            self.assertEqual(committed, 1)
             self.assertEqual(
                 store._db.execute("SELECT COUNT(*) FROM notifications").fetchone()[0],
-                1,
+                2,
             )
-            self.assertEqual(store.due_outbox(), [])
-            store.close()
-
-    def test_reply_followup_contact_bypasses_normal_notification_cooldown(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            store = Store(Path(directory) / "momoi.sqlite3")
-            store._db.execute(
-                """INSERT INTO notifications
-                   (id, turn_id, goal_id, notification_key, priority, reason,
-                    messages_json, state, not_before, created_at, queued_at)
-                   VALUES ('previous-reply', 'previous-reply-turn', 'heartbeat',
-                           'heartbeat.reply_followup', 'normal', 'previous',
-                           '[\"旧催促\"]', 'queued', 1000, 1000, 1000)"""
-            )
-            store._db.commit()
-            config = NotificationConfig(cooldown_seconds=1800)
-
-            ordinary = store.heartbeat_contact_window(
-                "heartbeat.reply_followup", config, now=1100
-            )
-            reply_followup = store.heartbeat_contact_window(
-                "heartbeat.reply_followup", config, now=1100, apply_cooldown=False
-            )
-
-            self.assertFalse(ordinary["allowed"])
-            self.assertTrue(reply_followup["allowed"])
-            self.assertEqual(reply_followup["eligible_at"], 1100)
+            self.assertEqual([row.text for row in store.due_outbox()], ["这次有新的进展。"])
             store.close()
 
     def test_owner_message_supersedes_queued_heartbeat_chat(self) -> None:
@@ -3199,7 +3132,7 @@ class StorageMemoryTest(unittest.TestCase):
                 committed = store.commit_heartbeat(
                     "heartbeat-chat",
                     owner_event_revision=0,
-                    notification_config=NotificationConfig(cooldown_seconds=0),
+                    notification_config=NotificationConfig(),
                     activity="想起游戏机制",
                     result="形成了一点看法",
                     next_heartbeat_at=2000,
@@ -3288,7 +3221,6 @@ class StorageMemoryTest(unittest.TestCase):
                 draft,
                 authority="owner",
                 source_event_id=event.event_id,
-                allow_notify=False,
             )
             self.assertTrue(created["ok"], created)
             goal_id = created["goal"]["id"]
@@ -3309,7 +3241,6 @@ class StorageMemoryTest(unittest.TestCase):
                 occurrence_draft,
                 authority="agent",
                 source_event_id="goal-review",
-                allow_notify=True,
             )
             self.assertTrue(occurrence["ok"], occurrence)
             self.assertEqual(occurrence["goal"]["status"], "active")
@@ -3324,7 +3255,6 @@ class StorageMemoryTest(unittest.TestCase):
                 TurnDraft(),
                 authority="agent",
                 source_event_id="goal-review",
-                allow_notify=True,
             )
             self.assertTrue(finished["ok"], finished)
             self.assertEqual(finished["goal"]["status"], "done")
@@ -3338,7 +3268,6 @@ class StorageMemoryTest(unittest.TestCase):
                 TurnDraft(),
                 authority="owner",
                 source_event_id="owner-stop",
-                allow_notify=False,
             )
             self.assertTrue(cancelled["ok"], cancelled)
             self.assertEqual(cancelled["goal"]["status"], "cancelled")
@@ -3424,7 +3353,6 @@ class StorageMemoryTest(unittest.TestCase):
                 draft,
                 authority="owner",
                 source_event_id="test",
-                allow_notify=False,
             )
             self.assertTrue(created["ok"], created)
             store.commit_goal_draft(draft)
@@ -3497,7 +3425,6 @@ class StorageMemoryTest(unittest.TestCase):
             quiet = NotificationConfig(
                 quiet_start="23:00",
                 quiet_end="08:00",
-                cooldown_seconds=3600,
             )
             late = datetime(2030, 1, 1, 23, 30, tzinfo=zone).timestamp()
             add(store, "quiet", "service.status", "normal", late)
@@ -3507,12 +3434,10 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertEqual(claimed["id"], "quiet")
             self.assertTrue(store.queue_notification("quiet", morning, quiet))
 
-            add(store, "cooldown", "service.status", "normal", morning + 60)
-            self.assertIsNone(store.claim_due_notification(quiet, morning + 60))
-            not_before = store._db.execute(
-                "SELECT not_before FROM notifications WHERE id='cooldown'"
-            ).fetchone()[0]
-            self.assertGreaterEqual(not_before, morning + 3600)
+            add(store, "next-update", "service.status", "normal", morning + 60)
+            claimed = store.claim_due_notification(quiet, morning + 60)
+            self.assertEqual(claimed["id"], "next-update")
+            self.assertTrue(store.queue_notification("next-update", morning + 60, quiet))
 
             store.close()
 
@@ -3523,18 +3448,15 @@ class StorageMemoryTest(unittest.TestCase):
             store.add_event(pending)
             add(store, "normal", "normal.status", "normal", now)
             add(store, "urgent", "urgent.failure", "urgent", now)
-            policy = NotificationConfig(
-                cooldown_seconds=0,
-                pending_owner_delay_seconds=60,
-            )
-            self.assertIsNone(store.claim_due_notification(policy, now))
+            policy = NotificationConfig()
+            # Pending owner input no longer delays a ready Goal notification.
+            claimed = store.claim_due_notification(policy, now)
+            self.assertEqual(claimed["id"], "normal")
+            self.assertTrue(store.queue_notification("normal", now, policy))
             claimed = store.claim_due_notification(policy, now)
             self.assertEqual(claimed["id"], "urgent")
             self.assertTrue(store.queue_notification("urgent", now, policy))
-            normal_due = store._db.execute(
-                "SELECT not_before FROM notifications WHERE id='normal'"
-            ).fetchone()[0]
-            self.assertEqual(normal_due, now + 60)
+            self.assertEqual(len(store.pending_events()), 1)
             store.close()
 
     def test_notification_policy_has_no_daily_delivery_cap(self) -> None:
@@ -3561,7 +3483,7 @@ class StorageMemoryTest(unittest.TestCase):
                 (now, now),
             )
             claimed = store.claim_due_notification(
-                NotificationConfig(cooldown_seconds=0), now
+                NotificationConfig(), now
             )
             self.assertEqual(claimed["id"], "next")
             store.close()

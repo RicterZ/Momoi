@@ -14,7 +14,6 @@ TRANSCRIPT_PROTOCOL_TOOLS = frozenset(
     {
         "send_bubbles",
         "end_turn",
-        "autonomous_finish",
         "heartbeat_end_turn",
         "tool_enable",
         "read_tool_result",

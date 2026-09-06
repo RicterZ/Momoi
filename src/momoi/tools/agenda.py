@@ -1,16 +1,14 @@
 import logging
-import re
 import time
 import uuid
 from datetime import datetime
 from typing import Any
 
-from ..emotions import EMOTION_PREFIX, emotion_slug
 from ..observability.events import log_event
 from ..models import ToolCall, TurnDraft
 from ..storage import Store
 from ..storage.scheduling import next_schedule_at, normalize_schedule
-from .contracts.agenda import AGENDA_TOOL_SPECS
+from .contracts.agenda import AGENDA_TOOL_SPECS, GOAL_REVIEW_SCHEMA
 
 logger = logging.getLogger(__name__)
 
@@ -31,10 +29,8 @@ class AgendaTools:
         self.store = store
 
     @staticmethod
-    def has_tool(name: str, *, allow_notify: bool) -> bool:
-        return any(spec["name"] == name for spec in AGENDA_TOOL_SPECS) or (
-            allow_notify and name == "send_bubbles"
-        )
+    def has_tool(name: str) -> bool:
+        return any(spec["name"] == name for spec in AGENDA_TOOL_SPECS)
 
     def execute(
         self,
@@ -43,7 +39,6 @@ class AgendaTools:
         *,
         authority: str,
         source_event_id: str,
-        allow_notify: bool,
     ) -> dict[str, Any]:
         try:
             if call.name == "goal_create":
@@ -52,8 +47,6 @@ class AgendaTools:
                 return self._update(call.arguments, draft)
             if call.name in {"goal_finish", "goal_cancel"}:
                 return self._close(call.name, call.arguments, draft)
-            if call.name == "send_bubbles" and allow_notify:
-                return self._notify(call.arguments, draft)
             return {"ok": False, "error": "tool_not_allowed"}
         except (TypeError, ValueError) as error:
             return {
@@ -190,39 +183,74 @@ class AgendaTools:
         draft.goals[goal_id] = goal
         return {"ok": True, "state": "staged", "goal": goal}
 
-    def _notify(self, arguments: dict[str, Any], draft: TurnDraft) -> dict[str, Any]:
-        raw_bubbles = arguments.get("bubbles")
-        reason = str(arguments.get("reason") or "").strip()
-        key = str(arguments.get("key") or "").strip()
-        priority = str(arguments.get("priority", "normal"))
-        if (
-            not isinstance(raw_bubbles, list)
-            or not raw_bubbles
-            or any(
-                not isinstance(item, str) or not item.strip() or len(item.strip()) > 500
-                for item in raw_bubbles
-            )
-            or not reason
-            or not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,99}", key)
-        ):
-            raise ValueError("bubbles, reason, and a stable lowercase key are required")
-        if priority not in {"normal", "urgent"}:
-            raise ValueError("priority must be normal or urgent")
-        bubbles = [item.strip() for item in raw_bubbles]
-        for bubble in bubbles:
-            if EMOTION_PREFIX not in bubble:
-                continue
-            slug = emotion_slug(bubble)
-            if slug is None:
-                raise ValueError("emotion directive must be a standalone bubble")
-            if self.store.emotion(slug) is None:
-                raise ValueError("notification contains an unknown emotion slug")
-        draft.notification_messages = bubbles
-        draft.notification_key = key
-        draft.notification_priority = priority
-        draft.notification_reason = reason[:500]
-        return {
-            "ok": True,
-            "state": "staged",
-            "bubbles": len(draft.notification_messages),
-        }
+    def finish_review(
+        self,
+        goal_id: str,
+        decision: dict[str, Any],
+        draft: TurnDraft,
+    ) -> dict[str, Any]:
+        """Stage the current Goal outcome. The caller ends the Turn only on success."""
+        try:
+            allowed = set(GOAL_REVIEW_SCHEMA["properties"])
+            if set(decision) - allowed:
+                raise ValueError("unknown goal outcome field")
+            status = decision.get("status")
+            if not isinstance(status, str) or status not in {
+                "active",
+                "waiting",
+                "blocked",
+                "done",
+                "cancelled",
+            }:
+                raise ValueError(
+                    "goal.status must be active, waiting, blocked, done, or cancelled"
+                )
+            result = decision.get("result")
+            if not isinstance(result, str) or not result.strip() or len(result) > 2000:
+                raise ValueError(
+                    "goal.result must be a nonempty string of at most 2000 characters"
+                )
+            if self._current(goal_id, draft)["status"] in {"done", "cancelled"}:
+                raise ValueError("current goal is already closed")
+            if status in {"done", "cancelled"}:
+                if set(decision) != {"status", "result"}:
+                    raise ValueError(
+                        "closed goal outcome accepts only status and result"
+                    )
+                return self._close(
+                    "goal_finish" if status == "done" else "goal_cancel",
+                    {
+                        "goal_id": goal_id,
+                        "result" if status == "done" else "reason": result,
+                    },
+                    draft,
+                )
+            for key in (
+                "next_action",
+                "waiting_for",
+                "blocked_reason",
+                "next_review_at",
+            ):
+                if key in decision and not isinstance(decision[key], str):
+                    raise ValueError(f"goal.{key} must be a string")
+            required = {
+                "active": "next_action",
+                "waiting": "waiting_for",
+                "blocked": "blocked_reason",
+            }[status]
+            if not str(decision.get(required) or "").strip():
+                raise ValueError(f"goal.{required} is required for {status}")
+            if "plan" in decision and (
+                not isinstance(decision["plan"], list)
+                or any(not isinstance(step, str) for step in decision["plan"])
+            ):
+                raise ValueError("goal.plan must be an array of strings")
+            if status == "blocked" and "next_review_at" in decision:
+                raise ValueError("blocked goal cannot schedule a review")
+            arguments = {
+                key: value for key, value in decision.items() if key != "result"
+            }
+            arguments.update(goal_id=goal_id, latest_result=result)
+            return self._update(arguments, draft)
+        except (TypeError, ValueError) as error:
+            return {"ok": False, "error": "invalid_goal_outcome", "message": str(error)}
