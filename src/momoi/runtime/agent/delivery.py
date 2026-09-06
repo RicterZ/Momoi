@@ -7,7 +7,7 @@ from difflib import SequenceMatcher
 from typing import Any
 
 from ...channel import Channel, ChannelMessage, normalize_channel_message, render_channel_message
-from ...tts import AudioOutput, TTSError, TTSProvider
+from ...integrations.contracts.tts import AudioOutput, TTSError, TTSProvider
 from ...emotions import EMOTION_PREFIX, emotion_slug
 from ...observability.events import log_event
 from ...models import ToolCall

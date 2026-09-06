@@ -1,3 +1,4 @@
+from tests.support import provider_catalog
 import json
 import sqlite3
 import tempfile
@@ -13,12 +14,8 @@ from momoi.tools.builtin import BuiltinTools
 from momoi.tools.contracts.agenda import AGENDA_TOOL_SPECS
 from momoi.tools.contracts.memory import MEMORY_TOOL_SPECS
 from momoi.channel.napcat import NapCatConfig
-from momoi.config.models import (
-    AppConfig,
-    HeartbeatConfig,
-    LLMConfig,
-    NotificationConfig,
-)
+from momoi.config.models import AppConfig, HeartbeatConfig, NotificationConfig
+from momoi.integrations.models import LLMConfig
 from momoi.context_time import context_timestamp
 from momoi.tools.memory import MemoryTools
 from momoi.models import (
@@ -2237,7 +2234,7 @@ class StorageMemoryTest(unittest.TestCase):
     def test_owner_can_resolve_or_resume_open_reconciliation_by_prefix(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
-                llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
+                providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
                 channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
                 transcript_turns_min=4,

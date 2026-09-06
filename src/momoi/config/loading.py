@@ -6,22 +6,16 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from ..channel import load_channel_config
 from .environment import apply_env_overrides
 from .models import (
-    ASRConfig,
     AppConfig,
     ConfigError,
     DashboardConfig,
-    EmbeddingConfig,
     EpisodeAnnealingConfig,
     HeartbeatConfig,
-    LLMConfig,
     NotificationConfig,
     ReflectionConfig,
-    ThinkingConfig,
-    UsageConfig,
     WebhookConfig,
 )
 from .validation import boolean, clock, integer, mapping, nonnegative, positive
-from .tts import load_tts_config
 
 
 def load_config(path: str | Path) -> AppConfig:
@@ -30,39 +24,28 @@ def load_config(path: str | Path) -> AppConfig:
         raw = json.load(file)
     if not isinstance(raw, dict):
         raise ConfigError("config.json must be a table/object")
-    apply_env_overrides(raw)
-
-    llm_raw = mapping(raw.get("llm"), "llm")
-    model = str(llm_raw.get("model") or "")
-    api_key = str(llm_raw.get("api_key") or "")
-    if not api_key:
-        raise ConfigError("llm.api_key is required")
-    if not model:
-        raise ConfigError("llm.model is required")
-    api_format = str(llm_raw.get("api_format", "anthropic")).lower()
-    if api_format not in {"anthropic", "openai"}:
-        raise ConfigError("llm.api_format must be anthropic or openai")
-    tool_choice = boolean(llm_raw.get("tool_choice", True), "llm.tool_choice")
-    thinking_raw = mapping(llm_raw.get("thinking") or {}, "llm.thinking")
-    thinking_effort = str(thinking_raw.get("effort") or "").lower()
-    allowed_thinking_efforts = {"", "low", "high", "max"}
-    if thinking_effort not in allowed_thinking_efforts:
-        raise ConfigError("llm.thinking.effort must be low, high, or max")
-    raw_thinking_stages = mapping(
-        thinking_raw.get("stages", {}),
-        "llm.thinking.stages",
-    )
-    thinking_stages = {
-        str(stage).strip(): str(effort).lower()
-        for stage, effort in raw_thinking_stages.items()
+    allowed = {
+        "providers",
+        "timezone",
+        "channels",
+        "context",
+        "storage",
+        "logging",
+        "notifications",
+        "tools",
+        "turn",
+        "webhooks",
+        "dashboard",
+        "heartbeat",
+        "reflection",
+        "episode_annealing",
     }
-    if any(not stage for stage in thinking_stages):
-        raise ConfigError("llm.thinking.stages keys must not be empty")
-    if any(
-        effort not in allowed_thinking_efforts - {""}
-        for effort in thinking_stages.values()
-    ):
-        raise ConfigError("llm.thinking.stages values must be low, high, or max")
+    if unknown := set(raw) - allowed:
+        raise ConfigError(f"unknown configuration field: {sorted(unknown)[0]}")
+    from ..integrations.configuration import resolve_provider_config
+
+    providers = resolve_provider_config(raw, config_path)
+    apply_env_overrides(raw)
 
     try:
         channel_section = mapping(raw.get("channels"), "channels")
@@ -146,53 +129,9 @@ def load_config(path: str | Path) -> AppConfig:
     turn_raw = mapping(raw.get("turn", {}), "turn")
     webhook_raw = mapping(raw.get("webhooks", {}), "webhooks")
     dashboard_raw = mapping(raw.get("dashboard", {}), "dashboard")
-    usage_raw = mapping(raw.get("usage", {}), "usage")
-    usage_enabled = boolean(usage_raw.get("enabled", True), "usage.enabled")
-    usage_settings = {
-        key: value
-        for key, value in usage_raw.items()
-        if key not in {"enabled", "provider", "api_key"}
-    }
-    asr_raw = mapping(raw.get("asr", {}), "asr")
-    asr_enabled = boolean(asr_raw.get("enabled", False), "asr.enabled")
-    asr_provider = str(asr_raw.get("provider") or "tencent").strip()
-    if not asr_provider:
-        raise ConfigError("asr.provider must not be empty")
-    asr_settings = mapping(asr_raw.get("settings", {}), "asr.settings")
-    asr_timeout = positive(asr_raw.get("timeout_seconds", 30), "asr.timeout_seconds")
-    asr_max_audio_bytes = int(asr_raw.get("max_audio_bytes", 3 * 1024 * 1024))
-    if asr_max_audio_bytes <= 0:
-        raise ConfigError("asr.max_audio_bytes must be positive")
-    if asr_enabled and asr_provider == "tencent":
-        if not str(asr_settings.get("secret_id") or "").strip():
-            raise ConfigError(
-                "asr.settings.secret_id is required when Tencent ASR is enabled"
-            )
-        if not str(asr_settings.get("secret_key") or "").strip():
-            raise ConfigError(
-                "asr.settings.secret_key is required when Tencent ASR is enabled"
-    )
     heartbeat_raw = mapping(raw.get("heartbeat", {}), "heartbeat")
     reflection_raw = mapping(raw.get("reflection", {}), "reflection")
     annealing_raw = mapping(raw.get("episode_annealing", {}), "episode_annealing")
-    embedding_raw = mapping(raw.get("embedding", {}), "embedding")
-    embedding_enabled = boolean(
-        embedding_raw.get("enabled", False), "embedding.enabled"
-    )
-    embedding_model = str(embedding_raw.get("model", "BAAI/bge-small-zh-v1.5")).strip()
-    embedding_dimensions = int(embedding_raw.get("dimensions", 512))
-    embedding_profile = str(
-        embedding_raw.get("calibration_profile", "bge-small-zh-v1.5-momoi-v1")
-    ).strip()
-    if embedding_enabled and not embedding_model:
-        raise ConfigError("embedding.model is required when embedding is enabled")
-    if embedding_dimensions <= 0:
-        raise ConfigError("embedding.dimensions must be positive")
-    if not embedding_profile:
-        raise ConfigError("embedding.calibration_profile must not be empty")
-    document_batch_size = int(embedding_raw.get("document_batch_size", 8))
-    if document_batch_size <= 0:
-        raise ConfigError("embedding.document_batch_size must be positive")
     dashboard_token = str(dashboard_raw.get("token") or "")
     mcp_value = tools_raw.get("mcp_config", "mcp.json")
     mcp_config = (config_path.parent / str(mcp_value)).resolve() if mcp_value else None
@@ -262,11 +201,6 @@ def load_config(path: str | Path) -> AppConfig:
         "context.summary_tokens",
         minimum=0,
     )
-    max_retries = integer(
-        llm_raw.get("max_retries", 3),
-        "llm.max_retries",
-        minimum=0,
-    )
     tool_result_max_chars = integer(
         tools_raw.get("result_max_chars", 12000),
         "tools.result_max_chars",
@@ -279,23 +213,6 @@ def load_config(path: str | Path) -> AppConfig:
     )
 
     return AppConfig(
-        llm=LLMConfig(
-            base_url=str(llm_raw["base_url"]).rstrip("/"),
-            api_key=api_key,
-            model=model,
-            max_tokens=int(llm_raw.get("max_tokens", 16384)),
-            temperature=float(llm_raw.get("temperature", 0.6)),
-            timeout_seconds=positive(
-                llm_raw.get("timeout_seconds", 300), "llm.timeout_seconds"
-            ),
-            max_retries=max_retries,
-            api_format=api_format,
-            tool_choice=tool_choice,
-            thinking=ThinkingConfig(
-                effort=thinking_effort,
-                stages=thinking_stages,
-            ),
-        ),
         channel=channel_config,
         system_prompt=system_prompt,
         transcript_turns_min=transcript_turns_min,
@@ -342,12 +259,6 @@ def load_config(path: str | Path) -> AppConfig:
             executors=executor_path,
         ),
         dashboard=DashboardConfig(token=dashboard_token),
-        usage=UsageConfig(
-            enabled=usage_enabled,
-            provider=str(usage_raw.get("provider") or ""),
-            api_key=str(usage_raw.get("api_key") or ""),
-            settings=usage_settings or None,
-        ),
         heartbeat=HeartbeatConfig(
             enabled=boolean(heartbeat_raw.get("enabled", False), "heartbeat.enabled"),
             initial_delay_seconds=positive(
@@ -380,32 +291,5 @@ def load_config(path: str | Path) -> AppConfig:
         heartbeat_prompt_path=heartbeat_path,
         thinking=thinking_dir,
         channels=channel_configs,
-        asr=ASRConfig(
-            enabled=asr_enabled,
-            provider=asr_provider,
-            timeout_seconds=asr_timeout,
-            max_audio_bytes=asr_max_audio_bytes,
-            settings=dict(asr_settings) or None,
-        ),
-        tts=load_tts_config(raw.get("tts", {})),
-        embedding=EmbeddingConfig(
-            enabled=embedding_enabled,
-            endpoint=str(
-                embedding_raw.get("endpoint", "http://embedding:8002/v1/embeddings")
-            ).rstrip("/"),
-            api_key=str(embedding_raw.get("api_key") or ""),
-            model=embedding_model,
-            dimensions=embedding_dimensions,
-            calibration_profile=embedding_profile,
-            query_timeout_seconds=positive(
-                embedding_raw.get("query_timeout_seconds", 5),
-                "embedding.query_timeout_seconds",
-            ),
-            document_timeout_seconds=positive(
-                embedding_raw.get("document_timeout_seconds", 30),
-                "embedding.document_timeout_seconds",
-            ),
-            document_batch_size=document_batch_size,
-        ),
-        config_path=config_path,
+        providers=providers,
     )

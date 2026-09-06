@@ -6,9 +6,9 @@ from typing import Any, Callable
 
 import aiohttp
 
-from .dumps import dump_request
-from .errors import ProviderResponseError
-from .telemetry import (
+from ...llm.dumps import dump_request
+from ...llm.errors import ProviderResponseError
+from ...llm.telemetry import (
     compact_response_text,
     log_tool_schema,
     openai_reasoning,
@@ -16,11 +16,11 @@ from .telemetry import (
     record_response,
     thinking_effort,
 )
-from .transport import http_error, openai_url, retry_request
-from ..config.models import LLMConfig
-from ..observability.events import log_event
-from ..observability.values import safe_preview
-from ..models import ProviderResponse, ToolCall
+from ...llm.transport import http_error, openai_url, retry_request
+from ...integrations.models import LLMConfig
+from ...observability.events import log_event
+from ...observability.values import safe_preview
+from ...models import ProviderResponse, ToolCall
 
 logger = logging.getLogger(__name__)
 
@@ -160,6 +160,7 @@ def _log_unusable_response(
 class OpenAIProvider:
     def __init__(self, config: LLMConfig, dump_dir: Path | None = None) -> None:
         self.config = config
+        self.accounting = None
         self.dump_dir = dump_dir
         self.usage_sink: Callable[..., None] | None = None
         self.usage_parser: (
@@ -177,11 +178,6 @@ class OpenAIProvider:
     async def __aexit__(self, *_: object) -> None:
         if self._session:
             await self._session.close()
-
-    def update_config(self, config: LLMConfig) -> None:
-        if config.api_format != "openai":
-            raise ValueError("changing llm.api_format requires a restart")
-        self.config = config
 
     async def complete(
         self,

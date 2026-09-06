@@ -1,34 +1,15 @@
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..integrations.configuration import ProviderCatalog
 
 from ..policies import RuntimePolicies
 
 
 class ConfigError(ValueError):
     pass
-
-
-@dataclass(frozen=True)
-class ThinkingConfig:
-    effort: str = ""
-    stages: dict[str, str] | None = None
-
-    def for_stage(self, stage: str) -> str:
-        return str((self.stages or {}).get(stage) or self.effort)
-
-
-@dataclass(frozen=True)
-class LLMConfig:
-    base_url: str
-    api_key: str
-    model: str
-    max_tokens: int
-    temperature: float
-    timeout_seconds: float
-    max_retries: int
-    api_format: str = "anthropic"
-    tool_choice: bool = True
-    thinking: ThinkingConfig = ThinkingConfig()
 
 
 @dataclass(frozen=True)
@@ -55,32 +36,6 @@ class DashboardConfig:
 
 
 @dataclass(frozen=True)
-class UsageConfig:
-    enabled: bool = True
-    provider: str = ""
-    api_key: str = ""
-    settings: dict[str, object] | None = None
-
-
-@dataclass(frozen=True)
-class ASRConfig:
-    enabled: bool = False
-    provider: str = "tencent"
-    timeout_seconds: float = 30
-    max_audio_bytes: int = 3 * 1024 * 1024
-    settings: dict[str, object] | None = None
-
-
-@dataclass(frozen=True)
-class TTSConfig:
-    enabled: bool = False
-    provider: str = "fish"
-    timeout_seconds: float = 60
-    max_audio_bytes: int = 20 * 1024 * 1024
-    settings: dict[str, object] | None = None
-
-
-@dataclass(frozen=True)
 class HeartbeatConfig:
     enabled: bool = False
     initial_delay_seconds: float = 900
@@ -102,21 +57,8 @@ class EpisodeAnnealingConfig:
 
 
 @dataclass(frozen=True)
-class EmbeddingConfig:
-    enabled: bool = False
-    endpoint: str = "http://embedding:8002/v1/embeddings"
-    api_key: str = ""
-    model: str = "BAAI/bge-small-zh-v1.5"
-    dimensions: int = 512
-    calibration_profile: str = "bge-small-zh-v1.5-momoi-v1"
-    query_timeout_seconds: float = 5
-    document_timeout_seconds: float = 30
-    document_batch_size: int = 8
-
-
-@dataclass(frozen=True)
 class AppConfig:
-    llm: LLMConfig
+    providers: "ProviderCatalog"
     channel: object
     system_prompt: str
     transcript_turns_min: int
@@ -139,7 +81,6 @@ class AppConfig:
     turn_max_total_tokens: int = 0
     webhooks: WebhookConfig = WebhookConfig()
     dashboard: DashboardConfig = DashboardConfig()
-    usage: UsageConfig = UsageConfig()
     heartbeat: HeartbeatConfig = HeartbeatConfig()
     reflection: ReflectionConfig = ReflectionConfig()
     episode_annealing: EpisodeAnnealingConfig = EpisodeAnnealingConfig()
@@ -150,10 +91,6 @@ class AppConfig:
     thinking: Path | None = None
     channels: tuple[object, ...] = ()
     policies: RuntimePolicies = RuntimePolicies()
-    asr: ASRConfig = ASRConfig()
-    tts: TTSConfig = TTSConfig()
-    embedding: EmbeddingConfig = EmbeddingConfig()
-    config_path: Path | None = None
 
     @property
     def channel_configs(self) -> tuple[object, ...]:

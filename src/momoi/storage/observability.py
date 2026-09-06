@@ -211,7 +211,7 @@ class ObservabilityStore:
                ORDER BY created_at""",
             (start.timestamp(),),
         ).fetchall()
-        plugin = self._usage_plugin
+        plugin = self._usage_accounting
         return summarize_usage(
             [dict(row) for row in rows],
             days=days,
@@ -234,7 +234,7 @@ class ObservabilityStore:
                ORDER BY created_at""",
             (start.timestamp(), end.timestamp()),
         ).fetchall()
-        plugin = self._usage_plugin
+        plugin = self._usage_accounting
         return summarize_hourly_usage(
             [dict(row) for row in rows],
             day=selected,

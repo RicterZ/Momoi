@@ -1,3 +1,4 @@
+from tests.support import provider_catalog
 import asyncio
 import base64
 import json
@@ -8,7 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 
-from momoi.asr import ASRProvider, AudioInput
+from momoi.integrations.contracts.asr import ASRProvider, AudioInput
 from momoi.channel import (
     VOICE_MESSAGE_PREFIX,
     NotConnected,
@@ -23,10 +24,8 @@ from momoi.channel.napcat import (
 )
 from momoi.channel.napcat.channel import VOICE_UNAVAILABLE_TEXT
 from momoi.channel.weixin import WeixinConfig
-from momoi.config.models import (
-    AppConfig,
-    LLMConfig,
-)
+from momoi.config.models import AppConfig
+from momoi.integrations.models import LLMConfig
 from momoi.runtime import (
     MomoiDaemon,
 )
@@ -778,7 +777,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(
                 AppConfig(
-                    llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
+                    providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
                     channel=NapCatConfig(
                         "ws://127.0.0.1", "20000", 0.01, 60, 30, 30, 20
                     ),
@@ -869,7 +868,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(
                 AppConfig(
-                    llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
+                    providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
                     channel=NapCatConfig(
                         "ws://127.0.0.1", "20000", 0.01, 60, 30, 30, 20
                     ),
@@ -954,7 +953,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
     async def test_outbox_waits_only_between_messages_in_the_same_turn(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
-                llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
+                providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
                 channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="test",
                 transcript_turns_min=4,
@@ -1008,7 +1007,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
     async def test_end_turn_can_close_a_turn_without_a_visible_message(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
-                llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
+                providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
                 channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="test",
                 transcript_turns_min=4,
@@ -1064,7 +1063,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(
                 AppConfig(
-                    llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
+                    providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
                     channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                     system_prompt="test",
                     transcript_turns_min=4,
@@ -1143,7 +1142,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
     async def test_outbox_does_not_wait_between_different_turns(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
-                llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
+                providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
                 channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="test",
                 transcript_turns_min=4,
@@ -1181,7 +1180,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
     async def test_pure_image_input_reaches_owner_queue_and_llm(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
-                llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
+                providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
                 channel=NapCatConfig("ws://127.0.0.1", "20000", 0.01, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
                 transcript_turns_min=4,
@@ -1295,7 +1294,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             asset.write_bytes(b"image")
             second_asset.write_bytes(b"image")
             config = AppConfig(
-                llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
+                providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
                 channel=NapCatConfig("ws://127.0.0.1", "20000", 0.01, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
                 transcript_turns_min=4,
@@ -1412,7 +1411,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
-                llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
+                providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
                 channel=NapCatConfig("ws://127.0.0.1", "20000", 0.01, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
                 transcript_turns_min=4,
@@ -1612,7 +1611,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             weixin = WeixinConfig.from_mapping({}, root)
             daemon = MomoiDaemon(
                 AppConfig(
-                    llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
+                    providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
                     channel=napcat,
                     channels=(napcat, weixin),
                     system_prompt="test",
@@ -1762,7 +1761,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             weixin = WeixinConfig.from_mapping({}, root)
             daemon = MomoiDaemon(
                 AppConfig(
-                    llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
+                    providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
                     channel=napcat,
                     channels=(napcat, weixin),
                     system_prompt="test",

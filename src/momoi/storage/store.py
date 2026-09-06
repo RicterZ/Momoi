@@ -5,7 +5,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from ..context_time import context_timestamp
-from ..extensions.base import UsagePlugin
+from ..llm.accounting import UsageAccounting
 from ..policies import MemoryPolicy
 from ..search import (
     SearchBackend,
@@ -128,14 +128,14 @@ class Store(
             self._timezone,
             self._search_backend,
         )
-        self._usage_plugin: UsagePlugin | None = None
+        self._usage_accounting: UsageAccounting | None = None
         self._initialize_database()
         self._recover_emotion_outbox()
         self._recover_outbox()
         self._recover_webhooks()
 
-    def set_usage_plugin(self, plugin: UsagePlugin) -> None:
-        self._usage_plugin = plugin
+    def set_usage_accounting(self, plugin: UsageAccounting) -> None:
+        self._usage_accounting = plugin
 
     @property
     def search_backend(self) -> SearchBackend:

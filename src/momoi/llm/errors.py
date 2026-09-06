@@ -1,4 +1,7 @@
-class ProviderError(RuntimeError):
+from ..integrations.errors import IntegrationError
+
+
+class ProviderError(IntegrationError):
     pass
 
 

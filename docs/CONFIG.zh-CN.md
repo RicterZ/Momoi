@@ -9,50 +9,55 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
 相对路径以 `config.json` 所在目录为基准解析。所有路径字段均可使用绝对路径。
 `config.json` 不会展开 `${VAR}` 占位符。
 
+外部 API 的端点、凭据和参数统一由 [providers.yaml](./PROVIDERS.zh-CN.md) 管理。
+主配置包含 `"providers": "providers.yaml"`，修改服务配置后重启。
+
 ## Fish Audio 语音合成
 
 TTS 默认关闭，关闭时不暴露 `send_voice`。启用后微信和 NapCat 请求使用相同的语音工具 schema，
 保留工具前缀缓存。harness 只允许支持语音发送的频道（目前为 NapCat）执行。不会修改提示词，也不会强制
 “语音输入用语音回复”的规则。
 
-在工作区 `config.json` 增加：
+合并到工作区 `providers.yaml` 的对应字段：
 
-```json
-{
-  "tts": {
-    "enabled": true,
-    "provider": "fish",
-    "timeout_seconds": 60,
-    "max_audio_bytes": 20971520,
-    "settings": {
-      "api_key": "",
-      "base_url": "https://api.fish.audio",
-      "model": "s2.1-pro-free",
-      "reference_id": "9bb8ad542dc44d148c21c73a0884e9ae",
-      "format": "mp3",
-      "latency": "normal"
-    }
-  }
-}
+```yaml
+credentials:
+  fish:
+    api_key: {env: FISH_API_KEY}
+services:
+  speech:
+    adapter: fish
+    base_url: https://api.fish.audio
+    credentials: fish
+    timeout_seconds: 60
+bindings:
+  tts:
+    service: speech
+    enabled: true
+    options:
+      model: s2.1-pro-free
+      reference_id: 9bb8ad542dc44d148c21c73a0884e9ae
+      format: mp3
+      latency: normal
+      max_audio_bytes: 20971520
 ```
 
 从 [Fish API key 页面](https://fish.audio/app/api-keys) 创建密钥，填写到
-`tts.settings.api_key`。TTS 所有设置只从 `config.json` 读取。
+`credentials.fish.api_key`，或通过示例中的 `FISH_API_KEY` 环境引用传入。
 修改后重启 Momoi，内部可通过 `daemon.bubble_delivery.tts_provider` 访问初始化后的 provider，
 调用 `synthesize(text)` 返回 `AudioOutput(data: bytes, format: str)`，音频只在内存中传递。不增加 CLI 入口。
 
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
 | `enabled` | `false` | 是否初始化内部 TTS provider |
-| `provider` | `fish` | 当前唯一支持配置的 TTS provider |
 | `timeout_seconds` | `60` | 完整 HTTP 响应超时，必须是有限正数 |
 | `max_audio_bytes` | `20971520` | 最大音频下载字节数，也限制分块响应 |
-| `settings.api_key` | — | 开启时必填 |
-| `settings.base_url` | `https://api.fish.audio` | API 基址，程序追加 `/v1/tts` |
-| `settings.model` | `s2.1-pro-free` | 可选 `s2.1-pro-free`、`s2.1-pro`、`s2-pro`、`s1` |
-| `settings.reference_id` | — | 必填，Fish 音色页面 URL 中的 ID |
-| `settings.format` | `mp3` | 支持 `mp3`、`wav`、`opus`，不支持裸 PCM |
-| `settings.latency` | `normal` | `normal` 优先音质；也支持 `balanced`、`low` |
+| `credentials.fish.api_key` | — | 开启时必填 |
+| `services.speech.base_url` | `https://api.fish.audio` | API 基址，程序追加 `/v1/tts` |
+| `options.model` | `s2.1-pro-free` | 可选 `s2.1-pro-free`、`s2.1-pro`、`s2-pro`、`s1` |
+| `options.reference_id` | — | 必填，Fish 音色页面 URL 中的 ID |
+| `options.format` | `mp3` | 支持 `mp3`、`wav`、`opus`，不支持裸 PCM |
+| `options.latency` | `normal` | `normal` 优先音质；也支持 `balanced`、`low` |
 
 示例 ID 对应[该 Fish 音色](https://fish.audio/m/9bb8ad542dc44d148c21c73a0884e9ae/)。
 音色和免费模型的可用性以 Fish 账号实际情况为准。Fish 文档说明未知模型名会回退到付费模型，
@@ -90,81 +95,11 @@ NapCat 和 Weixin 的语音转写前统一添加 `[语音消息] `，随后进�
 
 ## LLM
 
-```json
-{
-  "llm": {
-    "api_format": "anthropic",
-    "base_url": "https://llm.example.com",
-    "api_key": "replace-me",
-    "model": "model-name",
-    "max_tokens": 16384,
-    "temperature": 0.6,
-    "timeout_seconds": 300,
-    "max_retries": 3,
-    "tool_choice": true,
-    "thinking": {
-      "effort": "high",
-      "stages": {
-        "episode_anneal": "low",
-        "memory_maintenance": "low",
-        "reply_followup": "low"
-      }
-    }
-  }
-}
-```
-
-| 字段 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `api_format` | 否 | `anthropic` | 请求格式：`anthropic` 或 `openai` |
-| `base_url` | 是 | — | 兼容 API 的基础 URL |
-| `api_key` | 是 | — | 非空 API 凭证 |
-| `model` | 是 | — | Provider 模型标识符 |
-| `max_tokens` | 否 | `16384` | 单次模型调用的最大输出 token 数 |
-| `temperature` | 否 | `0.6` | 采样温度 |
-| `timeout_seconds` | 否 | `300` | 正数请求超时时间 |
-| `max_retries` | 否 | `3` | 瞬时错误的重试次数 |
-| `tool_choice` | 否 | `true` | OpenAI 格式请求要求使用工具；拒绝 `tool_choice` 的端点应设为 `false` |
-| `thinking.effort` | 否 | Provider 默认值 | 默认推理强度：`low`、`high` 或 `max` |
-| `thinking.stages` | 否 | `{}` | 按运行阶段覆盖推理强度；每个值只能是 `low`、`high` 或 `max` |
-
-已知阶段名称为 `context_plan`、`owner`、`heartbeat_plan`、`heartbeat`、
-`reply_followup`、`goal`、`webhook`、`reflection`、`memory_maintenance`、`episode_anneal` 和
-`episode_consolidate`。未写入 `thinking.stages` 的阶段使用
-`thinking.effort`。
+参数与接入方式见 [Provider 配置](./PROVIDERS.zh-CN.md#llm)。
 
 ## 入站语音识别
 
-```json
-{
-  "asr": {
-    "enabled": false,
-    "provider": "tencent",
-    "timeout_seconds": 30,
-    "max_audio_bytes": 3145728,
-    "settings": {
-      "secret_id": "replace-me",
-      "secret_key": "replace-me",
-      "region": "",
-      "engine": "16k_zh"
-    }
-  }
-}
-```
-
-| 字段 | 默认值 | 说明 |
-| --- | --- | --- |
-| `enabled` | `false` | 为收到的 NapCat 语音消息启用 ASR |
-| `provider` | `tencent` | 内置的 `tencent`，或 `ASRProvider` 子类的点分名称 |
-| `timeout_seconds` | `30` | 单次转写的正数超时时间 |
-| `max_audio_bytes` | `3145728` | 输入大小上限，单位为字节且必须为正数 |
-| `settings` | `{}` | Provider 构造参数 |
-| `settings.secret_id` | — | 腾讯 API Secret ID；启用腾讯 ASR 时必填 |
-| `settings.secret_key` | — | 腾讯 API Secret Key；启用腾讯 ASR 时必填 |
-| `settings.region` | 空 | 可选的腾讯地域 |
-| `settings.engine` | `16k_zh` | 腾讯识别引擎 |
-
-其他 ASR Provider 可以定义不同的 `settings` 字段。
+参数与接入方式见 [Provider 配置](./PROVIDERS.zh-CN.md#asr)。
 
 ## 渠道
 
@@ -288,38 +223,7 @@ NapCat 和 Weixin 的语音转写前统一添加 `[语音消息] `，随后进�
 
 ## Embedding 召回
 
-```json
-{
-  "embedding": {
-    "enabled": true,
-    "endpoint": "http://embedding:8002/v1/embeddings",
-    "api_key": "",
-    "model": "BAAI/bge-small-zh-v1.5",
-    "dimensions": 512,
-    "calibration_profile": "bge-small-zh-v1.5-momoi-v1",
-    "query_timeout_seconds": 5,
-    "document_timeout_seconds": 30,
-    "document_batch_size": 8
-  }
-}
-```
-
-| 字段 | 默认值 | 说明 |
-| --- | --- | --- |
-| `enabled` | `false` | 为记忆和 Episode 召回启用本地语义候选 |
-| `endpoint` | `http://embedding:8002/v1/embeddings` | OpenAI 兼容的 embedding 接口地址 |
-| `api_key` | 空 | 接口可选的 Bearer 凭证 |
-| `model` | `BAAI/bge-small-zh-v1.5` | Embedding 模型标识；内置 profile 支持此模型 |
-| `dimensions` | `512` | 正数向量维度；必须与接口输出一致 |
-| `calibration_profile` | `bge-small-zh-v1.5-momoi-v1` | 与模型和文档模板匹配的阈值配置 |
-| `query_timeout_seconds` | `5` | 单个 Turn 查询批次的正数超时时间 |
-| `document_timeout_seconds` | `30` | 单个后台文档批次的正数超时时间 |
-| `document_batch_size` | `8` | 每次后台请求编码的正数文档数量 |
-
-使用随项目提供的 Docker Compose 服务时保持默认 `endpoint`。使用其他 OpenAI
-兼容 embedding 服务时，`endpoint`、`model`、`dimensions` 和
-`calibration_profile` 必须使用受支持且相互匹配的一组值。接口不可用时自动退回
-关键词召回。
+参数与接入方式见 [Provider 配置](./PROVIDERS.zh-CN.md#embedding)。 编码服务配置在 `bindings.embedding`；切换模型、维度或校准配置需要建立新的语义空间。
 
 ## 工具与 MCP
 
@@ -494,31 +398,9 @@ NapCat 和 Weixin 的语音转写前统一添加 `[语音消息] `，随后进�
 
 看板监听地址和端口是 CLI 选项，不属于 `config.json` 字段。
 
-## Usage
+## 账户余额与 token 统计
 
-```json
-{
-  "usage": {
-    "enabled": true,
-    "provider": "momoi.extensions.deepseek.DeepSeekPlugin",
-    "api_key": "replace-me",
-    "base_url": "https://api.deepseek.com",
-    "timeout_seconds": 10
-  }
-}
-```
-
-| 字段 | 默认值 | 说明 |
-| --- | --- | --- |
-| `enabled` | `true` | 是否估算金额并查询账户余额；关闭后仍会统计 token 消耗 |
-| `provider` | 空 | `UsagePlugin` 类的点分名称 |
-| `api_key` | 空 | 传给插件构造函数的 `api_key` 参数 |
-| `base_url` | `https://api.deepseek.com` | 内置 DeepSeek 插件使用的 API 根地址 |
-| `timeout_seconds` | `10` | 内置 DeepSeek 插件的请求超时，限制在 `1`–`20` 秒 |
-| 其他字段 | — | 传给插件构造函数的其他关键字参数 |
-
-将 `enabled` 设为 `false` 后仍会记录 token 数量，但不会估算金额或查询账户余额。
-将 `provider` 留空也有相同效果，并使用协议通用的 token 解析器。
+参数与接入方式见 [Provider 配置](./PROVIDERS.zh-CN.md#账户余额与-token-统计)。 余额查询独立于本地 token 记录；DeepSeek LLM 适配器提供对应的用量解析和费用估算。
 
 ## 日志
 
@@ -551,10 +433,7 @@ NapCat 和 Weixin 的语音转写前统一添加 `[语音消息] `，随后进�
 | `MOMOI_WEBHOOKS_ENABLED` | `webhooks.enabled` |
 | `MOMOI_WEBHOOKS_HOST` | `webhooks.host` |
 | `MOMOI_WEBHOOKS_TOKEN` | `webhooks.token` |
-| `MOMOI_USAGE_API_KEY` | `usage.api_key` |
-| `MOMOI_ASR_SECRET_ID` | `asr.settings.secret_id` |
-| `MOMOI_ASR_SECRET_KEY` | `asr.settings.secret_key` |
 
-请妥善保护包含凭证的文件。Dashboard 中修改的模型连接字段会立即生效；修改
-其他 `config.json` 字段、`mcp.json`、工作流或执行器定义后，需要重启
+请妥善保护包含凭证的文件。Provider 凭据仅通过 YAML 中声明的环境引用读取。
+修改 `providers.yaml`、`config.json`、`mcp.json`、工作流或执行器定义后，需要重启
 `momoi run`。每个新 Turn 开始前都会重新加载提示词文件。

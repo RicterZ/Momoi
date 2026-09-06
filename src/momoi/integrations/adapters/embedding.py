@@ -5,20 +5,11 @@ import time
 import httpx
 import numpy as np
 
-from ..config.models import EmbeddingConfig
-from ..observability.events import log_event
-from ..policies import SemanticPolicy
+from ...integrations.models import EmbeddingConfig
+from ...observability.events import log_event
+from ...policies import SemanticPolicy
 
 logger = logging.getLogger(__name__)
-
-
-def semantic_error_category(error: BaseException) -> str:
-    """Classify embedding failures without changing the fallback payload."""
-    return (
-        "timeout"
-        if isinstance(error, (TimeoutError, httpx.TimeoutException))
-        else "error"
-    )
 
 
 class EmbeddingClient:
@@ -29,12 +20,20 @@ class EmbeddingClient:
     ) -> None:
         self.config = config
         self.policy = policy
-        self._client = httpx.AsyncClient()
+        self.__client: httpx.AsyncClient | None = None
         self._query_failures = 0
         self._query_breaker_until = 0.0
 
+    @property
+    def _client(self):
+        if self.__client is None:
+            self.__client = httpx.AsyncClient()
+        return self.__client
+
     async def close(self) -> None:
-        await self._client.aclose()
+        if self.__client is not None:
+            await self.__client.aclose()
+            self.__client = None
 
     async def encode(self, texts: list[str], *, query: bool) -> list[list[float]]:
         if not texts:

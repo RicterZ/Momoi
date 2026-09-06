@@ -1,3 +1,4 @@
+from tests.support import provider_catalog
 import asyncio
 import json
 import tempfile
@@ -7,7 +8,8 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from momoi.channel.napcat import NapCatConfig
-from momoi.config.models import AppConfig, LLMConfig, ReflectionConfig
+from momoi.config.models import AppConfig, ReflectionConfig
+from momoi.integrations.models import LLMConfig
 from momoi.runtime import REFLECTION_FINISH_SPEC, MomoiDaemon
 from momoi.runtime.parsing import parse_reflection_finish
 from momoi.models import ProviderResponse, ToolCall
@@ -19,7 +21,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
-                llm=LLMConfig("http://127.0.0.1", "test", "test", 1000, 0, 1, 0),
+                providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 1000, 0, 1, 0)),
                 channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="test {{SOUL}} {{CAPABILITY_POLICIES}}",
                 soul_prompt="Test soul",
@@ -367,7 +369,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
     async def test_daily_reflection_leaves_confirmed_memories_unchanged(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
-                llm=LLMConfig("http://127.0.0.1", "test", "test", 1000, 0, 1, 0),
+                providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 1000, 0, 1, 0)),
                 channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="test {{SOUL}} {{CAPABILITY_POLICIES}}",
                 soul_prompt="Test soul",
@@ -528,7 +530,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
     async def test_manual_reflect_overwrites_completed_day(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
-                llm=LLMConfig("http://127.0.0.1", "test", "test", 1000, 0, 1, 0),
+                providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 1000, 0, 1, 0)),
                 channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="test",
                 transcript_turns_min=4,
@@ -683,7 +685,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
     async def test_daily_reflection_closes_finished_open_conversations(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
-                llm=LLMConfig("http://127.0.0.1", "test", "test", 1000, 0, 1, 0),
+                providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 1000, 0, 1, 0)),
                 channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="test {{SOUL}} {{CAPABILITY_POLICIES}}",
                 soul_prompt="Test soul",

@@ -4,8 +4,9 @@ from collections import deque
 from typing import Any
 
 from ..tools.agenda import AgendaTools
-from ..asr import ASRProvider, load_asr_provider
-from ..tts import TTSProvider, create_tts_provider
+from ..integrations.contracts.asr import ASRProvider
+from ..integrations.contracts.tts import TTSProvider
+from ..integrations.registry import ServiceRegistry
 from ..tools.builtin import BuiltinTools
 from ..channel import (
     Channel,
@@ -15,13 +16,11 @@ from ..channel import (
 from ..config.models import AppConfig
 from ..dashboard.service import DashboardService
 from ..dashboard.settings import DashboardSettings
-from ..extensions import load_usage_plugin
 from ..observability.events import log_event
 from ..tools.memory import MemoryTools
 from ..tools.thinking import ThinkingTools
 from ..mcp.manager import MCPManager
 from ..models import AgentReply, IncomingMessage
-from ..llm.manager import ProviderManager
 from ..semantic.service import SemanticRecallService
 from ..storage import Store
 from ..webhooks.service import WebhookService
@@ -70,28 +69,26 @@ class MomoiDaemon(
             thinking=config.thinking,
             timezone=config.timezone,
         )
+        self.services = ServiceRegistry(
+            config.providers,
+            dump_dir=config.workspace / "llm-dumps" if config.workspace else None,
+            semantic_policy=config.policies.semantic,
+            overrides={
+                k: v
+                for k, v in {"asr": asr_provider, "tts": tts_provider}.items()
+                if v is not None
+            },
+        )
         self.semantic_recall = SemanticRecallService(
             self.store,
-            config.embedding,
+            self.services.embedding_config,
             policy=config.policies.semantic,
+            client=self.services.embedding,
         )
         self.semantic_recall.start()
-        usage_plugin = None
-        if config.usage.provider:
-            usage_plugin = load_usage_plugin(
-                config.usage.provider,
-                api_key=config.usage.api_key,
-                **(config.usage.settings or {}),
-            )
-            if config.usage.enabled:
-                self.store.set_usage_plugin(usage_plugin)
-            log_event(
-                logger,
-                logging.INFO,
-                "usage_plugin_loaded",
-                provider=config.usage.provider,
-                billing_enabled=config.usage.enabled,
-            )
+        accounting = self.services.llm.accounting
+        if accounting is not None:
+            self.store.set_usage_accounting(accounting)
         self.store.ensure_heartbeat(config.heartbeat)
         self.agenda_tools = AgendaTools(self.store)
         self.memory_tools = MemoryTools(
@@ -102,17 +99,15 @@ class MomoiDaemon(
             config.workspace or config.database.parent,
             private_roots=(tool_result_root(config),),
         )
-        self.asr_provider = asr_provider if config.asr.enabled else None
-        if config.asr.enabled and self.asr_provider is None:
-            settings = dict(config.asr.settings or {})
-            settings.setdefault("timeout_seconds", config.asr.timeout_seconds)
-            self.asr_provider = load_asr_provider(config.asr.provider, **settings)
+        self.asr_provider = self.services.asr
 
         def build_channel(item: object) -> Channel:
             dependencies = (
                 ChannelDependencies(
                     asr_provider=self.asr_provider,
-                    asr_max_audio_bytes=config.asr.max_audio_bytes,
+                    asr_max_audio_bytes=config.providers.options_for("asr").get(
+                        "max_audio_bytes", 3 * 1024 * 1024
+                    ),
                 )
                 if getattr(item, "plugin", "") == "napcat"
                 else None
@@ -132,31 +127,27 @@ class MomoiDaemon(
         else:
             primary_name = str(getattr(config.channel, "plugin", ""))
             self.channel = self.channels[primary_name]
-        dump_dir = config.workspace / "llm-dumps" if config.workspace else None
-        self.provider = ProviderManager(config.llm, dump_dir)
+        self.provider = self.services.llm
         self.provider.usage_sink = self.store.record_llm_call
         self.provider.thinking_sink = self.store.record_thinking_call
-        if usage_plugin is not None:
-            self.provider.usage_parser = usage_plugin.parse_usage
-        billing_plugin = usage_plugin if config.usage.enabled else None
+        if accounting is not None:
+            self.provider.usage_parser = accounting.parse_usage
         self.dashboard = (
             DashboardService(
                 self.store,
                 *dashboard,
                 token=config.dashboard.token,
-                usage_plugin=billing_plugin,
-                settings=DashboardSettings.from_config(
-                    config,
-                    llm_config=lambda: self.provider.config,
-                    activate_llm=self.provider.update_config,
-                ),
+                balance_provider=self.services.balance,
+                settings=DashboardSettings.from_config(config),
             )
             if dashboard is not None
             else None
         )
         self.mcp = MCPManager(config.mcp_config)
         self.tool_surface = ToolSurface(
-            self.mcp, self.channels, voice_enabled=tts_provider is not None or config.tts.enabled,
+            self.mcp,
+            self.channels,
+            voice_enabled=self.services.tts is not None,
         )
         self.delivery_policy = DeliveryPolicy(config, self.store)
         self.tool_executor = ToolExecutor(
@@ -194,7 +185,7 @@ class MomoiDaemon(
             self.channels,
             self.delivery_policy,
             self.outbox_changed,
-            tts_provider=tts_provider if tts_provider is not None else create_tts_provider(config),
+            tts_provider=self.services.tts,
         )
         self.tool_batch = ToolBatchExecutor(
             config,
@@ -235,9 +226,9 @@ class MomoiDaemon(
             self._enqueue_memory_maintenance(turn_id)
         for event in self.store.pending_events():
             self.incoming.put_nowait(event)
-        async with self.mcp, self.provider:
-            tasks: list[asyncio.Task[None]] = []
-            try:
+        try:
+            async with self.mcp, self.services:
+                tasks: list[asyncio.Task[None]] = []
                 async with asyncio.TaskGroup() as group:
                     tasks.extend(
                         group.create_task(self._run_channel(item, stop))
@@ -269,9 +260,8 @@ class MomoiDaemon(
                     await stop.wait()
                     for task in tasks:
                         task.cancel()
-            finally:
-                await self.semantic_recall.close()
-                self.store.close()
+        finally:
+            self.store.close()
 
     async def _run_channel(self, channel: Channel, stop: asyncio.Event) -> None:
         log_event(logger, logging.INFO, "channel_start", channel=channel.name)

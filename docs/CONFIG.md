@@ -11,6 +11,9 @@ Relative paths are resolved from the directory containing `config.json`.
 Absolute paths are accepted for every path field. `config.json` does not expand
 `${VAR}` placeholders.
 
+External API endpoints, credentials and options live in [providers.yaml](./PROVIDERS.md).
+The main config contains `"providers": "providers.yaml"`. Restart after service changes.
+
 ## Fish Audio speech synthesis
 
 TTS is disabled by default and `send_voice` is hidden while disabled. When TTS
@@ -19,29 +22,32 @@ to preserve the shared tool prefix for caching. The harness permits execution
 only on channels supporting voice output (currently NapCat).
 Prompts and automatic voice-versus-text reply rules are unchanged.
 
-Add this section to your workspace `config.json`:
+Merge these entries into your workspace `providers.yaml`:
 
-```json
-{
-  "tts": {
-    "enabled": true,
-    "provider": "fish",
-    "timeout_seconds": 60,
-    "max_audio_bytes": 20971520,
-    "settings": {
-      "api_key": "",
-      "base_url": "https://api.fish.audio",
-      "model": "s2.1-pro-free",
-      "reference_id": "9bb8ad542dc44d148c21c73a0884e9ae",
-      "format": "mp3",
-      "latency": "normal"
-    }
-  }
-}
+```yaml
+credentials:
+  fish:
+    api_key: {env: FISH_API_KEY}
+services:
+  speech:
+    adapter: fish
+    base_url: https://api.fish.audio
+    credentials: fish
+    timeout_seconds: 60
+bindings:
+  tts:
+    service: speech
+    enabled: true
+    options:
+      model: s2.1-pro-free
+      reference_id: 9bb8ad542dc44d148c21c73a0884e9ae
+      format: mp3
+      latency: normal
+      max_audio_bytes: 20971520
 ```
 
 Create a key on the [Fish API key page](https://fish.audio/app/api-keys) and
-put it in `tts.settings.api_key`. TTS settings are read only from `config.json`.
+put it in `credentials.fish.api_key`, or use the example’s `FISH_API_KEY` environment reference.
 Restart Momoi after updating
 configuration. The initialized provider is available internally through
 `daemon.bubble_delivery.tts_provider`; its `synthesize(text)` method returns the
@@ -50,15 +56,14 @@ in-memory `AudioOutput(data: bytes, format: str)`. No CLI entry point is added.
 | Field | Default | Meaning |
 | --- | --- | --- |
 | `enabled` | `false` | Initialize the internal TTS provider |
-| `provider` | `fish` | Currently the only configured TTS provider |
 | `timeout_seconds` | `60` | Finite positive timeout for the complete HTTP response |
 | `max_audio_bytes` | `20971520` | Maximum downloaded audio size, including chunked responses |
-| `settings.api_key` | — | Fish API credential; required when enabled |
-| `settings.base_url` | `https://api.fish.audio` | API base URL; Momoi appends `/v1/tts` |
-| `settings.model` | `s2.1-pro-free` | One of `s2.1-pro-free`, `s2.1-pro`, `s2-pro`, `s1` |
-| `settings.reference_id` | — | Required Fish voice ID, taken from the voice page URL |
-| `settings.format` | `mp3` | `mp3`, `wav`, or `opus`; raw PCM is not supported |
-| `settings.latency` | `normal` | `normal` for quality, `balanced`, or `low` |
+| `credentials.fish.api_key` | — | Fish API credential; required when enabled |
+| `services.speech.base_url` | `https://api.fish.audio` | API base URL; Momoi appends `/v1/tts` |
+| `options.model` | `s2.1-pro-free` | One of `s2.1-pro-free`, `s2.1-pro`, `s2-pro`, `s1` |
+| `options.reference_id` | — | Required Fish voice ID, taken from the voice page URL |
+| `options.format` | `mp3` | `mp3`, `wav`, or `opus`; raw PCM is not supported |
+| `options.latency` | `normal` | `normal` for quality, `balanced`, or `low` |
 
 The example uses [this Fish voice](https://fish.audio/m/9bb8ad542dc44d148c21c73a0884e9ae/).
 Voice availability and free-tier access depend on Fish. Momoi validates model
@@ -104,81 +109,11 @@ boundaries, schedules, quiet hours, logs, and model context. It defaults to
 
 ## LLM
 
-```json
-{
-  "llm": {
-    "api_format": "anthropic",
-    "base_url": "https://llm.example.com",
-    "api_key": "replace-me",
-    "model": "model-name",
-    "max_tokens": 16384,
-    "temperature": 0.6,
-    "timeout_seconds": 300,
-    "max_retries": 3,
-    "tool_choice": true,
-    "thinking": {
-      "effort": "high",
-      "stages": {
-        "episode_anneal": "low",
-        "memory_maintenance": "low",
-        "reply_followup": "low"
-      }
-    }
-  }
-}
-```
-
-| Field | Required | Default | Description |
-| --- | --- | --- | --- |
-| `api_format` | No | `anthropic` | Request format: `anthropic` or `openai` |
-| `base_url` | Yes | — | Compatible API base URL |
-| `api_key` | Yes | — | Non-empty API credential |
-| `model` | Yes | — | Provider model identifier |
-| `max_tokens` | No | `16384` | Maximum output tokens per model call |
-| `temperature` | No | `0.6` | Sampling temperature |
-| `timeout_seconds` | No | `300` | Positive request timeout |
-| `max_retries` | No | `3` | Retry count for transient errors |
-| `tool_choice` | No | `true` | Require tool use in OpenAI-format requests; set `false` for endpoints that reject `tool_choice` |
-| `thinking.effort` | No | provider default | Default reasoning effort: `low`, `high`, or `max` |
-| `thinking.stages` | No | `{}` | Reasoning-effort overrides keyed by runtime stage; each value is `low`, `high`, or `max` |
-
-Known stage names are `context_plan`, `owner`, `heartbeat_plan`, `heartbeat`,
-`reply_followup`, `goal`, `webhook`, `reflection`, `memory_maintenance`, `episode_anneal`, and
-`episode_consolidate`. A stage omitted from `thinking.stages` uses
-`thinking.effort`.
+See [Provider configuration](./PROVIDERS.md#llm) for options and setup.
 
 ## Inbound speech recognition
 
-```json
-{
-  "asr": {
-    "enabled": false,
-    "provider": "tencent",
-    "timeout_seconds": 30,
-    "max_audio_bytes": 3145728,
-    "settings": {
-      "secret_id": "replace-me",
-      "secret_key": "replace-me",
-      "region": "",
-      "engine": "16k_zh"
-    }
-  }
-}
-```
-
-| Field | Default | Description |
-| --- | --- | --- |
-| `enabled` | `false` | Enable ASR for inbound NapCat voice messages |
-| `provider` | `tencent` | Built-in `tencent` or the dotted name of an `ASRProvider` subclass |
-| `timeout_seconds` | `30` | Positive timeout for one transcription |
-| `max_audio_bytes` | `3145728` | Positive maximum input size in bytes |
-| `settings` | `{}` | Provider constructor arguments |
-| `settings.secret_id` | — | Tencent API secret ID; required for enabled Tencent ASR |
-| `settings.secret_key` | — | Tencent API secret key; required for enabled Tencent ASR |
-| `settings.region` | empty | Optional Tencent region |
-| `settings.engine` | `16k_zh` | Tencent recognition engine |
-
-Other ASR providers may define different `settings` fields.
+See [Provider configuration](./PROVIDERS.md#asr) for options and setup.
 
 ## Channels
 
@@ -303,38 +238,7 @@ Set `thinking` to `null` or an empty string to use the database directory.
 
 ## Embedding recall
 
-```json
-{
-  "embedding": {
-    "enabled": true,
-    "endpoint": "http://embedding:8002/v1/embeddings",
-    "api_key": "",
-    "model": "BAAI/bge-small-zh-v1.5",
-    "dimensions": 512,
-    "calibration_profile": "bge-small-zh-v1.5-momoi-v1",
-    "query_timeout_seconds": 5,
-    "document_timeout_seconds": 30,
-    "document_batch_size": 8
-  }
-}
-```
-
-| Field | Default | Description |
-| --- | --- | --- |
-| `enabled` | `false` | Enable local semantic candidates in memory and Episode recall |
-| `endpoint` | `http://embedding:8002/v1/embeddings` | OpenAI-compatible embedding endpoint |
-| `api_key` | empty | Optional bearer credential for the endpoint |
-| `model` | `BAAI/bge-small-zh-v1.5` | Embedding model identifier; the bundled profile supports this model |
-| `dimensions` | `512` | Positive vector dimension; must match the endpoint |
-| `calibration_profile` | `bge-small-zh-v1.5-momoi-v1` | Threshold profile matching the model and document templates |
-| `query_timeout_seconds` | `5` | Positive timeout for one Turn's query batch |
-| `document_timeout_seconds` | `30` | Positive timeout for one background document batch |
-| `document_batch_size` | `8` | Positive number of documents encoded per background request |
-
-The bundled Docker Compose service uses the default endpoint. For another
-OpenAI-compatible embedding server, set `endpoint`, `model`, `dimensions`, and
-`calibration_profile` to a supported matching set. An unavailable endpoint
-falls back to keyword recall.
+See [Provider configuration](./PROVIDERS.md#embedding) for options and setup. Configure `bindings.embedding`; changing model, dimensions or calibration requires a new semantic space.
 
 ## Tools and MCP
 
@@ -509,32 +413,9 @@ See [WORKFLOW.md](./WORKFLOW.md) for the workflow YAML reference.
 
 Dashboard bind address and port are CLI options, not `config.json` fields.
 
-## Usage
+## Account balance and token accounting
 
-```json
-{
-  "usage": {
-    "enabled": true,
-    "provider": "momoi.extensions.deepseek.DeepSeekPlugin",
-    "api_key": "replace-me",
-    "base_url": "https://api.deepseek.com",
-    "timeout_seconds": 10
-  }
-}
-```
-
-| Field | Default | Description |
-| --- | --- | --- |
-| `enabled` | `true` | Calculate estimated cost and query account balance; token counts remain available when disabled |
-| `provider` | empty | Dotted name of a `UsagePlugin` class |
-| `api_key` | empty | Plugin constructor's `api_key` argument |
-| `base_url` | `https://api.deepseek.com` | API root for the bundled DeepSeek plugin |
-| `timeout_seconds` | `10` | Request timeout for the bundled DeepSeek plugin, clamped to `1`–`20` seconds |
-| other fields | — | Additional plugin constructor keyword arguments |
-
-Set `enabled` to `false` to keep recording token counts without calculating
-cost or querying account balance. Leaving `provider` empty has the same effect,
-using the protocol's generic token parser.
+See [Provider configuration](./PROVIDERS.md#account-balance-and-token-accounting) for options and setup. Balance queries are independent of local token recording; the DeepSeek LLM adapter supplies its usage parser and cost estimation.
 
 ## Logging
 
@@ -567,11 +448,8 @@ Environment values override `config.json` for the current process.
 | `MOMOI_WEBHOOKS_ENABLED` | `webhooks.enabled` |
 | `MOMOI_WEBHOOKS_HOST` | `webhooks.host` |
 | `MOMOI_WEBHOOKS_TOKEN` | `webhooks.token` |
-| `MOMOI_USAGE_API_KEY` | `usage.api_key` |
-| `MOMOI_ASR_SECRET_ID` | `asr.settings.secret_id` |
-| `MOMOI_ASR_SECRET_KEY` | `asr.settings.secret_key` |
 
-Keep files containing credentials private. Model connection fields edited in
-the Dashboard take effect immediately. Restart `momoi run` after changing other
-`config.json` fields, `mcp.json`, workflows, or executor definitions. Prompt
+Keep files containing credentials private. Provider credentials use only explicit YAML
+environment references. Restart `momoi run` after changing `providers.yaml`,
+`config.json`, `mcp.json`, workflows, or executor definitions. Prompt
 files are reloaded before each new Turn.

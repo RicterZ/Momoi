@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
-from ..asr import ASRProvider
+from ..integrations.contracts.asr import ASRProvider
 from ..models import IncomingMessage, OwnerInputStatus
 
 

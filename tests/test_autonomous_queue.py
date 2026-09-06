@@ -1,10 +1,12 @@
+from tests.support import provider_catalog
 import asyncio
 import tempfile
 import unittest
 from pathlib import Path
 
 from momoi.channel.napcat import NapCatConfig
-from momoi.config.models import AppConfig, LLMConfig
+from momoi.config.models import AppConfig
+from momoi.integrations.models import LLMConfig
 from momoi.runtime.daemon import MomoiDaemon
 from momoi.runtime.jobs import AutonomousJob
 
@@ -14,9 +16,9 @@ class AutonomousQueueTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(
                 AppConfig(
-                    llm=LLMConfig(
+                    providers=provider_catalog(LLMConfig(
                         "http://127.0.0.1", "test", "test", 100, 0, 1, 0
-                    ),
+                    )),
                     channel=NapCatConfig(
                         "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
                     ),
@@ -56,9 +58,9 @@ class AutonomousQueueTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(
                 AppConfig(
-                    llm=LLMConfig(
+                    providers=provider_catalog(LLMConfig(
                         "http://127.0.0.1", "test", "test", 100, 0, 1, 0
-                    ),
+                    )),
                     channel=NapCatConfig(
                         "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
                     ),
@@ -87,9 +89,9 @@ class AutonomousQueueTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(
                 AppConfig(
-                    llm=LLMConfig(
+                    providers=provider_catalog(LLMConfig(
                         "http://127.0.0.1", "test", "test", 100, 0, 1, 0
-                    ),
+                    )),
                     channel=NapCatConfig(
                         "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
                     ),

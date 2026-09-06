@@ -1,8 +1,10 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
+from ..errors import IntegrationError
 
-class TTSError(RuntimeError):
+
+class TTSError(IntegrationError):
     pass
 
 

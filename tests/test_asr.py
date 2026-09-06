@@ -2,8 +2,8 @@ import json
 import unittest
 from unittest.mock import patch
 
-from momoi.asr import ASRProvider, AudioInput, load_asr_provider
-from momoi.asr.tencent import TencentASRProvider, _tc3_headers
+from momoi.integrations.contracts.asr import ASRProvider, AudioInput
+from momoi.integrations.adapters.tencent import TencentASRProvider, _tc3_headers
 
 
 class StubASRProvider(ASRProvider):
@@ -15,13 +15,6 @@ class StubASRProvider(ASRProvider):
 
 
 class ASRProviderTest(unittest.IsolatedAsyncioTestCase):
-    async def test_loads_dotted_provider_with_settings(self) -> None:
-        provider = load_asr_provider(f"{__name__}.StubASRProvider", prefix="heard:")
-        self.assertIsInstance(provider, StubASRProvider)
-        self.assertEqual(
-            await provider.transcribe(AudioInput(b"hello", "mp3")),
-            "heard:hello",
-        )
 
     async def test_tencent_request_contains_audio_length_and_format(self) -> None:
         class Response:
@@ -48,7 +41,7 @@ class ASRProviderTest(unittest.IsolatedAsyncioTestCase):
                 return None
 
             def post(
-                self, _url: str, *, data: bytes, headers: dict[str, str]
+                self, _url: str, *, data: bytes, headers: dict[str, str], timeout=None
             ) -> Response:
                 self.body = data
                 self.headers = headers
@@ -62,8 +55,8 @@ class ASRProviderTest(unittest.IsolatedAsyncioTestCase):
             engine="16k_zh",
         )
         with (
-            patch("momoi.asr.tencent.aiohttp.ClientSession", return_value=session),
-            patch("momoi.asr.tencent.time.time", return_value=1_700_000_000),
+            patch("momoi.integrations.adapters.tencent.aiohttp.ClientSession", return_value=session),
+            patch("momoi.integrations.adapters.tencent.time.time", return_value=1_700_000_000),
         ):
             result = await provider.transcribe(AudioInput(b"audio", "mp3"))
 

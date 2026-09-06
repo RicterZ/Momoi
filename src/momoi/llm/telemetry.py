@@ -6,8 +6,8 @@ from time import monotonic, time
 from typing import Any, Callable
 
 from .dumps import dump_response
-from ..config.models import LLMConfig
-from ..extensions.base import parse_protocol_usage
+from ..integrations.models import LLMConfig
+from ..llm.accounting import parse_protocol_usage
 from ..observability.context import current_log_context
 from ..observability.events import TRACE, log_event
 from ..storage import estimate_tokens

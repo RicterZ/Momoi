@@ -7,12 +7,13 @@ from typing import Callable, Iterable
 
 import numpy as np
 
-from ..config.models import EmbeddingConfig
+from ..integrations.models import EmbeddingSpaceConfig
 from ..observability.events import log_event
 from ..policies import SemanticPolicy
 from ..storage import MemoryRecallQuery, Store
 from ..storage.episode_ranking import EpisodeRecallQuery
-from .client import EmbeddingClient, semantic_error_category
+from ..integrations.contracts.embedding import Embedder
+from ..integrations.errors import error_category
 from .models import (
     CALIBRATION_PROFILES,
     DenseEpisodeHit,
@@ -29,15 +30,18 @@ class SemanticRecallService:
     def __init__(
         self,
         store: Store,
-        config: EmbeddingConfig,
+        config: EmbeddingSpaceConfig,
         *,
         auto_activate: bool = True,
         policy: SemanticPolicy = SemanticPolicy(),
+        client: Embedder | None,
     ) -> None:
         self.store = store
         self.config = config
         self.policy = policy
-        self.client = EmbeddingClient(config, policy)
+        self.client = client
+        if config.enabled and client is None:
+            raise ValueError("enabled semantic recall requires an embedder")
         self.snapshot = SegmentedVectorSnapshot(store, config.dimensions)
         self.degraded_reason = "disabled" if not config.enabled else "no_active_space"
         self.auto_activate = auto_activate
@@ -75,9 +79,6 @@ class SemanticRecallService:
         self.snapshot.load(str(space["id"]))
         self._needs_reconciliation = True
         self.degraded_reason = ""
-
-    async def close(self) -> None:
-        await self.client.close()
 
     @staticmethod
     def _expressions(
@@ -124,7 +125,7 @@ class SemanticRecallService:
         except Exception as error:
             error_type = type(error).__name__
             reason = f"{error_type}: {str(error)[:160]}"
-            category = semantic_error_category(error)
+            category = "timeout" if error_category(error) == "timeout" else "error"
             log_event(
                 logger,
                 logging.WARNING,

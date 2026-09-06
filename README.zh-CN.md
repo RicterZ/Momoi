@@ -219,7 +219,7 @@ Always/Recent memory、正在进行的近期 Turn、Goal、情绪与活动、思
 ### Docker Compose
 
 `docker-compose.yml` 中的发布栈会运行 Momoi、NapCat 和私有 Embedding 服务。Embedding
-容器会一起启动，但只有在 `config.json` 中启用后才会参与语义召回。
+容器会一起启动，但只有在 `providers.yaml` 中启用 embedding binding 后才会参与语义召回。
 
 设置 QQ 主人并启动发布栈：
 
@@ -237,7 +237,7 @@ docker compose -f docker-compose.yml logs momoi
 
 QQ 用户打开 `http://127.0.0.1:6099/webui`，从 `docker logs napcat` 获取 NapCat 登录
 token，完成登录并启用 OneBot WebSocket。Dashboard 默认位于
-`http://127.0.0.1:8788`，模型连接可在“设置”中修改。
+`http://127.0.0.1:8788`。编辑 workspace 中的 `providers.yaml` 配置模型连接，修改后重启。
 
 WeChat 渠道只需在同一 workspace 中认证一次（`weixin` 是内部渠道标识）：
 
@@ -265,8 +265,8 @@ mkdir -p ~/.momoi
 cp -R config.example/. ~/.momoi/
 ```
 
-编辑 `~/.momoi/config.json`，至少填写 LLM 端点、密钥、模型、启用渠道、primary 和本地
-时区，然后运行：
+在 `~/.momoi/config.json` 配置启用渠道、primary 和本地时区；在
+`~/.momoi/providers.yaml` 配置 LLM 端点、凭据和模型，然后运行：
 
 ```bash
 momoi run
@@ -291,21 +291,24 @@ docker compose -f compose.yaml up -d --build
 包含私有的 `momoi-embedding` 服务，且不会把端口发布到宿主机；如果 Momoi 直接运行在
 宿主机上，需要提供另一个可达的兼容端点。
 
-在 workspace 中启用匹配的配置：
+将以下内容合并到 `providers.yaml` 的 `services` 和 `bindings` 中：
 
-```json
-{
-  "embedding": {
-    "enabled": true,
-    "endpoint": "http://embedding:8002/v1/embeddings",
-    "model": "BAAI/bge-small-zh-v1.5",
-    "dimensions": 512,
-    "calibration_profile": "bge-small-zh-v1.5-momoi-v1",
-    "query_timeout_seconds": 5,
-    "document_timeout_seconds": 30,
-    "document_batch_size": 8
-  }
-}
+```yaml
+services:
+  vectors:
+    adapter: openai
+    base_url: http://embedding:8002/v1
+bindings:
+  embedding:
+    service: vectors
+    enabled: true
+    options:
+      model: BAAI/bge-small-zh-v1.5
+      dimensions: 512
+      calibration_profile: bge-small-zh-v1.5-momoi-v1
+      query_timeout_seconds: 5
+      document_timeout_seconds: 30
+      document_batch_size: 8
 ```
 
 Momoi 重启后会核对已有来源、在后台构建索引，并在覆盖完整时原子激活。整个过程中关键词
@@ -335,6 +338,14 @@ docker compose -f docker-compose.yml exec momoi momoi embedding status
   分享什么，以及什么时候保持安静。
 - 使用 `momoi emotion add` 添加可选图片反应；描述会告诉 Agent 每张图适合什么情境。
 
+### 外部 API 服务
+
+LLM、ASR、TTS、embedding 和账户余额通过能力接口、注册式适配器与统一的服务组装层接入。
+端点、凭据和服务参数放在 `providers.yaml`，`config.json` 只引用该文件。
+同一服务可绑定多项能力；余额查询与本地 token 统计独立。
+通过 Python 插件注册新适配器，无需修改业务代码。
+详见 [Provider 配置与扩展](./docs/PROVIDERS.zh-CN.md)。
+
 ### 工具
 
 在 workspace 中放置 `mcp.json`，即可连接 stdio 或远程 MCP Server。Momoi 会在运行时
@@ -349,7 +360,8 @@ momoi run --dashboard
 ```
 
 打开 `http://127.0.0.1:8788`。Dashboard 可以查看对话、每个 Turn 的召回 scope 与选中
-证据、复盘、记忆、Goal、图片反应、用量和思考记录，也可以编辑记忆、Goal 与图片反应。
+证据、复盘、记忆、Goal、图片反应、用量和思考记录，也可以编辑记忆、Goal、图片反应与提示词文件。
+Provider 配置在 `providers.yaml` 修改，重启生效。
 请只在本机或可信网络中开放。
 
 ### Webhook

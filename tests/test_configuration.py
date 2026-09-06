@@ -1,3 +1,4 @@
+from tests.support import write_app_config
 import json
 import tempfile
 import unittest
@@ -15,14 +16,7 @@ from momoi.tools.agenda import AgendaTools
 from momoi.channel.napcat import NapCatConfig
 from momoi.channel.weixin import WeixinConfig
 from momoi.config.loading import load_config
-from momoi.config.models import (
-    ASRConfig,
-    ConfigError,
-    DashboardConfig,
-    EmbeddingConfig,
-    ThinkingConfig,
-    UsageConfig,
-)
+from momoi.config.models import ConfigError, DashboardConfig
 from momoi.mcp.config import load_mcp_servers
 from momoi.models import (
     ToolCall,
@@ -41,145 +35,6 @@ def _napcat_channels() -> dict[str, object]:
 
 
 class ConfigurationTest(unittest.TestCase):
-    def test_loads_and_validates_embedding_configuration(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            (root / "prompts").mkdir()
-            (root / "prompts" / "SOUL.md").write_text("Test soul")
-            path = root / "config.json"
-            value = {
-                "llm": {
-                    "base_url": "https://example.com",
-                    "api_key": "key",
-                    "model": "model",
-                },
-                "channels": _napcat_channels(),
-                "context": {},
-                "storage": {"database": "momoi.sqlite3"},
-                "logging": {},
-            }
-            path.write_text(json.dumps(value))
-            default_embedding = load_config(path).embedding
-            self.assertEqual(default_embedding, EmbeddingConfig())
-            self.assertEqual(default_embedding.query_timeout_seconds, 5)
-
-            value["embedding"] = {
-                "enabled": True,
-                "endpoint": "http://localhost:8002/v1/embeddings/",
-                "model": "BAAI/bge-small-zh-v1.5",
-                "dimensions": 512,
-                "calibration_profile": "bge-small-zh-v1.5-momoi-v1",
-                "query_timeout_seconds": 0.25,
-                "document_timeout_seconds": 10,
-                "document_batch_size": 4,
-            }
-            path.write_text(json.dumps(value))
-            config = load_config(path)
-            self.assertTrue(config.embedding.enabled)
-            self.assertEqual(
-                config.embedding.endpoint,
-                "http://localhost:8002/v1/embeddings",
-            )
-            self.assertEqual(config.embedding.document_batch_size, 4)
-
-            value["embedding"]["dimensions"] = 0  # type: ignore[index]
-            path.write_text(json.dumps(value))
-            with self.assertRaisesRegex(ConfigError, "dimensions must be positive"):
-                load_config(path)
-
-    def test_loads_stage_specific_thinking_effort(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            (root / "prompts").mkdir()
-            (root / "prompts" / "SOUL.md").write_text("Test soul")
-            path = root / "config.json"
-            value = {
-                "llm": {
-                    "base_url": "https://example.com",
-                    "api_key": "key",
-                    "model": "model",
-                    "thinking": {
-                        "effort": "high",
-                        "stages": {
-                            "heartbeat": "low",
-                            "reply_followup": "low",
-                        },
-                    },
-                },
-                "channels": _napcat_channels(),
-                "context": {},
-                "storage": {"database": "momoi.sqlite3"},
-                "logging": {},
-            }
-            path.write_text(json.dumps(value))
-
-            config = load_config(path)
-
-            self.assertEqual(
-                config.llm.thinking,
-                ThinkingConfig(
-                    effort="high",
-                    stages={
-                        "heartbeat": "low",
-                        "reply_followup": "low",
-                    },
-                ),
-            )
-            self.assertEqual(config.llm.thinking.for_stage("owner"), "high")
-            self.assertEqual(
-                config.llm.thinking.for_stage("heartbeat"),
-                "low",
-            )
-
-            value["llm"]["thinking"]["effort"] = "medium"  # type: ignore[index]
-            path.write_text(json.dumps(value))
-            with self.assertRaisesRegex(ConfigError, "must be low, high, or max"):
-                load_config(path)
-
-    def test_loads_and_validates_asr_configuration(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            (root / "prompts").mkdir()
-            (root / "prompts" / "SOUL.md").write_text("Test soul")
-            path = root / "config.json"
-            value = {
-                "llm": {
-                    "base_url": "https://example.com",
-                    "api_key": "key",
-                    "model": "model",
-                },
-                "channels": _napcat_channels(),
-                "context": {},
-                "storage": {"database": "momoi.sqlite3"},
-                "logging": {},
-            }
-            path.write_text(json.dumps(value))
-            config = load_config(path)
-            self.assertEqual(config.asr, ASRConfig())
-
-            value["asr"] = {
-                "enabled": True,
-                "provider": "tencent",
-                "timeout_seconds": 12,
-                "max_audio_bytes": 1024,
-                "settings": {
-                    "secret_id": "id",
-                    "secret_key": "secret",
-                    "region": "ap-shanghai",
-                },
-            }
-            path.write_text(json.dumps(value))
-            config = load_config(path)
-            self.assertTrue(config.asr.enabled)
-            self.assertEqual(config.asr.timeout_seconds, 12)
-            self.assertEqual(config.asr.max_audio_bytes, 1024)
-            self.assertEqual(config.asr.settings["region"], "ap-shanghai")  # type: ignore[index]
-
-            value["asr"]["settings"]["secret_key"] = ""  # type: ignore[index]
-            path.write_text(json.dumps(value))
-            with self.assertRaisesRegex(ConfigError, "secret_key is required"):
-                load_config(path)
-
     def test_loads_multiple_channels_and_validates_primary(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -187,11 +42,7 @@ class ConfigurationTest(unittest.TestCase):
             (root / "prompts" / "SOUL.md").write_text("Test soul")
             path = root / "config.json"
             value = {
-                "llm": {
-                    "base_url": "https://example.com",
-                    "api_key": "key",
-                    "model": "model",
-                },
+                "providers": "providers.yaml",
                 "channels": {
                     "primary": "napcat",
                     "enabled": {
@@ -203,12 +54,9 @@ class ConfigurationTest(unittest.TestCase):
                 "storage": {"database": "momoi.sqlite3"},
                 "logging": {},
             }
-            path.write_text(json.dumps(value))
+            write_app_config(path, value)
             config = load_config(path)
             self.assertIsInstance(config.channel, NapCatConfig)
-            self.assertTrue(config.llm.tool_choice)
-            self.assertEqual(config.llm.max_tokens, 16384)
-            self.assertEqual(config.llm.timeout_seconds, 300)
             self.assertEqual(config.summary_results, 8)
             self.assertEqual(config.transcript_turns_min, 32)
             self.assertEqual(config.transcript_turns_max, 80)
@@ -223,13 +71,8 @@ class ConfigurationTest(unittest.TestCase):
                 [NapCatConfig, WeixinConfig],
             )
 
-            value["llm"]["tool_choice"] = False  # type: ignore[index]
-            path.write_text(json.dumps(value))
-            configured = load_config(path)
-            self.assertFalse(configured.llm.tool_choice)
-
             value["channels"]["primary"] = "missing"  # type: ignore[index]
-            path.write_text(json.dumps(value))
+            write_app_config(path, value)
             with self.assertRaisesRegex(ConfigError, "must name an enabled channel"):
                 load_config(path)
 
@@ -240,19 +83,14 @@ class ConfigurationTest(unittest.TestCase):
             (root / "prompts" / "SOUL.md").write_text("Test soul")
             path = root / "config.json"
             value = {
-                "llm": {
-                    "base_url": "https://example.com",
-                    "api_key": "key",
-                    "model": "model",
-                },
+                "providers": "providers.yaml",
                 "channels": _napcat_channels(),
                 "context": {},
                 "storage": {"database": "momoi.sqlite3"},
                 "logging": {},
             }
-            path.write_text(json.dumps(value))
+            write_app_config(path, value)
             invalid = {
-                ("llm", "max_retries"): -1,
                 ("context", "max_input_tokens"): 999,
                 ("context", "transcript_turns_min"): 0,
                 ("context", "transcript_turns_max"): 31,
@@ -267,14 +105,14 @@ class ConfigurationTest(unittest.TestCase):
                 with self.subTest(setting=f"{section}.{setting}"):
                     candidate = json.loads(json.dumps(value))
                     candidate.setdefault(section, {})[setting] = invalid_value
-                    path.write_text(json.dumps(candidate))
+                    write_app_config(path, candidate)
                     with self.assertRaisesRegex(
                         ConfigError, rf"{section}\.{setting} must"
                     ):
                         load_config(path)
 
             value["context"]["memory_results"] = 1.5  # type: ignore[index]
-            path.write_text(json.dumps(value))
+            write_app_config(path, value)
             with self.assertRaisesRegex(
                 ConfigError, "context.memory_results must be an integer"
             ):
@@ -287,21 +125,16 @@ class ConfigurationTest(unittest.TestCase):
             (root / "prompts" / "SOUL.md").write_text("Test soul")
             (root / "prompts" / "HEARTBEAT.md").write_text("偶尔整理自己的摄影兴趣。")
             path = root / "config.json"
-            path.write_text(
-                json.dumps(
-                    {
-                        "llm": {
-                            "base_url": "https://example.com",
-                            "api_key": "key",
-                            "model": "model",
-                        },
-                        "channels": _napcat_channels(),
-                        "context": {},
-                        "tools": {"result_retention_days": 14},
-                        "storage": {"database": "momoi.sqlite3"},
-                        "logging": {},
-                    }
-                )
+            write_app_config(
+                path,
+                {
+                    "providers": "providers.yaml",
+                    "channels": _napcat_channels(),
+                    "context": {},
+                    "tools": {"result_retention_days": 14},
+                    "storage": {"database": "momoi.sqlite3"},
+                    "logging": {},
+                },
             )
             config = load_config(path)
             self.assertIsInstance(config.channel, NapCatConfig)
@@ -315,8 +148,12 @@ class ConfigurationTest(unittest.TestCase):
             )
             self.assertEqual(config.heartbeat.max_interval_seconds, 5400)
             self.assertFalse(hasattr(config, "autonomy"))
-            self.assertFalse(hasattr(config.heartbeat, "reply_initial_interval_seconds"))
-            self.assertFalse(hasattr(config.heartbeat, "reply_followup_interval_seconds"))
+            self.assertFalse(
+                hasattr(config.heartbeat, "reply_initial_interval_seconds")
+            )
+            self.assertFalse(
+                hasattr(config.heartbeat, "reply_followup_interval_seconds")
+            )
             self.assertEqual(config.dashboard.token, "")
             self.assertEqual(config.tool_result_max_chars, 12000)
             self.assertEqual(config.tool_result_retention_days, 14)
@@ -326,8 +163,8 @@ class ConfigurationTest(unittest.TestCase):
 
             legacy = json.loads(path.read_text())
             legacy["napcat"] = legacy.pop("channels")["enabled"]["napcat"]
-            path.write_text(json.dumps(legacy))
-            with self.assertRaisesRegex(ConfigError, "channels must be a table/object"):
+            write_app_config(path, legacy)
+            with self.assertRaisesRegex(ConfigError, "unknown configuration field"):
                 load_config(path)
 
     def test_loads_dashboard_token(self) -> None:
@@ -336,77 +173,20 @@ class ConfigurationTest(unittest.TestCase):
             (root / "prompts").mkdir()
             (root / "prompts" / "SOUL.md").write_text("Test soul")
             path = root / "config.json"
-            path.write_text(
-                json.dumps(
-                    {
-                        "llm": {
-                            "base_url": "https://example.com",
-                            "api_key": "key",
-                            "model": "model",
-                        },
-                        "channels": _napcat_channels(),
-                        "dashboard": {"token": "dash-secret"},
-                        "context": {},
-                        "storage": {"database": "momoi.sqlite3"},
-                        "logging": {},
-                    }
-                )
+            write_app_config(
+                path,
+                {
+                    "providers": "providers.yaml",
+                    "channels": _napcat_channels(),
+                    "dashboard": {"token": "dash-secret"},
+                    "context": {},
+                    "storage": {"database": "momoi.sqlite3"},
+                    "logging": {},
+                },
             )
             config = load_config(path)
             self.assertIsInstance(config.dashboard, DashboardConfig)
             self.assertEqual(config.dashboard.token, "dash-secret")
-            self.assertEqual(config.usage.provider, "")
-            self.assertEqual(config.usage.api_key, "")
-
-    def test_loads_usage_plugin_config(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            (root / "prompts").mkdir()
-            (root / "prompts" / "SOUL.md").write_text("Test soul")
-            path = root / "config.json"
-            path.write_text(
-                json.dumps(
-                    {
-                        "llm": {
-                            "base_url": "https://example.com",
-                            "api_key": "key",
-                            "model": "model",
-                        },
-                        "channels": _napcat_channels(),
-                        "usage": {
-                            "provider": "momoi.extensions.deepseek.DeepSeekPlugin",
-                            "api_key": "sk-usage",
-                            "base_url": "https://api.deepseek.com",
-                            "timeout_seconds": 8,
-                        },
-                        "context": {},
-                        "storage": {"database": "momoi.sqlite3"},
-                        "logging": {},
-                    }
-                )
-            )
-            config = load_config(path)
-            self.assertIsInstance(config.usage, UsageConfig)
-            self.assertTrue(config.usage.enabled)
-            self.assertEqual(
-                config.usage.provider,
-                "momoi.extensions.deepseek.DeepSeekPlugin",
-            )
-            self.assertEqual(config.usage.api_key, "sk-usage")
-            self.assertEqual(
-                config.usage.settings,
-                {
-                    "base_url": "https://api.deepseek.com",
-                    "timeout_seconds": 8,
-                },
-            )
-
-            value = json.loads(path.read_text())
-            value["usage"]["enabled"] = False
-            path.write_text(json.dumps(value))
-            disabled = load_config(path).usage
-            self.assertFalse(disabled.enabled)
-            self.assertNotIn("enabled", disabled.settings or {})
 
     def test_environment_overrides_deployment_fields_but_not_llm(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -414,37 +194,32 @@ class ConfigurationTest(unittest.TestCase):
             (root / "prompts").mkdir()
             (root / "prompts" / "SOUL.md").write_text("Test soul")
             path = root / "config.json"
-            path.write_text(
-                json.dumps(
-                    {
-                        "llm": {
-                            "base_url": "https://example.com",
-                            "api_key": "key",
-                            "model": "model",
-                        },
-                        "channels": {
-                            "primary": "napcat",
-                            "enabled": {
-                                "napcat": {
-                                    "url": "ws://localhost",
-                                    "owner_qq": "123",
-                                },
-                                "weixin": {},
+            write_app_config(
+                path,
+                {
+                    "providers": "providers.yaml",
+                    "channels": {
+                        "primary": "napcat",
+                        "enabled": {
+                            "napcat": {
+                                "url": "ws://localhost",
+                                "owner_qq": "123",
                             },
+                            "weixin": {},
                         },
-                        "dashboard": {"token": "dash-secret"},
-                        "webhooks": {
-                            "enabled": False,
-                            "host": "127.0.0.1",
-                            "token": "old-hook",
-                        },
-                        "timezone": "UTC",
-                        "notifications": {},
-                        "context": {},
-                        "storage": {"database": "momoi.sqlite3"},
-                        "logging": {},
-                    }
-                )
+                    },
+                    "dashboard": {"token": "dash-secret"},
+                    "webhooks": {
+                        "enabled": False,
+                        "host": "127.0.0.1",
+                        "token": "old-hook",
+                    },
+                    "timezone": "UTC",
+                    "notifications": {},
+                    "context": {},
+                    "storage": {"database": "momoi.sqlite3"},
+                    "logging": {},
+                },
             )
             with patch.dict(
                 "os.environ",
@@ -467,10 +242,6 @@ class ConfigurationTest(unittest.TestCase):
                 clear=False,
             ):
                 config = load_config(path)
-            self.assertEqual(config.llm.api_format, "anthropic")
-            self.assertEqual(config.llm.base_url, "https://example.com")
-            self.assertEqual(config.llm.api_key, "key")
-            self.assertEqual(config.llm.model, "model")
             self.assertEqual(config.channel.plugin, "weixin")
             napcat = next(
                 item for item in config.channel_configs if item.plugin == "napcat"
@@ -482,8 +253,6 @@ class ConfigurationTest(unittest.TestCase):
             self.assertTrue(config.webhooks.enabled)
             self.assertEqual(config.webhooks.host, "0.0.0.0")
             self.assertEqual(config.webhooks.token, "env-hook")
-            self.assertEqual(config.asr.settings["secret_id"], "env-asr-id")  # type: ignore[index]
-            self.assertEqual(config.asr.settings["secret_key"], "env-asr-key")  # type: ignore[index]
 
     def test_dashboard_flag_requires_token(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -491,20 +260,15 @@ class ConfigurationTest(unittest.TestCase):
             (root / "prompts").mkdir()
             (root / "prompts" / "SOUL.md").write_text("Test soul")
             path = root / "config.json"
-            path.write_text(
-                json.dumps(
-                    {
-                        "llm": {
-                            "base_url": "https://example.com",
-                            "api_key": "key",
-                            "model": "model",
-                        },
-                        "channels": _napcat_channels(),
-                        "context": {},
-                        "storage": {"database": "momoi.sqlite3"},
-                        "logging": {},
-                    }
-                )
+            write_app_config(
+                path,
+                {
+                    "providers": "providers.yaml",
+                    "channels": _napcat_channels(),
+                    "context": {},
+                    "storage": {"database": "momoi.sqlite3"},
+                    "logging": {},
+                },
             )
             with self.assertRaisesRegex(ValueError, "dashboard.token is required"):
                 asyncio.run(
@@ -520,16 +284,18 @@ class ConfigurationTest(unittest.TestCase):
             (root / "prompts" / "SOUL.md").write_text("Test soul")
             path = root / "config.json"
             config = {
-                "llm": {"base_url": "https://example.com", "api_key": "key", "model": "model"},
+                "providers": "providers.yaml",
                 "channels": _napcat_channels(),
                 "context": {},
                 "storage": {"database": "momoi.sqlite3"},
                 "logging": {},
             }
-            for section in ("webhooks", "heartbeat", "reflection", "usage"):
+            for section in ("webhooks", "heartbeat", "reflection"):
                 config[section] = {"enabled": "false"}
-                path.write_text(json.dumps(config))
-                with self.assertRaisesRegex(ConfigError, rf"{section}\.enabled must be boolean"):
+                write_app_config(path, config)
+                with self.assertRaisesRegex(
+                    ConfigError, rf"{section}\.enabled must be boolean"
+                ):
                     load_config(path)
                 del config[section]
 
@@ -639,8 +405,7 @@ class ConfigurationTest(unittest.TestCase):
                     success="给出天气建议",
                     action="查询天气",
                     at=(
-                        datetime.now(ZoneInfo("Asia/Shanghai"))
-                        + timedelta(hours=1)
+                        datetime.now(ZoneInfo("Asia/Shanghai")) + timedelta(hours=1)
                     ).isoformat(),
                     every_seconds=None,
                     daily=None,
@@ -748,12 +513,13 @@ class ConfigurationTest(unittest.TestCase):
             (prompt_dir / "SOUL.md").write_text("Test soul", encoding="utf-8")
             config_path = workspace / "config.json"
             config_path.write_text(snippet, encoding="utf-8")
+            yaml_snippet = section.split("```yaml\n", 1)[1].split("\n```", 1)[0]
+            (workspace / "providers.yaml").write_text(yaml_snippet, encoding="utf-8")
 
             config = load_config(config_path)
 
         self.assertIsInstance(config.channel, WeixinConfig)
         self.assertEqual(config.channel_configs, (config.channel,))
         self.assertEqual(config.channel.plugin, "weixin")
-        self.assertTrue(config.embedding.enabled)
+        self.assertTrue(config.providers.enabled("embedding"))
         self.assertIsNone(config.mcp_config)
-        self.assertFalse(config.llm.tool_choice)

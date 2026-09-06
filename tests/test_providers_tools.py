@@ -1,3 +1,4 @@
+from tests.support import provider_catalog
 import asyncio
 import json
 import logging
@@ -13,11 +14,8 @@ from aiohttp.test_utils import TestServer
 
 from momoi.tools.builtin import BuiltinTools
 from momoi.channel.napcat import NapCatConfig
-from momoi.config.models import (
-    AppConfig,
-    LLMConfig,
-    ThinkingConfig,
-)
+from momoi.config.models import AppConfig
+from momoi.integrations.models import LLMConfig, ThinkingConfig
 from momoi.contracts import OWNER_PROGRESS_BEFORE_FIRST_CALL, OWNER_PROGRESS_FIELD
 from momoi.mcp.manager import MCPManager
 from momoi.models import (
@@ -27,10 +25,10 @@ from momoi.models import (
 )
 from momoi.observability.context import log_context
 from momoi.observability.events import TRACE
-from momoi.llm.anthropic import AnthropicProvider, merge_adjacent_roles
+from momoi.integrations.adapters.anthropic import AnthropicProvider, merge_adjacent_roles
 from momoi.llm.dumps import redact_dump_media
 from momoi.llm.errors import ProviderError
-from momoi.llm.openai import OpenAIProvider, openai_messages
+from momoi.integrations.adapters.openai import OpenAIProvider, openai_messages
 from momoi.llm.telemetry import (
     compact_response_text,
     log_tool_schema,
@@ -130,7 +128,7 @@ class ProvidersToolsTest(unittest.TestCase):
         ]
         with (
             _provider_trace_logs(),
-            self.assertLogs("momoi.llm", level=TRACE) as logs,
+            self.assertLogs("momoi", level=TRACE) as logs,
         ):
             log_tool_schema("openai", tools)
 
@@ -286,7 +284,7 @@ class ProvidersToolsTest(unittest.TestCase):
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
-                llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
+                providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
                 channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
                 transcript_turns_min=4,
@@ -376,7 +374,7 @@ class ProvidersToolsTest(unittest.TestCase):
     def test_large_mcp_result_is_snapshotted_and_can_be_read_exactly(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
-                llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
+                providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
                 channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
                 transcript_turns_min=4,
@@ -559,55 +557,6 @@ class ProvidersToolsTest(unittest.TestCase):
 
 
 class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
-    async def test_openai_provider_switches_config_between_requests(self) -> None:
-        entered = asyncio.Event()
-        release = asyncio.Event()
-        requests: list[tuple[str, dict[str, object]]] = []
-
-        async def completion(request: web.Request) -> web.Response:
-            requests.append((request.headers["Authorization"], await request.json()))
-            if len(requests) == 1:
-                entered.set()
-                await release.wait()
-            return web.json_response(
-                {"choices": [{"message": {"role": "assistant", "content": "ok"}}]}
-            )
-
-        server = TestServer(web.Application())
-        server.app.router.add_post("/v1/chat/completions", completion)
-        await server.start_server()
-        base_url = str(server.make_url("/")).rstrip("/")
-        old = LLMConfig(
-            base_url, "old-key", "old-model", 100, 0, 1, 0, api_format="openai"
-        )
-        provider = OpenAIProvider(old)
-        try:
-            async with provider:
-                first = asyncio.create_task(
-                    provider.complete("system", [{"role": "user", "content": "one"}])
-                )
-                await entered.wait()
-                provider.update_config(
-                    LLMConfig(
-                        base_url,
-                        "new-key",
-                        "new-model",
-                        100,
-                        0,
-                        1,
-                        0,
-                        api_format="openai",
-                    )
-                )
-                release.set()
-                await first
-                await provider.complete("system", [{"role": "user", "content": "two"}])
-        finally:
-            await server.close()
-        self.assertEqual(requests[0][0], "Bearer old-key")
-        self.assertEqual(requests[0][1]["model"], "old-model")
-        self.assertEqual(requests[1][0], "Bearer new-key")
-        self.assertEqual(requests[1][1]["model"], "new-model")
 
     async def test_required_mcp_connection_failure_stops_startup(self) -> None:
         manager = MCPManager(None)
@@ -1171,7 +1120,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
         )
         try:
             async with provider:
-                with self.assertLogs("momoi.llm", level="DEBUG") as logs:
+                with self.assertLogs("momoi", level="DEBUG") as logs:
                     response = await provider.complete(
                         "system", [{"role": "user", "content": "测试入口"}]
                     )
@@ -1233,7 +1182,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
         )
         try:
             async with provider:
-                with self.assertLogs("momoi.llm", level="WARNING") as logs:
+                with self.assertLogs("momoi", level="WARNING") as logs:
                     response = await provider.complete(
                         "system", [{"role": "user", "content": "测试入口"}]
                     )
@@ -1255,9 +1204,9 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
-                llm=LLMConfig(
+                providers=provider_catalog(LLMConfig(
                     "http://127.0.0.1", "test", "test", 100, 0, 1, 0, "openai"
-                ),
+                )),
                 channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
                 transcript_turns_min=4,
@@ -1314,7 +1263,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                     )
 
             fake = FakeProvider()
-            fake.config = config.llm  # type: ignore[attr-defined]
+            fake.config = daemon.services.llm.config  # type: ignore[attr-defined]
             daemon.provider = with_owner_recall(fake)  # type: ignore[assignment]
             event = IncomingMessage(
                 "qq:1:ignored-choice", "ignored-choice", "测试", 1, 1
@@ -1332,9 +1281,9 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
     async def test_owner_turn_returns_argument_parse_error_to_model(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
-                llm=LLMConfig(
+                providers=provider_catalog(LLMConfig(
                     "http://127.0.0.1", "test", "test", 100, 0, 1, 0, "openai"
-                ),
+                )),
                 channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="You are Momoi.",
                 transcript_turns_min=4,
@@ -1398,7 +1347,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
 
             self_test = self
             fake = FakeProvider()
-            fake.config = config.llm  # type: ignore[attr-defined]
+            fake.config = daemon.services.llm.config  # type: ignore[attr-defined]
             daemon.provider = with_owner_recall(fake)  # type: ignore[assignment]
             event = IncomingMessage("qq:1:bad-json", "bad-json", "测试", 1, 1)
             daemon.store.add_event(event)

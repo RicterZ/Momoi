@@ -1,3 +1,4 @@
+from tests.support import provider_catalog
 import asyncio
 import json
 import tempfile
@@ -5,11 +6,8 @@ import unittest
 from pathlib import Path
 
 from momoi.channel.napcat import NapCatConfig
-from momoi.config.models import (
-    AppConfig,
-    LLMConfig,
-    WebhookConfig,
-)
+from momoi.config.models import AppConfig, WebhookConfig
+from momoi.integrations.models import LLMConfig
 from momoi.tools.memory import MemoryTools
 from momoi.models import (
     AgentReply,
@@ -209,7 +207,7 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
     async def test_webhook_turn_uses_normal_curl_and_end_turn_loop(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = AppConfig(
-                llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
+                providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
                 channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="contract\n{{SOUL}}\n{{CAPABILITY_POLICIES}}",
                 transcript_turns_min=4,
@@ -347,7 +345,7 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                     }
 
             provider = Provider()
-            provider.config = daemon.config.llm  # type: ignore[attr-defined]
+            provider.config = daemon.services.llm.config  # type: ignore[attr-defined]
             tools = Tools()
             daemon.provider = provider  # type: ignore[assignment]
             daemon.builtin_tools = tools  # type: ignore[assignment]

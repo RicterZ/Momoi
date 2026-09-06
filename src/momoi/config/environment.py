@@ -48,16 +48,3 @@ def apply_env_overrides(raw: dict[str, Any]) -> None:
             webhooks["host"] = value
         if value := _env("MOMOI_WEBHOOKS_TOKEN"):
             webhooks["token"] = value
-
-    usage = raw.setdefault("usage", {})
-    if isinstance(usage, dict) and (value := _env("MOMOI_USAGE_API_KEY")):
-        usage["api_key"] = value
-
-    asr = raw.setdefault("asr", {})
-    if isinstance(asr, dict):
-        settings = asr.setdefault("settings", {})
-        if isinstance(settings, dict):
-            if value := _env("MOMOI_ASR_SECRET_ID"):
-                settings["secret_id"] = value
-            if value := _env("MOMOI_ASR_SECRET_KEY"):
-                settings["secret_key"] = value

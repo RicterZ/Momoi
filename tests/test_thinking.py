@@ -1,4 +1,4 @@
-import json
+from tests.support import write_app_config
 import tempfile
 import time
 import unittest
@@ -28,14 +28,8 @@ def _config(directory: Path, thinking: str | None = None) -> Path:
     storage = {"database": "data/momoi.sqlite3"}
     if thinking is not None:
         storage["thinking"] = thinking
-    path.write_text(
-        json.dumps(
-            {
-                "llm": {
-                    "base_url": "http://127.0.0.1",
-                    "api_key": "key",
-                    "model": "model",
-                },
+    write_app_config(path, {
+                "providers": "providers.yaml",
                 "channels": {
                     "primary": "napcat",
                     "enabled": {
@@ -45,9 +39,7 @@ def _config(directory: Path, thinking: str | None = None) -> Path:
                 "context": {},
                 "storage": storage,
                 "logging": {},
-            }
-        )
-    )
+            })
     (directory / "prompts").mkdir()
     (directory / "prompts" / "SOUL.md").write_text("soul")
     return path

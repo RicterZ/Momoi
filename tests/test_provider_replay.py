@@ -4,10 +4,10 @@ from unittest.mock import AsyncMock, call, patch
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
-from momoi.config.models import LLMConfig
-from momoi.llm.anthropic import AnthropicProvider
+from momoi.integrations.models import LLMConfig
+from momoi.integrations.adapters.anthropic import AnthropicProvider
 from momoi.llm.errors import ProviderError
-from momoi.llm.openai import OpenAIProvider
+from momoi.integrations.adapters.openai import OpenAIProvider
 
 
 def _config(base_url: str, api_format: str) -> LLMConfig:

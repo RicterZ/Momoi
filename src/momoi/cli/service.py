@@ -37,7 +37,7 @@ async def run(
         logging.getLogger(__name__),
         logging.INFO,
         "service_start",
-        model=config.llm.model,
+        model=config.providers.options_for("llm").get("model", ""),
         channels=",".join(
             str(getattr(item, "plugin", "unknown")) for item in config.channel_configs
         ),

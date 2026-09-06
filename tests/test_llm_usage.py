@@ -3,35 +3,20 @@ import unittest
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from momoi.extensions import load_usage_plugin
-from momoi.extensions.deepseek import DeepSeekPlugin
+from momoi.integrations.adapters.deepseek import DeepSeekAccounting
 from momoi.llm.usage import summarize_usage
 
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 
-def _plugin() -> DeepSeekPlugin:
-    return DeepSeekPlugin(api_key="")
+def _plugin() -> DeepSeekAccounting:
+    return DeepSeekAccounting()
 
 
-class LoadUsagePluginTest(unittest.TestCase):
-    def test_loads_class_from_dotted_name(self) -> None:
-        plugin = load_usage_plugin(
-            "momoi.extensions.deepseek.DeepSeekPlugin",
-            api_key="sk-test",
-            base_url="https://api.deepseek.com/v1",
-        )
-        self.assertIsInstance(plugin, DeepSeekPlugin)
-        self.assertEqual(plugin.api_key, "sk-test")
-        self.assertEqual(plugin.base_url, "https://api.deepseek.com")
-
-    def test_rejects_non_plugin_class(self) -> None:
-        with self.assertRaises(TypeError):
-            load_usage_plugin("momoi.config.LLMConfig", api_key="x")
 
 
-class DeepSeekPluginTest(unittest.TestCase):
+class DeepSeekAccountingTest(unittest.TestCase):
     def test_flat_rates_before_peak_pricing(self) -> None:
         plugin = _plugin()
         before = datetime(2026, 8, 16, 15, 0, tzinfo=SHANGHAI).timestamp()
@@ -47,12 +32,6 @@ class DeepSeekPluginTest(unittest.TestCase):
             0.71,
         )
 
-    def test_missing_key_marks_balance_unavailable(self) -> None:
-        import asyncio
-
-        balance = asyncio.run(_plugin().balance())
-        self.assertEqual(balance["source"], "unavailable")
-        self.assertEqual(balance["total_balance"], "0")
 
     def test_peak_and_offpeak_after_cutoff(self) -> None:
         plugin = _plugin()
@@ -248,7 +227,7 @@ class StoreUsageTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as raw:
             store = Store(Path(raw) / "momoi.sqlite3", timezone="Asia/Shanghai")
-            store.set_usage_plugin(_plugin())
+            store.set_usage_accounting(_plugin())
             start = datetime(2026, 9, 5, tzinfo=SHANGHAI)
             for offset in (-1, 0, 3599, 3600, 86399, 86400):
                 store.record_llm_call(
@@ -307,7 +286,7 @@ class StoreUsageTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
             store = Store(root / "momoi.sqlite3", root)
-            store.set_usage_plugin(_plugin())
+            store.set_usage_accounting(_plugin())
             now = time.time()
             store.record_llm_call(
                 created_at=now,

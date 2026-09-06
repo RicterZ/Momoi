@@ -7,6 +7,8 @@ node_modules/
 scripts/
 config.json
 !config.example/config.json
+providers.yaml
+!config.example/providers.yaml
 mcp.json
 !config.example/mcp.json
 *.sqlite3

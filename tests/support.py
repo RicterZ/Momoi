@@ -94,3 +94,40 @@ class ContextAwareProvider:
 
 def with_owner_recall(provider: object) -> ContextAwareProvider:
     return ContextAwareProvider(provider)
+
+
+def provider_catalog(config):
+    """Build the catalog used by runtime tests from explicit adapter options."""
+    from dataclasses import asdict
+    from pathlib import Path
+    from momoi.integrations.configuration import ProviderCatalog, ProviderBinding
+
+    options = asdict(config)
+    adapter = options.pop("api_format")
+    return ProviderCatalog(
+        Path("providers.yaml"),
+        {
+            "llm": ProviderBinding("chat", adapter, True, options),
+        },
+    )
+
+
+def write_app_config(path, value):
+    """Write a main config and the default provider fixture for app-only tests."""
+    import json
+
+    path.write_text(json.dumps(value))
+    catalog = path.parent / "providers.yaml"
+    if not catalog.exists():
+        catalog.write_text("""version: 1
+services:
+  chat:
+    adapter: anthropic
+    base_url: https://example.com
+bindings:
+  llm:
+    service: chat
+    options:
+      api_key: key
+      model: model
+""")

@@ -34,7 +34,7 @@ path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
 print(f"Momoi workspace created at {path.parent}", flush=True)
 print(f"Dashboard token: {dashboard_token}", flush=True)
 print(
-    "Open the Dashboard to configure the model connection; set MOMOI_OWNER_QQ"
+    "Edit providers.yaml to configure model and API services; set MOMOI_OWNER_QQ"
     " for NapCat or run: momoi channel login weixin",
     flush=True,
 )

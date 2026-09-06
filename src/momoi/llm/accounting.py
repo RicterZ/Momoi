@@ -82,16 +82,10 @@ def parse_protocol_usage(
     )
 
 
-class UsagePlugin(ABC):
-    """Dashboard usage plugin. Return only the data the page needs."""
+class UsageAccounting(ABC):
+    """Local token parsing and pricing; independent of account balance APIs."""
 
-    async def balance(self) -> dict[str, object]:
-        """Account funds. Must include source, currency, is_available, total_balance."""
-        raise NotImplementedError
-
-    def parse_usage(
-        self, data: dict[str, Any]
-    ) -> dict[str, float | int | bool] | None:
+    def parse_usage(self, data: dict[str, Any]) -> dict[str, float | int | bool] | None:
         """Normalize one model response into billed token buckets.
 
         The default parser understands OpenAI and Anthropic usage objects.
@@ -116,7 +110,5 @@ class UsagePlugin(ABC):
         hit, miss, completion = self.token_rates(model, timestamp)
         billed_miss = max(0, uncached) + max(0, cache_write)
         return (
-            max(0, cache_read) * hit
-            + billed_miss * miss
-            + max(0, output) * completion
+            max(0, cache_read) * hit + billed_miss * miss + max(0, output) * completion
         ) / 1_000_000

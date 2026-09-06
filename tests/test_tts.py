@@ -9,9 +9,11 @@ from aiohttp import web
 from aiohttp.test_utils import TestServer
 
 from momoi.config.loading import load_config
+from momoi.integrations.registry import ServiceRegistry
+import yaml
 from momoi.config.models import ConfigError
-from momoi.tts import TTSError, create_tts_provider
-from momoi.tts.fish import FishAudioTTSProvider
+from momoi.integrations.contracts.tts import TTSError
+from momoi.integrations.adapters.fish import FishAudioTTSProvider
 
 
 class FishTTSTest(unittest.IsolatedAsyncioTestCase):
@@ -25,7 +27,7 @@ class FishTTSTest(unittest.IsolatedAsyncioTestCase):
         self.audio = b"ID3-test-audio"
         self.delay = 0
         self.stream = False
-        retries = patch("momoi.tts.fish.TTS_RETRY_DELAYS", (0, 0, 0))
+        retries = patch("momoi.integrations.adapters.fish.TTS_RETRY_DELAYS", (0, 0, 0))
         retries.start()
         self.addCleanup(retries.stop)
 
@@ -34,12 +36,16 @@ class FishTTSTest(unittest.IsolatedAsyncioTestCase):
             if self.delay:
                 await asyncio.sleep(self.delay)
             if self.stream:
-                response = web.StreamResponse(headers={"Content-Type": self.content_type})
+                response = web.StreamResponse(
+                    headers={"Content-Type": self.content_type}
+                )
                 await response.prepare(request)
                 await response.write(self.audio)
                 await response.write_eof()
                 return response
-            return web.Response(status=self.status, body=self.audio, content_type=self.content_type)
+            return web.Response(
+                status=self.status, body=self.audio, content_type=self.content_type
+            )
 
         app = web.Application()
         app.router.add_post("/v1/tts", handle)
@@ -48,11 +54,14 @@ class FishTTSTest(unittest.IsolatedAsyncioTestCase):
         self.addAsyncCleanup(self.server.close)
 
     def provider(self, **kwargs):
-        return FishAudioTTSProvider(**{
-            "api_key": "test-key", "reference_id": "momoi-voice",
-            "base_url": str(self.server.make_url("")),
-            **kwargs,
-        })
+        return FishAudioTTSProvider(
+            **{
+                "api_key": "test-key",
+                "reference_id": "momoi-voice",
+                "base_url": str(self.server.make_url("")),
+                **kwargs,
+            }
+        )
 
     async def test_request_returns_audio_in_memory(self):
         text = "你好，老师。\n\n今天一起玩游戏吧！"
@@ -63,9 +72,15 @@ class FishTTSTest(unittest.IsolatedAsyncioTestCase):
         headers, body = self.requests[0]
         self.assertEqual(headers["Authorization"], "Bearer test-key")
         self.assertEqual(headers["model"], "s2.1-pro-free")
-        self.assertEqual(body, {
-            "text": text, "reference_id": "momoi-voice", "format": "mp3", "latency": "balanced",
-        })
+        self.assertEqual(
+            body,
+            {
+                "text": text,
+                "reference_id": "momoi-voice",
+                "format": "mp3",
+                "latency": "balanced",
+            },
+        )
         second = await self.provider().synthesize(text)
         self.assertEqual(second.data, self.audio)
 
@@ -74,7 +89,9 @@ class FishTTSTest(unittest.IsolatedAsyncioTestCase):
             with self.subTest(status=status):
                 self.status = status
                 self.audio = b'{"error":"backend unavailable", "key":"test-key", "text":"private spoken text"}'
-                with self.assertLogs("momoi.tts.fish", level="WARNING") as logs:
+                with self.assertLogs(
+                    "momoi.integrations.adapters.fish", level="WARNING"
+                ) as logs:
                     with self.assertRaises(TTSError) as caught:
                         await self.provider().synthesize("private spoken text")
                 self.assertIn(f"Fish TTS returned HTTP {status}", str(caught.exception))
@@ -82,7 +99,9 @@ class FishTTSTest(unittest.IsolatedAsyncioTestCase):
                 self.assertIn("failed after 4 attempts", str(caught.exception))
                 self.assertEqual(len(logs.output), 4)
                 reasons = [record.momoi_fields["reason"] for record in logs.records]
-                self.assertTrue(all("backend unavailable" in reason for reason in reasons))
+                self.assertTrue(
+                    all("backend unavailable" in reason for reason in reasons)
+                )
                 for output in [str(caught.exception), *logs.output, *reasons]:
                     self.assertNotIn("test-key", output)
                     self.assertNotIn("private spoken text", output)
@@ -93,10 +112,12 @@ class FishTTSTest(unittest.IsolatedAsyncioTestCase):
         self.status = 503
         provider = self.provider()
         original = provider._synthesize_once
+
         async def attempt(text):
             if self.requests:
                 self.status = 200
             return await original(text)
+
         provider._synthesize_once = attempt
         audio = await provider.synthesize("hello")
         self.assertEqual(audio.data, self.audio)
@@ -147,29 +168,59 @@ class FishTTSTest(unittest.IsolatedAsyncioTestCase):
         (self.root / "prompts").mkdir(exist_ok=True)
         (self.root / "prompts" / "SOUL.md").write_text("Test soul")
         raw = {
-            "llm": {"base_url": "http://localhost", "api_key": "test", "model": "test"},
-            "channels": {"primary": "napcat", "enabled": {"napcat": {"url": "ws://localhost", "owner_qq": "123"}}},
-            "context": {}, "storage": {"database": "data/momoi.sqlite3"}, "logging": {},
-            "tts": tts_config, "tools": {"mcp_config": None},
+            "providers": "providers.yaml",
+            "channels": {
+                "primary": "napcat",
+                "enabled": {"napcat": {"url": "ws://localhost", "owner_qq": "123"}},
+            },
+            "context": {},
+            "storage": {"database": "data/momoi.sqlite3"},
+            "logging": {},
+            "tools": {"mcp_config": None},
         }
         path = self.root / "config.json"
         path.write_text(json.dumps(raw))
+        catalog = {
+            "version": 1,
+            "services": {
+                "chat": {"adapter": "openai", "base_url": "http://localhost"},
+                "voice": {"adapter": "fish"},
+            },
+            "bindings": {
+                "llm": {
+                    "service": "chat",
+                    "options": {"model": "test", "api_key": "test"},
+                },
+                "tts": {"service": "voice", "enabled": False, **tts_config},
+            },
+        }
+        (self.root / "providers.yaml").write_text(yaml.safe_dump(catalog))
         return path
 
     async def test_config_factory_and_runtime_injection(self):
         path = self.write_config({})
-        self.assertIsNone(create_tts_provider(load_config(path)))
-        settings = {"api_key": "config-key", "reference_id": "momoi-voice", "base_url": str(self.server.make_url(""))}
-        path = self.write_config({"enabled": True, "settings": settings})
+        self.assertIsNone(ServiceRegistry(load_config(path).providers).tts)
+        settings = {
+            "api_key": "config-key",
+            "reference_id": "momoi-voice",
+            "base_url": str(self.server.make_url("")),
+        }
+        path = self.write_config({"enabled": True, "options": settings})
         with patch.dict("os.environ", {"MOMOI_TTS_API_KEY": "env-key"}):
             config = load_config(path)
-            provider = create_tts_provider(config)
+            provider = ServiceRegistry(config.providers).tts
             self.assertEqual(provider.api_key, "config-key")
             from momoi.runtime import MomoiDaemon
+
             daemon = MomoiDaemon(config)
             try:
-                self.assertIsInstance(daemon.bubble_delivery.tts_provider, FishAudioTTSProvider)
-                self.assertIn("send_voice", {s["name"] for s in daemon.tool_surface.conversation_specs()})
+                self.assertIsInstance(
+                    daemon.bubble_delivery.tts_provider, FishAudioTTSProvider
+                )
+                self.assertIn(
+                    "send_voice",
+                    {s["name"] for s in daemon.tool_surface.conversation_specs()},
+                )
             finally:
                 daemon.store.close()
             audio = await provider.synthesize("provider 测试")
@@ -177,14 +228,27 @@ class FishTTSTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.requests[0][0]["Authorization"], "Bearer config-key")
 
     def test_invalid_configuration_is_rejected_before_requests(self):
-        baseline = {"enabled": True, "settings": {"api_key": "test", "reference_id": "voice"}}
+        baseline = {
+            "enabled": True,
+            "options": {"api_key": "test", "reference_id": "voice"},
+        }
         cases = [
-            {"provider": "unknown"}, {"timeout_seconds": 0}, {"timeout_seconds": float("nan")},
-            {"max_audio_bytes": True}, {"output_dir": ""}, {"enabled": "true"},
+            {"provider": "unknown"},
+            {"options": {**baseline["options"], "timeout_seconds": 0}},
+            {"options": {**baseline["options"], "timeout_seconds": float("nan")}},
+            {"options": {**baseline["options"], "max_audio_bytes": True}},
+            {"output_dir": ""},
+            {"enabled": "true"},
         ]
-        for field, value in (("model", "s2.1-pro-fre"), ("format", "pcm"), ("latency", "fast"),
-                             ("base_url", "bad-url"), ("api_key", ""), ("reference_id", 123)):
-            cases.append({"settings": {**baseline["settings"], field: value}})
+        for field, value in (
+            ("model", "s2.1-pro-fre"),
+            ("format", "pcm"),
+            ("latency", "fast"),
+            ("base_url", "bad-url"),
+            ("api_key", ""),
+            ("reference_id", 123),
+        ):
+            cases.append({"options": {**baseline["options"], field: value}})
         with patch.dict("os.environ", {"MOMOI_TTS_API_KEY": ""}):
             for fields in cases:
                 with self.subTest(fields=fields):

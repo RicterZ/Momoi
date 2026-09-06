@@ -1,4 +1,5 @@
 import json
+import logging
 import mimetypes
 import re
 from importlib.metadata import PackageNotFoundError, version as package_version
@@ -20,11 +21,13 @@ from ..emotions import (
     remove_unreferenced_emotion_asset,
     valid_emotion_slug,
 )
-from ..extensions.base import UsagePlugin
+from ..integrations.contracts.balance import BalanceProvider
+from ..integrations.errors import error_category
+from ..observability.events import log_event
 from ..storage import Store
 
 ASSET_ROOT = files("momoi.dashboard").joinpath("static")
-USAGE_PLUGIN = web.AppKey("usage_plugin", UsagePlugin | None)
+BALANCE_PROVIDER = web.AppKey("balance_provider", BalanceProvider | None)
 
 
 def momoi_version() -> str:
@@ -196,12 +199,12 @@ def create_dashboard_app(
     store: Store,
     *,
     token: str = "",
-    usage_plugin: UsagePlugin | None = None,
+    balance_provider: BalanceProvider | None = None,
     settings: DashboardSettings,
 ) -> web.Application:
     app = web.Application(middlewares=[_auth, _headers])
     app[DASHBOARD_TOKEN] = token
-    app[USAGE_PLUGIN] = usage_plugin
+    app[BALANCE_PROVIDER] = balance_provider
     workspace = store._workspace
 
     async def index(_request: web.Request) -> web.Response:
@@ -271,9 +274,24 @@ def create_dashboard_app(
 
     async def overview(request: web.Request) -> web.Response:
         data = store.dashboard_overview()
-        plugin = request.app[USAGE_PLUGIN]
+        plugin = request.app[BALANCE_PROVIDER]
         if plugin is not None:
-            data["balance"] = await plugin.balance()
+            try:
+                data["balance"] = await plugin.balance()
+            except Exception as error:
+                log_event(
+                    logging.getLogger(__name__),
+                    logging.WARNING,
+                    "balance_query_failed",
+                    category=error_category(error),
+                    error_type=type(error).__name__,
+                )
+                data["balance"] = {
+                    "source": "unavailable",
+                    "currency": "CNY",
+                    "is_available": False,
+                    "total_balance": "0",
+                }
         else:
             data["balance"] = {
                 "source": "unavailable",
@@ -286,7 +304,9 @@ def create_dashboard_app(
     async def usage(request: web.Request) -> web.Response:
         if "date" in request.query:
             try:
-                return web.json_response(store.dashboard_hourly_usage(request.query["date"]))
+                return web.json_response(
+                    store.dashboard_hourly_usage(request.query["date"])
+                )
             except (ValueError, OverflowError):
                 raise web.HTTPBadRequest(text="date must be a valid YYYY-MM-DD")
         days = _bounded_int(request, "days", 30, 1, 366)
@@ -459,7 +479,7 @@ def create_dashboard_app(
         return web.json_response({"items": settings.prompts()})
 
     async def dashboard_settings(_request: web.Request) -> web.Response:
-        return web.json_response({"prompts": settings.prompts(), "llm": settings.llm()})
+        return web.json_response({"prompts": settings.prompts()})
 
     async def update_prompt(request: web.Request) -> web.Response:
         payload = await _json_body(request)
@@ -471,17 +491,6 @@ def create_dashboard_app(
         except KeyError:
             raise web.HTTPNotFound(text="prompt not found") from None
         except ValueError as error:
-            raise web.HTTPBadRequest(text=str(error)) from None
-        return web.json_response(item)
-
-    async def llm_settings(_request: web.Request) -> web.Response:
-        return web.json_response(settings.llm())
-
-    async def update_llm_settings(request: web.Request) -> web.Response:
-        payload = await _json_body(request)
-        try:
-            item = await settings.update_llm(payload)
-        except (OSError, ValueError, json.JSONDecodeError) as error:
             raise web.HTTPBadRequest(text=str(error)) from None
         return web.json_response(item)
 
@@ -619,8 +628,6 @@ def create_dashboard_app(
     app.router.add_get("/api/settings", dashboard_settings)
     app.router.add_get("/api/settings/prompts", prompts)
     app.router.add_put("/api/settings/prompts/{prompt_id}", update_prompt)
-    app.router.add_get("/api/settings/llm", llm_settings)
-    app.router.add_put("/api/settings/llm", update_llm_settings)
     app.router.add_get("/api/emotions", emotions)
     app.router.add_post("/api/emotions", create_emotion)
     app.router.add_patch("/api/emotions/{slug}", update_emotion)

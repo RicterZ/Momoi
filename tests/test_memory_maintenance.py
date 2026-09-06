@@ -1,3 +1,4 @@
+from tests.support import provider_catalog
 import asyncio
 import json
 import tempfile
@@ -5,7 +6,8 @@ import unittest
 from pathlib import Path
 
 from momoi.channel.napcat import NapCatConfig
-from momoi.config.models import AppConfig, LLMConfig
+from momoi.config.models import AppConfig
+from momoi.integrations.models import LLMConfig
 from momoi.observability.context import current_log_context
 from momoi.models import IncomingMessage, ProviderResponse, ToolCall
 from momoi.runtime import MomoiDaemon
@@ -559,7 +561,7 @@ class MemoryMaintenanceExecutionTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(
                 AppConfig(
-                    llm=LLMConfig("http://127.0.0.1", "test", "test", 1000, 0, 1, 0),
+                    providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 1000, 0, 1, 0)),
                     channel=NapCatConfig(
                         "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
                     ),
@@ -661,7 +663,7 @@ class MemoryMaintenanceExecutionTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(
                 AppConfig(
-                    llm=LLMConfig("http://127.0.0.1", "test", "test", 1000, 0, 1, 0),
+                    providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 1000, 0, 1, 0)),
                     channel=NapCatConfig(
                         "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
                     ),
@@ -824,7 +826,7 @@ class MemoryMaintenanceExecutionTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(
                 AppConfig(
-                    llm=LLMConfig("http://127.0.0.1", "test", "test", 1000, 0, 1, 0),
+                    providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 1000, 0, 1, 0)),
                     channel=NapCatConfig(
                         "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
                     ),
@@ -941,9 +943,9 @@ class MemoryMaintenanceExecutionTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(
                 AppConfig(
-                    llm=LLMConfig(
+                    providers=provider_catalog(LLMConfig(
                         "http://127.0.0.1", "test", "test", 1000, 0, 1, 0
-                    ),
+                    )),
                     channel=NapCatConfig(
                         "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
                     ),
@@ -984,9 +986,9 @@ class MemoryMaintenanceExecutionTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(
                 AppConfig(
-                    llm=LLMConfig(
+                    providers=provider_catalog(LLMConfig(
                         "http://127.0.0.1", "test", "test", 1000, 0, 1, 0
-                    ),
+                    )),
                     channel=NapCatConfig(
                         "ws://127.0.0.1", "20000", 1, 60, 30, 30, 20
                     ),

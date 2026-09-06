@@ -628,12 +628,6 @@ function previewRecords() {
 }
 
 function previewUsageApi() {
-  let llm = {
-    api_format: "openai",
-    base_url: "https://api.deepseek.com/v1",
-    model: "deepseek-v4-flash",
-    api_key_configured: true,
-  };
   const prompts = new Map([
     [
       "soul",
@@ -751,47 +745,7 @@ function previewUsageApi() {
           return;
         }
         if (req.method === "GET" && path === "/api/settings") {
-          json(res, { llm, prompts: [...prompts.values()] });
-          return;
-        }
-        if (req.method === "GET" && path === "/api/settings/llm") {
-          json(res, llm);
-          return;
-        }
-        if (req.method === "PUT" && path === "/api/settings/llm") {
-          let raw = "";
-          req.setEncoding("utf8");
-          req.on("data", (chunk) => { raw += chunk; });
-          req.on("end", () => {
-            try {
-              const body = JSON.parse(raw);
-              if (
-                body.api_format &&
-                !["openai", "anthropic"].includes(String(body.api_format))
-              ) {
-                json(res, { error: "llm.api_format must be anthropic or openai" }, 400);
-                return;
-              }
-              if (!String(body.base_url || llm.base_url).startsWith("http")) {
-                json(res, { error: "llm.base_url must be an absolute HTTP URL" }, 400);
-                return;
-              }
-              if (!String(body.model || llm.model).trim()) {
-                json(res, { error: "llm.model must not be empty" }, 400);
-                return;
-              }
-              llm = {
-                ...llm,
-                api_format: String(body.api_format || llm.api_format),
-                base_url: String(body.base_url || llm.base_url).replace(/\/$/, ""),
-                model: String(body.model || llm.model).trim(),
-                api_key_configured: Boolean(body.api_key || llm.api_key_configured),
-              };
-              json(res, llm);
-            } catch {
-              json(res, { error: "invalid json" }, 400);
-            }
-          });
+          json(res, { prompts: [...prompts.values()] });
           return;
         }
         if (req.method === "PUT" && path.startsWith("/api/settings/prompts/")) {

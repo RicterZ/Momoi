@@ -5,9 +5,9 @@ from typing import Any, Callable
 
 import aiohttp
 
-from .dumps import dump_request
-from .errors import ProviderError, ProviderResponseError
-from .telemetry import (
+from ...llm.dumps import dump_request
+from ...llm.errors import ProviderError, ProviderResponseError
+from ...llm.telemetry import (
     anthropic_reasoning,
     compact_response_text,
     log_tool_schema,
@@ -15,10 +15,10 @@ from .telemetry import (
     record_response,
     thinking_effort,
 )
-from .transport import anthropic_url, http_error, retry_request
-from ..config.models import LLMConfig
-from ..observability.events import log_event
-from ..models import ProviderResponse, ToolCall
+from ...llm.transport import anthropic_url, http_error, retry_request
+from ...integrations.models import LLMConfig
+from ...observability.events import log_event
+from ...models import ProviderResponse, ToolCall
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +51,7 @@ def merge_adjacent_roles(
 class AnthropicProvider:
     def __init__(self, config: LLMConfig, dump_dir: Path | None = None) -> None:
         self.config = config
+        self.accounting = None
         self.dump_dir = dump_dir
         self.usage_sink: Callable[..., None] | None = None
         self.usage_parser: (
@@ -67,11 +68,6 @@ class AnthropicProvider:
     async def __aexit__(self, *_: object) -> None:
         if self._session:
             await self._session.close()
-
-    def update_config(self, config: LLMConfig) -> None:
-        if config.api_format != "anthropic":
-            raise ValueError("changing llm.api_format requires a restart")
-        self.config = config
 
     async def complete(
         self,

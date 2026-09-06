@@ -1,4 +1,4 @@
-from ...tts.base import AudioOutput
+from ...integrations.contracts.tts import AudioOutput
 from .. import VOICE_MESSAGE_PREFIX
 import asyncio
 import base64
@@ -19,7 +19,7 @@ from .. import (
     NotConnected,
     SendRejected,
 )
-from ...asr import ASRProvider, AudioInput
+from ...integrations.contracts.asr import ASRProvider, AudioInput
 from ...observability.events import log_event
 from ...models import IncomingMessage, OwnerInputStatus
 from .config import NapCatConfig

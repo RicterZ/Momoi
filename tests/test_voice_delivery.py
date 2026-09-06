@@ -1,3 +1,4 @@
+from tests.support import provider_catalog
 import asyncio
 import base64
 import json
@@ -8,13 +9,13 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from momoi.channel import SendRejected
 from momoi.channel.napcat import NapCatChannel, NapCatConfig
 from momoi.models import ToolCall, AgentReply, IncomingMessage, ProviderResponse, TurnDraft
-from momoi.config.models import AppConfig, LLMConfig
+from momoi.config.models import AppConfig
+from momoi.integrations.models import LLMConfig
 from momoi.runtime import MomoiDaemon
 from momoi.runtime.agent import TurnExecutionSpec
-from momoi.tts import AudioOutput, TTSProvider, TTSError
+from momoi.integrations.contracts.tts import AudioOutput, TTSProvider, TTSError
 from momoi.runtime.dispatch.delivery import OutboxWorker
 from momoi.policies import DaemonPolicy
 from momoi.runtime.transcript.building import build_groups
@@ -242,7 +243,7 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
         for stage in ("owner", "heartbeat", "webhook", "reply_followup", "goal"):
             with self.subTest(stage=stage):
                 config = AppConfig(
-                    llm=LLMConfig("http://localhost", "test", "test", 100, 0, 1, 0),
+                    providers=provider_catalog(LLMConfig("http://localhost", "test", "test", 100, 0, 1, 0)),
                     channel=self.channel.config, system_prompt="test",
                     transcript_turns_min=4, transcript_turns_max=4,
                     episode_raw_tail_turns=2, memory_results=2,
@@ -318,7 +319,7 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_unsupported_channel_retains_schema_but_harness_blocks_voice(self):
         config = AppConfig(
-            llm=LLMConfig("http://localhost", "test", "test", 100, 0, 1, 0),
+            providers=provider_catalog(LLMConfig("http://localhost", "test", "test", 100, 0, 1, 0)),
             channel=self.channel.config, system_prompt="test", transcript_turns_min=4,
             transcript_turns_max=4, episode_raw_tail_turns=2, memory_results=2,
             database=self.root / "blocked.sqlite3", log_level="INFO",
@@ -359,7 +360,7 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
         for stage in ("webhook", "reply_followup", "goal"):
             with self.subTest(stage=stage):
                 config = AppConfig(
-                    llm=LLMConfig("http://localhost", "test", "test", 100, 0, 1, 0),
+                    providers=provider_catalog(LLMConfig("http://localhost", "test", "test", 100, 0, 1, 0)),
                     channel=self.channel.config, system_prompt="test",
                     transcript_turns_min=4, transcript_turns_max=4,
                     episode_raw_tail_turns=2, memory_results=2,

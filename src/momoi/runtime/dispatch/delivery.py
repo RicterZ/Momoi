@@ -7,7 +7,7 @@ from ...channel import AmbiguousSend, NotConnected, SendRejected
 from ...observability.events import TRACE, log_event
 from ...observability.values import safe_preview
 from ...policies import DaemonPolicy
-from ...tts import TTSError
+from ...integrations.contracts.tts import TTSError
 
 logger = logging.getLogger("momoi.runtime.daemon")
 _DEFAULT_DAEMON_POLICY = DaemonPolicy()

@@ -264,18 +264,12 @@ chmod 700 workspace
 ```
 
 Create `workspace/config.json` with the smallest practical configuration.
-Replace the four LLM values with a real connection before starting:
+Application settings stay in this file:
 
 ```json
 {
+  "providers": "providers.yaml",
   "timezone": "Asia/Shanghai",
-  "llm": {
-    "api_format": "openai",
-    "base_url": "https://api.example.com/v1",
-    "api_key": "replace-me",
-    "model": "model-name",
-    "tool_choice": false
-  },
   "channels": {
     "primary": "weixin",
     "enabled": {
@@ -289,11 +283,34 @@ Replace the four LLM values with a real connection before starting:
   "logging": {},
   "tools": {
     "mcp_config": null
-  },
-  "embedding": {
-    "enabled": true
   }
 }
+```
+
+Create `workspace/providers.yaml`, replacing the endpoint, key and model before
+starting. This catalog also enables the bundled embedding service:
+
+```yaml
+version: 1
+credentials:
+  chat:
+    api_key: replace-me
+services:
+  chat:
+    adapter: openai
+    base_url: https://api.example.com/v1
+    credentials: chat
+  vectors:
+    adapter: openai
+    base_url: http://embedding:8002/v1
+bindings:
+  llm:
+    service: chat
+    options:
+      model: model-name
+      tool_choice: false
+  embedding:
+    service: vectors
 ```
 
 `context` and `logging` are intentionally empty but required configuration
@@ -391,8 +408,8 @@ mkdir -p ~/.momoi
 cp -R config.example/. ~/.momoi/
 ```
 
-Edit `~/.momoi/config.json`, at minimum setting the LLM endpoint, key, model,
-enabled channels, primary channel, and local timezone. Then run:
+Edit `~/.momoi/config.json` for channels, primary channel and timezone. Set the
+LLM endpoint, credentials and model in `~/.momoi/providers.yaml`. Then run:
 
 ```bash
 momoi run
@@ -418,21 +435,24 @@ endpoint. The published Docker Compose stack already includes the private
 `momoi-embedding` service and does not publish its port to the host. For a
 non-Docker Momoi process, provide another reachable compatible endpoint.
 
-Enable the matching profile in the workspace:
+Merge these entries into `services` and `bindings` in `providers.yaml`:
 
-```json
-{
-  "embedding": {
-    "enabled": true,
-    "endpoint": "http://embedding:8002/v1/embeddings",
-    "model": "BAAI/bge-small-zh-v1.5",
-    "dimensions": 512,
-    "calibration_profile": "bge-small-zh-v1.5-momoi-v1",
-    "query_timeout_seconds": 5,
-    "document_timeout_seconds": 30,
-    "document_batch_size": 8
-  }
-}
+```yaml
+services:
+  vectors:
+    adapter: openai
+    base_url: http://embedding:8002/v1
+bindings:
+  embedding:
+    service: vectors
+    enabled: true
+    options:
+      model: BAAI/bge-small-zh-v1.5
+      dimensions: 512
+      calibration_profile: bge-small-zh-v1.5-momoi-v1
+      query_timeout_seconds: 5
+      document_timeout_seconds: 30
+      document_batch_size: 8
 ```
 
 After Momoi restarts, it reconciles existing sources, builds the index in the
@@ -466,6 +486,15 @@ See [Configuration](./docs/CONFIG.md#embedding-recall) for every option.
 - Add optional image reactions with `momoi emotion add`; descriptions tell the
   agent when each image fits.
 
+### External API services
+
+LLM, ASR, TTS, embedding and account balance use capability interfaces, registered
+adapters and a shared composition/lifecycle layer. Service endpoints and credentials
+live in `providers.yaml`; `config.json` references that file. A service can bind to
+multiple supported capabilities. Balance queries are independent of local token
+accounting. Add adapters through registered Python plugins.
+See [Provider configuration and extension](./docs/PROVIDERS.md).
+
 ### Tools
 
 Place `mcp.json` in the workspace to connect stdio or remote MCP servers.
@@ -483,7 +512,8 @@ momoi run --dashboard
 Open `http://127.0.0.1:8788`. The dashboard can inspect conversations,
 per-Turn recall scopes and selected evidence, reflections, memories, Goals,
 image reactions, usage, and thinking records; it can also edit memories, Goals,
-and reaction assets. Keep it on localhost or a trusted network.
+reaction assets, and prompt files. Provider changes are made in `providers.yaml`
+and require a restart. Keep the dashboard on localhost or a trusted network.
 
 ### Webhooks
 

@@ -1,50 +1,6 @@
 {
+  "providers": "providers.yaml",
   "timezone": "UTC",
-  "llm": {
-    "api_format": "anthropic",
-    "base_url": "https://api.example.com",
-    "api_key": "replace-me",
-    "model": "model-name",
-    "max_tokens": 16384,
-    "temperature": 0.6,
-    "timeout_seconds": 300,
-    "max_retries": 3,
-    "tool_choice": false,
-    "thinking": {
-      "effort": "high",
-      "stages": {
-        "episode_anneal": "low",
-        "memory_maintenance": "low",
-        "reply_followup": "low"
-      }
-    }
-  },
-  "asr": {
-    "enabled": false,
-    "provider": "tencent",
-    "timeout_seconds": 30,
-    "max_audio_bytes": 3145728,
-    "settings": {
-      "secret_id": "replace-me",
-      "secret_key": "replace-me",
-      "region": "",
-      "engine": "16k_zh"
-    }
-  },
-  "tts": {
-    "enabled": false,
-    "provider": "fish",
-    "timeout_seconds": 60,
-    "max_audio_bytes": 20971520,
-    "settings": {
-      "api_key": "",
-      "base_url": "https://api.fish.audio",
-      "model": "s2.1-pro-free",
-      "reference_id": "9bb8ad542dc44d148c21c73a0884e9ae",
-      "format": "mp3",
-      "latency": "normal"
-    }
-  },
   "channels": {
     "primary": "napcat",
     "enabled": {
@@ -83,17 +39,6 @@
   "storage": {
     "database": "data/momoi.sqlite3",
     "thinking": null
-  },
-  "embedding": {
-    "enabled": false,
-    "endpoint": "http://embedding:8002/v1/embeddings",
-    "api_key": "",
-    "model": "BAAI/bge-small-zh-v1.5",
-    "dimensions": 512,
-    "calibration_profile": "bge-small-zh-v1.5-momoi-v1",
-    "query_timeout_seconds": 5,
-    "document_timeout_seconds": 30,
-    "document_batch_size": 8
   },
   "tools": {
     "mcp_config": "mcp.json",
@@ -135,13 +80,6 @@
   },
   "dashboard": {
     "token": "replace-with-a-long-random-secret"
-  },
-  "usage": {
-    "enabled": true,
-    "provider": "momoi.extensions.deepseek.DeepSeekPlugin",
-    "api_key": "replace-me",
-    "base_url": "https://api.deepseek.com",
-    "timeout_seconds": 10
   },
   "logging": {
     "level": "INFO"

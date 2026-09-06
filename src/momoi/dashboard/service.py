@@ -5,7 +5,7 @@ from aiohttp import web
 
 from .app import create_dashboard_app
 from .settings import DashboardSettings
-from ..extensions.base import UsagePlugin
+from ..integrations.contracts.balance import BalanceProvider
 from ..observability.events import log_event
 from ..storage import Store
 
@@ -20,14 +20,14 @@ class DashboardService:
         port: int = 8788,
         *,
         token: str = "",
-        usage_plugin: UsagePlugin | None = None,
+        balance_provider: BalanceProvider | None = None,
         settings: DashboardSettings,
     ) -> None:
         self.store = store
         self.host = host
         self.port = port
         self.token = token
-        self.usage_plugin = usage_plugin
+        self.balance_provider = balance_provider
         self.settings = settings
 
     async def run(self, stop: asyncio.Event) -> None:
@@ -35,7 +35,7 @@ class DashboardService:
             create_dashboard_app(
                 self.store,
                 token=self.token,
-                usage_plugin=self.usage_plugin,
+                balance_provider=self.balance_provider,
                 settings=self.settings,
             ),
             access_log=None,

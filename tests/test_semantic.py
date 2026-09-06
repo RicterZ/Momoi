@@ -7,10 +7,11 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 
-from momoi.config.models import EmbeddingConfig
+from momoi.integrations.models import EmbeddingConfig
 from momoi.policies import SemanticPolicy
 from momoi.search import StringSearchBackend
-from momoi.semantic.client import EmbeddingClient, semantic_error_category
+from momoi.integrations.adapters.embedding import EmbeddingClient
+from momoi.integrations.errors import error_category
 from momoi.semantic.models import (
     DenseEpisodeHit,
     DenseMemoryHit,
@@ -34,25 +35,29 @@ def vector(first: float = 1.0, second: float = 0.0) -> list[float]:
 
 
 class SemanticRecallTest(unittest.TestCase):
-    def test_semantic_error_category(self) -> None:
-        self.assertEqual(semantic_error_category(TimeoutError("slow")), "timeout")
+    def test_error_category(self) -> None:
+        self.assertEqual(error_category(TimeoutError("slow")), "timeout")
+        self.assertEqual(error_category(httpx.ReadTimeout("slow read")), "timeout")
         self.assertEqual(
-            semantic_error_category(httpx.ReadTimeout("slow read")), "timeout"
+            error_category(httpx.ConnectTimeout("slow connect")), "timeout"
         )
-        self.assertEqual(
-            semantic_error_category(httpx.ConnectTimeout("slow connect")), "timeout"
-        )
-        self.assertEqual(semantic_error_category(ConnectionError("offline")), "error")
+        self.assertEqual(error_category(ConnectionError("offline")), "connection")
 
     def test_query_breaker_uses_declared_policy(self) -> None:
         policy = SemanticPolicy(query_failure_limit=2, query_breaker_seconds=17)
         transport = AsyncMock()
         transport.post.side_effect = httpx.ConnectError("offline")
-        with patch("momoi.semantic.client.httpx.AsyncClient", return_value=transport):
+        with patch(
+            "momoi.integrations.adapters.embedding.httpx.AsyncClient",
+            return_value=transport,
+        ):
             client = EmbeddingClient(EmbeddingConfig(enabled=True), policy)
+            client._client
 
         async def run() -> None:
-            with patch("momoi.semantic.client.time.monotonic", return_value=100):
+            with patch(
+                "momoi.integrations.adapters.embedding.time.monotonic", return_value=100
+            ):
                 for _ in range(2):
                     with self.assertRaises(httpx.ConnectError):
                         await client.encode(["query"], query=True)
@@ -70,6 +75,7 @@ class SemanticRecallTest(unittest.TestCase):
             self.store,
             EmbeddingConfig(enabled=True),
             policy=policy,
+            client=EmbeddingClient(EmbeddingConfig(enabled=True)),
         )
         service.start()
         widths: list[int] = []
@@ -94,7 +100,7 @@ class SemanticRecallTest(unittest.TestCase):
                     output_limit=3,
                 )
             finally:
-                await service.close()
+                await service.client.close()
 
         asyncio.run(run())
         self.assertEqual(widths, [6, 6])
@@ -105,6 +111,7 @@ class SemanticRecallTest(unittest.TestCase):
             self.store,
             EmbeddingConfig(enabled=True),
             policy=policy,
+            client=EmbeddingClient(EmbeddingConfig(enabled=True)),
         )
         stop = asyncio.Event()
         timeouts: list[float] = []
@@ -122,7 +129,7 @@ class SemanticRecallTest(unittest.TestCase):
         async def run() -> None:
             with patch("momoi.semantic.service.asyncio.wait_for", side_effect=wait_for):
                 await service.run_worker(stop)
-            await service.close()
+            await service.client.close()
 
         asyncio.run(run())
         self.assertEqual(timeouts, [0.25, 0.75])
@@ -349,9 +356,7 @@ class SemanticRecallTest(unittest.TestCase):
         )
 
     def test_sparse_search_uses_only_literal_keywords(self) -> None:
-        semantic_only = self.add_memory(
-            "semantic phrase", "老师此前如何处理客厅设备"
-        )
+        semantic_only = self.add_memory("semantic phrase", "老师此前如何处理客厅设备")
         keyword_hit = self.add_memory("device-42", "设备的真实编号")
         query = MemoryRecallQuery(
             "device-42",
@@ -386,9 +391,7 @@ class SemanticRecallTest(unittest.TestCase):
 
         self.assertEqual([row["id"] for row in selected], [memory_id])
         self.assertEqual(selected[0]["channels"], ["dense"])
-        self.assertEqual(
-            selected[0]["matched_queries"], ["老师对自动操作的长期偏好"]
-        )
+        self.assertEqual(selected[0]["matched_queries"], ["老师对自动操作的长期偏好"])
 
     def test_sparse_dense_agreement_adds_an_explainable_bonus(self) -> None:
         memory_id = self.add_memory("exact", "stored fact")
@@ -555,7 +558,11 @@ class SemanticRecallTest(unittest.TestCase):
                         self.now,
                     ),
                 )
-        service = SemanticRecallService(self.store, EmbeddingConfig(enabled=True))
+        service = SemanticRecallService(
+            self.store,
+            EmbeddingConfig(enabled=True),
+            client=EmbeddingClient(EmbeddingConfig(enabled=True)),
+        )
         service.start()
 
         async def run() -> DenseRecallEvidence:
@@ -571,7 +578,7 @@ class SemanticRecallTest(unittest.TestCase):
                     episode_before=120,
                 )
             finally:
-                await service.close()
+                await service.client.close()
 
         evidence = asyncio.run(run())
         hit = evidence.episodes["query"][episode_id]
@@ -595,7 +602,11 @@ class SemanticRecallTest(unittest.TestCase):
                     self.now,
                 ),
             )
-        service = SemanticRecallService(self.store, EmbeddingConfig(enabled=True))
+        service = SemanticRecallService(
+            self.store,
+            EmbeddingConfig(enabled=True),
+            client=EmbeddingClient(EmbeddingConfig(enabled=True)),
+        )
         service.start()
 
         async def run() -> tuple[float, list[list[str]]]:
@@ -620,7 +631,7 @@ class SemanticRecallTest(unittest.TestCase):
                     ("confirmed_memory", str(memory_id))
                 ].cosine, encoded_batches
             finally:
-                await service.close()
+                await service.client.close()
 
         cosine, encoded_batches = asyncio.run(run())
         self.assertAlmostEqual(cosine, 0.8)

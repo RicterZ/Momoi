@@ -8,7 +8,10 @@ from typing import Any
 
 import aiohttp
 
-from .base import ASRError, ASRProvider, AudioInput
+from ..transport import HTTPTransport
+from ..errors import error_category, http_category, ErrorCategory
+
+from ..contracts.asr import ASRError, ASRProvider, AudioInput
 
 
 _ENDPOINT = "https://asr.tencentcloudapi.com"
@@ -84,7 +87,9 @@ class TencentASRProvider(ASRProvider):
         region: str = "",
         engine: str = "16k_zh",
         timeout_seconds: float = 30,
+        transport: HTTPTransport | None = None,
     ) -> None:
+        self.transport = transport or HTTPTransport()
         self.secret_id = secret_id.strip()
         self.secret_key = secret_key.strip()
         self.region = region.strip()
@@ -120,20 +125,37 @@ class TencentASRProvider(ASRProvider):
         )
         timeout = aiohttp.ClientTimeout(total=self.timeout_seconds)
         try:
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.post(_ENDPOINT, data=body, headers=headers) as response:
+            async with self.transport.session(
+                timeout_seconds=self.timeout_seconds
+            ) as session:
+                async with session.post(
+                    _ENDPOINT, data=body, headers=headers, timeout=timeout
+                ) as response:
                     if response.status >= 400:
-                        raise ASRError(f"Tencent ASR returned HTTP {response.status}")
+                        raise ASRError(
+                            f"Tencent ASR returned HTTP {response.status}",
+                            category=http_category(response.status),
+                            service="tencent",
+                            operation="transcribe",
+                        )
                     result: Any = await response.json()
         except ASRError:
             raise
         except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as error:
             raise ASRError(
-                f"Tencent ASR request failed: {type(error).__name__}"
+                f"Tencent ASR request failed: {type(error).__name__}",
+                category=error_category(error),
+                service="tencent",
+                operation="transcribe",
             ) from error
         response_data = result.get("Response") if isinstance(result, dict) else None
         if not isinstance(response_data, dict):
-            raise ASRError("Tencent ASR returned an invalid response")
+            raise ASRError(
+                "Tencent ASR returned an invalid response",
+                category=ErrorCategory.INVALID_RESPONSE,
+                service="tencent",
+                operation="transcribe",
+            )
         error_data = response_data.get("Error")
         if isinstance(error_data, dict):
             code = str(error_data.get("Code") or "Unknown")

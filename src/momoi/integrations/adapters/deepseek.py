@@ -3,9 +3,14 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import aiohttp
+from decimal import Decimal, InvalidOperation
 
-from .base import (
-    UsagePlugin,
+from ..transport import HTTPTransport
+from ..contracts.balance import Balance
+from ..errors import IntegrationError, ErrorCategory, http_category, error_category
+
+from ...llm.accounting import (
+    UsageAccounting,
     billed_usage,
     usage_int,
     usage_mapping,
@@ -37,18 +42,80 @@ def _root_url(base_url: str) -> str:
     return base
 
 
-class DeepSeekPlugin(UsagePlugin):
+class DeepSeekBalanceProvider:
     def __init__(
         self,
         *,
         api_key: str,
         base_url: str = "https://api.deepseek.com",
         timeout_seconds: float = 10,
+        transport: HTTPTransport | None = None,
     ) -> None:
+        self.transport = transport or HTTPTransport()
         self.base_url = _root_url(str(base_url))
         self.api_key = str(api_key)
-        self.timeout_seconds = min(20.0, max(1.0, float(timeout_seconds)))
+        self.timeout_seconds = float(timeout_seconds)
 
+    async def balance(self) -> Balance:
+        try:
+            timeout = aiohttp.ClientTimeout(total=self.timeout_seconds)
+            async with self.transport.session(
+                timeout_seconds=self.timeout_seconds
+            ) as session:
+                async with session.get(
+                    f"{self.base_url}/user/balance",
+                    headers={"Authorization": f"Bearer {self.api_key}"},
+                    timeout=timeout,
+                    allow_redirects=False,
+                ) as response:
+                    if response.status != 200:
+                        raise IntegrationError(
+                            f"DeepSeek balance HTTP {response.status}",
+                            category=http_category(response.status),
+                            service="deepseek",
+                            operation="balance",
+                            retryable=response.status >= 500 or response.status == 429,
+                        )
+                    payload = await response.json(content_type=None)
+            infos = payload.get("balance_infos") if isinstance(payload, dict) else None
+            if (
+                not isinstance(infos, list)
+                or not infos
+                or not isinstance(infos[0], dict)
+                or type(payload.get("is_available")) is not bool
+            ):
+                raise ValueError("invalid balance response")
+            info = infos[0]
+            amount = str(info["total_balance"])
+            if not Decimal(amount).is_finite() or not isinstance(
+                info.get("currency"), str
+            ):
+                raise ValueError("invalid balance amount or currency")
+            return {
+                "source": "live",
+                "currency": info["currency"],
+                "is_available": payload["is_available"],
+                "total_balance": amount,
+            }
+        except IntegrationError:
+            raise
+        except (ValueError, KeyError, InvalidOperation) as error:
+            raise IntegrationError(
+                "DeepSeek balance returned an invalid response",
+                category=ErrorCategory.INVALID_RESPONSE,
+                service="deepseek",
+                operation="balance",
+            ) from error
+        except Exception as error:
+            raise IntegrationError(
+                f"DeepSeek balance request failed: {type(error).__name__}",
+                category=error_category(error),
+                service="deepseek",
+                operation="balance",
+            ) from error
+
+
+class DeepSeekAccounting(UsageAccounting):
     def token_rates(self, model: str, timestamp: float) -> tuple[float, float, float]:
         table = _RATES.get(model) or _RATES["deepseek-v4-flash"]
         when = datetime.fromtimestamp(timestamp, DEEPSEEK_BILLING_TIMEZONE)
@@ -58,57 +125,11 @@ class DeepSeekPlugin(UsagePlugin):
         peak = 9 * 60 <= minutes < 12 * 60 or 14 * 60 <= minutes < 18 * 60
         return table["peak"] if peak else table["offpeak"]
 
-    def parse_usage(
-        self, data: dict[str, Any]
-    ) -> dict[str, float | int | bool] | None:
+    def parse_usage(self, data: dict[str, Any]) -> dict[str, float | int | bool] | None:
         usage = data.get("usage")
         if not isinstance(usage, dict):
             return None
         return _parse_deepseek_usage(usage)
-
-    async def balance(self) -> dict[str, object]:
-        if not self.api_key:
-            return {
-                "source": "unavailable",
-                "currency": "CNY",
-                "is_available": False,
-                "total_balance": "0",
-            }
-        try:
-            timeout = aiohttp.ClientTimeout(total=self.timeout_seconds)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(
-                    f"{self.base_url}/user/balance",
-                    headers={"Authorization": f"Bearer {self.api_key}"},
-                ) as response:
-                    status = response.status
-                    payload = await response.json(content_type=None)
-            if status != 200 or not isinstance(payload, dict):
-                return {
-                    "source": "unavailable",
-                    "currency": "CNY",
-                    "is_available": False,
-                    "total_balance": "0",
-                }
-            infos = payload.get("balance_infos")
-            info = (
-                infos[0]
-                if isinstance(infos, list) and infos and isinstance(infos[0], dict)
-                else {}
-            )
-            return {
-                "source": "live",
-                "currency": str(info.get("currency") or "CNY"),
-                "is_available": bool(payload.get("is_available")),
-                "total_balance": str(info.get("total_balance") or "0"),
-            }
-        except Exception:
-            return {
-                "source": "unavailable",
-                "currency": "CNY",
-                "is_available": False,
-                "total_balance": "0",
-            }
 
 
 def _parse_deepseek_usage(usage: dict[str, Any]) -> dict[str, float | int | bool]:

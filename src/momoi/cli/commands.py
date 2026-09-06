@@ -1,7 +1,6 @@
 import argparse
 import asyncio
 import json
-from dataclasses import replace
 from datetime import datetime, timedelta
 
 from ..channel import login_channel
@@ -144,7 +143,17 @@ def goal(args: argparse.Namespace) -> None:
 
 async def embedding(args: argparse.Namespace) -> None:
     config = load_config(args.workspace / "config.json")
-    embedding_config = replace(config.embedding, enabled=True)
+    from ..integrations.registry import ServiceRegistry
+
+    if not config.providers.enabled("embedding"):
+        raise ValueError(
+            "Enable the embedding binding in providers.yaml before using embedding commands"
+        )
+    services = ServiceRegistry(
+        config.providers, semantic_policy=config.policies.semantic
+    )
+    embedding_config = services.embedding_config
+    client = services.embedding
     store = Store(
         config.database,
         args.workspace,
@@ -155,56 +164,57 @@ async def embedding(args: argparse.Namespace) -> None:
         store,
         embedding_config,
         auto_activate=False,
+        client=client,
         policy=config.policies.semantic,
     )
     try:
-        if args.embedding_command == "status":
-            status = store.semantic_status()
-            healthy, latency_ms, error = await service.client.health()
-            status["sidecar"] = {
-                "healthy": healthy,
-                "latency_ms": round(latency_ms, 2),
-                "error": error,
-            }
-            print(json.dumps(status, ensure_ascii=False, indent=2, default=str))
-            return
-        if args.embedding_command == "activate":
-            space_id = args.space_id
-            if not space_id:
-                building = store.semantic_space(state="building")
-                if building is None:
-                    raise ValueError("building semantic space not found")
-                space_id = str(building["id"])
-            store.activate_semantic_space(space_id)
-            print(f"activated\t{space_id}")
-            return
-        space = store.ensure_semantic_space(
-            model=embedding_config.model,
-            dimensions=embedding_config.dimensions,
-            calibration_profile=embedding_config.calibration_profile,
-        )
-        queued = store.reconcile_semantic_sources(str(space["id"]))
-        if args.embedding_command == "reconcile":
-            print(f"reconciled\t{space['id']}\tqueued={queued}")
-            return
-        if not args.wait:
-            print(f"building\t{space['id']}\tqueued={queued}")
-            return
-        while True:
-            await service.maintain_once()
-            status = store.semantic_status(str(space["id"]))
-            if (
-                status["eligible_source_coverage"] >= 1.0
-                and not status["pending"]
-                and not status["encoding"]
-                and not status["retry"]
-                and not status["dirty_sources"]
-            ):
+        async with services:
+            if args.embedding_command == "status":
+                status = store.semantic_status()
+                healthy, latency_ms, error = await service.client.health()
+                status["sidecar"] = {
+                    "healthy": healthy,
+                    "latency_ms": round(latency_ms, 2),
+                    "error": error,
+                }
                 print(json.dumps(status, ensure_ascii=False, indent=2, default=str))
                 return
-            await asyncio.sleep(0.05)
+            if args.embedding_command == "activate":
+                space_id = args.space_id
+                if not space_id:
+                    building = store.semantic_space(state="building")
+                    if building is None:
+                        raise ValueError("building semantic space not found")
+                    space_id = str(building["id"])
+                store.activate_semantic_space(space_id)
+                print(f"activated\t{space_id}")
+                return
+            space = store.ensure_semantic_space(
+                model=embedding_config.model,
+                dimensions=embedding_config.dimensions,
+                calibration_profile=embedding_config.calibration_profile,
+            )
+            queued = store.reconcile_semantic_sources(str(space["id"]))
+            if args.embedding_command == "reconcile":
+                print(f"reconciled\t{space['id']}\tqueued={queued}")
+                return
+            if not args.wait:
+                print(f"building\t{space['id']}\tqueued={queued}")
+                return
+            while True:
+                await service.maintain_once()
+                status = store.semantic_status(str(space["id"]))
+                if (
+                    status["eligible_source_coverage"] >= 1.0
+                    and not status["pending"]
+                    and not status["encoding"]
+                    and not status["retry"]
+                    and not status["dirty_sources"]
+                ):
+                    print(json.dumps(status, ensure_ascii=False, indent=2, default=str))
+                    return
+                await asyncio.sleep(0.05)
     finally:
-        await service.close()
         store.close()
 
 

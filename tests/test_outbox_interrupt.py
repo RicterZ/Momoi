@@ -1,3 +1,4 @@
+from tests.support import provider_catalog
 import asyncio
 import tempfile
 import unittest
@@ -5,10 +6,11 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from momoi.channel.napcat import NapCatConfig
-from momoi.config.models import AppConfig, LLMConfig
+from momoi.config.models import AppConfig
+from momoi.integrations.models import LLMConfig
 from momoi.models import AgentReply, IncomingMessage, OwnerInputStatus
 from momoi.runtime import MomoiDaemon
-from momoi.tts import AudioOutput
+from momoi.integrations.contracts.tts import AudioOutput
 
 
 class OutboxInterruptTest(unittest.IsolatedAsyncioTestCase):
@@ -16,7 +18,7 @@ class OutboxInterruptTest(unittest.IsolatedAsyncioTestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.daemon = MomoiDaemon(AppConfig(
-            llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
+            providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
             channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
             system_prompt="test",
             transcript_turns_min=4,

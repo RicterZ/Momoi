@@ -1,17 +1,19 @@
+from tests.support import provider_catalog
 import tempfile
 import unittest
 import uuid
 from pathlib import Path
 
 from momoi.channel.napcat import NapCatConfig
-from momoi.config.models import AppConfig, LLMConfig
+from momoi.config.models import AppConfig
+from momoi.integrations.models import LLMConfig
 from momoi.models import AgentReply, IncomingMessage
 from momoi.runtime import MomoiDaemon
 
 
 def config(directory: str) -> AppConfig:
     return AppConfig(
-        llm=LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0),
+        providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
         channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
         system_prompt="test",
         transcript_turns_min=4,
