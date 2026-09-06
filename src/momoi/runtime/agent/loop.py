@@ -1,4 +1,5 @@
 import logging
+from dataclasses import replace
 from typing import Any
 
 from ...channel import (
@@ -6,14 +7,14 @@ from ...channel import (
 )
 from ...observability.events import TRACE, log_event
 from ...observability.values import safe_preview
-from ...models import AgentReply, IncomingMessage, TurnDraft
+from ...models import AgentReply, IncomingMessage, ToolCall, TurnDraft
 from . import (
     AgentWorkflow,
     TurnExecutionSpec,
     TurnHarness,
     WorkflowProtocolError,
 )
-from ..parsing import response_text
+from ..parsing import parse_tagged_bubbles, response_text
 from .protocol import (
     handle_no_tool_response,
     parse_end_turn,
@@ -257,6 +258,28 @@ class AgentLoop:
                 failed_tool_rounds = 0
                 remind_owner_bubbles = False
                 continue
+            if stage == "owner" and harness.started and not response.tool_calls:
+                bubbles = parse_tagged_bubbles(response_text(response.content))
+                if bubbles is not None:
+                    call = ToolCall(
+                        f"text-bubbles:{call_id}", "send_bubbles", {"bubbles": bubbles}
+                    )
+                    # Use the normal tool path for validation, delivery, deduplication,
+                    # owner interruption, and the tool result consumed next round.
+                    response = replace(
+                        response,
+                        content=[*response.content, {
+                            "type": "tool_use", "id": call.id,
+                            "name": call.name, "input": call.arguments,
+                        }],
+                        tool_calls=[call],
+                    )
+                    log_event(
+                        logger, logging.DEBUG, "assistant_bubbles_adapted",
+                        stage=stage, turn_id=turn_id, call_id=call_id,
+                        round=llm_round, channel=delivery_channel.name,
+                        tool_call_id=call.id, bubbles=len(bubbles),
+                    )
             if not response.tool_calls:
                 resolution = handle_no_tool_response(
                     messages,

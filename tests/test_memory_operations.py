@@ -825,3 +825,66 @@ def test_owner_assistant_text_never_becomes_a_delivered_bubble(daemon):
     assert not replies
     assert [row.text for row in daemon.store.due_outbox()] == ['这是气泡']
     assert daemon.store._db.execute("SELECT state FROM turns WHERE id='source'").fetchone()[0] == 'completed'
+
+
+def test_owner_tagged_text_uses_delivery_tool_and_then_end_turn(daemon, caplog):
+    from types import SimpleNamespace
+    from tests.support import recall_response
+
+    source = event(daemon.store)
+    count = 0
+
+    async def complete(_system, messages, *args, **kwargs):
+        nonlocal count
+        count += 1
+        if count == 1:
+            return recall_response()
+        if count == 2:
+            return ProviderResponse([{'type': 'text', 'text':
+                '[turn=T52]\n<bubble>\n登录过期啦\n</bubble>\n'
+                '<bubble>\n第一行\n第二行\n</bubble>'}], [])
+        assert count == 3, 'Unexpected retry'
+        sent = json.loads(messages[-1]['content'][0]['content'])
+        assert sent['ok'] and sent['state'] == 'committed'
+        assert sent['bubbles'] == 2
+        call = next(block for block in messages[-2]['content'] if block['type'] == 'tool_use')
+        assert call['name'] == 'send_bubbles'
+        assert call['id'].startswith('text-bubbles:')
+        assert sent['provenance']['tool'] == 'send_bubbles'
+        return response(ToolCall('end', 'end_turn', {
+            'reply_wait': {'wait': False}, 'mood': {'decision': 'unchanged'},
+            'activity': {'decision': 'unchanged'},
+        }))
+
+    daemon.provider = SimpleNamespace(complete=complete, config=SimpleNamespace(api_format='anthropic'))
+    with caplog.at_level('DEBUG', logger='momoi.runtime.turns'):
+        asyncio.run(daemon._complete_batch_turn([source], asyncio.Event(), 'source'))
+    assert count == 3
+    assert [row['text'] for row in daemon.store._db.execute(
+        "SELECT text FROM outbox WHERE turn_id='source' ORDER BY id"
+    )] == ['登录过期啦', '第一行\n第二行']
+    assert any(getattr(record, 'momoi_event', '') == 'assistant_bubbles_adapted' for record in caplog.records)
+    assert not any(getattr(record, 'momoi_event', '') == 'llm_protocol_rejected' for record in caplog.records)
+
+
+@pytest.mark.parametrize('tagged', [True, False])
+def test_text_with_native_send_is_never_delivered_twice(daemon, tagged):
+    from types import SimpleNamespace
+    from tests.support import recall_response
+
+    source = event(daemon.store)
+    send = response(ToolCall('send', 'send_bubbles', {'bubbles': ['工具气泡']}))
+    send.content.insert(0, {'type': 'text', 'text': '<bubble>正文气泡</bubble>' if tagged else '普通正文'})
+    replies = [recall_response(), send, response(ToolCall('end', 'end_turn', {
+        'reply_wait': {'wait': False}, 'mood': {'decision': 'unchanged'},
+        'activity': {'decision': 'unchanged'},
+    }))]
+
+    async def complete(*args, **kwargs):
+        assert replies
+        return replies.pop(0)
+
+    daemon.provider = SimpleNamespace(complete=complete, config=SimpleNamespace(api_format='anthropic'))
+    asyncio.run(daemon._complete_batch_turn([source], asyncio.Event(), 'source'))
+    assert not replies
+    assert [row.text for row in daemon.store.due_outbox()] == ['工具气泡']

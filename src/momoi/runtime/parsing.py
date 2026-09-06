@@ -1,4 +1,5 @@
 import re
+from html import unescape
 from typing import Any
 
 from ..channel import (
@@ -19,6 +20,25 @@ def response_text(content: list[dict[str, Any]]) -> str:
         for block in content
         if block.get("type") == "text"
     ).strip()
+
+
+def parse_tagged_bubbles(text: str) -> list[str] | None:
+    """Read a complete bubble transcript, preserving boundaries and inner newlines."""
+    remaining = re.sub(r"\A\s*\[turn=T\d+\]\s*", "", text).strip()
+    bubbles: list[str] = []
+    while remaining:
+        match = re.match(r"<bubble>(.*?)</bubble>", remaining, re.DOTALL)
+        if match is None:
+            return None
+        body = match.group(1)
+        if "<bubble" in body or "</bubble" in body:
+            return None
+        body = unescape(body).strip()
+        if not body:
+            return None
+        bubbles.append(body)
+        remaining = remaining[match.end():].lstrip()
+    return bubbles or None
 
 
 def parse_bubbles(
