@@ -202,8 +202,9 @@ def owner_content_blocks(
     for index, event in enumerate(events):
         line = f"{context_timestamp(event.occurred_at, timezone)} {event.text}".strip()
         opening = "<current_owner_bubbles>\n" if index == 0 else ""
-        blocks.append({"type": "text", "text": f"{opening}{escape(line)}"})
+        blocks.append({"type": "text", "text": f"{opening}<bubble>\n{escape(line)}"})
         blocks.extend(content_blocks(event.segments))
+        blocks.append({"type": "text", "text": "\n</bubble>\n"})
     closing = "</current_owner_bubbles>" if events else ""
     blocks.append({"type": "text", "text": closing})
     return blocks

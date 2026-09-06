@@ -2082,7 +2082,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((turn["state"], turn["llm_calls"]), ("completed", 0))
             daemon.store.close()
 
-    async def test_plain_text_with_end_turn_is_retried_through_send_bubbles(
+    async def test_text_with_invalid_end_turn_is_corrected_before_delivery(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -2149,11 +2149,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         raise AssertionError(tools)
                     if self.calls == 2:
                         correction = request_text
-                        if (
-                            "without end_turn" not in correction
-                            or "alone on the next step" not in correction
-                        ):
-                            raise AssertionError(correction)
+                        self_outer.assertIn("invalid_activity_decision", correction)
                         self_outer.assertIn(
                             OWNER_BUBBLE_REQUEST_REMINDER, correction
                         )
@@ -2328,7 +2324,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             daemon.store.close()
 
-    async def test_plain_text_with_invalid_mood_is_retried_through_send_bubbles(
+    async def test_text_with_invalid_mood_returns_parameter_error(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -2391,7 +2387,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     content = last.get("content")
                     if isinstance(content, list):
                         self.corrections.extend(
-                            str(block.get("text") or "")
+                            str(block.get("content") or block.get("text") or "")
                             for block in content
                             if isinstance(block, dict)
                         )
@@ -2453,9 +2449,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(provider.calls, 3)
             self.assertTrue(
                 any(
-                    "Call send_bubbles" in text
-                    and "without end_turn" in text
-                    and "alone on the next step" in text
+                    "invalid_mood_decision" in text
                     for text in provider.corrections
                 )
             )
@@ -2726,10 +2720,10 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                     if response_kind == "text_with_tool" or (
                                         response_kind == "mixed" and self.calls % 2 == 0
                                     ):
-                                        calls = [ToolCall("recall", "recall", {})]
+                                        calls = [ToolCall("wrong-first", "send_bubbles", {"bubbles": ["hello"]})]
                                         content.append({
-                                            "type": "tool_use", "id": "recall",
-                                            "name": "recall", "input": {},
+                                            "type": "tool_use", "id": "wrong-first",
+                                            "name": "send_bubbles", "input": {"bubbles": ["hello"]},
                                         })
                                     return ProviderResponse(content, calls)
 
