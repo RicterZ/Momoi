@@ -11,6 +11,7 @@ TurnWorkflowKind = Literal[
     "reply_followup",
     "reflection",
     "memory_maintenance",
+    "memory_operation",
     "episode_consolidate",
     "episode_anneal",
 ]
@@ -24,6 +25,7 @@ TURN_WORKFLOW_KINDS = frozenset(
         "reply_followup",
         "reflection",
         "memory_maintenance",
+        "memory_operation",
         "episode_consolidate",
         "episode_anneal",
     }

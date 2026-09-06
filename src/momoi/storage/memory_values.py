@@ -5,7 +5,6 @@ import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from ..policies import MemoryPolicy
 
 
 MEMORY_KINDS = {
@@ -23,7 +22,6 @@ ALWAYS_MEMORY_KINDS = {"profile", "preference", "relationship"}
 
 RECENT_MEMORY_WINDOW_SECONDS = 30 * 24 * 60 * 60
 
-_DEFAULT_MEMORY_POLICY = MemoryPolicy()
 
 REFLECTION_MEMORY_CAUTION = (
     "Daily reflection memories are fallible and may be outdated or no longer "
@@ -72,20 +70,6 @@ def format_reflection_memory(row: Mapping[str, object]) -> str:
         f"- [date={local_date} {row['kind']}:{row['key']}] "
         f"{row['content']}"
     )
-
-def memory_expires_at(
-    activation: str,
-    ttl_hours: float,
-    now: float,
-    policy: MemoryPolicy = _DEFAULT_MEMORY_POLICY,
-) -> float | None:
-    if activation != "recent":
-        return None
-    hours = min(
-        policy.recent_max_ttl_hours,
-        max(policy.recent_min_ttl_hours, float(ttl_hours)),
-    )
-    return now + hours * 3600
 
 def estimate_tokens(text: str) -> int:
     from ..runtime.agent.budget import TEXT_SIZER

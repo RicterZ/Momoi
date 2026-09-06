@@ -146,6 +146,11 @@ class ToolBatchExecutor:
             elif call.name not in allowed_tool_names:
                 result = {"ok": False, "error": "tool_not_allowed"}
             elif call.name == "heartbeat_begin":
+                async def prepare_heartbeat_context(arguments):
+                    prepared = await request.prepare_heartbeat_context(arguments)
+                    request.draft.memory_context.update(prepared["memory_snapshots"])
+                    return prepared
+
                 result = await begin_heartbeat(
                     call,
                     heartbeat_turn=execution.heartbeat,
@@ -153,7 +158,7 @@ class ToolBatchExecutor:
                     enable_tool_groups=request.enable_tool_groups,
                     tools=request.tools,
                     tool_surface=self.tool_surface,
-                    prepare_context=request.prepare_heartbeat_context,
+                    prepare_context=prepare_heartbeat_context,
                 )
             elif call.name == "recall":
                 result = await recall_owner_context(
@@ -162,6 +167,12 @@ class ToolBatchExecutor:
                     turn_id=request.turn_id,
                     submit_context=request.submit_owner_context,
                 )
+                if result.get("ok"):
+                    record = self.store.context_plan(request.turn_id)
+                    recalled = record.get("retrieval", {}).get("recall_memories", []) if record else []
+                    request.draft.memory_context.update(self.store.memory_snapshots(
+                        [item["id"] for item in recalled if isinstance(item.get("id"), int)]
+                    ))
             elif not request.harness.started and execution.authority == "owner":
                 result = {
                     "ok": False,

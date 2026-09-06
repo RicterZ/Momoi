@@ -1,3 +1,4 @@
+from tests.support import seed_memory
 from tests.support import provider_catalog
 import asyncio
 import json
@@ -228,22 +229,8 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             daemon.store.add_event(event)
             draft = TurnDraft()
-            remembered = MemoryTools(daemon.store).execute(
-                ToolCall(
-                    "remember-packages",
-                    "memory_remember",
-                    {
-                        "kind": "preference",
-                        "key": "arrival.packages",
-                        "content": "回家事件需要留意已到达的快递",
-                        "evidence": event.text,
-                        "importance": 0.8,
-                    },
-                ),
-                [event],
-                draft,
-            )
-            self.assertTrue(remembered["ok"])
+            seed_memory(daemon.store, event, kind="routine", key="routine.arrive_home.parcel",
+                        content="回家事件需要留意已到达的快递")
             owner_turn_id = "owner-packages"
             daemon.store.begin_turn(owner_turn_id, "owner", [event.event_id])
             daemon.store.commit_turn(

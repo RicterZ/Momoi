@@ -132,10 +132,7 @@ class TurnCommitStore:
                         now,
                     ),
                 )
-            for memory in draft.memories if draft else []:
-                self._remember(memory, events, now)
-            for forgotten in draft.forgotten_memories if draft else []:
-                self._forget_memory(forgotten, events, now)
+            self._queue_memory_operations(turn_id, draft, events, now)
             self._apply_goal_mutations(draft, now)
             self._apply_cooled_reply_action(draft, now)
             self._append_turn_journal(
@@ -151,16 +148,7 @@ class TurnCommitStore:
                         else {}
                     ),
                     "mutations": {
-                        "memories": [
-                            vars(memory)
-                            for memory in (draft.memories if draft else [])
-                        ],
-                        "forgotten_memories": [
-                            vars(memory)
-                            for memory in (
-                                draft.forgotten_memories if draft else []
-                            )
-                        ],
+                        "memory_operations": draft.memory_operations if draft else [],
                         "goals": list(draft.goals.values()) if draft else [],
                     },
                 },

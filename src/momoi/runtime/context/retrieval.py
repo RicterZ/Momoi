@@ -218,9 +218,12 @@ def build_plan_retrieval(
         )
         for item in source_retrieval.get("recall_memories") or []:
             if isinstance(item, dict):
-                inherited_memories.append(
-                    {**copy.deepcopy(item), "unit_ids": unit_ids}
-                )
+                current = store.active_memory(str(item["kind"]), str(item["key"]))
+                if current is not None:
+                    inherited_memories.append({
+                        **{key: current[key] for key in ("id", "kind", "key", "content")},
+                        "unit_ids": unit_ids,
+                    })
         for item in source_retrieval.get("reflection_memories") or []:
             if isinstance(item, dict):
                 inherited_reflections.append(
@@ -282,8 +285,9 @@ def build_plan_retrieval(
     )
     recall_memories = [
         {
-            "kind": truncate_tokens(str(row.get("kind") or ""), 24),
-            "key": truncate_tokens(str(row.get("key") or ""), 64),
+            "id": int(row["id"]),
+            "kind": str(row.get("kind") or ""),
+            "key": str(row.get("key") or ""),
             "content": str(row.get("content") or ""),
             "unit_ids": list(row.get("unit_ids") or []),
         }

@@ -218,7 +218,7 @@ CREATE TABLE IF NOT EXISTS turns (
     kind TEXT NOT NULL CHECK (kind IN ('owner', 'autonomous')),
     workflow_kind TEXT CHECK (workflow_kind IN (
         'owner', 'webhook', 'goal', 'heartbeat', 'reply_followup',
-        'reflection', 'memory_maintenance', 'episode_consolidate',
+        'reflection', 'memory_maintenance', 'memory_operation', 'episode_consolidate',
         'episode_anneal'
     )),
     source_ids_json TEXT NOT NULL,
@@ -655,3 +655,20 @@ CREATE TABLE IF NOT EXISTS llm_usage (
     cache_reported INTEGER NOT NULL DEFAULT 0 CHECK (cache_reported IN (0, 1))
 );
 CREATE INDEX IF NOT EXISTS llm_usage_created ON llm_usage(created_at);
+
+CREATE TABLE IF NOT EXISTS memory_operation_batches (
+    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+    id TEXT NOT NULL UNIQUE REFERENCES turns(id),
+    state TEXT NOT NULL DEFAULT 'pending' CHECK(state IN ('pending','running','completed')),
+    operations_json TEXT NOT NULL,
+    context_json TEXT NOT NULL,
+    conversation_json TEXT NOT NULL,
+    events_json TEXT NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    retry_at REAL NOT NULL DEFAULT 0,
+    result_json TEXT,
+    error TEXT,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS memory_operation_pending ON memory_operation_batches(state,retry_at,created_at);

@@ -255,7 +255,7 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
                     daemon.store.pending_owner_reply = lambda: {"turn_id": "previous"}
                     recalled = {key: "" for key in ("recall_memories", "query_recall", "reflection_memories", "episodes")}
                     daemon.submit_owner_context = AsyncMock(return_value=recalled)
-                    daemon.prepare_heartbeat_context = AsyncMock(return_value={"context": recalled})
+                    daemon.prepare_heartbeat_context = AsyncMock(return_value={"context": recalled, "memory_snapshots": {}})
                     calls = []
                     if stage == "owner":
                         calls.append(ToolCall("recall", "recall", {}))

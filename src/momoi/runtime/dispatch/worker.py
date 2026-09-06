@@ -51,6 +51,8 @@ class AgentWorker:
                         work = self._complete_heartbeat_turn(stop, target_channel)
                     elif job.kind == "reflection":
                         work = self._complete_reflection_turn(job.id, stop)
+                    elif job.kind == "memory_operation":
+                        work = self._complete_memory_operation_turn(job.id, stop)
                     elif job.kind == "memory_maintenance":
                         work = self._complete_memory_maintenance_turn(job.id, stop)
                     else:
@@ -88,12 +90,12 @@ class AgentWorker:
                                 local_date=local_date,
                                 reason="owner_stop",
                             )
-                        elif job.kind == "memory_maintenance":
+                        elif job.kind in {"memory_maintenance", "memory_operation"}:
                             log_event(
                                 logger,
                                 logging.INFO,
                                 "turn_cancelled",
-                                stage="memory_maintenance",
+                                stage=job.kind,
                                 turn_id=job.id,
                                 reason="owner_stop",
                             )
@@ -108,6 +110,8 @@ class AgentWorker:
                                 reason="owner_stop",
                             )
                     finally:
+                        if job.kind == "memory_operation":
+                            self._queued_memory_operations.discard(job.id)
                         if job.kind == "memory_maintenance":
                             self._queued_memory_maintenance.discard(job.id)
                             if requeue_memory_maintenance and not stop.is_set():
@@ -239,6 +243,12 @@ class AgentWorker:
 
     def _next_autonomous(self) -> AutonomousJob:
         return self._prioritize_autonomous(self.autonomous.get_nowait())
+
+    def _enqueue_memory_operation(self, batch_id: str) -> None:
+        if batch_id in self._queued_memory_operations:
+            return
+        self._queued_memory_operations.add(batch_id)
+        self.autonomous.put_nowait(AutonomousJob.memory_operation(batch_id))
 
     def _enqueue_memory_maintenance(self, turn_id: str) -> None:
         if turn_id in self._queued_memory_maintenance:

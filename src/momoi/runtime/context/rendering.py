@@ -27,7 +27,7 @@ def _memory_lines(items: object) -> str:
     if not isinstance(items, list):
         return ""
     return "\n".join(
-        f"- [{item['kind']}:{item['key']}] {item['content']}"
+        f"- [memory_id={item['id']} {item['kind']}:{item['key']}] {item['content']}"
         for item in items
         if isinstance(item, dict)
         and item.get("kind") not in (None, "")

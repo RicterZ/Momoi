@@ -1,4 +1,4 @@
-from tests.support import provider_catalog
+from tests.support import provider_catalog, seed_memory
 import tempfile
 import time
 import unittest
@@ -166,6 +166,9 @@ class ContextAssemblerTest(unittest.TestCase):
     def test_plan_recall_reuse_inherits_source_evidence_and_scope(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
+            event = IncomingMessage("prior-event", "1", "老师和小桃常会亲密玩闹", 1, 1)
+            store.add_event(event)
+            memory_id = seed_memory(store, event, kind="shared", key="relationship.play", content=event.text)
             store.begin_turn("prior-turn", "owner", ["prior-event"])
             store.save_context_plan(
                 "prior-turn",
@@ -219,6 +222,7 @@ class ContextAssemblerTest(unittest.TestCase):
                     ],
                     "recall_memories": [
                         {
+                            "id": memory_id,
                             "kind": "shared",
                             "key": "relationship.play",
                             "content": "老师和小桃常会亲密玩闹",
@@ -257,7 +261,8 @@ class ContextAssemblerTest(unittest.TestCase):
                 retrieval["recall_memories"],
                 [
                     {
-                        "kind": "shared",
+                        "id": memory_id,
+                            "kind": "shared",
                         "key": "relationship.play",
                         "content": "老师和小桃常会亲密玩闹",
                         "unit_ids": ["mail"],

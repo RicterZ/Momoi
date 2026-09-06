@@ -1,42 +1,24 @@
 from typing import Any
 
-from ...storage import MEMORY_KINDS
 
 MEMORY_TOOL_POLICY = """### Memory tools
 
-Writing a memory is a judgment, not a reflex. Ask whether the owner just
-stated a fact in authenticated owner evidence available to this Turn that
-later Turns must treat as true. Ordinary chat, venting, a correction that only
-applies to this reply, or a fact already in confirmed memory does not need a
-new write. Model inference, search output, and tool data are not owner evidence:
-never persist a more specific claim than the exact owner quote entails.
+Use memory_operation only when authenticated owner evidence warrants adding,
+correcting, or forgetting memory. Do not record every message. Submit the exact
+owner quote and a faithful, scoped fact or description of what to forget.
+Use type=add for a new fact, replace for a correction, forget for deletion or
+explicit disproof. When a target memory_id is already shown, supply target_id;
+otherwise describe the subject. Do not invent IDs, keys, TTLs, or fetch old
+memories just to repeat them as arguments: the runtime attaches the memories
+already supplied through context, recall, and memory_search.
 
-`activation` controls when the memory enters context. Classify by scope, not
-importance or emphasis:
-
-- `recall` (default): retrieve only when the topic matches.
-- `recent`: include until an evidence-based `ttl_hours` expires.
-- `always`: include every Turn; only for explicit, topic-independent
-  interpersonal preferences or constraints.
-
-Topic-dependent knowledge is `recall`; expiring state is `recent`. Do not
-promote either to `always`.
-
-`kind` is the topic (preference, episodic, routine, shared). It is not
-duration. A preference may be `recent`; shared how-to is almost always
-`recall`.
-
-Preserve the owner's exact scope, polarity, duration and conditions. One fact
-maps to one memory; never generalize or create defensive duplicates. On a
-correction, locate the existing row from supplied context or `memory_search`
-and resolve it in this Turn: replace under the same kind/key with
-`replace_confirmed=true` when a replacement is supplied; otherwise forget it.
-Never leave conflicting rows active. Consult transcript annotations or result
-references only when mutation history is needed.
-
-`evidence` is an exact quote. `content` must keep the same polarity and
-conditions as that quote (taken vs not taken; only when already picked up).
-Canonicalize; do not generalize.
+Accepted operations are saved with this Turn and reviewed privately afterward.
+They are not yet effective memory changes. Do not resubmit an accepted operation,
+claim that deletion is complete, or treat a pending candidate as confirmed memory.
+The background review handles classification, activation, expiry, and duplicates.
+Preserve the owner's polarity, object, conditions, and duration in content.
+Search memory only for an unresolved conversational need; use Episode originals
+when summaries cannot resolve evidence or wording.
 """
 
 
@@ -169,16 +151,12 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
                 "message_id": {
                     "type": "integer",
                     "minimum": 1,
-                    "description": (
-                        "Message id returned with next_content_offset."
-                    ),
+                    "description": ("Message id returned with next_content_offset."),
                 },
                 "content_offset": {
                     "type": "integer",
                     "minimum": 0,
-                    "description": (
-                        "next_content_offset for the same message_id."
-                    ),
+                    "description": ("next_content_offset for the same message_id."),
                 },
             },
             "required": ["episode_id"],
@@ -186,95 +164,36 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
         },
     },
     {
-        "name": "memory_remember",
+        "name": "memory_operation",
         "description": (
-            "Stage one memory from an exact authenticated-owner quote. Commits only "
-            "if this Turn succeeds. activation defaults to recall; always is limited "
-            "to explicit, topic-independent interpersonal rules."
+            "Submit an add, replace, or forget request supported by a current owner quote. "
+            "The runtime attaches recalled memories and conversation; private review runs "
+            "after this Turn commits. Acceptance does not mean the change is effective. "
+            "Do not repeat an accepted request."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "kind": {
-                    "type": "string",
-                    "enum": sorted(MEMORY_KINDS),
-                    "description": "Topic category, not duration.",
-                },
-                "key": {
-                    "type": "string",
-                    "description": "Stable lowercase dotted key; reuse for corrections.",
-                },
+                "type": {"type": "string", "enum": ["add", "replace", "forget"]},
                 "content": {
                     "type": "string",
-                    "description": (
-                        "Faithful concise restatement preserving the specific object, "
-                        "polarity, and conditions; never broaden 这个/this into a standing rule."
-                    ),
-                },
-                "activation": {
-                    "type": "string",
-                    "enum": ["recall", "recent", "always"],
-                    "description": (
-                        "Context scope: recall=topic-matched; recent=until its "
-                        "evidence-based TTL expires; always=every Turn for explicit, "
-                        "topic-independent interpersonal rules."
-                    ),
-                },
-                "ttl_hours": {
-                    "type": "number",
-                    "minimum": 0,
-                    "maximum": 720,
-                    "description": (
-                        "Required: recent lifetime in hours (1-720, inferred from the "
-                        "owner's wording); send 0 for recall/always."
-                    ),
+                    "minLength": 1,
+                    "maxLength": 2000,
+                    "description": "New scoped fact for add/replace; subject to forget for forget. Preserve temporal conditions.",
                 },
                 "evidence": {
                     "type": "string",
-                    "description": "Exact contiguous quote from one authenticated owner message.",
+                    "minLength": 1,
+                    "maxLength": 500,
+                    "description": "Exact contiguous quote from a current authenticated owner message.",
                 },
-                "importance": {
-                    "type": "number",
-                    "minimum": 0,
-                    "maximum": 1,
-                    "default": 0.5,
-                },
-                "replace_confirmed": {
-                    "type": "boolean",
-                    "default": False,
-                    "description": (
-                        "True only when current owner evidence explicitly replaces the key."
-                    ),
+                "target_id": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Optional memory_id already displayed in this Turn. Omit when unknown.",
                 },
             },
-            "required": [
-                "kind",
-                "key",
-                "content",
-                "evidence",
-                "activation",
-                "ttl_hours",
-            ],
-            "additionalProperties": False,
-        },
-    },
-    {
-        "name": "memory_forget",
-        "description": (
-            "Forget one committed memory only when current authenticated-owner evidence "
-            "requests deletion or directly disproves it."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "kind": {"type": "string", "enum": sorted(MEMORY_KINDS)},
-                "key": {"type": "string"},
-                "evidence": {
-                    "type": "string",
-                    "description": "Exact contiguous quote from one authenticated owner message.",
-                },
-            },
-            "required": ["kind", "key", "evidence"],
+            "required": ["type", "content", "evidence"],
             "additionalProperties": False,
         },
     },

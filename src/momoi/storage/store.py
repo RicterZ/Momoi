@@ -6,7 +6,6 @@ from zoneinfo import ZoneInfo
 
 from ..context_time import context_timestamp
 from ..llm.accounting import UsageAccounting
-from ..policies import MemoryPolicy
 from ..search import (
     SearchBackend,
     StringSearchBackend,
@@ -20,6 +19,7 @@ from .episode_search import (
 )
 from .episode_annealing import EpisodeAnnealingStore
 from .episode_consolidation import EpisodeConsolidationStore
+from .memory_operations import MemoryOperationStore
 from .memory_mutations import MemoryMutationStore
 from .memory_inventory import MemoryInventoryStore
 from .memory_recall import MemoryRecallStore
@@ -94,6 +94,7 @@ class Store(
     MemoryInventoryStore,
     MemoryRecallStore,
     MemoryMutationStore,
+    MemoryOperationStore,
     WebhookStore,
     DeliveryStore,
     SemanticSpaceStore,
@@ -104,7 +105,6 @@ class Store(
         self,
         path: Path,
         workspace: Path | None = None,
-        memory_policy: MemoryPolicy = MemoryPolicy(),
         search_backend: SearchBackend | None = None,
         episode_search_backend: EpisodeSearchBackend | None = None,
         thinking: Path | None = None,
@@ -112,7 +112,6 @@ class Store(
     ) -> None:
         database = Path(path).expanduser().resolve()
         self._workspace = (workspace or database.parent).expanduser().resolve()
-        self._memory_policy = memory_policy
         self._search_backend = search_backend or StringSearchBackend()
         self._timezone = ZoneInfo(timezone)
         self._episode_query = EpisodeQueryService(

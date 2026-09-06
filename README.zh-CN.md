@@ -103,7 +103,7 @@ Momoi 的三层共同构成持续运行的系统：当前 Turn 通过连续性�
    并独立选择 Episode 归属。运行时执行相同的关键词与可选向量检索，返回有上限的证据。
 4. 同一个模型应用 Momoi 的 Soul 与 Style Card，按需使用工具，并通过渠道投递协议发送
    主人可见的气泡。
-5. Turn 把消息、记忆与 Goal 变更、情绪与活动、工具证据、投递状态和待处理追问一起提交
+5. Turn 把消息、记忆操作请求与 Goal 变更、情绪与活动、工具证据、投递状态和待处理追问一起提交
    为可恢复记录。
 
 Owner、Goal、Heartbeat 和 Webhook Turn 的权限与目的不同，但都位于同一条时间线上。
@@ -131,6 +131,37 @@ Confirmed memory 的 activation 决定事实放在哪里，而不是它有多重
 Episode 是一次具体经历，而不是一个永久分类。它用紧凑摘要维持宽泛连续性，同时保留
 原始 Turn 和消息证据，以便找回准确措辞、更正、决定和未完成承诺。复盘学习始终是独立
 的低权威层，不会被静默晋升为主人确认的事实。
+
+### 记忆写入与整理
+
+前台统一调用 `memory_operation(type, content, evidence, target_id?)`，其中 `type` 是
+`add`、`replace` 或 `forget`。`evidence` 必须是当前已认证主人消息中的原话；`target_id`
+仅可引用本轮已展示的记忆 ID，不知道时可以省略。例如：
+
+```json
+{"type":"replace","content":"主人现在更喜欢喝茶","evidence":"以后我更喜欢喝茶了"}
+```
+
+工具成功表示请求已接收；源 Turn 成功提交后，请求才进入持久化队列，尚未成为有效记忆。
+前台不嵌套调用 LLM，也不用重复输出旧记忆或为了维护再检索一次。运行时自动附带本轮
+注入、`recall` 和 `memory_search` 展示的记忆快照、相关对话和主人证据。没有记忆操作
+的对话不会触发这项后台工作。
+
+Dispatcher 使用同一 agent worker，按提交顺序串行执行 `memory_operation` Turn，
+不等待每日 `/tidy`。它复用标准 Turn 的 LLM、预算、工具循环和日志，采用独立系统提示词，
+只开放 `memory_operation_search` 和 `memory_operation_finish`。后台基于当前记录判断
+新增、替换/合并、删除、不变或证据不足；必要时查询其他 activation 的有效记忆。
+分类、activation 和绝对过期时间由后台决定，临时事实的期限按主人原话计算。
+
+`memory_operation_finish` 一次提交整批决定并结束 Turn；验证失败返回 tool error，模型
+可修正，数据库不会部分生效。`defer` 记录证据不足并结束本次审查，不自动重试相同证据。
+运行失败则保留队列，5 分钟后重试，后续记忆请求不能越过前项。每次尝试有独立 Turn ID。
+普通新消息等待正在执行的记忆 Turn 完成；`/stop`、停机取消或进程重启后可以恢复任务。
+提交前仍检查记忆快照，避免覆盖 Dashboard 等入口的并发编辑。
+
+`always` / `recent` 按记忆 ID 稳定排序、逐条完整注入第一个 user 消息，以复用缓存；
+不再压缩或按内容去重。业务 `recall` 的检索范围保持不变，`memory_search` 仍然保留。
+每日 `/tidy` 继续负责全局维护。
 
 ### 召回与可选语义检索
 

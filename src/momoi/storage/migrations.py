@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import re
 from collections.abc import Callable
 
 
@@ -39,9 +40,53 @@ def _add_turn_workflow_kind(database: sqlite3.Connection) -> None:
         )
 
 
+def _add_memory_operation_workflow(database: sqlite3.Connection) -> None:
+    sql = str(
+        database.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='turns'"
+        ).fetchone()[0]
+    )
+    if "'memory_operation'" in sql:
+        return
+    objects = [
+        row[0]
+        for row in database.execute(
+            "SELECT sql FROM sqlite_master WHERE tbl_name='turns' AND type IN ('index','trigger') AND sql IS NOT NULL"
+        )
+    ]
+    replacement = re.sub(
+        r'CREATE TABLE ["`\[]?turns["`\]]?', "CREATE TABLE turns_new", sql, count=1
+    )
+    replacement = replacement.replace(
+        "'memory_maintenance'", "'memory_maintenance', 'memory_operation'"
+    )
+    database.commit()
+    database.execute("PRAGMA foreign_keys=OFF")
+    try:
+        with database:
+            database.execute("BEGIN")
+            database.execute(replacement)
+            columns = ",".join(
+                '"' + str(row[1]) + '"'
+                for row in database.execute("PRAGMA table_info(turns)")
+            )
+            database.execute(
+                f"INSERT INTO turns_new ({columns}) SELECT {columns} FROM turns"
+            )
+            database.execute("DROP TABLE turns")
+            database.execute("ALTER TABLE turns_new RENAME TO turns")
+            for statement in objects:
+                database.execute(statement)
+            if database.execute("PRAGMA foreign_key_check").fetchone():
+                raise ValueError("foreign key violation after turns migration")
+    finally:
+        database.execute("PRAGMA foreign_keys=ON")
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     _add_runtime_archive_metadata,
     _add_turn_workflow_kind,
+    _add_memory_operation_workflow,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 

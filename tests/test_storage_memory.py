@@ -1,3 +1,4 @@
+from tests.support import seed_memory
 from tests.support import provider_catalog
 import json
 import sqlite3
@@ -1543,11 +1544,11 @@ class StorageMemoryTest(unittest.TestCase):
             "reminder_create", {item["name"] for item in AGENDA_TOOL_SPECS}
         )
         remember = next(
-            spec for spec in MEMORY_TOOL_SPECS if spec["name"] == "memory_remember"
+            spec for spec in MEMORY_TOOL_SPECS if spec["name"] == "memory_operation"
         )
         self.assertEqual(
-            remember["input_schema"]["properties"]["activation"]["enum"],
-            ["recall", "recent", "always"],
+            remember["input_schema"]["properties"]["type"]["enum"],
+            ["add", "replace", "forget"],
         )
 
     def test_context_plan_revisions_and_episode_turn_links_persist(self) -> None:
@@ -2434,7 +2435,7 @@ class StorageMemoryTest(unittest.TestCase):
             )
             store.close()
 
-    def test_heartbeat_commits_memory_mutations(self) -> None:
+    def test_heartbeat_commits_memory_operation_requests(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
             event = IncomingMessage(
@@ -2450,14 +2451,11 @@ class StorageMemoryTest(unittest.TestCase):
             memory = MemoryTools(store).execute(
                 ToolCall(
                     "remember",
-                    "memory_remember",
+                    "memory_operation",
                     {
-                        "kind": "shared",
-                        "key": "shared.weibo.session_check",
+                        "type": "add",
                         "content": "查微博登录状态时先检查 session",
                         "evidence": event.text,
-                        "activation": "recall",
-                        "ttl_hours": 0,
                     },
                 ),
                 [event],
@@ -2478,7 +2476,8 @@ class StorageMemoryTest(unittest.TestCase):
                 draft=draft,
                 memory_events=[event],
             )
-            self.assertTrue(store.has_memory("shared", "shared.weibo.session_check"))
+            self.assertFalse(store.has_memory("shared", "shared.weibo.session_check"))
+            self.assertEqual(store.pending_memory_operation(), "heartbeat-tools")
             store.close()
 
     def test_expected_reply_keeps_heartbeat_attention_until_owner_returns(self) -> None:
@@ -3588,422 +3587,9 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertEqual(store.due_outbox()[0].text, "处理完成")
             store.close()
 
-    def test_memory_survives_history_window_and_correction(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "momoi.sqlite3"
-            store = Store(path)
-            event = IncomingMessage(
-                "qq:1:memory-1",
-                "memory-1",
-                "以后卧室灯都用暖色，记住哦",
-                1.0,
-                1.0,
-            )
-            store.add_event(event)
-            draft = TurnDraft()
-            result = MemoryTools(store).execute(
-                ToolCall(
-                    "tool-1",
-                    "memory_remember",
-                    {
-                        "kind": "preference",
-                        "key": "home.bedroom.light_color",
-                        "content": "卧室灯默认使用暖色",
-                        "evidence": "卧室灯都用暖色",
-                        "importance": 0.9,
-                    },
-                ),
-                [event],
-                draft,
-            )
-            self.assertTrue(result["ok"])
-            store.commit_turn(
-                [event],
-                event.text,
-                AgentReply(["记住啦"]),
-                draft,
-            )
-            self.assertIn(
-                "卧室灯默认使用暖色",
-                str(store.search_memories("卧室灯", 6)),
-            )
-
-            correction = IncomingMessage(
-                "qq:1:memory-2",
-                "memory-2",
-                "改一下，以后卧室灯用冷色",
-                2.0,
-                2.0,
-            )
-            store.add_event(correction)
-            correction_draft = TurnDraft()
-            result = MemoryTools(store).execute(
-                ToolCall(
-                    "tool-2",
-                    "memory_remember",
-                    {
-                        "kind": "preference",
-                        "key": "home.bedroom.light_color",
-                        "content": "卧室灯默认使用冷色",
-                        "evidence": "卧室灯用冷色",
-                        "importance": 0.9,
-                        "replace_confirmed": True,
-                    },
-                ),
-                [correction],
-                correction_draft,
-            )
-            self.assertTrue(result["ok"])
-            store.commit_turn(
-                [correction],
-                correction.text,
-                AgentReply(["改成冷色了"]),
-                correction_draft,
-            )
-            recalled = str(store.search_memories("卧室灯", 6))
-            self.assertIn("卧室灯默认使用冷色", recalled)
-            self.assertNotIn("卧室灯默认使用暖色", recalled)
-
-            for index in range(30):
-                item = IncomingMessage(
-                    f"qq:1:{index + 10}",
-                    str(index + 10),
-                    f"第{index}轮",
-                    float(index + 10),
-                    float(index + 10),
-                )
-                store.add_event(item)
-                store.commit_turn([item], item.text, AgentReply([f"回复{index}"]))
-            self.assertGreater(
-                store._db.execute("SELECT COUNT(*) FROM messages").fetchone()[0],
-                60,
-            )
-            store.close()
-            store = Store(path)
-            self.assertIn(
-                "卧室灯默认使用冷色",
-                str(store.search_memories("卧室灯", 6)),
-            )
-            store.close()
-
-    def test_memory_overwrite_waits_for_owner_confirmation(self) -> None:
+    def test_memory_activation_layers_preserve_records_and_are_queryable(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
-            tools = MemoryTools(store)
-            original = IncomingMessage(
-                "qq:1:original", "original", "记住我喜欢暖色灯", 1, 1
-            )
-            store.add_event(original)
-            draft = TurnDraft()
-            tools.execute(
-                ToolCall(
-                    "remember-original",
-                    "memory_remember",
-                    {
-                        "kind": "preference",
-                        "key": "home.light.color",
-                        "content": "主人喜欢暖色灯",
-                        "evidence": "我喜欢暖色灯",
-                    },
-                ),
-                [original],
-                draft,
-            )
-            store.commit_turn([original], original.text, AgentReply(["记住了"]), draft)
-
-            uncertain = IncomingMessage(
-                "qq:1:uncertain", "uncertain", "也许我更喜欢冷色灯", 2, 2
-            )
-            store.add_event(uncertain)
-            conflict_draft = TurnDraft()
-            result = tools.execute(
-                ToolCall(
-                    "remember-uncertain",
-                    "memory_remember",
-                    {
-                        "kind": "preference",
-                        "key": "home.light.color",
-                        "content": "主人喜欢冷色灯",
-                        "evidence": "也许我更喜欢冷色灯",
-                    },
-                ),
-                [uncertain],
-                conflict_draft,
-            )
-            self.assertEqual(result["state"], "conflict_pending")
-            store.commit_turn(
-                [uncertain],
-                uncertain.text,
-                AgentReply(["你想改成冷色吗"]),
-                conflict_draft,
-            )
-            self.assertEqual(
-                store.active_memory("preference", "home.light.color")["content"],
-                "主人喜欢暖色灯",
-            )
-
-            confirmed = IncomingMessage(
-                "qq:1:confirmed", "confirmed", "对，改成冷色灯", 3, 3
-            )
-            store.add_event(confirmed)
-            confirmed_draft = TurnDraft()
-            result = tools.execute(
-                ToolCall(
-                    "remember-confirmed",
-                    "memory_remember",
-                    {
-                        "kind": "preference",
-                        "key": "home.light.color",
-                        "content": "主人喜欢冷色灯",
-                        "evidence": "改成冷色灯",
-                        "replace_confirmed": True,
-                    },
-                ),
-                [confirmed],
-                confirmed_draft,
-            )
-            self.assertEqual(result["state"], "staged")
-            store.commit_turn(
-                [confirmed], confirmed.text, AgentReply(["已经改好了"]), confirmed_draft
-            )
-            self.assertEqual(
-                store.active_memory("preference", "home.light.color")["content"],
-                "主人喜欢冷色灯",
-            )
-            store.close()
-
-    def test_repeated_identical_memory_updates_evidence_without_duplication(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            store = Store(Path(directory) / "momoi.sqlite3")
-            tools = MemoryTools(store)
-            for index, text in enumerate(
-                ["记住，我喜欢暖色灯", "再说一次，我喜欢暖色灯"], start=1
-            ):
-                event = IncomingMessage(
-                    f"qq:1:same-memory-{index}",
-                    f"same-memory-{index}",
-                    text,
-                    float(index),
-                    float(index),
-                )
-                store.add_event(event)
-                draft = TurnDraft()
-                result = tools.execute(
-                    ToolCall(
-                        f"remember-{index}",
-                        "memory_remember",
-                        {
-                            "kind": "preference",
-                            "key": "home.light.color",
-                            "content": "主人偏好暖色灯光",
-                            "evidence": "我喜欢暖色灯",
-                            "importance": 0.7 + index / 10,
-                        },
-                    ),
-                    [event],
-                    draft,
-                )
-                self.assertTrue(result["ok"])
-                store.commit_turn([event], text, AgentReply(["记住了"]), draft)
-
-            rows = store._db.execute(
-                "SELECT id, source_event_id, evidence_quote, importance FROM memories"
-            ).fetchall()
-            self.assertEqual(len(rows), 1)
-            self.assertEqual(rows[0]["source_event_id"], "qq:1:same-memory-2")
-            self.assertEqual(rows[0]["evidence_quote"], "我喜欢暖色灯")
-            self.assertAlmostEqual(rows[0]["importance"], 0.9)
-            self.assertEqual(
-                store._db.execute(
-                    "SELECT COUNT(*) FROM memory_evidence WHERE memory_id=?",
-                    (rows[0]["id"],),
-                ).fetchone()[0],
-                2,
-            )
-            store.close()
-
-    def test_memory_forget_requires_owner_evidence_and_can_be_relearned(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            store = Store(Path(directory) / "momoi.sqlite3")
-            tools = MemoryTools(store)
-            remembered = IncomingMessage(
-                "qq:1:remember-forget", "remember-forget", "记住我喜欢暖色", 1, 1
-            )
-            store.add_event(remembered)
-            draft = TurnDraft()
-            self.assertTrue(
-                tools.execute(
-                    ToolCall(
-                        "remember",
-                        "memory_remember",
-                        {
-                            "kind": "preference",
-                            "key": "light.color",
-                            "content": "主人喜欢暖色",
-                            "evidence": "我喜欢暖色",
-                        },
-                    ),
-                    [remembered],
-                    draft,
-                )["ok"]
-            )
-            store.commit_turn(
-                [remembered], remembered.text, AgentReply(["记住了"]), draft
-            )
-
-            uncertain = IncomingMessage(
-                "qq:1:forget-conflict", "forget-conflict", "也许我喜欢冷色", 1.5, 1.5
-            )
-            store.add_event(uncertain)
-            conflict_draft = TurnDraft()
-            self.assertEqual(
-                tools.execute(
-                    ToolCall(
-                        "remember-conflict",
-                        "memory_remember",
-                        {
-                            "kind": "preference",
-                            "key": "light.color",
-                            "content": "主人喜欢冷色",
-                            "evidence": "也许我喜欢冷色",
-                        },
-                    ),
-                    [uncertain],
-                    conflict_draft,
-                )["state"],
-                "conflict_pending",
-            )
-            store.commit_turn(
-                [uncertain], uncertain.text, AgentReply(["需要你确认"]), conflict_draft
-            )
-
-            forgotten = IncomingMessage(
-                "qq:1:forget", "forget", "忘掉灯光颜色偏好", 2, 2
-            )
-            store.add_event(forgotten)
-            invalid = tools.execute(
-                ToolCall(
-                    "forget-invalid",
-                    "memory_forget",
-                    {
-                        "kind": "preference",
-                        "key": "light.color",
-                        "evidence": "这段话并不存在",
-                    },
-                ),
-                [forgotten],
-                TurnDraft(),
-            )
-            self.assertEqual(invalid["error"], "evidence_not_in_current_input")
-
-            forget_draft = TurnDraft()
-            self.assertTrue(
-                tools.execute(
-                    ToolCall(
-                        "forget",
-                        "memory_forget",
-                        {
-                            "kind": "preference",
-                            "key": "light.color",
-                            "evidence": "忘掉灯光颜色偏好",
-                        },
-                    ),
-                    [forgotten],
-                    forget_draft,
-                )["ok"]
-            )
-            store.commit_turn(
-                [forgotten], forgotten.text, AgentReply(["已经忘掉了"]), forget_draft
-            )
-            self.assertEqual(store.search_memories("冷色", 6), [])
-            self.assertEqual(
-                store._db.execute("SELECT COUNT(*) FROM memories").fetchone()[0], 1
-            )
-
-            relearned = IncomingMessage(
-                "qq:1:relearn", "relearn", "重新记住我喜欢冷色", 3, 3
-            )
-            store.add_event(relearned)
-            relearn_draft = TurnDraft()
-            self.assertTrue(
-                tools.execute(
-                    ToolCall(
-                        "relearn",
-                        "memory_remember",
-                        {
-                            "kind": "preference",
-                            "key": "light.color",
-                            "content": "主人喜欢冷色",
-                            "evidence": "我喜欢冷色",
-                        },
-                    ),
-                    [relearned],
-                    relearn_draft,
-                )["ok"]
-            )
-            store.commit_turn(
-                [relearned], relearned.text, AgentReply(["重新记住了"]), relearn_draft
-            )
-            self.assertIn("主人喜欢冷色", str(store.search_memories("冷色", 6)))
-            store.close()
-
-    def test_memory_remember_validates_boundary_parameters(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            store = Store(Path(directory) / "momoi.sqlite3")
-            tools = MemoryTools(store)
-            evidence = "证" * 500
-            event = IncomingMessage("qq:1:bounds", "bounds", evidence, 1, 1)
-            valid = {
-                "kind": "preference",
-                "key": "k" * 200,
-                "content": "内" * 2000,
-                "evidence": evidence,
-                "importance": 2,
-            }
-            draft = TurnDraft()
-            accepted = tools.execute(
-                ToolCall("valid", "memory_remember", valid), [event], draft
-            )
-            self.assertTrue(accepted["ok"])
-            self.assertEqual(draft.memories[0].importance, 1.0)
-
-            invalid = [
-                ({**valid, "kind": "unknown"}, "invalid_kind"),
-                ({**valid, "key": "UPPER"}, "invalid_key"),
-                ({**valid, "key": "k" * 201}, "invalid_key"),
-                ({**valid, "content": ""}, "invalid_content"),
-                ({**valid, "content": "内" * 2001}, "invalid_content"),
-                (
-                    {**valid, "evidence": "不在当前消息里"},
-                    "evidence_not_in_current_input",
-                ),
-                ({**valid, "evidence": "证" * 501}, "evidence_not_in_current_input"),
-                ({**valid, "replace_confirmed": "yes"}, "invalid_replace_confirmed"),
-                (
-                    {**valid, "activation": "recent", "ttl_hours": 0},
-                    "invalid_ttl",
-                ),
-                (
-                    {**valid, "activation": "recent", "ttl_hours": 721},
-                    "invalid_ttl",
-                ),
-            ]
-            for index, (arguments, error) in enumerate(invalid):
-                result = tools.execute(
-                    ToolCall(f"invalid-{index}", "memory_remember", arguments),
-                    [event],
-                    TurnDraft(),
-                )
-                self.assertEqual(result["error"], error)
-                self.assertTrue(result["message"])
-            store.close()
-
-    def test_memory_activation_layers_are_compact_and_queryable(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            store = Store(Path(directory) / "momoi.sqlite3")
-            tools = MemoryTools(store)
             cases = [
                 (
                     "always",
@@ -4029,25 +3615,8 @@ class StorageMemoryTest(unittest.TestCase):
                     f"activation-{index}", f"activation-{index}", evidence, 1, 1
                 )
                 store.add_event(event)
-                draft = TurnDraft()
-                result = tools.execute(
-                    ToolCall(
-                        f"remember-{index}",
-                        "memory_remember",
-                        {
-                            "kind": "preference",
-                            "key": key,
-                            "content": content,
-                            "evidence": evidence,
-                            "activation": activation,
-                            "ttl_hours": 48 if activation == "recent" else 0,
-                        },
-                    ),
-                    [event],
-                    draft,
-                )
-                self.assertTrue(result["ok"])
-                store.commit_turn([event], event.text, AgentReply(["记住了"]), draft)
+                seed_memory(store, event, key=key, content=content, activation=activation,
+                            expires_at=time.time()+48*3600 if activation == "recent" else None)
 
             always = store.always_memory_context()
             recent = store.recent_memory_context()
@@ -4060,6 +3629,13 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertNotIn("波浪号", recalled)
             self.assertNotIn("恢复身体", recalled)
             self.assertEqual(always.count("波浪号"), 1)
+            for activation, rendered in (("always", always), ("recent", recent)):
+                row = store._db.execute(
+                    "SELECT * FROM memories WHERE activation=?", (activation,)
+                ).fetchone()
+                self.assertIn(f"memory_id={row['id']}", rendered)
+                self.assertIn(f"kind={row['kind']} key={row['key']}", rendered)
+                self.assertIn(f"activation={activation}", rendered)
             recent_row = store._db.execute(
                 "SELECT expires_at FROM memories WHERE key='current.recovery'"
             ).fetchone()
@@ -4070,33 +3646,50 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertIsNone(always_row["expires_at"])
             store.close()
 
+    def test_injected_memory_preserves_duplicates_whitespace_and_cached_prefix(self) -> None:
+        from momoi.runtime.turn_support import context_data_message
+
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            self.addCleanup(store.close)
+            content = "第一条规则  保留空格\n第二行\n\n最后一段"
+            now = time.time()
+            with store._db:
+                for activation in ("always", "recent"):
+                    for index in range(2):
+                        store._db.execute(
+                            """INSERT INTO memories
+                               (kind, key, content, activation, authority, source_event_id,
+                                evidence_quote, importance, created_at, updated_at, expires_at)
+                               VALUES ('preference', ?, ?, ?, 'owner', 'evidence', ?, ?, ?, ?, ?)""",
+                            (f"{activation}.rule.{index}", content, activation, content,
+                             index, now, now, now + 3600 if activation == "recent" else None),
+                        )
+
+            def prefix():
+                return context_data_message(
+                    ("long_term_memories", store.always_memory_context()),
+                    ("recent_memories", store.recent_memory_context()),
+                )
+
+            before = prefix()
+            self.assertEqual(before["role"], "user")
+            self.assertEqual(before["content"][0]["cache_control"], {"type": "ephemeral"})
+            text = before["content"][0]["text"]
+            self.assertEqual(text.count(content), 4)
+            for activation in ("always", "recent"):
+                self.assertLess(text.index(f"key={activation}.rule.0"), text.index(f"key={activation}.rule.1"))
+            store.add_event(IncomingMessage("later", "later", "无关的新消息", 1, 1))
+            self.assertEqual(prefix(), before)
+
     def test_recent_memory_drops_after_ttl(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
-            tools = MemoryTools(store)
             event = IncomingMessage("qq:ttl", "ttl", "现在窝在沙发上", 1, 1)
             store.add_event(event)
-            draft = TurnDraft()
-            result = tools.execute(
-                ToolCall(
-                    "remember-ttl",
-                    "memory_remember",
-                    {
-                        "kind": "episodic",
-                        "key": "current.sofa",
-                        "content": "小桃现在抱着靠枕窝在沙发上。",
-                        "evidence": "窝在沙发上",
-                        "activation": "recent",
-                        "ttl_hours": 2,
-                    },
-                ),
-                [event],
-                draft,
-            )
-            self.assertTrue(result["ok"])
-            self.assertEqual(result["memory"]["ttl_hours"], 2)
             before = time.time()
-            store.commit_turn([event], event.text, AgentReply(["记住了"]), draft)
+            seed_memory(store, event, key="current.sofa", content="小桃现在抱着靠枕窝在沙发上。",
+                        activation="recent", expires_at=time.time()+2*3600)
             expires_at = store._db.execute(
                 "SELECT expires_at FROM memories WHERE key='current.sofa'"
             ).fetchone()["expires_at"]

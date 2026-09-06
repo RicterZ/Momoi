@@ -179,8 +179,6 @@ class HeartbeatWorkflow:
             recent_topics.append(topic)
             topic_tokens += size
         goals = self.store.active_goals_context(authority="agent")
-        recent_memories = self.store.recent_memory_context()
-        long_term_memories = self.store.always_memory_context()
         conversation_rows = self._recent_conversation_rows()
         tool_activity = self.store.turn_activity(
             [str(row["turn_id"]) for row in conversation_rows]
@@ -231,9 +229,10 @@ class HeartbeatWorkflow:
             ),
         )
         system = self._system()
+        injected_memories = self.store.injected_memory_snapshots()
         context_message = _context_data_message(
-            ("long_term_memories", long_term_memories),
-            ("recent_memories", recent_memories),
+            ("long_term_memories", self.store._memory_context([row for row in injected_memories.values() if row["activation"] == "always"])),
+            ("recent_memories", self.store._memory_context([row for row in injected_memories.values() if row["activation"] == "recent"])),
             required=True,
         )
         assert context_message is not None
@@ -252,7 +251,7 @@ class HeartbeatWorkflow:
             },
         ]
         tools = self.tool_surface.conversation_specs()
-        draft = TurnDraft()
+        draft = TurnDraft(memory_context=injected_memories, memory_conversation=transcript_messages)
         memory_events = self.store.recent_owner_events(
             max(20, self.config.transcript_turns_max)
         )
@@ -324,8 +323,7 @@ class HeartbeatWorkflow:
             visible_messages=committed_messages,
             tools=_turn_tool_names(draft),
             tool_calls=len(draft.tool_calls),
-            memories=len(draft.memories),
-            forgotten_memories=len(draft.forgotten_memories),
+            memory_operations=len(draft.memory_operations),
             goals=len(draft.goals),
             next_minutes=decision["next_check_minutes"],
             llm=self.store.turn_usage(turn_id),

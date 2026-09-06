@@ -245,10 +245,7 @@ class HeartbeatCommitStore:
                 )
             else:
                 self._apply_goal_mutations(draft, now)
-                for memory in draft.memories if draft else []:
-                    self._remember(memory, memory_events or [], now)
-                for forgotten in draft.forgotten_memories if draft else []:
-                    self._forget_memory(forgotten, memory_events or [], now)
+                self._queue_memory_operations(turn_id, draft, memory_events or [], now)
                 activity_since = (
                     current["activity_since"]
                     if current["activity"] == activity

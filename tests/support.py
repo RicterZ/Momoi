@@ -131,3 +131,18 @@ bindings:
       api_key: key
       model: model
 """)
+
+
+def seed_memory(store, event, *, key, content, kind='preference', activation='recall', expires_at=None):
+    """Insert an effective memory fixture, independent of foreground request tools."""
+    import time
+    now = time.time()
+    with store._db:
+        cursor = store._db.execute(
+            """INSERT INTO memories(kind,key,content,activation,authority,source_event_id,
+               evidence_quote,created_at,updated_at,expires_at)
+               VALUES (?,?,?,?,'owner',?,?,?,?,?)""",
+            (kind,key,content,activation,event.event_id,event.text,now,now,expires_at),
+        )
+        store._add_memory_evidence(cursor.lastrowid,event.event_id,event.text,now)
+    return cursor.lastrowid

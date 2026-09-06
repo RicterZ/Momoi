@@ -2,6 +2,7 @@ from .episode import EpisodeAnnealingWorkflow, EpisodeConsolidationWorkflow
 from .goal import GoalWorkflow
 from .heartbeat import HeartbeatWorkflow
 from .memory_maintenance import MemoryMaintenanceWorkflow
+from .memory_operation import MemoryOperationWorkflow
 from .owner import OwnerWorkflow
 from .reflection import ReflectionWorkflow
 from .reply_followup import ReplyFollowupWorkflow
@@ -13,6 +14,7 @@ __all__ = [
     "GoalWorkflow",
     "HeartbeatWorkflow",
     "MemoryMaintenanceWorkflow",
+    "MemoryOperationWorkflow",
     "OwnerWorkflow",
     "ReflectionWorkflow",
     "ReplyFollowupWorkflow",

@@ -158,6 +158,10 @@ class Scheduler:
                 )
                 await self.autonomous.put(AutonomousJob.goal(str(goal["id"])))
                 continue
+            operation_id = self.store.pending_memory_operation()
+            if operation_id is not None and operation_id not in self._queued_memory_operations:
+                self._enqueue_memory_operation(operation_id)
+                continue
             reflection = self.store.claim_due_reflection(self.config.reflection)
             if reflection is not None:
                 log_event(
@@ -195,6 +199,7 @@ class Scheduler:
                 for due in (
                     self.store.next_notification_due_at(),
                     self.store.next_goal_due_at(),
+                    self.store.next_memory_operation_due_at(),
                     self.store.next_reflection_due_at(
                         self.config.reflection,
                     ),

@@ -126,7 +126,7 @@ class DaemonTest(unittest.TestCase):
 
         base = daemon._system()
         specialized = daemon._system_with_tool_policies(
-            base, [{"name": "send_bubbles"}, {"name": "memory_remember"}]
+            base, [{"name": "send_bubbles"}, {"name": "memory_operation"}]
         )
         owner = daemon._system_with_tool_policies(
             base,

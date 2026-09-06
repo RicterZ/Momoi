@@ -74,38 +74,24 @@ class MemoryInventoryStore:
                      SELECT 1 FROM memory_tombstones AS t
                      WHERE t.kind=m.kind AND t.key=m.key
                  )
-               ORDER BY m.importance DESC, m.updated_at DESC, m.id DESC""",
+               ORDER BY m.id""",
             (activation, now, recent_cutoff),
         ).fetchall()
 
     @staticmethod
-    def _compact_memory_context(
-        label: str, rows: list[sqlite3.Row]
-    ) -> str:
-        if not rows:
-            return ""
-        contents: list[str] = []
-        seen: set[str] = set()
-        for row in rows:
-            content = " ".join(str(row["content"]).split())
-            if not content or content in seen:
-                continue
-            seen.add(content)
-            contents.append(content)
-        if not contents:
-            return ""
-        return f"{label}：" + "；".join(contents)
+    def _memory_context(rows: list[sqlite3.Row]) -> str:
+        return "\n\n".join(
+            f"[memory_id={row['id']} kind={row['kind']} key={row['key']} "
+            f"activation={row['activation']}]\n{row['content']}"
+            for row in rows
+        )
 
     def always_memory_context(self) -> str:
-        return self._compact_memory_context(
-            "老师的长期记忆", self._memory_rows("always")
-        )
+        return self._memory_context(self._memory_rows("always"))
 
     def recent_memory_context(self) -> str:
         self.purge_expired_memories()
-        return self._compact_memory_context(
-            "老师近期需要保持的上下文", self._memory_rows("recent")
-        )
+        return self._memory_context(self._memory_rows("recent"))
 
     def has_memory(self, kind: str, key: str) -> bool:
         return (

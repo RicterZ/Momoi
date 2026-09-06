@@ -1,9 +1,5 @@
-import tempfile
 import unittest
-from pathlib import Path
 
-from momoi.tools.memory import MemoryTools
-from momoi.models import IncomingMessage, ToolCall, TurnDraft
 from momoi.policies import (
     ContextPolicy,
     DaemonPolicy,
@@ -12,8 +8,6 @@ from momoi.policies import (
 )
 from momoi.runtime.dispatch.delivery import message_gap_bounds
 from momoi.runtime.turn_support import MAX_CONSECUTIVE_TOOL_FAILURES
-from momoi.storage import Store
-from momoi.storage.memory_values import memory_expires_at
 
 
 class RuntimePolicyDefaultsTests(unittest.TestCase):
@@ -28,41 +22,35 @@ class RuntimePolicyDefaultsTests(unittest.TestCase):
         self.assertEqual(message_gap_bounds("中等长度" * 8), (5.0, 6.0))
         self.assertEqual(message_gap_bounds("长消息" * 30), (6.0, 7.0))
 
-    def test_default_memory_ttl_policy_is_applied(self):
-        now = 100.0
-        self.assertEqual(memory_expires_at("recent", 0, now), now + 3600)
-        self.assertEqual(memory_expires_at("recent", 999, now), now + 720 * 3600)
-
     def test_injected_memory_policy_is_used_end_to_end(self):
-        policy = MemoryPolicy(2, 12)
-        now = 100.0
-        self.assertEqual(
-            memory_expires_at("recent", 1, now, policy), now + 2 * 3600
-        )
-        self.assertEqual(
-            memory_expires_at("recent", 99, now, policy), now + 12 * 3600
-        )
-        with tempfile.TemporaryDirectory() as directory:
-            store = Store(Path(directory) / "momoi.sqlite3", memory_policy=policy)
-            tools = MemoryTools(store, policy)
-            result = tools.execute(
-                ToolCall(
-                    "call-1",
-                    "memory_remember",
-                    {
-                        "kind": "episodic",
-                        "key": "policy.test",
-                        "content": "这件事",
-                        "evidence": "记住这件事",
-                        "activation": "recent",
-                        "ttl_hours": 1,
-                    },
-                ),
-                [IncomingMessage("event-1", "owner", "记住这件事", 1, now)],
-                TurnDraft(),
+        policy = MemoryPolicy(recent_max_ttl_hours=12)
+        from momoi.runtime.workflows.memory_operation.parsing import parse_decisions
+        import time
+
+        operation = {"id": "op", "type": "add", "event_id": "event"}
+        decision = {
+            "operation_ids": ["op"],
+            "action": "write",
+            "reason": "temporary",
+            "target_ids": [],
+            "evidence": [{"event_id": "event", "quote": "临时"}],
+            "memory": {
+                "kind": "episodic",
+                "key": "temporary",
+                "content": "临时",
+                "activation": "recent",
+                "expires_at": time.time() + 24 * 3600,
+            },
+        }
+        with self.assertRaisesRegex(ValueError, "configured lifetime"):
+            parse_decisions(
+                {"decisions": [decision]},
+                [operation],
+                {},
+                {"event": "临时"},
+                policy.recent_max_ttl_hours,
             )
-            self.assertEqual(result["error"], "invalid_ttl")
-            store.close()
+
 
 if __name__ == "__main__":
     unittest.main()

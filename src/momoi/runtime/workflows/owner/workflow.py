@@ -275,9 +275,10 @@ class OwnerWorkflow:
         # Slow-changing material sits ahead of the transcript so it stays inside
         # the cached prefix; everything that moves with the Turn stays in the
         # tail, which is rebuilt anyway.
+        injected_memories = self.store.injected_memory_snapshots()
         context_message = _owner_context_message(
-            ("long_term_memories", recalled["long_term_memories"]),
-            ("recent_memories", recalled["recent_memories"]),
+            ("long_term_memories", self.store._memory_context([row for row in injected_memories.values() if row["activation"] == "always"])),
+            ("recent_memories", self.store._memory_context([row for row in injected_memories.values() if row["activation"] == "recent"])),
             ("goal_directory", recalled["goal_directory"]),
         )
         runtime_text = _pack_user_context(
@@ -317,7 +318,7 @@ class OwnerWorkflow:
                 groups=len(transcript.orphaned),
                 bubbles=sum(len(group.parts) for group in transcript.orphaned),
             )
-        draft = TurnDraft()
+        draft = TurnDraft(memory_context=injected_memories, memory_conversation=transcript_messages)
         tools = self.tool_surface.conversation_specs()
         reply = await self._run_tool_loop(
             system,
@@ -357,8 +358,7 @@ class OwnerWorkflow:
             visible_messages=len(reply.messages),
             tools=_turn_tool_names(draft),
             tool_calls=len(draft.tool_calls),
-            memories=len(draft.memories),
-            forgotten_memories=len(draft.forgotten_memories),
+            memory_operations=len(draft.memory_operations),
             goals=len(draft.goals),
             expects_reply=reply.expects_reply,
             schedule_reply_wait=reply.should_schedule_reply_wait,

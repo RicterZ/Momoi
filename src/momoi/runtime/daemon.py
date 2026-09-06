@@ -65,7 +65,6 @@ class MomoiDaemon(
         self.store = Store(
             config.database,
             config.workspace,
-            config.policies.memory,
             thinking=config.thinking,
             timezone=config.timezone,
         )
@@ -206,6 +205,7 @@ class MomoiDaemon(
         self._stop_requested = False
         self._manual_heartbeat_channel: str | None = None
         self._queued_memory_maintenance: set[str] = set()
+        self._queued_memory_operations: set[str] = set()
         self.webhooks = (
             WebhookService(
                 config.webhooks,
@@ -222,6 +222,7 @@ class MomoiDaemon(
     async def run(self, stop: asyncio.Event) -> None:
         if self.config.episode_annealing.enabled:
             self.episode_annealing_requested.set()
+        self.store.recover_memory_operations()
         for turn_id in self.store.recover_memory_maintenance_turns():
             self._enqueue_memory_maintenance(turn_id)
         for event in self.store.pending_events():

@@ -118,7 +118,7 @@ in-process snapshot performs vector search.
    retrieval and returns bounded evidence.
 4. The same model applies Momoi's Soul and Style Card, uses tools when needed,
    and sends owner-visible bubbles through the channel delivery protocol.
-5. The Turn commits messages, memory and Goal mutations, mood/activity state,
+5. The Turn commits messages, memory operation requests and Goal mutations, mood/activity state,
    tool evidence, delivery state, and any pending follow-up as one recoverable
    record.
 
@@ -151,6 +151,44 @@ compact account for broad continuity and retains the original Turn/message
 evidence for exact wording, corrections, decisions, and unfinished promises.
 Reflection learning remains a separate, lower-trust layer; it is not silently
 promoted into an owner-confirmed fact.
+
+### Writing and reviewing memory
+
+Foreground tools use `memory_operation(type, content, evidence, target_id?)` with
+`add`, `replace`, or `forget`. Evidence must quote an authenticated owner message;
+optional `target_id` must identify memory already shown in the Turn. For example:
+
+```json
+{"type":"replace","content":"The owner now prefers tea","evidence":"I prefer tea now"}
+```
+
+Acceptance records an intent, not an effective memory change. A successful source
+Turn commits requests into a durable queue; conversations without requests do not
+start this review. The runtime attaches injected and recalled memory snapshots,
+`memory_search` results, conversation context, and owner evidence. Foreground tools
+make no nested LLM call and require no repeated memory list or extra search.
+
+The dispatcher runs private `memory_operation` Turns on the shared agent worker,
+in submission order including retries, without waiting for daily maintenance.
+Each Turn uses the standard LLM, budget, journal, and tool loop with a dedicated
+system prompt. Only `memory_operation_search` and `memory_operation_finish` are
+available. Review decides writes, replacements/merges, forgetting, no change, or
+insufficient evidence; optional search can find active memories across activations.
+The reviewer assigns kind, activation, and absolute expiry from owner evidence.
+
+`memory_operation_finish` atomically applies the complete decision batch and ends
+the Turn. Invalid decisions return tool errors for correction without partial
+writes. `defer` completes review without a memory change or automatic retry of the
+same evidence. Execution failures retry after five minutes, blocking subsequent
+memory requests from overtaking them; each attempt has a separate Turn ID.
+Ordinary owner messages wait for an active review to finish. Explicit `/stop`,
+shutdown cancellation, and process restart preserve unfinished work for recovery.
+Snapshot checks still protect against concurrent Dashboard edits.
+
+`always` and `recent` records are injected individually, sorted by memory ID, in
+the first user message for cache stability, without compression or content deduplication.
+Business recall scope is unchanged, `memory_search` remains available, and `/tidy`
+continues to handle global maintenance.
 
 ### Recall and optional semantic search
 

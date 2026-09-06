@@ -22,7 +22,6 @@ class ContextPolicy:
 
 @dataclass(frozen=True)
 class MemoryPolicy:
-    recent_min_ttl_hours: float = 1.0
     recent_max_ttl_hours: float = 30 * 24
 
 

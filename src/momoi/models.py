@@ -34,25 +34,6 @@ class OutboxMessage:
 
 
 @dataclass(frozen=True)
-class MemoryCandidate:
-    kind: str
-    key: str
-    content: str
-    evidence: str
-    importance: float = 0.5
-    replace_confirmed: bool = False
-    activation: str = "recall"
-    ttl_hours: float = 0
-
-
-@dataclass(frozen=True)
-class MemoryForgetCandidate:
-    kind: str
-    key: str
-    evidence: str
-
-
-@dataclass(frozen=True)
 class AgentReply:
     messages: list[str | dict[str, Any]]
     mood_update: dict[str, Any] | None = None
@@ -111,8 +92,9 @@ class ProviderResponse:
 
 @dataclass
 class TurnDraft:
-    memories: list[MemoryCandidate] = field(default_factory=list)
-    forgotten_memories: list[MemoryForgetCandidate] = field(default_factory=list)
+    memory_operations: list[dict[str, Any]] = field(default_factory=list)
+    memory_context: dict[int, dict[str, Any]] = field(default_factory=dict)
+    memory_conversation: list[dict[str, Any]] = field(default_factory=list)
     goals: dict[str, GoalMutation] = field(default_factory=dict)
     notification_messages: list[str | dict[str, Any]] | None = None
     notification_key: str = ""

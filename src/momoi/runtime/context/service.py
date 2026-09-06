@@ -300,6 +300,9 @@ class ContextService:
         )
         return {
             "plan": plan,
+            "memory_snapshots": self.store.memory_snapshots([
+                item["id"] for item in retrieval["recall_memories"]
+            ]),
             "context": assemble_main_context(
                 self.store,
                 retrieval,

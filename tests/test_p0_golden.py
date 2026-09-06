@@ -21,10 +21,9 @@ class P0GoldenTests(unittest.TestCase):
                 MemoryTools(store).execute(
                     ToolCall(
                         "memory-1",
-                        "memory_remember",
+                        "memory_operation",
                         {
-                            "kind": "preference",
-                            "key": "drink.oolong",
+                            "type": "add",
                             "content": "喜欢乌龙茶",
                             "evidence": "喜欢乌龙茶",
                         },
@@ -61,12 +60,10 @@ class P0GoldenTests(unittest.TestCase):
             store.record_turn_usage("turn-1", 12, 3)
             outbox = store.due_outbox()[0]
             goal = store.list_goals()[0]
-            memory = dict(
-                store._db.execute(
-                    """SELECT kind, key, content, activation FROM memories
-                       WHERE kind='preference' AND key='drink.oolong'"""
-                ).fetchone()
-            )
+            self.assertEqual(store.list_memories(), [])
+            operation = store._db.execute("SELECT state,operations_json FROM memory_operation_batches WHERE id='turn-1'").fetchone()
+            import json
+            memory = {"state": operation["state"], "content": json.loads(operation["operations_json"])[0]["content"]}
             snapshot = {
                 "outbox": {
                     "turn_id": outbox.turn_id,
@@ -97,10 +94,8 @@ class P0GoldenTests(unittest.TestCase):
                         "channel": "test",
                     },
                     "memory": {
-                        "kind": "preference",
-                        "key": "drink.oolong",
+                        "state": "pending",
                         "content": "喜欢乌龙茶",
-                        "activation": "recall",
                     },
                     "goal": {
                         "title": "提醒买乌龙茶",

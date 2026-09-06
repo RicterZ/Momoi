@@ -55,7 +55,7 @@ AGENDA_POLICY_TOOLS = frozenset(
         "goal_cancel",
     }
 )
-MEMORY_POLICY_TOOLS = frozenset({"memory_remember", "memory_forget"})
+MEMORY_POLICY_TOOLS = frozenset({"memory_operation"})
 THINKING_POLICY_TOOLS = frozenset({"thinking_search", "thinking_read"})
 
 

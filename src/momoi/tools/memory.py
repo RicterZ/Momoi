@@ -1,23 +1,17 @@
 import json
 import logging
-import re
 from typing import Any
 
 from .time_range import parse_history_time_range
 from ..observability.events import log_event
 from ..models import (
     IncomingMessage,
-    MemoryCandidate,
-    MemoryForgetCandidate,
     ToolCall,
     TurnDraft,
 )
 from ..policies import MemoryPolicy
 from ..search import SearchBackend, search_expression
 from ..storage import (
-    ALWAYS_MEMORY_KINDS,
-    MEMORY_ACTIVATIONS,
-    MEMORY_KINDS,
     Store,
     MemoryRecallQuery,
     truncate_tokens,
@@ -108,21 +102,8 @@ _MEMORY_ERROR_MESSAGES = {
         "time_range must be recent with optional days, range with from/to, or all."
     ),
     "invalid_search_cursor": "cursor must be a non-negative integer.",
-    "invalid_kind": (
-        "kind must be a memory category such as episodic, preference, or routine; "
-        "use activation for always, recent, or recall."
-    ),
-    "invalid_activation": "activation must be always, recent, or recall.",
-    "invalid_key": "key must be a lowercase stable identifier using dots or hyphens.",
     "invalid_content": "content must contain between 1 and 2000 characters.",
-    "evidence_not_in_current_input": (
-        "evidence must be one exact contiguous quote from authenticated owner "
-        "evidence available to this Turn."
-    ),
-    "invalid_replace_confirmed": "replace_confirmed must be a boolean.",
-    "invalid_ttl": "ttl_hours must be within the allowed range for recent memory.",
-    "always_memory_kind": "always memory is limited to profile, preference, or relationship.",
-    "memory_not_found": "The requested committed or staged memory was not found.",
+    "evidence_not_in_current_input": "evidence must be an exact quote from a current authenticated owner message.",
 }
 
 
@@ -218,10 +199,8 @@ class MemoryTools:
                 return self._episode_search(call.arguments)
             if call.name == "episode_read":
                 return self._episode_read(call.arguments)
-            if call.name == "memory_remember":
-                return self._remember(call.arguments, current_events, draft)
-            if call.name == "memory_forget":
-                return self._forget(call.arguments, current_events, draft)
+            if call.name == "memory_operation":
+                return self._operation(call, current_events, draft)
             return _memory_error("tool_not_allowed")
         except Exception as error:
             log_event(
@@ -260,31 +239,13 @@ class MemoryTools:
                 [MemoryRecallQuery(query)], limit, dense_evidence=dense_evidence
             )
 
-        committed_keys = {(str(item["kind"]), str(item["key"])) for item in results}
-        for index, memory in enumerate(draft.memories):
-            if len(results) >= limit:
-                break
-            key = (memory.kind, memory.key)
-            if key in committed_keys:
-                continue
-            if (
-                search_expression(
-                    query,
-                    (memory.key, memory.content),
-                    self.store.search_backend,
-                )
-                is not None
-            ):
-                results.append(
-                    {
-                        "id": f"draft:{index}",
-                        "kind": memory.kind,
-                        "key": memory.key,
-                        "content": memory.content,
-                        "authority": "owner",
-                        "state": "staged",
-                    }
-                )
+        ids = [
+            int(item["id"])
+            for item in results
+            if isinstance(item.get("id"), int)
+            and item.get("source", "confirmed") == "confirmed"
+        ]
+        draft.memory_context.update(self.store.memory_snapshots(ids))
         return {"ok": True, "count": len(results), "results": results}
 
     def _episode_search(
@@ -435,137 +396,55 @@ class MemoryTools:
             "episode": episode,
         }
 
-    def _remember(
+    def _operation(
         self,
-        arguments: dict[str, Any],
+        call: ToolCall,
         current_events: list[IncomingMessage],
         draft: TurnDraft,
     ) -> dict[str, Any]:
-        kind = str(arguments.get("kind") or "").strip()
-        key = str(arguments.get("key") or "").strip()
-        content = str(arguments.get("content") or "").strip()
-        evidence = str(arguments.get("evidence") or "").strip()
-        activation = str(arguments.get("activation") or "recall").strip()
-        if kind not in MEMORY_KINDS:
-            return _memory_error("invalid_kind")
-        if activation not in MEMORY_ACTIVATIONS:
-            return _memory_error("invalid_activation")
-        if activation == "always" and kind not in ALWAYS_MEMORY_KINDS:
-            return _memory_error("always_memory_kind")
-        if not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,199}", key):
-            return _memory_error("invalid_key")
-        if not content or len(content) > 2000:
-            return _memory_error("invalid_content")
+        args = call.arguments
+        if set(args) - {"type", "content", "evidence", "target_id"}:
+            return {"ok": False, "error": "invalid_memory_operation_fields"}
         if (
-            not evidence
-            or len(evidence) > 500
-            or not any(evidence in event.text for event in current_events)
+            not call.id
+            or not isinstance(args.get("type"), str)
+            or args["type"] not in {"add", "replace", "forget"}
         ):
+            return {"ok": False, "error": "invalid_memory_operation"}
+        content, evidence = args.get("content"), args.get("evidence")
+        if not isinstance(content, str) or not content.strip() or len(content) > 2000:
+            return _memory_error("invalid_content")
+        if not isinstance(evidence, str) or not evidence.strip() or len(evidence) > 500:
             return _memory_error("evidence_not_in_current_input")
-        try:
-            importance = min(1.0, max(0.0, float(arguments.get("importance", 0.5))))
-        except (TypeError, ValueError):
-            importance = 0.5
-        replace_confirmed = arguments.get("replace_confirmed", False)
-        if not isinstance(replace_confirmed, bool):
-            return _memory_error("invalid_replace_confirmed")
-        raw_ttl = arguments.get("ttl_hours", 0)
-        if isinstance(raw_ttl, bool) or not isinstance(raw_ttl, (int, float)):
-            return _memory_error("invalid_ttl")
-        if activation == "recent":
-            if not (
-                self.policy.recent_min_ttl_hours
-                <= float(raw_ttl)
-                <= self.policy.recent_max_ttl_hours
-            ):
-                return _memory_error("invalid_ttl")
-            ttl_hours = float(raw_ttl)
-        else:
-            ttl_hours = 0
-
-        existing = self.store.active_memory(kind, key)
-        if existing and existing["content"] != content and not replace_confirmed:
-            draft.memories = [
-                memory
-                for memory in draft.memories
-                if (memory.kind, memory.key) != (kind, key)
-            ]
-            return {
-                "ok": True,
-                "state": "conflict_pending",
-                "existing": {
-                    "kind": kind,
-                    "key": key,
-                    "content": existing["content"],
-                },
-                "candidate": {"content": content},
-            }
-
-        candidate = MemoryCandidate(
-            kind,
-            key,
-            content,
-            evidence,
-            importance,
-            replace_confirmed,
-            activation,
-            ttl_hours,
+        event = next(
+            (event for event in reversed(current_events) if evidence in event.text),
+            None,
         )
-        draft.memories = [
-            memory
-            for memory in draft.memories
-            if (memory.kind, memory.key) != (kind, key)
-        ]
-        draft.memories.append(candidate)
-        draft.forgotten_memories = [
-            forgotten
-            for forgotten in draft.forgotten_memories
-            if (forgotten.kind, forgotten.key) != (kind, key)
-        ]
+        if event is None:
+            return _memory_error("evidence_not_in_current_input")
+        target_id = args.get("target_id")
+        if "target_id" in args and (
+            type(target_id) is not int or target_id not in draft.memory_context
+        ):
+            return {"ok": False, "error": "target_memory_not_in_context"}
+        operation = {
+            "id": call.id,
+            "type": args["type"],
+            "content": content.strip(),
+            "evidence": evidence,
+            "event_id": event.event_id,
+            **({"target_id": target_id} if target_id is not None else {}),
+        }
+        previous = next(
+            (item for item in draft.memory_operations if item["id"] == call.id), None
+        )
+        if previous is not None and previous != operation:
+            return {"ok": False, "error": "tool_call_id_conflict"}
+        if previous is None:
+            draft.memory_operations.append(operation)
         return {
             "ok": True,
-            "state": "staged",
-            "memory": {
-                "kind": kind,
-                "key": key,
-                "content": content,
-                "activation": activation,
-                "ttl_hours": ttl_hours,
-            },
+            "state": "accepted",
+            "operation_id": call.id,
+            "message": "Request accepted for private review after this Turn commits. Do not resubmit; the memory change is not effective yet.",
         }
-
-    def _forget(
-        self,
-        arguments: dict[str, Any],
-        current_events: list[IncomingMessage],
-        draft: TurnDraft,
-    ) -> dict[str, Any]:
-        kind = str(arguments.get("kind") or "").strip()
-        key = str(arguments.get("key") or "").strip()
-        evidence = str(arguments.get("evidence") or "").strip()
-        if kind not in MEMORY_KINDS:
-            return _memory_error("invalid_kind")
-        if not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,199}", key):
-            return _memory_error("invalid_key")
-        if (
-            not evidence
-            or len(evidence) > 500
-            or not any(evidence in event.text for event in current_events)
-        ):
-            return _memory_error("evidence_not_in_current_input")
-        if not self.store.has_memory(kind, key) and not any(
-            (memory.kind, memory.key) == (kind, key) for memory in draft.memories
-        ):
-            return _memory_error("memory_not_found")
-        draft.memories = [
-            memory
-            for memory in draft.memories
-            if (memory.kind, memory.key) != (kind, key)
-        ]
-        draft.forgotten_memories = [
-            forgotten
-            for forgotten in draft.forgotten_memories
-            if (forgotten.kind, forgotten.key) != (kind, key)
-        ]
-        draft.forgotten_memories.append(MemoryForgetCandidate(kind, key, evidence))
-        return {"ok": True, "state": "staged", "memory": {"kind": kind, "key": key}}
