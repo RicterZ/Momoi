@@ -296,6 +296,20 @@ class AgentLoop:
             )
             if harness_error is not None:
                 failed_tool_rounds += 1
+                log_event(
+                    logger,
+                    logging.DEBUG,
+                    "llm_protocol_rejected",
+                    stage=stage,
+                    turn_id=turn_id,
+                    call_id=call_id,
+                    round=llm_round,
+                    channel=delivery_channel.name,
+                    reason=harness_error,
+                    tool_names=[call.name for call in response.tool_calls],
+                    consecutive_failures=failed_tool_rounds,
+                    failure_limit=MAX_CONSECUTIVE_TOOL_FAILURES,
+                )
                 if failed_tool_rounds >= MAX_CONSECUTIVE_TOOL_FAILURES:
                     error_type = (
                         WorkflowProtocolError

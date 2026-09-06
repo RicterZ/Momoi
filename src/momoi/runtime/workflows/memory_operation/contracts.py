@@ -98,7 +98,18 @@ MEMORY_OPERATION_SEARCH_SPEC = {
     "input_schema": {
         "type": "object",
         "properties": {
-            "query": {"type": "string", "minLength": 1, "maxLength": 240},
+            "query": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 240,
+                "description": (
+                    "A concise literal subject or alternative phrases separated by |, "
+                    "for example 面试|interview or OAuth2|cloud sandbox. Each alternative "
+                    "is matched as a whole phrase by keyword search; spaces within a "
+                    "phrase are preserved, not keyword separators. Do not concatenate "
+                    "unrelated terms and dates into one query phrase."
+                ),
+            },
         },
         "required": ["query"],
         "additionalProperties": False,

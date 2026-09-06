@@ -463,7 +463,7 @@ def test_optional_private_search_can_resolve_missing_target(daemon):
         count += 1
         if count == 1:
             return response(
-                ToolCall("search", "memory_operation_search", {"query": "喝茶"})
+                ToolCall("search", "memory_operation_search", {"query": "tea|喝茶"})
             )
         assert "喝茶" in json.dumps(messages, ensure_ascii=False)
         return response(
@@ -478,6 +478,60 @@ def test_optional_private_search_can_resolve_missing_target(daemon):
     asyncio.run(daemon._complete_memory_operation_turn("source", asyncio.Event()))
     assert count == 2
     assert not daemon.store.memory_snapshots([target])
+
+
+@pytest.mark.parametrize("rejected_rounds", [1, 3])
+def test_assistant_text_rejection_is_logged_before_retry_or_abort(
+    daemon, caplog, rejected_rounds
+):
+    source = event(daemon.store)
+    submit(daemon.store, source)
+    count = 0
+
+    async def complete(*args, **kwargs):
+        nonlocal count
+        count += 1
+        assert not daemon.store.active_memory("preference", "drink")
+        result = response(
+            ToolCall(
+                f"finish-{count}",
+                "memory_operation_finish",
+                {"decisions": [write(source)]},
+            )
+        )
+        if count <= rejected_rounds:
+            result.content.insert(0, {"type": "text", "text": "I'll apply this change."})
+        return result
+
+    daemon.provider = type("Provider", (), {"complete": staticmethod(complete)})()
+    with caplog.at_level("DEBUG", logger="momoi.runtime.turns"):
+        asyncio.run(daemon._complete_memory_operation_turn("source", asyncio.Event()))
+
+    rejections = [
+        record.momoi_fields
+        for record in caplog.records
+        if getattr(record, "momoi_event", "") == "llm_protocol_rejected"
+    ]
+    assert len(rejections) == rejected_rounds
+    for index, fields in enumerate(rejections, start=1):
+        assert fields["reason"] == "assistant_text_forbidden"
+        assert fields["stage"] == "memory_operation"
+        assert fields["turn_id"] == "memory-operation:source:1"
+        assert fields["call_id"]
+        assert fields["round"] == index
+        assert fields["consecutive_failures"] == index
+        assert fields["failure_limit"] == 3
+        assert fields["tool_names"] == ["memory_operation_finish"]
+    batch = daemon.store._db.execute("SELECT * FROM memory_operation_batches").fetchone()
+    if rejected_rounds == 1:
+        assert count == 2
+        assert batch["state"] == "completed"
+        assert daemon.store.active_memory("preference", "drink")
+    else:
+        assert count == 3
+        assert batch["state"] == "pending"
+        assert batch["error"] == "assistant_text_forbidden"
+        assert not daemon.store.active_memory("preference", "drink")
 
 
 def test_new_owner_input_waits_for_running_review(daemon):
