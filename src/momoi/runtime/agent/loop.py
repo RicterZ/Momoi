@@ -13,6 +13,7 @@ from . import (
     TurnHarness,
     WorkflowProtocolError,
 )
+from ..parsing import response_text
 from .protocol import (
     handle_no_tool_response,
     parse_end_turn,
@@ -330,6 +331,21 @@ class AgentLoop:
                 )
                 continue
             harness.observe_calls(response.tool_calls)
+            assistant_text = response_text(response.content)
+            log_event(
+                logger,
+                logging.DEBUG,
+                "tool_call_context",
+                stage=stage,
+                turn_id=turn_id,
+                call_id=call_id,
+                round=llm_round,
+                channel=delivery_channel.name,
+                tool_names=[call.name for call in response.tool_calls],
+                tool_call_ids=[call.id for call in response.tool_calls],
+                has_assistant_text=bool(assistant_text),
+                assistant_text=assistant_text,
+            )
             if (
                 require_response
                 and len(response.tool_calls) == 1

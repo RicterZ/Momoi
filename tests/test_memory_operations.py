@@ -759,7 +759,8 @@ def test_owner_recall_snapshot_reaches_private_queue(daemon):
     assert count == 3
 
 
-def test_assistant_text_can_accompany_private_finish(daemon):
+@pytest.mark.parametrize("commentary", ["", "I will apply this decision.", "进展\n" * 600])
+def test_assistant_text_can_accompany_private_finish(daemon, caplog, commentary):
     source = event(daemon.store)
     submit(daemon.store, source)
     calls = 0
@@ -768,14 +769,35 @@ def test_assistant_text_can_accompany_private_finish(daemon):
         nonlocal calls
         calls += 1
         result = response(ToolCall('finish', 'memory_operation_finish', {'decisions': [write(source)]}))
-        result.content.insert(0, {'type': 'text', 'text': 'I will apply this decision.'})
+        result.content.insert(0, {'type': 'text', 'text': commentary})
+        result.content.insert(0, {'type': 'thinking', 'thinking': 'private reasoning sentinel'})
         return result
 
     daemon.provider = type('Provider', (), {'complete': staticmethod(complete)})()
-    asyncio.run(daemon._complete_memory_operation_turn('source', asyncio.Event()))
+    with caplog.at_level('DEBUG', logger='momoi.runtime.turns'):
+        asyncio.run(daemon._complete_memory_operation_turn('source', asyncio.Event()))
     assert calls == 1
     assert daemon.store.active_memory('preference', 'drink')
     assert not daemon.store.due_outbox()
+
+
+    contexts = [record for record in caplog.records
+                if getattr(record, 'momoi_event', '') == 'tool_call_context']
+    assert len(contexts) == 1
+    fields = contexts[0].momoi_fields
+    assert fields['assistant_text'] == commentary.strip()
+    assert fields['has_assistant_text'] == bool(commentary)
+    assert fields['tool_names'] == ['memory_operation_finish']
+    assert fields['tool_call_ids'] == ['finish']
+    assert fields['stage'] == 'memory_operation'
+    assert fields['round'] == 1
+    assert fields['call_id']
+    from momoi.observability.formatting import KeyValueFormatter
+    from zoneinfo import ZoneInfo
+    rendered = KeyValueFormatter(ZoneInfo('UTC')).format(contexts[0])
+    assert 'assistant_text=' + json.dumps(commentary.strip(), ensure_ascii=False) in rendered
+    assert 'private reasoning sentinel' not in rendered
+    assert '\n' not in rendered
 
 
 def test_owner_assistant_text_never_becomes_a_delivered_bubble(daemon):

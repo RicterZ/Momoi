@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 from datetime import datetime
@@ -54,6 +55,7 @@ _EVENT_GROUPS = {
     "llm_retry": "MODEL",
     "llm_failure": "MODEL",
     "tool_start": "TOOL",
+    "tool_call_context": "TOOL",
     "tool_end": "TOOL",
     "turn_complete": "TURN",
     "turn_failure": "TURN",
@@ -148,7 +150,14 @@ class KeyValueFormatter(logging.Formatter):
         ordered = [key for key in _PREFERRED_FIELDS if key in fields] + sorted(
             key for key in fields if key not in _PREFERRED_FIELDS
         )
-        rendered = " ".join(f"{key}={format_log_value(fields[key])}" for key in ordered)
+        rendered = " ".join(
+            f"{key}=" + (
+                json.dumps(fields[key], ensure_ascii=False)
+                if event == "tool_call_context" and key == "assistant_text"
+                else format_log_value(fields[key])
+            )
+            for key in ordered
+        )
         group = _EVENT_GROUPS.get(event, record.name.rsplit(".", 1)[-1].upper())
         prefix = f"{timestamp} {level} {group:<9} event={event}"
         return self._colorize(record, f"{prefix} {rendered}".rstrip())
