@@ -273,7 +273,7 @@ END_TURN_TOOL_SPEC: dict[str, Any] = {
             {
                 "required": ["goal"],
                 "properties": {
-                    "goal": GOAL_REVIEW_SCHEMA,
+                    "goal": {"type": "object"},
                     "reply_wait": False,
                     "mood": False,
                     "activity": False,
@@ -288,8 +288,9 @@ END_TURN_TOOL_SPEC: dict[str, Any] = {
 SEND_BUBBLES_TOOL_SPEC: dict[str, Any] = {
     "name": "send_bubbles",
     "description": (
-        "Only way to send owner-visible content. Call with the exact bubbles; "
-        "assistant text is not delivered. After all work, call the current workflow's "
+        "Send owner-visible messages with the exact bubbles; use send_voice for speech "
+        "when available. Starts delivery immediately, independently of end_turn. "
+        "Assistant text is not delivered. After all work, call the current workflow's "
         "terminal tool alone. Text may accompany images; files, video, audio, and "
         "records must stand alone."
     ),

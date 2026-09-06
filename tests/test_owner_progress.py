@@ -60,7 +60,9 @@ class OwnerProgressPolicyTest(unittest.TestCase):
         )
         text_description = bubbles["items"]["oneOf"][0]["description"]
         self.assertIn("Assistant text is not delivered", text_description)
-        self.assertIn("Only way to send owner-visible content", spec["description"])
+        self.assertIn("Send owner-visible messages", spec["description"])
+        self.assertIn("send_voice", spec["description"])
+        self.assertEqual(set(spec["input_schema"]["properties"]), {"bubbles", "channel"})
 
     def test_public_schema_keeps_native_message_argument(self) -> None:
         spec = {

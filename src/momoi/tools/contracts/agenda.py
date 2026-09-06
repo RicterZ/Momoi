@@ -8,7 +8,8 @@ AGENDA_TOOL_POLICY = """### Agenda tools
 - A recurring goal may use an interval or daily `schedule`. Daily times use the
   application's single configured timezone. The runtime computes each next
   review while the Goal remains open.
-- `goal_update` keeps a Goal open with its latest state. `goal_finish` closes it as
+- Outside a due Goal review, `goal_update` keeps a Goal open with its latest state.
+  `goal_finish` closes it as
   successfully completed when its success criteria are satisfied. `goal_cancel`
   closes it without claiming success when it should no longer be pursued.
 - During a due Goal review, submit its outcome once using `end_turn.goal`; do not
@@ -17,10 +18,11 @@ AGENDA_TOOL_POLICY = """### Agenda tools
   notification. Use `next_review_at` once or a recurring `schedule`; describe the
   intended notification in its success criteria and next action. At review time,
   use current context and `send_bubbles`, then call `end_turn` with goal.status
-  set to done for a completed one-time Goal or active to keep a recurring one. Never use `sleep` to cross Turns.
+  set to done for a completed one-time Goal or active to keep a recurring one.
+  Never use `sleep` to cross Turns.
 - During autonomous Goal review, `send_bubbles` is available only for a useful
-  result, a needed decision, or a meaningful failure; otherwise finish the
-  autonomous Turn silently. Use separate short `bubbles` when the notification
+  result, a needed decision, or a meaningful failure; otherwise call end_turn
+  without sending a message. Use separate short `bubbles` when the notification
   has distinct parts; use a single item when it is one thought. Treat each item
   as an owner-visible private-chat bubble governed
   by the shared Style Card and system bubble rules.
@@ -92,7 +94,10 @@ AGENDA_TOOL_SPECS: list[dict[str, Any]] = [
     },
     {
         "name": "goal_update",
-        "description": "Update an existing active, waiting, or blocked goal.",
+        "description": (
+            "Update an existing active, waiting, or blocked goal outside a Goal review. "
+            "During a Goal review, use end_turn.goal instead."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -121,7 +126,8 @@ AGENDA_TOOL_SPECS: list[dict[str, Any]] = [
     {
         "name": "goal_finish",
         "description": (
-            "Close a goal successfully only when all success criteria are achieved."
+            "Close a goal successfully only when all success criteria are achieved. "
+            "During a Goal review, use end_turn.goal with status done instead."
         ),
         "input_schema": {
             "type": "object",
@@ -134,7 +140,8 @@ AGENDA_TOOL_SPECS: list[dict[str, Any]] = [
         "name": "goal_cancel",
         OWNER_PROGRESS_FIELD: OWNER_PROGRESS_BEFORE_FIRST_CALL,
         "description": (
-            "Close a goal without success when abandoned, obsolete, or stopped."
+            "Close a goal without success when abandoned, obsolete, or stopped. "
+            "During a Goal review, use end_turn.goal with status cancelled instead."
         ),
         "input_schema": {
             "type": "object",
@@ -148,12 +155,27 @@ AGENDA_TOOL_SPECS: list[dict[str, Any]] = [
 
 GOAL_REVIEW_SCHEMA: dict[str, Any] = {
     "type": "object",
-    "description": "Outcome of the current Goal review; the runtime supplies the Goal ID.",
+    "description": (
+        "Outcome of the current Goal review; the runtime supplies the Goal ID. "
+        "Use exactly one status branch. Sending messages is independent of this outcome."
+    ),
     "properties": {
         **{
             key: value
             for key, value in AGENDA_TOOL_SPECS[1]["input_schema"]["properties"].items()
             if key not in {"goal_id", "status", "latest_result"}
+        },
+        "next_review_at": {
+            "type": "string",
+            "description": (
+                "Future ISO 8601 timestamp with timezone. Required for waiting and "
+                "non-recurring active Goals. Omit for recurring active, blocked, done, "
+                "or cancelled Goals."
+            ),
+        },
+        "clear_schedule": {
+            "type": "boolean",
+            "description": "Remove recurrence. Cannot be true when schedule is supplied.",
         },
         "status": {
             "type": "string",
@@ -163,9 +185,47 @@ GOAL_REVIEW_SCHEMA: dict[str, Any] = {
             "type": "string",
             "minLength": 1,
             "maxLength": 2000,
-            "description": "Verified result of this review, or the reason for cancellation.",
+            "pattern": r"\S",
+            "description": (
+                "Concrete checks, actions, and verified outcome of this review, or the "
+                "reason for cancellation. Record what was shared when relevant to "
+                "avoid repeating it next time. This field does not send a message."
+            ),
         },
     },
     "required": ["status", "result"],
+    "oneOf": [
+        {
+            "description": "Continue work. Schedule a future review, or reuse the recurring schedule.",
+            "properties": {
+                "status": {"enum": ["active"]},
+                "next_action": {"pattern": r"\S"},
+            },
+            "required": ["next_action"],
+        },
+        {
+            "description": "Await a condition; a future review timestamp is always required.",
+            "properties": {
+                "status": {"enum": ["waiting"]},
+                "waiting_for": {"pattern": r"\S"},
+                "next_review_at": {"pattern": r"\S"},
+            },
+            "required": ["waiting_for", "next_review_at"],
+        },
+        {
+            "description": "Cannot proceed. Explain the blocker and do not schedule a review.",
+            "properties": {
+                "status": {"enum": ["blocked"]},
+                "blocked_reason": {"pattern": r"\S"},
+                "next_review_at": False,
+            },
+            "required": ["blocked_reason"],
+        },
+        {
+            "description": "Close the Goal. Supply only status and result.",
+            "properties": {"status": {"enum": ["done", "cancelled"]}},
+            "maxProperties": 2,
+        },
+    ],
     "additionalProperties": False,
 }

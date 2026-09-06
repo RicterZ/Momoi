@@ -57,6 +57,37 @@ class GoalBoundaryTest(unittest.TestCase):
         ):
             self.assertFalse(validator.is_valid(args))
 
+    def test_goal_schema_requires_status_specific_outcomes(self):
+        from jsonschema import Draft202012Validator
+        from momoi.runtime.tool_contracts.conversation import END_TURN_TOOL_SPEC
+
+        validator = Draft202012Validator(END_TURN_TOOL_SPEC["input_schema"])
+        valid = [
+            {"status": "done", "result": "Verified"},
+            {"status": "cancelled", "result": "Owner stopped the task"},
+            {"status": "active", "result": "Step 1 complete", "next_action": "Step 2", "next_review_at": future()},
+            {"status": "active", "result": "Periodic check complete", "next_action": "Check again"},
+            {"status": "waiting", "result": "Submitted", "waiting_for": "Approval", "next_review_at": future()},
+            {"status": "blocked", "result": "Could not connect", "blocked_reason": "Missing credentials"},
+        ]
+        for outcome in valid:
+            with self.subTest(outcome=outcome):
+                self.assertTrue(validator.is_valid({"goal": outcome}))
+        for status in ("active", "waiting", "blocked"):
+            with self.subTest(missing_fields=status):
+                self.assertFalse(validator.is_valid({"goal": {"status": status, "result": "Checked"}}))
+        invalid = [
+            {"status": "done", "result": "Verified", "next_action": "More work"},
+            {"status": "cancelled", "result": "Stopped", "plan": []},
+            {"status": "waiting", "result": "Submitted", "waiting_for": "Approval"},
+            {"status": "blocked", "result": "Failed", "blocked_reason": "Credentials", "next_review_at": future()},
+            {"status": "active", "result": "Checked", "next_action": "  "},
+            {"status": "done", "result": "  "},
+        ]
+        for outcome in invalid:
+            with self.subTest(outcome=outcome):
+                self.assertFalse(validator.is_valid({"goal": outcome}))
+
     def test_goal_argument_is_restricted_by_trusted_turn_stage(self):
         for stage in ("owner", "heartbeat", "webhook", "reply_followup"):
             harness = TurnHarness.for_stage(stage)

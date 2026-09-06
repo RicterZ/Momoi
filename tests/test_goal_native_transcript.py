@@ -18,6 +18,7 @@ from momoi.models import (
     TurnDraft,
 )
 from momoi.runtime import MomoiDaemon
+from momoi.runtime.tool_contracts.conversation import END_TURN_TOOL_SPEC
 
 
 class GoalNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
@@ -73,6 +74,7 @@ class GoalNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             class Provider:
                 calls = 0
                 first_system: object = None
+                first_tools: list[dict[str, object]] = []
                 first_messages: list[dict[str, object]] = []
                 surfaces: list[list[str]] = []
                 required_tools: list[object] = []
@@ -89,6 +91,7 @@ class GoalNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                     self.required_tools.append(kwargs.get("required_tool"))
                     if self.calls == 1:
                         self.first_system = copy.deepcopy(_system)
+                        self.first_tools = copy.deepcopy(_tools)
                         self.first_messages = copy.deepcopy(messages)
                         return ProviderResponse(
                             [{"type": "text", "text": "plain text is invalid"}], []
@@ -127,6 +130,8 @@ class GoalNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             daemon.provider = provider  # type: ignore[assignment]
             await daemon._complete_goal_turn(goal_id, asyncio.Event())
 
+            end_turn = next(tool for tool in provider.first_tools if tool["name"] == "end_turn")
+            self.assertEqual(end_turn["input_schema"], END_TURN_TOOL_SPEC["input_schema"])
             rendered = str(provider.first_messages)
             self.assertNotIn("Due Goal contract", str(provider.first_system))
             self.assertIn("<workflow_contract>", rendered)
