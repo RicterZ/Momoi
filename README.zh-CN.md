@@ -48,7 +48,7 @@ flowchart TB
   subgraph active["Momoi · 当前 Turn"]
     direction LR
     intake["调度与<br/>消息合并"]
-    transcript["原生对话<br/>user · assistant"]
+    transcript["共享时间线<br/>对话 · 事件 · 执行记录"]
     context["召回<br/>search · reuse"]
     agent["Owner / 自主<br/>Agent"]
     delivery["提交与<br/>投递"]
@@ -97,17 +97,38 @@ Momoi 的三层共同构成持续运行的系统：当前 Turn 通过连续性�
 ### 一个 Owner Turn 怎样运行
 
 1. 入站消息按时间线合并成一个连贯批次。
-2. 最近已送达的主人与 Momoi 发言以原生 `user` / `assistant` 消息进入请求；运行时状态
-   和记忆仍是明确标记的数据，主人此刻的话始终是唯一的当前主人权限。
+2. 最近的主人与 Momoi 发言以原生 `user` / `assistant` 消息进入请求，保留气泡边界与
+   投递状态。Webhook 事件、Goal 执行和 Heartbeat 记录作为带标签的数据进入同一时间线；
+   主人此刻的话始终是唯一的当前主人权限。
 3. Owner 模型先调用 `recall`，搜索新的历史 scope 或复用明确覆盖当前需求的旧 scope，
    并独立选择 Episode 归属。运行时执行相同的关键词与可选向量检索，返回有上限的证据。
-4. 同一个模型应用 Momoi 的 Soul 与 Style Card，按需使用工具，并通过渠道投递协议发送
-   主人可见的气泡。
-5. Turn 把消息、记忆操作请求与 Goal 变更、情绪与活动、工具证据、投递状态和待处理追问一起提交
-   为可恢复记录。
+4. 同一个模型应用 Momoi 的 Soul 与 Style Card，按需使用工具，并把气泡提交到共享 outbox。
+   排队消息先落库，再经过模拟输入延迟和网络投递。
+5. Turn 收尾时归档对话、记忆操作请求与 Goal 变更、情绪与活动、工具证据、投递状态和待处理追问，
+   形成可恢复记录。
 
 Owner、Goal、Heartbeat 和 Webhook Turn 的权限与目的不同，但都位于同一条时间线上。
 自主 Turn 或外部事件 Turn 可以合法地选择沉默。
+
+### 共享时间线
+
+transcript 同时包含对话和历史运行记录：
+
+| 记录 | 内容与时间 |
+| --- | --- |
+| `<bubble>` | 一条主人或 Momoi 消息，保留消息内的单换行；排队中的发送消息带 `delivery="queued"` |
+| `<event id="E…" source="webhook:…" received_at="…">` | 已落库的外部事件，按接收时间排序 |
+| `<goal id="G…" completed_at="…">` | 一次 Goal 执行结束时的结果与状态快照 |
+| `<heartbeat id="H…" completed_at="…">` | 一次已完成心跳的 Activity 与 Result |
+
+记录 ID 来自数据库消息 ID。记录描述发生过什么，消息投递状态单独判断；后续 Goal 执行
+追加新快照，不覆盖旧记录。Webhook、Goal、Heartbeat 的当前请求分别通过
+`<recent_events>`、`<recent_goals>`、`<recent_heartbeats>` 列出 transcript 内的对应 ID，
+不再向最新输入重复注入历史记录正文。Goal 和 Webhook 不自动预检索；Heartbeat 通过
+`heartbeat_begin` 选择搜索或跳过。always/recent 记忆仍稳定放在第一条 user 消息。
+
+reply-followup 在正常上下文之外只通过当前 `<followup>` 携带续话原因和沉默时长，
+发出的气泡进入对话历史，不另建历史 reply-wait 记录。主人新消息会取消正在等待的续话。
 
 ## 记忆架构
 
@@ -115,7 +136,7 @@ Momoi 不把所有内容塞进一个笼统的“记忆”桶。每一层回答�
 
 | 层级 | 事实来源 | 怎样进入上下文 | 生命周期 |
 | --- | --- | --- | --- |
-| 工作上下文 | 原生近期 user/assistant 消息、当前输入、情绪、活动、进行中的 Goal 和未完成工作 | 按时间线与当前相关性直接带入 | 随正在进行的对话移动，不会自动晋升为长期事实 |
+| 工作上下文 | 共享对话、事件和执行记录时间线，当前输入、情绪、活动、进行中的 Goal 和未完成工作 | 按时间线与当前相关性直接带入 | 随正在进行的对话移动，不会自动晋升为长期事实 |
 | Confirmed memory | 来自已认证主人消息的事实、偏好、关系、习惯和可复用方法 | `always` 持续可见；`recent` 在有限时间内可见；`recall` 按话题检索 | 主人的新更正可以替换、收窄、过期或退役旧事实 |
 | Episode | 有原始 Turn 与消息作为证据的具体共同经历 | 近期 Episode 直接可见；更早的 Episode 通过摘要或原始 Turn 证据召回 | 开放对话按真实主题归组，随后归档，并在话题继续发展时更新 |
 | Reflection memory | 每日复盘产生的、带日期的体会、方法、工具经验和关系学习 | 独立召回，置信度更低，并明确提示可能过时 | 可以被修订或失去适用性，永远不能压过当前证据或 Confirmed memory |

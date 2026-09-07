@@ -58,7 +58,7 @@ flowchart TB
   subgraph active["Momoi · Active Turn"]
     direction LR
     intake["Scheduling<br/>and batching"]
-    transcript["Native transcript<br/>user · assistant"]
+    transcript["Shared timeline<br/>speech · events · reviews"]
     context["Recall<br/>search · reuse"]
     agent["Owner / autonomous<br/>agent"]
     delivery["Commit<br/>and delivery"]
@@ -109,22 +109,48 @@ in-process snapshot performs vector search.
 
 1. Incoming messages are grouped into a coherent batch while preserving their
    timeline.
-2. Recent delivered owner and Momoi speech is projected as native `user` and
-   `assistant` messages. Runtime state and memory remain explicitly marked data;
+2. Recent owner and Momoi speech is projected as native `user` and `assistant`
+   messages with explicit bubble boundaries and delivery state. Webhook events,
+   Goal reviews and Heartbeat records join the same timeline as tagged data;
    current owner text remains the only current owner authority.
 3. The Owner model first calls `recall`. It either searches a new historical
    scope or reuses a displayed prior scope, and independently chooses the
    Episode binding. The runtime performs the same keyword and optional vector
    retrieval and returns bounded evidence.
 4. The same model applies Momoi's Soul and Style Card, uses tools when needed,
-   and sends owner-visible bubbles through the channel delivery protocol.
-5. The Turn commits messages, memory operation requests and Goal mutations, mood/activity state,
+   and submits bubbles to the shared outbox. Queued messages are recorded before
+   simulated typing delays or network delivery.
+5. The Turn finalizes conversation history, memory operation requests and Goal mutations, mood/activity state,
    tool evidence, delivery state, and any pending follow-up as one recoverable
    record.
 
 Owner, Goal, Heartbeat, and Webhook Turns differ in authority and purpose, but
 they all operate on the same timeline. Silence is a valid outcome for an
 autonomous or external-event Turn.
+
+### Shared timeline
+
+The transcript contains speech and historical runtime records:
+
+| Record | Content and timestamp |
+| --- | --- |
+| `<bubble>` | One owner or Momoi message, preserving single newlines within it; queued outgoing messages carry `delivery="queued"` |
+| `<event id="E…" source="webhook:…" received_at="…">` | A stored external event, ordered by reception time |
+| `<goal id="G…" completed_at="…">` | An immutable snapshot of one Goal review, including its result and state |
+| `<heartbeat id="H…" completed_at="…">` | One completed Heartbeat's activity and result |
+
+Record IDs derive from stored message IDs. A record describes what happened;
+message delivery is tracked separately. Later Goal reviews append new records.
+Webhook, Goal and Heartbeat requests use `<recent_events>`, `<recent_goals>` and
+`<recent_heartbeats>` respectively to list the IDs present in their transcript,
+without repeating historical record bodies in the latest input. Goal and Webhook
+Turns do not run automatic pre-retrieval; Heartbeat selects search or skip through
+`heartbeat_begin`. Always/recent memory remains in the stable first user message.
+
+Reply-followup requests carry only the current `<followup>` reason and elapsed
+silence alongside normal context. Their outgoing bubbles enter conversation
+history; no separate historical reply-wait record is added. New owner messages
+cancel the pending wait.
 
 ## Memory architecture
 
@@ -133,7 +159,7 @@ different questions and carry different authority.
 
 | Layer | Source of truth | How it enters context | Lifecycle |
 | --- | --- | --- | --- |
-| Working context | Native recent user/assistant messages, current input, mood, activity, active Goals, and unresolved work | Included directly by chronology and current relevance | Moves with the live conversation; it is not automatically promoted to long-term fact |
+| Working context | Shared speech/event/review timeline, current input, mood, activity, active Goals, and unresolved work | Included directly by chronology and current relevance | Moves with the live conversation; it is not automatically promoted to long-term fact |
 | Confirmed memory | Facts, preferences, relationships, routines, and reusable methods grounded in authenticated owner messages | `always` facts are continuously available; `recent` facts are available for a bounded time; `recall` facts are retrieved by topic | New owner corrections can replace, narrow, expire, or retire older facts |
 | Episodes | Concrete shared experiences backed by the original Turns and messages | Recent Episodes are available directly; older Episodes are recalled by their summary or original Turn evidence | Open conversation is grouped by subject, then archived and refreshed as the subject develops |
 | Reflection memory | Dated impressions, methods, tool-use lessons, and relationship learning produced by daily reflection | Recalled separately with lower confidence and an explicit stale-information warning | May be revised or become inapplicable; it never outranks current evidence or confirmed memory |

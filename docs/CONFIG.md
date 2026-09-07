@@ -212,9 +212,13 @@ All fields must be positive.
 | `summary_tokens` | `6000` | Merged Episode-summary token budget; `0` disables this layer |
 
 `max_input_tokens` should remain below the provider's actual context window. The
-48–96 Turn transcript watermark and the complete-request token watermark are
+default 32–80 Turn transcript watermark and the complete-request token watermark are
 independent safeguards. Episode raw evidence uses a budget derived from the same
 compaction watermark; it has no separate token setting.
+The same window covers conversation, Webhook events, Goal reviews and Heartbeat
+records, including completed Turns with records but no outgoing messages. Their
+ID indexes are derived from the retained transcript and have no separate history
+limit. Goal and Webhook Turns do not run automatic pre-retrieval.
 Always-on and active recent memories are injected in full. Query recall is bounded
 by `memory_results`, not by a separate memory token budget.
 

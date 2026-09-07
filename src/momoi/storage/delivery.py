@@ -179,7 +179,7 @@ class DeliveryStore:
         self._db.execute(
             """UPDATE self_state SET pending_reply_turn_id=NULL,
                pending_reply_expectation='', pending_reply_since=NULL,
-               pending_reply_checks=0, pending_reply_last_reason='',
+               pending_reply_last_reason='',
                pending_reply_channel='', pending_reply_delay_minutes=0,
                pending_reply_next_check_at=NULL, updated_at=? WHERE id=1""",
             (time.time(),),
@@ -203,7 +203,7 @@ class DeliveryStore:
         self._db.execute(
             """UPDATE self_state SET pending_reply_turn_id=?,
                pending_reply_expectation=?, pending_reply_channel=?,
-               pending_reply_since=?, pending_reply_checks=0,
+               pending_reply_since=?,
                pending_reply_last_reason=?, pending_reply_delay_minutes=?,
                pending_reply_next_check_at=?, updated_at=? WHERE id=1""",
             (

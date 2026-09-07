@@ -12,7 +12,7 @@ from momoi.runtime import MomoiDaemon
 
 
 class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
-    async def test_rest_recovers_from_text_without_requesting_a_message(self) -> None:
+    async def test_rest_requires_terminal_tool_but_allows_accompanying_text(self) -> None:
         for with_terminal in (False, True):
             with self.subTest(with_terminal=with_terminal), tempfile.TemporaryDirectory() as directory:
                 daemon = MomoiDaemon(AppConfig(
@@ -58,11 +58,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                             correction = str(messages[-1]["content"])
                             case.assertNotIn("send_bubbles", correction)
                             case.assertIn("native tool calls", correction)
-                            case.assertIn(
-                                "assistant text accompanied tool calls" if with_terminal
-                                else "no native tool call was returned",
-                                correction,
-                            )
+                            case.assertIn("no native tool call was returned", correction)
                         case.assertLessEqual(self.calls, 3)
                         return ProviderResponse(content, [call])
 
@@ -71,7 +67,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                 turn_id = daemon._turn_id("heartbeat-text-recovery")
                 daemon.store.begin_turn(turn_id, "heartbeat", [f"heartbeat:{turn_id}"])
                 await daemon._complete_heartbeat(turn_id, owner_event_revision=0)
-                self.assertEqual(provider.calls, 3)
+                self.assertEqual(provider.calls, 2 if with_terminal else 3)
                 self.assertEqual(daemon.store._db.execute(
                     "SELECT COUNT(*) FROM outbox WHERE turn_id=?", (turn_id,),
                 ).fetchone()[0], 0)

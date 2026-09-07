@@ -190,7 +190,7 @@ class HeartbeatCommitStore:
                     self._db.execute(
                         """UPDATE self_state SET pending_reply_turn_id=NULL,
                            pending_reply_expectation='', pending_reply_since=NULL,
-                           pending_reply_checks=0, pending_reply_last_reason='',
+                           pending_reply_last_reason='',
                            pending_reply_channel='', pending_reply_delay_minutes=0,
                            pending_reply_next_check_at=NULL
                            WHERE id=1"""
@@ -234,8 +234,6 @@ class HeartbeatCommitStore:
                         )
                         self._reindex_episode_terms(episode_id)
                     self._index_turn_episode_terms(str(pending_reply_turn_id))
-            if not reply_followup_only:
-                self._apply_cooled_reply_action(draft, now)
             self._apply_mood_update(mood_update, now)
             if reply_followup_only:
                 self._db.execute(

@@ -57,9 +57,16 @@ curl -X POST http://127.0.0.1:8787/webhooks/event-message \
   --data '{"event_prompt":"The washing machine has finished. Remind the owner to collect the laundry."}'
 ```
 
-Momoi receives her current conversation context, relevant memory, goals, mood, activity, and emotion catalog. The event is not treated as owner speech, but the resulting message still comes from the same Momoi.
+Before a `message` step runs, the runtime stores its rendered event prompt. After
+the Turn completes, the event appears in the shared transcript as `<event>` with
+a stable ID, workflow source and reception timestamp. Momoi receives the shared
+timeline, always/recent memory, current mood and activity, and the current event
+task. `<recent_events>` lists the historical event IDs in that transcript. No
+automatic memory or Episode pre-retrieval runs for Webhook Turns.
 
-A message step may use HTTP to fetch data required by the event prompt, then must finish by sending one or more messages. It cannot call arbitrary MCP or file tools.
+The step may use HTTP to fetch data required by the event prompt. It may send
+new information or finish silently through `end_turn`; storing an event does not
+imply that a message was delivered. It cannot call arbitrary MCP or file tools.
 
 ## Add a fixed command step
 

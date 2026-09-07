@@ -57,23 +57,8 @@ class HeartbeatStateStore:
             return None
         since = float(row["pending_reply_since"] or now)
         source_turn = str(row["pending_reply_turn_id"] or "")
-        source_messages = [
-            {
-                "role": str(item["role"]),
-                "content": str(item["content"]),
-                "delivery_state": str(item["delivery_state"]),
-                "timestamp": self.context_timestamp(item["created_at"]),
-            }
-            for item in self._db.execute(
-                """SELECT role, content, created_at, delivery_state FROM messages
-                   WHERE turn_id=? AND (role IN ('user', 'event') OR delivery_state IN ('delivered','uncertain'))
-                   ORDER BY id""",
-                (source_turn,),
-            ).fetchall()
-        ]
         return {
             "source_turn": source_turn,
-            "source_messages": source_messages,
             "expected_information": str(row["pending_reply_expectation"]),
             "reason": str(row["pending_reply_last_reason"] or ""),
             "waiting_since": self.context_timestamp(since),

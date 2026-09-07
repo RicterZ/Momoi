@@ -61,15 +61,10 @@ class OwnerWorkflow:
                 "Current local time: "
                 f"{datetime.now(self.store.timezone).isoformat(timespec='seconds')}",
             ),
-            # ("goal_progress", recalled["goal_progress"]),
             ("recall_memories", recalled["recall_memories"]),
             ("recall_status", recalled["query_recall"]),
             ("reflection_memories", recalled["reflection_memories"]),
             ("episode_directory", recalled["episodes"]),
-            # (
-            #     "interrupted_reply_expectation",
-            #     self.store.cooled_reply_expectation_context(),
-            # ),
         )
         content = _owner_content_blocks(
             updates, channel.content_blocks, self.store.timezone, runtime_text
@@ -289,14 +284,9 @@ class OwnerWorkflow:
                 f"{heartbeat_self_state_lines(self.store.self_state_context())}",
             ),
             ("runtime_directives", "\n\n".join(directives)),
-            # ("goal_progress", recalled["goal_progress"]),
             ("proactive_bubbles", proactive_bubbles),
             ("candidate_episodes", candidates["candidate_episodes"]),
             ("recent_recall_context", candidates["recent_recall_context"]),
-            # (
-            #     "interrupted_reply_expectation",
-            #     self.store.cooled_reply_expectation_context(),
-            # ),
         )
         current_content = _owner_content_blocks(
             batch, channel.content_blocks, self.store.timezone, runtime_text

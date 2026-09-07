@@ -134,7 +134,6 @@ class TurnCommitStore:
                 )
             self._queue_memory_operations(turn_id, draft, events, now)
             self._apply_goal_mutations(draft, now)
-            self._apply_cooled_reply_action(draft, now)
             self._append_turn_journal(
                 turn_id,
                 "final",

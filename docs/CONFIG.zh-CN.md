@@ -197,9 +197,12 @@ NapCat 和 Weixin 的语音转写前统一添加 `[语音消息] `，随后进�
 | `summary_results` | `8` | 查询召回的 Episode 上限，最多可配置为 `12`；`0` 关闭查询召回 |
 | `summary_tokens` | `6000` | 合并后 Episode 摘要的 token 预算；`0` 关闭该层 |
 
-`max_input_tokens` 应低于 Provider 的实际上下文窗口。48–96 Turn transcript
+`max_input_tokens` 应低于 Provider 的实际上下文窗口。默认 32–80 Turn transcript
 水位与完整请求 token 水位是两道相互独立的保护。Episode 原始证据额度也从同一
 压缩水位派生，不再单独配置 token 预算。
+同一窗口覆盖对话、Webhook 事件、Goal 执行和 Heartbeat 记录，也包含有记录但没有发消息的
+已完成 Turn。对应 ID 索引从保留的 transcript 生成，没有独立的历史条数限制。
+Goal 和 Webhook Turn 不运行自动预检索。
 常驻记忆和仍有效的近期记忆会完整注入；查询召回仅由 `memory_results` 限制条数，
 不再设置独立的记忆 token 预算。
 

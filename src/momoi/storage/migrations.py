@@ -115,12 +115,24 @@ def _remove_heartbeat_record_header(database: sqlite3.Connection) -> None:
     )
 
 
+def _remove_obsolete_reply_context(database: sqlite3.Connection) -> None:
+    obsolete = {
+        "cooled_reply_expectation", "cooled_reply_source_turn_id",
+        "cooled_reply_since", "cooled_reply_due_at", "cooled_reply_delay_minutes",
+        "cooled_reply_waiting_since", "cooled_reply_review_at",
+        "cooled_reply_checks", "cooled_reply_reason", "pending_reply_checks",
+    }
+    for column in sorted(_columns(database, "self_state") & obsolete):
+        database.execute(f'ALTER TABLE self_state DROP COLUMN "{column}"')
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     _add_runtime_archive_metadata,
     _add_turn_workflow_kind,
     _add_memory_operation_workflow,
     _remove_goal_review_header,
     _remove_heartbeat_record_header,
+    _remove_obsolete_reply_context,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 

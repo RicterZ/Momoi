@@ -2580,7 +2580,6 @@ class StorageMemoryTest(unittest.TestCase):
                 self.assertFalse(store.mark_sent(stale_followup.id))
             self.assertIsNone(store.pending_owner_reply(1310))
             self.assertFalse(store.mark_sending(stale_followup.id))
-            self.assertEqual(store.cooled_reply_expectation_context(1310), "")
             self.assertEqual(
                 store._db.execute(
                     """SELECT COUNT(*) FROM messages
@@ -2782,6 +2781,7 @@ class StorageMemoryTest(unittest.TestCase):
     def test_owner_reply_cancels_only_reply_check_schedule(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
+            store.create_episode("风险偏好", episode_id="risk-preference")
             store.commit_turn(
                 [],
                 "",
@@ -2796,6 +2796,10 @@ class StorageMemoryTest(unittest.TestCase):
                 ),
                 turn_id="question",
             )
+            store.link_turn_to_episode("risk-preference", "question")
+            store._db.execute(
+                "UPDATE conversation_episodes SET status='open' WHERE id='risk-preference'"
+            )
             store._db.execute("UPDATE self_state SET next_heartbeat_at=4900 WHERE id=1")
             with patch("momoi.storage.delivery.time.time", return_value=1000):
                 self.assertTrue(store.mark_sent(store.due_outbox()[0].id))
@@ -2809,10 +2813,8 @@ class StorageMemoryTest(unittest.TestCase):
             state = store.self_state()
             self.assertIsNone(state["pending_reply_next_check_at"])
             self.assertEqual(store.next_heartbeat_due_at(True), 4900)
-            interrupted = json.loads(store.cooled_reply_expectation_context(1020))
-            self.assertEqual(interrupted["state"], "owner_replied_before_deadline")
-            self.assertEqual(interrupted["expected_information"], "主人的风险偏好")
-            self.assertIn("风险机制", interrupted["reason"])
+            self.assertIsNone(store.pending_owner_reply(1020))
+            self.assertEqual(store.episode("risk-preference")["status"], "closing")
             store.close()
 
     def test_owner_reply_supersedes_claimed_undelivered_followup(self) -> None:
@@ -2919,7 +2921,6 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertIsNotNone(store.pending_owner_reply(1100))
             store.mark_sent(store.due_outbox()[0].id)
             self.assertIsNone(store.pending_owner_reply(1100))
-            self.assertEqual(store.cooled_reply_expectation_context(1100), "")
             after = store.self_state()
             for key in (
                 "activity",
@@ -2928,29 +2929,6 @@ class StorageMemoryTest(unittest.TestCase):
                 "next_heartbeat_at",
             ):
                 self.assertEqual(after[key], before[key])
-            store.close()
-
-    def test_owner_turn_consumes_interrupted_reply_expectation(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            store = Store(Path(directory) / "momoi.sqlite3")
-            store._db.execute(
-                """UPDATE self_state SET cooled_reply_expectation='旧期待',
-                   cooled_reply_source_turn_id='old', cooled_reply_since=1000,
-                   cooled_reply_waiting_since=900, cooled_reply_due_at=1200,
-                   cooled_reply_delay_minutes=5,
-                   cooled_reply_reason='想听老师回答旧期待' WHERE id=1"""
-            )
-            interrupted = json.loads(store.cooled_reply_expectation_context(2000))
-            self.assertEqual(interrupted["expected_information"], "旧期待")
-            self.assertEqual(interrupted["reason"], "想听老师回答旧期待")
-            with patch("momoi.storage.turn_commits.time.time", return_value=2000):
-                store.commit_turn(
-                    [],
-                    "",
-                    AgentReply([]),
-                    turn_id="consume-expectation",
-                )
-            self.assertEqual(store.cooled_reply_expectation_context(2000), "")
             store.close()
 
     def test_reply_followup_never_schedules_a_second_check(self) -> None:
@@ -2986,8 +2964,48 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertIsNone(store.next_heartbeat_due_at(False))
             store.mark_sent(store.due_outbox()[0].id)
             self.assertIsNone(store.pending_owner_reply(1100))
-            self.assertEqual(store.cooled_reply_expectation_context(1100), "")
             store.close()
+
+    def test_reply_context_migration_preserves_active_wait_and_conversation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "momoi.sqlite3"
+            store = Store(path)
+            store.commit_turn([], "之前的对话", AgentReply([]), turn_id="before-migration")
+            with store._db:
+                for name, declaration in (
+                    ("cooled_reply_expectation", "TEXT NOT NULL DEFAULT ''"),
+                    ("cooled_reply_source_turn_id", "TEXT NOT NULL DEFAULT ''"),
+                    ("cooled_reply_since", "REAL"),
+                    ("cooled_reply_due_at", "REAL"),
+                    ("cooled_reply_delay_minutes", "INTEGER NOT NULL DEFAULT 0"),
+                    ("cooled_reply_waiting_since", "REAL"),
+                    ("cooled_reply_review_at", "REAL"),
+                    ("cooled_reply_checks", "INTEGER NOT NULL DEFAULT 0"),
+                    ("cooled_reply_reason", "TEXT NOT NULL DEFAULT ''"),
+                    ("pending_reply_checks", "INTEGER NOT NULL DEFAULT 0"),
+                ):
+                    store._db.execute(f"ALTER TABLE self_state ADD COLUMN {name} {declaration}")
+                store._db.execute(
+                    """UPDATE self_state SET cooled_reply_expectation='过时的期待',
+                       pending_reply_turn_id='before-migration',
+                       pending_reply_expectation='老师的选择', pending_reply_since=1000,
+                       pending_reply_next_check_at=1300, next_heartbeat_at=2000 WHERE id=1"""
+                )
+                store._db.execute("PRAGMA user_version=5")
+            before = store.self_state()
+            store.close()
+            for _ in range(2):
+                store = Store(path)
+                state = store.self_state()
+                self.assertEqual(state, {
+                    key: value for key, value in before.items()
+                    if not key.startswith("cooled_reply_") and key != "pending_reply_checks"
+                })
+                self.assertEqual(store.pending_owner_reply(1100)["expected_information"], "老师的选择")
+                self.assertEqual(store.next_heartbeat_due_at(False), 1300)
+                self.assertEqual(store.recent_conversation_messages(10, 10000)[0]["content"], "之前的对话")
+                self.assertFalse(store._db.execute("PRAGMA foreign_key_check").fetchall())
+                store.close()
 
     def test_episode_anneal_waits_for_pending_owner_reply(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

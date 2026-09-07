@@ -57,9 +57,13 @@ curl -X POST http://127.0.0.1:8787/webhooks/event-message \
   --data '{"event_prompt":"The washing machine has finished. Remind the owner to collect the laundry."}'
 ```
 
-Momoi 会获得当前对话上下文、相关记忆、目标、情绪、活动和情绪素材库。该事件不会被当作主人说的话，但最终消息仍由同一个 Momoi 发出。
+`message` 步骤执行前，运行时先保存渲染后的事件 prompt。Turn 完成后，事件以 `<event>`
+进入共享 transcript，带稳定 ID、工作流来源和接收时间。Momoi 获得共享时间线、
+always/recent 记忆、当前情绪与活动，以及本次事件任务；`<recent_events>` 列出
+transcript 中的历史事件 ID。Webhook Turn 不自动预检索记忆或 Episode。
 
-`message` 步骤可以使用 HTTP 获取事件 prompt 所需的数据，然后必须先把事件写入对话时间线。是否向主人发可见消息另判，可以静默结束。它不能调用任意 MCP 或文件工具。
+步骤可以使用 HTTP 获取任务需要的数据，发送新信息或直接调用 `end_turn` 静默结束。
+事件落库不代表消息已投递。它不能调用任意 MCP 或文件工具。
 
 ## 添加固定命令步骤
 

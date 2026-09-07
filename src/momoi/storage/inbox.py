@@ -2,14 +2,14 @@ import json
 import sqlite3
 import time
 
-from ..models import IncomingMessage, TurnDraft
+from ..models import IncomingMessage
 from .episode_sql import runtime_archive_kind_sql
 from .integrity import decode_stored_json
 from .turn_workflow import turn_workflow_kind_sql
 
 
 class InboxStore:
-    """Owner event ingestion, pending inbox, and interrupted reply state."""
+    """Owner event ingestion, pending inbox, and reply-wait cancellation."""
 
     def owner_channel_revision(self, channel: str) -> int:
         return int(self._db.execute(
@@ -36,11 +36,18 @@ class InboxStore:
             )
             if cursor.rowcount == 1:
                 now = time.time()
-                self._cool_active_reply(now, "owner_message_received")
+                pending = self._db.execute(
+                    """SELECT pending_reply_turn_id FROM self_state
+                       WHERE id=1 AND pending_reply_expectation<>''"""
+                ).fetchone()
+                if pending is not None:
+                    self._release_reply_episode_hold(
+                        str(pending["pending_reply_turn_id"] or ""), now
+                    )
                 self._db.execute(
                     """UPDATE self_state SET pending_reply_turn_id=NULL,
                        pending_reply_expectation='', pending_reply_since=NULL,
-                       pending_reply_checks=0, pending_reply_last_reason='',
+                       pending_reply_last_reason='',
                        pending_reply_channel='', pending_reply_delay_minutes=0,
                        pending_reply_next_check_at=NULL,
                        updated_at=? WHERE id=1""",
@@ -52,37 +59,6 @@ class InboxStore:
                     now,
                 )
         return cursor.rowcount == 1
-
-    def _cool_active_reply(self, now: float, _reason: str) -> bool:
-        row = self._db.execute(
-            """SELECT pending_reply_turn_id, pending_reply_expectation,
-                      pending_reply_since, pending_reply_last_reason,
-                      pending_reply_delay_minutes, pending_reply_next_check_at
-               FROM self_state WHERE id=1"""
-        ).fetchone()
-        expectation = str(row["pending_reply_expectation"] or "").strip() if row else ""
-        if not expectation:
-            return False
-        self._db.execute(
-            """UPDATE self_state SET cooled_reply_expectation=?,
-                   cooled_reply_source_turn_id=?, cooled_reply_since=?,
-                   cooled_reply_due_at=?, cooled_reply_delay_minutes=?,
-                   cooled_reply_waiting_since=?, cooled_reply_review_at=NULL,
-                   cooled_reply_checks=0,
-                   cooled_reply_reason=?, updated_at=? WHERE id=1""",
-            (
-                expectation,
-                str(row["pending_reply_turn_id"] or ""),
-                now,
-                row["pending_reply_next_check_at"],
-                int(row["pending_reply_delay_minutes"] or 0),
-                row["pending_reply_since"],
-                str(row["pending_reply_last_reason"] or "")[:500],
-                now,
-            ),
-        )
-        self._release_reply_episode_hold(str(row["pending_reply_turn_id"] or ""), now)
-        return True
 
     def _release_reply_episode_hold(self, turn_id: str, now: float) -> None:
         if not turn_id:
@@ -96,77 +72,6 @@ class InboxStore:
                  )
                  AND {runtime_archive_kind_sql('conversation_episodes')} IS NULL""",
             (now, turn_id),
-        )
-
-    def cooled_reply_expectation_context(self, now: float | None = None) -> str:
-        now = time.time() if now is None else now
-        row = self._db.execute(
-            """SELECT cooled_reply_expectation, cooled_reply_source_turn_id,
-                      cooled_reply_since, cooled_reply_due_at,
-                      cooled_reply_delay_minutes, cooled_reply_waiting_since,
-                      cooled_reply_reason
-               FROM self_state WHERE id=1"""
-        ).fetchone()
-        expectation = str(row["cooled_reply_expectation"] or "").strip() if row else ""
-        if not expectation:
-            return ""
-        source_turn = str(row["cooled_reply_source_turn_id"] or "")
-        source_rows = self._db.execute(
-            """SELECT role, content, created_at, delivery_state FROM messages
-               WHERE turn_id=? AND (role IN ('user', 'event') OR delivery_state IN ('delivered','uncertain'))
-               ORDER BY id""",
-            (source_turn,),
-        ).fetchall()
-        source_messages = [
-            {
-                "role": str(item["role"]),
-                "content": str(item["content"]),
-                "delivery_state": str(item["delivery_state"]),
-                "timestamp": self.context_timestamp(item["created_at"]),
-            }
-            for item in source_rows
-        ]
-        return json.dumps(
-            {
-                "state": "owner_replied_before_deadline",
-                "expected_information": expectation,
-                "reason": str(row["cooled_reply_reason"] or ""),
-                "source_turn": source_turn,
-                "source_messages": source_messages,
-                "waiting_since": self.context_timestamp(
-                    row["cooled_reply_waiting_since"] or now
-                ),
-                "interrupted_at": self.context_timestamp(
-                    row["cooled_reply_since"] or now
-                ),
-                "deadline": self.context_timestamp(row["cooled_reply_due_at"] or now),
-                "delay_minutes": int(row["cooled_reply_delay_minutes"] or 0),
-                "elapsed_minutes": max(
-                    0,
-                    int(
-                        (
-                            float(row["cooled_reply_since"] or now)
-                            - float(row["cooled_reply_waiting_since"] or now)
-                        )
-                        / 60
-                    ),
-                ),
-            },
-            ensure_ascii=False,
-            separators=(",", ":"),
-        )
-
-    def _apply_cooled_reply_action(
-        self, _draft: TurnDraft | None, now: float
-    ) -> None:
-        self._db.execute(
-            """UPDATE self_state SET cooled_reply_expectation='',
-               cooled_reply_source_turn_id='', cooled_reply_since=NULL,
-               cooled_reply_due_at=NULL, cooled_reply_delay_minutes=0,
-               cooled_reply_waiting_since=NULL, cooled_reply_review_at=NULL,
-               cooled_reply_checks=0, cooled_reply_reason='', updated_at=?
-               WHERE id=1 AND cooled_reply_expectation<>''""",
-            (now,),
         )
 
     def _supersede_heartbeat_contacts(
