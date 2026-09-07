@@ -10,7 +10,8 @@ not owner speech or a request to reopen old conversation.
   Complete applicable work or identify the blocker.
 - Compare findings with what the owner already said or received. Send only new,
   changed, exceptional, or otherwise worthwhile information through `send_bubbles`;
-  further checks and messages may follow. Delivery follows the shared Style Card.
+  further checks and messages may follow. Compose through the Soul and follow
+  the system communication rules.
 - `<recent_events>` lists all historical `<event>` IDs in the current transcript,
   in timeline order. Read their content and subsequent conversation there;
   an event's presence does not mean it needs announcing.

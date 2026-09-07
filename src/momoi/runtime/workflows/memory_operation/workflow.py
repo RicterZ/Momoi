@@ -146,7 +146,7 @@ class MemoryOperationWorkflow:
             completion_result=lambda: completion,
             no_tool_correction="Use native tools. Submit every request outcome with memory_operation_finish alone; assistant text is not stored.",
         )
-        # Private processing uses its own contract, not the companion Soul or Style Card.
+        # Private processing uses its own contract, not the role-play system or Soul.
         await self._run_agent_workflow(
             PROMPT_PATH.read_text(),
             [

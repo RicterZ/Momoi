@@ -43,10 +43,7 @@ from momoi.models import (
 from momoi.llm.errors import (
     ProviderError,
 )
-from momoi.runtime.turn_support import (
-    HEARTBEAT_PROMPT_PATH,
-    STYLE_CARD_SYSTEM_PROMPT,
-)
+from momoi.runtime.turn_support import HEARTBEAT_PROMPT_PATH
 from momoi.runtime.agent.protocol import (
     OWNER_BUBBLE_REQUEST_REMINDER,
     owner_request_messages,
@@ -244,7 +241,10 @@ class DaemonTest(unittest.TestCase):
             self.assertIn("Old heartbeat", daemon._heartbeat_system_prompt())
             soul.write_text("New soul")
             heartbeat.write_text("New heartbeat")
-            self.assertIn("New soul", daemon._system()[0]["text"])
+            rendered_system = daemon._system()[0]["text"]
+            self.assertIn("New soul", rendered_system)
+            self.assertNotIn("Old soul", rendered_system)
+            self.assertNotIn("{{SOUL}}", rendered_system)
             rendered = daemon._heartbeat_system_prompt()
             base_heartbeat = HEARTBEAT_PROMPT_PATH.read_text(encoding="utf-8").strip()
             self.assertEqual(
@@ -285,19 +285,6 @@ class DaemonTest(unittest.TestCase):
                 daemon._loaded_workspace_prompts["soul"],
                 f"{soul}\0Changed soul",
             )
-
-    def test_shared_style_card_is_injected(self) -> None:
-        daemon = object.__new__(MomoiDaemon)
-        daemon.config = SimpleNamespace(
-            system_prompt="{{STYLE_CARD}}",
-            soul_prompt="Test soul",
-            soul_prompt_path=None,
-        )
-        daemon._loaded_workspace_prompts = {}
-        daemon.mcp = SimpleNamespace(tool_specs=[])
-        daemon.store = SimpleNamespace(emotion_context=lambda token_budget=4000: "")
-
-        self.assertEqual(daemon._system()[0]["text"], STYLE_CARD_SYSTEM_PROMPT)
 
     def test_mood_update_parser_accepts_open_state_labels(self) -> None:
         mood, error = parse_mood_update(

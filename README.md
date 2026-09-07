@@ -77,7 +77,7 @@ flowchart TB
   subgraph workspace["Momoi · Private workspace"]
     direction LR
     sqlite[("SQLite<br/>canonical state + derived vectors")]
-    prompts["Soul, Style Card<br/>and runtime prompts"]
+    prompts["Soul<br/>and runtime prompts"]
     files["Media and large<br/>tool-result snapshots"]
     sqlite ~~~ prompts ~~~ files
   end
@@ -117,8 +117,8 @@ in-process snapshot performs vector search.
    scope or reuses a displayed prior scope, and independently chooses the
    Episode binding. The runtime performs the same keyword and optional vector
    retrieval and returns bounded evidence.
-4. The same model applies Momoi's Soul and Style Card, uses tools when needed,
-   and submits bubbles to the shared outbox. Queued messages are recorded before
+4. The same model applies the configured Soul and system communication rules,
+   uses tools when needed, and submits bubbles to the shared outbox. Queued messages are recorded before
    simulated typing delays or network delivery.
 5. The Turn finalizes conversation history, memory operation requests and Goal mutations, mood/activity state,
    tool evidence, delivery state, and any pending follow-up as one recoverable

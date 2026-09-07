@@ -396,7 +396,7 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("Momoi webhook event contract", system_text)
             self.assertIn("<workflow_contract>", context_text)
             self.assertIn("Momoi webhook event contract", context_text)
-            self.assertIn("follows the shared Style Card", context_text)
+            self.assertIn("the system communication rules", context_text)
             self.assertIn("<current_webhook_task>", context_text)
             self.assertIn("<runtime_state>", context_text)
             self.assertNotIn("<recent_conversation>", context_text)

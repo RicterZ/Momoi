@@ -22,10 +22,8 @@ AGENDA_TOOL_POLICY = """### Agenda tools
   Never use `sleep` to cross Turns.
 - During autonomous Goal review, `send_bubbles` is available only for a useful
   result, a needed decision, or a meaningful failure; otherwise call end_turn
-  without sending a message. Use separate short `bubbles` when the notification
-  has distinct parts; use a single item when it is one thought. Treat each item
-  as an owner-visible private-chat bubble governed
-  by the shared Style Card and system bubble rules.
+  without sending a message. Compose notifications through the Soul and follow
+  the system communication rules, including bubble boundaries.
 """
 
 

@@ -16,8 +16,6 @@ from .turn_support import (
     THINKING_POLICY_TOOLS,
     REPLY_WAIT_PROMPT_PATH,
     REPLY_WAIT_SYSTEM_PROMPT,
-    STYLE_CARD_PROMPT_PATH,
-    STYLE_CARD_SYSTEM_PROMPT,
     SYSTEM_PROMPT_PATH,
     live_prompt as _live_prompt,
     sections as _sections,
@@ -74,21 +72,14 @@ class PromptRenderer:
         if soul_path is not None:
             system_prompt = _live_prompt(SYSTEM_PROMPT_PATH, system_prompt)
         soul_prompt = self._workspace_soul()
-        text = (
-            system_prompt.replace(
-                "{{SOUL}}", soul_prompt or "No additional Soul is configured."
-            )
-            .replace(
-                "{{STYLE_CARD}}",
-                _live_prompt(STYLE_CARD_PROMPT_PATH, STYLE_CARD_SYSTEM_PROMPT),
-            )
-            .replace("{{CAPABILITY_POLICIES}}", "")
-        )
+        text = system_prompt.replace(
+            "{{SOUL}}", soul_prompt or "No additional Soul is configured."
+        ).replace("{{CAPABILITY_POLICIES}}", "")
         blocks: list[dict[str, Any]] = [
             {"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}
         ]
         # Keep the catalog as its own cached system block so editing stickers does
-        # not invalidate the large contract/Soul/style prefix.
+        # not invalidate the large contract/Soul prefix.
         emotions = self.store.emotion_context()
         if emotions.strip():
             blocks.append(

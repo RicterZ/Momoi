@@ -67,7 +67,7 @@ flowchart TB
   subgraph workspace["Momoi · 私人 workspace"]
     direction LR
     sqlite[("SQLite<br/>权威状态 + 派生向量")]
-    prompts["Soul、Style Card<br/>与运行时提示词"]
+    prompts["Soul<br/>与运行时提示词"]
     files["媒体与大工具<br/>结果快照"]
     sqlite ~~~ prompts ~~~ files
   end
@@ -102,7 +102,7 @@ Momoi 的三层共同构成持续运行的系统：当前 Turn 通过连续性�
    主人此刻的话始终是唯一的当前主人权限。
 3. Owner 模型先调用 `recall`，搜索新的历史 scope 或复用明确覆盖当前需求的旧 scope，
    并独立选择 Episode 归属。运行时执行相同的关键词与可选向量检索，返回有上限的证据。
-4. 同一个模型应用 Momoi 的 Soul 与 Style Card，按需使用工具，并把气泡提交到共享 outbox。
+4. 同一个模型应用当前 Soul 与 system 通信规则，按需使用工具，并把气泡提交到共享 outbox。
    排队消息先落库，再经过模拟输入延迟和网络投递。
 5. Turn 收尾时归档对话、记忆操作请求与 Goal 变更、情绪与活动、工具证据、投递状态和待处理追问，
    形成可恢复记录。
