@@ -3,7 +3,6 @@ from typing import Any
 
 from ..tools.contracts.agenda import AGENDA_TOOL_POLICY
 from ..observability.events import log_event
-from ..observability.values import safe_preview
 from ..mcp.prompt import MCP_TOOL_POLICY
 from ..tools.contracts.memory import MEMORY_TOOL_POLICY
 from ..tools.contracts.thinking import THINKING_TOOL_POLICY
@@ -51,7 +50,6 @@ class PromptRenderer:
                 logger,
                 logging.INFO,
                 "workspace_prompt_loaded",
-                preview=safe_preview(text, 160),
                 **fields,
             )
             return
