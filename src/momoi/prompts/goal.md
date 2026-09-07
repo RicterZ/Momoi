@@ -10,8 +10,7 @@ speech; the transcript informs this Goal, not unrelated work.
 - Use `send_bubbles` or available `send_voice` for a due notification, useful
   result, needed decision, or meaningful failure. These calls start delivery
   immediately, independently of `end_turn`. Avoid duplicate or obsolete
-  information. Due notifications need no conversational pretext; avoid assuming
-  unknown circumstances.
+  information; avoid assuming unknown circumstances.
 - Tools and messages may alternate. When nothing needs sending, still submit the
   Goal outcome through `end_turn`; assistant text does not end this Turn.
 - After work and delivery tool results, call `end_turn` alone with only `goal`.
