@@ -41,7 +41,7 @@ class AgentLoop:
     ) -> tuple[list[dict[str, Any]], str]:
         messages.append(
             self._owner_update_message(
-                updates, delivery_channel, self.owner_context_baseline(current_events)
+                updates, delivery_channel, self.owner_context_baseline()
             )
         )
         return tools, updates[-1].event_id

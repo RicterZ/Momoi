@@ -313,13 +313,8 @@ def assemble_main_context(
     store: Store,
     retrieval: dict[str, object],
     summary_token_budget: int,
-    recent_before_timestamp: float | None = None,
 ) -> dict[str, str]:
     return {
-        "recent_external_events": assemble_recent_external_events(
-            store,
-            recent_before_timestamp,
-        ),
         "episodes": _episode_context(
             store,
             retrieval.get("episodes"),

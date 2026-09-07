@@ -66,7 +66,6 @@ class OwnerWorkflow:
             ("recall_status", recalled["query_recall"]),
             ("reflection_memories", recalled["reflection_memories"]),
             ("episode_directory", recalled["episodes"]),
-            ("recent_external_events", recalled["recent_external_events"]),
             # (
             #     "interrupted_reply_expectation",
             #     self.store.cooled_reply_expectation_context(),
@@ -232,7 +231,7 @@ class OwnerWorkflow:
         channel: Channel | None = None,
     ) -> None:
         channel = channel or self._channel_for(batch[0].channel)
-        recalled = self.owner_context_baseline(batch)
+        recalled = self.owner_context_baseline()
         reconciliation_control = self._apply_reconciliation_commands(batch)
         directives: list[str] = []
         if any(message.text.strip() == "/stop" for message in batch):
@@ -294,7 +293,6 @@ class OwnerWorkflow:
             ("proactive_bubbles", proactive_bubbles),
             ("candidate_episodes", candidates["candidate_episodes"]),
             ("recent_recall_context", candidates["recent_recall_context"]),
-            ("recent_external_events", recalled["recent_external_events"]),
             # (
             #     "interrupted_reply_expectation",
             #     self.store.cooled_reply_expectation_context(),

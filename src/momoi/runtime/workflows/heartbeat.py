@@ -16,7 +16,6 @@ from ..context.presentation import (
     heartbeat_self_state_lines,
     heartbeat_topic_lines,
 )
-from ..context.rendering import assemble_recent_external_events
 from ..transcript.building import build_transcript
 from ..transcript.rendering import render_messages
 from ..turn_support import (
@@ -222,10 +221,6 @@ class HeartbeatWorkflow:
             (
                 "recent_heartbeat_activities",
                 heartbeat_activity_lines(self.store.recent_heartbeat_activities()),
-            ),
-            (
-                "recent_external_events",
-                assemble_recent_external_events(self.store),
             ),
         )
         system = self._system()

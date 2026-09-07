@@ -145,12 +145,10 @@ class ContextService:
             "uncertainty": [],
         }
 
-    def owner_context_baseline(
-        self, events: list[IncomingMessage]
-    ) -> dict[str, str]:
+    def owner_context_baseline(self) -> dict[str, str]:
         """Assemble the context that holds before any recall decision is made.
 
-        The fixed memory baseline, Goals and folded external events do not
+        The fixed memory baseline and Goals do not
         depend on what this input turns out to need, so they are available
         before the Owner decides anything. Query-driven evidence arrives later,
         as the result of that decision.
@@ -165,7 +163,6 @@ class ContextService:
             self.store,
             retrieval,
             self.config.summary_tokens,
-            recent_before_timestamp=min(event.received_at for event in events),
         )
 
     def owner_context_candidates(
@@ -234,7 +231,6 @@ class ContextService:
             self.store,
             stored["retrieval"],
             self.config.summary_tokens,
-            recent_before_timestamp=min(event.received_at for event in events),
         )
 
     async def prepare_heartbeat_context(
@@ -309,4 +305,3 @@ class ContextService:
                 self.config.summary_tokens,
             ),
         }
-

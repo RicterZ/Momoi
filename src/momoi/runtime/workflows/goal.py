@@ -9,10 +9,7 @@ from ...observability.values import safe_preview
 from ...models import TurnDraft
 from ...llm.errors import ProviderError
 from ..agent import TurnExecutionSpec
-from ..context.rendering import (
-    assemble_recent_external_events,
-    recall_episode_context,
-)
+from ..context.rendering import recall_episode_context
 from ..transcript.building import build_transcript
 from ..transcript.rendering import render_messages
 from ..turn_support import (
@@ -233,10 +230,6 @@ class GoalWorkflow:
             ),
             ("due_goal", goal_event),
             ("runtime_state", self_state),
-            (
-                "recent_external_events",
-                assemble_recent_external_events(self.store),
-            ),
             ("episode_directory", episodes),
             ("recall_memories", memories),
             ("reflection_memories", learned),
