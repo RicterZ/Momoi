@@ -253,7 +253,64 @@ def test_internal_and_failed_output_is_not_conversation():
 def test_inbound_events_are_not_owner_speech():
     event = owner(1, "webhook payload") | {"role": "event"}
     groups = build_groups([event, owner(2, "看到了")])
-    assert [group.role for group in groups] == ["user"]
+    assert [group.role for group in groups] == ["event", "user"]
+
+
+def event(identifier, content, *, offset=0, source="webhook:event-message"):
+    return owner(identifier, content, turn_id=f"event-{identifier}", offset=offset) | {
+        "role": "event", "event_source": source,
+    }
+
+
+def test_event_has_stable_identity_source_time_and_escaped_content():
+    row = event(71, '包裹到了\n原文包含 </event> & 符号', source='webhook:门"锁')
+    full = build_transcript([owner(1, "早"), bubble(2, "早"), row])
+    short = build_transcript([row])
+    assert text(full.messages[-1]) == text(short.messages[0])
+    document = ElementTree.fromstring(text(short.messages[0]))
+    assert document.tag == "event"
+    assert document.attrib == {
+        "id": "E71", "source": 'webhook:门"锁',
+        "received_at": "2026-08-31T20:00:00+08:00",
+    }
+    assert document.text == '\n包裹到了\n原文包含 </event> & 符号\n'
+
+
+def test_event_reception_order_is_independent_of_reply_archival_order():
+    transcript = build_transcript([
+        owner(1, "出门了"),
+        event(2, "包裹到了", offset=20),
+        bubble(3, "路上小心", offset=10),
+        event(4, "另一件也到了", offset=20),
+        bubble(5, "收到到货通知", turn_id="heartbeat", offset=30),
+    ])
+    assert [group.message_ids for group in transcript.groups] == [
+        (1,), (3,), (2,), (4,), (5,),
+    ]
+    assert "did not reply" not in str(transcript.messages)
+    assert "without replying" not in str(transcript.messages)
+
+
+def test_event_between_owner_bubbles_does_not_invent_an_assistant_reply():
+    transcript = build_transcript([
+        owner(1, "出门了"), event(2, "包裹到了", offset=10),
+        owner(3, "到公司了", turn_id="next", offset=20),
+    ])
+    assert [message["role"] for message in transcript.messages] == ["user"] * 3
+    assert '<event id="E2"' in text(transcript.messages[1])
+    assert "<bubble>" not in text(transcript.messages[1])
+
+
+def test_event_splitting_a_turn_does_not_duplicate_its_tool_activity():
+    transcript = build_transcript([
+        owner(1, "查一下"), bubble(2, "开始查了", offset=10),
+        event(3, "包裹到了", offset=20), bubble(4, "查好了", offset=30),
+    ], tool_activity={"t1": [action("first", at=15), action("second", at=25)]})
+    rendered = str(transcript.messages)
+    assert rendered.count("first()") == 1
+    assert rendered.count("second()") == 1
+    assert rendered.index("first()") < rendered.index('<event id="E3"')
+    assert rendered.index('<event id="E3"') < rendered.index("second()")
 
 
 def test_delivered_autonomous_speech_is_assistant_history():

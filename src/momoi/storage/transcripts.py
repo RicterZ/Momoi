@@ -1,6 +1,5 @@
 import json
 import logging
-import time
 
 from ..observability.events import log_event
 from .context_plan_adapter import normalize_context_plan
@@ -50,7 +49,7 @@ class TranscriptStore:
                    SELECT 1 FROM messages AS m
                    WHERE m.turn_id=t.id
                      AND (
-                         m.role='user'
+                         m.role IN ('user', 'event')
                          OR m.role='assistant'
                             AND m.delivery_state IN ('delivered', 'uncertain', 'queued')
                      )
@@ -83,7 +82,7 @@ class TranscriptStore:
                              SELECT 1 FROM messages AS m
                              WHERE m.turn_id=t.id
                                AND (
-                                   m.role='user'
+                                   m.role IN ('user', 'event')
                                    OR m.role='assistant'
                                       AND m.delivery_state IN (
                                           'delivered', 'uncertain', 'queued'
@@ -140,7 +139,7 @@ class TranscriptStore:
                    SELECT 1 FROM messages AS m
                    WHERE m.turn_id=t.id
                      AND (
-                         m.role='user'
+                         m.role IN ('user', 'event')
                          OR m.role='assistant'
                             AND m.delivery_state IN ('delivered', 'uncertain', 'queued')
                      )
@@ -154,9 +153,17 @@ class TranscriptStore:
         turn_ids = [str(row["id"]) for row in turns]
         placeholders = ",".join("?" for _ in turn_ids)
         rows = self._db.execute(
-            f"""SELECT m.id, m.turn_id, m.role, m.content, m.created_at,
-                       m.delivery_state
+            f"""SELECT m.id, m.turn_id, m.role, m.content,
+                       CASE WHEN m.role='event' THEN COALESCE(wr.created_at, m.created_at)
+                            ELSE m.created_at END AS created_at,
+                       m.delivery_state,
+                       CASE WHEN m.role='event'
+                            THEN 'webhook:' || COALESCE(wr.workflow_id, 'unknown')
+                            ELSE '' END AS event_source
                 FROM messages AS m
+                LEFT JOIN webhook_steps AS ws
+                  ON m.turn_id=('webhook:' || ws.run_id || ':' || ws.step_index)
+                LEFT JOIN webhook_runs AS wr ON wr.id=ws.run_id
                 WHERE m.turn_id IN ({placeholders})
                   AND (m.role IN ('user', 'event') OR m.delivery_state IN ('delivered', 'uncertain', 'queued'))
                 ORDER BY m.id""",
@@ -417,80 +424,3 @@ class TranscriptStore:
                 }
             )
         return records
-
-    def recent_external_events(
-        self,
-        limit: int,
-        lookback_seconds: float,
-        before_timestamp: float | None = None,
-    ) -> list[dict[str, object]]:
-        """Return folded autonomous Events that never became shared dialogue."""
-
-        if limit <= 0 or lookback_seconds <= 0:
-            return []
-        upper = float(before_timestamp) if before_timestamp is not None else time.time()
-        rows = self._db.execute(
-            """SELECT m.content, m.created_at, t.id AS turn_id,
-                      t.source_ids_json, wr.workflow_id
-               FROM messages AS m
-               JOIN turns AS t ON t.id=m.turn_id
-               LEFT JOIN webhook_steps AS ws
-                 ON t.id=('webhook:' || ws.run_id || ':' || ws.step_index)
-               LEFT JOIN webhook_runs AS wr ON wr.id=ws.run_id
-               WHERE t.kind='autonomous'
-                 AND t.state<>'running'
-                 AND t.updated_at>=? AND t.updated_at<?
-                 AND m.role='event'
-                 AND m.created_at>=? AND m.created_at<?
-                 AND NOT EXISTS (
-                     SELECT 1 FROM messages AS visible
-                     WHERE visible.turn_id=t.id
-                       AND visible.role='assistant'
-                       AND visible.delivery_state IN ('delivered', 'uncertain')
-                 )
-               ORDER BY m.created_at""",
-            (
-                upper - float(lookback_seconds),
-                upper,
-                upper - float(lookback_seconds),
-                upper,
-            ),
-        ).fetchall()
-        folded: dict[tuple[str, str], dict[str, object]] = {}
-        for row in rows:
-            content = " ".join(str(row["content"] or "").split())
-            if not content:
-                continue
-            workflow_id = str(row["workflow_id"] or "").strip()
-            if workflow_id:
-                source = f"webhook:{workflow_id}"
-            else:
-                source_ids = decode_stored_json(
-                    row["source_ids_json"] or "[]",
-                    entity="turn",
-                    record_id=row["turn_id"],
-                    field="source_ids_json",
-                    expected_type=list,
-                    fallback=[],
-                )
-                raw_source = str(source_ids[0]) if source_ids else str(row["turn_id"])
-                source = raw_source.split(":", 1)[0] or "autonomous"
-            key = (source, content)
-            seen_at = float(row["created_at"])
-            item = folded.get(key)
-            if item is None:
-                folded[key] = {
-                    "source": source,
-                    "event": content,
-                    "first_seen": seen_at,
-                    "last_seen": seen_at,
-                    "occurrences": 1,
-                }
-                continue
-            item["last_seen"] = seen_at
-            item["occurrences"] = int(item["occurrences"]) + 1
-        selected = sorted(
-            folded.values(),
-            key=lambda item: (float(item["last_seen"]), str(item["source"])),
-        )[-limit:]
-        return selected

@@ -1,6 +1,6 @@
 from collections.abc import Mapping, Sequence
 from datetime import datetime
-from xml.sax.saxutils import escape
+from xml.sax.saxutils import escape, quoteattr
 from zoneinfo import ZoneInfo
 
 from .models import (
@@ -75,6 +75,16 @@ def _silence(
 def render_bubble(text: str, *, delivery_state: str = "delivered") -> str:
     attributes = ' delivery="queued"' if delivery_state == "queued" else ""
     return f"<bubble{attributes}>\n{escape(text)}\n</bubble>"
+
+
+def render_event(
+    text: str, identifier: int, source: str, received_at: float, timezone: ZoneInfo
+) -> str:
+    timestamp = datetime.fromtimestamp(received_at, timezone).isoformat(timespec="seconds")
+    return (
+        f'<event id="E{identifier}" source={quoteattr(source)} received_at="{timestamp}">\n'
+        f'{escape(text)}\n</event>'
+    )
 
 
 def _part_bubble(group: TranscriptGroup, index: int) -> str:
@@ -181,7 +191,20 @@ def render_messages(
 
     messages: list[dict[str, object]] = []
     previous: TranscriptGroup | None = None
-    for group in groups:
+    for group_index, group in enumerate(groups):
+        if group.role == "event":
+            lines = []
+            for index, content in enumerate(group.parts):
+                lines.append(
+                    render_event(
+                        content, group.message_ids[index], group.event_sources[index],
+                        group.part_times[index], timezone,
+                    )
+                )
+            messages.append(_message("user", "\n".join(lines)))
+            # An event is neither owner speech nor an unanswered chat bubble.
+            previous = None
+            continue
         silence = _silence(group, previous)
         if silence is not None:
             messages.append(silence)
@@ -215,6 +238,22 @@ def render_messages(
             if group.role == "assistant"
             else []
         )
+        if records:
+            # An event may split one Turn's speech into several groups. Assign
+            # each tool record to the corresponding interval exactly once.
+            same_turn = [
+                index for index, candidate in enumerate(groups)
+                if candidate.role == "assistant"
+                and set(candidate.turn_ids).intersection(group.turn_ids)
+            ]
+            earlier = [index for index in same_turn if index < group_index]
+            later = [index for index in same_turn if index > group_index]
+            lower = groups[earlier[-1] + 1].started_at if earlier else float("-inf")
+            upper = groups[group_index + 1].started_at if later else float("inf")
+            records = [
+                record for record in records
+                if lower <= float(record.get("at") or 0.0) < upper
+            ]
         if records:
             lines.extend(_assistant_body(group, records, action_limit))
         else:

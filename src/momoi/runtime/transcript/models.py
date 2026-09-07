@@ -23,6 +23,7 @@ class TranscriptGroup:
     started_at: float
     ended_at: float
     part_states: tuple[str, ...] = ()
+    event_sources: tuple[str, ...] = ()
     uncertain: bool = False
     token_estimate: int = field(default=0, compare=False)
 

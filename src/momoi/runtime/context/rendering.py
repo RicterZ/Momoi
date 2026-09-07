@@ -14,9 +14,6 @@ from ..agent.budget import SECTION_BUDGET_ALLOCATOR
 from .retrieval import _merge_matches
 
 logger = logging.getLogger(__name__)
-RECENT_EXTERNAL_EVENT_LIMIT = 6
-RECENT_EXTERNAL_EVENT_LOOKBACK_SECONDS = 6 * 3600
-RECENT_EXTERNAL_EVENT_TOKEN_BUDGET = 1200
 
 
 def _supports(item: dict[str, object]) -> str:
@@ -229,35 +226,6 @@ def _episode_context(
         summary_quality=quality_counts,
     )
     return rendered
-
-
-def assemble_recent_external_events(
-    store: Store,
-    before_timestamp: float | None = None,
-    *,
-    limit: int = RECENT_EXTERNAL_EVENT_LIMIT,
-    lookback_seconds: float = RECENT_EXTERNAL_EVENT_LOOKBACK_SECONDS,
-    token_budget: int = RECENT_EXTERNAL_EVENT_TOKEN_BUDGET,
-) -> str:
-    """Render silent autonomous Events as a folded, low-priority ledger."""
-
-    events = store.recent_external_events(limit, lookback_seconds, before_timestamp)
-    blocks: list[str] = []
-    for index, event in enumerate(events, 1):
-        first_seen = float(event["first_seen"])
-        last_seen = float(event["last_seen"])
-        occurrences = int(event["occurrences"])
-        lines = [
-            f"E-{index} {store.context_timestamp(last_seen)} [{event['source']}]",
-            f"  event: {event['event']}",
-        ]
-        if occurrences > 1:
-            lines.append(
-                f"  observations: {occurrences} since {store.context_timestamp(first_seen)}"
-            )
-        blocks.append("\n".join(lines))
-    rendered = "\n\n".join(blocks)
-    return truncate_tokens(rendered, max(1, token_budget)) if rendered else ""
 
 
 def assemble_recent_webhook_activity(

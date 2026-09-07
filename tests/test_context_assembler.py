@@ -7,12 +7,10 @@ from pathlib import Path
 from momoi.channel.napcat import NapCatConfig
 from momoi.config.models import AppConfig
 from momoi.integrations.models import LLMConfig
-from momoi.context_time import context_timestamp
 from momoi.models import AgentReply, IncomingMessage
 from momoi.runtime.context.rendering import (
     _episode_header,
     assemble_main_context,
-    assemble_recent_external_events,
     recall_episode_context,
 )
 from momoi.runtime.context.retrieval import (
@@ -598,7 +596,7 @@ class ContextAssemblerTest(unittest.TestCase):
 
 
 
-    def test_silent_external_events_fold_without_displacing_shared_turns(self) -> None:
+    def test_silent_external_events_enter_the_transcript_window(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
 
@@ -624,7 +622,6 @@ class ContextAssemblerTest(unittest.TestCase):
                 ).fetchone()["id"]
                 store.mark_sent(int(outbox_id))
 
-            baseline = store.recent_conversation_messages(6, 88000, 100)
             for index in range(12):
                 turn_id = f"webhook:silent-{index}:0"
                 observed_at = 20 + index
@@ -644,16 +641,13 @@ class ContextAssemblerTest(unittest.TestCase):
                     )
 
             selected = store.recent_conversation_messages(6, 88000, 100)
-            self.assertEqual(selected, baseline)
-
-            external = assemble_recent_external_events(
-                store,
-                100,
-                lookback_seconds=100,
-            )
-            self.assertEqual(external.count("event: 门锁超时未关"), 1)
-            self.assertIn("observations: 12 since", external)
-            self.assertIn(context_timestamp(31, store.timezone), external)
+            self.assertEqual(len(selected), 6)
+            transcript = build_transcript(selected, timezone=store.timezone)
+            rendered = str(transcript.messages)
+            self.assertEqual(rendered.count('<event id="E'), 6)
+            self.assertIn("门锁超时未关", rendered)
+            self.assertNotIn("<bubble>", rendered)
+            self.assertNotIn("did not reply", rendered)
             store.close()
 
     def test_visible_autonomous_event_remains_shared_conversation(self) -> None:
@@ -680,19 +674,11 @@ class ContextAssemblerTest(unittest.TestCase):
 
             recent = store.recent_conversation_messages(6, 88000, 20)
             transcript = build_transcript(recent, timezone=store.timezone)
-            self.assertEqual(transcript.messages, [])
-            self.assertEqual(
-                [part for group in transcript.orphaned for part in group.parts],
-                ["老师看一下门锁"],
-            )
-            self.assertEqual(
-                assemble_recent_external_events(
-                    store,
-                    20,
-                    lookback_seconds=20,
-                ),
-                "",
-            )
+            self.assertEqual([m["role"] for m in transcript.messages], ["user", "assistant"])
+            self.assertEqual(transcript.orphaned, [])
+            self.assertIn('<event id="E', str(transcript.messages[0]))
+            self.assertIn("门锁超时未关", str(transcript.messages[0]))
+            self.assertIn("老师看一下门锁", str(transcript.messages[1]))
             store.close()
 
 

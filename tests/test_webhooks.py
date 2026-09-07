@@ -20,7 +20,7 @@ from momoi.models import (
 from momoi.runtime import (
     MomoiDaemon,
 )
-from momoi.runtime.context.rendering import assemble_recent_external_events
+from momoi.runtime.transcript.building import build_transcript
 from momoi.storage import Store
 from momoi.webhooks.catalog import WorkflowError, bind_workflow, load_catalog
 from momoi.webhooks.service import WebhookService
@@ -594,10 +594,12 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(event[0]["content"], "没有变化时保持安静。")
             self.assertEqual(event[0]["delivery_state"], "delivered")
             recent = store.recent_conversation_messages(5, 2000)
-            self.assertEqual(recent, [])
-            external = assemble_recent_external_events(store)
-            self.assertIn("[webhook:event-message]", external)
-            self.assertIn("event: 没有变化时保持安静。", external)
+            self.assertEqual(len(recent), 1)
+            transcript = build_transcript(recent, timezone=store.timezone)
+            external = str(transcript.messages)
+            self.assertIn('source="webhook:event-message"', external)
+            self.assertIn("没有变化时保持安静。", external)
+            self.assertNotIn("<bubble>", external)
             found = store.search_episodes("没有变化", 3)
             self.assertTrue(found)
             self.assertIn(

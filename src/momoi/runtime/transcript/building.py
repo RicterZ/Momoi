@@ -10,12 +10,12 @@ from .models import (
     TranscriptGroup,
     text_value,
 )
-from .rendering import render_bubble, render_messages
+from .rendering import render_bubble, render_event, render_messages
 
 
 def _visible(row: Mapping[str, object]) -> bool:
     role = text_value(row.get("role"))
-    if role == "user":
+    if role in {"user", "event"}:
         return bool(text_value(row.get("content")))
     if role != "assistant":
         return False
@@ -36,19 +36,34 @@ def _row_order(row: Mapping[str, object]) -> tuple[int, float]:
 def build_groups(rows: Iterable[Mapping[str, object]]) -> list[TranscriptGroup]:
     """Group visible rows into one message per role per runtime Turn.
 
-    A Turn is the unit of Momoi speaking. Within one Turn it may call
-    ``send_bubbles`` several times around tool work, but the owner simply sees
-    consecutive bubbles, and the tool work between them never enters history.
-    Grouping by Turn therefore needs no timing heuristic, and it gives
-    consecutive assistant groups one exact meaning: Momoi opened a new Turn and
-    spoke again without the owner answering.
+    Dialogue is grouped by role and Turn; events remain separate historical
+    inputs. Their reception time places them among the archived bubbles.
     """
 
     visible = sorted((row for row in rows if _visible(row)), key=_row_order)
+    # Dialogue keeps its established message order. Event reception can precede
+    # the archival of an older reply, so merge events by time, not archive ID.
+    events = sorted(
+        (row for row in visible if row.get("role") == "event"),
+        key=lambda row: (_row_order(row)[1], _row_order(row)[0]),
+    )
+    ordered = []
+    event_index = 0
+    for row in visible:
+        if row.get("role") == "event":
+            continue
+        while event_index < len(events) and (
+            _row_order(events[event_index])[1], _row_order(events[event_index])[0]
+        ) <= (_row_order(row)[1], _row_order(row)[0]):
+            ordered.append(events[event_index])
+            event_index += 1
+        ordered.append(row)
+    ordered.extend(events[event_index:])
     groups: list[TranscriptGroup] = []
     parts: list[str] = []
     part_times: list[float] = []
     part_states: list[str] = []
+    event_sources: list[str] = []
     message_ids: list[int] = []
     turn_ids: list[str] = []
     role = ""
@@ -59,11 +74,15 @@ def build_groups(rows: Iterable[Mapping[str, object]]) -> list[TranscriptGroup]:
 
     def flush() -> None:
         nonlocal parts, part_times, part_states, message_ids, turn_ids, role, turn, uncertain
+        nonlocal event_sources
         if not parts:
             return
         text = "\n".join(
-            render_bubble(part, delivery_state=state)
-            for part, state in zip(parts, part_states, strict=True)
+            render_event(
+                part, message_ids[index], event_sources[index], part_times[index],
+                ZoneInfo("UTC"),
+            ) if role == "event" else render_bubble(part, delivery_state=part_states[index])
+            for index, part in enumerate(parts)
         )
         groups.append(
             TranscriptGroup(
@@ -71,6 +90,7 @@ def build_groups(rows: Iterable[Mapping[str, object]]) -> list[TranscriptGroup]:
                 parts=tuple(parts),
                 part_times=tuple(part_times),
                 part_states=tuple(part_states),
+                event_sources=tuple(event_sources),
                 message_ids=tuple(message_ids),
                 turn_ids=tuple(dict.fromkeys(turn_ids)),
                 started_at=started,
@@ -82,13 +102,14 @@ def build_groups(rows: Iterable[Mapping[str, object]]) -> list[TranscriptGroup]:
         parts = []
         part_times = []
         part_states = []
+        event_sources = []
         message_ids = []
         turn_ids = []
         role = ""
         turn = ""
         uncertain = False
 
-    for row in visible:
+    for row in ordered:
         row_role = text_value(row.get("role"))
         row_turn = text_value(row.get("turn_id"))
         identifier, created = _row_order(row)
@@ -100,6 +121,7 @@ def build_groups(rows: Iterable[Mapping[str, object]]) -> list[TranscriptGroup]:
         parts.append(text_value(row.get("content")))
         part_times.append(created)
         part_states.append(text_value(row.get("delivery_state")) or "delivered")
+        event_sources.append(text_value(row.get("event_source")) or "webhook:unknown")
         message_ids.append(identifier)
         turn_ids.append(text_value(row.get("turn_id")))
         ended = created
@@ -133,17 +155,17 @@ def select_groups(
 def partition_for_protocol(
     groups: Sequence[TranscriptGroup],
 ) -> tuple[list[TranscriptGroup], list[TranscriptGroup]]:
-    """Split off committed Momoi speech that no owner message precedes.
+    """Split off committed Momoi speech that no user-role input precedes.
 
     Proactive Heartbeat, Goal and Webhook messages can open a window, and the
-    Anthropic Messages API requires the first message to be the user's. Those
-    bubbles are committed output with explicit delivery states, so they are returned
-    separately for the caller to render as output evidence rather than dropped or
-    turned into a fabricated owner message.
+    Anthropic Messages API requires the first message to have the user role.
+    Historical events can also occupy a user-role input without being owner
+    speech. Leading assistant bubbles are returned separately with their delivery
+    states for the caller to render as output evidence.
     """
 
     leading = 0
-    while leading < len(groups) and groups[leading].role != "user":
+    while leading < len(groups) and groups[leading].role == "assistant":
         leading += 1
     return list(groups[:leading]), list(groups[leading:])
 

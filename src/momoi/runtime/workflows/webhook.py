@@ -5,7 +5,6 @@ from ...channel import Channel
 from ...models import AgentReply, TurnDraft
 from ..agent import TurnExecutionSpec
 from ..context.rendering import (
-    assemble_recent_external_events,
     assemble_recent_webhook_activity,
     recall_episode_context,
 )
@@ -87,10 +86,6 @@ class WebhookWorkflow:
             (
                 "runtime_state",
                 f"{runtime_state}\n{heartbeat_self_state_lines(self_state)}",
-            ),
-            (
-                "recent_external_events",
-                assemble_recent_external_events(self.store),
             ),
             ("episode_directory", episodes),
             ("recall_memories", memories),

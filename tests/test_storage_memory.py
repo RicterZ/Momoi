@@ -613,13 +613,9 @@ class StorageMemoryTest(unittest.TestCase):
 
             queued = store.conversation_episode(episode_id)["messages"][-1]
             self.assertEqual(queued["delivery_state"], "queued")
-            self.assertNotIn(
-                "这条消息等待投递",
-                [
-                    item["content"]
-                    for item in store.recent_conversation_messages(1, 1000)
-                ],
-            )
+            pending = store.recent_conversation_messages(1, 1000)[-1]
+            self.assertEqual(pending["content"], "这条消息等待投递")
+            self.assertEqual(pending["delivery_state"], "queued")
 
             store.mark_ambiguous(outbox_id, 1, "timeout")
             uncertain = store.recent_conversation_messages(1, 1000)[-1]

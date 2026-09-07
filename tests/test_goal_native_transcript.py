@@ -74,6 +74,14 @@ class GoalNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             # A previous Goal has finished, but its remaining bubbles are still
             # waiting for simulated typing. The next Goal must see all of them.
             daemon.store.begin_turn("previous-goal", "goal", ["goal:water"])
+            with daemon.store._db:
+                daemon.store._db.execute(
+                    """INSERT INTO messages
+                       (turn_id, role, content, created_at, source_event_ids_json,
+                        delivery_state)
+                       VALUES ('previous-goal', 'event', '贴纸包到站', ?, '[]', 'delivered')""",
+                    (datetime.now(ZoneInfo("UTC")).timestamp(),),
+                )
             daemon.store.queue_progress(
                 "previous-goal", "water-bubbles", ["两点了", "记得喝水"], "napcat",
             )
@@ -156,6 +164,9 @@ class GoalNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             )
             self.assertIn("继续检查", str(provider.first_messages[1]["content"]))
             self.assertIn("好", str(provider.first_messages[2]["content"]))
+            self.assertIn('<event id="E', str(provider.first_messages[3]["content"]))
+            self.assertIn("贴纸包到站", str(provider.first_messages[3]["content"]))
+            self.assertNotIn("<recent_external_events>", rendered)
             previous_speech = str(provider.first_messages[4]["content"])
             self.assertIn("两点了", previous_speech)
             self.assertIn("记得喝水", previous_speech)
