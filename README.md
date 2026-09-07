@@ -378,11 +378,11 @@ Create `compose.yaml`:
 ```yaml
 services:
   embedding:
-    image: ricterz/momoi-embedding:0.5.6
+    image: ricterz/momoi-embedding:latest
     restart: unless-stopped
 
   momoi:
-    image: ricterz/momoi:0.5.6
+    image: ricterz/momoi:latest
     restart: unless-stopped
     depends_on:
       - embedding
