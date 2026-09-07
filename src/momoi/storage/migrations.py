@@ -83,10 +83,22 @@ def _add_memory_operation_workflow(database: sqlite3.Connection) -> None:
         database.execute("PRAGMA foreign_keys=ON")
 
 
+def _remove_goal_review_header(database: sqlite3.Connection) -> None:
+    header = "[AUTONOMOUS GOAL REVIEW RECORD; not sent to the owner]\n"
+    database.execute(
+        """UPDATE messages SET content=substr(content, ?)
+           WHERE role='assistant' AND delivery_state='internal'
+             AND json_extract(source_event_ids_json, '$[0]')='goal-record:' || turn_id
+             AND substr(content, 1, ?)=?""",
+        (len(header) + 1, len(header), header),
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     _add_runtime_archive_metadata,
     _add_turn_workflow_kind,
     _add_memory_operation_workflow,
+    _remove_goal_review_header,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 

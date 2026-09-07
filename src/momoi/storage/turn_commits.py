@@ -204,7 +204,6 @@ class TurnCommitStore:
             current = self.goal(goal_id)
             if current is not None:
                 goal_record = (
-                    "[AUTONOMOUS GOAL REVIEW RECORD; not sent to the owner]\n"
                     f"Goal: {current['title']}\n"
                     f"Status: {current['status']}\n"
                     f"Latest result: {current['latest_result'] or '(none)'}\n"
@@ -264,4 +263,3 @@ class TurnCommitStore:
                 (now, turn_id),
             )
         return turn_id
-

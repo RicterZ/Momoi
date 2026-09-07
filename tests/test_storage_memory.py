@@ -1676,6 +1676,31 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertEqual(archive["archive_day"], "2026-09-02")
             reopened.close()
 
+    def test_goal_header_migration_only_changes_goal_snapshots(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "momoi.sqlite3"
+            store = Store(path)
+            header = "[AUTONOMOUS GOAL REVIEW RECORD; not sent to the owner]\n"
+            body = "Goal: 检查\nStatus: done\nLatest result: 正常\nNext action: (none)"
+            with store._db:
+                store._db.executemany(
+                    """INSERT INTO messages
+                       (turn_id, role, content, created_at, source_event_ids_json, delivery_state)
+                       VALUES ('review', ?, ?, 1, ?, ?)""",
+                    [
+                        ("assistant", header + body, '["goal-record:review"]', "internal"),
+                        ("user", header + body, '[]', "delivered"),
+                        ("assistant", header + body, '[]', "internal"),
+                    ],
+                )
+                store._db.execute("PRAGMA user_version=3")
+            store.close()
+            for _ in range(2):
+                store = Store(path)
+                rows = store._db.execute("SELECT content FROM messages ORDER BY id").fetchall()
+                self.assertEqual([row["content"] for row in rows], [body, header + body, header + body])
+                store.close()
+
     def test_database_migrations_are_versioned_and_reject_newer_schema(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "momoi.sqlite3"
@@ -2336,7 +2361,8 @@ class StorageMemoryTest(unittest.TestCase):
             archived = store.conversation_episode(str(episode["id"]))["messages"]
             self.assertTrue(
                 any(
-                    "AUTONOMOUS GOAL REVIEW RECORD" in item["content"]
+                    item["content"].startswith("Goal: ")
+                    and "Latest result: 本次检查正常" in item["content"]
                     for item in archived
                 )
             )
