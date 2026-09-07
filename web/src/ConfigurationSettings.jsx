@@ -771,6 +771,21 @@ function ProviderSection({ module, data, save, saving, next, previous }) {
             {
               ...result.capabilities[name],
               enabled: draft.values[name].enabled,
+              options: {
+                // Keep other adapters' draft fields locally; only the active
+                // adapter's normalized options are sent to the server.
+                ...Object.fromEntries(
+                  Object.entries(draft.values[name].options).filter(([key]) =>
+                    !Object.hasOwn(
+                      data.adapters.find((adapter) =>
+                        adapter.capability === name && adapter.adapter === draft.values[name].adapter,
+                      )?.fields || {},
+                      key,
+                    ),
+                  ),
+                ),
+                ...result.capabilities[name].options,
+              },
             },
           ]),
         ),
