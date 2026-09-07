@@ -162,7 +162,6 @@ def _episode_context(
     summary_token_budget: int,
     raw_token_budget: int = 0,
     exclude_message_ids: set[int] | None = None,
-    skip_empty_webhook: bool = False,
 ) -> str:
     if not isinstance(episodes, list):
         return ""
@@ -188,12 +187,6 @@ def _episode_context(
     for selected in existing:
         episode = store.episode(str(selected["episode_id"]))
         if episode is None:
-            continue
-        if (
-            skip_empty_webhook
-            and str(episode.get("title") or "").startswith("Webhook event-message")
-            and not _episode_summary(episode)[0]
-        ):
             continue
         lines = [
             _episode_header(episode, selected),
@@ -260,9 +253,6 @@ def recall_episode_context(
     query: str,
     max_results: int,
     summary_token_budget: int,
-    *,
-    skip_empty_webhook: bool = False,
-    exclude_turn_ids: set[str] | None = None,
 ) -> str:
     query = query.strip()
     if not query:
@@ -287,18 +277,10 @@ def recall_episode_context(
         max_results,
         summary_token_budget,
     )
-    recent_ids = exclude_turn_ids or set()
-    for episode in episodes:
-        episode["is_recent"] = any(
-            isinstance(match, dict)
-            and str(match.get("turn_id") or "") in recent_ids
-            for match in episode.get("matches") or []
-        )
     episodes = rank_recall_items(episodes)
     return _episode_context(
         store,
         episodes,
         summary_token_budget,
         summary_token_budget,
-        skip_empty_webhook=skip_empty_webhook,
     )

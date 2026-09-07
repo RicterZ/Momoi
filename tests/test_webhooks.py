@@ -6,6 +6,7 @@ import tempfile
 import unittest
 import time
 from pathlib import Path
+from unittest.mock import patch
 
 from momoi.channel.napcat import NapCatConfig
 from momoi.config.models import AppConfig, WebhookConfig
@@ -357,9 +358,13 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             daemon.provider = provider  # type: ignore[assignment]
             daemon.builtin_tools = tools  # type: ignore[assignment]
             daemon.tool_executor.builtin_tools = tools  # type: ignore[assignment]
-            reply = await daemon._complete_webhook_turn(
-                "回家时检查快递状态并根据结果提醒我。", "webhook:test:0"
-            )
+            with (
+                patch.object(daemon.store, "ranked_memory_context", side_effect=AssertionError("unexpected memory pre-retrieval")),
+                patch.object(daemon.store, "search_episodes", side_effect=AssertionError("unexpected episode pre-retrieval")),
+            ):
+                reply = await daemon._complete_webhook_turn(
+                    "回家时检查快递状态并根据结果提醒我。", "webhook:test:0"
+                )
             self.assertEqual(reply.messages, [])
             self.assertEqual(provider.calls, 3)
             expected_surface = [
@@ -409,6 +414,8 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                 current_context,
             )
             self.assertNotIn("历史事件", current_context)
+            for tag in ("episode_directory", "recall_memories", "reflection_memories"):
+                self.assertNotIn(f"<{tag}>", current_context)
             for event_id in event_ids:
                 self.assertEqual(
                     str(provider.conversations[0]).count(f'<event id="{event_id}"'), 1,
