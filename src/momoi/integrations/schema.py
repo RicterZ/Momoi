@@ -50,6 +50,7 @@ SCHEMAS = {
         "api_key": field(secret=True),
         "model": field(default="BAAI/bge-small-zh-v1.5"),
         "dimensions": field("integer", 512),
+        "calibration_profile": field(default="bge-small-zh-v1.5-momoi-v1"),
         "query_timeout_seconds": field("number", 5),
         "document_timeout_seconds": field("number", 30),
     },
@@ -82,6 +83,7 @@ def builtin_schema(name, capability):
         "format": "音频格式",
         "latency": "延迟模式",
         "dimensions": "向量维度",
+        "calibration_profile": "评分校准配置",
         "query_timeout_seconds": "查询超时（秒）",
         "document_timeout_seconds": "文档编码超时（秒）",
     }
@@ -108,6 +110,7 @@ def builtin_schema(name, capability):
     if (name, capability) == ("openai", "embedding"):
         fields["endpoint"]["description"] = "完整请求地址，例如 https://api.example.com/v1/embeddings；不会自动追加路径。"
         fields["dimensions"]["description"] = "需与所选模型的输出维度一致"
+        fields["calibration_profile"]["description"] = "选择与 embedding 模型匹配的已实现校准配置；填写名称不会自动生成评分阈值。"
     if (name, capability) == ("fish", "tts"):
         fields["format"]["enum"] = ["mp3", "wav", "opus"]
         fields["latency"]["enum"] = ["normal", "balanced", "low"]

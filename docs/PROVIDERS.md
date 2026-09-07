@@ -102,14 +102,17 @@ complete `endpoint`. Other defaults:
 | --- | --- |
 | `model` | `BAAI/bge-small-zh-v1.5` |
 | `dimensions` | `512` |
+| `calibration_profile` | `bge-small-zh-v1.5-momoi-v1` |
 | `query_timeout_seconds` | `5` |
 | `document_timeout_seconds` | `30` |
 
 Query and document timeouts are configured independently; the shared
 `timeout_seconds` is no longer accepted. Indexing uses the internal batch size of
-8 and built-in `bge-small-zh-v1.5-momoi-v1` scoring calibration. Remove
-`timeout_seconds`, `document_batch_size`, and `calibration_profile` from existing
-embedding configurations. Calibration and semantic-space consistency checks
+8. Remove `timeout_seconds` and `document_batch_size` from existing embedding
+configurations. `calibration_profile` remains an advanced setting that selects
+an implemented scoring calibration matching the model. The built-in profile is
+`bge-small-zh-v1.5-momoi-v1`; entering a new name does not generate thresholds.
+Calibration and semantic-space consistency checks
 remain in place; switching models does not automatically calibrate scoring for
 the new model. Model and dimensions must match the encoder.
 Enable this binding before using `momoi embedding` commands.

@@ -46,6 +46,7 @@ def register_builtins():
                 "api_key",
                 "model",
                 "dimensions",
+                "calibration_profile",
                 "query_timeout_seconds",
                 "document_timeout_seconds",
             },

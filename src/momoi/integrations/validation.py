@@ -129,4 +129,7 @@ def embedding_space_config(options, *, enabled):
         enabled=True,
         model=text(options, "model", defaults.model),
         dimensions=number(options, "dimensions", defaults.dimensions, integer=True),
+        calibration_profile=text(
+            options, "calibration_profile", defaults.calibration_profile
+        ),
     )

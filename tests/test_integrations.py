@@ -151,7 +151,6 @@ class CatalogTest(unittest.TestCase):
         removed = {
             "timeout_seconds": 10,
             "document_batch_size": 4,
-            "calibration_profile": "unknown-profile",
         }
         self.assertFalse(set(removed) & schema.keys())
         raw = {
@@ -164,6 +163,9 @@ class CatalogTest(unittest.TestCase):
         self.assertEqual(services.embedding_config.calibration_profile, "bge-small-zh-v1.5-momoi-v1")
         self.assertEqual(services.embedding.config.query_timeout_seconds, 5)
         self.assertEqual(services.embedding.config.document_timeout_seconds, 30)
+        self.assertTrue(schema["calibration_profile"]["advanced"])
+        raw["bindings"]["embedding"]["options"] = {"calibration_profile": "custom-model-v1"}
+        self.assertEqual(ServiceRegistry(self.load(raw)).embedding_config.calibration_profile, "custom-model-v1")
         for key, value in removed.items():
             with self.subTest(field=key):
                 raw["bindings"]["embedding"]["options"] = {key: value}

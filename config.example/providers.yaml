@@ -75,6 +75,7 @@ bindings:
     options:
       model: BAAI/bge-small-zh-v1.5
       dimensions: 512
+      calibration_profile: bge-small-zh-v1.5-momoi-v1
       query_timeout_seconds: 5
       document_timeout_seconds: 30
   balance:

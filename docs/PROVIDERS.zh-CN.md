@@ -89,12 +89,14 @@ Embedding 不再接受 `base_url`；已有配置需改为完整的 `endpoint`。
 | --- | --- |
 | `model` | `BAAI/bge-small-zh-v1.5` |
 | `dimensions` | `512` |
+| `calibration_profile` | `bge-small-zh-v1.5-momoi-v1` |
 | `query_timeout_seconds` | `5` |
 | `document_timeout_seconds` | `30` |
 
 查询与文档编码分别设置超时，不再接受总超时 `timeout_seconds`。
-索引批次固定使用内部默认值 8，评分校准使用内置的 `bge-small-zh-v1.5-momoi-v1`；
-`document_batch_size` 和 `calibration_profile` 不再是用户配置项，已有配置需移除这三项。
+索引批次固定使用内部默认值 8；已有配置需移除 `document_batch_size` 和 `timeout_seconds`。
+`calibration_profile` 是高级配置项，用来选择已实现的评分校准规则，必须与模型匹配。
+当前内置规则为 `bge-small-zh-v1.5-momoi-v1`；填写新名称不会自动生成阈值。
 校准逻辑和向量空间一致性检查仍保留；切换模型并不表示自动完成了针对新模型的评分校准。
 模型、维度必须与编码器匹配。使用 `momoi embedding` 命令前需要启用 binding。
 查询失败仍会退回关键词召回，并保留查询熔断机制。
