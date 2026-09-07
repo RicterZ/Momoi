@@ -15,6 +15,8 @@ class AudioInput:
 
 
 class ASRProvider(ABC):
+    max_audio_bytes: int = 3 * 1024 * 1024
+
     @abstractmethod
     async def transcribe(self, audio: AudioInput) -> str:
         """Return recognized text for one complete voice message."""

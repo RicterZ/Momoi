@@ -1,11 +1,12 @@
 import logging
 import math
 import time
+from dataclasses import fields
 
 import httpx
 import numpy as np
 
-from ...integrations.models import EmbeddingConfig
+from ...integrations.models import EmbeddingConfig, EmbeddingSpaceConfig
 from ...observability.events import log_event
 from ...policies import SemanticPolicy
 
@@ -19,6 +20,12 @@ class EmbeddingClient:
         policy: SemanticPolicy = SemanticPolicy(),
     ) -> None:
         self.config = config
+        self.space = EmbeddingSpaceConfig(
+            **{
+                item.name: getattr(config, item.name)
+                for item in fields(EmbeddingSpaceConfig)
+            }
+        )
         self.policy = policy
         self.__client: httpx.AsyncClient | None = None
         self._query_failures = 0

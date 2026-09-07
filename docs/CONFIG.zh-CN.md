@@ -10,7 +10,7 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
 `config.json` 不会展开 `${VAR}` 占位符。
 
 外部 API 的端点、凭据和参数统一由 [providers.yaml](./PROVIDERS.zh-CN.md) 管理。
-主配置包含 `"providers": "providers.yaml"`，修改服务配置后重启。
+主配置包含 `"providers": "providers.yaml"`，dashboard 模式自动检测服务配置变化并重建业务实例。
 
 ## Fish Audio 语音合成
 
@@ -44,7 +44,7 @@ bindings:
 
 从 [Fish API key 页面](https://fish.audio/app/api-keys) 创建密钥，填写到
 `credentials.fish.api_key`，或通过示例中的 `FISH_API_KEY` 环境引用传入。
-修改后重启 Momoi，内部可通过 `daemon.bubble_delivery.tts_provider` 访问初始化后的 provider，
+Dashboard 模式修改后自动应用，内部可通过 `daemon.bubble_delivery.tts_provider` 访问初始化后的 provider，
 调用 `synthesize(text)` 返回 `AudioOutput(data: bytes, format: str)`，音频只在内存中传递。不增加 CLI 入口。
 
 | 字段 | 默认值 | 说明 |
@@ -134,7 +134,7 @@ NapCat 和 Weixin 的语音转写前统一添加 `[语音消息] `，随后进�
 | 字段 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `primary` | 是 | — | 用于出站投递的渠道名称 |
-| `enabled` | 是 | — | 非空的渠道名称与配置对象；必须包含 `primary` |
+| `enabled` | 是 | — | 渠道名称与配置对象；dashboard 设置阶段允许为空，否则必须包含 `primary` |
 
 ### NapCat
 
@@ -438,5 +438,7 @@ Goal 的 `send_bubbles` / `send_voice` 调用后立即进入通用发送流程�
 | `MOMOI_WEBHOOKS_TOKEN` | `webhooks.token` |
 
 请妥善保护包含凭证的文件。Provider 凭据仅通过 YAML 中声明的环境引用读取。
-修改 `providers.yaml`、`config.json`、`mcp.json`、工作流或执行器定义后，需要重启
-`momoi run`。每个新 Turn 开始前都会重新加载提示词文件。
+Dashboard 模式自动检测 `providers.yaml` 和 `config.json` 的变化。
+修改 `mcp.json`、工作流或执行器后，在设置页点击“重新应用”。存储路径、时区、dashboard
+认证及提示词文件路径需要重启进程。纯后台模式的配置修改需要重启。
+每个新 Turn 开始前都会重新加载提示词内容。

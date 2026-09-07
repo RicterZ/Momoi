@@ -111,7 +111,13 @@ class WeixinAPI:
         return value
 
 
-async def login(config: WeixinConfig) -> None:
+async def login(config: WeixinConfig, *, on_update=None, verification=None) -> None:
+    """Authenticate via terminal or an asynchronous dashboard presentation adapter."""
+
+    async def emit(status, **data):
+        if on_update is not None:
+            await on_update(status, **data)
+
     previous = WeixinState.load(config.state_path)
     timeout = aiohttp.ClientTimeout(total=None, connect=20)
     async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -132,12 +138,14 @@ async def login(config: WeixinConfig) -> None:
             url = str(response.get("qrcode_img_content") or "")
             if not token or not url:
                 raise ValueError("Weixin did not return a QR code")
-            print("请用手机微信扫描以下二维码：")
-            qr = qrcode.QRCode(border=1)
-            qr.add_data(url)
-            qr.make(fit=True)
-            qr.print_ascii(invert=True)
-            print(f"二维码无法显示时，请打开：{url}")
+            if on_update is None:
+                print("请用手机微信扫描以下二维码：")
+                qr = qrcode.QRCode(border=1)
+                qr.add_data(url)
+                qr.make(fit=True)
+                qr.print_ascii(invert=True)
+                print(f"二维码无法显示时，请打开：{url}")
+            await emit("waiting", qr_content=url)
             return token
 
         qr_token = await new_qr()
@@ -156,18 +164,26 @@ async def login(config: WeixinConfig) -> None:
                 continue
             if status == "scaned":
                 code = ""
-                print("已扫码，正在确认…")
+                await emit("scanned")
+                if on_update is None:
+                    print("已扫码，正在确认…")
             elif status == "need_verifycode":
+                await emit("verification_required")
                 code = (
-                    await asyncio.to_thread(input, "请输入手机微信显示的数字：")
-                ).strip()
+                    (await verification()).strip()
+                    if verification is not None
+                    else (
+                        await asyncio.to_thread(input, "请输入手机微信显示的数字：")
+                    ).strip()
+                )
                 continue
             elif status in {"expired", "verify_code_blocked"}:
                 refreshes += 1
                 if refreshes > 3:
                     raise ValueError("Weixin QR code expired too many times")
                 code = ""
-                print("二维码已失效，正在刷新…")
+                if on_update is None:
+                    print("二维码已失效，正在刷新…")
                 qr_token = await new_qr()
                 poll_base = DEFAULT_BASE_URL
                 continue
@@ -180,7 +196,9 @@ async def login(config: WeixinConfig) -> None:
                     raise ValueError(
                         "Weixin reports an existing binding, but local state is missing"
                     )
-                print("微信已绑定，保留现有登录状态。")
+                await emit("confirmed")
+                if on_update is None:
+                    print("微信已绑定，保留现有登录状态。")
                 return
             elif status == "confirmed":
                 account_id = str(response.get("ilink_bot_id") or "").strip()
@@ -202,7 +220,9 @@ async def login(config: WeixinConfig) -> None:
                     get_updates_buf=previous.get_updates_buf if same_account else "",
                     context_token=previous.context_token if same_account else "",
                 ).save(config.state_path)
-                print("微信登录成功。")
+                await emit("confirmed")
+                if on_update is None:
+                    print("微信登录成功。")
                 return
             await asyncio.sleep(1)
     raise ValueError("Weixin login timed out")

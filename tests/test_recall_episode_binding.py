@@ -2,18 +2,24 @@ from tests.support import provider_catalog
 import tempfile
 import unittest
 import uuid
+import json
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 from momoi.channel.napcat import NapCatConfig
 from momoi.config.models import AppConfig
 from momoi.integrations.models import LLMConfig
-from momoi.models import AgentReply, IncomingMessage
+from momoi.models import AgentReply, IncomingMessage, ToolCall
 from momoi.runtime import MomoiDaemon
+from momoi.runtime.agent.runtime_tools import recall_owner_context
 
 
 def config(directory: str) -> AppConfig:
     return AppConfig(
-        providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
+        providers=provider_catalog(
+            LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)
+        ),
         channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
         system_prompt="test",
         transcript_turns_min=4,
@@ -26,6 +32,96 @@ def config(directory: str) -> AppConfig:
 
 
 class RecallEpisodeBindingTest(unittest.IsolatedAsyncioTestCase):
+    async def test_disabled_embedding_recall_uses_only_keywords_without_tool_errors(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(config(directory))
+            self.addCleanup(daemon.store.close)
+            self.assertFalse(daemon.config.providers.enabled("embedding"))
+            self.assertIsNone(daemon.services.embedding)
+            # Fail loudly if the disabled branch ever tries to invoke the encoder.
+            encoder = AsyncMock(
+                side_effect=AssertionError("disabled embedding was called")
+            )
+            daemon.semantic_recall.client = SimpleNamespace(encode=encoder)
+            semantic = "semantic-only-sentinel"
+            with daemon.store._db:
+                for key, content in (
+                    ("keyword-anchor", "keyword-only-memory"),
+                    (semantic, "semantic-only-memory"),
+                ):
+                    daemon.store._db.execute(
+                        """INSERT INTO memories
+                           (kind, key, content, activation, authority, source_event_id,
+                            evidence_quote, importance, created_at, updated_at)
+                           VALUES ('shared', ?, ?, 'recall', 'owner', 'seed', ?, 0.5, 1, 1)""",
+                        (key, content, content),
+                    )
+            for index, (keywords, expected) in enumerate(
+                [
+                    (["keyword-anchor"], "keyword-only-memory"),
+                    (["unmatched-anchor"], ""),
+                    ([], ""),
+                ]
+            ):
+                with self.subTest(keywords=keywords):
+                    event = IncomingMessage(
+                        f"disabled-recall-{index}",
+                        "owner",
+                        "test",
+                        10 + index,
+                        10 + index,
+                    )
+                    daemon.store.add_event(event)
+                    turn_id = f"disabled-recall-turn-{index}"
+                    daemon.store.begin_turn(turn_id, "owner", [event.event_id])
+                    call = ToolCall(
+                        f"recall-{index}",
+                        "recall",
+                        {
+                            "units": [
+                                {
+                                    "intent": "test keyword-only recall",
+                                    "recall_mode": "search",
+                                    "recall_queries": [
+                                        {"semantic": semantic, "keywords": keywords}
+                                    ],
+                                    "recall_from_turn_id": "",
+                                    "episode": {
+                                        "action": "none",
+                                        "ref": "",
+                                        "title": "",
+                                    },
+                                }
+                            ]
+                        },
+                    )
+                    with self.assertNoLogs("momoi.semantic.service", level="WARNING"):
+                        result = await recall_owner_context(
+                            call,
+                            current_events=[event],
+                            turn_id=turn_id,
+                            submit_context=daemon.submit_owner_context,
+                        )
+                    self.assertTrue(result["ok"])
+                    self.assertEqual(result["state"], "recalled")
+                    self.assertNotIn("error", result)
+                    self.assertNotIn("semantic-only-memory", result["memory"])
+                    if expected:
+                        self.assertIn(expected, result["memory"])
+                    else:
+                        self.assertEqual(result["memory"], "")
+                    self.assertNotIn("disabled", json.dumps(result))
+                    self.assertNotIn("fallback", json.dumps(result))
+                    record = daemon.store.context_plan(turn_id)
+                    self.assertEqual(record["state"], "recalled")
+                    diagnostics = record["retrieval"]["semantic_recall"]
+                    self.assertEqual(diagnostics["fallback_reason"], "disabled")
+                    self.assertEqual(diagnostics["query_batch_size"], 0)
+                    self.assertEqual(diagnostics["request_ms"], 0)
+            encoder.assert_not_awaited()
+
     async def test_candidate_directory_follows_transcript_episode_ids(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(config(directory))

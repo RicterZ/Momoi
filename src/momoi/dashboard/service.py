@@ -22,6 +22,8 @@ class DashboardService:
         token: str = "",
         balance_provider: BalanceProvider | None = None,
         settings: DashboardSettings,
+        configuration=None,
+        runtime=None,
     ) -> None:
         self.store = store
         self.host = host
@@ -29,6 +31,8 @@ class DashboardService:
         self.token = token
         self.balance_provider = balance_provider
         self.settings = settings
+        self.configuration = configuration
+        self.runtime = runtime
 
     async def run(self, stop: asyncio.Event) -> None:
         runner = web.AppRunner(
@@ -37,6 +41,8 @@ class DashboardService:
                 token=self.token,
                 balance_provider=self.balance_provider,
                 settings=self.settings,
+                configuration=self.configuration,
+                runtime=self.runtime,
             ),
             access_log=None,
         )

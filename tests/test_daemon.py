@@ -3250,7 +3250,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("end_turn", final_tools)
         self.assertIn("memory_search", final_tools)
         self.assertEqual(final_tools, initial_tools)
-        self.assertNotIn("tool_choice", llm_requests[7])
+        # The application requires a tool response independently of wire protocol.
+        self.assertEqual(llm_requests[7]["tool_choice"], {"type": "any"})
         self.assertEqual(
             llm_requests[0]["system"][0]["cache_control"], {"type": "ephemeral"}
         )

@@ -359,7 +359,7 @@ class ConfigurationTest(unittest.TestCase):
             with patch("sys.argv", ["momoi", "run"]):
                 args = parse_args()
                 self.assertEqual(args.workspace, Path.home() / ".momoi")
-                self.assertFalse(args.dashboard)
+                self.assertTrue(args.dashboard)
                 self.assertEqual(args.dashboard_port, 8788)
             with patch(
                 "sys.argv",

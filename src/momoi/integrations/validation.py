@@ -111,13 +111,6 @@ def llm_config(options, api_format):
 
 def embedding_config(options, *, enabled=True):
     values = dict(options)
-    if "base_url" in values:
-        base = url(values, "base_url")
-        values.setdefault(
-            "endpoint",
-            base + ("/embeddings" if base.endswith("/v1") else "/v1/embeddings"),
-        )
-        del values["base_url"]
     if "timeout_seconds" in values:
         timeout = number(values, "timeout_seconds", 30)
         values.setdefault("query_timeout_seconds", timeout)

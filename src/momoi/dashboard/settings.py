@@ -1,9 +1,8 @@
-import os
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
 from ..config.models import AppConfig
+from ..config.workspace import atomic_write
 
 
 @dataclass(frozen=True)
@@ -49,26 +48,7 @@ class DashboardSettings:
         self._write(item.path, content)
         return self.read(prompt_id)
 
-    @staticmethod
-    def _write(path: Path, content: str) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        temporary: str | None = None
-        try:
-            with tempfile.NamedTemporaryFile(
-                "w",
-                encoding="utf-8",
-                dir=path.parent,
-                prefix=f".{path.name}.",
-                delete=False,
-            ) as file:
-                file.write(content)
-                file.flush()
-                os.fsync(file.fileno())
-                temporary = file.name
-            os.replace(temporary, path)
-        finally:
-            if temporary is not None:
-                Path(temporary).unlink(missing_ok=True)
+    _write = staticmethod(atomic_write)
 
     def _file(self, prompt_id: str) -> PromptFile:
         try:

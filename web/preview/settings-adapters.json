@@ -1,0 +1,375 @@
+[
+  {
+    "adapter": "openai",
+    "capability": "llm",
+    "fields": {
+      "base_url": {
+        "type": "string",
+        "label": "服务地址",
+        "advanced": false,
+        "required": true
+      },
+      "api_key": {
+        "type": "string",
+        "secret": true,
+        "label": "API 密钥",
+        "advanced": false
+      },
+      "model": {
+        "type": "string",
+        "label": "模型名称",
+        "advanced": false,
+        "required": true
+      },
+      "max_tokens": {
+        "type": "integer",
+        "default": 16384,
+        "label": "最大输出 Token",
+        "advanced": true
+      },
+      "temperature": {
+        "type": "number",
+        "default": 0.6,
+        "label": "温度",
+        "advanced": true
+      },
+      "timeout_seconds": {
+        "type": "number",
+        "default": 300,
+        "label": "请求超时（秒）",
+        "advanced": true
+      },
+      "max_retries": {
+        "type": "integer",
+        "default": 3,
+        "label": "最大重试次数",
+        "advanced": true
+      },
+      "tool_choice": {
+        "type": "boolean",
+        "default": true,
+        "label": "工具选择",
+        "advanced": true
+      },
+      "thinking": {
+        "type": "object",
+        "default": {},
+        "label": "thinking",
+        "advanced": true
+      }
+    }
+  },
+  {
+    "adapter": "anthropic",
+    "capability": "llm",
+    "fields": {
+      "base_url": {
+        "type": "string",
+        "label": "服务地址",
+        "advanced": false,
+        "required": true
+      },
+      "api_key": {
+        "type": "string",
+        "secret": true,
+        "label": "API 密钥",
+        "advanced": false
+      },
+      "model": {
+        "type": "string",
+        "label": "模型名称",
+        "advanced": false,
+        "required": true
+      },
+      "max_tokens": {
+        "type": "integer",
+        "default": 16384,
+        "label": "最大输出 Token",
+        "advanced": true
+      },
+      "temperature": {
+        "type": "number",
+        "default": 0.6,
+        "label": "温度",
+        "advanced": true
+      },
+      "timeout_seconds": {
+        "type": "number",
+        "default": 300,
+        "label": "请求超时（秒）",
+        "advanced": true
+      },
+      "max_retries": {
+        "type": "integer",
+        "default": 3,
+        "label": "最大重试次数",
+        "advanced": true
+      },
+      "tool_choice": {
+        "type": "boolean",
+        "default": true,
+        "label": "工具选择",
+        "advanced": true
+      },
+      "thinking": {
+        "type": "object",
+        "default": {},
+        "label": "thinking",
+        "advanced": true
+      }
+    }
+  },
+  {
+    "adapter": "deepseek",
+    "capability": "llm",
+    "fields": {
+      "base_url": {
+        "type": "string",
+        "default": "https://api.deepseek.com",
+        "label": "服务地址",
+        "advanced": false,
+        "required": true
+      },
+      "api_key": {
+        "type": "string",
+        "secret": true,
+        "label": "API 密钥",
+        "advanced": false
+      },
+      "model": {
+        "type": "string",
+        "label": "模型名称",
+        "advanced": false,
+        "required": true
+      },
+      "max_tokens": {
+        "type": "integer",
+        "default": 16384,
+        "label": "最大输出 Token",
+        "advanced": true
+      },
+      "temperature": {
+        "type": "number",
+        "default": 0.6,
+        "label": "温度",
+        "advanced": true
+      },
+      "timeout_seconds": {
+        "type": "number",
+        "default": 300,
+        "label": "请求超时（秒）",
+        "advanced": true
+      },
+      "max_retries": {
+        "type": "integer",
+        "default": 3,
+        "label": "最大重试次数",
+        "advanced": true
+      },
+      "tool_choice": {
+        "type": "boolean",
+        "default": true,
+        "label": "工具选择",
+        "advanced": true
+      },
+      "thinking": {
+        "type": "object",
+        "default": {},
+        "label": "thinking",
+        "advanced": true
+      }
+    }
+  },
+  {
+    "adapter": "tencent",
+    "capability": "asr",
+    "fields": {
+      "secret_id": {
+        "type": "string",
+        "secret": true,
+        "label": "Secret ID",
+        "advanced": false,
+        "required": true
+      },
+      "secret_key": {
+        "type": "string",
+        "secret": true,
+        "label": "Secret Key",
+        "advanced": false,
+        "required": true
+      },
+      "region": {
+        "type": "string",
+        "default": "",
+        "label": "服务区域",
+        "advanced": true
+      },
+      "engine": {
+        "type": "string",
+        "default": "16k_zh",
+        "label": "识别引擎",
+        "advanced": false
+      },
+      "timeout_seconds": {
+        "type": "number",
+        "default": 30,
+        "label": "请求超时（秒）",
+        "advanced": true
+      },
+      "max_audio_bytes": {
+        "type": "integer",
+        "default": 3145728,
+        "label": "音频大小上限（字节）",
+        "advanced": true
+      }
+    }
+  },
+  {
+    "adapter": "fish",
+    "capability": "tts",
+    "fields": {
+      "api_key": {
+        "type": "string",
+        "secret": true,
+        "label": "API 密钥",
+        "advanced": false,
+        "required": true
+      },
+      "reference_id": {
+        "type": "string",
+        "label": "音色 ID",
+        "advanced": false,
+        "required": true
+      },
+      "model": {
+        "type": "string",
+        "default": "s2.1-pro-free",
+        "label": "模型名称",
+        "advanced": false
+      },
+      "base_url": {
+        "type": "string",
+        "default": "https://api.fish.audio",
+        "label": "服务地址",
+        "advanced": true
+      },
+      "format": {
+        "type": "string",
+        "default": "mp3",
+        "label": "音频格式",
+        "advanced": true,
+        "enum": [
+          "mp3",
+          "wav",
+          "opus"
+        ]
+      },
+      "latency": {
+        "type": "string",
+        "default": "normal",
+        "label": "延迟模式",
+        "advanced": true,
+        "enum": [
+          "normal",
+          "balanced",
+          "low"
+        ]
+      },
+      "timeout_seconds": {
+        "type": "number",
+        "default": 60,
+        "label": "请求超时（秒）",
+        "advanced": true
+      },
+      "max_audio_bytes": {
+        "type": "integer",
+        "default": 20971520,
+        "label": "音频大小上限（字节）",
+        "advanced": true
+      }
+    }
+  },
+  {
+    "adapter": "openai",
+    "capability": "embedding",
+    "fields": {
+      "endpoint": {
+        "type": "string",
+        "default": "http://embedding:8002/v1/embeddings",
+        "label": "Embedding 接口地址",
+        "advanced": false,
+        "description": "完整请求地址，例如 https://api.example.com/v1/embeddings；不会自动追加路径。"
+      },
+      "api_key": {
+        "type": "string",
+        "secret": true,
+        "label": "API 密钥",
+        "advanced": false
+      },
+      "model": {
+        "type": "string",
+        "default": "BAAI/bge-small-zh-v1.5",
+        "label": "模型名称",
+        "advanced": false
+      },
+      "dimensions": {
+        "type": "integer",
+        "default": 512,
+        "label": "向量维度",
+        "advanced": false
+      },
+      "calibration_profile": {
+        "type": "string",
+        "default": "bge-small-zh-v1.5-momoi-v1",
+        "label": "校准配置",
+        "advanced": true
+      },
+      "timeout_seconds": {
+        "type": "number",
+        "label": "请求超时（秒）",
+        "advanced": true
+      },
+      "query_timeout_seconds": {
+        "type": "number",
+        "label": "查询超时（秒）",
+        "advanced": true
+      },
+      "document_timeout_seconds": {
+        "type": "number",
+        "label": "文档编码超时（秒）",
+        "advanced": true
+      },
+      "document_batch_size": {
+        "type": "integer",
+        "default": 8,
+        "label": "文档批量大小",
+        "advanced": true
+      }
+    }
+  },
+  {
+    "adapter": "deepseek",
+    "capability": "balance",
+    "fields": {
+      "api_key": {
+        "type": "string",
+        "secret": true,
+        "label": "API 密钥",
+        "advanced": false,
+        "required": true
+      },
+      "base_url": {
+        "type": "string",
+        "default": "https://api.deepseek.com",
+        "label": "服务地址",
+        "advanced": false
+      },
+      "timeout_seconds": {
+        "type": "number",
+        "default": 10,
+        "label": "请求超时（秒）",
+        "advanced": true
+      }
+    }
+  }
+]

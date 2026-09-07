@@ -23,7 +23,7 @@ from momoi.integrations.adapters.tencent import TencentASRProvider
 from momoi.integrations.configuration import load_provider_catalog
 from momoi.integrations.contracts.tts import AudioOutput
 from momoi.integrations.errors import ErrorCategory, IntegrationError
-from momoi.integrations.registry import ServiceRegistry, register_adapter
+from momoi.integrations.registry import Adapter, ServiceRegistry, register_adapter
 from momoi.storage import Store
 from tests.support import write_app_config
 
@@ -100,7 +100,7 @@ class CatalogTest(unittest.TestCase):
                 },
                 "vectors": {
                     "adapter": "openai",
-                    "base_url": "http://localhost:8002/v1",
+                    "settings": {"endpoint": "http://localhost:8002/v1/embeddings"},
                     "timeout_seconds": 12,
                 },
             }
@@ -124,6 +124,25 @@ class CatalogTest(unittest.TestCase):
         )
         self.assertEqual(services.embedding_config.document_batch_size, 4)
         self.assertEqual(services.embedding.config.query_timeout_seconds, 12)
+
+    def test_embedding_has_one_explicit_address_without_path_inference(self):
+        from momoi.integrations.registry import adapter_definition
+
+        schema = adapter_definition("openai", "embedding").schema
+        self.assertNotIn("base_url", schema)
+        self.assertFalse(schema["endpoint"]["advanced"])
+        raw = {
+            "version": 1,
+            "services": {"vectors": {"adapter": "openai"}},
+            "bindings": {"embedding": {"service": "vectors", "options": {}}},
+        }
+        options = raw["bindings"]["embedding"]["options"]
+        for endpoint in ["http://localhost:8002/v1/embeddings", "https://gateway.example/custom/encode"]:
+            options["endpoint"] = endpoint
+            self.assertEqual(ServiceRegistry(self.load(raw)).embedding.config.endpoint, endpoint)
+        options["base_url"] = "https://ignored.example"
+        with self.assertRaisesRegex(ConfigError, "base_url"):
+            self.load(raw)
 
     def test_main_config_only_references_relative_catalog(self):
         raw = catalog_data()
@@ -185,7 +204,6 @@ class CatalogTest(unittest.TestCase):
             {"service": "chat", "enabled": "true"},
             {"service": "chat", "options": []},
             {"service": "chat", "extra": 1},
-            {"service": "chat", "enabled": False},
         ]:
             raw = catalog_data()
             raw["bindings"]["llm"] = binding
@@ -243,7 +261,7 @@ class IntegrationLifecycleTest(unittest.IsolatedAsyncioTestCase):
     async def test_custom_plugin_factory_without_core_changes(self):
         name = "test_" + uuid.uuid4().hex
         module_path = self.root / f"{name}.py"
-        module_path.write_text("""from momoi.integrations.registry import register_adapter
+        module_path.write_text("""from momoi.integrations.registry import Adapter, register_adapter
 from momoi.integrations.contracts.tts import AudioOutput
 class Voice:
     def __init__(self, options, context):
@@ -257,7 +275,7 @@ class Voice:
 def validate(options):
     if not isinstance(options.get('prefix'), str):
         raise ValueError('prefix required')
-register_adapter(__name__, 'tts', Voice, validate=validate)
+register_adapter(Adapter(__name__, 'tts', Voice, validate=validate, schema={'prefix': {'type': 'string'}}))
 """)
         raw = catalog_data()
         raw["credentials"]["shared"]["api_key"] = "key"
@@ -299,13 +317,22 @@ register_adapter(__name__, 'tts', Voice, validate=validate)
                 pass
 
         register_adapter(
-            name,
-            "balance",
-            lambda options, ctx: Balance(),
-            validate=lambda options: None,
+            Adapter(
+                name,
+                "balance",
+                lambda options, ctx: Balance(),
+                validate=lambda options: None,
+                schema={},
+            )
         )
         register_adapter(
-            name, "tts", lambda options, ctx: Voice(), validate=lambda options: None
+            Adapter(
+                name,
+                "tts",
+                lambda options, ctx: Voice(),
+                validate=lambda options: None,
+                schema={},
+            )
         )
         raw = catalog_data()
         raw["credentials"]["shared"]["api_key"] = "key"
@@ -419,16 +446,13 @@ register_adapter(__name__, 'tts', Voice, validate=validate)
 
     async def test_custom_llm_asr_and_embedding_use_capability_contracts(self):
         from momoi.integrations.contracts.asr import AudioInput
-        from momoi.integrations.validation import llm_config
+        from momoi.integrations.models import EmbeddingSpaceConfig
         from momoi.models import ProviderResponse
 
         name = "test_" + uuid.uuid4().hex
 
         class Model:
             def __init__(self, options, context):
-                self.config = llm_config(
-                    {"base_url": "http://localhost", "model": "custom"}, "openai"
-                )
                 self.accounting = self.usage_sink = self.thinking_sink = (
                     self.usage_parser
                 ) = None
@@ -437,12 +461,20 @@ register_adapter(__name__, 'tts', Voice, validate=validate)
                 return ProviderResponse([{"type": "text", "text": "custom"}], [])
 
         class Recognition:
+            max_audio_bytes = 1024
+
             async def transcribe(self, audio):
                 return audio.data.decode()
 
         class Vectors:
             def __init__(self, options, context):
-                self.endpoint = options["base_url"]
+                self.endpoint = options["connection"]["address"]
+                self.space = EmbeddingSpaceConfig(
+                    enabled=True,
+                    model=options["deployment"],
+                    dimensions=2,
+                    calibration_profile="custom-v1",
+                )
                 self.closed = False
 
             async def encode(self, texts, *, query):
@@ -454,14 +486,36 @@ register_adapter(__name__, 'tts', Voice, validate=validate)
             async def close(self):
                 self.closed = True
 
-        register_adapter(name, "llm", Model, validate=lambda options: None)
         register_adapter(
-            name,
-            "asr",
-            lambda options, ctx: Recognition(),
-            validate=lambda options: None,
+            Adapter(name, "llm", Model, validate=lambda options: None, schema={})
         )
-        register_adapter(name, "embedding", Vectors, validate=lambda options: None)
+        register_adapter(
+            Adapter(
+                name,
+                "asr",
+                lambda options, ctx: Recognition(),
+                validate=lambda options: None,
+                schema={},
+            )
+        )
+        register_adapter(
+            Adapter(
+                name,
+                "embedding",
+                Vectors,
+                validate=lambda options: None,
+                schema={
+                    "connection": {
+                        "type": "object",
+                        "required": True,
+                        "properties": {
+                            "address": {"type": "string", "required": True},
+                        },
+                    },
+                    "deployment": {"type": "string", "default": "custom-vector"},
+                },
+            )
+        )
         raw = {
             "version": 1,
             "services": {"custom": {"adapter": name}},
@@ -471,15 +525,15 @@ register_adapter(__name__, 'tts', Voice, validate=validate)
                 "embedding": {
                     "service": "custom",
                     "options": {
-                        "base_url": "grpc://encoder",
-                        "model": "custom-vector",
-                        "dimensions": 2,
+                        "connection": {"address": "grpc://encoder"},
                     },
                 },
             },
         }
         services = ServiceRegistry(self.load(raw))
         model, asr, vectors = services.llm, services.asr, services.embedding
+        self.assertFalse(hasattr(model, "config"))
+        self.assertEqual(asr.max_audio_bytes, 1024)
         self.assertEqual(services.embedding_config.model, "custom-vector")
         self.assertFalse(hasattr(services.embedding_config, "api_key"))
         self.assertFalse(hasattr(services.embedding_config, "endpoint"))

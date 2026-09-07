@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { createSettingsPreview } from "./web/preview/settings.js";
 
 function previewThinkingCalls() {
   const day = new Date();
@@ -719,6 +720,8 @@ function previewUsageApi() {
     res.end(JSON.stringify(body));
   };
 
+  const settingsPreview = createSettingsPreview(json);
+
   return {
     name: "momoi-preview-api",
     configureServer(server) {
@@ -728,6 +731,7 @@ function previewUsageApi() {
           return;
         }
         const path = (req.url || "").split("?")[0];
+        if (settingsPreview(req, res, path)) return;
         if (req.method === "POST" && path === "/api/auth/token") {
           json(res, {
             token: "preview-token",
@@ -956,7 +960,7 @@ export default defineConfig({
   plugins: [react(), previewUsageApi()],
   server: {
     proxy: {
-      "/api": "http://127.0.0.1:8788",
+      "/api": process.env.MOMOI_API_URL || "http://127.0.0.1:8788",
     },
   },
   build: {

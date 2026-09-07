@@ -3,8 +3,9 @@
 [EN](./PROVIDERS.md) | 中文
 
 外部 API 统一配置在 `providers.yaml`。主配置 `config.json` 只写
-`"providers": "providers.yaml"`，路径相对于主配置所在目录。修改后重启 Momoi；
-后台设置页编辑提示词文件，服务配置由 YAML 管理。
+`"providers": "providers.yaml"`，路径相对于主配置所在目录。Dashboard 设置页根据 adapter
+字段定义生成能力表单，保存前统一校验并原子写入。启用 dashboard 时，配置变化会自动重建业务实例；
+dashboard 本身保持可用，服务配置仍持久化在 YAML 中。
 
 从[完整示例](../config.example/providers.yaml)开始，启用所需能力并填写凭据。
 
@@ -55,7 +56,7 @@ bindings:
 凭据字段不能在 options 中重复定义。启动前会校验未知字段、重复 YAML 键、引用关系
 和适配器支持的能力。启用的 binding 必须能读取其引用的环境凭据；禁用的 binding
 仍需引用有效服务，但不要求环境密钥，也不会创建客户端。
-`llm` 必须存在且启用；省略的可选能力默认禁用。
+首次配置允许暂缺 LLM 和渠道。LLM 一旦绑定就不能设置 `enabled: false`，配置接口也不允许删除已配置模型或移除最后一个渠道。语音、embedding 和余额可以禁用；禁用 embedding 仅停止语义检索，关键词召回与记忆写入保留。
 
 ## 内置适配器
 
@@ -79,8 +80,10 @@ bindings:
 
 ### Embedding
 
-可以配置服务 `base_url`，程序追加 `/v1/embeddings`（已以 `/v1` 结尾则追加
-`/embeddings`）；也可以直接设置 `endpoint`。
+只配置 `endpoint`，填写完整请求 URL，例如 `https://api.example.com/v1/embeddings`，
+也支持网关自定义路径。程序不自动追加路径。默认值为
+`http://embedding:8002/v1/embeddings`。该字段放在服务 `settings` 或 binding `options` 中。
+Embedding 不再接受 `base_url`；已有配置需改为完整的 `endpoint`。
 
 | 参数 | 默认值 |
 | --- | --- |
@@ -140,7 +143,7 @@ Momoi 主配置。构造时不应打开网络资源。在进入注册表的 asyn
 固定余额适配器：
 
 ```python
-from momoi.integrations.registry import register_adapter
+from momoi.integrations.registry import Adapter, register_adapter
 
 class FixedBalance:
     def __init__(self, options, context):
@@ -154,15 +157,85 @@ def validate(options):
     if set(options) != {"amount"} or not isinstance(options["amount"], str):
         raise ValueError("amount must be a string")
 
-register_adapter("fixed", "balance", FixedBalance, validate=validate)
+register_adapter(Adapter(
+    name="fixed", capability="balance", factory=FixedBalance, validate=validate,
+    schema={"amount": {"type": "string", "default": "12.34"}},
+))
 ```
 
 添加 `plugins: [my_balance]`，定义 `adapter: fixed`、`settings: {amount: "12.34"}`
-的 service，并将 balance binding 指向它。每项能力注册工厂和离线校验函数。
+的 service，并将 balance binding 指向它。每项能力必须注册工厂、离线校验函数和字段 schema；
+凭据字段使用 `secret: True`，provider 配置 API 返回已保存的密钥原值。旧位置参数注册签名已移除。
 同一厂商新增其他 API 时，继续注册对应能力，无需修改主配置字段、业务消费者或后台。
 
-LLM 实现需提供契约中的 `config`、`accounting`、`usage_sink`、`thinking_sink`、
-`usage_parser` 和 `complete()`。Embedding 的 `encode()` 返回归一化向量，并实现
-`health()`、`close()`；binding options 同时描述语义空间的模型、维度和校准配置。
+LLM 实现需提供契约中的 `accounting`、`usage_sink`、`thinking_sink`、
+`usage_parser` 和 `complete()`；不要求暴露厂商的 `config`。应用层统一通过
+`require_tool` / `required_tool` 表达工具调用要求，由 adapter 转换为厂商协议。
+需要响应的 Owner 轮次也采用这一契约，包括 Anthropic。
+
+Embedding 的 `encode()` 返回归一化向量，并实现 `health()`、`close()`。
+实例必须提供 `space: EmbeddingSpaceConfig`，描述启用状态、模型标识、维度、
+校准配置和文档批次大小。adapter 自行将自定义选项转换为这些标准信息；例如将
+`deployment` 转成 `space.model`，将嵌套 `connection.address` 用作自己的连接地址。
+注册表和语义检索不会假设配置一定含有 `model`、`dimensions` 或 HTTP 地址。
+读取 `ServiceRegistry.embedding_config` 会按需获取 encoder 的 `space`；禁用时
+返回禁用的语义空间且不创建 encoder。
+
+ASR 实例提供正整数 `max_audio_bytes`，供入站渠道执行限制；继承 `ASRProvider`
+时默认 3 MiB。厂商自定义参数如何转换为这一限制由 adapter 决定。
 TTS 失败抛出 `TTSError`，余额适配器抛出带脱敏详情及分类的 `IntegrationError`；
 取消操作必须向上传播。
+
+## 字段声明与前端接入契约
+
+后端 `GET /api/settings/configuration` 的 `adapters[]` 返回
+`{adapter, capability, fields}`。`fields` 是按声明顺序排列的字段映射，插件自行定义，
+不需要编辑内置 schema。后端已支持以下完整契约；当前页面尚未支持全部嵌套表单和
+布局元数据，递归字段渲染待接入。
+
+| 元数据 | 后端语义 / 前端用途 |
+| --- | --- |
+| `type` | `string`、`integer`、`number`、`boolean`、`object`、`array` |
+| `label`、`description` | 字段名称和帮助说明 |
+| `required` | 启用时必须提供；字符串不能仅含空白，布尔值 `false` 合法 |
+| `default` | 字段缺省时补入运行配置；显式值优先，`null` 不表示缺省 |
+| `secret` | 仅字符串；标记凭据及环境引用，支持嵌套及数组元素；配置 API 返回原值 |
+| `enum` | 标量可选值；前端必须保留原始类型，不能一律提交字符串 |
+| `minimum`、`maximum` | 数字闭区间；整数拒绝布尔值和小数，数字拒绝 NaN / Infinity |
+| `properties` | 对象的子字段映射，递归应用同一契约；省略时为自由 JSON 对象 |
+| `items` | 数组元素的字段声明，可继续嵌套对象或数组 |
+| `advanced` | 可折叠的高级配置标记，缺省为普通字段 |
+
+注册时校验字段声明及默认值，拒绝未知元数据。秘密值不得出现在公开的 default 或 enum 中。
+读取配置、Dashboard 保存和工厂实例化使用同一套字段规则，未知配置字段会报错。
+校验顺序为：合并服务与 binding 参数、解析凭据、补默认值并校验字段，最后调用
+adapter 的 `validate(options)` 做跨字段或业务约束校验。工厂收到最终解析后的字典。
+禁用 binding 可缺必填项及环境密钥，但已经填写的值仍需符合字段类型和范围。
+
+例如，一个厂商可以声明完全不同的认证方式：
+
+```python
+schema = {
+    "tenant": {"type": "string", "label": "租户", "required": True},
+    "region": {"type": "string", "enum": ["east", "west"], "default": "east"},
+    "auth": {"type": "object", "required": True, "properties": {
+        "client": {"type": "string", "label": "客户端密钥", "secret": True,
+                   "required": True},
+        "scope": {"type": "string", "default": "read"},
+    }},
+    "retries": {"type": "integer", "default": 2, "minimum": 0,
+                "maximum": 5, "advanced": True},
+}
+```
+
+用 `Adapter(..., schema=schema)` 注册即可暴露这份声明。
+命名凭据表保存顶层字符串密钥；嵌套密钥保留在 settings/options 的原路径，
+配置 API 均返回原值。`auth.client: {env: CUSTOM_PROVIDER_AUTH}` 同样支持环境引用。
+缺省值只在解析后的运行配置中补齐，不会将环境值或默认值自动写回 YAML。
+前端应根据 schema 显示缺省值，并保留未填写与显式填写的区别。
+已保存密钥直接返回字符串，前端回传原值即可保留，填写新值即可替换。
+Provider 配置不接受 `{"$secret":"keep"}` 占位符。环境变量字段返回 `{env: NAME}`
+引用本身，运行时才解析环境值。
+
+新增同类 provider 只需注册 adapter、实现标准能力接口和厂商选项转换。
+配置热加载仍由 supervisor 串行关闭旧实例、创建新实例；业务消费者不参与转换。

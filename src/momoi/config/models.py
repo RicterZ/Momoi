@@ -92,4 +92,4 @@ class AppConfig:
 
     @property
     def channel_configs(self) -> tuple[object, ...]:
-        return self.channels or (self.channel,)
+        return self.channels or ((self.channel,) if self.channel is not None else ())

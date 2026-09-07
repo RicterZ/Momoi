@@ -18,8 +18,9 @@ def parse_args() -> argparse.Namespace:
     run_parser = commands.add_parser("run", help="run the Momoi daemon")
     run_parser.add_argument(
         "--dashboard",
-        action="store_true",
-        help="serve the local Web dashboard (/api requires JWT from dashboard.token)",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="serve the Web dashboard (enabled by default; use --no-dashboard for headless mode)",
     )
     run_parser.add_argument(
         "--dashboard-host",

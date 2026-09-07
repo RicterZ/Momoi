@@ -87,9 +87,11 @@ class TencentASRProvider(ASRProvider):
         region: str = "",
         engine: str = "16k_zh",
         timeout_seconds: float = 30,
+        max_audio_bytes: int = 3 * 1024 * 1024,
         transport: HTTPTransport | None = None,
     ) -> None:
         self.transport = transport or HTTPTransport()
+        self.max_audio_bytes = max_audio_bytes
         self.secret_id = secret_id.strip()
         self.secret_key = secret_key.strip()
         self.region = region.strip()

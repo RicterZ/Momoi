@@ -10,6 +10,7 @@ from typing import Any
 import yaml
 
 from ..config.models import ConfigError
+from .fields import normalize_fields
 
 CAPABILITIES = frozenset({"llm", "asr", "tts", "embedding", "balance"})
 
@@ -79,6 +80,11 @@ def load_provider_catalog(path: Path) -> ProviderCatalog:
         raise ConfigError(
             f"cannot load providers YAML {path}: {type(error).__name__}"
         ) from None
+    return parse_provider_catalog(raw, path)
+
+
+def parse_provider_catalog(raw: object, path: Path) -> ProviderCatalog:
+    """Resolve an in-memory document using the same rules as file loading."""
     raw = table(raw, "providers")
     keys(
         raw, {"version", "plugins", "credentials", "services", "bindings"}, "providers"
@@ -142,6 +148,8 @@ def load_provider_catalog(path: Path) -> ProviderCatalog:
         enabled = binding.get("enabled", True)
         if type(enabled) is not bool:
             raise ConfigError(f"bindings.{capability}.enabled must be boolean")
+        if capability == "llm" and not enabled:
+            raise ConfigError("the model cannot be disabled; configure or replace it")
         name = binding.get("service")
         if not isinstance(name, str) or name not in services:
             raise ConfigError(
@@ -187,6 +195,7 @@ def load_provider_catalog(path: Path) -> ProviderCatalog:
                         f"credentials.{credential}.{key} must be a string or env reference"
                     )
                 options[key] = secret
+        options = normalize_fields(definition.schema, options, enabled=enabled)
         if enabled:
             try:
                 definition.validate(options)
@@ -198,8 +207,6 @@ def load_provider_catalog(path: Path) -> ProviderCatalog:
                 ) from None
         resolved[capability] = ProviderBinding(name, adapter, enabled, options)
     catalog = ProviderCatalog(path, resolved)
-    if not catalog.enabled("llm"):
-        raise ConfigError("providers.bindings.llm must be enabled")
     return catalog
 
 

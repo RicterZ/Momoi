@@ -1,4 +1,4 @@
-# External services. Restart Momoi after changing this file.
+# External services. Dashboard mode watches this file and reloads the business runtime.
 version: 1
 credentials:
   model:
@@ -31,7 +31,8 @@ services:
     timeout_seconds: 60
   vectors:
     adapter: openai
-    base_url: http://embedding:8002/v1
+    settings:
+      endpoint: http://embedding:8002/v1/embeddings
   deepseek_account:
     adapter: deepseek
     credentials: deepseek

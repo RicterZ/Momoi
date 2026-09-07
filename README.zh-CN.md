@@ -289,7 +289,7 @@ docker compose -f docker-compose.yml logs momoi
 
 QQ 用户打开 `http://127.0.0.1:6099/webui`，从 `docker logs napcat` 获取 NapCat 登录
 token，完成登录并启用 OneBot WebSocket。Dashboard 默认位于
-`http://127.0.0.1:8788`。编辑 workspace 中的 `providers.yaml` 配置模型连接，修改后重启。
+`http://127.0.0.1:8788`。在设置页配置模型连接，保存后自动应用。
 
 WeChat 渠道只需在同一 workspace 中认证一次（`weixin` 是内部渠道标识）：
 
@@ -349,7 +349,8 @@ docker compose -f compose.yaml up -d --build
 services:
   vectors:
     adapter: openai
-    base_url: http://embedding:8002/v1
+    settings:
+      endpoint: http://embedding:8002/v1/embeddings
 bindings:
   embedding:
     service: vectors
@@ -405,15 +406,18 @@ LLM、ASR、TTS、embedding 和账户余额通过能力接口、注册式适配�
 
 ### Dashboard
 
-在 `config.json` 中设置 `dashboard.token`，然后运行：
+空工作区直接运行，自动生成最小配置和访问口令：
 
 ```bash
-momoi run --dashboard
+momoi run
 ```
 
 打开 `http://127.0.0.1:8788`。Dashboard 可以查看对话、每个 Turn 的召回 scope 与选中
 证据、复盘、记忆、Goal、图片反应、用量和思考记录，也可以编辑记忆、Goal、图片反应与提示词文件。
-Provider 配置在 `providers.yaml` 修改，重启生效。
+首次使用启动输出中的口令登录，然后在设置页配置 Provider、启用消息渠道并完成微信扫码登录。
+保存配置会自动重建业务实例，dashboard 保持可用。纯后台运行使用 `momoi run --no-dashboard`。
+已有工作区需设置 `dashboard.token` 或 `MOMOI_DASHBOARD_TOKEN`。
+架构、覆盖规则和生效边界见[配置管理说明](docs/DASHBOARD-CONFIGURATION.zh-CN.md)。
 请只在本机或可信网络中开放。
 
 ### Webhook

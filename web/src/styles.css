@@ -363,6 +363,8 @@ h2, h3, p { overflow-wrap: anywhere; }
 .edit-form textarea,
 .edit-form select,
 .create-form input,
+.dash-input,
+.prompt-field textarea.dash-input,
 .edit-area {
   width: 100%;
   box-sizing: border-box;
@@ -371,11 +373,17 @@ h2, h3, p { overflow-wrap: anywhere; }
   border-radius: 12px;
   color: var(--ink);
   background: var(--canvas);
-  box-shadow: 3px 3px 0 var(--blue);
+  box-shadow: 3px 3px 0 var(--control-accent, var(--blue));
   font: inherit;
   line-height: 1.2;
 }
+/* White controls share the existing form border, radius and hard shadows. */
+.dash-input,
+.prompt-field textarea.dash-input { background: var(--surface); }
 .token-card-field input:focus,
+.dash-input:focus,
+.dash-input[aria-expanded="true"],
+.prompt-field textarea.dash-input:focus,
 .edit-form input:focus,
 .edit-form textarea:focus,
 .edit-form select:focus,
@@ -383,7 +391,7 @@ h2, h3, p { overflow-wrap: anywhere; }
 .edit-area:focus {
   outline: none;
   background: var(--surface);
-  box-shadow: 2px 2px 0 var(--pink);
+  box-shadow: 2px 2px 0 var(--control-focus, var(--pink));
 }
 .token-card-error {
   min-height: 1.35em;
@@ -1623,13 +1631,16 @@ a.tag:hover {
   }
 }
 
-.recall-panel {
-  margin: 0 0 24px;
-  overflow: hidden;
+.recall-panel,
+.settings-panel {
   border: 2px solid var(--ink);
   border-radius: 12px;
   background: var(--surface);
   box-shadow: 4px 4px 0 var(--pink);
+}
+.recall-panel {
+  margin: 0 0 24px;
+  overflow: hidden;
 }
 
 .recall-panel-head {
@@ -1700,7 +1711,8 @@ a.tag:hover {
 }
 .recall-panel[open] .recall-panel-toggle::before { content: "−"; }
 
-.recall-panel-body {
+.recall-panel-body,
+.settings-form-body {
   padding: 18px;
   background:
     linear-gradient(var(--wash) 1px, transparent 1px),
@@ -2123,7 +2135,8 @@ a.tag:hover {
   .recall-panel-head { grid-template-columns: minmax(0, 1fr) 28px; padding: 16px; }
   .recall-panel-summary { grid-column: 1 / -1; grid-row: 2; justify-content: flex-start; }
   .recall-panel-toggle { grid-column: 2; grid-row: 1; }
-  .recall-panel-body { padding: 13px; }
+  .recall-panel-body,
+.settings-form-body { padding: 13px; }
   .recall-unit-body { padding: 12px; }
   .recall-source { align-items: flex-start; flex-direction: column; gap: 7px; }
   .recall-archive { gap: 8px; padding: 12px; }

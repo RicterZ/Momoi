@@ -209,6 +209,8 @@ class SemanticRecallService:
         )
 
     async def maintain_once(self, *, allow_encoding: bool = True) -> bool:
+        if not self.config.enabled:
+            return False
         worked = False
         claims = self.store.claim_semantic_sources(16)
         for claim in claims:

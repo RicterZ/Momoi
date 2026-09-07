@@ -1,6 +1,8 @@
 import { StrictMode, createContext, useContext, useEffect, useId, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
+import Loading from "./Loading.jsx";
+import ConfigurationSettings, { ApplyDialog, SaveBar } from "./ConfigurationSettings.jsx";
 
 const TOKEN_KEY = "momoi-dashboard-token";
 const REFLECTION_PAGE = 14;
@@ -366,15 +368,6 @@ function useHashRoute() {
     return () => window.removeEventListener("hashchange", onChange);
   }, []);
   return route;
-}
-
-function Loading({ children = "正在读取 Momoi 的生活记录…" }) {
-  return (
-    <div className="loading">
-      <span className="loading-mark">M</span>
-      <span>{children}</span>
-    </div>
-  );
 }
 
 function Empty({ text = "Momoi 开始运行后，内容会出现在这里。" }) {
@@ -2443,116 +2436,84 @@ const promptDetails = {
   },
 };
 
-function PromptEditor({ item, token }) {
+function PromptEditor({ item, value, onChange, disabled }) {
   const details = promptDetails[item.id];
-  const [saved, setSaved] = useState(item.content || "");
-  const [draft, setDraft] = useState(item.content || "");
-  const [saving, setSaving] = useState(false);
-  const [status, setStatus] = useState("");
-  const dirty = draft !== saved;
-
-  useEffect(() => {
-    const content = item.content || "";
-    setSaved(content);
-    setDraft(content);
-    setStatus("");
-  }, [item.id, item.content]);
-
-  async function save(event) {
-    event.preventDefault();
-    if (!dirty || saving) return;
-    setSaving(true);
-    setStatus("");
-    try {
-      const updated = await api(
-        `/api/settings/prompts/${encodeURIComponent(item.id)}`,
-        { method: "PUT", token, body: { content: draft } },
-      );
-      const content = updated?.content ?? draft;
-      setSaved(content);
-      setDraft(content);
-      setStatus("已保存");
-    } catch (error) {
-      setStatus(`保存失败 · ${error.message}`);
-    } finally {
-      setSaving(false);
-    }
-  }
-
   return (
-    <form className="prompt-card" onSubmit={save}>
+    <section className="prompt-card">
       <header className="prompt-card-head">
-        <div>
-          <p className="prompt-code">{details.code}</p>
-          <h2>{details.title}</h2>
-        </div>
+        <h2>{details.title}</h2>
+        <span className="panel-label">PROMPTS // {item.filename}</span>
       </header>
       <p className="prompt-description">{details.description}</p>
       <label className="prompt-field">
-        <span>{item.filename}</span>
         <textarea
-          value={draft}
+          className="dash-input"
+          aria-label={`${details.title} ${item.filename}`}
+          value={value}
           rows={item.id === "soul" ? 18 : 10}
-          onChange={(event) => {
-            setDraft(event.target.value);
-            setStatus("");
-          }}
+          disabled={disabled}
+          onChange={event => onChange(event.target.value)}
         />
       </label>
-      <div className="prompt-card-foot">
-        {status ? (
-          <span className={status.startsWith("保存失败") ? "is-error" : ""} aria-live="polite">
-            {status}
-          </span>
-        ) : null}
-        <div className="card-actions">
-          <button
-            className="quiet-button"
-            type="button"
-            disabled={!dirty || saving}
-            onClick={() => {
-              setDraft(saved);
-              setStatus("");
-            }}
-          >
-            撤销修改
-          </button>
-          <button
-            className="quiet-button pink"
-            type="submit"
-            disabled={!dirty || saving}
-          >
-            {saving ? "保存中…" : "保存提示词"}
-          </button>
+    </section>
+  );
+}
+
+function PromptSettings({ items, token, navigation }) {
+  const initial = () => Object.fromEntries(items.map(item => [item.id, item.content || ""]));
+  const [saved, setSaved] = useState(initial);
+  const [drafts, setDrafts] = useState(initial);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState(null);
+  const [progress, setProgress] = useState(null);
+  const saveLock = useRef(false);
+  const dirtyItems = items.filter(item => drafts[item.id] !== saved[item.id]);
+  async function save(event) {
+    event.preventDefault();
+    if (!dirtyItems.length || saveLock.current) return;
+    saveLock.current = true;
+    setSaving(true);
+    setProgress({ state: "saving", title: "正在保存提示词", message: "正在提交人格设定与心跳指引…" });
+    try {
+      const results = await Promise.allSettled(dirtyItems.map(async item => {
+        const result = await api(`/api/settings/prompts/${encodeURIComponent(item.id)}`, {
+          method: "PUT", token, body: { content: drafts[item.id] }, signal: AbortSignal.timeout(30000),
+        });
+        return [item.id, result?.content ?? drafts[item.id]];
+      }));
+      const completed = Object.fromEntries(results.filter(result => result.status === "fulfilled").map(result => result.value));
+      setSaved(current => ({ ...current, ...completed }));
+      setDrafts(current => ({ ...current, ...completed }));
+      const failed = results.flatMap((result, index) => result.status === "rejected" ? [`${promptDetails[dirtyItems[index].id].title}：${result.reason.message}`] : []);
+      setStatus({ text: failed.length ? "部分提示词未保存，请重试" : "提示词已保存", error: failed.length > 0 });
+      setProgress({ state: failed.length ? "error" : "success", title: failed.length ? "提示词未全部保存" : "提示词已保存", message: failed.length ? failed.join("；") : "人格设定与心跳指引已更新。" });
+    } finally {
+      saveLock.current = false;
+      setSaving(false);
+    }
+  }
+  return (
+    <form className="settings-prompts-form" onSubmit={save} data-dirty={dirtyItems.length > 0}>
+      {progress && <ApplyDialog progress={progress} onClose={() => setProgress(null)} />}
+      <div className="settings-form-body settings-persona">
+        <div className="prompt-grid">
+          {items.map(item => <PromptEditor key={item.id} item={item} value={drafts[item.id]} disabled={saving} onChange={value => { setDrafts(current => ({ ...current, [item.id]: value })); setStatus(null); }} />)}
         </div>
       </div>
+      <SaveBar {...navigation} busy={saving || navigation.busy} dirty={dirtyItems.length > 0} status={status} hint="" />
     </form>
   );
 }
 
-
 function Settings({ refreshKey, token }) {
   return (
-    <DataView path="/api/settings" refreshKey={refreshKey} token={token}>
-      {(data) => (
-        <div className="settings-page">
-          <section className="settings-section">
-            <header className="settings-section-head">
-              <div>
-                <p className="eyebrow">CONFIG // PROMPTS</p>
-                <h2>提示词</h2>
-              </div>
-              <p>调整 Momoi 的人格和空闲时关注的事情。</p>
-            </header>
-            <div className="prompt-grid">
-              {(data.prompts || []).map((item) => (
-                <PromptEditor item={item} token={token} key={item.id} />
-              ))}
-            </div>
-          </section>
-        </div>
-      )}
-    </DataView>
+    <div className="settings-page">
+      <ConfigurationSettings key={refreshKey} token={token} request={api} promptContent={navigation => (
+        <DataView path="/api/settings" refreshKey={refreshKey} token={token}>
+          {data => <PromptSettings items={data.prompts || []} token={token} navigation={navigation} />}
+        </DataView>
+      )} />
+    </div>
   );
 }
 
@@ -2629,6 +2590,7 @@ function TokenGate({ value, onChange, onUnlock }) {
 }
 
 function App() {
+  const confirm = useConfirm();
   const { view, param } = useHashRoute();
   const [refreshKey, setRefreshKey] = useState(0);
   const [token, setToken] = useState(readToken);
@@ -2639,6 +2601,17 @@ function App() {
   const [pageTitle, eyebrow] = pages[view];
   const View = viewComponents[view];
   const isRecord = view === "conversations" || view === "thinking";
+
+  async function allowSettingsLeave() {
+    if (view !== "settings" || !document.querySelector('.settings-studio [data-dirty="true"]')) return true;
+    return confirm({
+      title: "还有修改没有保存",
+      message: "离开或刷新页面会丢弃配置与提示词的草稿。",
+      confirmLabel: "丢弃修改并继续",
+      cancelLabel: "继续编辑",
+    });
+  }
+
 
   useEffect(() => {
     if (!token) return undefined;
@@ -2679,6 +2652,13 @@ function App() {
     <>
       <div
         className={`shell${locked ? " is-locked" : ""}${isRecord ? " is-record" : ""}`}
+        onClickCapture={async (event) => {
+          const link = event.target.closest('a[href^="#"]');
+          if (view !== "settings" || !link || link.hash === location.hash || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+          if (!document.querySelector('.settings-studio [data-dirty="true"]')) return;
+          event.preventDefault();
+          if (await allowSettingsLeave()) location.hash = link.hash;
+        }}
         data-timezone={timezone}
         aria-hidden={locked || undefined}
         inert={locked || undefined}
@@ -2723,9 +2703,9 @@ function App() {
               className="quiet-button"
               type="button"
               tabIndex={locked ? -1 : undefined}
-              onClick={() => setRefreshKey((value) => value + 1)}
+              onClick={async () => { if (await allowSettingsLeave()) setRefreshKey((value) => value + 1); }}
             >
-              ↻ 重载
+              ↻ 刷新
             </button>
           </header>
           <div id="content">
@@ -2734,6 +2714,7 @@ function App() {
               token={token}
               routeParam={param}
               onMutated={() => setRefreshKey((value) => value + 1)}
+
             />
           </div>
         </main>

@@ -1,3 +1,4 @@
+import copy
 import json
 from importlib.resources import files
 from pathlib import Path
@@ -22,6 +23,11 @@ def load_config(path: str | Path) -> AppConfig:
     config_path = Path(path).expanduser().resolve()
     with config_path.open("r", encoding="utf-8") as file:
         raw = json.load(file)
+    return parse_config(raw, config_path)
+
+
+def parse_config(raw, config_path: Path, *, providers=None) -> AppConfig:
+    raw = copy.deepcopy(raw)
     if not isinstance(raw, dict):
         raise ConfigError("config.json must be a table/object")
     allowed = {
@@ -44,16 +50,15 @@ def load_config(path: str | Path) -> AppConfig:
         raise ConfigError(f"unknown configuration field: {sorted(unknown)[0]}")
     from ..integrations.configuration import resolve_provider_config
 
-    providers = resolve_provider_config(raw, config_path)
+    if providers is None:
+        providers = resolve_provider_config(raw, config_path)
     apply_env_overrides(raw)
 
     try:
         channel_section = mapping(raw.get("channels"), "channels")
         primary_name = str(channel_section.get("primary") or "")
         enabled = mapping(channel_section.get("enabled"), "channels.enabled")
-        if not enabled:
-            raise ConfigError("channels.enabled must not be empty")
-        if primary_name not in enabled:
+        if (enabled or primary_name) and primary_name not in enabled:
             raise ConfigError("channels.primary must name an enabled channel")
         channel_configs = tuple(
             load_channel_config(
@@ -64,9 +69,12 @@ def load_config(path: str | Path) -> AppConfig:
             for name, settings in enabled.items()
         )
         channel_config = next(
-            item
-            for item in channel_configs
-            if getattr(item, "plugin", "") == primary_name
+            (
+                item
+                for item in channel_configs
+                if getattr(item, "plugin", "") == primary_name
+            ),
+            None,
         )
     except (TypeError, ValueError) as error:
         raise ConfigError(str(error)) from None

@@ -12,7 +12,7 @@ Absolute paths are accepted for every path field. `config.json` does not expand
 `${VAR}` placeholders.
 
 External API endpoints, credentials and options live in [providers.yaml](./PROVIDERS.md).
-The main config contains `"providers": "providers.yaml"`. Restart after service changes.
+The main config contains `"providers": "providers.yaml"`. Dashboard mode watches service changes and reloads the business runtime.
 
 ## Fish Audio speech synthesis
 
@@ -48,8 +48,7 @@ bindings:
 
 Create a key on the [Fish API key page](https://fish.audio/app/api-keys) and
 put it in `credentials.fish.api_key`, or use the example’s `FISH_API_KEY` environment reference.
-Restart Momoi after updating
-configuration. The initialized provider is available internally through
+Dashboard mode applies configuration changes automatically. The initialized provider is available internally through
 `daemon.bubble_delivery.tts_provider`; its `synthesize(text)` method returns the
 in-memory `AudioOutput(data: bytes, format: str)`. No CLI entry point is added.
 
@@ -148,7 +147,7 @@ See [Provider configuration](./PROVIDERS.md#asr) for options and setup.
 | Field | Required | Default | Description |
 | --- | --- | --- | --- |
 | `primary` | Yes | — | Channel name selected for outbound delivery |
-| `enabled` | Yes | — | Non-empty object of Channel names and their settings; must contain `primary` |
+| `enabled` | Yes | — | Channel names and settings; may be empty during dashboard setup; otherwise must contain `primary` |
 
 ### NapCat
 
@@ -455,6 +454,8 @@ Environment values override `config.json` for the current process.
 | `MOMOI_WEBHOOKS_TOKEN` | `webhooks.token` |
 
 Keep files containing credentials private. Provider credentials use only explicit YAML
-environment references. Restart `momoi run` after changing `providers.yaml`,
-`config.json`, `mcp.json`, workflows, or executor definitions. Prompt
-files are reloaded before each new Turn.
+environment references. Dashboard mode watches `providers.yaml` and `config.json`.
+Use Settings → Reapply after editing `mcp.json`, workflows, or executors.
+Storage paths, timezone, dashboard authentication and prompt file paths require a
+process restart. Headless mode requires a restart for configuration changes. Prompt
+content is reloaded before each new Turn.

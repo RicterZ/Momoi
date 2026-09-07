@@ -201,10 +201,16 @@ def create_dashboard_app(
     token: str = "",
     balance_provider: BalanceProvider | None = None,
     settings: DashboardSettings,
+    configuration=None,
+    runtime=None,
 ) -> web.Application:
     app = web.Application(middlewares=[_auth, _headers])
     app[DASHBOARD_TOKEN] = token
     app[BALANCE_PROVIDER] = balance_provider
+    if configuration is not None and runtime is not None:
+        from .configuration import register_configuration_routes
+
+        register_configuration_routes(app, configuration, runtime)
     workspace = store._workspace
 
     async def index(_request: web.Request) -> web.Response:

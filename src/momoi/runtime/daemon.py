@@ -14,8 +14,6 @@ from ..channel import (
     create_channel,
 )
 from ..config.models import AppConfig
-from ..dashboard.service import DashboardService
-from ..dashboard.settings import DashboardSettings
 from ..observability.events import log_event
 from ..tools.memory import MemoryTools
 from ..tools.thinking import ThinkingTools
@@ -50,11 +48,22 @@ class MomoiDaemon(
         self,
         config: AppConfig,
         channel: Channel | None = None,
-        dashboard: tuple[str, int] | None = None,
         asr_provider: ASRProvider | None = None,
         tts_provider: TTSProvider | None = None,
     ) -> None:
+        self.store = None
+        try:
+            self._compose(config, channel, asr_provider, tts_provider)
+        except BaseException:
+            if self.store is not None:
+                self.store.close()
+            raise
+
+    def _compose(self, config, channel, asr_provider, tts_provider):
+        if not config.providers.enabled("llm") or not config.channel_configs:
+            raise ValueError("runtime requires an enabled LLM and at least one channel")
         self.config = config
+        self.ready = asyncio.Event()
         self._loaded_workspace_prompts: dict[str, str] = {}
         self.daemon_policy = config.policies.daemon
         artifact_root(config).mkdir(parents=True, exist_ok=True)
@@ -104,8 +113,9 @@ class MomoiDaemon(
             dependencies = (
                 ChannelDependencies(
                     asr_provider=self.asr_provider,
-                    asr_max_audio_bytes=config.providers.options_for("asr").get(
-                        "max_audio_bytes", 3 * 1024 * 1024
+                    asr_max_audio_bytes=(
+                        self.asr_provider.max_audio_bytes
+                        if self.asr_provider else 3 * 1024 * 1024
                     ),
                 )
                 if getattr(item, "plugin", "") == "napcat"
@@ -131,17 +141,6 @@ class MomoiDaemon(
         self.provider.thinking_sink = self.store.record_thinking_call
         if accounting is not None:
             self.provider.usage_parser = accounting.parse_usage
-        self.dashboard = (
-            DashboardService(
-                self.store,
-                *dashboard,
-                token=config.dashboard.token,
-                balance_provider=self.services.balance,
-                settings=DashboardSettings.from_config(config),
-            )
-            if dashboard is not None
-            else None
-        )
         self.mcp = MCPManager(config.mcp_config)
         self.tool_surface = ToolSurface(
             self.mcp,
@@ -253,11 +252,10 @@ class MomoiDaemon(
                             )
                         )
                     )
-                    if self.dashboard is not None:
-                        tasks.append(group.create_task(self.dashboard.run(stop)))
                     if self.webhooks is not None:
                         tasks.append(group.create_task(self.webhooks.run_api(stop)))
                         tasks.append(group.create_task(self.webhooks.run_worker(stop)))
+                    self.ready.set()
                     await stop.wait()
                     for task in tasks:
                         task.cancel()

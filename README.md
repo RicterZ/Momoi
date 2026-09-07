@@ -366,7 +366,8 @@ services:
     credentials: chat
   vectors:
     adapter: openai
-    base_url: http://embedding:8002/v1
+    settings:
+      endpoint: http://embedding:8002/v1/embeddings
 bindings:
   llm:
     service: chat
@@ -505,7 +506,8 @@ Merge these entries into `services` and `bindings` in `providers.yaml`:
 services:
   vectors:
     adapter: openai
-    base_url: http://embedding:8002/v1
+    settings:
+      endpoint: http://embedding:8002/v1/embeddings
 bindings:
   embedding:
     service: vectors
@@ -567,17 +569,20 @@ configured read-only tools differently from tools with external effects.
 
 ### Dashboard
 
-Set `dashboard.token` in `config.json`, then run:
+Run with an empty workspace to generate minimal configuration and an access token:
 
 ```bash
-momoi run --dashboard
+momoi run
 ```
 
 Open `http://127.0.0.1:8788`. The dashboard can inspect conversations,
 per-Turn recall scopes and selected evidence, reflections, memories, Goals,
 image reactions, usage, and thinking records; it can also edit memories, Goals,
-reaction assets, and prompt files. Provider changes are made in `providers.yaml`
-and require a restart. Keep the dashboard on localhost or a trusted network.
+reaction assets, and prompt files. Enter the generated token from startup output,
+then configure providers and channels in Settings, including Weixin QR login.
+Configuration changes reload the business runtime without closing the dashboard.
+Use `momoi run --no-dashboard` for headless operation. Existing workspaces need
+`dashboard.token` or `MOMOI_DASHBOARD_TOKEN`. Keep the dashboard on localhost or a trusted network.
 
 ### Webhooks
 

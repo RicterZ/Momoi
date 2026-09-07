@@ -4,8 +4,9 @@ EN | [中文](./PROVIDERS.zh-CN.md)
 
 Momoi configures external APIs in `providers.yaml`. The main `config.json` contains
 `"providers": "providers.yaml"`; this path is resolved relative to `config.json`.
-Restart Momoi after editing the catalog. The dashboard settings page edits prompt
-files; provider configuration is managed in YAML.
+The dashboard settings page configures each capability using adapter field schemas.
+Saving validates and atomically replaces the document. With the dashboard enabled,
+catalog changes also trigger a controlled runtime reload while the dashboard stays available.
 
 Start with [the complete example](../config.example/providers.yaml). Enable only
 the capabilities you need and supply their credentials.
@@ -61,7 +62,10 @@ also appear in options. Unknown fields, duplicate YAML keys, unresolved referenc
 and unsupported adapter/capability pairs fail validation before startup. Enabled
 bindings require their referenced environment credentials. Disabled bindings still
 validate references but do not require environment secrets or create clients.
-The LLM binding is required and enabled; omitted optional bindings are disabled.
+The dashboard can start before its model and channel are configured. An LLM binding
+cannot set `enabled: false`; configuration APIs also reject removing an existing
+model or the last channel. Voice, embedding and balance can be disabled. Disabling
+embedding stops semantic retrieval while preserving keyword recall and memory writes.
 
 ## Built-in adapters
 
@@ -88,8 +92,11 @@ wire protocol.
 
 ### Embedding
 
-Use service `base_url` (Momoi appends `/v1/embeddings`, or `/embeddings` if the URL
-already ends in `/v1`) or an explicit `endpoint` option. Defaults:
+Use only `endpoint` in service `settings` or binding `options`: a complete request
+URL such as `https://api.example.com/v1/embeddings`, or a custom gateway path.
+No path is appended. The default is `http://embedding:8002/v1/embeddings`.
+Embedding no longer accepts `base_url`; change existing configurations to a
+complete `endpoint`. Other defaults:
 
 | Option | Default |
 | --- | --- |
@@ -160,7 +167,7 @@ Install a Python module in the runtime environment and list it in `plugins`.
 For example, `my_balance.py` implements a fixed balance source for local testing:
 
 ```python
-from momoi.integrations.registry import register_adapter
+from momoi.integrations.registry import Adapter, register_adapter
 
 class FixedBalance:
     def __init__(self, options, context):
@@ -174,18 +181,69 @@ def validate(options):
     if set(options) != {"amount"} or not isinstance(options["amount"], str):
         raise ValueError("amount must be a string")
 
-register_adapter("fixed", "balance", FixedBalance, validate=validate)
+register_adapter(Adapter(
+    name="fixed", capability="balance", factory=FixedBalance, validate=validate,
+    schema={"amount": {"type": "string", "default": "12.34"}},
+))
 ```
 
 Add `plugins: [my_balance]`, a service with `adapter: fixed` and
 `settings: {amount: "12.34"}`, and point the `balance` binding at it. Registration
-includes an offline validator for that capability. Register another capability
+requires its factory, offline validator and field schema. Mark credential fields
+with `secret: True`; the provider configuration API returns saved values in plaintext. The old
+positional registration signature has been removed. Register another capability
 for the same adapter when a vendor exposes more APIs. New adapters do not require
 changes to Momoi config fields, runtime consumers, or the dashboard.
 
-LLM implementations supply `config`, `accounting`, `usage_sink`, `thinking_sink`,
-`usage_parser`, and `complete()` as defined by the contract. Embedders return
-normalized vectors from `encode()` and expose `health()` / `close()`; binding
-options also describe the semantic space's model, dimensions and calibration.
+LLM implementations supply `accounting`, `usage_sink`, `thinking_sink`,
+`usage_parser`, and `complete()` as defined by the contract. Vendor `config` is
+private to the adapter. The application expresses tool requirements through
+`require_tool` / `required_tool`, including Owner rounds requiring a response on
+Anthropic; each adapter translates that intent into its wire protocol.
+
+Embedders return normalized vectors from `encode()` and expose `health()` /
+`close()` and `space: EmbeddingSpaceConfig`. The adapter maps its own configuration
+to the enabled semantic space's model identity, dimensions, calibration and batch
+size. Custom options may use arbitrary names and nesting; neither the registry
+nor recall reads vendor option names. Reading `registry.embedding_config` lazily
+resolves the encoder's space; disabled embeddings create no encoder.
+
+ASR implementations expose a positive `max_audio_bytes` for inbound channels.
+The `ASRProvider` base class defaults to 3 MiB; adapters can derive the limit from
+their own options.
 TTS failures raise `TTSError`; balance adapters raise `IntegrationError` with
 sanitized details and an error category. Cancellation must propagate.
+
+## Declarative field contract
+
+`GET /api/settings/configuration` exposes `adapters[]` entries containing
+`{adapter, capability, fields}`. Plugins declare their own ordered field mappings.
+The backend supports the full contract below; recursive frontend rendering and
+layout metadata are pending integration.
+
+Fields support `type` (`string`, `integer`, `number`, `boolean`, `object`, `array`),
+`label`, `description`, `required`, `default`, `secret`, scalar `enum`, inclusive
+numeric `minimum` / `maximum`, object `properties`, array `items`, and `advanced`.
+Object properties and array items recursively use the same field specification.
+An object without `properties` is a free-form JSON object. Undeclared fields and
+metadata are rejected. Schema definitions and defaults are validated on registration.
+
+The loader merges options, resolves credentials, fills missing defaults, validates
+fields, then calls the adapter's offline validator for cross-field/business rules.
+Factories receive this resolved dictionary. Disabled bindings may omit required
+fields and environment credentials; supplied values must still have valid types
+and ranges. Defaults apply only when a field is absent; `null` is not absence.
+Required booleans may be false. Defaults are not written back into YAML.
+
+Mark secret string fields at any depth with `secret: True`. Nonempty secret
+defaults and secret enums are prohibited because schema metadata is public.
+Top-level secrets are stored in the named credential table; nested secrets remain
+at their settings/options paths. Both support `{env: NAME}` references without
+writing resolved environment values to disk. Provider snapshots return literal
+credentials unchanged. Resubmit the value to preserve it or supply a new value to
+replace it. Provider configuration does not accept `{"$secret":"keep"}` placeholders.
+Environment fields return their `{env: NAME}` references and resolve at runtime.
+
+See the [nested schema example](./PROVIDERS.zh-CN.md#字段声明与前端接入契约).
+New providers implement the capability and translate their options inside the
+adapter; application consumers and runtime replacement remain unchanged.
