@@ -52,7 +52,7 @@ const modules = [
 ];
 const capabilityLabels = { asr: "语音识别", tts: "语音合成" };
 const adapterLabels = {
-  openai: "OpenAI 兼容协议",
+  openai: "OpenAI",
   deepseek: "DeepSeek",
   anthropic: "Anthropic",
   tencent: "腾讯云",
