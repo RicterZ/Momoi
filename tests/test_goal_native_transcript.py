@@ -71,6 +71,17 @@ class GoalNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             ).fetchone()["id"]
             daemon.store.mark_sent(int(outbox_id))
 
+            # A previous Goal has finished, but its remaining bubbles are still
+            # waiting for simulated typing. The next Goal must see all of them.
+            daemon.store.begin_turn("previous-goal", "goal", ["goal:water"])
+            daemon.store.queue_progress(
+                "previous-goal", "water-bubbles", ["两点了", "记得喝水"], "napcat",
+            )
+            daemon.store.commit_autonomous_turn(
+                "water", TurnDraft(), turn_id="previous-goal",
+            )
+            daemon.store.mark_sent(daemon.store.due_outbox()[0].id)
+
             class Provider:
                 calls = 0
                 first_system: object = None
@@ -141,10 +152,14 @@ class GoalNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn("<due_goal>", rendered)
             self.assertEqual(
                 [message["role"] for message in provider.first_messages],
-                ["user", "user", "assistant", "user"],
+                ["user", "user", "assistant", "user", "assistant", "user"],
             )
             self.assertIn("继续检查", str(provider.first_messages[1]["content"]))
             self.assertIn("好", str(provider.first_messages[2]["content"]))
+            previous_speech = str(provider.first_messages[4]["content"])
+            self.assertIn("两点了", previous_speech)
+            self.assertIn("记得喝水", previous_speech)
+            self.assertEqual(previous_speech.count('delivery="queued"'), 1)
             self.assertEqual(provider.calls, 3)
             expected_surface = [
                 str(tool["name"]) for tool in daemon.tool_surface.conversation_specs()

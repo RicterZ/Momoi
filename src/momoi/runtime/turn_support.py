@@ -96,7 +96,7 @@ USER_CONTEXT_SECTION_ORDER = (
     # "goal_progress",
     "active_goals",
     # "interrupted_reply_expectation",
-    "delivered_proactive_bubbles",
+    "proactive_bubbles",
     "recent_external_events",
     "candidate_episodes",
     "recent_recall_context",
@@ -157,7 +157,7 @@ def context_data_message(
     if not text and required:
         text = (
             "<runtime_directives>\n"
-            "The following native bubbles are shared conversation evidence.\n"
+            "The following native bubbles record conversation and committed output; pending delivery is marked.\n"
             "</runtime_directives>"
         )
     if not text:

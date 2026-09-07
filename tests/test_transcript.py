@@ -10,7 +10,7 @@ from momoi.runtime.transcript.building import (
     select_groups,
 )
 from momoi.runtime.transcript.rendering import (
-    render_delivered_bubble_evidence,
+    render_proactive_bubble_evidence,
     render_messages as _render_messages,
     turn_labels,
 )
@@ -242,6 +242,7 @@ def test_internal_and_failed_output_is_not_conversation():
             owner(1, "早"),
             bubble(2, "内部记录", delivery_state="internal"),
             bubble(3, "发送失败", delivery_state="failed"),
+            bubble(5, "被新消息打断", delivery_state="superseded"),
             bubble(4, "早上好"),
         ]
     )
@@ -345,6 +346,40 @@ def test_uncertain_delivery_stays_marked():
     assert "delivery uncertain" in text(messages[1])
 
 
+@pytest.mark.parametrize("with_tools", [False, True])
+def test_queued_bubbles_keep_boundaries_and_individual_delivery_state(with_tools):
+    messages = render_messages(
+        build_groups([
+            owner(1, "提醒我"),
+            bubble(2, "两点了", offset=1),
+            bubble(3, "起来走走\n喝口水 & 休息一下", offset=3, delivery_state="queued"),
+        ]),
+        tool_activity={"t1": [action("clock", at=2)]} if with_tools else {},
+    )
+    document = ElementTree.fromstring(f"<history>{text(messages[1])}</history>")
+    bubbles = document.findall("bubble")
+    assert [item.attrib for item in bubbles] == [{}, {"delivery": "queued"}]
+    assert [item.text for item in bubbles] == [
+        "\n两点了\n", "\n起来走走\n喝口水 & 休息一下\n",
+    ]
+    if with_tools:
+        assert text(messages[1]).index("clock()") < text(messages[1]).index('delivery="queued"')
+
+
+def test_pending_proactive_speech_is_evidence_without_claiming_owner_silence():
+    transcript = build_transcript([
+        bubble(1, "喝水啦", turn_id="goal1", delivery_state="queued"),
+        bubble(2, "外卖到了", turn_id="goal2", offset=10, delivery_state="queued"),
+    ])
+    evidence = render_proactive_bubble_evidence(
+        transcript.orphaned, timezone=TEST_TIMEZONE,
+    )
+    assert evidence.count('<bubble delivery="queued">') == 2
+    assert "喝水啦" in evidence and "外卖到了" in evidence
+    assert "still being delivered" in evidence
+    assert "owner did not reply" not in evidence
+
+
 def test_transcript_never_opens_on_an_assistant_reply():
     transcript = build_transcript(
         [
@@ -373,11 +408,11 @@ def test_proactive_speech_without_an_owner_message_is_kept_as_evidence():
     assert transcript.messages == []
     assert len(transcript.orphaned) == 2
 
-    evidence = render_delivered_bubble_evidence(
+    evidence = render_proactive_bubble_evidence(
         transcript.orphaned,
         timezone=TEST_TIMEZONE,
     )
-    assert "Momoi bubbles already delivered" in evidence
+    assert "Committed Momoi bubbles" in evidence
     assert "<bubble>\n我看到一条新闻\n</bubble>" in evidence
     assert "[owner did not reply" in evidence
     assert "你还没睡吧" in evidence

@@ -5,7 +5,7 @@ def text_value(value: object) -> str:
     return str(value or "").strip()
 
 
-VISIBLE_ASSISTANT_STATES = frozenset({"delivered", "uncertain"})
+VISIBLE_ASSISTANT_STATES = frozenset({"delivered", "uncertain", "queued"})
 
 DEFAULT_GAP_SECONDS = 30 * 60
 
@@ -22,6 +22,7 @@ class TranscriptGroup:
     turn_ids: tuple[str, ...]
     started_at: float
     ended_at: float
+    part_states: tuple[str, ...] = ()
     uncertain: bool = False
     token_estimate: int = field(default=0, compare=False)
 

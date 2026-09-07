@@ -934,10 +934,10 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             await daemon._complete_batch([event], turn_id)
 
             wire = json.dumps(provider.messages, ensure_ascii=False)
-            self.assertIn("<delivered_proactive_bubbles>", wire)
+            self.assertIn("<proactive_bubbles>", wire)
             self.assertIn("刚才提醒你窗户还开着", wire)
             self.assertIn(
-                "already delivered before the retained owner transcript", wire
+                "Committed Momoi bubbles before the retained owner transcript", wire
             )
             self.assertFalse(
                 any(

@@ -48,6 +48,7 @@ def build_groups(rows: Iterable[Mapping[str, object]]) -> list[TranscriptGroup]:
     groups: list[TranscriptGroup] = []
     parts: list[str] = []
     part_times: list[float] = []
+    part_states: list[str] = []
     message_ids: list[int] = []
     turn_ids: list[str] = []
     role = ""
@@ -57,15 +58,19 @@ def build_groups(rows: Iterable[Mapping[str, object]]) -> list[TranscriptGroup]:
     uncertain = False
 
     def flush() -> None:
-        nonlocal parts, part_times, message_ids, turn_ids, role, turn, uncertain
+        nonlocal parts, part_times, part_states, message_ids, turn_ids, role, turn, uncertain
         if not parts:
             return
-        text = "\n".join(render_bubble(part) for part in parts)
+        text = "\n".join(
+            render_bubble(part, delivery_state=state)
+            for part, state in zip(parts, part_states, strict=True)
+        )
         groups.append(
             TranscriptGroup(
                 role=role,
                 parts=tuple(parts),
                 part_times=tuple(part_times),
+                part_states=tuple(part_states),
                 message_ids=tuple(message_ids),
                 turn_ids=tuple(dict.fromkeys(turn_ids)),
                 started_at=started,
@@ -76,6 +81,7 @@ def build_groups(rows: Iterable[Mapping[str, object]]) -> list[TranscriptGroup]:
         )
         parts = []
         part_times = []
+        part_states = []
         message_ids = []
         turn_ids = []
         role = ""
@@ -93,6 +99,7 @@ def build_groups(rows: Iterable[Mapping[str, object]]) -> list[TranscriptGroup]:
             started = created
         parts.append(text_value(row.get("content")))
         part_times.append(created)
+        part_states.append(text_value(row.get("delivery_state")) or "delivered")
         message_ids.append(identifier)
         turn_ids.append(text_value(row.get("turn_id")))
         ended = created
@@ -126,12 +133,12 @@ def select_groups(
 def partition_for_protocol(
     groups: Sequence[TranscriptGroup],
 ) -> tuple[list[TranscriptGroup], list[TranscriptGroup]]:
-    """Split off delivered Momoi speech that no owner message precedes.
+    """Split off committed Momoi speech that no owner message precedes.
 
     Proactive Heartbeat, Goal and Webhook messages can open a window, and the
     Anthropic Messages API requires the first message to be the user's. Those
-    bubbles are still real speech the owner saw, so they are returned separately
-    for the caller to render as delivered-output evidence rather than dropped or
+    bubbles are committed output with explicit delivery states, so they are returned
+    separately for the caller to render as output evidence rather than dropped or
     turned into a fabricated owner message.
     """
 

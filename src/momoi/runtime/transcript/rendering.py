@@ -66,12 +66,20 @@ def _silence(
     if previous is None or previous.role != group.role:
         return None
     if group.role == "assistant":
+        if "queued" in previous.part_states:
+            return _message("user", "[previous Momoi messages still being delivered]")
         waited = max(0.0, group.started_at - previous.ended_at)
         return _message("user", f"[owner did not reply · {_elapsed(waited)} later]")
     return _message("assistant", "[ended the Turn without replying]")
 
-def render_bubble(text: str) -> str:
-    return f"<bubble>\n{escape(text)}\n</bubble>"
+def render_bubble(text: str, *, delivery_state: str = "delivered") -> str:
+    attributes = ' delivery="queued"' if delivery_state == "queued" else ""
+    return f"<bubble{attributes}>\n{escape(text)}\n</bubble>"
+
+
+def _part_bubble(group: TranscriptGroup, index: int) -> str:
+    state = group.part_states[index] if index < len(group.part_states) else "delivered"
+    return render_bubble(group.parts[index], delivery_state=state)
 
 
 def _message(role: str, text: str) -> dict[str, object]:
@@ -124,9 +132,9 @@ def _assistant_body(
     """
 
     events: list[tuple[float, int, object]] = []
-    for index, part in enumerate(group.parts):
+    for index in range(len(group.parts)):
         at = group.part_times[index] if index < len(group.part_times) else 0.0
-        events.append((at, 1, part))
+        events.append((at, 1, _part_bubble(group, index)))
     for record in records:
         events.append((float(record.get("at") or 0.0), 0, record))
     events.sort(key=lambda item: (item[0], item[1]))
@@ -150,7 +158,7 @@ def _assistant_body(
     for _at, _kind, item in events:
         if isinstance(item, str):
             flush_run()
-            lines.append(render_bubble(item))
+            lines.append(item)
             continue
         if run and text_value(run[0].get("name")) != text_value(item.get("name")):
             flush_run()
@@ -210,12 +218,12 @@ def render_messages(
         if records:
             lines.extend(_assistant_body(group, records, action_limit))
         else:
-            lines.extend(render_bubble(part) for part in group.parts)
+            lines.extend(_part_bubble(group, index) for index in range(len(group.parts)))
         messages.append(_message(group.role, "\n".join(lines)))
         previous = group
     return messages
 
-def render_delivered_bubble_evidence(
+def render_proactive_bubble_evidence(
     groups: Sequence[TranscriptGroup],
     *,
     timezone: ZoneInfo,
@@ -229,7 +237,7 @@ def render_delivered_bubble_evidence(
         tool_activity=tool_activity,
     )
     parts = [
-        "Momoi bubbles already delivered before the retained owner transcript:"
+        "Committed Momoi bubbles before the retained owner transcript (pending delivery is marked):"
     ]
     for message in rendered:
         content = "\n".join(

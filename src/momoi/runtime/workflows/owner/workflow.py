@@ -13,7 +13,7 @@ from ....llm.errors import ProviderError
 from ...agent import TurnExecutionSpec
 from ...transcript.building import build_transcript
 from ...transcript.rendering import (
-    render_delivered_bubble_evidence,
+    render_proactive_bubble_evidence,
     render_messages,
     turn_labels,
 )
@@ -266,7 +266,7 @@ class OwnerWorkflow:
             tool_activity=tool_activity,
             labels=transcript_labels,
         )
-        delivered_proactive_bubbles = render_delivered_bubble_evidence(
+        proactive_bubbles = render_proactive_bubble_evidence(
             transcript.orphaned,
             timezone=self.store.timezone,
             tool_activity=tool_activity,
@@ -291,7 +291,7 @@ class OwnerWorkflow:
             ),
             ("runtime_directives", "\n\n".join(directives)),
             # ("goal_progress", recalled["goal_progress"]),
-            ("delivered_proactive_bubbles", delivered_proactive_bubbles),
+            ("proactive_bubbles", proactive_bubbles),
             ("candidate_episodes", candidates["candidate_episodes"]),
             ("recent_recall_context", candidates["recent_recall_context"]),
             ("recent_external_events", recalled["recent_external_events"]),

@@ -2,10 +2,58 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from momoi.models import TurnDraft
+from momoi.runtime.transcript.building import build_groups
+from momoi.runtime.transcript.rendering import render_messages
 from momoi.storage import Store
 
 
 class TranscriptWindowTest(unittest.TestCase):
+    def test_committed_goal_bubbles_are_visible_before_delivery_and_track_outbox(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            self._add_visible_turn(store, 1)
+            self.assertEqual(store.transcript_window_turn_limit(4, 8), 4)
+            store.begin_turn("goal-turn", "goal", ["goal:water"])
+            store.queue_progress(
+                "goal-turn", "bubbles", ["两点了", "起来走走\n喝口水"], "napcat",
+            )
+            store.queue_progress(
+                "goal-turn", "voice", ["语音提醒"], "napcat", voice=True,
+            )
+            store.commit_autonomous_turn("water", TurnDraft(), turn_id="goal-turn")
+
+            def rows():
+                return store.recent_conversation_messages(1, 10000)
+
+            def rendered():
+                return str(render_messages(build_groups(rows()), timezone=store.timezone))
+
+            # The next Goal sees the complete committed speech even if delivery
+            # has not started. A wholly queued Turn also advances the window.
+            self.assertEqual(store.transcript_window_turn_limit(4, 8), 5)
+            self.assertEqual([row["content"] for row in rows()], [
+                "两点了", "起来走走\n喝口水", "语音提醒",
+            ])
+            self.assertEqual([row["delivery_state"] for row in rows()], ["queued"] * 3)
+            self.assertEqual(rendered().count('delivery="queued"'), 3)
+
+            first = store.due_outbox()[0]
+            store.mark_sending(first.id)
+            store.mark_sent(first.id)
+            self.assertEqual([row["delivery_state"] for row in rows()], [
+                "delivered", "queued", "queued",
+            ])
+            self.assertEqual(rendered().count('delivery="queued"'), 2)
+
+            second = store.due_outbox()[0]
+            store.mark_failed(second.id, "delivery failed")
+            self.assertEqual([row["content"] for row in rows()], ["两点了", "语音提醒"])
+            self.assertEqual(store.cancel_pending_outbox("napcat", "new owner message"), 1)
+            self.assertEqual([row["content"] for row in rows()], ["两点了"])
+            self.assertNotIn('delivery="queued"', rendered())
+            store.close()
+
     @staticmethod
     def _add_visible_turn(
         store: Store,

@@ -52,7 +52,7 @@ class TranscriptStore:
                      AND (
                          m.role='user'
                          OR m.role='assistant'
-                            AND m.delivery_state IN ('delivered', 'uncertain')
+                            AND m.delivery_state IN ('delivered', 'uncertain', 'queued')
                      )
                )
                ORDER BY t.updated_at DESC, t.id DESC LIMIT 1"""
@@ -86,7 +86,7 @@ class TranscriptStore:
                                    m.role='user'
                                    OR m.role='assistant'
                                       AND m.delivery_state IN (
-                                          'delivered', 'uncertain'
+                                          'delivered', 'uncertain', 'queued'
                                       )
                                )
                          )""",
@@ -142,7 +142,7 @@ class TranscriptStore:
                      AND (
                          m.role='user'
                          OR m.role='assistant'
-                            AND m.delivery_state IN ('delivered', 'uncertain')
+                            AND m.delivery_state IN ('delivered', 'uncertain', 'queued')
                      )
                )
                  AND (? IS NULL OR t.updated_at < ?)
@@ -158,7 +158,7 @@ class TranscriptStore:
                        m.delivery_state
                 FROM messages AS m
                 WHERE m.turn_id IN ({placeholders})
-                  AND (m.role IN ('user', 'event') OR m.delivery_state IN ('delivered', 'uncertain'))
+                  AND (m.role IN ('user', 'event') OR m.delivery_state IN ('delivered', 'uncertain', 'queued'))
                 ORDER BY m.id""",
             tuple(turn_ids),
         ).fetchall()
