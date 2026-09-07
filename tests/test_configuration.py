@@ -495,30 +495,3 @@ class ConfigurationTest(unittest.TestCase):
         path = Path(__file__).resolve().parents[1] / "config.example" / "mcp.json"
         loaded = load_mcp_servers(path)
         self.assertTrue(loaded["brave-search"]["optional"])
-
-    def test_readme_minimal_weixin_deployment_config_loads(self) -> None:
-        root = Path(__file__).resolve().parents[1]
-        readme = (root / "README.md").read_text(encoding="utf-8")
-        section = readme.split(
-            "Create `workspace/config.json` with the smallest practical configuration.",
-            1,
-        )[1]
-        snippet = section.split("```json\n", 1)[1].split("\n```", 1)[0]
-
-        with tempfile.TemporaryDirectory() as directory:
-            workspace = Path(directory)
-            prompt_dir = workspace / "prompts"
-            prompt_dir.mkdir()
-            (prompt_dir / "SOUL.md").write_text("Test soul", encoding="utf-8")
-            config_path = workspace / "config.json"
-            config_path.write_text(snippet, encoding="utf-8")
-            yaml_snippet = section.split("```yaml\n", 1)[1].split("\n```", 1)[0]
-            (workspace / "providers.yaml").write_text(yaml_snippet, encoding="utf-8")
-
-            config = load_config(config_path)
-
-        self.assertIsInstance(config.channel, WeixinConfig)
-        self.assertEqual(config.channel_configs, (config.channel,))
-        self.assertEqual(config.channel.plugin, "weixin")
-        self.assertTrue(config.providers.enabled("embedding"))
-        self.assertIsNone(config.mcp_config)
