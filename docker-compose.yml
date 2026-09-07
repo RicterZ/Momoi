@@ -5,20 +5,6 @@ services:
     container_name: momoi-embedding
     restart: unless-stopped
 
-  napcat:
-    image: mlikiowa/napcat-docker:latest
-    container_name: napcat
-    restart: unless-stopped
-    profiles: [qq]
-    environment:
-      NAPCAT_UID: ${NAPCAT_UID:-1000}
-      NAPCAT_GID: ${NAPCAT_GID:-1000}
-    ports:
-      - "3001:3001"
-      - "6099:6099"
-    volumes:
-      - napcat-qq:/app/.config/QQ
-
   momoi:
     image: ricterz/momoi:latest
     container_name: momoi
@@ -33,6 +19,3 @@ services:
       - "${MOMOI_DASHBOARD_PORT:-8788}:8788"
     volumes:
       - ${MOMOI_WORKSPACE:-${HOME}/.momoi}:/home/momoi/.momoi
-
-volumes:
-  napcat-qq:

@@ -327,16 +327,14 @@ and sign in to Weixin by scanning its QR code.
 Optional services start only when requested:
 
 ```bash
-docker compose -f docker-compose.yml --profile qq up -d
 docker compose -f docker-compose.yml --profile embedding up -d
 ```
 
-For QQ, open the NapCat WebUI at `http://127.0.0.1:6099/webui`, obtain its token
-from `docker logs napcat`, and complete QQ login and OneBot WebSocket setup.
-Then enter `ws://napcat:3001` and the owner QQ in Momoi's Settings. For the private
+For QQ, deploy NapCat separately and enter its reachable OneBot WebSocket URL
+and the owner QQ in Momoi's Settings. For the private
 embedding service, use `http://embedding:8002/v1/embeddings`. Starting a container
 does not enable its capability; enable it separately in Settings. Weixin requires
-neither optional service.
+the optional encoder.
 
 The workspace is persisted in `~/.momoi` by default and initialized by `momoi run`;
 existing files are preserved. Only dashboard port 8788 is published by default.
@@ -369,19 +367,22 @@ To use another workspace, place `--workspace` before the command:
 momoi --workspace /path/to/workspace run
 ```
 
-The source-oriented `compose.yaml` builds Momoi from the current checkout and
-shares the same defaults and optional profiles:
+To build the current checkout as a container, use the source Compose file:
 
 ```bash
 docker compose -f compose.yaml up -d --build
 ```
 
+It shares the published stack's defaults; add `--profile embedding` before `up`
+to build and start the optional encoder. Always specify `-f`: without it, Docker
+Compose prefers `compose.yaml` over `docker-compose.yml`.
+
 ## Semantic recall
 
 Enable semantic memory in Settings and select a compatible embedding endpoint,
 model, and vector dimension. The Docker Compose stacks provide a private embedding
-service through `--profile embedding`. With `compose.yaml`, also pass `--build`
-when starting that profile. A Momoi process running on the host needs an endpoint reachable from the host.
+service through `--profile embedding`. A Momoi process running on the host needs
+an endpoint reachable from the host.
 
 Momoi builds the index in the background and activates it when coverage is complete.
 Keyword recall remains available during indexing. See

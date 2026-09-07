@@ -284,14 +284,12 @@ docker compose -f docker-compose.yml logs momoi
 需要时再启动可选服务：
 
 ```bash
-docker compose -f docker-compose.yml --profile qq up -d
 docker compose -f docker-compose.yml --profile embedding up -d
 ```
 
-QQ 用户打开 `http://127.0.0.1:6099/webui`，从 `docker logs napcat` 获取 NapCat 登录
-token，完成 QQ 登录并启用 OneBot WebSocket，然后在 Momoi 设置页填写
-`ws://napcat:3001` 和主人 QQ。私有 Embedding 地址填写
-`http://embedding:8002/v1/embeddings`。启动容器后仍需在设置页启用对应功能；微信不依赖这两个服务。
+QQ 用户单独部署 NapCat，在 Momoi 设置页填写可访问的 OneBot WebSocket 地址和主人 QQ。
+私有 Embedding 地址填写
+`http://embedding:8002/v1/embeddings`。启动容器后仍需在设置页启用对应功能；微信不依赖该服务。
 
 工作区默认持久化在 `~/.momoi`，由 `momoi run` 初始化，已有文件不覆盖。
 默认只发布 dashboard 的 8788 端口；使用 Webhook 时另行添加端口映射并配置功能。
@@ -320,17 +318,20 @@ momoi run
 momoi --workspace /path/to/workspace run
 ```
 
-面向源码开发的 `compose.yaml` 从当前 checkout 构建 Momoi，默认行为和可选 profile 与发布栈一致：
+需要从当前源码构建容器时，使用源码版 Compose：
 
 ```bash
 docker compose -f compose.yaml up -d --build
 ```
 
+它复用发布栈的默认设置；需要本地编码器时，在 `up` 前添加 `--profile embedding`。
+请明确指定 `-f`：不指定时，Docker Compose 会优先使用 `compose.yaml`，而非 `docker-compose.yml`。
+
 ## 语义召回
 
 在设置页启用语义记忆，选择兼容的 Embedding 接口、模型和向量维度。
-Docker Compose 通过 `--profile embedding` 按需启动私有 Embedding 服务；使用源码版
-`compose.yaml` 时同时加 `--build`。直接在宿主机运行 Momoi 时，需使用宿主机可达的接口。
+Docker Compose 通过 `--profile embedding` 按需启动私有 Embedding 服务。
+直接在宿主机运行 Momoi 时，需使用宿主机可达的接口。
 
 Momoi 会在后台构建索引，覆盖完整后自动激活，期间关键词召回仍然可用。
 索引管理与高级选项见[配置参考](./docs/CONFIG.zh-CN.md#embedding-召回)。

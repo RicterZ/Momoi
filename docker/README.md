@@ -25,14 +25,14 @@ Pin a version tag from the Tags tab if you do not want `latest`.
 The published Compose file starts only Momoi. Start optional services as needed:
 
 ```bash
-docker compose -f docker-compose.yml --profile qq up -d
 docker compose -f docker-compose.yml --profile embedding up -d
 ```
 
-Then configure `ws://napcat:3001` or `http://embedding:8002/v1/embeddings` in Settings
-and enable the corresponding capability. Remote providers require neither container.
-The source `compose.yaml` shares these definitions and builds the checkout with
-`up -d --build`.
+Then configure `http://embedding:8002/v1/embeddings` in Settings and enable semantic
+recall. For QQ, deploy NapCat separately and configure its reachable OneBot WebSocket
+URL in Settings. Remote embedding providers require no local encoder container.
+For source builds, use `docker compose -f compose.yaml up -d --build`.
+Specify `-f` explicitly: Compose otherwise prefers `compose.yaml` over `docker-compose.yml`.
 
 ## Environment
 

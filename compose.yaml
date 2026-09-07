@@ -7,10 +7,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.embedding
-  napcat:
-    extends:
-      file: docker-compose.yml
-      service: napcat
   momoi:
     extends:
       file: docker-compose.yml
@@ -19,6 +15,3 @@ services:
     build:
       context: .
       target: release
-
-volumes:
-  napcat-qq:
