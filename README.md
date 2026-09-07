@@ -309,151 +309,26 @@ incrementally without blocking owner conversation.
 
 ## Deployment
 
-### Docker Compose: Weixin with semantic recall
+### Docker Compose
 
-This deployment runs only Momoi and the private embedding service. It uses
-Weixin as the sole and primary channel, enables semantic recall, persists all
-state under `./workspace`, and does not install or run NapCat.
-
-Before starting, install Docker with Compose v2 and have an Anthropic Messages-
-compatible or OpenAI Chat Completions-compatible endpoint and credential ready.
-The host also needs outbound HTTPS access for Weixin login and messaging.
-
-Create a new deployment directory and the required prompt directory:
+The published `docker-compose.yml` stack runs Momoi, NapCat, and a private
+embedding service. Install Docker with Compose v2, then start the stack:
 
 ```bash
-mkdir momoi-deploy && cd momoi-deploy
-mkdir -p workspace/prompts
-chmod 700 workspace
+docker compose -f docker-compose.yml up -d
+docker compose -f docker-compose.yml logs momoi
 ```
 
-Create `workspace/config.json` with the smallest practical configuration.
-Application settings stay in this file:
+Open `http://127.0.0.1:8788` and sign in with the Dashboard token from the startup
+logs. Use Settings to connect a model, edit prompts, enable message channels,
+and sign in to Weixin by scanning its QR code.
 
-```json
-{
-  "providers": "providers.yaml",
-  "timezone": "Asia/Shanghai",
-  "channels": {
-    "primary": "weixin",
-    "enabled": {
-      "weixin": {}
-    }
-  },
-  "context": {},
-  "storage": {
-    "database": "data/momoi.sqlite3"
-  },
-  "logging": {},
-  "tools": {
-    "mcp_config": null
-  }
-}
-```
+For QQ, open the NapCat WebUI at `http://127.0.0.1:6099/webui`, obtain its token
+from `docker logs napcat`, and complete QQ login and OneBot WebSocket setup.
+Then enter the NapCat connection details in Momoi's Settings.
 
-Create `workspace/providers.yaml`, replacing the endpoint, key and model before
-starting. This catalog also enables the bundled embedding service:
-
-```yaml
-version: 1
-credentials:
-  chat:
-    api_key: replace-me
-services:
-  chat:
-    adapter: openai
-    base_url: https://api.example.com/v1
-    credentials: chat
-  vectors:
-    adapter: openai
-    settings:
-      endpoint: http://embedding:8002/v1/embeddings
-bindings:
-  llm:
-    service: chat
-    options:
-      model: model-name
-      tool_choice: false
-  embedding:
-    service: vectors
-```
-
-`context` and `logging` are intentionally empty but required configuration
-sections. Setting `mcp_config` to `null` disables MCP loading instead of using
-the implicit `mcp.json` path. The omitted embedding fields use the bundled
-service's matching endpoint, model, dimensions, and calibration profile.
-
-Create `workspace/prompts/SOUL.md`. It must be non-empty and should describe
-the identity and relationship you want Momoi to preserve. A minimal starting
-point is:
-
-```markdown
-# Soul
-
-You are Momoi, a persistent personal companion. Speak naturally with your
-owner and preserve continuity across conversations.
-```
-
-Generate the Dashboard secret in `.env`:
-
-```bash
-printf 'MOMOI_DASHBOARD_TOKEN=%s\n' "$(openssl rand -hex 24)" > .env
-```
-
-Create `compose.yaml`:
-
-```yaml
-services:
-  embedding:
-    image: ricterz/momoi-embedding:latest
-    restart: unless-stopped
-
-  momoi:
-    image: ricterz/momoi:latest
-    restart: unless-stopped
-    depends_on:
-      - embedding
-    environment:
-      MOMOI_DASHBOARD_TOKEN: ${MOMOI_DASHBOARD_TOKEN:?set it in .env}
-    ports:
-      - "127.0.0.1:8788:8788"
-    volumes:
-      - ./workspace:/home/momoi/.momoi
-```
-
-Authenticate Weixin once in the foreground. The QR code appears in this
-terminal, and the resulting credentials remain in the mounted workspace:
-
-```bash
-docker compose run --rm momoi channel login weixin
-```
-
-Then start Momoi and follow its logs:
-
-```bash
-docker compose up -d
-docker compose logs -f momoi
-```
-
-Open `http://127.0.0.1:8788` and sign in with the value from `.env`. Check the
-embedding index from the running container with:
-
-```bash
-docker compose exec momoi momoi embedding status
-```
-
-Keep `workspace` private and backed up. It contains the Weixin credential,
-LLM credential, conversation database, memories, prompts, and generated
-artifacts.
-
-Common startup failures are deliberate and local to the configuration:
-
-- `channels.primary must name an enabled channel` means the identifier is not
-  exactly `weixin`, or `channels.enabled.weixin` is missing.
-- A Weixin QR code appears only in the foreground `channel login` command, not
-  in `docker compose logs`.
-- `required MCP server failed to connect` means `mcp_config` was not set to
-  `null`, or another MCP configuration was mounted intentionally.
+The workspace is persisted in `~/.momoi` by default. See
+[Configuration](./docs/CONFIG.md) for deployment options.
 
 ### Run from source
 
@@ -461,7 +336,6 @@ Requirements:
 
 - Python 3.12 or newer
 - [uv](https://docs.astral.sh/uv/)
-- one configured private-chat channel
 - an Anthropic Messages-compatible or OpenAI Chat Completions-compatible LLM
   endpoint
 
@@ -469,16 +343,11 @@ From the repository root:
 
 ```bash
 uv tool install .
-mkdir -p ~/.momoi
-cp -R config.example/. ~/.momoi/
-```
-
-Edit `~/.momoi/config.json` for channels, primary channel and timezone. Set the
-LLM endpoint, credentials and model in `~/.momoi/providers.yaml`. Then run:
-
-```bash
 momoi run
 ```
+
+Open `http://127.0.0.1:8788`, sign in with the token printed at startup, and
+complete setup in Settings.
 
 To use another workspace, place `--workspace` before the command:
 
@@ -487,59 +356,21 @@ momoi --workspace /path/to/workspace run
 ```
 
 The source-oriented `compose.yaml` builds Momoi and the embedding image from the
-current checkout. It expects an already configured workspace:
+current checkout:
 
 ```bash
 docker compose -f compose.yaml up -d --build
 ```
 
-## Enable semantic recall
+## Semantic recall
 
-Semantic recall requires a separately running OpenAI-compatible embedding
-endpoint. The published Docker Compose stack already includes the private
-`momoi-embedding` service and does not publish its port to the host. For a
-non-Docker Momoi process, provide another reachable compatible endpoint.
+Enable semantic memory in Settings and select a compatible embedding endpoint,
+model, and vector dimension. The Docker Compose stacks include a private embedding
+service. A Momoi process running on the host needs an endpoint reachable from the host.
 
-Merge these entries into `services` and `bindings` in `providers.yaml`:
-
-```yaml
-services:
-  vectors:
-    adapter: openai
-    settings:
-      endpoint: http://embedding:8002/v1/embeddings
-bindings:
-  embedding:
-    service: vectors
-    enabled: true
-    options:
-      model: BAAI/bge-small-zh-v1.5
-      dimensions: 512
-      calibration_profile: bge-small-zh-v1.5-momoi-v1
-      query_timeout_seconds: 5
-      document_timeout_seconds: 30
-      document_batch_size: 8
-```
-
-After Momoi restarts, it reconciles existing sources, builds the index in the
-background, and atomically activates it when coverage is complete. Keyword
-recall remains available throughout. Inspect health and progress from a source
-installation with:
-
-```bash
-momoi embedding status
-```
-
-For the Docker Compose deployment above, run the same CLI inside the container:
-
-```bash
-docker compose exec momoi momoi embedding status
-```
-
-For a controlled offline migration, `momoi embedding build --wait` prepares a
-building space and `momoi embedding activate` switches to it after validation.
-Model, dimension, and calibration profile must remain a supported matching set.
-See [Configuration](./docs/CONFIG.md#embedding-recall) for every option.
+Momoi builds the index in the background and activates it when coverage is complete.
+Keyword recall remains available during indexing. See
+[Configuration](./docs/CONFIG.md#embedding-recall) for index management and advanced options.
 
 ## Personalize and connect
 
@@ -568,12 +399,6 @@ Momoi discovers their schemas at runtime, can expose selected tools, and treats
 configured read-only tools differently from tools with external effects.
 
 ### Dashboard
-
-Run with an empty workspace to generate minimal configuration and an access token:
-
-```bash
-momoi run
-```
 
 Open `http://127.0.0.1:8788`. The dashboard can inspect conversations,
 per-Turn recall scopes and selected evidence, reflections, memories, Goals,

@@ -270,35 +270,21 @@ Always/Recent memory、正在进行的近期 Turn、Goal、情绪与活动、思
 
 ### Docker Compose
 
-`docker-compose.yml` 中的发布栈会运行 Momoi、NapCat 和私有 Embedding 服务。Embedding
-容器会一起启动，但只有在 `providers.yaml` 中启用 embedding binding 后才会参与语义召回。
-
-设置 QQ 主人并启动发布栈：
+`docker-compose.yml` 中的发布栈会运行 Momoi、NapCat 和私有 Embedding 服务。
+安装 Docker 与 Compose v2 后启动：
 
 ```bash
-export MOMOI_OWNER_QQ=your-qq-number
 docker compose -f docker-compose.yml up -d
-```
-
-首次启动时，镜像会在未设置 `MOMOI_WORKSPACE` 时创建 `$HOME/.momoi`，生成 Dashboard
-与 Webhook token，并写入 Momoi 容器日志：
-
-```bash
 docker compose -f docker-compose.yml logs momoi
 ```
 
+打开 `http://127.0.0.1:8788`，使用启动日志中的 Dashboard token 登录。
+在设置页连接模型、编辑提示词、启用消息渠道，并完成微信扫码登录。
+
 QQ 用户打开 `http://127.0.0.1:6099/webui`，从 `docker logs napcat` 获取 NapCat 登录
-token，完成登录并启用 OneBot WebSocket。Dashboard 默认位于
-`http://127.0.0.1:8788`。在设置页配置模型连接，保存后自动应用。
+token，完成 QQ 登录并启用 OneBot WebSocket，然后在 Momoi 设置页填写 Napcat 连接信息。
 
-WeChat 渠道只需在同一 workspace 中认证一次（`weixin` 是内部渠道标识）：
-
-```bash
-docker compose -f docker-compose.yml run --rm momoi channel login weixin
-```
-
-如果希望主动消息发送到 WeChat，下次 `up` 时设置 `MOMOI_PRIMARY=weixin`。只启用一个渠道
-即可，也可以让两个渠道同时在线。
+工作区默认持久化在 `~/.momoi`。部署选项见[配置参考](./docs/CONFIG.zh-CN.md)。
 
 ### 从源码运行
 
@@ -306,23 +292,16 @@ docker compose -f docker-compose.yml run --rm momoi channel login weixin
 
 - Python 3.12 或更高版本
 - [uv](https://docs.astral.sh/uv/)
-- 至少一个已经配置好的私聊渠道
 - 兼容 Anthropic Messages 或 OpenAI Chat Completions 的 LLM 端点
 
 在仓库根目录执行：
 
 ```bash
 uv tool install .
-mkdir -p ~/.momoi
-cp -R config.example/. ~/.momoi/
-```
-
-在 `~/.momoi/config.json` 配置启用渠道、primary 和本地时区；在
-`~/.momoi/providers.yaml` 配置 LLM 端点、凭据和模型，然后运行：
-
-```bash
 momoi run
 ```
+
+打开 `http://127.0.0.1:8788`，使用启动输出中的口令登录，在设置页完成配置。
 
 使用其他 workspace 时，`--workspace` 必须放在子命令前：
 
@@ -330,57 +309,19 @@ momoi run
 momoi --workspace /path/to/workspace run
 ```
 
-面向源码开发的 `compose.yaml` 会从当前 checkout 构建 Momoi 与 Embedding 镜像，并使用
-已经配置好的 workspace：
+面向源码开发的 `compose.yaml` 会从当前 checkout 构建 Momoi 与 Embedding 镜像：
 
 ```bash
 docker compose -f compose.yaml up -d --build
 ```
 
-## 启用语义召回
+## 语义召回
 
-语义召回依赖单独运行的 OpenAI-compatible Embedding 端点。发布版 Docker Compose 已经
-包含私有的 `momoi-embedding` 服务，且不会把端口发布到宿主机；如果 Momoi 直接运行在
-宿主机上，需要提供另一个可达的兼容端点。
+在设置页启用语义记忆，选择兼容的 Embedding 接口、模型和向量维度。
+Docker Compose 栈包含私有 Embedding 服务；直接在宿主机运行 Momoi 时，需使用宿主机可达的接口。
 
-将以下内容合并到 `providers.yaml` 的 `services` 和 `bindings` 中：
-
-```yaml
-services:
-  vectors:
-    adapter: openai
-    settings:
-      endpoint: http://embedding:8002/v1/embeddings
-bindings:
-  embedding:
-    service: vectors
-    enabled: true
-    options:
-      model: BAAI/bge-small-zh-v1.5
-      dimensions: 512
-      calibration_profile: bge-small-zh-v1.5-momoi-v1
-      query_timeout_seconds: 5
-      document_timeout_seconds: 30
-      document_batch_size: 8
-```
-
-Momoi 重启后会核对已有来源、在后台构建索引，并在覆盖完整时原子激活。整个过程中关键词
-召回仍然可用。从源码安装时，用下面的命令查看健康状态和进度：
-
-```bash
-momoi embedding status
-```
-
-使用发布版 Docker Compose 时，在容器内运行同一个 CLI：
-
-```bash
-docker compose -f docker-compose.yml exec momoi momoi embedding status
-```
-
-需要受控的离线迁移时，`momoi embedding build --wait` 会准备 building space，
-`momoi embedding activate` 会在校验后切换过去。模型、维度和 calibration profile
-必须使用受支持且相互匹配的一组值。完整选项见
-[配置参考](./docs/CONFIG.zh-CN.md#embedding-召回)。
+Momoi 会在后台构建索引，覆盖完整后自动激活，期间关键词召回仍然可用。
+索引管理与高级选项见[配置参考](./docs/CONFIG.zh-CN.md#embedding-召回)。
 
 ## 个性化与连接
 
@@ -405,12 +346,6 @@ LLM、ASR、TTS、embedding 和账户余额通过能力接口、注册式适配�
 发现 schema、按配置暴露工具，并区分只读工具与可能产生外部影响的工具。
 
 ### Dashboard
-
-空工作区直接运行，自动生成最小配置和访问口令：
-
-```bash
-momoi run
-```
 
 打开 `http://127.0.0.1:8788`。Dashboard 可以查看对话、每个 Turn 的召回 scope 与选中
 证据、复盘、记忆、Goal、图片反应、用量和思考记录，也可以编辑记忆、Goal、图片反应与提示词文件。
