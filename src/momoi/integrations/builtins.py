@@ -42,15 +42,12 @@ def register_builtins():
         fields(
             options,
             {
-                "timeout_seconds",
                 "endpoint",
                 "api_key",
                 "model",
                 "dimensions",
-                "calibration_profile",
                 "query_timeout_seconds",
                 "document_timeout_seconds",
-                "document_batch_size",
             },
         )
         embedding_config(options)

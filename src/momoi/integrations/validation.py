@@ -111,11 +111,6 @@ def llm_config(options, api_format):
 
 def embedding_config(options, *, enabled=True):
     values = dict(options)
-    if "timeout_seconds" in values:
-        timeout = number(values, "timeout_seconds", 30)
-        values.setdefault("query_timeout_seconds", timeout)
-        values.setdefault("document_timeout_seconds", timeout)
-        del values["timeout_seconds"]
     return EmbeddingConfig(
         **asdict(embedding_space_config(values, enabled=enabled)),
         endpoint=url(values, "endpoint", EmbeddingConfig().endpoint),
@@ -134,10 +129,4 @@ def embedding_space_config(options, *, enabled):
         enabled=True,
         model=text(options, "model", defaults.model),
         dimensions=number(options, "dimensions", defaults.dimensions, integer=True),
-        calibration_profile=text(
-            options, "calibration_profile", defaults.calibration_profile
-        ),
-        document_batch_size=number(
-            options, "document_batch_size", defaults.document_batch_size, integer=True
-        ),
     )

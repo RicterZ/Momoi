@@ -101,7 +101,6 @@ class CatalogTest(unittest.TestCase):
                 "vectors": {
                     "adapter": "openai",
                     "settings": {"endpoint": "http://localhost:8002/v1/embeddings"},
-                    "timeout_seconds": 12,
                 },
             }
         )
@@ -111,7 +110,7 @@ class CatalogTest(unittest.TestCase):
                 "asr": {"service": "recognition", "options": {"max_audio_bytes": 1024}},
                 "embedding": {
                     "service": "vectors",
-                    "options": {"document_batch_size": 4},
+                    "options": {"query_timeout_seconds": 12},
                 },
             }
         )
@@ -122,8 +121,9 @@ class CatalogTest(unittest.TestCase):
         self.assertEqual(
             services.embedding.config.endpoint, "http://localhost:8002/v1/embeddings"
         )
-        self.assertEqual(services.embedding_config.document_batch_size, 4)
+        self.assertEqual(services.embedding_config.document_batch_size, 8)
         self.assertEqual(services.embedding.config.query_timeout_seconds, 12)
+        self.assertEqual(services.embedding.config.document_timeout_seconds, 30)
 
     def test_embedding_has_one_explicit_address_without_path_inference(self):
         from momoi.integrations.registry import adapter_definition
@@ -143,6 +143,32 @@ class CatalogTest(unittest.TestCase):
         options["base_url"] = "https://ignored.example"
         with self.assertRaisesRegex(ConfigError, "base_url"):
             self.load(raw)
+
+    def test_embedding_internal_settings_are_not_user_options(self):
+        from momoi.integrations.registry import adapter_definition
+
+        schema = adapter_definition("openai", "embedding").schema
+        removed = {
+            "timeout_seconds": 10,
+            "document_batch_size": 4,
+            "calibration_profile": "unknown-profile",
+        }
+        self.assertFalse(set(removed) & schema.keys())
+        raw = {
+            "version": 1,
+            "services": {"vectors": {"adapter": "openai"}},
+            "bindings": {"embedding": {"service": "vectors"}},
+        }
+        services = ServiceRegistry(self.load(raw))
+        self.assertEqual(services.embedding_config.document_batch_size, 8)
+        self.assertEqual(services.embedding_config.calibration_profile, "bge-small-zh-v1.5-momoi-v1")
+        self.assertEqual(services.embedding.config.query_timeout_seconds, 5)
+        self.assertEqual(services.embedding.config.document_timeout_seconds, 30)
+        for key, value in removed.items():
+            with self.subTest(field=key):
+                raw["bindings"]["embedding"]["options"] = {key: value}
+                with self.assertRaisesRegex(ConfigError, key):
+                    self.load(raw)
 
     def test_main_config_only_references_relative_catalog(self):
         raw = catalog_data()

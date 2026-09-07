@@ -102,14 +102,17 @@ complete `endpoint`. Other defaults:
 | --- | --- |
 | `model` | `BAAI/bge-small-zh-v1.5` |
 | `dimensions` | `512` |
-| `calibration_profile` | `bge-small-zh-v1.5-momoi-v1` |
 | `query_timeout_seconds` | `5` |
 | `document_timeout_seconds` | `30` |
-| `document_batch_size` | `8` |
 
-A service `timeout_seconds` supplies both timeout defaults; explicit query/document
-timeouts take precedence. Semantic space model, dimensions, and calibration must
-match the encoder. Enable this binding before using `momoi embedding` commands.
+Query and document timeouts are configured independently; the shared
+`timeout_seconds` is no longer accepted. Indexing uses the internal batch size of
+8 and built-in `bge-small-zh-v1.5-momoi-v1` scoring calibration. Remove
+`timeout_seconds`, `document_batch_size`, and `calibration_profile` from existing
+embedding configurations. Calibration and semantic-space consistency checks
+remain in place; switching models does not automatically calibrate scoring for
+the new model. Model and dimensions must match the encoder.
+Enable this binding before using `momoi embedding` commands.
 Query failures still fall back to keyword recall and use the query circuit breaker.
 
 ### ASR

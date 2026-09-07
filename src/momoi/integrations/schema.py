@@ -50,11 +50,8 @@ SCHEMAS = {
         "api_key": field(secret=True),
         "model": field(default="BAAI/bge-small-zh-v1.5"),
         "dimensions": field("integer", 512),
-        "calibration_profile": field(default="bge-small-zh-v1.5-momoi-v1"),
-        "timeout_seconds": field("number"),
-        "query_timeout_seconds": field("number"),
-        "document_timeout_seconds": field("number"),
-        "document_batch_size": field("integer", 8),
+        "query_timeout_seconds": field("number", 5),
+        "document_timeout_seconds": field("number", 30),
     },
     ("deepseek", "balance"): {
         "api_key": field(secret=True),
@@ -75,7 +72,7 @@ def builtin_schema(name, capability):
         "temperature": "温度",
         "timeout_seconds": "请求超时（秒）",
         "max_retries": "最大重试次数",
-        "tool_choice": "工具选择",
+        "tool_choice": "工具选择（Tool Choice）",
         "secret_id": "Secret ID",
         "secret_key": "Secret Key",
         "region": "服务区域",
@@ -85,19 +82,17 @@ def builtin_schema(name, capability):
         "format": "音频格式",
         "latency": "延迟模式",
         "dimensions": "向量维度",
-        "calibration_profile": "校准配置",
         "query_timeout_seconds": "查询超时（秒）",
         "document_timeout_seconds": "文档编码超时（秒）",
-        "document_batch_size": "文档批量大小",
     }
     for key, spec in fields.items():
         spec["label"] = labels.get(key, key)
     basic = {
         "llm": {"base_url", "api_key", "model"},
-        "asr": {"secret_id", "secret_key", "engine"},
+        "asr": {"secret_id", "secret_key"},
         "tts": {"api_key", "reference_id", "model"},
         "embedding": {"endpoint", "api_key", "model", "dimensions"},
-        "balance": {"api_key", "base_url"},
+        "balance": {"api_key", "base_url", "timeout_seconds"},
     }
     for key, spec in fields.items():
         spec["advanced"] = key not in basic[capability]
@@ -112,6 +107,7 @@ def builtin_schema(name, capability):
         fields[key]["required"] = True
     if (name, capability) == ("openai", "embedding"):
         fields["endpoint"]["description"] = "完整请求地址，例如 https://api.example.com/v1/embeddings；不会自动追加路径。"
+        fields["dimensions"]["description"] = "需与所选模型的输出维度一致"
     if (name, capability) == ("fish", "tts"):
         fields["format"]["enum"] = ["mp3", "wav", "opus"]
         fields["latency"]["enum"] = ["normal", "balanced", "low"]
