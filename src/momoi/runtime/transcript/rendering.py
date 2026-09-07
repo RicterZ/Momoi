@@ -87,6 +87,14 @@ def render_event(
     )
 
 
+def render_goal(text: str, identifier: int, completed_at: float, timezone: ZoneInfo) -> str:
+    timestamp = datetime.fromtimestamp(completed_at, timezone).isoformat(timespec="seconds")
+    return (
+        f'<goal id="G{identifier}" completed_at="{timestamp}">\n'
+        f'{escape(text)}\n</goal>'
+    )
+
+
 def _part_bubble(group: TranscriptGroup, index: int) -> str:
     state = group.part_states[index] if index < len(group.part_states) else "delivered"
     return render_bubble(group.parts[index], delivery_state=state)
@@ -192,17 +200,19 @@ def render_messages(
     messages: list[dict[str, object]] = []
     previous: TranscriptGroup | None = None
     for group_index, group in enumerate(groups):
-        if group.role == "event":
+        if group.role in {"event", "goal"}:
             lines = []
             for index, content in enumerate(group.parts):
                 lines.append(
                     render_event(
                         content, group.message_ids[index], group.event_sources[index],
                         group.part_times[index], timezone,
+                    ) if group.role == "event" else render_goal(
+                        content, group.message_ids[index], group.part_times[index], timezone,
                     )
                 )
             messages.append(_message("user", "\n".join(lines)))
-            # An event is neither owner speech nor an unanswered chat bubble.
+            # Runtime records are neither owner speech nor unanswered bubbles.
             previous = None
             continue
         silence = _silence(group, previous)

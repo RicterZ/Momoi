@@ -10,12 +10,12 @@ from .models import (
     TranscriptGroup,
     text_value,
 )
-from .rendering import render_bubble, render_event, render_messages
+from .rendering import render_bubble, render_event, render_goal, render_messages
 
 
 def _visible(row: Mapping[str, object]) -> bool:
     role = text_value(row.get("role"))
-    if role in {"user", "event"}:
+    if role in {"user", "event", "goal"}:
         return bool(text_value(row.get("content")))
     if role != "assistant":
         return False
@@ -44,13 +44,13 @@ def build_groups(rows: Iterable[Mapping[str, object]]) -> list[TranscriptGroup]:
     # Dialogue keeps its established message order. Event reception can precede
     # the archival of an older reply, so merge events by time, not archive ID.
     events = sorted(
-        (row for row in visible if row.get("role") == "event"),
+        (row for row in visible if row.get("role") in {"event", "goal"}),
         key=lambda row: (_row_order(row)[1], _row_order(row)[0]),
     )
     ordered = []
     event_index = 0
     for row in visible:
-        if row.get("role") == "event":
+        if row.get("role") in {"event", "goal"}:
             continue
         while event_index < len(events) and (
             _row_order(events[event_index])[1], _row_order(events[event_index])[0]
@@ -81,7 +81,10 @@ def build_groups(rows: Iterable[Mapping[str, object]]) -> list[TranscriptGroup]:
             render_event(
                 part, message_ids[index], event_sources[index], part_times[index],
                 ZoneInfo("UTC"),
-            ) if role == "event" else render_bubble(part, delivery_state=part_states[index])
+            ) if role == "event" else (
+                render_goal(part, message_ids[index], part_times[index], ZoneInfo("UTC"))
+                if role == "goal" else render_bubble(part, delivery_state=part_states[index])
+            )
             for index, part in enumerate(parts)
         )
         groups.append(

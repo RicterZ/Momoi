@@ -37,6 +37,14 @@ def _tool_call_subject(arguments: object, limit: int = 48) -> str:
     return ""
 
 
+# Goal reviews already persist an immutable result snapshot as an internal
+# message. Only that explicitly sourced record belongs in the shared timeline.
+_GOAL_RECORD_SQL = """(
+    m.role='assistant' AND m.delivery_state='internal'
+    AND json_extract(m.source_event_ids_json, '$[0]')='goal-record:' || m.turn_id
+)"""
+
+
 class TranscriptStore:
     def transcript_window_turn_limit(
         self, minimum_turns: int, maximum_turns: int
@@ -44,12 +52,12 @@ class TranscriptStore:
         minimum_turns = max(1, minimum_turns)
         maximum_turns = max(minimum_turns, maximum_turns)
         latest = self._db.execute(
-            """SELECT t.id, t.updated_at FROM turns AS t
+            f"""SELECT t.id, t.updated_at FROM turns AS t
                WHERE t.state='completed' AND EXISTS (
                    SELECT 1 FROM messages AS m
                    WHERE m.turn_id=t.id
                      AND (
-                         m.role IN ('user', 'event')
+                         m.role IN ('user', 'event') OR {_GOAL_RECORD_SQL}
                          OR m.role='assistant'
                             AND m.delivery_state IN ('delivered', 'uncertain', 'queued')
                      )
@@ -72,7 +80,7 @@ class TranscriptStore:
                 return minimum_turns
             new_turns = int(
                 self._db.execute(
-                    """SELECT COUNT(*) FROM turns AS t
+                    f"""SELECT COUNT(*) FROM turns AS t
                        WHERE t.state='completed'
                          AND (
                              t.updated_at>?
@@ -82,7 +90,7 @@ class TranscriptStore:
                              SELECT 1 FROM messages AS m
                              WHERE m.turn_id=t.id
                                AND (
-                                   m.role IN ('user', 'event')
+                                   m.role IN ('user', 'event') OR {_GOAL_RECORD_SQL}
                                    OR m.role='assistant'
                                       AND m.delivery_state IN (
                                           'delivered', 'uncertain', 'queued'
@@ -134,12 +142,12 @@ class TranscriptStore:
         if turn_limit <= 0 or token_budget <= 0:
             return []
         turns = self._db.execute(
-            """SELECT t.id, t.updated_at FROM turns AS t
+            f"""SELECT t.id, t.updated_at FROM turns AS t
                WHERE t.state='completed' AND EXISTS (
                    SELECT 1 FROM messages AS m
                    WHERE m.turn_id=t.id
                      AND (
-                         m.role IN ('user', 'event')
+                         m.role IN ('user', 'event') OR {_GOAL_RECORD_SQL}
                          OR m.role='assistant'
                             AND m.delivery_state IN ('delivered', 'uncertain', 'queued')
                      )
@@ -153,7 +161,9 @@ class TranscriptStore:
         turn_ids = [str(row["id"]) for row in turns]
         placeholders = ",".join("?" for _ in turn_ids)
         rows = self._db.execute(
-            f"""SELECT m.id, m.turn_id, m.role, m.content,
+            f"""SELECT m.id, m.turn_id,
+                       CASE WHEN {_GOAL_RECORD_SQL} THEN 'goal' ELSE m.role END AS role,
+                       m.content,
                        CASE WHEN m.role='event' THEN COALESCE(wr.created_at, m.created_at)
                             ELSE m.created_at END AS created_at,
                        m.delivery_state,
@@ -165,7 +175,7 @@ class TranscriptStore:
                   ON m.turn_id=('webhook:' || ws.run_id || ':' || ws.step_index)
                 LEFT JOIN webhook_runs AS wr ON wr.id=ws.run_id
                 WHERE m.turn_id IN ({placeholders})
-                  AND (m.role IN ('user', 'event') OR m.delivery_state IN ('delivered', 'uncertain', 'queued'))
+                  AND ({_GOAL_RECORD_SQL} OR m.role IN ('user', 'event') OR m.delivery_state IN ('delivered', 'uncertain', 'queued'))
                 ORDER BY m.id""",
             tuple(turn_ids),
         ).fetchall()

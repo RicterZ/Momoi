@@ -15,6 +15,7 @@ from momoi.integrations.models import LLMConfig
 from momoi.models import ProviderResponse, ToolCall, TurnDraft
 from momoi.runtime import MomoiDaemon
 from momoi.runtime.agent import TurnHarness, TurnExecutionSpec
+from momoi.runtime.transcript.building import build_transcript
 from tests.support import provider_catalog
 
 
@@ -222,6 +223,13 @@ class GoalCompletionTest(unittest.IsolatedAsyncioTestCase):
                 goal = self.daemon.store.goal(goal_id)
                 self.assertEqual(goal["status"], outcome["status"])
                 self.assertEqual(goal["latest_result"], outcome["result"])
+                historical = self.daemon.store.recent_conversation_messages(1, 10000)
+                self.assertEqual([item["role"] for item in historical], ["goal"])
+                transcript = build_transcript(historical, timezone=self.daemon.store.timezone)
+                self.assertIn(f"Status: {outcome['status']}", str(transcript.messages))
+                self.assertIn(outcome["result"], str(transcript.messages))
+                self.assertIn('<goal id="G', str(transcript.messages))
+                self.assertNotIn("<bubble>", str(transcript.messages))
                 if outcome["status"] in {"done", "cancelled", "blocked"}:
                     self.assertIsNone(goal["next_review_at"])
                 else:
@@ -234,6 +242,41 @@ class GoalCompletionTest(unittest.IsolatedAsyncioTestCase):
                     ("goal",),
                 ).fetchone()
                 self.assertEqual(row["state"], "completed")
+
+    async def test_next_goal_reads_immutable_review_result_without_a_message(self):
+        store = self.daemon.store
+        initial_window = store.transcript_window_turn_limit(4, 8)
+        self.provider([ToolCall("finish-first", "end_turn", {"goal": {
+            "status": "done", "result": "Checked: no notification needed",
+        }})])
+        await self.daemon._complete_goal_turn(self.goal_id, asyncio.Event())
+        original = store.recent_conversation_messages(10, 10000)
+        self.assertEqual(len(original), 1)
+        self.assertEqual(original[0]["role"], "goal")
+        stable_id = f"G{original[0]['id']}"
+        self.assertEqual(store.due_outbox(), [])
+        # Editing the live Goal cannot rewrite an earlier review's snapshot.
+        with store._db:
+            store._db.execute(
+                "UPDATE goals SET latest_result='New live result' WHERE id=?", (self.goal_id,),
+            )
+        other_goal = self.create_goal()
+
+        def inspect(_round, messages):
+            history = str(messages)
+            self.assertIn(f'<goal id="{stable_id}"', history)
+            self.assertIn("Checked: no notification needed", history)
+            self.assertNotIn("New live result", history)
+            self.assertNotIn("without replying", history)
+
+        self.provider([ToolCall("finish-next", "end_turn", {"goal": {
+            "status": "done", "result": "Second review complete",
+        }})], inspect=inspect)
+        await self.daemon._complete_goal_turn(other_goal, asyncio.Event())
+        self.assertEqual(store.transcript_window_turn_limit(4, 8), initial_window + 1)
+        reviews = store.recent_conversation_messages(10, 10000)
+        self.assertEqual(len(reviews), 2)
+        self.assertEqual(reviews[0]["content"], original[0]["content"])
         self.assertEqual(
             self.daemon.store._db.execute(
                 "SELECT COUNT(*) FROM notifications"
