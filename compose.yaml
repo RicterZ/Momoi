@@ -1,23 +1,24 @@
 services:
   embedding:
-    image: momoi-embedding
+    extends:
+      file: docker-compose.yml
+      service: embedding
+    image: momoi-embedding:local
     build:
       context: .
       dockerfile: Dockerfile.embedding
-    restart: unless-stopped
+  napcat:
+    extends:
+      file: docker-compose.yml
+      service: napcat
   momoi:
-    image: momoi
+    extends:
+      file: docker-compose.yml
+      service: momoi
+    image: momoi:local
     build:
       context: .
       target: release
-    depends_on:
-      - embedding
-    restart: unless-stopped
-    environment:
-      BRAVE_API_KEY: ${BRAVE_API_KEY:-}
-      TZ: ${TZ:-Asia/Shanghai}
-    volumes:
-      - ${MOMOI_WORKSPACE:-${HOME}/.momoi}:/home/momoi/.momoi
-    ports:
-      - 127.0.0.1:${MOMOI_WEBHOOK_PORT:-8787}:8787
-      - 127.0.0.1:${MOMOI_DASHBOARD_PORT:-8788}:8788
+
+volumes:
+  napcat-qq:

@@ -270,7 +270,7 @@ Always/Recent memory、正在进行的近期 Turn、Goal、情绪与活动、思
 
 ### Docker Compose
 
-`docker-compose.yml` 中的发布栈会运行 Momoi、NapCat 和私有 Embedding 服务。
+`docker-compose.yml` 默认只启动 Momoi，不需要提前填写模型密钥、渠道或准备配置文件。
 安装 Docker 与 Compose v2 后启动：
 
 ```bash
@@ -281,10 +281,21 @@ docker compose -f docker-compose.yml logs momoi
 打开 `http://127.0.0.1:8788`，使用启动日志中的 Dashboard token 登录。
 在设置页连接模型、编辑提示词、启用消息渠道，并完成微信扫码登录。
 
-QQ 用户打开 `http://127.0.0.1:6099/webui`，从 `docker logs napcat` 获取 NapCat 登录
-token，完成 QQ 登录并启用 OneBot WebSocket，然后在 Momoi 设置页填写 Napcat 连接信息。
+需要时再启动可选服务：
 
-工作区默认持久化在 `~/.momoi`。部署选项见[配置参考](./docs/CONFIG.zh-CN.md)。
+```bash
+docker compose -f docker-compose.yml --profile qq up -d
+docker compose -f docker-compose.yml --profile embedding up -d
+```
+
+QQ 用户打开 `http://127.0.0.1:6099/webui`，从 `docker logs napcat` 获取 NapCat 登录
+token，完成 QQ 登录并启用 OneBot WebSocket，然后在 Momoi 设置页填写
+`ws://napcat:3001` 和主人 QQ。私有 Embedding 地址填写
+`http://embedding:8002/v1/embeddings`。启动容器后仍需在设置页启用对应功能；微信不依赖这两个服务。
+
+工作区默认持久化在 `~/.momoi`，由 `momoi run` 初始化，已有文件不覆盖。
+默认只发布 dashboard 的 8788 端口；使用 Webhook 时另行添加端口映射并配置功能。
+部署选项见[配置参考](./docs/CONFIG.zh-CN.md)。
 
 ### 从源码运行
 
@@ -309,7 +320,7 @@ momoi run
 momoi --workspace /path/to/workspace run
 ```
 
-面向源码开发的 `compose.yaml` 会从当前 checkout 构建 Momoi 与 Embedding 镜像：
+面向源码开发的 `compose.yaml` 从当前 checkout 构建 Momoi，默认行为和可选 profile 与发布栈一致：
 
 ```bash
 docker compose -f compose.yaml up -d --build
@@ -318,7 +329,8 @@ docker compose -f compose.yaml up -d --build
 ## 语义召回
 
 在设置页启用语义记忆，选择兼容的 Embedding 接口、模型和向量维度。
-Docker Compose 栈包含私有 Embedding 服务；直接在宿主机运行 Momoi 时，需使用宿主机可达的接口。
+Docker Compose 通过 `--profile embedding` 按需启动私有 Embedding 服务；使用源码版
+`compose.yaml` 时同时加 `--build`。直接在宿主机运行 Momoi 时，需使用宿主机可达的接口。
 
 Momoi 会在后台构建索引，覆盖完整后自动激活，期间关键词召回仍然可用。
 索引管理与高级选项见[配置参考](./docs/CONFIG.zh-CN.md#embedding-召回)。

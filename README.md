@@ -311,8 +311,9 @@ incrementally without blocking owner conversation.
 
 ### Docker Compose
 
-The published `docker-compose.yml` stack runs Momoi, NapCat, and a private
-embedding service. Install Docker with Compose v2, then start the stack:
+The published `docker-compose.yml` starts only Momoi by default. No model keys,
+channel configuration, or existing workspace files are required. Install Docker
+with Compose v2, then start:
 
 ```bash
 docker compose -f docker-compose.yml up -d
@@ -323,11 +324,24 @@ Open `http://127.0.0.1:8788` and sign in with the Dashboard token from the start
 logs. Use Settings to connect a model, edit prompts, enable message channels,
 and sign in to Weixin by scanning its QR code.
 
+Optional services start only when requested:
+
+```bash
+docker compose -f docker-compose.yml --profile qq up -d
+docker compose -f docker-compose.yml --profile embedding up -d
+```
+
 For QQ, open the NapCat WebUI at `http://127.0.0.1:6099/webui`, obtain its token
 from `docker logs napcat`, and complete QQ login and OneBot WebSocket setup.
-Then enter the NapCat connection details in Momoi's Settings.
+Then enter `ws://napcat:3001` and the owner QQ in Momoi's Settings. For the private
+embedding service, use `http://embedding:8002/v1/embeddings`. Starting a container
+does not enable its capability; enable it separately in Settings. Weixin requires
+neither optional service.
 
-The workspace is persisted in `~/.momoi` by default. See
+The workspace is persisted in `~/.momoi` by default and initialized by `momoi run`;
+existing files are preserved. Only dashboard port 8788 is published by default.
+Webhook deployment requires an explicit port mapping and webhook configuration.
+See
 [Configuration](./docs/CONFIG.md) for deployment options.
 
 ### Run from source
@@ -355,8 +369,8 @@ To use another workspace, place `--workspace` before the command:
 momoi --workspace /path/to/workspace run
 ```
 
-The source-oriented `compose.yaml` builds Momoi and the embedding image from the
-current checkout:
+The source-oriented `compose.yaml` builds Momoi from the current checkout and
+shares the same defaults and optional profiles:
 
 ```bash
 docker compose -f compose.yaml up -d --build
@@ -365,8 +379,9 @@ docker compose -f compose.yaml up -d --build
 ## Semantic recall
 
 Enable semantic memory in Settings and select a compatible embedding endpoint,
-model, and vector dimension. The Docker Compose stacks include a private embedding
-service. A Momoi process running on the host needs an endpoint reachable from the host.
+model, and vector dimension. The Docker Compose stacks provide a private embedding
+service through `--profile embedding`. With `compose.yaml`, also pass `--build`
+when starting that profile. A Momoi process running on the host needs an endpoint reachable from the host.
 
 Momoi builds the index in the background and activates it when coverage is complete.
 Keyword recall remains available during indexing. See

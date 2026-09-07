@@ -63,11 +63,11 @@ const primaryFields = {
   asr: ["secret_id", "secret_key"],
   tts: ["api_key", "reference_id", "model"],
   embedding: ["endpoint", "api_key", "model", "dimensions"],
-  balance: ["api_key", "base_url", "timeout_seconds"],
+  balance: ["base_url", "api_key", "timeout_seconds"],
 };
 // Hide transport tuning from the form without removing saved option values.
 const hiddenFields = {
-  embedding: ["base_url", "calibration_profile", "document_batch_size", "timeout_seconds"],
+  embedding: ["base_url", "document_batch_size", "timeout_seconds"],
 };
 const fieldHints = {
   dimensions: "需与所选模型的输出维度一致",
@@ -841,6 +841,11 @@ function ProviderSection({ module, data, save, saving, next, previous }) {
               const basic = fields.filter(([key]) =>
                 primaryFields[name]?.includes(key),
               );
+              if (name === "balance") {
+                basic.sort(([left], [right]) =>
+                  primaryFields.balance.indexOf(left) - primaryFields.balance.indexOf(right),
+                );
+              }
               const advanced = fields.filter(
                 ([key]) =>
                   !primaryFields[name]?.includes(key) &&
@@ -1103,7 +1108,7 @@ function ChannelSection({ module, data, save, login, action, saving, actionBusy,
             {loginError && <p className="confirm-copy is-error" role="alert">{loginError}</p>}
           </div>
           <div className="confirm-actions">
-            <button type="button" className="quiet-button" disabled={busy} onClick={closeLogin}>{loginActive ? "取消登录" : "关闭"}</button>
+            <button type="button" className="quiet-button" disabled={busy} onClick={closeLogin}>关闭</button>
             {!loginActive && (loginError || ["expired", "error", "cancelled", "idle"].includes(login?.status)) && <button type="button" className="quiet-button" disabled={busy} onClick={startLogin}>重新获取二维码</button>}
           </div>
         </SettingsDialog>
@@ -1187,10 +1192,12 @@ export default function ConfigurationSettings({
     let timer;
     const controller = new AbortController();
     async function poll() {
+      let delay = 2000;
       try {
         const value = await call("/api/settings/runtime", {
-          signal: controller.signal,
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(8000)]),
         });
+        if (["starting", "waiting", "scanned", "verification_required"].includes(value?.weixin_login?.status)) delay = 1000;
         if (active) {
           setRuntime(value);
           setPollError("");
@@ -1198,7 +1205,7 @@ export default function ConfigurationSettings({
       } catch (problem) {
         if (active) setPollError(`运行状态暂时无法更新：${problem.message}`);
       } finally {
-        if (active) timer = setTimeout(poll, 2000);
+        if (active) timer = setTimeout(poll, delay);
       }
     }
     poll();
@@ -1271,6 +1278,7 @@ export default function ConfigurationSettings({
       await call(path, { method, body, signal: AbortSignal.timeout(30000) });
       const value = await call("/api/settings/runtime", { signal: AbortSignal.timeout(8000) });
       setRuntime(value);
+      setPollError("");
       setError("");
       return true;
     } catch (problem) {

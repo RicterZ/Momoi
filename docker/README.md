@@ -6,41 +6,46 @@ Architectures: `linux/amd64`, `linux/arm64`.
 
 ## One command
 
-NapCat must already be running and exposing OneBot WebSocket on port `3001`.
+No provider keys, channels, or existing configuration files are required.
 
 ```bash
 docker run -d --name momoi --restart unless-stopped \
-  --add-host=host.docker.internal:host-gateway \
-  -e TZ=Asia/Shanghai \
-  -e MOMOI_OWNER_QQ=your-qq-number \
+  -e TZ=Asia/Shanghai -e MOMOI_TIMEZONE=Asia/Shanghai \
   -v "$HOME/.momoi:/home/momoi/.momoi" \
-  -p 8787:8787 -p 8788:8788 \
+  -p 8788:8788 \
   ricterz/momoi:latest
 ```
 
-The first start copies a workspace into the volume and prints the generated dashboard token in `docker logs momoi`. Webhooks remain disabled until enabled explicitly in `config.json`. Open `http://127.0.0.1:8788` and configure the model connection under Settings. Pin a version tag from the Tags tab if you do not want `latest`.
+On an empty volume, `momoi run` creates a minimal workspace and prints the generated
+dashboard passphrase in `docker logs momoi`. Existing files are preserved. Open
+`http://127.0.0.1:8788`, sign in, then configure models, channels and optional
+capabilities in Settings. Weixin QR login is available in the dashboard.
+Pin a version tag from the Tags tab if you do not want `latest`.
 
-For Weixin instead of QQ, omit `MOMOI_OWNER_QQ` and run:
+The published Compose file starts only Momoi. Start optional services as needed:
 
 ```bash
-docker run --rm -it \
-  -v "$HOME/.momoi:/home/momoi/.momoi" \
-  ricterz/momoi:latest channel login weixin
+docker compose -f docker-compose.yml --profile qq up -d
+docker compose -f docker-compose.yml --profile embedding up -d
 ```
 
-Then set `MOMOI_PRIMARY=weixin` on the next start.
+Then configure `ws://napcat:3001` or `http://embedding:8002/v1/embeddings` in Settings
+and enable the corresponding capability. Remote providers require neither container.
+The source `compose.yaml` shares these definitions and builds the checkout with
+`up -d --build`.
 
 ## Environment
 
 | Variable | Purpose |
 | --- | --- |
-| `MOMOI_OWNER_QQ` | Owner QQ accepted by NapCat |
-| `MOMOI_NAPCAT_URL` | OneBot WebSocket URL. Default for `docker run`: `ws://host.docker.internal:3001` |
-| `MOMOI_PRIMARY` | `napcat` or `weixin` |
-| `MOMOI_TIMEZONE` | Notification timezone. Falls back to `TZ` |
+| `MOMOI_TIMEZONE` | Application timezone; set alongside container `TZ` |
 | `MOMOI_DASHBOARD_TOKEN` | Dashboard passphrase. Generated on first start if omitted |
-| `MOMOI_WEBHOOKS_ENABLED` | Override `webhooks.enabled`; webhooks are disabled by default |
-| `MOMOI_WEBHOOKS_TOKEN` | Override the configured Webhook bearer token |
-| `MOMOI_USAGE_API_KEY` | Optional Usage plugin key |
+| `MOMOI_WORKSPACE` | Compose host workspace directory, default `~/.momoi`; container mount remains `/home/momoi/.momoi` |
+| `MOMOI_DASHBOARD_PORT` | Compose host dashboard port, default `8788` |
+
+Configure provider keys and channels in Settings. Webhooks are disabled by default;
+add a port mapping for 8787 and configure the listener and authentication when
+enabling them. Use `--workspace /path run` to override the workspace inside a
+container, or `run --no-dashboard` for an already configured headless deployment.
 
 Source and compose file: https://github.com/RicterZ/Momoi

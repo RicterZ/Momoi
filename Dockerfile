@@ -42,7 +42,7 @@ RUN pip wheel --no-deps --wheel-dir /wheels .
 
 FROM python:3.13-slim-trixie AS release
 
-ARG VERSION=0.5.5
+ARG VERSION=0.5.6
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -62,10 +62,6 @@ COPY --from=build /wheels /wheels
 RUN pip install --no-cache-dir --no-index /wheels/*.whl \
     && rm -rf /wheels
 
-COPY config.example /usr/share/momoi/example
-COPY docker/entrypoint.sh /usr/local/bin/momoi-entrypoint
-RUN chmod +x /usr/local/bin/momoi-entrypoint
-
 EXPOSE 8787 8788
-ENTRYPOINT ["momoi-entrypoint"]
-CMD ["run", "--dashboard"]
+ENTRYPOINT ["momoi"]
+CMD ["run"]
