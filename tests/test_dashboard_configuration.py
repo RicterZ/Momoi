@@ -95,10 +95,13 @@ class ConfigurationManagerTest(unittest.TestCase):
         raw = {
             "version": 1,
             "credentials": {"shared": {"api_key": {"env": "TEST_SHARED_KEY"}}},
-            "services": {"shared": {"adapter": "deepseek", "credentials": "shared"}},
+            "services": {
+                "shared": {"adapter": "openai", "credentials": "shared", "base_url": "https://api.deepseek.com"},
+                "account": {"adapter": "deepseek", "credentials": "shared"},
+            },
             "bindings": {
                 "llm": {"service": "shared", "options": {"model": "test"}},
-                "balance": {"service": "shared"},
+                "balance": {"service": "account"},
             },
         }
         atomic_write(self.manager.provider_path, yaml.safe_dump(raw))

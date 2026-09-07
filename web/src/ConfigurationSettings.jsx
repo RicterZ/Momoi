@@ -679,6 +679,7 @@ function providerDraft(names, data, optional) {
         {
           adapter:
             data.capabilities[name]?.adapter ||
+            (name === "llm" && data.adapters.some((adapter) => adapter.capability === "llm" && adapter.adapter === "openai") ? "openai" : "") ||
             data.adapters.find((adapter) => adapter.capability === name)
               ?.adapter ||
             "",
@@ -691,12 +692,14 @@ function providerDraft(names, data, optional) {
 }
 
 function normalizeProvider(name, value, adapters) {
-  const options = { ...value.options };
   const fields =
     adapters.find(
       (adapter) =>
         adapter.capability === name && adapter.adapter === value.adapter,
     )?.fields || {};
+  const options = Object.fromEntries(
+    Object.entries(value.options).filter(([key]) => Object.hasOwn(fields, key)),
+  );
   for (const [key, spec] of Object.entries(fields)) {
     if (options[key] === "" || options[key] === undefined) {
       delete options[key];
@@ -907,7 +910,7 @@ function ProviderSection({ module, data, save, saving, next, previous }) {
                         label="服务协议"
                         value={value.adapter}
                         onChange={(adapter) =>
-                          update({ ...value, adapter, options: {} })
+                          update({ ...value, adapter })
                         }
                         options={adapters.map((adapter) => ({
                           value: adapter.adapter,

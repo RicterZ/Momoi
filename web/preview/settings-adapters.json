@@ -1,65 +1,5 @@
 [
   {
-    "adapter": "openai",
-    "capability": "llm",
-    "fields": {
-      "base_url": {
-        "type": "string",
-        "label": "服务地址",
-        "advanced": false,
-        "required": true
-      },
-      "api_key": {
-        "type": "string",
-        "secret": true,
-        "label": "API 密钥",
-        "advanced": false
-      },
-      "model": {
-        "type": "string",
-        "label": "模型名称",
-        "advanced": false,
-        "required": true
-      },
-      "max_tokens": {
-        "type": "integer",
-        "default": 16384,
-        "label": "最大输出 Token",
-        "advanced": true
-      },
-      "temperature": {
-        "type": "number",
-        "default": 0.6,
-        "label": "温度",
-        "advanced": true
-      },
-      "timeout_seconds": {
-        "type": "number",
-        "default": 300,
-        "label": "请求超时（秒）",
-        "advanced": true
-      },
-      "max_retries": {
-        "type": "integer",
-        "default": 3,
-        "label": "最大重试次数",
-        "advanced": true
-      },
-      "tool_choice": {
-        "type": "boolean",
-        "default": true,
-        "label": "工具选择",
-        "advanced": true
-      },
-      "thinking": {
-        "type": "object",
-        "default": {},
-        "label": "thinking",
-        "advanced": true
-      }
-    }
-  },
-  {
     "adapter": "anthropic",
     "capability": "llm",
     "fields": {
@@ -108,7 +48,7 @@
       "tool_choice": {
         "type": "boolean",
         "default": true,
-        "label": "工具选择",
+        "label": "工具选择（Tool Choice）",
         "advanced": true
       },
       "thinking": {
@@ -116,111 +56,42 @@
         "default": {},
         "label": "thinking",
         "advanced": true
+      },
+      "accounting": {
+        "type": "string",
+        "default": "none",
+        "enum": [
+          "none",
+          "deepseek"
+        ],
+        "label": "计费规则",
+        "advanced": true,
+        "description": "独立于接口协议。none 仅记录通用用量；deepseek 使用 DeepSeek 官方用量解析和价格估算。"
       }
     }
   },
   {
     "adapter": "deepseek",
-    "capability": "llm",
+    "capability": "balance",
     "fields": {
-      "base_url": {
-        "type": "string",
-        "default": "https://api.deepseek.com",
-        "label": "服务地址",
-        "advanced": false,
-        "required": true
-      },
       "api_key": {
         "type": "string",
         "secret": true,
         "label": "API 密钥",
-        "advanced": false
-      },
-      "model": {
-        "type": "string",
-        "label": "模型名称",
         "advanced": false,
         "required": true
       },
-      "max_tokens": {
-        "type": "integer",
-        "default": 16384,
-        "label": "最大输出 Token",
-        "advanced": true
-      },
-      "temperature": {
-        "type": "number",
-        "default": 0.6,
-        "label": "温度",
-        "advanced": true
-      },
-      "timeout_seconds": {
-        "type": "number",
-        "default": 300,
-        "label": "请求超时（秒）",
-        "advanced": true
-      },
-      "max_retries": {
-        "type": "integer",
-        "default": 3,
-        "label": "最大重试次数",
-        "advanced": true
-      },
-      "tool_choice": {
-        "type": "boolean",
-        "default": true,
-        "label": "工具选择",
-        "advanced": true
-      },
-      "thinking": {
-        "type": "object",
-        "default": {},
-        "label": "thinking",
-        "advanced": true
-      }
-    }
-  },
-  {
-    "adapter": "tencent",
-    "capability": "asr",
-    "fields": {
-      "secret_id": {
+      "base_url": {
         "type": "string",
-        "secret": true,
-        "label": "Secret ID",
-        "advanced": false,
-        "required": true
-      },
-      "secret_key": {
-        "type": "string",
-        "secret": true,
-        "label": "Secret Key",
-        "advanced": false,
-        "required": true
-      },
-      "region": {
-        "type": "string",
-        "default": "",
-        "label": "服务区域",
-        "advanced": true
-      },
-      "engine": {
-        "type": "string",
-        "default": "16k_zh",
-        "label": "识别引擎",
+        "default": "https://api.deepseek.com",
+        "label": "服务地址",
         "advanced": false
       },
       "timeout_seconds": {
         "type": "number",
-        "default": 30,
+        "default": 10,
         "label": "请求超时（秒）",
-        "advanced": true
-      },
-      "max_audio_bytes": {
-        "type": "integer",
-        "default": 3145728,
-        "label": "音频大小上限（字节）",
-        "advanced": true
+        "advanced": false
       }
     }
   },
@@ -316,58 +187,141 @@
         "type": "integer",
         "default": 512,
         "label": "向量维度",
-        "advanced": false
+        "advanced": false,
+        "description": "需与所选模型的输出维度一致"
       },
       "calibration_profile": {
         "type": "string",
         "default": "bge-small-zh-v1.5-momoi-v1",
-        "label": "校准配置",
-        "advanced": true
-      },
-      "timeout_seconds": {
-        "type": "number",
-        "label": "请求超时（秒）",
-        "advanced": true
+        "label": "评分校准配置",
+        "advanced": true,
+        "description": "选择与 embedding 模型匹配的已实现校准配置；填写名称不会自动生成评分阈值。"
       },
       "query_timeout_seconds": {
         "type": "number",
+        "default": 5,
         "label": "查询超时（秒）",
         "advanced": true
       },
       "document_timeout_seconds": {
         "type": "number",
+        "default": 30,
         "label": "文档编码超时（秒）",
-        "advanced": true
-      },
-      "document_batch_size": {
-        "type": "integer",
-        "default": 8,
-        "label": "文档批量大小",
         "advanced": true
       }
     }
   },
   {
-    "adapter": "deepseek",
-    "capability": "balance",
+    "adapter": "openai",
+    "capability": "llm",
     "fields": {
+      "base_url": {
+        "type": "string",
+        "label": "服务地址",
+        "advanced": false,
+        "required": true
+      },
       "api_key": {
         "type": "string",
         "secret": true,
         "label": "API 密钥",
+        "advanced": false
+      },
+      "model": {
+        "type": "string",
+        "label": "模型名称",
         "advanced": false,
         "required": true
       },
-      "base_url": {
-        "type": "string",
-        "default": "https://api.deepseek.com",
-        "label": "服务地址",
-        "advanced": false
+      "max_tokens": {
+        "type": "integer",
+        "default": 16384,
+        "label": "最大输出 Token",
+        "advanced": true
+      },
+      "temperature": {
+        "type": "number",
+        "default": 0.6,
+        "label": "温度",
+        "advanced": true
       },
       "timeout_seconds": {
         "type": "number",
-        "default": 10,
+        "default": 300,
         "label": "请求超时（秒）",
+        "advanced": true
+      },
+      "max_retries": {
+        "type": "integer",
+        "default": 3,
+        "label": "最大重试次数",
+        "advanced": true
+      },
+      "tool_choice": {
+        "type": "boolean",
+        "default": true,
+        "label": "工具选择（Tool Choice）",
+        "advanced": true
+      },
+      "thinking": {
+        "type": "object",
+        "default": {},
+        "label": "thinking",
+        "advanced": true
+      },
+      "accounting": {
+        "type": "string",
+        "default": "none",
+        "enum": [
+          "none",
+          "deepseek"
+        ],
+        "label": "计费规则",
+        "advanced": true,
+        "description": "独立于接口协议。none 仅记录通用用量；deepseek 使用 DeepSeek 官方用量解析和价格估算。"
+      }
+    }
+  },
+  {
+    "adapter": "tencent",
+    "capability": "asr",
+    "fields": {
+      "secret_id": {
+        "type": "string",
+        "secret": true,
+        "label": "Secret ID",
+        "advanced": false,
+        "required": true
+      },
+      "secret_key": {
+        "type": "string",
+        "secret": true,
+        "label": "Secret Key",
+        "advanced": false,
+        "required": true
+      },
+      "region": {
+        "type": "string",
+        "default": "",
+        "label": "服务区域",
+        "advanced": true
+      },
+      "engine": {
+        "type": "string",
+        "default": "16k_zh",
+        "label": "识别引擎",
+        "advanced": true
+      },
+      "timeout_seconds": {
+        "type": "number",
+        "default": 30,
+        "label": "请求超时（秒）",
+        "advanced": true
+      },
+      "max_audio_bytes": {
+        "type": "integer",
+        "default": 3145728,
+        "label": "音频大小上限（字节）",
         "advanced": true
       }
     }

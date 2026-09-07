@@ -71,6 +71,7 @@ def llm_config(options, api_format):
             "max_retries",
             "tool_choice",
             "thinking",
+            "accounting",
         },
     )
     thinking = options.get("thinking", {})
@@ -89,14 +90,12 @@ def llm_config(options, api_format):
             "thinking.stages must map nonempty stages to low, high, or max"
         )
     choice = options.get("tool_choice", True)
+    if options.get("accounting", "none") not in {"none", "deepseek"}:
+        raise ConfigError("accounting must be none or deepseek")
     if type(choice) is not bool:
         raise ConfigError("tool_choice must be boolean")
     return LLMConfig(
-        base_url=url(
-            options,
-            "base_url",
-            "https://api.deepseek.com" if api_format == "deepseek" else None,
-        ),
+        base_url=url(options, "base_url"),
         api_key=text(options, "api_key", "", empty=True),
         model=text(options, "model"),
         max_tokens=number(options, "max_tokens", 16384, integer=True),

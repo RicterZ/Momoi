@@ -12,7 +12,7 @@ export function createSettingsPreview(json) {
     adapters,
     capabilities: {
       llm: {
-        adapter: "deepseek",
+        adapter: "openai",
         enabled: true,
         options: {
           base_url: "https://api.deepseek.com",

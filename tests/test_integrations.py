@@ -34,14 +34,15 @@ def catalog_data():
         "credentials": {"shared": {"api_key": {"env": "TEST_MODEL_KEY"}}},
         "services": {
             "chat": {
-                "adapter": "deepseek",
+                "adapter": "openai",
                 "base_url": "https://api.deepseek.com/v1",
                 "credentials": "shared",
-            }
+            },
+            "account": {"adapter": "deepseek", "credentials": "shared"},
         },
         "bindings": {
-            "llm": {"service": "chat", "options": {"model": "deepseek-v4-flash"}},
-            "balance": {"service": "chat"},
+            "llm": {"service": "chat", "options": {"model": "deepseek-v4-flash", "accounting": "deepseek"}},
+            "balance": {"service": "account"},
         },
     }
 
@@ -124,6 +125,32 @@ class CatalogTest(unittest.TestCase):
         self.assertEqual(services.embedding_config.document_batch_size, 8)
         self.assertEqual(services.embedding.config.query_timeout_seconds, 12)
         self.assertEqual(services.embedding.config.document_timeout_seconds, 30)
+
+    def test_model_protocol_and_accounting_are_independent(self):
+        from momoi.integrations.registry import adapter_definition, adapter_schemas
+        from momoi.integrations.adapters.openai import OpenAIProvider
+        from momoi.integrations.adapters.anthropic import AnthropicProvider
+
+        self.assertFalse(any(item["adapter"] == "deepseek" and item["capability"] == "llm" for item in adapter_schemas()))
+        with self.assertRaisesRegex(ValueError, "does not support llm"):
+            adapter_definition("deepseek", "llm")
+        for protocol, cls in [("openai", OpenAIProvider), ("anthropic", AnthropicProvider)]:
+            schema = adapter_definition(protocol, "llm").schema
+            self.assertTrue(schema["accounting"]["advanced"])
+            raw = catalog_data()
+            raw["services"]["chat"]["adapter"] = protocol
+            for accounting in ["none", "deepseek"]:
+                raw["bindings"]["llm"]["options"]["accounting"] = accounting
+                services = ServiceRegistry(self.load(raw))
+                self.assertIsInstance(services.llm, cls)
+                if accounting == "none":
+                    self.assertIsNone(services.llm.accounting)
+                else:
+                    self.assertIsInstance(services.llm.accounting, DeepSeekAccounting)
+                self.assertIsInstance(services.balance, DeepSeekBalanceProvider)
+            raw["bindings"]["llm"]["options"]["accounting"] = "unknown"
+            with self.assertRaises(ConfigError):
+                self.load(raw)
 
     def test_embedding_has_one_explicit_address_without_path_inference(self):
         from momoi.integrations.registry import adapter_definition
@@ -402,7 +429,7 @@ register_adapter(Adapter(__name__, 'tts', Voice, validate=validate, schema={'pre
         self.addAsyncCleanup(server.close)
         raw = catalog_data()
         raw["credentials"]["shared"]["api_key"] = "shared-key"
-        raw["services"]["chat"]["base_url"] = str(server.make_url("/v1"))
+        raw["services"]["account"]["base_url"] = str(server.make_url("/v1"))
         services = ServiceRegistry(self.load(raw))
         provider = services.balance
         store = Store(self.root / "store.sqlite3")

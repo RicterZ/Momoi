@@ -22,11 +22,11 @@ LLM = {
     "max_retries": field("integer", 3),
     "tool_choice": field("boolean", True),
     "thinking": field("object", {}),
+    "accounting": {"type": "string", "default": "none", "enum": ["none", "deepseek"]},
 }
 SCHEMAS = {
     ("openai", "llm"): LLM,
     ("anthropic", "llm"): LLM,
-    ("deepseek", "llm"): {**LLM, "base_url": field(default="https://api.deepseek.com")},
     ("tencent", "asr"): {
         "secret_id": field(secret=True),
         "secret_key": field(secret=True),
@@ -74,6 +74,7 @@ def builtin_schema(name, capability):
         "timeout_seconds": "请求超时（秒）",
         "max_retries": "最大重试次数",
         "tool_choice": "工具选择（Tool Choice）",
+        "accounting": "计费规则",
         "secret_id": "Secret ID",
         "secret_key": "Secret Key",
         "region": "服务区域",
@@ -107,6 +108,8 @@ def builtin_schema(name, capability):
     }
     for key in required[capability]:
         fields[key]["required"] = True
+    if capability == "llm":
+        fields["accounting"]["description"] = "独立于接口协议。none 仅记录通用用量；deepseek 使用 DeepSeek 官方用量解析和价格估算。"
     if (name, capability) == ("openai", "embedding"):
         fields["endpoint"]["description"] = "完整请求地址，例如 https://api.example.com/v1/embeddings；不会自动追加路径。"
         fields["dimensions"]["description"] = "需与所选模型的输出维度一致"

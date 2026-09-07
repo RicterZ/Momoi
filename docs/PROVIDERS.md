@@ -24,21 +24,25 @@ credentials:
     api_key: {env: DEEPSEEK_API_KEY}
 services:
   deepseek:
-    adapter: deepseek
+    adapter: openai
     base_url: https://api.deepseek.com
+    credentials: deepseek
+  deepseek_balance:
+    adapter: deepseek
     credentials: deepseek
 bindings:
   llm:
     service: deepseek
     options:
       model: deepseek-v4-flash
+      accounting: deepseek
       max_tokens: 16384
       thinking:
         effort: high
         stages:
           reply_followup: low
   balance:
-    service: deepseek
+    service: deepseek_balance
     options:
       timeout_seconds: 10
 ```
@@ -73,7 +77,6 @@ embedding stops semantic retrieval while preserving keyword recall and memory wr
 | --- | --- | --- |
 | `anthropic` | `llm` | Anthropic Messages protocol |
 | `openai` | `llm` | OpenAI Chat Completions protocol |
-| `deepseek` | `llm` | OpenAI protocol with DeepSeek token parsing and local pricing |
 | `openai` | `embedding` | OpenAI-compatible embedding endpoint |
 | `tencent` | `asr` | Tencent SentenceRecognition |
 | `fish` | `tts` | Fish Audio synthesis |
@@ -81,8 +84,9 @@ embedding stops semantic retrieval while preserving keyword recall and memory wr
 
 ### LLM
 
-`model` and `base_url` are required (`deepseek` defaults to
-`https://api.deepseek.com`). `api_key` can be omitted for an unauthenticated local
+The model protocols are `openai` and `anthropic`. DeepSeek uses `openai` with
+`base_url: https://api.deepseek.com`; it is not a separate model protocol.
+`model` and `base_url` are required. `api_key` can be omitted for an unauthenticated local
 endpoint. Defaults: `max_tokens: 16384`, `temperature: 0.6`,
 `timeout_seconds: 300`, `max_retries: 3`, `tool_choice: true`.
 `thinking.effort` and each value in `thinking.stages` accept `low`, `high`, or `max`.
@@ -147,9 +151,13 @@ DeepSeek balance requires `api_key`; `base_url` defaults to
 The dashboard queries the balance provider. API failure marks balance unavailable
 while the rest of the overview remains usable.
 
-Token counts are recorded from LLM responses independently. Selecting the
-`deepseek` LLM adapter enables its local usage parser and pricing rules; selecting
-only a DeepSeek balance binding does not apply DeepSeek prices to another LLM.
+Token counts are recorded from LLM responses independently. The advanced model
+option `accounting` defaults to `none` (generic usage only); `deepseek` selects
+DeepSeek usage parsing and official pricing estimates independently of protocol.
+Selecting only a DeepSeek balance binding does not apply DeepSeek prices to another LLM.
+Replace old model `adapter: deepseek` bindings with `adapter: openai` and an
+explicit URL; set `accounting: deepseek` to retain vendor statistics. A service
+shared with balance must be split into two services, which may share credentials.
 Disabling balance has no effect on token recording or LLM cost estimation.
 
 ## Extend the architecture

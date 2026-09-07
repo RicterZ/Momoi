@@ -15,7 +15,7 @@ def register_builtins():
 
     def llm_factory(options, ctx, name, cls):
         instance = cls(llm_config(options, name), ctx.dump_dir)
-        if name == "deepseek":
+        if options.get("accounting") == "deepseek":
             from .adapters.deepseek import DeepSeekAccounting
 
             instance.accounting = DeepSeekAccounting()
@@ -23,7 +23,6 @@ def register_builtins():
 
     for name, cls in [
         ("openai", OpenAIProvider),
-        ("deepseek", OpenAIProvider),
         ("anthropic", AnthropicProvider),
     ]:
         register_adapter(

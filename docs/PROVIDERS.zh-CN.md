@@ -21,21 +21,25 @@ credentials:
     api_key: {env: DEEPSEEK_API_KEY}
 services:
   deepseek:
-    adapter: deepseek
+    adapter: openai
     base_url: https://api.deepseek.com
+    credentials: deepseek
+  deepseek_balance:
+    adapter: deepseek
     credentials: deepseek
 bindings:
   llm:
     service: deepseek
     options:
       model: deepseek-v4-flash
+      accounting: deepseek
       max_tokens: 16384
       thinking:
         effort: high
         stages:
           reply_followup: low
   balance:
-    service: deepseek
+    service: deepseek_balance
     options:
       timeout_seconds: 10
 ```
@@ -64,7 +68,6 @@ bindings:
 | --- | --- | --- |
 | `anthropic` | `llm` | Anthropic Messages 协议 |
 | `openai` | `llm` | OpenAI Chat Completions 协议 |
-| `deepseek` | `llm` | OpenAI 协议，加 DeepSeek token 解析和本地费用估算 |
 | `openai` | `embedding` | OpenAI 兼容的向量接口 |
 | `tencent` | `asr` | 腾讯 SentenceRecognition |
 | `fish` | `tts` | Fish Audio 语音合成 |
@@ -72,7 +75,8 @@ bindings:
 
 ### LLM
 
-`model`、`base_url` 必填；`deepseek` 的默认地址为 `https://api.deepseek.com`。
+模型协议只有 `openai` 和 `anthropic`。`model`、`base_url` 必填；连接 DeepSeek 时
+选择 `openai` 并填写 `https://api.deepseek.com`。DeepSeek 不是单独的模型协议。
 无需鉴权的本地接口可以省略 `api_key`。默认参数：`max_tokens: 16384`、
 `temperature: 0.6`、`timeout_seconds: 300`、`max_retries: 3`、`tool_choice: true`。
 `thinking.effort` 和 `thinking.stages` 的值支持 `low`、`high`、`max`，阶段设置优先。
@@ -125,8 +129,11 @@ DeepSeek 余额需要 `api_key`，默认 `base_url: https://api.deepseek.com`、
 `timeout_seconds: 10`。后台通过 balance 能力查询余额；API 失败时显示不可用，
 不影响概览中的其他数据。
 
-Token 数量独立记录。选择 `deepseek` LLM 适配器时启用该厂商的 token 解析和本地价格表；
+Token 数量独立记录。模型高级参数 `accounting` 默认 `none`，只记录通用用量；
+选择 `deepseek` 才启用 DeepSeek 用量解析和官方价格估算，与接口协议分开配置。
 仅配置 DeepSeek 的余额服务不会给其他 LLM 套用 DeepSeek 价格。
+旧的 `adapter: deepseek` 模型绑定需改为 `adapter: openai` 并显式填写地址；需要保留
+专属统计时增加 `accounting: deepseek`。如果原服务同时用于余额，拆成两个 service，凭据仍可共享。
 禁用 balance 不影响 token 记录或 LLM 费用估算。
 
 ## 扩展代码架构
