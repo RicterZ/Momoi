@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 from momoi.config.models import NotificationConfig
 from momoi.context_time import context_timestamp
 from momoi.storage import Store
-from momoi.storage.heartbeat_state import RECENT_HEARTBEAT_LIMIT
+from momoi.runtime.transcript.building import build_transcript
 
 
 class HeartbeatEpisodeTests(unittest.TestCase):
@@ -115,7 +115,7 @@ class HeartbeatEpisodeTests(unittest.TestCase):
             store.close()
 
 
-class RecentHeartbeatActivityTests(unittest.TestCase):
+class HeartbeatTimelineTests(unittest.TestCase):
     def _commit(
         self,
         store: Store,
@@ -137,31 +137,29 @@ class RecentHeartbeatActivityTests(unittest.TestCase):
                 reason="test",
             )
 
-    def test_recent_heartbeat_activities_keep_latest_six(self) -> None:
+    def test_heartbeat_timeline_retains_activity_and_result_in_window(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
             now = datetime(
                 2026, 8, 16, 10, tzinfo=ZoneInfo("Asia/Shanghai")
             ).timestamp()
-            for index in range(RECENT_HEARTBEAT_LIMIT + 1):
+            for index in range(8):
                 self._commit(
                     store,
                     f"heartbeat-{index}",
                     now + index,
                     f"活动{index}",
                 )
-            items = store.recent_heartbeat_activities()
-            self.assertEqual(
-                [item["text"] for item in items],
-                [f"活动{index}" for index in range(1, RECENT_HEARTBEAT_LIMIT + 1)],
-            )
-            self.assertEqual(
-                [item["at"] for item in items],
-                [
-                    context_timestamp(now + index, store.timezone)
-                    for index in range(1, RECENT_HEARTBEAT_LIMIT + 1)
-                ],
-            )
+            items = store.recent_conversation_messages(7, 10000)
+            self.assertEqual([item["content"] for item in items], [
+                f"Activity: 活动{index}\nResult: 记录 heartbeat-{index}" for index in range(1, 8)
+            ])
+            self.assertEqual([item["timestamp"] for item in items], [
+                context_timestamp(now + index, store.timezone) for index in range(1, 8)
+            ])
+            transcript = build_transcript(items, timezone=store.timezone)
+            self.assertEqual(str(transcript.messages).count('<heartbeat id="H'), 7)
+            self.assertNotIn("<bubble>", str(transcript.messages))
             store.close()
 
     def test_reply_followup_does_not_append_recent_heartbeat_activity(self) -> None:
@@ -172,8 +170,8 @@ class RecentHeartbeatActivityTests(unittest.TestCase):
             ).timestamp()
             self._commit(store, "heartbeat-1", now, "刷微博")
             self.assertEqual(
-                [item["text"] for item in store.recent_heartbeat_activities()],
-                ["刷微博"],
+                [item["content"] for item in store.recent_conversation_messages(10, 10000) if item["role"] == "heartbeat"],
+                ["Activity: 刷微博\nResult: 记录 heartbeat-1"],
             )
             store.begin_turn("owner-1", "owner", ["evt-1"])
             with store._db:
@@ -196,12 +194,12 @@ class RecentHeartbeatActivityTests(unittest.TestCase):
                     pending_reply_turn_id="owner-1",
                 )
             self.assertEqual(
-                [item["text"] for item in store.recent_heartbeat_activities()],
-                ["刷微博"],
+                [item["content"] for item in store.recent_conversation_messages(10, 10000) if item["role"] == "heartbeat"],
+                ["Activity: 刷微博\nResult: 记录 heartbeat-1"],
             )
             store.close()
 
-    def test_recent_heartbeat_activities_read_existing_records(self) -> None:
+    def test_heartbeat_header_migration_preserves_existing_records(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
             now = datetime(
@@ -232,10 +230,16 @@ class RecentHeartbeatActivityTests(unittest.TestCase):
                             json.dumps([f"heartbeat-record:{turn_id}"]),
                         ),
                     )
+            with store._db:
+                store._db.execute("PRAGMA user_version=4")
+            path = Path(directory) / "momoi.sqlite3"
+            store.close()
+            store = Store(path)
             self.assertEqual(
-                [item["text"] for item in store.recent_heartbeat_activities()],
-                ["刷微博", "整理笔记", "发呆"],
+                [item["content"] for item in store.recent_conversation_messages(10, 10000) if item["role"] == "heartbeat"],
+                [f"Activity: {activity}\nResult: 看了今天的消息" for activity in ("刷微博", "整理笔记", "发呆")],
             )
+            self.assertEqual(store._db.execute("SELECT COUNT(*) FROM turns WHERE workflow_kind='heartbeat'").fetchone()[0], 3)
             store.close()
 
 

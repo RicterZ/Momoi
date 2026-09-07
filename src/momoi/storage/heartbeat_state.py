@@ -1,20 +1,11 @@
 import json
 import logging
-import re
 import time
 
 from ..observability.events import log_event
 from ..observability.values import safe_preview
-from .turn_workflow import turn_workflow_kind_sql
 
 logger = logging.getLogger(__name__)
-RECENT_HEARTBEAT_LIMIT = 6
-_HEARTBEAT_RECORD_ACTIVITY = re.compile(r"^Activity: (.*)$", re.MULTILINE)
-
-
-def _heartbeat_record_activity(content: str) -> str:
-    match = _HEARTBEAT_RECORD_ACTIVITY.search(content)
-    return match.group(1).strip()[:300] if match else ""
 
 
 class HeartbeatStateStore:
@@ -52,30 +43,6 @@ class HeartbeatStateStore:
             ensure_ascii=False,
             separators=(",", ":"),
         )
-
-    def recent_heartbeat_activities(self) -> list[dict[str, str]]:
-        workflow = turn_workflow_kind_sql("t")
-        rows = self._db.execute(
-            f"""SELECT m.content, m.created_at FROM messages AS m
-               JOIN turns AS t ON t.id=m.turn_id
-               WHERE m.delivery_state='internal'
-                 AND {workflow}='heartbeat'
-               ORDER BY m.created_at DESC, m.id DESC
-               LIMIT ?""",
-            (RECENT_HEARTBEAT_LIMIT,),
-        ).fetchall()
-        items: list[dict[str, str]] = []
-        for row in reversed(rows):
-            text = _heartbeat_record_activity(str(row["content"] or ""))
-            if not text:
-                continue
-            items.append(
-                {
-                    "at": self.context_timestamp(row["created_at"]),
-                    "text": text,
-                }
-            )
-        return items[-RECENT_HEARTBEAT_LIMIT:]
 
     def pending_owner_reply(self, now: float | None = None) -> dict[str, object] | None:
         now = time.time() if now is None else now

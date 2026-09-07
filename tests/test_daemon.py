@@ -1870,7 +1870,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             or "<autonomous_heartbeat>" not in request
                             or "<runtime_state>" not in request
                             or "<recent_topic_reference>" not in request
-                            or "<recent_heartbeat_activities>" not in request
+                            or "<recent_heartbeat_activities>" in request
                             or "<recent_turn_base>" in request
                             or "<recent_turn_append>" in request
                             or "最近的聊天话题" not in request

@@ -107,7 +107,7 @@ USER_CONTEXT_SECTION_ORDER = (
     "recent_goals",
     "open_conversations",
     "recent_topic_reference",
-    "recent_heartbeat_activities",
+    "recent_heartbeats",
     "runtime_directives",
     "runtime_state",
     "workflow_contract",

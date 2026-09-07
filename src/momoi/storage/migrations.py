@@ -94,11 +94,33 @@ def _remove_goal_review_header(database: sqlite3.Connection) -> None:
     )
 
 
+def _remove_heartbeat_record_header(database: sqlite3.Connection) -> None:
+    header = "[AUTONOMOUS HEARTBEAT RECORD; not sent to the owner]\n"
+    # Preserve the workflow identity of older records before removing the text
+    # previously used to identify them.
+    database.execute(
+        """UPDATE turns SET workflow_kind='heartbeat'
+           WHERE workflow_kind IS NULL AND EXISTS (
+               SELECT 1 FROM messages m WHERE m.turn_id=turns.id
+                 AND m.role='assistant' AND m.delivery_state='internal'
+                 AND json_extract(m.source_event_ids_json, '$[0]')='heartbeat-record:' || m.turn_id
+           )"""
+    )
+    database.execute(
+        """UPDATE messages SET content=substr(content, ?)
+           WHERE role='assistant' AND delivery_state='internal'
+             AND json_extract(source_event_ids_json, '$[0]')='heartbeat-record:' || turn_id
+             AND substr(content, 1, ?)=?""",
+        (len(header) + 1, len(header), header),
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     _add_runtime_archive_metadata,
     _add_turn_workflow_kind,
     _add_memory_operation_workflow,
     _remove_goal_review_header,
+    _remove_heartbeat_record_header,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 

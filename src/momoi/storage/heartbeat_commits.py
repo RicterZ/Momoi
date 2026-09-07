@@ -266,7 +266,6 @@ class HeartbeatCommitStore:
                     ),
                 )
                 heartbeat_record = (
-                    "[AUTONOMOUS HEARTBEAT RECORD; not sent to the owner]\n"
                     f"Activity: {activity}\n"
                     f"Result: {result.strip() or '(no concrete result recorded)'}"
                 )

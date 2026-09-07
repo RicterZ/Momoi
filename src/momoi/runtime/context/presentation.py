@@ -67,15 +67,6 @@ def heartbeat_topic_lines(items: list[dict[str, object]]) -> str:
     return "\n".join(lines)
 
 
-def heartbeat_activity_lines(items: list[dict[str, str]]) -> str:
-    rendered = "\n".join(
-        f"- at={item.get('at') or '?'} activity={str(item.get('text') or '').strip()}"
-        for item in items
-        if isinstance(item, dict) and str(item.get("text") or "").strip()
-    )
-    return rendered or "(none)"
-
-
 def heartbeat_self_state_lines(value: str) -> str:
     try:
         state = json.loads(value)

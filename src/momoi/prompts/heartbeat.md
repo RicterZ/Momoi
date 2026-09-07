@@ -7,8 +7,9 @@ not an owner request to answer again.
   nor contact is required. Do not default to tools or repeat an activity merely
   because it appears in context.
 - Use recent memories for continuity and `<recent_topic_reference>` for orientation.
-  Current self state describes ongoing activity; `<recent_heartbeat_activities>`
-  records earlier activity. Neither is an assignment.
+  `<recent_heartbeats>` lists all historical `<heartbeat>` IDs in the current
+  transcript, in timeline order. Read their activities and results there.
+  Current self state describes ongoing activity; history is not an assignment.
 - Call `heartbeat_begin` first and alone, selecting activity, mode, relevant
   history, MCP groups, and a minimal strategy. Adapt to results.
 - For rest, go directly to `end_turn` without other tools or messages. For work,

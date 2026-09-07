@@ -94,6 +94,8 @@ speech, a current task, or a pending notification. Its presence does not mean
 the owner has not been informed; check the conversation for prior messages.
 `<goal>` records a completed Goal review's result and state at that time, not
 a new task or proof of message delivery. Later reviews may supersede it.
+`<heartbeat>` records a past heartbeat's activity and result, not owner speech,
+an assignment, or proof of message delivery.
 `turn=T#` links to `<candidate_episodes>.turns`. `Current self state`
 informs your ongoing mood and activity; it is not an announcement to deliver.
 

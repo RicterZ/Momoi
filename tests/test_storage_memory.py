@@ -2450,7 +2450,7 @@ class StorageMemoryTest(unittest.TestCase):
             episode = store.search_episodes("关卡灵感", 3)[0]
             self.assertEqual(len(store.episode_turns(str(episode["id"]))), 20)
             self.assertIn(
-                "AUTONOMOUS HEARTBEAT RECORD",
+                "Activity: 整理关卡灵感",
                 store.conversation_episode(str(episode["id"]))["messages"][-1][
                     "content"
                 ],

@@ -104,6 +104,26 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                 "SELECT id FROM outbox WHERE turn_id=?", (owner_turn,)
             ).fetchone()["id"]
             daemon.store.mark_sent(int(outbox_id))
+            heartbeat_ids = []
+            for index in range(2):
+                past_turn = f"past-heartbeat-{index}"
+                daemon.store.begin_turn(past_turn, "heartbeat", [f"heartbeat:{past_turn}"])
+                daemon.store.commit_heartbeat(
+                    past_turn,
+                    owner_event_revision=0,
+                    notification_config=daemon.config.notifications,
+                    activity=f"历史活动{index}",
+                    result=f"历史结果{index}",
+                    next_heartbeat_at=0,
+                    mood_update=None,
+                    messages=[],
+                    reason="test",
+                )
+                record = daemon.store._db.execute(
+                    "SELECT id FROM messages WHERE turn_id=? AND delivery_state='internal'",
+                    (past_turn,),
+                ).fetchone()
+                heartbeat_ids.append(f"H{record['id']}")
 
             class Provider:
                 calls = 0
@@ -197,10 +217,23 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(provider.calls, 2)
             self.assertEqual(
                 [message["role"] for message in provider.first_messages],
-                ["user", "user", "assistant", "user"],
+                ["user", "user", "assistant", "user", "user", "user"],
             )
             self.assertIn("我到家了", str(provider.first_messages[1]["content"]))
             self.assertIn("终于回来了", str(provider.first_messages[2]["content"]))
+            latest = provider.first_messages[-1]["content"][0]["text"]
+            self.assertIn(
+                f"<recent_heartbeats>\n{', '.join(heartbeat_ids)}\n</recent_heartbeats>",
+                latest,
+            )
+            self.assertNotIn("recent_heartbeat_activities", rendered)
+            for index, identifier in enumerate(heartbeat_ids):
+                historical = str(provider.first_messages[index + 3]["content"])
+                self.assertIn(f'<heartbeat id="{identifier}"', historical)
+                self.assertIn(f"Activity: 历史活动{index}", historical)
+                self.assertIn(f"Result: 历史结果{index}", historical)
+                self.assertNotIn(f"Activity: 历史活动{index}", latest)
+            self.assertNotIn("<heartbeat id=", str(provider.first_messages[0]["content"]))
             daemon.store.close()
 
     async def test_selected_mcp_group_is_resident_and_callable(self) -> None:

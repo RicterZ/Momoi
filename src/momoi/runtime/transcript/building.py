@@ -10,12 +10,12 @@ from .models import (
     TranscriptGroup,
     text_value,
 )
-from .rendering import render_bubble, render_event, render_goal, render_messages
+from .rendering import render_bubble, render_event, render_review, render_messages
 
 
 def _visible(row: Mapping[str, object]) -> bool:
     role = text_value(row.get("role"))
-    if role in {"user", "event", "goal"}:
+    if role in {"user", "event", "goal", "heartbeat"}:
         return bool(text_value(row.get("content")))
     if role != "assistant":
         return False
@@ -44,13 +44,13 @@ def build_groups(rows: Iterable[Mapping[str, object]]) -> list[TranscriptGroup]:
     # Dialogue keeps its established message order. Event reception can precede
     # the archival of an older reply, so merge events by time, not archive ID.
     events = sorted(
-        (row for row in visible if row.get("role") in {"event", "goal"}),
+        (row for row in visible if row.get("role") in {"event", "goal", "heartbeat"}),
         key=lambda row: (_row_order(row)[1], _row_order(row)[0]),
     )
     ordered = []
     event_index = 0
     for row in visible:
-        if row.get("role") in {"event", "goal"}:
+        if row.get("role") in {"event", "goal", "heartbeat"}:
             continue
         while event_index < len(events) and (
             _row_order(events[event_index])[1], _row_order(events[event_index])[0]
@@ -82,8 +82,8 @@ def build_groups(rows: Iterable[Mapping[str, object]]) -> list[TranscriptGroup]:
                 part, message_ids[index], event_sources[index], part_times[index],
                 ZoneInfo("UTC"),
             ) if role == "event" else (
-                render_goal(part, message_ids[index], part_times[index], ZoneInfo("UTC"))
-                if role == "goal" else render_bubble(part, delivery_state=part_states[index])
+                render_review(role, part, message_ids[index], part_times[index], ZoneInfo("UTC"))
+                if role in {"goal", "heartbeat"} else render_bubble(part, delivery_state=part_states[index])
             )
             for index, part in enumerate(parts)
         )

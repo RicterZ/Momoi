@@ -12,7 +12,6 @@ from ...reply_wait import REPLY_FOLLOWUP_RETRY_SECONDS
 from ...storage import estimate_tokens, truncate_tokens
 from ..agent import TurnExecutionSpec
 from ..context.presentation import (
-    heartbeat_activity_lines,
     heartbeat_self_state_lines,
     heartbeat_topic_lines,
 )
@@ -192,6 +191,12 @@ class HeartbeatWorkflow:
             timezone=self.store.timezone,
             tool_activity=tool_activity,
         )
+        recent_heartbeats = ", ".join(dict.fromkeys(
+            f"H{message_id}"
+            for group in (*transcript.orphaned, *transcript.groups)
+            if group.role == "heartbeat"
+            for message_id in group.message_ids
+        ))
         artifact_root = self.tool_executor.artifact_root.resolve()
         minimum = max(1, int(self.config.heartbeat.min_interval_seconds / 60))
         maximum = max(minimum, int(self.config.heartbeat.max_interval_seconds / 60))
@@ -218,10 +223,7 @@ class HeartbeatWorkflow:
                 "recent_topic_reference",
                 heartbeat_topic_lines(recent_topics),
             ),
-            (
-                "recent_heartbeat_activities",
-                heartbeat_activity_lines(self.store.recent_heartbeat_activities()),
-            ),
+            ("recent_heartbeats", recent_heartbeats),
         )
         system = self._system()
         injected_memories = self.store.injected_memory_snapshots()

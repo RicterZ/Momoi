@@ -87,11 +87,14 @@ def render_event(
     )
 
 
-def render_goal(text: str, identifier: int, completed_at: float, timezone: ZoneInfo) -> str:
+def render_review(
+    kind: str, text: str, identifier: int, completed_at: float, timezone: ZoneInfo
+) -> str:
     timestamp = datetime.fromtimestamp(completed_at, timezone).isoformat(timespec="seconds")
+    prefix = {"goal": "G", "heartbeat": "H"}[kind]
     return (
-        f'<goal id="G{identifier}" completed_at="{timestamp}">\n'
-        f'{escape(text)}\n</goal>'
+        f'<{kind} id="{prefix}{identifier}" completed_at="{timestamp}">\n'
+        f'{escape(text)}\n</{kind}>'
     )
 
 
@@ -200,15 +203,15 @@ def render_messages(
     messages: list[dict[str, object]] = []
     previous: TranscriptGroup | None = None
     for group_index, group in enumerate(groups):
-        if group.role in {"event", "goal"}:
+        if group.role in {"event", "goal", "heartbeat"}:
             lines = []
             for index, content in enumerate(group.parts):
                 lines.append(
                     render_event(
                         content, group.message_ids[index], group.event_sources[index],
                         group.part_times[index], timezone,
-                    ) if group.role == "event" else render_goal(
-                        content, group.message_ids[index], group.part_times[index], timezone,
+                    ) if group.role == "event" else render_review(
+                        group.role, content, group.message_ids[index], group.part_times[index], timezone,
                     )
                 )
             messages.append(_message("user", "\n".join(lines)))

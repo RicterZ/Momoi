@@ -313,10 +313,11 @@ def test_event_splitting_a_turn_does_not_duplicate_its_tool_activity():
     assert rendered.index('<event id="E3"') < rendered.index("second()")
 
 
-def test_goal_review_follows_committed_speech_without_claiming_delivery():
+@pytest.mark.parametrize("kind,prefix", [("goal", "G"), ("heartbeat", "H")])
+def test_review_follows_committed_speech_without_claiming_delivery(kind, prefix):
     review = {
         **owner(4, "Goal: 检查\nStatus: done\nLatest result: <已提交> & 等待投递", offset=30),
-        "role": "goal", "delivery_state": "internal",
+        "role": kind, "delivery_state": "internal",
     }
     transcript = build_transcript([
         owner(1, "帮我检查"),
@@ -324,11 +325,11 @@ def test_goal_review_follows_committed_speech_without_claiming_delivery():
         review,
         bubble(5, "不应泄露的内部记录", offset=40, delivery_state="internal"),
     ])
-    assert [group.role for group in transcript.groups] == ["user", "assistant", "goal"]
+    assert [group.role for group in transcript.groups] == ["user", "assistant", kind]
     assert 'delivery="queued"' in text(transcript.messages[1])
     goal = ElementTree.fromstring(text(transcript.messages[2]))
-    assert goal.tag == "goal"
-    assert goal.attrib == {"id": "G4", "completed_at": "2026-08-31T20:00:30+08:00"}
+    assert goal.tag == kind
+    assert goal.attrib == {"id": f"{prefix}4", "completed_at": "2026-08-31T20:00:30+08:00"}
     assert "<已提交> & 等待投递" in goal.text
     assert "不应泄露" not in str(transcript.messages)
     assert "did not reply" not in str(transcript.messages)
