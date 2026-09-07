@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from inspect import isawaitable
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from momoi.channel.napcat import NapCatConfig
 from momoi.config.models import AppConfig
@@ -268,11 +268,18 @@ class GoalCompletionTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn("Checked: no notification needed", history)
             self.assertNotIn("New live result", history)
             self.assertNotIn("without replying", history)
+            current = messages[-1]["content"][0]["text"]
+            self.assertIn(f"<recent_goals>\n{stable_id}\n</recent_goals>", current)
+            self.assertNotIn("Checked: no notification needed", current)
+            self.assertIn(f"Goal id: {other_goal}", current)
+            for tag in ("episode_directory", "recall_memories", "reflection_memories"):
+                self.assertNotIn(f"<{tag}>", current)
 
         self.provider([ToolCall("finish-next", "end_turn", {"goal": {
             "status": "done", "result": "Second review complete",
         }})], inspect=inspect)
-        await self.daemon._complete_goal_turn(other_goal, asyncio.Event())
+        with patch.object(store, "ranked_memory_context", side_effect=AssertionError("unexpected pre-retrieval")):
+            await self.daemon._complete_goal_turn(other_goal, asyncio.Event())
         self.assertEqual(store.transcript_window_turn_limit(4, 8), initial_window + 1)
         reviews = store.recent_conversation_messages(10, 10000)
         self.assertEqual(len(reviews), 2)
@@ -283,6 +290,28 @@ class GoalCompletionTest(unittest.IsolatedAsyncioTestCase):
             ).fetchone()[0],
             0,
         )
+
+    async def test_recent_goals_indexes_every_retained_review_in_order(self):
+        store = self.daemon.store
+        for index in range(6):
+            turn_id = f"review-{index}"
+            store.begin_turn(turn_id, "goal", [f"goal:{self.goal_id}"])
+            store.commit_autonomous_turn(self.goal_id, TurnDraft(), turn_id=turn_id)
+        retained = store.recent_conversation_messages(4, 10000)
+        expected = [f"G{row['id']}" for row in retained if row["role"] == "goal"]
+        self.assertEqual(len(expected), 4)
+
+        def inspect(_round, messages):
+            current = messages[-1]["content"][0]["text"]
+            self.assertIn("<recent_goals>\n" + ", ".join(expected) + "\n</recent_goals>", current)
+            history = str(messages[:-1])
+            for identifier in expected:
+                self.assertEqual(history.count(f'<goal id="{identifier}"'), 1)
+
+        self.provider([ToolCall("finish", "end_turn", {"goal": {
+            "status": "done", "result": "Complete",
+        }})], inspect=inspect)
+        await self.daemon._complete_goal_turn(self.goal_id, asyncio.Event())
 
     async def test_recurring_goal_keeps_its_schedule_without_extra_update(self):
         goal_id = self.create_goal({"kind": "interval", "every_seconds": 3600})

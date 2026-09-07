@@ -104,6 +104,7 @@ USER_CONTEXT_SECTION_ORDER = (
     "reflection_memories",
     "episode_directory",
     "recent_events",
+    "recent_goals",
     "open_conversations",
     "recent_topic_reference",
     "recent_heartbeat_activities",
