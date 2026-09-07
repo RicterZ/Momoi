@@ -103,7 +103,7 @@ USER_CONTEXT_SECTION_ORDER = (
     "recall_status",
     "reflection_memories",
     "episode_directory",
-    "webhook_activity",
+    "recent_events",
     "open_conversations",
     "recent_topic_reference",
     "recent_heartbeat_activities",

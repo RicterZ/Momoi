@@ -4,6 +4,7 @@ import asyncio
 import json
 import tempfile
 import unittest
+import time
 from pathlib import Path
 
 from momoi.channel.napcat import NapCatConfig
@@ -211,8 +212,8 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                 providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
                 channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
                 system_prompt="contract\n{{SOUL}}\n{{CAPABILITY_POLICIES}}",
-                transcript_turns_min=4,
-                transcript_turns_max=4,
+                transcript_turns_min=12,
+                transcript_turns_max=12,
                 episode_raw_tail_turns=2,
                 memory_results=2,
                 database=Path(directory) / "momoi.sqlite3",
@@ -250,6 +251,25 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                 topics=["回家", "快递"],
             )
             daemon.store.link_turn_to_episode("arrival-packages", owner_turn_id)
+
+            event_ids = []
+            for index in range(7):
+                historical_turn = f"webhook:history-{index}:0"
+                daemon.store.begin_turn(historical_turn, "webhook", [historical_turn])
+                with daemon.store._db:
+                    received_at = time.time()
+                    row = daemon.store._db.execute(
+                        """INSERT INTO messages
+                           (turn_id, role, content, created_at, source_event_ids_json,
+                            delivery_state)
+                           VALUES (?, 'event', ?, ?, '[]', 'delivered')""",
+                        (historical_turn, f"历史事件 {index}", received_at),
+                    )
+                    event_ids.append(f"E{row.lastrowid}")
+                    daemon.store._db.execute(
+                        "UPDATE turns SET state='completed', updated_at=? WHERE id=?",
+                        (received_at, historical_turn),
+                    )
 
             class Provider:
                 calls = 0
@@ -376,7 +396,23 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn("<runtime_state>", context_text)
             self.assertNotIn("<recent_conversation>", context_text)
             self.assertNotIn("<recent_turns>", context_text)
-            self.assertIn("<webhook_activity>", context_text)
+            self.assertNotIn("<webhook_activity>", context_text)
+            current_context = next(
+                block["text"]
+                for message in provider.conversations[0]
+                for block in message["content"]
+                if block.get("type") == "text"
+                and "<current_webhook_task>" in block["text"]
+            )
+            self.assertIn(
+                "<recent_events>\n" + ", ".join(event_ids) + "\n</recent_events>",
+                current_context,
+            )
+            self.assertNotIn("历史事件", current_context)
+            for event_id in event_ids:
+                self.assertEqual(
+                    str(provider.conversations[0]).count(f'<event id="{event_id}"'), 1,
+                )
             self.assertNotIn("<conversation_state>", context_text)
             historical = provider.conversations[0][1:3]
             self.assertEqual(

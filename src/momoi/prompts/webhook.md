@@ -11,8 +11,8 @@ not owner speech or a request to reopen old conversation.
 - Compare findings with what the owner already said or received. Send only new,
   changed, exceptional, or otherwise worthwhile information through `send_bubbles`;
   further checks and messages may follow. Delivery follows the shared Style Card.
-- Historical `<event>` entries record earlier inputs; `<webhook_activity>`
-  summarizes earlier checks. Use conversation history to determine what was
-  already communicated; an event's presence does not mean it needs announcing.
+- `<recent_events>` lists all historical `<event>` IDs in the current transcript,
+  in timeline order. Read their content and subsequent conversation there;
+  an event's presence does not mean it needs announcing.
 - After work and delivery results, call `end_turn` alone. With nothing to share,
   finish silently; do not send a receipt or announce that nothing changed.

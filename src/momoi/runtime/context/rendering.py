@@ -228,55 +228,6 @@ def _episode_context(
     return rendered
 
 
-def assemble_recent_webhook_activity(
-    store: Store,
-    turn_limit: int = 4,
-    token_budget: int = 700,
-) -> str:
-    """Render a tiny ledger of completed webhook work for continuity.
-
-    Keep tool names and outcome summaries, never raw tool payloads. This lets a
-    later webhook avoid repeating an already completed notification without
-    carrying the full prior tool transcript.
-    """
-    rows: list[str] = []
-    for record in reversed(store.recent_turn_records(max(1, turn_limit * 3))):
-        if record.get("workflow_kind") != "webhook":
-            continue
-        timeline = record.get("timeline")
-        if not isinstance(timeline, list):
-            continue
-        calls: list[str] = []
-        result_text = ""
-        notified = False
-        at = str(record.get("completed_at") or record.get("started_at") or "")
-        for item in timeline:
-            if not isinstance(item, dict):
-                continue
-            kind = str(item.get("type") or "")
-            if kind == "tool_call":
-                name = str(item.get("name") or "tool")
-                calls.append(name)
-            elif kind == "tool_result":
-                if str(item.get("name") or "") == "send_bubbles":
-                    notified = bool(item.get("ok", True))
-                summary = item.get("summary") or item.get("result") or item.get("error")
-                if summary and not result_text:
-                    result_text = truncate_tokens(str(summary), 100)
-        if not calls and not result_text:
-            continue
-        rows.append(
-            f"{at} tool={', '.join(dict.fromkeys(calls)) or 'none'} "
-            f"notification={'sent' if notified else 'not-sent'} "
-            f"result={result_text or 'no summary'}"
-        )
-        if len(rows) >= turn_limit:
-            break
-    if not rows:
-        return "(none)"
-    return truncate_tokens("\n".join(reversed(rows)), token_budget)
-
-
 def assemble_main_context(
     store: Store,
     retrieval: dict[str, object],

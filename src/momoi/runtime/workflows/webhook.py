@@ -4,10 +4,7 @@ from typing import Any
 from ...channel import Channel
 from ...models import AgentReply, TurnDraft
 from ..agent import TurnExecutionSpec
-from ..context.rendering import (
-    assemble_recent_webhook_activity,
-    recall_episode_context,
-)
+from ..context.rendering import recall_episode_context
 from ..context.presentation import heartbeat_self_state_lines
 from ..transcript.building import build_transcript
 from ..transcript.rendering import render_messages
@@ -48,6 +45,12 @@ class WebhookWorkflow:
             timezone=self.store.timezone,
             tool_activity=tool_activity,
         )
+        recent_events = ", ".join(dict.fromkeys(
+            f"E{message_id}"
+            for group in (*transcript.orphaned, *transcript.groups)
+            if group.role == "event"
+            for message_id in group.message_ids
+        ))
         recent_turn_ids = {
             transcript_turn_id
             for group in (*transcript.orphaned, *transcript.groups)
@@ -90,7 +93,7 @@ class WebhookWorkflow:
             ("episode_directory", episodes),
             ("recall_memories", memories),
             ("reflection_memories", learned),
-            ("webhook_activity", assemble_recent_webhook_activity(self.store)),
+            ("recent_events", recent_events),
         )
         system = self._system()
         context_message = _context_data_message(
