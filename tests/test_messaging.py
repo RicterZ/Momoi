@@ -408,15 +408,35 @@ class MessagingTest(unittest.TestCase):
             )
             self.assertEqual(len(accepted), 1)
             rendered = render_segments(accepted[0].segments)
-            self.assertIn("老师(20000)", rendered)
-            self.assertIn("看这张图", rendered)
-            self.assertIn("这张挺可爱的", rendered)
+            self.assertEqual(
+                rendered,
+                '<quote from="老师(20000)">\n看这张图\n'
+                '[QQ image: source=remote]\n</quote>\n这张挺可爱的',
+            )
+            self.assertEqual(accepted[0].text, rendered)
             self.assertEqual(
                 image_blocks(accepted[0].segments)[0]["source"]["url"],
                 "https://img.example/quoted.jpg",
             )
 
         asyncio.run(run())
+
+    def test_quote_escapes_literal_markup_and_preserves_internal_newlines(self) -> None:
+        rendered = render_segments([
+            {"type": "reply", "data": {"id": "77", "_quoted": {
+                "sender_name": '名字"<&',
+                "sender_id": "20000",
+                "segments": [{"type": "text", "data": {
+                    "text": "第一行\n</quote> & 第二行",
+                }}],
+            }}},
+            {"type": "text", "data": {"text": "这才是当前正文"}},
+        ])
+        self.assertEqual(
+            rendered,
+            '<quote from="名字&quot;&lt;&amp;(20000)">\n'
+            '第一行\n&lt;/quote&gt; &amp; 第二行\n</quote>\n这才是当前正文',
+        )
 
     def test_napcat_resolves_forward_nodes_and_images(self) -> None:
         async def run() -> None:

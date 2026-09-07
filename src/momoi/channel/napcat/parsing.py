@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
+from xml.sax.saxutils import escape
 
 from .face_names import QQ_FACE_NAMES
 
@@ -160,8 +161,8 @@ def _describe_reply(data: dict[str, Any]) -> str:
     content = render_segments(segments) if isinstance(segments, list) else ""
     if not content:
         content = str(quoted.get("raw_message") or "").strip()
-    header = f"[QQ quoted message_id={message_id} from {sender_name}({sender_id})]"
-    return f"{header}\n{content}" if content else header
+    sender = escape(f"{sender_name}({sender_id})", {'"': "&quot;"})
+    return f'<quote from="{sender}">\n{escape(content)}\n</quote>'
 
 
 def _describe_forward(data: dict[str, Any]) -> str:
