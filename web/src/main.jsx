@@ -726,7 +726,7 @@ function UsageChart({ rows, today, balance, costAvailable, days = 30, token, sel
       <div className="usage-home-stats">
         <div>
           <span>账户余额</span>
-          <strong>{costAvailable ? formatYuan(balance?.total_balance) : "-"}</strong>
+          <strong>{balance?.source === "live" ? formatYuan(balance.total_balance) : "-"}</strong>
         </div>
         <div>
           <span>{hourly ? "当日请求" : "今日请求"}</span>

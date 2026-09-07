@@ -1442,14 +1442,15 @@ export default function ConfigurationSettings({
             })}
           </div>
         </div>
+      ) : loading ? (
+        <div role="status">
+          <Loading>正在读取配置…</Loading>
+        </div>
       ) : (
         <div className="settings-loading" role="status">
-          <Icon
-            name={loading ? "refresh" : "info"}
-            className={loading ? "is-spinning" : ""}
-          />
-          <strong>{loading ? "正在读取配置…" : "暂时无法载入配置"}</strong>
-          <p>{loading ? "请稍候" : "请检查服务状态，再点击右上角刷新。"}</p>
+          <Icon name="info" />
+          <strong>暂时无法载入配置</strong>
+          <p>请检查服务状态，再点击右上角刷新。</p>
           {issue && (
             <p className="is-error" role="alert">
               {issue}
