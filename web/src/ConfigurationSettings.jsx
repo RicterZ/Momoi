@@ -1415,24 +1415,13 @@ export default function ConfigurationSettings({
       setActionBusy(false);
     }
   }
-  const pending =
-    runtime?.saved_revision &&
-    runtime.applied_revision !== runtime.saved_revision;
   const issue = error || pollError || runtime?.error || data?.validation_error;
-  const applying = runtime?.state === "applying";
-  const runtimeContent = (pending || applying || issue) ? (
-    <section className="settings-runtime" aria-label="配置应用进度">
-      {(pending || applying) && (
-        <p className="settings-runtime-status" role="status">
-          {applying ? "正在应用配置…" : "已保存，等待应用"}
-        </p>
-      )}
-      {issue && (
-        <p className="settings-runtime-message is-error" role="alert">
-          <Icon name="info" />
-          {issue}
-        </p>
-      )}
+  const runtimeContent = issue ? (
+    <section className="settings-runtime" aria-label="配置错误">
+      <p className="settings-runtime-message is-error" role="alert">
+        <Icon name="info" />
+        {issue}
+      </p>
     </section>
   ) : null;
   return (

@@ -69,15 +69,6 @@
   padding: 16px 20px;
   background: var(--surface);
 }
-.settings-runtime-status {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin: 0;
-  font-size: 11px;
-  color: var(--muted);
-}
 .settings-button {
   display: inline-flex;
   align-items: center;
