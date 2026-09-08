@@ -260,7 +260,7 @@ class AgentLoop:
                 failed_tool_rounds = 0
                 remind_owner_bubbles = False
                 continue
-            if stage == "owner" and harness.started and not response.tool_calls:
+            if harness.started:
                 bubbles = parse_tagged_bubbles(response_text(response.content))
                 if bubbles is not None:
                     call = ToolCall(
@@ -270,11 +270,11 @@ class AgentLoop:
                     # owner interruption, and the tool result consumed next round.
                     response = replace(
                         response,
-                        content=[*response.content, {
+                        content=[{
                             "type": "tool_use", "id": call.id,
                             "name": call.name, "input": call.arguments,
-                        }],
-                        tool_calls=[call],
+                        }, *response.content],
+                        tool_calls=[call, *response.tool_calls],
                     )
                     log_event(
                         logger, logging.DEBUG, "assistant_bubbles_adapted",

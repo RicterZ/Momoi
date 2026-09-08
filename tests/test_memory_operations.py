@@ -868,12 +868,12 @@ def test_owner_tagged_text_uses_delivery_tool_and_then_end_turn(daemon, caplog):
 
 
 @pytest.mark.parametrize('tagged', [True, False])
-def test_text_with_native_send_is_never_delivered_twice(daemon, tagged):
+def test_tagged_text_and_native_send_both_use_delivery_tools(daemon, tagged):
     from types import SimpleNamespace
     from tests.support import recall_response
 
     source = event(daemon.store)
-    send = response(ToolCall('send', 'send_bubbles', {'bubbles': ['工具气泡']}))
+    send = response(ToolCall('send', 'send_bubbles', {'bubbles': ['明天上午十点出门']}))
     send.content.insert(0, {'type': 'text', 'text': '<bubble>正文气泡</bubble>' if tagged else '普通正文'})
     replies = [recall_response(), send, response(ToolCall('end', 'end_turn', {
         'reply_wait': {'wait': False}, 'mood': {'decision': 'unchanged'},
@@ -887,4 +887,63 @@ def test_text_with_native_send_is_never_delivered_twice(daemon, tagged):
     daemon.provider = SimpleNamespace(complete=complete, config=SimpleNamespace(api_format='anthropic'))
     asyncio.run(daemon._complete_batch_turn([source], asyncio.Event(), 'source'))
     assert not replies
-    assert [row.text for row in daemon.store.due_outbox()] == ['工具气泡']
+    expected = ['正文气泡', '明天上午十点出门'] if tagged else ['明天上午十点出门']
+    assert [row['text'] for row in daemon.store._db.execute(
+        "SELECT text FROM outbox WHERE turn_id='source' ORDER BY id"
+    )] == expected
+
+
+@pytest.mark.parametrize('stage', ['heartbeat', 'webhook'])
+@pytest.mark.parametrize('with_terminal', [False, True])
+def test_non_owner_tagged_text_respects_terminal_sequence(daemon, stage, with_terminal):
+    from types import SimpleNamespace
+    from momoi.runtime.agent import TurnExecutionSpec
+
+    terminal = {'reply_wait': {'wait': False}, 'mood': {'decision': 'unchanged'}}
+    if stage == 'heartbeat':
+        terminal['heartbeat'] = {
+            'activity': '分享消息', 'result': '分享完成',
+            'next_check_minutes': 30, 'reason': '完成本轮',
+        }
+    tagged = response(ToolCall('early-end', 'end_turn', terminal)) if with_terminal else ProviderResponse([], [])
+    tagged.content.insert(0, {'type': 'text', 'text': '<bubble>刚看到一条消息</bubble>'})
+    replies = []
+    if stage == 'heartbeat':
+        replies.append(response(ToolCall('begin', 'heartbeat_begin', {
+            'activity': '分享消息', 'mode': 'work', 'recall_mode': 'skip',
+            'recall_queries': [], 'tool_groups': [], 'strategy': ['分享当前消息'],
+        })))
+    replies.append(tagged)
+    if with_terminal:
+        replies.append(response(ToolCall('send', 'send_bubbles', {'bubbles': ['刚看到一条消息']})))
+    replies.append(response(ToolCall('finish', 'end_turn', terminal)))
+    after_tagged = False
+
+    async def complete(_system, messages, *args, **kwargs):
+        nonlocal after_tagged
+        if after_tagged:
+            after_tagged = False
+            if with_terminal:
+                assert 'end_turn_must_be_alone' in str(messages[-1])
+                assert not daemon.store.due_outbox()
+                calls = [b for b in messages[-2]['content'] if b['type'] == 'tool_use']
+                assert [c['name'] for c in calls] == ['send_bubbles', 'end_turn']
+                assert calls[1]['id'] == 'early-end'
+            else:
+                result = json.loads(messages[-1]['content'][0]['content'])
+                assert result['ok'] and result['state'] == 'committed'
+        assert replies, 'Unexpected protocol retry'
+        reply = replies.pop(0)
+        after_tagged = reply is tagged
+        return reply
+
+    daemon.provider = SimpleNamespace(complete=complete, config=SimpleNamespace(api_format='anthropic'))
+    daemon.store.begin_turn('tagged-test', stage, [])
+    asyncio.run(daemon._run_tool_loop(
+        [], [{'role': 'user', 'content': 'test'}],
+        daemon.tool_surface.conversation_specs(), [], TurnDraft(),
+        execution=TurnExecutionSpec(stage, permitted_tools=daemon.tool_surface.permitted_names(stage)),
+        source_event_id='test', turn_id='tagged-test', delivery_channel=daemon.channel,
+    ))
+    assert not replies
+    assert [r.text for r in daemon.store.due_outbox()] == ['刚看到一条消息']
