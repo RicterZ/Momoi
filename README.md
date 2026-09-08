@@ -311,7 +311,7 @@ incrementally without blocking owner conversation.
 
 ### Docker Compose
 
-The published `docker-compose.yml` starts only Momoi by default. No model keys,
+The published `docker-compose.yml` starts Momoi and its private embedding service. No model keys,
 channel configuration, or existing workspace files are required. Install Docker
 with Compose v2, then start:
 
@@ -324,17 +324,15 @@ Open `http://127.0.0.1:8788` and sign in with the Dashboard token from the start
 logs. Use Settings to connect a model, edit prompts, enable message channels,
 and sign in to Weixin by scanning its QR code.
 
-Optional services start only when requested:
-
-```bash
-docker compose -f docker-compose.yml --profile embedding up -d
-```
-
 For QQ, deploy NapCat separately and enter its reachable OneBot WebSocket URL
-and the owner QQ in Momoi's Settings. For the private
-embedding service, use `http://embedding:8002/v1/embeddings`. Starting a container
-does not enable its capability; enable it separately in Settings. Weixin requires
-the optional encoder.
+and the owner QQ in Momoi's Settings. On first startup, Compose enables semantic
+memory with `http://embedding:8002/v1/embeddings`, model `BAAI/bge-small-zh-v1.5`,
+512 dimensions, and calibration profile `bge-small-zh-v1.5-momoi-v1`.
+Momoi includes these defaults and copies them into a new workspace's
+`providers.yaml`. No additional startup arguments or configuration mounts are needed.
+These are saved settings: you can change the provider or disable semantic memory
+in the Dashboard. Restarting preserves your changes. Existing workspaces are
+not migrated; configure or enable embedding in Settings if needed.
 
 The workspace is persisted in `~/.momoi` by default and initialized by `momoi run`;
 existing files are preserved. Only dashboard port 8788 is published by default.
@@ -373,16 +371,17 @@ To build the current checkout as a container, use the source Compose file:
 docker compose -f compose.yaml up -d --build
 ```
 
-It shares the published stack's defaults; add `--profile embedding` before `up`
-to build and start the optional encoder. Always specify `-f`: without it, Docker
+It shares the published stack's defaults and builds both Momoi and the encoder.
+Always specify `-f`: without it, Docker
 Compose prefers `compose.yaml` over `docker-compose.yml`.
 
 ## Semantic recall
 
-Enable semantic memory in Settings and select a compatible embedding endpoint,
-model, and vector dimension. The Docker Compose stacks provide a private embedding
-service through `--profile embedding`. A Momoi process running on the host needs
-an endpoint reachable from the host.
+New workspaces have semantic memory configured and enabled by
+default. To use another provider, select a compatible embedding endpoint, model,
+and vector dimension in Settings. A Momoi process running on the host needs
+an endpoint reachable from the host; update the default Docker address in Settings
+or disable semantic memory when no encoder is available.
 
 Momoi builds the index in the background and activates it when coverage is complete.
 Keyword recall remains available during indexing. See

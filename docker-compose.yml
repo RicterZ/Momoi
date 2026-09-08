@@ -1,7 +1,6 @@
 services:
   embedding:
     image: ricterz/momoi-embedding:latest
-    profiles: [embedding]
     container_name: momoi-embedding
     restart: unless-stopped
 
@@ -15,6 +14,8 @@ services:
       TZ: ${TZ:-Asia/Shanghai}
       MOMOI_TIMEZONE: ${TZ:-Asia/Shanghai}
       MOMOI_DASHBOARD_TOKEN: ${MOMOI_DASHBOARD_TOKEN:-}
+    depends_on:
+      - embedding
     ports:
       - "${MOMOI_DASHBOARD_PORT:-8788}:8788"
     volumes:

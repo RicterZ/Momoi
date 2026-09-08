@@ -4,9 +4,8 @@ import json
 import os
 import secrets
 import tempfile
+from importlib.resources import files
 from pathlib import Path
-
-import yaml
 
 
 def atomic_write(path: Path, content: str) -> None:
@@ -67,7 +66,12 @@ def bootstrap(config_path: Path) -> bool:
     config = default_config()
     config["dashboard"] = {"token": secrets.token_urlsafe(32)}
     root = config_path.parent
-    _create(root / "providers.yaml", yaml.safe_dump(empty_providers(), sort_keys=False))
+    provider_path = root / "providers.yaml"
+    if not provider_path.exists():
+        _create(
+            provider_path,
+            files("momoi.config").joinpath("providers.default.yaml").read_text(encoding="utf-8"),
+        )
     _create(
         root / "prompts/SOUL.md",
         "你是 Momoi，是主人的个人助手。请用自然、清晰的语言交流。\n",

@@ -40,7 +40,7 @@ class ConfigurationManagerTest(unittest.TestCase):
         bootstrap(self.path)
         self.manager = ConfigurationManager(self.path)
 
-    def test_bootstrap_is_idempotent_and_loads_without_providers_or_channels(self):
+    def test_bootstrap_is_idempotent_and_loads_without_model_or_channels(self):
         before = {
             path: path.read_bytes()
             for path in self.path.parent.rglob("*")
@@ -50,9 +50,43 @@ class ConfigurationManagerTest(unittest.TestCase):
         self.assertEqual(before, {path: path.read_bytes() for path in before})
         config = self.manager.validate()
         self.assertFalse(config.providers.enabled("llm"))
+        self.assertTrue(config.providers.enabled("embedding"))
         self.assertEqual(config.channel_configs, ())
         self.assertGreaterEqual(len(config.dashboard.token), 32)
         self.assertEqual(os.stat(self.path).st_mode & 0o777, 0o600)
+
+    def test_bootstrap_seeds_editable_embedding_once(self):
+        path = self.path.parent / "compose" / "config.json"
+        self.assertTrue(bootstrap(path))
+        manager = ConfigurationManager(path)
+        config = manager.validate()
+        self.assertFalse(config.providers.enabled("llm"))
+        self.assertEqual(config.channel_configs, ())
+        snapshot = manager.snapshot()
+        embedding = snapshot["capabilities"]["embedding"]
+        self.assertTrue(embedding["enabled"])
+        self.assertEqual(embedding["adapter"], "openai")
+        self.assertEqual(embedding["options"]["endpoint"], "http://embedding:8002/v1/embeddings")
+        self.assertEqual(embedding["options"]["model"], "BAAI/bge-small-zh-v1.5")
+        self.assertEqual(embedding["options"]["dimensions"], 512)
+        self.assertEqual(embedding["options"]["calibration_profile"], "bge-small-zh-v1.5-momoi-v1")
+        embedding["enabled"] = False
+        embedding["options"]["endpoint"] = "https://embedding.example/v1/embeddings"
+        manager.save_binding("embedding", embedding, snapshot["revision"])
+        before = manager.provider_path.read_bytes()
+        self.assertFalse(bootstrap(path))
+        self.assertEqual(manager.provider_path.read_bytes(), before)
+        self.assertFalse(manager.validate().providers.enabled("embedding"))
+
+    def test_bootstrap_preserves_existing_provider_file(self):
+        path = self.path.parent / "existing" / "config.json"
+        provider_path = path.parent / "providers.yaml"
+        original = b"version: 1\ncredentials: {}\nservices: {}\nbindings: {}\n"
+        provider_path.parent.mkdir()
+        provider_path.write_bytes(original)
+        self.assertTrue(bootstrap(path))
+        self.assertEqual(provider_path.read_bytes(), original)
+        self.assertFalse(ConfigurationManager(path).validate().providers.enabled("embedding"))
 
     def test_schema_plaintext_credentials_and_revision_conflict(self):
         before = self.manager.snapshot()
@@ -281,7 +315,8 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
         response = await self.client.get("/api/settings/configuration")
         self.assertEqual(response.status, 200)
         data = await response.json()
-        self.assertEqual(data["capabilities"], {})
+        self.assertEqual(set(data["capabilities"]), {"embedding"})
+        self.assertTrue(data["capabilities"]["embedding"]["enabled"])
         self.assertEqual(response.headers["Cache-Control"], "no-store")
         await self.runtime.apply()
         self.assertEqual(self.runtime.status()["missing"], ["llm", "channel"])

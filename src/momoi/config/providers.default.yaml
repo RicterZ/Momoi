@@ -1,0 +1,17 @@
+# Copied into new workspaces only. Edit providers.yaml through Dashboard Settings.
+version: 1
+credentials: {}
+services:
+  embedding:
+    adapter: openai
+bindings:
+  embedding:
+    service: embedding
+    enabled: true
+    options:
+      endpoint: http://embedding:8002/v1/embeddings
+      model: BAAI/bge-small-zh-v1.5
+      dimensions: 512
+      calibration_profile: bge-small-zh-v1.5-momoi-v1
+      query_timeout_seconds: 5
+      document_timeout_seconds: 30
