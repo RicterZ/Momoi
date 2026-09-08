@@ -1025,6 +1025,45 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(calls, 2)
             daemon.store.close()
 
+    async def test_compact_command_updates_shared_transcript_without_owner_turn(self) -> None:
+        from tests.test_transcript_window import TranscriptWindowTest
+
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(AppConfig(
+                providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 100, 0, 1, 0)),
+                channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
+                system_prompt="test", transcript_turns_min=4, transcript_turns_max=8,
+                episode_raw_tail_turns=2, memory_results=2,
+                database=Path(directory) / "momoi.sqlite3", log_level="INFO",
+            ))
+            try:
+                for index in range(1, 5):
+                    TranscriptWindowTest._add_visible_turn(daemon.store, index)
+                daemon._recent_conversation_rows()
+                for index in range(5, 7):
+                    TranscriptWindowTest._add_visible_turn(daemon.store, index)
+                self.assertEqual(len(daemon._recent_conversation_rows()), 6)
+                active = asyncio.create_task(asyncio.Event().wait())
+                daemon._active_turn = active
+                try:
+                    command = IncomingMessage(
+                        "qq:manual-compact", "manual-compact", " /compact ", 10, 10,
+                        channel="napcat",
+                    )
+                    await daemon._receive(command)
+                    await daemon._receive(command)
+                    self.assertEqual(len(daemon._recent_conversation_rows()), 4)
+                    self.assertFalse(active.done())
+                    self.assertEqual(active.cancelling(), 0)
+                    self.assertTrue(daemon.incoming.empty())
+                    self.assertTrue(daemon.autonomous.empty())
+                    self.assertEqual(daemon.store.pending_events(), [])
+                finally:
+                    active.cancel()
+                    await asyncio.gather(active, return_exceptions=True)
+            finally:
+                daemon.store.close()
+
     async def test_manual_heartbeat_command_queues_once_even_when_disabled(
         self,
     ) -> None:

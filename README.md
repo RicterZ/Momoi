@@ -465,11 +465,16 @@ and `goal_cancel` for task management; Goal reviews use the terminal outcome ins
 | Chat command | Purpose |
 | --- | --- |
 | `/stop` | Cancel the active task |
+| `/compact` | Shrink the transcript window to `transcript_turns_min` for the next context build |
 | `/heartbeat` | Trigger one Heartbeat immediately |
 | `/reflect` | Run Reflection for the current local day |
 | `/tidy` | Run confirmed-memory maintenance |
 | `/resolve <id> <result>` | Record the verified result of an uncertain external action |
 | `/resume <id> <current state>` | Continue uncertain work from a verified current state |
+
+`/compact` uses the existing transcript window compaction and persists the reduced
+window across restarts. It preserves stored history, does not call the model or
+interrupt the active Turn, and resumes normal window growth as new Turns complete.
 
 Momoi includes CLI management for Goals, image reactions, channels, and semantic
 index status. Run `momoi --help` or a subcommand's `--help` for the current

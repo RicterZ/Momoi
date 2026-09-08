@@ -100,6 +100,49 @@ class TranscriptWindowTest(unittest.TestCase):
             self.assertEqual(reopened.transcript_window_turn_limit(48, 96), 48)
             reopened.close()
 
+    def test_manual_compaction_persists_and_resumes_growth(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "momoi.sqlite3"
+            store = Store(path)
+            for index in range(1, 5):
+                self._add_visible_turn(store, index)
+            self.assertEqual(store.transcript_window_turn_limit(4, 8), 4)
+            for index in range(5, 7):
+                self._add_visible_turn(store, index)
+            self.assertEqual(store.transcript_window_turn_limit(4, 8), 6)
+            # Include a completed Turn not yet observed by a context build.
+            self._add_visible_turn(store, 7)
+            self.assertEqual(
+                store.transcript_window_turn_limit(4, 8, force_compact=True), 4
+            )
+            store.close()
+
+            reopened = Store(path)
+            self.assertEqual(reopened.transcript_window_turn_limit(4, 8), 4)
+            self.assertEqual(
+                [row["content"] for row in reopened.recent_conversation_messages(4, 10000)],
+                [f"message {index}" for index in range(4, 8)],
+            )
+            self.assertEqual(len(reopened.recent_conversation_messages(8, 10000)), 7)
+            self._add_visible_turn(reopened, 8)
+            self.assertEqual(reopened.transcript_window_turn_limit(4, 8), 5)
+            reopened.close()
+
+    def test_manual_compaction_with_empty_or_fixed_window(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            self.assertEqual(
+                store.transcript_window_turn_limit(4, 8, force_compact=True), 4
+            )
+            self._add_visible_turn(store, 1)
+            self.assertEqual(
+                store.transcript_window_turn_limit(4, 8, force_compact=True), 4
+            )
+            self.assertEqual(
+                store.transcript_window_turn_limit(4, 4, force_compact=True), 4
+            )
+            store.close()
+
     def test_episode_directory_contains_only_transcript_episodes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")

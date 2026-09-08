@@ -52,7 +52,7 @@ _HEARTBEAT_RECORD_SQL = """(
 
 class TranscriptStore:
     def transcript_window_turn_limit(
-        self, minimum_turns: int, maximum_turns: int
+        self, minimum_turns: int, maximum_turns: int, *, force_compact: bool = False
     ) -> int:
         minimum_turns = max(1, minimum_turns)
         maximum_turns = max(minimum_turns, maximum_turns)
@@ -114,10 +114,12 @@ class TranscriptStore:
                 max(minimum_turns, int(state["current_turns"])),
             )
             span = maximum_turns - minimum_turns
-            compacted = span > 0 and current - minimum_turns + new_turns >= span
+            compacted = force_compact or (
+                span > 0 and current - minimum_turns + new_turns >= span
+            )
             current = (
                 minimum_turns
-                if span == 0
+                if force_compact or span == 0
                 else minimum_turns + (current - minimum_turns + new_turns) % span
             )
             self._db.execute(
@@ -131,6 +133,7 @@ class TranscriptStore:
                 logger,
                 logging.INFO,
                 "transcript_window_compacted",
+                reason="manual" if force_compact else "window_limit",
                 retained_turns=current,
                 minimum_turns=minimum_turns,
                 maximum_turns=maximum_turns,

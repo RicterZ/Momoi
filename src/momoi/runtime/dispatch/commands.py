@@ -67,6 +67,22 @@ class CommandRouter:
                 )
                 await self.incoming.put(message)
             return
+        if message.text.strip() == "/compact":
+            retained_turns = self.store.transcript_window_turn_limit(
+                self.config.transcript_turns_min,
+                self.config.transcript_turns_max,
+                force_compact=True,
+            )
+            log_event(
+                logger,
+                logging.INFO,
+                "owner_command_accepted",
+                channel=message.channel,
+                event_id=message.event_id,
+                command="compact",
+                retained_turns=retained_turns,
+            )
+            return
         if message.text.strip() == "/heartbeat":
             if self.store.claim_manual_heartbeat():
                 log_event(
