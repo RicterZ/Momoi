@@ -27,7 +27,7 @@ pathlib.Path("/tmp/requirements.txt").write_text(
 )
 PY
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip wheel --wheel-dir /wheels --requirement /tmp/requirements.txt
+    pip wheel --wheel-dir /wheels --requirement /tmp/requirements.txt uv
 
 
 FROM python-dependencies AS build
