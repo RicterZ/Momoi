@@ -7,6 +7,7 @@ export function createSettingsPreview(json) {
   let revision = 1;
   let applied = "preview-1";
   let login = { status: "idle" };
+  let connectionTesting = false;
   let configuration = {
     revision: "preview-1",
     app: {
@@ -21,7 +22,7 @@ export function createSettingsPreview(json) {
         enabled: true,
         options: {
           base_url: "https://api.deepseek.com",
-          api_key: { $secret: "keep" },
+          api_key: "preview-model-key",
           model: "deepseek-v4-flash",
           temperature: 0.6,
         },
@@ -117,7 +118,8 @@ export function createSettingsPreview(json) {
       path === "/api/settings/configuration/app" && req.method === "PATCH";
     const verify =
       path === "/api/settings/channels/weixin/verify" && req.method === "POST";
-    if (!providers && !app && !verify) return false;
+    const test = req.method === "POST" && path.match(/^\/api\/settings\/providers\/([^/]+)\/test$/);
+    if (!providers && !app && !verify && !test) return false;
     let raw = "";
     req.setEncoding("utf8");
     req.on("data", (chunk) => {
@@ -126,6 +128,26 @@ export function createSettingsPreview(json) {
     req.on("end", () => {
       try {
         const body = JSON.parse(raw);
+        if (test) {
+          const capability = test[1];
+          const metadata = adapters.find(item => item.capability === capability && item.adapter === body.adapter);
+          if (metadata?.test_supported !== true) {
+            json(res, { ok: false, error: { code: "unsupported", message: "当前服务不支持连接测试。" } }, 400);
+            return;
+          }
+          if (connectionTesting) {
+            json(res, { ok: false, error: { code: "busy", message: "已有连接测试正在进行，请稍后重试。" } }, 429);
+            return;
+          }
+          connectionTesting = true;
+          setTimeout(() => {
+            connectionTesting = false;
+            json(res, { ok: true, capability, adapter: body.adapter, elapsed_ms: 320,
+              details: { model: body.options?.model || "preview-model", ...(capability === "embedding" ? { dimensions: body.options?.dimensions || 512 } : {}) },
+            });
+          }, 320);
+          return;
+        }
         if (verify) {
           if (!body.code?.trim()) {
             json(res, { error: "请输入验证码" }, 400);

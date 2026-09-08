@@ -187,6 +187,25 @@
   gap: 9px;
   min-width: 0;
 }
+.settings-field-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.settings-studio .settings-test-button {
+  padding: 0;
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+.settings-test-button svg { width: 14px; height: 14px; }
+.settings-test-result {
+  margin: 16px 0 0;
+  font-size: 12px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
 .settings-label {
   display: block;
   font-size: 12px;

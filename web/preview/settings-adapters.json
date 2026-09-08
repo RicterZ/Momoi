@@ -57,7 +57,8 @@
         "label": "thinking",
         "advanced": true
       }
-    }
+    },
+    "test_supported": true
   },
   {
     "adapter": "deepseek",
@@ -89,7 +90,8 @@
         "advanced": false,
         "description": "按 DeepSeek 用量和官方价格估算模型费用；模型使用其他服务商时请关闭。关闭后仍可查询余额并记录通用 Token 用量。"
       }
-    }
+    },
+    "test_supported": false
   },
   {
     "adapter": "fish",
@@ -154,7 +156,8 @@
         "label": "音频大小上限（字节）",
         "advanced": true
       }
-    }
+    },
+    "test_supported": false
   },
   {
     "adapter": "openai",
@@ -205,7 +208,8 @@
         "label": "文档编码超时（秒）",
         "advanced": true
       }
-    }
+    },
+    "test_supported": true
   },
   {
     "adapter": "openai",
@@ -265,7 +269,8 @@
         "label": "thinking",
         "advanced": true
       }
-    }
+    },
+    "test_supported": true
   },
   {
     "adapter": "tencent",
@@ -309,6 +314,7 @@
         "label": "音频大小上限（字节）",
         "advanced": true
       }
-    }
+    },
+    "test_supported": false
   }
 ]

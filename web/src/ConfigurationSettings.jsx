@@ -8,6 +8,7 @@ import {
 } from "react";
 import Loading from "./Loading.jsx";
 import { waitForConfiguration } from "./configurationRuntime.js";
+import { testProviderConnection } from "./providerConnectionTest.js";
 import "./settings.css";
 
 const modules = [
@@ -172,7 +173,7 @@ function Icon({ name, ...props }) {
 }
 
 // Keep native form semantics, but render a keyboard-operable menu instead of the OS select popup.
-function SelectField({ label, value, onChange, options, hint }) {
+function SelectField({ label, value, onChange, options, hint, labelAction }) {
   const id = useId();
   const root = useRef(null);
   const trigger = useRef(null);
@@ -239,9 +240,12 @@ function SelectField({ label, value, onChange, options, hint }) {
   }
   return (
     <div className="settings-field">
-      <span id={`${id}-label`} className="settings-label">
+      {labelAction ? <div className="settings-field-heading">
+        <span id={`${id}-label`} className="settings-label">{label}</span>
+        {labelAction}
+      </div> : <span id={`${id}-label`} className="settings-label">
         {label}
-      </span>
+      </span>}
       <div
         className="settings-select"
         ref={root}
@@ -735,7 +739,7 @@ function normalizeProvider(name, value, adapters) {
   return { ...value, options };
 }
 
-function ProviderSection({ module, data, save, saving, next, previous }) {
+function ProviderSection({ module, data, save, saving, testProvider, testing, next, previous }) {
   const configurationId = useId();
   const { names, optional } = module;
   const [draft, setDraft] = useState(() =>
@@ -745,15 +749,49 @@ function ProviderSection({ module, data, save, saving, next, previous }) {
   const [status, setStatus] = useState(null);
   const [busy, setBusy] = useState(false);
   const [showDisabled, setShowDisabled] = useState(false);
+  const [testResult, setTestResult] = useState(null);
+  const [testPending, setTestPending] = useState(false);
+  const testVersion = useRef(0);
+  const testLock = useRef(false);
+  const testCapability = names.find(name => data.adapters.some(adapter =>
+    adapter.capability === name && adapter.adapter === draft.values[name].adapter && adapter.test_supported === true,
+  ));
+  useEffect(() => () => { testVersion.current += 1; }, []);
   const dirty = !equal(draft, saved);
   function change(next) {
+    testVersion.current += 1;
+    setTestResult(null);
     setDraft(next);
     setStatus(null);
+  }
+  async function testConnection() {
+    if (!testCapability || testing || testLock.current || saving || busy) return;
+    const version = ++testVersion.current;
+    testLock.current = true;
+    setTestPending(true);
+    setTestResult(null);
+    setStatus(null);
+    try {
+      const { adapter, options } = normalizeProvider(testCapability, draft.values[testCapability], data.adapters);
+      const fields = data.adapters.find(item => item.capability === testCapability && item.adapter === adapter)?.fields || {};
+      for (const [key, spec] of Object.entries(fields)) {
+        if (spec.secret && keepSecret(options[key])) throw new Error(`请重新填写${spec.label || key}后测试连接。`);
+      }
+      const result = await testProvider(testCapability, { adapter, options });
+      if (version === testVersion.current) setTestResult(result);
+    } catch (error) {
+      if (version === testVersion.current) setTestResult({ text: error.message, error: true });
+    } finally {
+      testLock.current = false;
+      setTestPending(false);
+    }
   }
   async function submit(event) {
     event.preventDefault();
     if (saving || busy || !dirty) return;
     setBusy(true);
+    testVersion.current += 1;
+    setTestResult(null);
     setStatus(null);
     try {
       const document = Object.fromEntries(
@@ -802,6 +840,13 @@ function ProviderSection({ module, data, save, saving, next, previous }) {
       setBusy(false);
     }
   }
+  const testButton = testCapability && (
+    <button type="button" className="settings-text-button settings-test-button"
+      disabled={testing || saving || busy} onClick={testConnection}>
+      <Icon name="refresh" className={testPending ? "is-spinning" : ""} />
+      {testPending ? "测试中…" : "测试连接"}
+    </button>
+  );
   return (
     <>
       <form
@@ -832,6 +877,7 @@ function ProviderSection({ module, data, save, saving, next, previous }) {
                   {saved.enabled ? "将在保存后停用" : "功能未启用"}
                 </h3>
                 <p>{module.tip}</p>
+                {testButton}
               </div>
               <button
                 type="button"
@@ -926,6 +972,7 @@ function ProviderSection({ module, data, save, saving, next, previous }) {
                     >
                       <SelectField
                         label="服务协议"
+                        labelAction={draft.enabled && name === testCapability ? testButton : undefined}
                         value={value.adapter}
                         onChange={(adapter) =>
                           update({ ...value, adapter })
@@ -956,11 +1003,13 @@ function ProviderSection({ module, data, save, saving, next, previous }) {
               );
             })}
           </div>
+          {testResult && <p className={`settings-test-result${testResult.error ? " is-error" : ""}`} role="status">{testResult.text}</p>}
         </div>
         <SaveBar
           busy={saving || busy}
           dirty={dirty}
           status={status}
+          saveDisabled={testing}
           next={next}
           previous={previous}
         />
@@ -1312,6 +1361,9 @@ export default function ConfigurationSettings({
   const [generation, setGeneration] = useState(0);
   const [activeSection, setActiveSection] = useState("model");
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const providerTestLock = useRef(false);
+  const providerTestController = useRef(null);
   const [applyProgress, setApplyProgress] = useState(null);
   const applyController = useRef(null);
   const applyRevision = useRef(null);
@@ -1407,6 +1459,23 @@ export default function ConfigurationSettings({
     return () => window.removeEventListener("beforeunload", beforeUnload);
   }, []);
   useEffect(() => () => applyController.current?.abort(), []);
+  useEffect(() => () => providerTestController.current?.abort(), []);
+  async function testProvider(capability, document) {
+    if (providerTestLock.current) throw new Error("已有连接测试正在进行，请稍后重试。");
+    providerTestLock.current = true;
+    const controller = new AbortController();
+    providerTestController.current = controller;
+    setTesting(true);
+    try {
+      return await testProviderConnection(
+        (path, options) => request(path, { ...options, token }),
+        capability, document, controller.signal,
+      );
+    } finally {
+      providerTestLock.current = false;
+      setTesting(false);
+    }
+  }
   async function monitorApply(target) {
     applyController.current?.abort();
     const controller = new AbortController();
@@ -1589,6 +1658,8 @@ export default function ConfigurationSettings({
                       previous={previous}
                       data={data}
                       save={save}
+                      testProvider={testProvider}
+                      testing={testing}
                       saving={saving || loading}
                     />
                   )}
