@@ -9,6 +9,7 @@ import {
 import Loading from "./Loading.jsx";
 import { waitForConfiguration } from "./configurationRuntime.js";
 import { testProviderConnection } from "./providerConnectionTest.js";
+import { runtimeFieldValue, runtimeFieldChanges } from "./runtimeFields.js";
 import "./settings.css";
 
 const modules = [
@@ -1105,19 +1106,33 @@ function TimeField({ label, value, onChange, allowDisabled = false }) {
   );
 }
 
-const runtimeOrder = { heartbeat: 0, episode_annealing: 1, logging: 2, reflection: 3 };
+function RuntimePropertyFields({ spec, value, onChange }) {
+  return (
+    <div className="settings-runtime-properties">
+      {Object.entries(spec.properties).map(([key, child]) => {
+        const update = next => onChange({ ...value, [key]: next });
+        if (child.properties) return <RuntimePropertyFields key={key} spec={child} value={value?.[key]} onChange={update} />;
+        return <SelectField key={key} label={child.label || key} value={value?.[key] ?? child.default}
+          options={child.enum.map(option => ({ value: option, label: option === "" ? "跟随模型" : option }))} onChange={update} />;
+      })}
+    </div>
+  );
+}
+
+const runtimeOrder = { heartbeat: 0, episode_annealing: 1, logging: 2, reflection: 3, thinking: 4 };
 const runtimeDescriptions = {
   heartbeat: "心跳是 Momoi 的自主时间。她可以探索、创作、延续自己的活动，也可以休息或主动与你分享。",
   logging: "控制运行日志的详细程度，用于查看服务状态与排查问题。",
   reflection: "每天在设定时间回顾对话与活动，记录感受、关系变化和可复用的经验。",
   episode_annealing: "将值得记住的对话按话题整理、生成摘要，并保留原始记录，便于日后回忆与延续。",
+  thinking: "为不同运行阶段设置思考强度；默认跟随模型，单独设置后不随模型切换而改变。",
 };
 
 function RuntimeSection({ module, data, save, saving, previous, next }) {
   const schemas = data.app_fields || {};
   const initial = () => Object.fromEntries(Object.entries(schemas).map(([name, schema]) => [
     name,
-    Object.fromEntries(Object.entries(schema.fields).map(([key, spec]) => [key, data.app[name]?.[key] ?? spec.default])),
+    Object.fromEntries(Object.entries(schema.fields).map(([key, spec]) => [key, runtimeFieldValue(spec, data.app[name]?.[key])])),
   ]));
   const [draft, setDraft] = useState(initial);
   const [saved, setSaved] = useState(initial);
@@ -1132,17 +1147,18 @@ function RuntimeSection({ module, data, save, saving, previous, next }) {
         const changes = {};
         for (const [key, spec] of Object.entries(schema.fields)) {
           const value = draft[name][key];
-          if (value === saved[name][key]) continue;
+          const change = runtimeFieldChanges(spec, value, saved[name][key]);
+          if (change === undefined) continue;
           if (spec.pattern && !new RegExp(spec.pattern).test(String(value))) {
             throw new Error(`${spec.label}请使用 HH:MM 格式，例如 03:00。`);
           }
-          changes[key] = value;
+          changes[key] = change;
         }
         if (Object.keys(changes).length) document[name] = changes;
       }
       const result = await save("/api/settings/configuration/app", document, "PATCH");
       const updated = Object.fromEntries(Object.entries(schemas).map(([name, schema]) => [
-        name, Object.fromEntries(Object.entries(schema.fields).map(([key, spec]) => [key, result.app[name]?.[key] ?? spec.default])),
+        name, Object.fromEntries(Object.entries(schema.fields).map(([key, spec]) => [key, runtimeFieldValue(spec, result.app[name]?.[key])])),
       ]));
       setDraft(updated);
       setSaved(updated);
@@ -1154,7 +1170,7 @@ function RuntimeSection({ module, data, save, saving, previous, next }) {
       <SectionHeader module={module} />
       <div className="settings-form-body settings-runtime-controls">
         {Object.entries(schemas).sort(([a], [b]) => (runtimeOrder[a] ?? 99) - (runtimeOrder[b] ?? 99)).map(([name, schema]) => (
-          <section className="settings-runtime-group" key={name} aria-labelledby={`runtime-${name}`}>
+          <section className={`settings-runtime-group${Object.values(schema.fields).some(spec => spec.properties) ? " settings-runtime-nested" : ""}`} key={name} aria-labelledby={`runtime-${name}`}>
             <div className="settings-runtime-copy">
               <div className="settings-voice-title">
                 <h3 id={`runtime-${name}`}>{name === "episode_annealing" ? "话题归档" : schema.label}</h3>
@@ -1182,6 +1198,7 @@ function RuntimeSection({ module, data, save, saving, previous, next }) {
                   setDraft(current => ({ ...current, [name]: { ...current[name], [key]: value } }));
                   setStatus(null);
                 };
+                if (spec.properties) return <RuntimePropertyFields key={key} spec={spec} value={draft[name][key]} onChange={onChange} />;
                 if (spec.type === "boolean") return (
                   <Toggle key={key} checked={draft[name][key]} disabled={saving} onChange={onChange} hideLabel>
                     {name === "episode_annealing" ? "启用归档" : spec.label}

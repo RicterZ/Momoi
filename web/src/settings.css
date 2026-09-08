@@ -1217,12 +1217,27 @@
   white-space: nowrap;
 }
 .settings-runtime-fields .dash-input { height: 44px; }
+.settings-runtime-group.settings-runtime-nested {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+.settings-runtime-nested .settings-runtime-fields { display: block; }
+.settings-runtime-properties {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px 28px;
+}
+.settings-runtime-properties > .settings-field:nth-child(4n + 3),
+.settings-runtime-properties > .settings-field:nth-child(4n + 4) { --control-accent: var(--pink); }
 @media (min-width: 651px) and (max-width: 900px) {
   .settings-runtime-group { flex-wrap: wrap; gap: 20px; }
   .settings-runtime-copy { flex-basis: 100%; }
   .settings-runtime-fields { width: 100%; flex-wrap: wrap; }
 }
 @media (max-width: 650px) {
+  .settings-runtime-properties { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .settings-runtime-properties > .settings-field:nth-child(odd) { --control-accent: var(--blue); }
+  .settings-runtime-properties > .settings-field:nth-child(even) { --control-accent: var(--pink); }
   .settings-form-body.settings-runtime-controls { padding: 4px 20px; }
   .settings-runtime-group { flex-wrap: wrap; gap: 20px; }
   .settings-runtime-copy { flex-basis: 100%; }

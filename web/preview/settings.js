@@ -200,7 +200,10 @@ export function createSettingsPreview(json) {
         } else
           configuration = {
             ...configuration,
-            app: { ...configuration.app, ...Object.fromEntries(Object.entries(body.document).map(([name, value]) => [name, appFields[name] ? { ...configuration.app[name], ...value } : value])) },
+            app: { ...configuration.app, ...Object.fromEntries(Object.entries(body.document).map(([name, value]) => [name,
+              name === "thinking" ? { ...configuration.app[name], ...value, stages: { ...configuration.app[name]?.stages, ...value.stages } }
+                : appFields[name] ? { ...configuration.app[name], ...value } : value,
+            ])) },
           };
         revision += 1;
         configuration.revision = `preview-${revision}`;

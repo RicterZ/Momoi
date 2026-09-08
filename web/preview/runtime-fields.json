@@ -1,11 +1,175 @@
 {
+  "thinking": {
+    "label": "阶段思考强度",
+    "fields": {
+      "stages": {
+        "type": "object",
+        "label": "运行阶段",
+        "default": {},
+        "description": "覆盖各运行阶段的思考强度；留空跟随当前模型设置。切换模型不会清空。",
+        "properties": {
+          "owner": {
+            "type": "string",
+            "label": "用户对话",
+            "enum": [
+              "",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            "default": "",
+            "advanced": false,
+            "description": "空字符串表示跟随模型；low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。"
+          },
+          "heartbeat": {
+            "type": "string",
+            "label": "心跳",
+            "enum": [
+              "",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            "default": "",
+            "advanced": false,
+            "description": "空字符串表示跟随模型；low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。"
+          },
+          "reply_followup": {
+            "type": "string",
+            "label": "回复跟进",
+            "enum": [
+              "",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            "default": "",
+            "advanced": false,
+            "description": "空字符串表示跟随模型；low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。"
+          },
+          "webhook": {
+            "type": "string",
+            "label": "Webhook",
+            "enum": [
+              "",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            "default": "",
+            "advanced": false,
+            "description": "空字符串表示跟随模型；low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。"
+          },
+          "goal": {
+            "type": "string",
+            "label": "目标执行",
+            "enum": [
+              "",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            "default": "",
+            "advanced": false,
+            "description": "空字符串表示跟随模型；low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。"
+          },
+          "reflection": {
+            "type": "string",
+            "label": "每日复盘",
+            "enum": [
+              "",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            "default": "",
+            "advanced": false,
+            "description": "空字符串表示跟随模型；low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。"
+          },
+          "memory_maintenance": {
+            "type": "string",
+            "label": "记忆维护",
+            "enum": [
+              "",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            "default": "",
+            "advanced": false,
+            "description": "空字符串表示跟随模型；low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。"
+          },
+          "memory_operation": {
+            "type": "string",
+            "label": "记忆操作",
+            "enum": [
+              "",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            "default": "",
+            "advanced": false,
+            "description": "空字符串表示跟随模型；low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。"
+          },
+          "episode_consolidate": {
+            "type": "string",
+            "label": "话题整理",
+            "enum": [
+              "",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            "default": "",
+            "advanced": false,
+            "description": "空字符串表示跟随模型；low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。"
+          },
+          "episode_anneal": {
+            "type": "string",
+            "label": "话题归档",
+            "enum": [
+              "",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            "default": "",
+            "advanced": false,
+            "description": "空字符串表示跟随模型；low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。"
+          }
+        },
+        "advanced": false
+      }
+    }
+  },
   "heartbeat": {
     "label": "心跳",
     "fields": {
       "enabled": {
         "type": "boolean",
         "label": "启用心跳",
-        "default": false,
+        "default": true,
         "advanced": false
       }
     }
