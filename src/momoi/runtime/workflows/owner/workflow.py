@@ -287,7 +287,7 @@ class OwnerWorkflow:
             ),
             ("runtime_directives", "\n\n".join(directives)),
             ("proactive_bubbles", proactive_bubbles),
-            ("candidate_episodes", candidates["candidate_episodes"]),
+            ("recent_episodes", candidates["recent_episodes"]),
             ("recent_recall_context", candidates["recent_recall_context"]),
         )
         current_content = _owner_content_blocks(

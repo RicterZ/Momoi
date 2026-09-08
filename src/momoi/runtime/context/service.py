@@ -4,7 +4,7 @@ import uuid
 from ...models import IncomingMessage
 from ...storage import MemoryRecallQuery
 from ..agent.context_window import context_compaction_tokens
-from .presentation import episode_candidate_lines, recall_context_lines
+from .presentation import recent_episode_lines, recall_context_lines
 from .rendering import assemble_main_context
 from .retrieval import build_plan_retrieval, select_plan_recall_queries
 
@@ -185,7 +185,7 @@ class ContextService:
         """
 
         return {
-            "candidate_episodes": episode_candidate_lines(
+            "recent_episodes": recent_episode_lines(
                 self.store.episode_directory_for_turns(
                     turn_ids,
                     exclude_runtime_archives=True,

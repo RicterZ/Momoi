@@ -93,7 +93,7 @@ USER_CONTEXT_SECTION_ORDER = (
     "goal_directory",
     "active_goals",
     "proactive_bubbles",
-    "candidate_episodes",
+    "recent_episodes",
     "recent_recall_context",
     "recall_memories",
     "recall_status",

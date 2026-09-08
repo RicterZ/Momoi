@@ -25,7 +25,7 @@ def turn_label_ranges(values: list[str]) -> str:
     return ",".join(ranges)
 
 
-def episode_candidate_lines(
+def recent_episode_lines(
     items: list[dict[str, object]], labels: dict[str, str]
 ) -> str:
     lines: list[str] = []

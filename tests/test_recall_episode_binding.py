@@ -191,7 +191,7 @@ class RecallEpisodeBindingTest(unittest.IsolatedAsyncioTestCase):
             candidates = daemon.owner_context_candidates(
                 ["turn-inside"],
                 {"turn-inside": "T1"},
-            )["candidate_episodes"]
+            )["recent_episodes"]
 
             self.assertIn("id=episode-inside", candidates)
             self.assertIn("title=窗口内经历", candidates)
