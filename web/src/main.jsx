@@ -74,7 +74,7 @@ function clearToken() {
   localStorage.removeItem(TOKEN_KEY);
 }
 
-async function api(path, { signal, method = "GET", body, token, formData } = {}) {
+async function api(path, { signal, method = "GET", body, token, formData, responseType } = {}) {
   const headers = { Accept: "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
   let payload = body;
@@ -96,6 +96,7 @@ async function api(path, { signal, method = "GET", body, token, formData } = {})
     throw new Error(text || `${response.status} ${response.statusText}`);
   }
   if (response.status === 204) return null;
+  if (responseType === "text") return response.text();
   const contentType = response.headers.get("content-type") || "";
   if (!contentType.includes("application/json")) return null;
   return response.json();

@@ -49,6 +49,7 @@ const modules = [
     optional: true,
     tip: "关闭后停止余额查询与费用估算，本地请求量与通用 Token 用量统计仍然保留。",
   },
+  { id: "mcp", label: "MCP 工具" },
   { id: "runtime", label: "运行设置" },
 ];
 const capabilityLabels = { asr: "语音识别", tts: "语音合成" };
@@ -639,7 +640,7 @@ export function ApplyDialog({ progress, onClose, onRetry }) {
   );
 }
 
-export function SaveBar({ busy, dirty, status, next, previous, hint = "" }) {
+export function SaveBar({ busy, dirty, status, next, previous, hint = "", saveDisabled = false }) {
   return (
     <footer className="settings-save-bar">
       <PreviousButton previous={previous} busy={busy} />
@@ -656,7 +657,7 @@ export function SaveBar({ busy, dirty, status, next, previous, hint = "" }) {
         <button
           type="submit"
           className="quiet-button settings-button"
-          disabled={!dirty || busy}
+          disabled={!dirty || busy || saveDisabled}
         >
           <Icon
             name={busy ? "refresh" : "memory"}
@@ -977,6 +978,59 @@ function SectionHeader({ module, control }) {
       </div>
       <div className="settings-panel-control">{control}</div>
     </header>
+  );
+}
+
+// The MCP PATCH endpoint is currently a no-op; keep editing local until it can save.
+function McpSection({ module, request, token, active, busy, previous, next }) {
+  const [content, setContent] = useState(null);
+  const [draft, setDraft] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const dirty = content !== null && draft !== content;
+  useEffect(() => {
+    if (!active || content !== null) return;
+    const controller = new AbortController();
+    setLoading(true);
+    setError("");
+    request("/api/settings/mcp", { token, responseType: "text", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30000)]) })
+      .then(value => {
+        if (controller.signal.aborted) return;
+        if (typeof value !== "string") throw new Error("无法读取 mcp.json，请刷新后重试。");
+        setDraft(value);
+        setContent(value);
+        setLoading(false);
+      })
+      .catch(problem => {
+        if (!controller.signal.aborted) { setError(problem.message); setLoading(false); }
+      });
+    return () => controller.abort();
+  }, [active, content, request, token]);
+  return (
+    <form onSubmit={event => event.preventDefault()} data-dirty={dirty}>
+      <SectionHeader module={module} />
+      <div className="settings-form-body settings-persona settings-mcp">
+        <div className="prompt-card">
+          <p className="prompt-description">连接外部 MCP 服务，为 Momoi 提供更多工具。</p>
+          <label className="prompt-field">
+            <span>mcp.json</span>
+            <textarea
+              className="dash-input"
+              aria-label="mcp.json"
+              value={draft}
+              placeholder={loading ? "正在读取 mcp.json…" : ""}
+              spellCheck={false}
+              autoCapitalize="off"
+              autoCorrect="off"
+              disabled={busy || loading || content === null}
+              aria-busy={loading}
+              onChange={event => setDraft(event.target.value)}
+            />
+          </label>
+        </div>
+      </div>
+      <SaveBar busy={busy} dirty={dirty} status={error ? { text: error, error: true } : null} saveDisabled previous={previous} next={next} />
+    </form>
   );
 }
 
@@ -1510,6 +1564,8 @@ export default function ConfigurationSettings({
                       <SectionHeader module={module} />
                       {promptContent({ next, previous, busy: saving || actionBusy })}
                     </>
+                  ) : module.id === "mcp" ? (
+                    <McpSection module={module} request={request} token={token} active={activeSection === module.id} busy={saving || loading || actionBusy} previous={previous} next={next} />
                   ) : module.id === "runtime" ? (
                     <RuntimeSection key={generation} module={module} data={data} save={save} saving={saving || loading || actionBusy} previous={previous} next={next} />
                   ) : module.id === "channel" ? (

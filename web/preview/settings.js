@@ -73,6 +73,11 @@ export function createSettingsPreview(json) {
     return { ...value, options };
   };
   return (req, res, path) => {
+    if (req.method === "GET" && path === "/api/settings/mcp") {
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ mcpServers: {} }, null, 2) + "\n");
+      return true;
+    }
     if (req.method === "GET" && path === "/api/settings/configuration") {
       json(res, configuration);
       return true;

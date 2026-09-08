@@ -684,6 +684,10 @@
   border: 0;
   padding-top: 0;
 }
+.settings-mcp .prompt-card { padding: 24px; }
+.settings-mcp .prompt-description { margin-top: 0; }
+.settings-mcp .prompt-field { grid-template-rows: auto minmax(0, 1fr); }
+.settings-mcp .prompt-field textarea { height: 420px; }
 .settings-persona .quiet-button:focus-visible {
   outline: 3px solid var(--settings-focus);
   outline-offset: 3px;
