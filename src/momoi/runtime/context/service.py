@@ -86,12 +86,20 @@ class ContextService:
                 if isinstance(query, dict) and str(query.get("semantic") or "").strip()
             ][:3]
             from_turn_id = str(raw.get("recall_from_turn_id") or "")
-            if mode not in {"search", "reuse"}:
-                raise ValueError("recall_mode must be search or reuse")
+            if mode not in {"search", "reuse", "skip"}:
+                raise ValueError("recall_mode must be search, reuse, or skip")
             if mode == "search":
                 if not queries:
                     raise ValueError("search recall requires at least one query")
                 from_turn_id = ""
+            elif mode == "skip":
+                if (
+                    raw.get("recall_queries") != []
+                    or raw.get("recall_from_turn_id") != ""
+                ):
+                    raise ValueError(
+                        "skip requires empty recall_queries and recall_from_turn_id"
+                    )
             elif not from_turn_id or not self.store.recall_reuse_candidates(
                 [from_turn_id]
             ):
@@ -209,18 +217,20 @@ class ContextService:
             turn_id, revision, [event.event_id for event in events], plan
         )
         selected, _reused, _emitted, _skipped = select_plan_recall_queries(plan)
-        dense_evidence = await self.semantic_recall.prepare(
-            [
-                MemoryRecallQuery(
-                    expression=str(item["expression"]),
-                    unit_ids=tuple(str(value) for value in item["unit_ids"]),
-                    priority=int(item["priority"]),
-                    semantic_expression=str(item["semantic_expression"]),
-                )
-                for item in selected
-            ],
-            output_limit=max(self.config.memory_results, self.config.summary_results),
-        )
+        dense_evidence = None
+        if selected:
+            dense_evidence = await self.semantic_recall.prepare(
+                [
+                    MemoryRecallQuery(
+                        expression=str(item["expression"]),
+                        unit_ids=tuple(str(value) for value in item["unit_ids"]),
+                        priority=int(item["priority"]),
+                        semantic_expression=str(item["semantic_expression"]),
+                    )
+                    for item in selected
+                ],
+                output_limit=max(self.config.memory_results, self.config.summary_results),
+            )
         retrieval = build_plan_retrieval(
             self.store, plan, self.config, dense_evidence=dense_evidence
         )

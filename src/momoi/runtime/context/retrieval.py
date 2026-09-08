@@ -46,6 +46,8 @@ def select_plan_recall_queries(
             continue
         unit_id = str(unit.get("id") or "")
         recall = unit.get("recall")
+        if isinstance(recall, dict) and recall.get("mode") == "skip":
+            continue
         if isinstance(recall, dict) and recall.get("mode") == "reuse":
             source_turn_id = str(recall.get("from_turn_id") or "")
             if source_turn_id and unit_id:
@@ -449,6 +451,13 @@ def build_plan_retrieval(
         existing["is_recent"] = True
     episodes = rank_recall_items(episodes)
     recall_index: list[str] = []
+    no_retrieval_units = [
+        str(unit["id"])
+        for unit in plan.get("intent_units") or []
+        if isinstance(unit, dict) and unit.get("recall_mode") == "skip"
+    ]
+    if no_retrieval_units:
+        recall_index.append("no_retrieval_units=" + ",".join(no_retrieval_units))
     if reused_units_by_turn:
         recall_index.extend(
             f"reused_from={turn_id} units={','.join(dict.fromkeys(unit_ids))}"

@@ -19,9 +19,9 @@ Tools and messages may alternate; sending a message does not end the Turn.
 
 - Separate outcomes that can finish independently; a correction replaces the
   intent it revokes.
-- Retrieve the least history needed to understand the input and choose a
-  response or action, including interaction conventions only when relevant.
-  Recall selects evidence, not wording or delivery.
+- Assess whether supplied context leaves a historical question that could
+  change understanding or action. Without one, skip retrieval; calling `recall`
+  does not require a search. Choose how to respond after assessing the evidence.
 - Use `reuse` only when a displayed query set in `<recent_recall_context>`
   covers the entire need and no new historical dependency has appeared.
   Proximity, mood, or Episode membership does not establish coverage.

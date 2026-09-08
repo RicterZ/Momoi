@@ -1165,6 +1165,37 @@ def test_owner_terminal_text_contract_and_same_round_delivery(daemon, text, use_
     assert [r['text'] for r in queued] == expected
 
 
+def test_owner_skip_completes_recall_gate_and_sends_without_search(daemon):
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    source = event(daemon.store, text="收到")
+    terminal = {'reply_wait': {'wait': False}, 'mood': {'decision': 'unchanged'},
+                'activity': {'decision': 'unchanged'}}
+    replies = [
+        response(ToolCall('recall', 'recall', {'units': [{
+            'intent': '主人确认收到', 'recall_mode': 'skip', 'recall_queries': [],
+            'recall_from_turn_id': '', 'episode': {'action': 'none'},
+        }]})),
+        response(ToolCall('send', 'send_bubbles', {'bubbles': ['好！']})),
+        response(ToolCall('end', 'end_turn', terminal)),
+    ]
+
+    async def complete(_system, messages, _tools, **kwargs):
+        assert replies, 'Unexpected recall retry'
+        assert kwargs.get('required_tool') == ('recall' if len(replies) == 3 else None)
+        if len(replies) == 2:
+            assert 'no_retrieval_units=u1' in str(messages[-1])
+        return replies.pop(0)
+
+    daemon.provider = SimpleNamespace(complete=complete, config=SimpleNamespace(api_format='anthropic'))
+    with patch.object(daemon.semantic_recall, 'prepare', new_callable=AsyncMock) as dense:
+        asyncio.run(daemon._complete_batch_turn([source], asyncio.Event(), 'source'))
+    dense.assert_not_awaited()
+    assert not replies
+    assert [r.text for r in daemon.store.due_outbox()] == ['好！']
+
+
 def test_owner_update_after_send_supersedes_same_response_end(daemon):
     from types import SimpleNamespace
     from tests.support import recall_response

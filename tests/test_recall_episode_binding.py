@@ -5,7 +5,7 @@ import uuid
 import json
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from momoi.channel.napcat import NapCatConfig
 from momoi.config.models import AppConfig
@@ -32,6 +32,55 @@ def config(directory: str) -> AppConfig:
 
 
 class RecallEpisodeBindingTest(unittest.IsolatedAsyncioTestCase):
+    async def test_skip_preserves_episode_routing_without_retrieval(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(config(directory))
+            self.addCleanup(daemon.store.close)
+            event = IncomingMessage("skip:new", "1", "开始整理书房", 1, 1)
+            daemon.store.add_event(event)
+            turn_id = daemon._turn_id(event.event_id)
+            daemon.store.begin_turn(turn_id, "owner", [event.event_id])
+            unit = {
+                "intent": "主人开始整理书房",
+                "recall_mode": "skip", "recall_queries": [], "recall_from_turn_id": "",
+                "episode": {"action": "new", "ref": "new:study", "title": "整理书房"},
+            }
+            with patch.object(daemon.semantic_recall, "prepare", new_callable=AsyncMock) as dense:
+                result = await recall_owner_context(
+                    ToolCall("recall", "recall", {"units": [unit]}),
+                    current_events=[event], turn_id=turn_id,
+                    submit_context=daemon.submit_owner_context,
+                )
+            dense.assert_not_awaited()
+            self.assertTrue(result["ok"])
+            self.assertIn("no_retrieval_units=u1", result["status"])
+            record = daemon.store.context_plan(turn_id)
+            self.assertEqual(record["state"], "recalled")
+            self.assertEqual(record["plan"]["intent_units"][0]["recall"]["mode"], "skip")
+            for field in ("recall_memories", "reflection_memories", "episodes", "effective_recall_queries"):
+                self.assertEqual(record["retrieval"][field], [])
+            self.assertEqual(daemon.store.recall_reuse_candidates([turn_id]), [])
+            daemon.store.commit_turn([event], event.text, AgentReply([]), turn_id=turn_id)
+            linked = daemon.store._db.execute(
+                "SELECT episode_id FROM episode_turns WHERE turn_id=?", (turn_id,),
+            ).fetchone()
+            self.assertEqual(daemon.store.episode(linked["episode_id"])["title"], "整理书房")
+
+    async def test_skip_rejects_search_arguments_instead_of_discarding_them(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(config(directory))
+            self.addCleanup(daemon.store.close)
+            event = IncomingMessage("skip:invalid", "1", "收到", 1, 1)
+            daemon.store.add_event(event)
+            unit = {"intent": "确认收到", "recall_mode": "skip", "recall_queries": [],
+                    "recall_from_turn_id": "", "episode": {"action": "none"}}
+            for extra in ({"recall_queries": [{"semantic": "往事"}]},
+                          {"recall_queries": [{"semantic": ""}]},
+                          {"recall_from_turn_id": "previous"}):
+                with self.subTest(extra=extra), self.assertRaisesRegex(ValueError, "skip requires empty"):
+                    daemon._plan_from_submission([event], {"units": [{**unit, **extra}]},
+                                                 turn_id="invalid", revision=1)
+
     async def test_disabled_embedding_recall_uses_only_keywords_without_tool_errors(
         self,
     ) -> None:

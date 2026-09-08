@@ -23,8 +23,9 @@ confirmed, what remains unfinished, and which parts of the past matter now.
   Heartbeats, and Webhooks enter the same runtime and share the same history,
   relationship, state, and delivery rules.
 - **Context selected by the acting Momoi.** Every Owner Turn opens with a
-  mandatory `recall` action. Momoi chooses a new search or reuses an exact prior
-  scope, while the runtime retrieves memory and binds the Turn to an Episode.
+  mandatory `recall` action. Momoi objectively describes the current input and
+  missing historical information, then searches, reuses a prior scope, or skips
+  retrieval when supplied context is sufficient. Episode routing is independent.
 - **Memory with provenance and authority.** Recent conversation, confirmed
   owner facts, shared Episodes, and lower-confidence reflection learning have
   different lifetimes and are never treated as interchangeable.
@@ -59,7 +60,7 @@ flowchart TB
     direction LR
     intake["Scheduling<br/>and batching"]
     transcript["Shared timeline<br/>speech · events · reviews"]
-    context["Recall<br/>search · reuse"]
+    context["Recall<br/>search · reuse · skip"]
     agent["Owner / autonomous<br/>agent"]
     delivery["Commit<br/>and delivery"]
     intake --> transcript --> context --> agent --> delivery
@@ -299,7 +300,7 @@ incrementally without blocking owner conversation.
 | --- | --- |
 | Private chat | One owner across QQ (NapCat) and WeChat; replies return to the originating channel and proactive messages use the configured primary channel |
 | Conversation | Message batching, quoted/forwarded content, media handling, natural multi-bubble delivery, optional image reactions, and valid silence |
-| Context | Native shared transcript, mandatory Owner search/reuse recall, Episode routing, runtime re-search, and bounded model input |
+| Context | Native shared transcript, mandatory Owner recall with search/reuse/skip, Episode routing, runtime re-search, and bounded model input |
 | Tools | Built-in file/HTTP tools plus dynamically discovered MCP servers and per-server tool allowlists |
 | Long-running work | Tool loops, progress messages, interruption, token/time budgets, large-result snapshots, and recovery for uncertain external effects |
 | Time and initiative | Persistent Goals, multiple daily trigger times, Heartbeats, quiet hours, and interruption by new owner messages |

@@ -66,7 +66,7 @@ def test_tool_schema_is_valid(spec):
     Draft202012Validator.check_schema(spec["input_schema"])
 
 
-def test_recall_search_and_reuse_have_distinct_arguments():
+def test_recall_search_reuse_and_skip_have_distinct_arguments():
     check = validator(RECALL_TOOL_SPEC)
     unit = {
         "intent": "饮品偏好",
@@ -88,6 +88,10 @@ def test_recall_search_and_reuse_have_distinct_arguments():
     assert not check.is_valid(
         {"units": [{**reuse, "recall_queries": unit["recall_queries"]}]}
     )
+    skip = {**unit, "recall_mode": "skip", "recall_queries": []}
+    assert check.is_valid({"units": [skip]})
+    assert not check.is_valid({"units": [{**skip, "recall_queries": unit["recall_queries"]}]})
+    assert not check.is_valid({"units": [{**skip, "recall_from_turn_id": "T1"}]})
 
 
 def test_heartbeat_requires_strategy_for_work_and_queries_for_search():
@@ -115,6 +119,22 @@ def test_heartbeat_requires_strategy_for_work_and_queries_for_search():
         {**search, "recall_mode": "skip"},
     ):
         assert not check.is_valid(invalid)
+
+
+def test_mixed_recall_modes_search_only_requested_units():
+    from momoi.runtime.context.retrieval import select_plan_recall_queries
+
+    query = {"semantic": "已有项目的截止日期", "keywords": ["项目"]}
+    selected, reused, emitted, skipped = select_plan_recall_queries({"intent_units": [
+        {"id": "u1", "recall": {"mode": "skip"}, "recall_queries": []},
+        {"id": "u2", "recall": {"mode": "search"}, "recall_queries": [query]},
+        {"id": "u3", "recall": {"mode": "reuse", "from_turn_id": "prior"}, "recall_queries": []},
+    ]})
+    assert len(selected) == 1
+    assert selected[0]["unit_ids"] == ["u2"]
+    assert reused == {"prior": ["u3"]}
+    assert emitted == {query["semantic"]}
+    assert skipped == set()
 
 
 def test_goal_creation_requires_one_schedule_and_timezone():

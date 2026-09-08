@@ -24,15 +24,18 @@ RECALL_TOOL_SPEC: dict[str, Any] = {
                             "type": "string",
                             "maxLength": 160,
                             "description": (
-                                "Operative outcome for this unit, with corrections "
-                                "folded into the final intent."
+                                "Objectively describe the owner's current request or "
+                                "shared information, incorporating corrections. "
+                                "Preserve uncertainty; do not add unstated needs or "
+                                "your intended response strategy."
                             ),
                         },
                         "recall_mode": {
                             "type": "string",
-                            "enum": ["search", "reuse"],
+                            "enum": ["search", "reuse", "skip"],
                             "description": (
-                                "Whether to retrieve new evidence or reuse a prior query scope."
+                                "search for missing historical evidence; reuse a prior "
+                                "query scope; skip when supplied context is sufficient."
                             ),
                         },
                         "recall_queries": {
@@ -50,13 +53,11 @@ RECALL_TOOL_SPEC: dict[str, Any] = {
                                         "minLength": 1,
                                         "maxLength": 240,
                                         "description": (
-                                            "Self-contained declarative retrieval need "
-                                            "using conversation-supported canonical "
-                                            "subjects. Name the missing fact, relationship, "
-                                            "convention, preference, interaction, or task "
-                                            "state. Describe unresolved referents without "
-                                            "guessing identity. No questions, copied chat, "
-                                            "or guessed answers."
+                                            "Objectively describe the historical information "
+                                            "missing from supplied context, using supported "
+                                            "subjects and preserving unresolved references. "
+                                            "Do not embed a presumed answer, inferred owner "
+                                            "preference, or intended response strategy."
                                         ),
                                     },
                                     "keywords": {
@@ -127,6 +128,13 @@ RECALL_TOOL_SPEC: dict[str, Any] = {
                                 "recall_mode": {"enum": ["reuse"]},
                                 "recall_queries": {"maxItems": 0},
                                 "recall_from_turn_id": {"minLength": 1},
+                            }
+                        },
+                        {
+                            "properties": {
+                                "recall_mode": {"enum": ["skip"]},
+                                "recall_queries": {"maxItems": 0},
+                                "recall_from_turn_id": {"const": ""},
                             }
                         },
                     ],
