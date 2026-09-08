@@ -17,7 +17,9 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
 `GET /api/settings/mcp` 原样返回 `tools.mcp_config` 指定的 JSON 文件，未指定时
 读取工作区的 `mcp.json`。保留禁用服务和环境变量引用；工作区没有该文件时返回
 `{"mcpServers": {}}`，自定义路径不存在时返回 404。
-`PATCH /api/settings/mcp` 直接返回 204 空响应，不修改配置、不重载服务。
+`PATCH /api/settings/mcp` 校验请求中的完整 JSON，替换文件并触发业务运行实例重启。
+返回 202 和配置快照，表示保存成功，不代表新实例已启动。两个接口均需 dashboard 认证。
+请求格式、版本冲突和失败恢复详见 [MCP 设置 API](./MCP_SETTINGS_API.md)。
 两个方法均需要 dashboard 鉴权。
 
 鉴权后请求 `GET /api/settings/configuration`，从 `app` 读取当前配置，
@@ -475,7 +477,9 @@ Goal 的 `send_bubbles` / `send_voice` 调用后立即进入通用发送流程�
 | `MOMOI_WEBHOOKS_TOKEN` | `webhooks.token` |
 
 请妥善保护包含凭证的文件。Provider 凭据仅通过 YAML 中声明的环境引用读取。
-Dashboard 模式自动检测 `providers.yaml` 和 `config.json` 的变化。
-修改 `mcp.json`、工作流或执行器后，在设置页点击“重新应用”。存储路径、时区、dashboard
+Dashboard 模式自动检测 `providers.yaml`、`config.json` 和当前 MCP 配置文件的变化。
+MCP 修改会重启整个业务运行实例，重建所有 MCP 连接和工具 schema，dashboard 进程继续运行。
+格式错误保留当前实例；新实例启动失败时，尝试使用上一份有效配置（包括 MCP 快照）恢复。
+修好外部依赖后可点击“重新应用”重试原配置；工作流或执行器修改后也需“重新应用”。存储路径、时区、dashboard
 认证及提示词文件路径需要重启进程。纯后台模式的配置修改需要重启。
 每个新 Turn 开始前都会重新加载提示词内容。

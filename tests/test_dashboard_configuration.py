@@ -417,7 +417,7 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(response.status, 400)
 
-    async def test_mcp_get_returns_raw_config_and_patch_never_changes_it(self):
+    async def test_mcp_get_returns_raw_config_and_patch_saves_and_requests_apply(self):
         path = self.path.parent / "mcp.json"
         content = '{\n  "mcpServers": {"test": {"disabled": true, "env": {"TOKEN": "${UNSET_TOKEN}"}}}\n}\n'
         path.write_text(content)
@@ -431,19 +431,64 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.headers["Cache-Control"], "no-store")
         self.assertEqual(await response.text(), content)
         revision = self.manager.revision()
+        etag = response.headers["ETag"]
         self.runtime.changed.clear()
-        response = await self.client.patch("/api/settings/mcp", json={"mcpServers": {}})
-        self.assertEqual(response.status, 204)
-        self.assertEqual(await response.read(), b"")
-        self.assertEqual(path.read_text(), content)
-        self.assertEqual(self.manager.revision(), revision)
-        self.assertFalse(self.runtime.changed.is_set())
+        response = await self.client.patch("/api/settings/mcp", json={"mcpServers": {}}, headers={"If-Match": etag})
+        self.assertEqual(response.status, 202)
+        self.assertEqual((await response.json())["revision"], self.manager.revision())
+        self.assertEqual(json.loads(path.read_text()), {"mcpServers": {}})
+        self.assertNotEqual(self.manager.revision(), revision)
+        self.assertTrue(self.runtime.changed.is_set())
+        response = await self.client.patch("/api/settings/mcp", json={"mcpServers": {}}, headers={"If-Match": etag})
+        self.assertEqual(response.status, 409)
         path.unlink()
+        self.runtime.changed.clear()
         response = await self.client.patch("/api/settings/mcp", data="not JSON")
-        self.assertEqual(response.status, 204)
+        self.assertEqual(response.status, 400)
         self.assertFalse(path.exists())
+        self.assertFalse(self.runtime.changed.is_set())
         response = await self.client.get("/api/settings/mcp")
         self.assertEqual(await response.json(), {"mcpServers": {}})
+
+    async def test_mcp_patch_validation_preserves_files_and_enables_existing_workspace(self):
+        self.client.session.headers["Authorization"] = self.auth
+        path = self.manager.mcp_path()
+        before = path.read_bytes()
+        for value in ({}, [], {"mcpServers": []}, {"mcpServers": {"bad": 1}},
+                      {"mcpServers": {"bad": {"command": "demo", "disabled": "false"}}},
+                      {"mcpServers": {"bad": {"command": "demo", "args": "--arg"}}}):
+            response = await self.client.patch("/api/settings/mcp", json=value)
+            self.assertEqual(response.status, 400, value)
+            self.assertEqual(path.read_bytes(), before)
+        app = self.manager.read_app()
+        app["tools"]["mcp_config"] = None
+        atomic_write(self.path, json.dumps(app))
+        path.unlink()
+        document = {"mcpServers": {"later": {"disabled": True}}, "extra": "preserved"}
+        response = await self.client.patch("/api/settings/mcp", json=document)
+        self.assertEqual(response.status, 202)
+        self.assertEqual(json.loads(path.read_text()), document)
+        self.assertEqual(self.manager.validate().mcp_config, path)
+
+    async def test_mcp_patch_saves_to_custom_path(self):
+        self.client.session.headers["Authorization"] = self.auth
+        app = self.manager.read_app()
+        app["tools"]["mcp_config"] = "nested/tools.json"
+        atomic_write(self.path, json.dumps(app))
+        response = await self.client.patch("/api/settings/mcp", json={"mcpServers": {}})
+        self.assertEqual(response.status, 202)
+        self.assertEqual(self.manager.mcp_path().read_text(), '{\n  "mcpServers": {}\n}\n')
+
+    async def test_mcp_patch_cannot_overwrite_app_or_provider_catalog(self):
+        self.client.session.headers["Authorization"] = self.auth
+        for path in (self.path, self.manager.provider_path):
+            app = self.manager.read_app()
+            app["tools"]["mcp_config"] = str(path)
+            atomic_write(self.path, json.dumps(app))
+            before = path.read_bytes()
+            response = await self.client.patch("/api/settings/mcp", json={"mcpServers": {}})
+            self.assertEqual(response.status, 400)
+            self.assertEqual(path.read_bytes(), before)
 
     async def test_mcp_get_uses_configured_path(self):
         self.client.session.headers["Authorization"] = self.auth

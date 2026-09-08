@@ -37,7 +37,7 @@ def default_config() -> dict:
         "context": {},
         "storage": {"database": "data/momoi.sqlite3"},
         "logging": {"level": "INFO"},
-        "tools": {"mcp_config": None},
+        "tools": {"mcp_config": "mcp.json"},
         "heartbeat": {"enabled": True},
         "reflection": {"enabled": False},
         "episode_annealing": {"enabled": True},
@@ -66,6 +66,7 @@ def bootstrap(config_path: Path) -> bool:
     config = default_config()
     config["dashboard"] = {"token": secrets.token_urlsafe(32)}
     root = config_path.parent
+    _create(root / "mcp.json", '{"mcpServers": {}}\n')
     provider_path = root / "providers.yaml"
     if not provider_path.exists():
         _create(

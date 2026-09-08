@@ -85,6 +85,7 @@ class OwnerProgressPolicyTest(unittest.TestCase):
     def test_surface_keeps_progress_list_private_to_harness(self) -> None:
         channels = {"napcat": SimpleNamespace(name="napcat")}
         mcp = SimpleNamespace(
+            tool_group=lambda _: "brave-search",
             tool_specs=[
                 {
                     "name": "mcp__brave-search__brave_web_search",

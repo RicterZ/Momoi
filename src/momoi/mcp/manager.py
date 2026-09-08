@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import logging
 import os
 import re
@@ -46,8 +47,10 @@ def _mcp_error_message(payload: dict[str, Any]) -> str:
 
 
 class MCPManager:
-    def __init__(self, path: Path | None) -> None:
-        self.configs = load_mcp_servers(path)
+    def __init__(
+        self, path: Path | None, *, servers: dict[str, dict[str, Any]] | None = None
+    ) -> None:
+        self.configs = load_mcp_servers(path) if servers is None else copy.deepcopy(servers)
         self.tool_specs: list[dict[str, Any]] = []
         self._tools: dict[str, tuple[str, str]] = {}
         self._capabilities: dict[str, str] = {}
@@ -70,6 +73,9 @@ class MCPManager:
             )
             try:
                 await ready
+            except asyncio.CancelledError:
+                await self.__aexit__()
+                raise
             except Exception as error:
                 log_event(
                     logger,
@@ -116,6 +122,7 @@ class MCPManager:
         queue: asyncio.Queue[MCPRequest],
         ready: asyncio.Future[None],
     ) -> None:
+        future = None
         try:
             try:
                 await self._connect(name, config)
@@ -215,6 +222,13 @@ class MCPManager:
                         duration_ms=int((monotonic() - started) * 1000),
                     )
         finally:
+            # Runtime replacement must not leave callers waiting on abandoned queues.
+            if future is not None and not future.done():
+                future.set_result({"ok": False, "error": "mcp_stopped", "ambiguous": True})
+            while not queue.empty():
+                _, _, pending, _ = queue.get_nowait()
+                if not pending.done():
+                    pending.set_result({"ok": False, "error": "mcp_stopped", "ambiguous": False})
             await self._disconnect(name)
 
     async def _try_connect(self, name: str, config: dict[str, Any]) -> bool:
@@ -437,10 +451,15 @@ class MCPManager:
     def has_tool(self, name: str) -> bool:
         return name in self._tools
 
+    def tool_group(self, name: str) -> str:
+        return self._tools[name][0]
+
     def capability(self, name: str) -> str:
         return self._capabilities.get(name, "external_effect")
 
     async def call(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        if self._closing:
+            return {"ok": False, "error": "mcp_stopped", "ambiguous": False}
         target = self._tools.get(name)
         if target is None:
             return {"ok": False, "error": "tool_not_allowed"}

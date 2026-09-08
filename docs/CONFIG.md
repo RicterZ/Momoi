@@ -20,8 +20,11 @@ The main config contains `"providers": "providers.yaml"`. Dashboard mode watches
 `tools.mcp_config`, falling back to workspace `mcp.json`. Disabled entries and
 environment references are preserved. Without a workspace MCP file it returns
 `{"mcpServers": {}}`; a missing custom path returns 404.
-`PATCH /api/settings/mcp` is a no-op returning 204 with no body; it neither writes
-configuration nor reloads services. Both methods require dashboard authentication.
+`PATCH /api/settings/mcp` replaces the file with the request JSON, validates it,
+and requests a business runtime restart. It returns 202 with the configuration
+snapshot; this confirms saving, not successful startup. Both methods require
+dashboard authentication. See [MCP settings API](./MCP_SETTINGS_API.md) for the
+request contract, revision checks and failure recovery.
 
 Authenticated `GET /api/settings/configuration` returns current editable values
 in `app` and control metadata in `app_fields`. Each section has `label` and
@@ -495,8 +498,13 @@ Environment values override `config.json` for the current process.
 | `MOMOI_WEBHOOKS_TOKEN` | `webhooks.token` |
 
 Keep files containing credentials private. Provider credentials use only explicit YAML
-environment references. Dashboard mode watches `providers.yaml` and `config.json`.
-Use Settings → Reapply after editing `mcp.json`, workflows, or executors.
+environment references. Dashboard mode watches `providers.yaml`, `config.json` and
+the configured MCP file. MCP changes replace the complete business runtime,
+including all MCP connections and tool schemas; the dashboard process stays alive.
+Invalid files leave the current runtime intact. Failed startup attempts restore
+the previous validated configuration, including its MCP snapshot, when available.
+Use Settings → Reapply to retry an unchanged configuration after fixing an external
+dependency, or after editing workflows or executors.
 Storage paths, timezone, dashboard authentication and prompt file paths require a
 process restart. Headless mode requires a restart for configuration changes. Prompt
 content is reloaded before each new Turn.

@@ -30,11 +30,6 @@ class ToolSurface:
         self.voice_enabled = voice_enabled
 
     @staticmethod
-    def mcp_tool_group(name: str) -> str:
-        parts = str(name).split("__", 2)
-        return parts[1] if len(parts) == 3 else "other"
-
-    @staticmethod
     def public_specs(specs: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return [public_tool_spec(spec) for spec in specs]
 
@@ -51,7 +46,8 @@ class ToolSurface:
         for spec in self.public_specs(
             sorted(self.mcp.tool_specs, key=lambda item: str(item.get("name") or ""))
         ):
-            group = self.mcp_tool_group(str(spec.get("name") or ""))
+            name = str(spec.get("name") or "")
+            group = self.mcp.tool_group(name)
             groups.setdefault(group, []).append(spec)
         return dict(sorted(groups.items()))
 
@@ -111,7 +107,7 @@ class ToolSurface:
             *copy.deepcopy(THINKING_TOOL_SPECS),
             *self.public_specs(AGENDA_TOOL_SPECS),
             *self.public_specs(BUILTIN_TOOL_SPECS),
-            tool_enable_spec(catalog),
+            *([tool_enable_spec(catalog)] if catalog else []),
             copy.deepcopy(END_TURN_TOOL_SPEC),
         ]
         self._log_conversation_surface(tools)

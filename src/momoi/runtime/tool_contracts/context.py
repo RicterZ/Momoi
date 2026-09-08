@@ -205,7 +205,7 @@ def heartbeat_begin_spec(group_descriptions: dict[str, str]) -> dict[str, Any]:
                     "type": "array",
                     "maxItems": len(group_ids),
                     "uniqueItems": True,
-                    "items": {"type": "string", "enum": group_ids},
+                    "items": {"type": "string", **({"enum": group_ids} if group_ids else {})},
                     "description": (
                         "MCP groups required by the chosen activity. "
                         + "; ".join(

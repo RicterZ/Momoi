@@ -149,6 +149,7 @@ class DaemonTest(unittest.TestCase):
     def test_mcp_policy_is_present_for_the_common_surface(self) -> None:
         daemon = object.__new__(MomoiDaemon)
         daemon.mcp = SimpleNamespace(
+            tool_group=lambda _: "search",
             tool_specs=[
                 {
                     "name": "mcp__search__query",
@@ -173,6 +174,7 @@ class DaemonTest(unittest.TestCase):
     def test_conversation_surface_keeps_builtins_resident_and_mcp_lazy(self) -> None:
         daemon = object.__new__(MomoiDaemon)
         daemon.mcp = SimpleNamespace(
+            tool_group=lambda _: "homeassistant",
             tool_specs=[
                 {"name": "mcp__homeassistant__GetLiveContext"},
                 {"name": "mcp__homeassistant__HassTurnOn"},
@@ -1323,6 +1325,10 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 )
             )
             class MCP:
+                @staticmethod
+                def tool_group(_: str) -> str:
+                    return "demo"
+
                 tool_specs = [
                     {
                         "name": "mcp__demo__read",

@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 import os
+from dataclasses import replace
 from pathlib import Path
 
 import yaml
@@ -15,6 +16,7 @@ from .runtime_fields import runtime_fields
 from ..integrations.configuration import CatalogLoader, parse_provider_catalog
 from ..integrations.registry import adapter_schemas, adapter_definition
 from ..integrations.configuration import CAPABILITIES
+from ..mcp.config import load_mcp_servers, parse_mcp_servers
 
 KEEP_SECRET = {"$secret": "keep"}
 SECRET_NAMES = {
@@ -126,13 +128,53 @@ class ConfigurationManager:
 
     def revision(self):
         digest = hashlib.sha256()
-        for path in (self.path, self.provider_path):
-            data = path.read_bytes() if path.exists() else b""
+        paths = [self.path, self.provider_path]
+        try:
+            reference = self.read_app().get("tools", {}).get("mcp_config", "mcp.json")
+            if reference:
+                paths.append(self.mcp_path())
+        except (ConfigError, AttributeError, TypeError):
+            # Invalid config.json must produce a new revision, not stop the watcher.
+            pass
+        for path in paths:
+            try:
+                data = b"file:" + path.read_bytes()
+            except OSError as error:
+                data = f"unreadable:{type(error).__name__}".encode()
             digest.update(len(data).to_bytes(8, "big"))
             digest.update(data)
         return digest.hexdigest()
 
-    def validate(self, app=None, providers=None):
+    def mcp_path(self, app=None):
+        app = self.read_app() if app is None else app
+        reference = app.get("tools", {}).get("mcp_config") or "mcp.json"
+        path = Path(reference)
+        return (path if path.is_absolute() else self.path.parent / path).resolve()
+
+    def save_mcp(self, document, revision=None):
+        """Replace the MCP document; the supervisor applies the saved generation."""
+        expected = self.revision() if revision is None else revision
+        if expected != self.revision():
+            raise RevisionConflict("configuration changed; reload before saving")
+        content = json.dumps(document, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
+        servers = parse_mcp_servers(content)
+        app = self.read_app()
+        path = self.mcp_path(app)
+        if path in (self.path, self.provider_path):
+            raise ConfigError("MCP configuration must use a separate file")
+        tools = app.setdefault("tools", {})
+        enable = not tools.get("mcp_config", "mcp.json")
+        if enable:
+            tools["mcp_config"] = "mcp.json"
+        self.validate(app, mcp_servers=servers)
+        if expected != self.revision():
+            raise RevisionConflict("configuration changed; reload before saving")
+        atomic_write(path, content)
+        if enable:
+            atomic_write(self.path, json.dumps(app, ensure_ascii=False, indent=2) + "\n")
+        return self.snapshot()
+
+    def validate(self, app=None, providers=None, *, mcp_servers=None):
         app = self.read_app() if app is None else app
         if self._provider_path(app) != self.provider_path:
             raise ConfigError(
@@ -141,10 +183,8 @@ class ConfigurationManager:
         providers = self.read_providers() if providers is None else providers
         catalog = parse_provider_catalog(providers, self.provider_path)
         config = parse_config(app, self.path, providers=catalog)
-        from ..mcp.config import load_mcp_servers
-
-        load_mcp_servers(config.mcp_config)
-        return config
+        servers = load_mcp_servers(config.mcp_config) if mcp_servers is None else mcp_servers
+        return replace(config, mcp_servers=copy.deepcopy(servers))
 
     def dashboard_config(self):
         # A broken provider or channel must not take away the repair UI.

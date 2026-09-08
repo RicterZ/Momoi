@@ -3,7 +3,6 @@
 import asyncio
 import base64
 import io
-from pathlib import Path
 
 import qrcode
 import qrcode.image.svg
@@ -116,20 +115,28 @@ def register_configuration_routes(app, configuration, runtime):
 
     async def mcp_config(request):
         if request.method == "PATCH":
-            return web.Response(status=204)
+            value = await body(request)
+            try:
+                revision = request.headers.get("If-Match")
+                result = configuration.save_mcp(value, revision.strip('"') if revision else None)
+            except RevisionConflict as error:
+                raise web.HTTPConflict(text=str(error)) from None
+            except (ValueError, TypeError, KeyError, OSError) as error:
+                raise web.HTTPBadRequest(text=f"invalid MCP configuration: {type(error).__name__}") from None
+            runtime.request_apply()
+            return web.json_response(result, status=202)
         reference = configuration.read_app().get("tools", {}).get("mcp_config", "mcp.json")
-        path = Path(reference) if reference else Path("mcp.json")
-        if not path.is_absolute():
-            path = configuration.path.parent / path
+        path = configuration.mcp_path()
+        headers = {"ETag": f'"{configuration.revision()}"'}
         try:
             content = path.read_bytes()
         except FileNotFoundError:
             if reference and reference != "mcp.json":
                 raise web.HTTPNotFound(text="MCP configuration file not found") from None
-            return web.json_response({"mcpServers": {}})
+            return web.json_response({"mcpServers": {}}, headers=headers)
         except OSError:
             raise web.HTTPInternalServerError(text="Cannot read MCP configuration") from None
-        return web.Response(body=content, content_type="application/json")
+        return web.Response(body=content, content_type="application/json", headers=headers)
 
     async def save(request):
         value = await body(request)

@@ -251,6 +251,10 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             )
 
             class MCP:
+                @staticmethod
+                def tool_group(_: str) -> str:
+                    return "demo"
+
                 tool_specs = [
                     {
                         "name": "mcp__demo__read",

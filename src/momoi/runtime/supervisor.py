@@ -130,6 +130,9 @@ class RuntimeSupervisor:
                 )
                 self.state = "error"
                 return
+            if revision != self.configuration.revision():
+                self.request_apply()
+                return
             self.missing = []
             if not config.providers.enabled("llm"):
                 self.missing.append("llm")

@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -72,6 +72,8 @@ class AppConfig:
     summary_tokens: int = 6000
     soul_prompt: str = ""
     mcp_config: Path | None = None
+    # Validated snapshot retained with a runtime generation for reliable rollback.
+    mcp_servers: dict | None = field(default=None, repr=False)
     notifications: NotificationConfig = NotificationConfig()
     tool_result_max_chars: int = 12000
     tool_result_retention_days: float = 30
