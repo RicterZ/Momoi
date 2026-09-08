@@ -23,8 +23,7 @@ environment references are preserved. Without a workspace MCP file it returns
 `PATCH /api/settings/mcp` replaces the file with the request JSON, validates it,
 and requests a business runtime restart. It returns 202 with the configuration
 snapshot; this confirms saving, not successful startup. Both methods require
-dashboard authentication. See [MCP settings API](./MCP_SETTINGS_API.md) for the
-request contract, revision checks and failure recovery.
+dashboard authentication.
 
 Authenticated `GET /api/settings/configuration` returns current editable values
 in `app` and control metadata in `app_fields`. Each section has `label` and

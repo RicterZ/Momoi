@@ -19,8 +19,6 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
 `{"mcpServers": {}}`，自定义路径不存在时返回 404。
 `PATCH /api/settings/mcp` 校验请求中的完整 JSON，替换文件并触发业务运行实例重启。
 返回 202 和配置快照，表示保存成功，不代表新实例已启动。两个接口均需 dashboard 认证。
-请求格式、版本冲突和失败恢复详见 [MCP 设置 API](./MCP_SETTINGS_API.md)。
-两个方法均需要 dashboard 鉴权。
 
 鉴权后请求 `GET /api/settings/configuration`，从 `app` 读取当前配置，
 从 `app_fields` 读取控件定义。每组包含 `label` 和 `fields`，字段提供
