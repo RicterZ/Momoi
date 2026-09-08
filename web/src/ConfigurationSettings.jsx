@@ -579,7 +579,7 @@ function PreviousButton({ previous, busy }) {
   );
 }
 
-function SettingsDialog({ title, onClose, children, className = "" }) {
+function SettingsDialog({ title, onClose, children, className = "", returnFocusRef }) {
   const dialog = useRef(null);
   const titleId = useId();
   useEffect(() => {
@@ -595,7 +595,8 @@ function SettingsDialog({ title, onClose, children, className = "" }) {
       element.close();
       document.body.style.overflow = overflow;
       document.body.style.paddingRight = paddingRight;
-      if (focused?.isConnected) focused.focus();
+      const target = returnFocusRef?.current || focused;
+      if (target?.isConnected) target.focus();
     };
   }, []);
   return (
@@ -753,6 +754,7 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
   const [testPending, setTestPending] = useState(false);
   const testVersion = useRef(0);
   const testLock = useRef(false);
+  const testButtonRef = useRef(null);
   const testCapability = names.find(name => data.adapters.some(adapter =>
     adapter.capability === name && adapter.adapter === draft.values[name].adapter && adapter.test_supported === true,
   ));
@@ -841,7 +843,7 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
     }
   }
   const testButton = testCapability && (
-    <button type="button" className="settings-text-button settings-test-button"
+    <button ref={testButtonRef} type="button" className="settings-text-button settings-test-button"
       disabled={testing || saving || busy} onClick={testConnection}>
       <Icon name="refresh" className={testPending ? "is-spinning" : ""} />
       {testPending ? "测试中…" : "测试连接"}
@@ -849,6 +851,16 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
   );
   return (
     <>
+      {testResult && (
+        <SettingsDialog title="连接测试" onClose={() => setTestResult(null)} returnFocusRef={testButtonRef}>
+          <p className={`confirm-copy${testResult.error ? " is-error" : ""}`} role={testResult.error ? "alert" : "status"}>
+            {testResult.text}
+          </p>
+          <div className="confirm-actions">
+            <button type="button" className="quiet-button" onClick={() => setTestResult(null)}>关闭</button>
+          </div>
+        </SettingsDialog>
+      )}
       <form
         noValidate
         onSubmit={submit}
@@ -1003,7 +1015,6 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
               );
             })}
           </div>
-          {testResult && <p className={`settings-test-result${testResult.error ? " is-error" : ""}`} role="status">{testResult.text}</p>}
         </div>
         <SaveBar
           busy={saving || busy}

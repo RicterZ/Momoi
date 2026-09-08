@@ -200,12 +200,6 @@
   white-space: nowrap;
 }
 .settings-test-button svg { width: 14px; height: 14px; }
-.settings-test-result {
-  margin: 16px 0 0;
-  font-size: 12px;
-  line-height: 1.8;
-  overflow-wrap: anywhere;
-}
 .settings-label {
   display: block;
   font-size: 12px;
