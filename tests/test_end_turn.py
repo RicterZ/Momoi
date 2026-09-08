@@ -142,3 +142,70 @@ class EndTurnTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EndTurnSchemaTest(unittest.TestCase):
+    def test_each_stage_schema_requires_exact_private_state(self):
+        from jsonschema import Draft202012Validator
+        from momoi.runtime.tool_contracts.conversation import end_turn_tool_spec
+
+        arguments = EndTurnTest()
+        expected = {
+            'owner': {'reply_wait', 'mood', 'activity'},
+            'heartbeat': {'reply_wait', 'mood', 'heartbeat'},
+            'webhook': {'reply_wait', 'mood'},
+            'reply_followup': {'reply_wait', 'mood'},
+            'goal': {'goal'},
+        }
+        for stage, required in expected.items():
+            with self.subTest(stage=stage):
+                spec = end_turn_tool_spec(stage, heartbeat_min_interval_seconds=300,
+                                          heartbeat_max_interval_seconds=3600)
+                schema = spec['input_schema']
+                Draft202012Validator.check_schema(schema)
+                validator = Draft202012Validator(schema)
+                args = {'goal': {'status': 'done', 'result': '完成'}} if stage == 'goal' else arguments.arguments(stage)
+                self.assertEqual(set(schema['required']), required)
+                self.assertTrue(validator.is_valid(args))
+                for field in required:
+                    self.assertFalse(validator.is_valid({k: v for k, v in args.items() if k != field}))
+                for field in {'activity', 'heartbeat', 'goal'} - required:
+                    self.assertFalse(validator.is_valid({**args, field: {}}))
+                if stage != 'goal':
+                    self.assertTrue(validator.is_valid({**args, 'goal': None}))
+                if stage == 'reply_followup':
+                    self.assertFalse(validator.is_valid(arguments.arguments(stage, wait=True)))
+                if stage == 'heartbeat':
+                    for minutes in (4, 61):
+                        args['heartbeat']['next_check_minutes'] = minutes
+                        self.assertFalse(validator.is_valid(args))
+                self.assertEqual(spec, end_turn_tool_spec(stage, heartbeat_min_interval_seconds=300,
+                                                         heartbeat_max_interval_seconds=3600))
+
+    def test_terminal_text_and_delivery_boundary(self):
+        from momoi.models import ToolCall
+        from momoi.runtime.agent.harness import TurnHarness
+
+        send = ToolCall('send', 'send_bubbles', {'bubbles': ['消息']})
+        end = ToolCall('end', 'end_turn', {})
+        work = ToolCall('work', 'read_file', {'path': 'test'})
+        for stage in ('owner', 'heartbeat', 'webhook', 'reply_followup'):
+            harness = TurnHarness.for_stage(stage)
+            harness.started = True
+            # Reply-followup must use its opening send before it is marked started.
+            if stage == 'reply_followup':
+                harness.started = False
+                calls = [send, end]
+            else:
+                calls = [end]
+            for text in ('', ' \n ', '<bubble>消息</bubble>', '说明\n<bubble>消息</bubble>'):
+                self.assertIsNone(harness.validate(calls, assistant_text=text))
+            for text in ('未发送正文', '<bubble>未闭合', '<bubble></bubble>'):
+                self.assertEqual(harness.validate(calls, assistant_text=text), 'end_turn_text_requires_bubbles')
+            self.assertIsNone(harness.validate([send, end]))
+        harness = TurnHarness.for_stage('owner')
+        harness.accept('recall')
+        self.assertIsNotNone(harness.validate([end, send]))
+        self.assertIsNotNone(harness.validate([work, end]))
+        self.assertIsNotNone(harness.validate([send, end, end]))
+        self.assertEqual(harness.validate([send, end], assistant_text='未发送正文'), 'end_turn_text_requires_bubbles')

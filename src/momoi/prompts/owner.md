@@ -13,8 +13,8 @@ Tools and messages may alternate; sending a message does not end the Turn.
    `send_bubbles` or write `<bubble>...</bubble>`. This prelude is required once
    per owner request and may precede the tool in the same batch.
 4. Continue tools and `send_bubbles` as needed, without a one-call limit.
-5. After work and delivery results, call `end_turn` alone. An acknowledgment
-   may need no reply, but still requires recall.
+5. After work, call `end_turn`; it may follow `send_bubbles`/`send_voice` in the
+   same response. An acknowledgment may need no reply, but still requires recall.
 
 ## Recall scope
 

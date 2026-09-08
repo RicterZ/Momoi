@@ -1,4 +1,5 @@
 import copy
+import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -6,15 +7,20 @@ from typing import Any
 
 from ...channel import Channel, ChannelMessage
 from ...observability.context import log_context
-from ...models import IncomingMessage, ProviderResponse, TurnDraft
+from ...models import AgentReply, IncomingMessage, ProviderResponse, TurnDraft
+from ...observability.events import TRACE, log_event
+from ...observability.values import safe_preview
 from ..turn_support import (
     tool_error_block,
     tool_result_block,
 )
 from .harness import TurnHarness
-from .protocol import assistant_history_content
+from .protocol import assistant_history_content, parse_end_turn
 from .runtime_tools import begin_heartbeat, enable_tools, recall_owner_context
 from .workflow import AgentWorkflow, TurnExecutionSpec
+
+
+logger = logging.getLogger("momoi.runtime.turns")
 
 
 SettleOwnerUpdates = Callable[
@@ -57,7 +63,6 @@ class ToolBatchRequest:
     prepare_heartbeat_context: PrepareHeartbeatContext
     submit_owner_context: SubmitOwnerContext
     settle_owner_updates: SettleOwnerUpdates
-    defer_end_turn: bool = False
 
 
 @dataclass(frozen=True)
@@ -67,6 +72,8 @@ class ToolBatchResult:
     external_effect: bool
     state: ToolBatchState
     last_tool_error: str
+    ended: bool
+    reply: AgentReply | None
 
 
 class ToolBatchExecutor:
@@ -105,6 +112,8 @@ class ToolBatchExecutor:
         last_sent_channel = state.last_sent_channel
         last_tool_error = ""
         external_effect = False
+        ended = False
+        reply = None
 
         # Keep protocol output for the next round, excluding private reasoning.
         request.messages.append(
@@ -146,16 +155,6 @@ class ToolBatchExecutor:
                 }
             elif call.name not in allowed_tool_names:
                 result = {"ok": False, "error": "tool_not_allowed"}
-            elif call.name == "end_turn" and request.defer_end_turn:
-                result = {
-                    "ok": False,
-                    "error": "end_turn_deferred_until_tool_results",
-                    "message": (
-                        "Read this batch's send and work results before finishing. "
-                        "Do not resend committed bubbles. Handle any failures, then "
-                        "call end_turn alone with an outcome grounded in those results."
-                    ),
-                }
             elif call.name == "heartbeat_begin":
                 async def prepare_heartbeat_context(arguments):
                     prepared = await request.prepare_heartbeat_context(arguments)
@@ -192,19 +191,57 @@ class ToolBatchExecutor:
                         "Call recall first to decide what history this input depends on."
                     ),
                 }
-            elif call.name == "end_turn" and execution.goal_id:
-                result = self.agenda_tools.finish_review(
-                    execution.goal_id, call.arguments["goal"], request.draft,
-                )
             elif call.name == "end_turn":
-                result = {
-                    "ok": False,
-                    "error": (
-                        "end_turn_must_be_the_only_terminal_tool"
-                        if execution.require_response
-                        else "tool_not_allowed"
-                    ),
-                }
+                fields = dict(
+                    stage=execution.stage, turn_id=request.turn_id,
+                    call_id=request.call_id, round=request.round_number,
+                    channel=request.delivery_channel.name,
+                )
+                log_event(
+                    logger, TRACE, "end_turn_received", **fields,
+                    arguments=safe_preview(call.arguments, 1000),
+                )
+                if any(block["is_error"] for block in results):
+                    result = {
+                        "ok": False, "error": "end_turn_delivery_failed",
+                        "message": (
+                            "Handle the failed delivery before finishing. "
+                            "Do not resend committed bubbles."
+                        ),
+                    }
+                elif execution.goal_id:
+                    result = self.agenda_tools.finish_review(
+                        execution.goal_id, call.arguments["goal"], request.draft,
+                    )
+                else:
+                    reply, error = parse_end_turn(
+                        call.arguments,
+                        execution=execution,
+                        visible_since_owner_update=visible,
+                        heartbeat_min_interval_seconds=self.config.heartbeat.min_interval_seconds,
+                        heartbeat_max_interval_seconds=self.config.heartbeat.max_interval_seconds,
+                    )
+                    result = (
+                        {"ok": True, "state": "completed"}
+                        if reply is not None else {"ok": False, "error": error}
+                    )
+                    if error:
+                        schema = next(
+                            spec["input_schema"] for spec in request.request_tools
+                            if spec["name"] == "end_turn"
+                        )
+                        missing = [
+                            key for key in schema["required"] if key not in call.arguments
+                        ]
+                        if missing:
+                            result["message"] = "Supply all missing fields: " + ", ".join(missing)
+                ended = bool(result.get("ok"))
+                log_event(
+                    logger, TRACE, "end_turn_accepted" if ended else "end_turn_rejected",
+                    **fields,
+                    **({"mood_decision": "updated" if reply and reply.mood_update else "unchanged"}
+                       if ended else {"reason": result.get("error")}),
+                )
             elif call.name in {"send_bubbles", "send_voice"}:
                 dispatch = (
                     self.bubble_delivery.dispatch_voice
@@ -325,6 +362,8 @@ class ToolBatchExecutor:
                     for pending in request.response.tool_calls[index + 1 :]
                 )
                 break
+            if ended:
+                break
             if execution.accept_owner_updates:
                 owner_updates = await request.settle_owner_updates(
                     request.current_events, request.delivery_channel.name
@@ -348,4 +387,6 @@ class ToolBatchExecutor:
                 last_sent_channel=last_sent_channel,
             ),
             last_tool_error=last_tool_error,
+            ended=ended,
+            reply=reply,
         )

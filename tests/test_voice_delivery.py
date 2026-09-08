@@ -284,7 +284,7 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
                             self.assertEqual(daemon.store.due_outbox()[0].kind, "voice")
                             self.assertTrue(daemon.outbox_changed.is_set())
                         return ProviderResponse([
-                            {"type": "text", "text": "Assistant commentary must not be delivered."},
+                            {"type": "text", "text": "" if call.name == "end_turn" else "Assistant commentary must not be delivered."},
                             {"type": "tool_use", "id": call.id, "name": call.name, "input": call.arguments},
                         ], [call])
 
@@ -325,7 +325,12 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
             async def complete(_system, messages, request_tools, **kwargs):
                 nonlocal rounds
                 rounds += 1
-                self.assertEqual(request_tools, tools)
+                self.assertEqual(
+                    [tool for tool in request_tools if tool["name"] != "end_turn"],
+                    [tool for tool in tools if tool["name"] != "end_turn"],
+                )
+                terminal_schema = next(tool["input_schema"] for tool in request_tools if tool["name"] == "end_turn")
+                self.assertEqual(terminal_schema["required"], ["reply_wait", "mood"])
                 if rounds == 1:
                     call = ToolCall("voice", "send_voice", {"text": self.text})
                 else:

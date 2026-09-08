@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 from ...models import ToolCall
+from ..parsing import parse_tagged_bubbles
 
 
 @dataclass(frozen=True)
@@ -95,6 +96,7 @@ class TurnHarness:
         calls: list[ToolCall],
         *,
         required_tool: str | None = None,
+        assistant_text: str = "",
     ) -> str | None:
         names = [call.name for call in calls]
         if any(name in self.blocked_tool_names for name in names):
@@ -111,7 +113,11 @@ class TurnHarness:
         ):
             first_names.add("send_voice")
         if first is not None and not self.started:
-            if len(names) != 1 or names[0] not in first_names:
+            opening_send_and_end = (
+                first == "send_bubbles" and len(names) == 2
+                and names[0] in first_names and names[1] == "end_turn"
+            )
+            if not opening_send_and_end and (len(names) != 1 or names[0] not in first_names):
                 return f"{first}_must_be_first_and_alone"
         elif first is not None and any(name in first_names for name in names):
             return f"{first}_already_completed"
@@ -122,8 +128,14 @@ class TurnHarness:
         ):
             return f"{required_tool}_required"
         terminal = self.spec.terminal_tool
-        if terminal in names and (len(names) != 1 or names[0] != terminal):
+        send_and_end = (
+            terminal == "end_turn" and names[-1:] == [terminal]
+            and all(name in {"send_bubbles", "send_voice"} for name in names[:-1])
+        )
+        if terminal in names and not send_and_end and (len(names) != 1 or names[0] != terminal):
             return f"{terminal}_must_be_alone"
+        if "end_turn" in names and assistant_text.strip() and parse_tagged_bubbles(assistant_text) is None:
+            return "end_turn_text_requires_bubbles"
         permitted = (
             self.permitted_tool_names
             if self.permitted_tool_names is not None

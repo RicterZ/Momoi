@@ -1,3 +1,5 @@
+import copy
+import math
 from typing import Any
 
 from ...tools.contracts.agenda import GOAL_REVIEW_SCHEMA
@@ -250,7 +252,7 @@ END_TURN_TOOL_SPEC: dict[str, Any] = {
         "Goal requires only goal: submit status and result, plus next steps when open; "
         "it commits the current Goal outcome and ends the review. Other Turns must "
         "omit goal or set it to null. Commit private state only; never visible content. "
-        "Call once and alone after "
+        "Call once after "
         "work and delivery. Owner requires activity; Heartbeat requires heartbeat; "
         "other workflows must omit both. Reply Follow-up must set reply_wait.wait "
         "to false; other chat Turns may wait only after visible bubbles."
@@ -285,6 +287,47 @@ END_TURN_TOOL_SPEC: dict[str, Any] = {
     },
 }
 
+def end_turn_tool_spec(
+    stage: str,
+    *,
+    heartbeat_min_interval_seconds: int = 60,
+    heartbeat_max_interval_seconds: int = 86400,
+) -> dict[str, Any]:
+    """Project the catalog template onto the executing Turn's actual contract."""
+    spec = copy.deepcopy(END_TURN_TOOL_SPEC)
+    schema = spec["input_schema"]
+    schema.pop("oneOf")
+    properties = schema["properties"]
+    if stage == "goal":
+        schema["properties"] = {"goal": copy.deepcopy(GOAL_REVIEW_SCHEMA)}
+        schema["required"] = ["goal"]
+    else:
+        required = ["reply_wait", "mood"]
+        if stage == "owner":
+            required.append("activity")
+        elif stage == "heartbeat":
+            required.append("heartbeat")
+            interval = properties["heartbeat"]["properties"]["next_check_minutes"]
+            interval["minimum"] = max(1, math.ceil(heartbeat_min_interval_seconds / 60))
+            interval["maximum"] = min(1440, math.floor(heartbeat_max_interval_seconds / 60))
+        elif stage == "reply_followup":
+            properties["reply_wait"] = copy.deepcopy(REPLY_WAIT_DECISION_SCHEMA["oneOf"][0])
+        elif stage != "webhook":
+            raise ValueError(f"end_turn is not available in {stage}")
+        schema["required"] = required
+        schema["properties"] = {key: properties[key] for key in required}
+        schema["properties"]["goal"] = {"type": "null"}
+    spec["description"] = (
+        f"Finish the {stage} Turn; required fields: {', '.join(schema['required'])}. "
+        "May be called alone or last after send_bubbles/send_voice in the same response. "
+        "Same-response delivery must succeed before the Turn can finish. "
+        "Assistant text must be empty or contain valid <bubble>...</bubble> messages; "
+        "untagged assistant text with end_turn is rejected. "
+        "Other work tools must finish in earlier rounds."
+    )
+    return spec
+
+
 SEND_BUBBLES_TOOL_SPEC: dict[str, Any] = {
     "name": "send_bubbles",
     "description": (
@@ -293,7 +336,8 @@ SEND_BUBBLES_TOOL_SPEC: dict[str, Any] = {
         "Explicit <bubble>...</bubble> blocks in assistant text are equivalent to this tool "
         "and use the current channel; text outside them is not delivered. "
         "After all work and delivery results, call the current workflow's "
-        "terminal tool alone. Text may accompany images; files, video, audio, and "
+        "terminal tool; end_turn may follow delivery in the same response. "
+        "Text may accompany images; files, video, audio, and "
         "records must stand alone."
     ),
     "input_schema": {

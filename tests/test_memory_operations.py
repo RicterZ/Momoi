@@ -895,7 +895,8 @@ def test_tagged_text_and_native_send_both_use_delivery_tools(daemon, tagged):
 
 @pytest.mark.parametrize('stage', ['heartbeat', 'webhook', 'reply_followup', 'goal'])
 @pytest.mark.parametrize('with_terminal', [False, True])
-def test_non_owner_tagged_text_respects_terminal_sequence(daemon, stage, with_terminal):
+@pytest.mark.parametrize('native_send', [False, True])
+def test_non_owner_tagged_text_respects_terminal_sequence(daemon, stage, with_terminal, native_send):
     from types import SimpleNamespace
     from momoi.runtime.agent import TurnExecutionSpec
 
@@ -913,6 +914,12 @@ def test_non_owner_tagged_text_respects_terminal_sequence(daemon, stage, with_te
         terminal = {'goal': {'status': 'done', 'result': '分享完成'}}
     tagged = response(ToolCall('early-end', 'end_turn', terminal)) if with_terminal else ProviderResponse([], [])
     tagged.content.insert(0, {'type': 'text', 'text': '刷到一条跟我本行有关的消息\n<bubble>刚看到一条消息</bubble>'})
+    if native_send:
+        send = response(ToolCall('native-send', 'send_bubbles', {'bubbles': ['刚看到一条消息']}))
+        tagged = ProviderResponse(
+            send.content + [b for b in tagged.content if b['type'] != 'text'],
+            send.tool_calls + tagged.tool_calls,
+        )
     replies = []
     if stage == 'heartbeat':
         replies.append(response(ToolCall('begin', 'heartbeat_begin', {
@@ -920,7 +927,8 @@ def test_non_owner_tagged_text_respects_terminal_sequence(daemon, stage, with_te
             'recall_queries': [], 'tool_groups': [], 'strategy': ['分享当前消息'],
         })))
     replies.append(tagged)
-    replies.append(response(ToolCall('finish', 'end_turn', terminal)))
+    if not with_terminal:
+        replies.append(response(ToolCall('finish', 'end_turn', terminal)))
     after_tagged = False
 
     async def complete(_system, messages, *args, **kwargs):
@@ -929,12 +937,6 @@ def test_non_owner_tagged_text_respects_terminal_sequence(daemon, stage, with_te
             after_tagged = False
             result = json.loads(messages[-1]['content'][0]['content'])
             assert result['ok'] and result['state'] == 'committed'
-            if with_terminal:
-                assert 'end_turn_deferred_until_tool_results' in str(messages[-1])
-                calls = [b for b in messages[-2]['content'] if b['type'] == 'tool_use']
-                assert [c['name'] for c in calls] == ['send_bubbles', 'end_turn']
-                assert calls[1]['id'] == 'early-end'
-                assert messages[-1]['content'][1]['tool_use_id'] == 'early-end'
             if stage == 'goal':
                 daemon.agenda_tools.finish_review.assert_not_called()
         assert replies, 'Unexpected protocol retry'
@@ -1045,7 +1047,7 @@ def test_goal_send_failure_is_observed_before_finish(daemon, tagged):
         if len(replies) == 1:
             results = [json.loads(b['content']) for b in messages[-1]['content']]
             assert results[0]['error'] == 'blank_lines_must_be_separate_bubbles'
-            assert results[1]['error'] == 'end_turn_deferred_until_tool_results'
+            assert results[1]['error'] == 'end_turn_delivery_failed'
             assert not daemon.store.due_outbox()
             daemon.agenda_tools.finish_review.assert_not_called()
         return replies.pop(0)
@@ -1115,3 +1117,114 @@ def test_owner_update_preserves_actual_recall_completion(daemon, recall_succeede
     asyncio.run(daemon._complete_batch_turn([source], asyncio.Event(), 'source'))
     assert submissions == (1 if recall_succeeded else 2)
     assert [r.text for r in daemon.store.due_outbox()] == ['收到，不找了']
+
+
+@pytest.mark.parametrize('text', ['', '  \n ', '<bubble>收到</bubble>', '未发送的正文', '<bubble>未闭合'])
+def test_owner_terminal_text_contract_and_same_round_delivery(daemon, text):
+    from types import SimpleNamespace
+    from jsonschema import Draft202012Validator
+    from tests.support import recall_response
+
+    source = event(daemon.store)
+    terminal = {'reply_wait': {'wait': False}, 'mood': {'decision': 'unchanged'},
+                'activity': {'decision': 'unchanged'}}
+    native = response(ToolCall('send', 'send_bubbles', {'bubbles': ['收到']}))
+    end = response(ToolCall('end', 'end_turn', terminal))
+    valid = text in ('', '  \n ', '<bubble>收到</bubble>')
+    use_native = '<bubble>' not in text
+    body = ([{'type': 'text', 'text': text}] + (native.content if use_native else []) + end.content)
+    combined = ProviderResponse(body, (native.tool_calls if use_native else []) + end.tool_calls)
+    replies = [recall_response(), combined]
+    if not valid:
+        replies.append(ProviderResponse(native.content + end.content, native.tool_calls + end.tool_calls))
+    rejected = False
+    schema_seen = None
+
+    async def complete(_system, messages, tools, **kwargs):
+        nonlocal rejected, schema_seen
+        schema = next(tool['input_schema'] for tool in tools if tool['name'] == 'end_turn')
+        assert set(schema['required']) == {'reply_wait', 'mood', 'activity'}
+        assert Draft202012Validator(schema).is_valid(terminal)
+        if schema_seen is not None:
+            assert schema == schema_seen
+        schema_seen = schema
+        if rejected:
+            assert 'end_turn_text_requires_bubbles' in str(messages[-1])
+            assert not daemon.store.due_outbox()
+        assert replies, 'Unexpected extra model round'
+        reply = replies.pop(0)
+        rejected = reply is combined and not valid
+        return reply
+
+    daemon.provider = SimpleNamespace(complete=complete, config=SimpleNamespace(api_format='anthropic'))
+    asyncio.run(daemon._complete_batch_turn([source], asyncio.Event(), 'source'))
+    assert not replies
+    assert [r.text for r in daemon.store.due_outbox()] == ['收到']
+
+
+def test_owner_update_after_send_supersedes_same_response_end(daemon):
+    from types import SimpleNamespace
+    from tests.support import recall_response
+
+    source = event(daemon.store)
+    update = IncomingMessage('update', 'update', '先等等，换个话题', time.time(), time.time())
+    dispatch = daemon.bubble_delivery.dispatch
+    deliveries = 0
+
+    def send_and_interrupt(*args, **kwargs):
+        nonlocal deliveries
+        result = dispatch(*args, **kwargs)
+        deliveries += 1
+        if deliveries == 1:
+            daemon.store.add_event(update)
+            daemon.incoming.put_nowait(update)
+        return result
+
+    daemon.bubble_delivery.dispatch = send_and_interrupt
+    terminal = {'reply_wait': {'wait': False}, 'mood': {'decision': 'unchanged'},
+                'activity': {'decision': 'unchanged'}}
+    def combined(text, name):
+        end = response(ToolCall(name, 'end_turn', terminal))
+        end.content.insert(0, {'type': 'text', 'text': f'<bubble>{text}</bubble>'})
+        return end
+
+    replies = [recall_response(), combined('原回复', 'stale-end'), combined('收到，换话题', 'new-end')]
+
+    async def complete(_system, messages, *args, **kwargs):
+        assert replies, 'Unexpected model round'
+        if len(replies) == 1:
+            assert 'superseded_by_owner_update' in str(messages)
+            assert '先等等，换个话题' in str(messages[-1])
+            assert kwargs.get('required_tool') is None
+        return replies.pop(0)
+
+    daemon.provider = SimpleNamespace(complete=complete, config=SimpleNamespace(api_format='anthropic'))
+    asyncio.run(daemon._complete_batch_turn([source], asyncio.Event(), 'source'))
+    assert not replies
+    rows = daemon.store._db.execute("SELECT text FROM outbox WHERE turn_id='source' ORDER BY id").fetchall()
+    assert [row['text'] for row in rows] == ['原回复', '收到，换话题']
+
+
+def test_owner_end_turn_reports_all_missing_fields_together(daemon):
+    from types import SimpleNamespace
+    from tests.support import recall_response
+
+    source = event(daemon.store)
+    replies = [recall_response(), response(ToolCall('missing', 'end_turn', {})),
+               response(ToolCall('corrected', 'end_turn', {
+                   'reply_wait': {'wait': False}, 'mood': {'decision': 'unchanged'},
+                   'activity': {'decision': 'unchanged'},
+               }))]
+
+    async def complete(_system, messages, *args, **kwargs):
+        assert replies, 'Unexpected model retry'
+        if len(replies) == 1:
+            result = json.loads(messages[-1]['content'][0]['content'])
+            assert not result['ok']
+            assert all(field in result['message'] for field in ('mood', 'activity', 'reply_wait'))
+        return replies.pop(0)
+
+    daemon.provider = SimpleNamespace(complete=complete, config=SimpleNamespace(api_format='anthropic'))
+    asyncio.run(daemon._complete_batch_turn([source], asyncio.Event(), 'source'))
+    assert not replies
+    assert not daemon.store.due_outbox()

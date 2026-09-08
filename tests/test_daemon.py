@@ -2184,7 +2184,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         raise AssertionError(tools)
                     if self.calls == 2:
                         correction = request_text
-                        self_outer.assertIn("invalid_activity_decision", correction)
+                        self_outer.assertIn("end_turn_text_requires_bubbles", correction)
                         self_outer.assertIn(
                             OWNER_BUBBLE_REQUEST_REMINDER, correction
                         )
@@ -2359,7 +2359,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             )
             daemon.store.close()
 
-    async def test_text_with_invalid_mood_returns_parameter_error(
+    async def test_untagged_terminal_text_is_rejected_before_parameter_validation(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -2484,7 +2484,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(provider.calls, 3)
             self.assertTrue(
                 any(
-                    "invalid_mood_decision" in text
+                    "end_turn_text_requires_bubbles" in text
                     for text in provider.corrections
                 )
             )

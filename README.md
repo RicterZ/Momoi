@@ -454,8 +454,14 @@ review in one call. `active`, `waiting` and `blocked` keep the Goal; `done` and
 Continuing requires `next_action` and a future `next_review_at`; recurring active
 Goals may reuse their schedule. Waiting requires `waiting_for` and a future review;
 blocked requires `blocked_reason`. `send_bubbles` and `send_voice` use the normal
-delivery path immediately, independently of Goal completion. Invalid outcomes
-return tool errors for correction.
+delivery path immediately, independently of Goal completion. Delivery and
+`end_turn` may share one response, with `end_turn` last; failed delivery prevents
+completion. Invalid outcomes return tool errors for correction.
+
+With `end_turn`, assistant text must be empty or contain valid `<bubble>...</bubble>`
+blocks. These blocks use the same delivery path as `send_bubbles`; untagged text
+causes rejection. Each Turn receives an `end_turn` schema with its own required
+fields, including `activity` for Owner and `heartbeat` for Heartbeat.
 Other Turns must omit `goal` or pass `null`; the harness rejects cross-workflow
 arguments before execution. Normal conversations retain `goal_update`, `goal_finish`
 and `goal_cancel` for task management; Goal reviews use the terminal outcome instead.

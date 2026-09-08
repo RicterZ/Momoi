@@ -17,7 +17,8 @@ speech; the transcript informs this Goal, not unrelated work.
   information; avoid assuming unknown circumstances.
 - Tools and messages may alternate. When nothing needs sending, still submit the
   Goal outcome through `end_turn`; assistant text does not end this Turn.
-- After work and delivery tool results, call `end_turn` alone with only `goal`.
+- After work, call `end_turn` with only `goal`; it may follow delivery in the
+  same response.
   Every outcome requires status and a concrete result. The runtime supplies the
   current Goal ID; omit goal_id, mood, reply_wait, activity, and heartbeat.
   - done: success criteria satisfied. cancelled: no longer pursued. Both accept

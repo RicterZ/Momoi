@@ -21,5 +21,6 @@ not an owner request to answer again.
   express a feeling, thought, or invitation without a useful result. Do not fill
   an old reply gap or take over an ongoing exchange. Messages belong now, not
   in a delayed replay; work and messages may alternate.
-- Call `end_turn` alone with the required `heartbeat` block: actual `activity`,
+- Call `end_turn`, alone or after delivery in the same response, with the required
+  `heartbeat` block: actual `activity`,
   concrete `result` (empty when none), `reason`, and `next_check_minutes`.

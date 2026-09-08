@@ -10,7 +10,8 @@ from .workflow import TurnExecutionSpec, WorkflowProtocolError
 
 OWNER_BUBBLE_REQUEST_REMINDER = (
     "Use <bubble>...</bubble>, send_bubbles, or send_voice "
-    "for owner-visible messages. Text outside bubble blocks is not delivered; "
+    "for owner-visible messages. With end_turn, assistant text must be empty "
+    "or contain valid bubble blocks; "
     "otherwise call the next work or terminal tool."
 )
 
@@ -126,8 +127,8 @@ def handle_no_tool_response(
     elif owner_turn:
         correction = (
             "[Trusted runtime protocol error: no native tool call was returned. "
-            "Call send_bubbles or write <bubble>...</bubble> for owner-visible messages, without end_turn. "
-            "After its result, call end_turn alone on the next step.]"
+            "Call send_bubbles or write <bubble>...</bubble> for owner-visible messages, "
+            "then end_turn when ready; both may occur in the same response.]"
         )
     else:
         correction = (

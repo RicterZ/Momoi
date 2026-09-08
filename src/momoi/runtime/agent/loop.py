@@ -5,8 +5,7 @@ from typing import Any
 from ...channel import (
     Channel,
 )
-from ...observability.events import TRACE, log_event
-from ...observability.values import safe_preview
+from ...observability.events import log_event
 from ...models import AgentReply, IncomingMessage, ToolCall, TurnDraft
 from . import (
     AgentWorkflow,
@@ -17,9 +16,9 @@ from . import (
 from ..parsing import parse_tagged_bubbles, response_text
 from .protocol import (
     handle_no_tool_response,
-    parse_end_turn,
 )
 from .tool_batch import ToolBatchRequest, ToolBatchState
+from ..tool_contracts.conversation import end_turn_tool_spec
 from ..turn_support import (
     ExternalToolTurnError,
     MAX_CONSECUTIVE_TOOL_FAILURES,
@@ -97,6 +96,14 @@ class AgentLoop:
             permitted_tool_names=permitted_tools,
             blocked_tool_names=frozenset() if voice_allowed else frozenset({"send_voice"}),
         )
+        tools = [
+            end_turn_tool_spec(
+                stage,
+                heartbeat_min_interval_seconds=self.config.heartbeat.min_interval_seconds,
+                heartbeat_max_interval_seconds=self.config.heartbeat.max_interval_seconds,
+            ) if tool["name"] == "end_turn" else tool
+            for tool in tools
+        ]
         harness.validate_surface({str(tool["name"]) for tool in tools})
         while True:
             if reply_wait_turn and self.store.pending_owner_reply() is None:
@@ -312,23 +319,10 @@ class AgentLoop:
                 if resolution.action == "return":
                     return None
                 continue
-            # Sending and finishing in one response cannot establish delivery
-            # success. Execute the messages/work, then return a result for the
-            # deferred end_turn so the model can finish from observed outcomes.
-            defer_end_turn = (
-                any(
-                    call.name in {"send_bubbles", "send_voice"}
-                    for call in response.tool_calls
-                )
-                and any(call.name == "end_turn" for call in response.tool_calls)
-            )
-            executable_calls = [
-                call for call in response.tool_calls
-                if not (defer_end_turn and call.name == "end_turn")
-            ]
             harness_error = harness.validate(
-                executable_calls,
+                response.tool_calls,
                 required_tool=required_tool,
+                assistant_text=response_text(response.content),
             )
             if harness_error is not None:
                 failed_tool_rounds += 1
@@ -368,7 +362,7 @@ class AgentLoop:
                     ]
                 )
                 continue
-            harness.observe_calls(executable_calls)
+            harness.observe_calls(response.tool_calls)
             assistant_text = response_text(response.content)
             log_event(
                 logger,
@@ -384,73 +378,9 @@ class AgentLoop:
                 has_assistant_text=bool(assistant_text),
                 assistant_text=assistant_text,
             )
-            if (
-                require_response
-                and len(response.tool_calls) == 1
-                and response.tool_calls[0].name == "end_turn"
-            ):
-                log_event(
-                    logger,
-                    TRACE,
-                    "end_turn_received",
-                    stage=stage,
-                    turn_id=turn_id,
-                    call_id=call_id,
-                    round=llm_round,
-                    channel=delivery_channel.name,
-                    arguments=safe_preview(response.tool_calls[0].arguments, 1000),
-                )
-                reply, error = parse_end_turn(
-                    response.tool_calls[0].arguments,
-                    execution=execution,
-                    visible_since_owner_update=visible_since_owner_update,
-                    heartbeat_min_interval_seconds=(
-                        self.config.heartbeat.min_interval_seconds
-                    ),
-                    heartbeat_max_interval_seconds=(
-                        self.config.heartbeat.max_interval_seconds
-                    ),
-                )
-                if reply is not None:
-                    log_event(
-                        logger,
-                        TRACE,
-                        "end_turn_accepted",
-                        stage=stage,
-                        turn_id=turn_id,
-                        call_id=call_id,
-                        round=llm_round,
-                        mood_decision=(
-                            "updated" if reply.mood_update else "unchanged"
-                        ),
-                    )
-                    return reply
-                log_event(
-                    logger,
-                    TRACE,
-                    "end_turn_rejected",
-                    stage=stage,
-                    turn_id=turn_id,
-                    call_id=call_id,
-                    round=llm_round,
-                    reason=error,
-                )
-                messages.extend(
-                    [
-                        {"role": "assistant", "content": response.content},
-                        {
-                            "role": "user",
-                            "content": [
-                                _tool_error_block(response.tool_calls[0].id, error)
-                            ],
-                        },
-                    ]
-                )
-                continue
             batch = await self.tool_batch.execute(
                 ToolBatchRequest(
                     response=response,
-                    defer_end_turn=defer_end_turn,
                     messages=messages,
                     request_tools=request_tools,
                     tools=tools,
@@ -502,13 +432,8 @@ class AgentLoop:
                 harness.accept_owner_update()
                 failed_tool_rounds = 0
                 continue
-            if (
-                autonomous_goal_id
-                and len(response.tool_calls) == 1
-                and response.tool_calls[0].name == "end_turn"
-                and results and not results[0]["is_error"]
-            ):
-                return None
+            if batch.ended:
+                return batch.reply
             if workflow is not None and workflow.is_complete():
                 return workflow.completion_result() or {"ok": True}
             if any(not block["is_error"] for block in results):
@@ -526,9 +451,8 @@ class AgentLoop:
                     "content": (
                         "[Trusted runtime protocol stop. Tool calls failed validation "
                         "three consecutive times. Do not retry tools in this Turn. "
-                        "Use send_bubbles for the last concrete failure reason without "
-                        "end_turn. After its result, call end_turn alone on the next "
-                        "step.]"
+                        "Use send_bubbles for the last concrete failure reason, then "
+                        "end_turn. Both may occur in the same response.]"
                     ),
                 }
             )
