@@ -102,6 +102,7 @@ def render_episode_consolidation_request(candidate: Mapping[str, object]) -> str
             f"  id: {_text(episode.get('id'))}",
             f"  title: {_text(episode.get('title'))}",
             f"  status: {_text(episode.get('status')) or 'unknown'}",
+            f"  created at: {_text(episode.get('created_timestamp')) or 'unknown'}",
         ]
         summary = _text(episode.get("narrative_summary"))
         if summary:

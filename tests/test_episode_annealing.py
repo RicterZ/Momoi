@@ -398,6 +398,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                         "id": "episode-project",
                         "title": "完成项目",
                         "status": "closing",
+                        "created_timestamp": "2026-08-19T20:00:00+08:00",
                         "narrative_summary": "老师完成了项目。",
                         "topics": ["项目"],
                         "entities": [],
@@ -411,6 +412,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("[OWNER timestamp=2026-08-20T12:00:00+08:00]", prompt)
         self.assertIn("今天把项目做完了", prompt)
         self.assertIn("<candidate_episodes>\nEpisode 1", prompt)
+        self.assertIn("  created at: 2026-08-19T20:00:00+08:00", prompt)
         self.assertNotIn("created_at", prompt)
         self.assertNotIn("updated-at-is-redundant", prompt)
         self.assertNotIn("message id:", prompt)

@@ -1203,6 +1203,11 @@ class StorageMemoryTest(unittest.TestCase):
                 {episode["id"] for episode in candidate["candidate_episodes"]},
             )
             self.assertEqual(
+                next(episode for episode in candidate["candidate_episodes"]
+                     if episode["id"] == "playing-game")["created_timestamp"],
+                store.episode("playing-game")["created_timestamp"],
+            )
+            self.assertEqual(
                 store.apply_episode_consolidation(
                     ["first"],
                     [
