@@ -1,6 +1,6 @@
 [project]
 name = "momoi"
-version = "0.5.6"
+version = "1.0.0"
 description = "A headless, single-owner personal agent daemon."
 readme = "README.md"
 requires-python = ">=3.12"
