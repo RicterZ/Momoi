@@ -448,6 +448,39 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
         response = await self.client.get("/api/settings/mcp")
         self.assertEqual(await response.json(), {"mcpServers": {}})
 
+    async def test_mcp_patch_restarts_runtime_with_saved_servers(self):
+        self.enable()
+        self.client.session.headers["Authorization"] = self.auth
+        stop = asyncio.Event()
+        task = asyncio.create_task(self.runtime.run(stop))
+
+        async def applied(revision):
+            async with asyncio.timeout(5):
+                while self.runtime.applied_revision != revision:
+                    await asyncio.sleep(0.01)
+
+        try:
+            await applied(self.manager.revision())
+            original = self.runtime.daemon
+            document = {"mcpServers": {"example": {"command": "unused-test-server"}}}
+            response = await self.client.patch(
+                "/api/settings/mcp", json=document,
+                headers={"If-Match": f'"{self.manager.revision()}"'},
+            )
+            self.assertEqual(response.status, 202, await response.text())
+            saved = await response.json()
+            await applied(saved["revision"])
+            self.assertTrue(original.closed)
+            self.assertIsNot(self.runtime.daemon, original)
+            self.assertEqual(self.runtime.daemon.config.mcp_servers, document["mcpServers"])
+            self.assertEqual(json.loads(self.manager.mcp_path().read_text()), document)
+            status = await (await self.client.get("/api/settings/runtime")).json()
+            self.assertEqual(status["state"], "running")
+            self.assertEqual(status["applied_revision"], saved["revision"])
+        finally:
+            stop.set()
+            await task
+
     async def test_mcp_patch_validation_preserves_files_and_enables_existing_workspace(self):
         self.client.session.headers["Authorization"] = self.auth
         path = self.manager.mcp_path()
