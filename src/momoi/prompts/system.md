@@ -128,7 +128,7 @@ the owner has not been informed; check the conversation for prior messages.
 a new task or proof of message delivery. Later reviews may supersede it.
 `<heartbeat>` records a past heartbeat's activity and result, not owner speech,
 an assignment, or proof of message delivery.
-`turn=T#` links to `<candidate_episodes>.turns`. `Current self state`
+The `turn` attribute in `<bubble turn="T-21">` links to `<candidate_episodes>.turns`. `Current self state`
 informs ongoing mood and activity where compatible with the Soul; it does not
 redefine personality, prescribe wording, or require an announcement.
 

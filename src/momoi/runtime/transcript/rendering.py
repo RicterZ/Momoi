@@ -43,7 +43,7 @@ def turn_labels(groups: Sequence[TranscriptGroup]) -> dict[str, str]:
         if turn_id
     ]
     return {
-        turn_id: f"T{index}"
+        turn_id: f"T-{index}"
         for index, turn_id in enumerate(dict.fromkeys(ordered), 1)
     }
 
@@ -72,8 +72,10 @@ def _silence(
         return _message("user", f"[owner did not reply · {_elapsed(waited)} later]")
     return _message("assistant", "[ended the Turn without replying]")
 
-def render_bubble(text: str, *, delivery_state: str = "delivered") -> str:
-    attributes = ' delivery="queued"' if delivery_state == "queued" else ""
+def render_bubble(text: str, *, delivery_state: str = "delivered", turn: str = "") -> str:
+    attributes = f" turn={quoteattr(turn)}" if turn else ""
+    if delivery_state == "queued":
+        attributes += ' delivery="queued"'
     return f"<bubble{attributes}>\n{escape(text)}\n</bubble>"
 
 
@@ -98,9 +100,9 @@ def render_review(
     )
 
 
-def _part_bubble(group: TranscriptGroup, index: int) -> str:
+def _part_bubble(group: TranscriptGroup, index: int, turn: str = "") -> str:
     state = group.part_states[index] if index < len(group.part_states) else "delivered"
-    return render_bubble(group.parts[index], delivery_state=state)
+    return render_bubble(group.parts[index], delivery_state=state, turn=turn)
 
 
 def _message(role: str, text: str) -> dict[str, object]:
@@ -143,6 +145,7 @@ def _assistant_body(
     group: TranscriptGroup,
     records: Sequence[Mapping[str, object]],
     action_limit: int,
+    turn: str,
 ) -> list[str]:
     """Interleave what a Turn said with what it did, in the order it happened.
 
@@ -155,7 +158,7 @@ def _assistant_body(
     events: list[tuple[float, int, object]] = []
     for index in range(len(group.parts)):
         at = group.part_times[index] if index < len(group.part_times) else 0.0
-        events.append((at, 1, _part_bubble(group, index)))
+        events.append((at, 1, _part_bubble(group, index, turn)))
     for record in records:
         events.append((float(record.get("at") or 0.0), 0, record))
     events.sort(key=lambda item: (item[0], item[1]))
@@ -227,8 +230,7 @@ def render_messages(
             for turn_id in group.turn_ids
             if (labels or {}).get(turn_id)
         ]
-        if group_labels:
-            annotations.append("turn=" + ",".join(dict.fromkeys(group_labels)))
+        turn = ",".join(dict.fromkeys(group_labels))
         marker = _marker(
             group.started_at,
             previous.ended_at if previous else 0.0,
@@ -268,9 +270,9 @@ def render_messages(
                 if lower <= float(record.get("at") or 0.0) < upper
             ]
         if records:
-            lines.extend(_assistant_body(group, records, action_limit))
+            lines.extend(_assistant_body(group, records, action_limit, turn))
         else:
-            lines.extend(_part_bubble(group, index) for index in range(len(group.parts)))
+            lines.extend(_part_bubble(group, index, turn) for index in range(len(group.parts)))
         messages.append(_message(group.role, "\n".join(lines)))
         previous = group
     return messages

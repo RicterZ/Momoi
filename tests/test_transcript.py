@@ -47,10 +47,11 @@ def test_turn_labels_are_stable_for_each_runtime_turn():
     labels = turn_labels(groups)
     messages = render_messages(groups, labels=labels)
 
-    assert labels == {"turn-a": "T1", "turn-b": "T2"}
-    assert "[turn=T1" in text(messages[0])
-    assert "[turn=T1" in text(messages[1])
-    assert "[turn=T2" in text(messages[2])
+    assert labels == {"turn-a": "T-1", "turn-b": "T-2"}
+    for message, label in zip(messages, ["T-1", "T-1", "T-2"], strict=True):
+        document = ElementTree.fromstring(f"<history>{text(message)}</history>")
+        assert document.find("bubble").attrib == {"turn": label}
+        assert "turn=" not in (document.text or "")
 
 
 def owner(
@@ -357,7 +358,8 @@ def action(name: str, *, at: float, subject: str = "", ok: bool = True, ref: str
     }
 
 
-def test_work_is_interleaved_with_the_words_that_narrate_it():
+@pytest.mark.parametrize("label", ["", "T-21"])
+def test_work_is_interleaved_with_the_words_that_narrate_it(label):
     messages = render_messages(
         build_groups(
             [
@@ -373,17 +375,19 @@ def test_work_is_interleaved_with_the_words_that_narrate_it():
                 action("weibo_detail", at=4, subject="4012", ref="tr-9"),
             ]
         },
+        labels={"t1": label},
     )
+    opening = f'<bubble turn="{label}">' if label else "<bubble>"
     assert text(messages[1]).split("\n") == [
-        "<bubble>",
+        opening,
         "好的，我刷微博",
         "</bubble>",
         "[tool_call] weibo_feed(home) -> ok",
-        "<bubble>",
+        opening,
         "我发现了内容XXX",
         "</bubble>",
         "[tool_call] weibo_detail(4012) -> ok · ref=tr-9",
-        "<bubble>",
+        opening,
         "刷完了",
         "</bubble>",
     ]

@@ -841,8 +841,8 @@ def test_owner_tagged_text_uses_delivery_tool_and_then_end_turn(daemon, caplog):
             return recall_response()
         if count == 2:
             return ProviderResponse([{'type': 'text', 'text':
-                '[turn=T52]\n<bubble>\n登录过期啦\n</bubble>\n'
-                '<bubble>\n第一行\n第二行\n</bubble>'}], [])
+                '<bubble turn="T-52">\n登录过期啦\n</bubble>\n'
+                '<bubble turn="T-52">\n第一行\n第二行\n</bubble>'}], [])
         assert count == 3, 'Unexpected retry'
         sent = json.loads(messages[-1]['content'][0]['content'])
         assert sent['ok'] and sent['state'] == 'committed'

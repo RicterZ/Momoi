@@ -29,7 +29,7 @@ def parse_tagged_bubbles(text: str) -> list[str] | None:
     tokens = re.finditer(
         r"(?m:^[ \t]{0,3}(`{3,}|~{3,})[^\n]*(?:\n|$)).*?"
         r"(?m:^[ \t]{0,3}\1[ \t]*(?:\n|$)|\Z)"
-        r"|<bubble>(.*?)</bubble>|</?bubble\b",
+        r"|<bubble(?:\s+[\w:-]+\s*=\s*(?:\"[^\"]*\"|'[^']*'))*\s*>(.*?)</bubble>|</?bubble\b",
         text,
         re.DOTALL,
     )
