@@ -1184,7 +1184,6 @@ function Reflections({ refreshKey, token, routeParam }) {
             </p>
             {!!item.memories?.length && (
               <div className="reflection-snapshot">
-                <p className="secondary">当日提炼 · 历史快照，当前记忆可在<a href="#memories">记忆页</a>管理。</p>
                 <div className="memory-list">
                   {item.memories.map((memory) => (
                     <div className="memory" key={`${memory.kind}:${memory.key}`}>
