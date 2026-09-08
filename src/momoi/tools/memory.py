@@ -238,6 +238,9 @@ class MemoryTools:
             results = self.store.rank_recalled_memories(
                 [MemoryRecallQuery(query)], limit, dense_evidence=dense_evidence
             )
+            # TODO: Restore reflection results alongside shared context injection
+            # once their evidence and applicability are preserved.
+            results = [item for item in results if item["source"] == "confirmed"]
 
         ids = [
             int(item["id"])

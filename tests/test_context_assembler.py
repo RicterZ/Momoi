@@ -405,14 +405,8 @@ class ContextAssemblerTest(unittest.TestCase):
                 )
             )
             assembled = assemble_main_context(store, retrieval, 2000)
-            self.assertIn(
-                "may be outdated or no longer applicable",
-                assembled["reflection_memories"],
-            )
-            self.assertIn(
-                "[date=2030-01-01 owner_profile:cup.core]",
-                assembled["reflection_memories"],
-            )
+            self.assertEqual(assembled["reflection_memories"], "")
+            self.assertNotIn("复盘认为蓝色杯子很重要", str(assembled))
 
             heartbeat_retrieval = build_plan_retrieval(
                 store,
@@ -429,6 +423,12 @@ class ContextAssemblerTest(unittest.TestCase):
             )
             self.assertTrue(heartbeat_retrieval["recall_memories"])
             self.assertTrue(heartbeat_retrieval["reflection_memories"])
+            self.assertEqual(
+                assemble_main_context(store, heartbeat_retrieval, 2000)[
+                    "reflection_memories"
+                ],
+                "",
+            )
             self.assertIn("queries=蓝色杯子", heartbeat_retrieval["query_recall"])
 
             shared_intent = "整理蓝色杯子的共同回忆"
@@ -1395,7 +1395,7 @@ class ContextAssemblerTest(unittest.TestCase):
             )
             rendered = "\n".join(assembled.values())
             self.assertNotIn("较早的项目邮件仍在等待", rendered)
-            self.assertIn("项目邮件关系到当前合作", rendered)
+            self.assertNotIn("项目邮件关系到当前合作", rendered)
             self.assertIn("goal-mail", rendered)
             self.assertIn("goal-social", rendered)
             autonomous = recall_episode_context(store, "项目邮件", 3, 2000)
