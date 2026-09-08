@@ -987,10 +987,7 @@ function TimeField({ label, value, onChange, allowDisabled = false }) {
   });
   if (allowDisabled) options.unshift({ value: "disabled", label: "禁用" });
   return (
-    <div className="settings-time-field" role="group" aria-label={label}>
-      <span className="settings-label">{label}</span>
-      <SelectField label={label} value={value || "03:00"} options={options} onChange={onChange} />
-    </div>
+    <SelectField label={label} value={value || "03:00"} options={options} onChange={onChange} />
   );
 }
 

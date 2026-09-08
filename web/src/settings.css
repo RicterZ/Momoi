@@ -1183,8 +1183,7 @@
   font-size: 13px;
 }
 .settings-runtime-fields > .settings-field { width: 200px; }
-.settings-runtime-fields > .settings-field > .settings-label,
-.settings-time-field > .settings-field > .settings-label {
+.settings-runtime-fields > .settings-field > .settings-label {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -1193,14 +1192,6 @@
   clip-path: inset(50%);
   white-space: nowrap;
 }
-.settings-time-field {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  min-width: 0;
-}
-.settings-time-field > .settings-label { white-space: nowrap; }
-.settings-time-field > .settings-field { width: 160px; }
 .settings-runtime-fields .dash-input { height: 44px; }
 @media (min-width: 651px) and (max-width: 900px) {
   .settings-runtime-group { flex-wrap: wrap; gap: 20px; }
@@ -1212,10 +1203,5 @@
   .settings-runtime-group { flex-wrap: wrap; gap: 20px; }
   .settings-runtime-copy { flex-basis: 100%; }
   .settings-runtime-fields { flex-wrap: wrap; gap: 16px; }
-  .settings-runtime-group:has(.settings-time-field) .settings-runtime-fields {
-    width: 100%;
-    justify-content: space-between;
-  }
-  .settings-time-field { gap: 10px; }
   .settings-runtime-fields > .settings-field { width: 150px; }
 }
