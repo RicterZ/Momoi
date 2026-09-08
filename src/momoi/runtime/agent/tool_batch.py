@@ -15,7 +15,7 @@ from ..turn_support import (
     tool_result_block,
 )
 from .harness import TurnHarness
-from .protocol import assistant_history_content, parse_end_turn
+from .protocol import assistant_history_message, parse_end_turn
 from .runtime_tools import begin_heartbeat, enable_tools, recall_owner_context
 from .workflow import AgentWorkflow, TurnExecutionSpec
 
@@ -115,12 +115,8 @@ class ToolBatchExecutor:
         ended = False
         reply = None
 
-        # Keep protocol output for the next round, excluding private reasoning.
         request.messages.append(
-            {
-                "role": "assistant",
-                "content": assistant_history_content(request.response.content),
-            }
+            assistant_history_message(request.response.content, request.response.continuation)
         )
         results: list[dict[str, Any]] = []
         owner_updates: list[IncomingMessage] = []

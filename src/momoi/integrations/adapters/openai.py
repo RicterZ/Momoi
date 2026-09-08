@@ -47,8 +47,12 @@ def openai_messages(
     for message in messages:
         role = str(message.get("role") or "")
         content = message.get("content")
+        continuation = message.get("provider_continuation", {}).get("openai", {})
         if isinstance(content, str):
-            wire.append({"role": role, "content": content})
+            item = {"role": role, "content": content}
+            if role == "assistant" and "reasoning_content" in continuation:
+                item["reasoning_content"] = continuation["reasoning_content"]
+            wire.append(item)
             continue
         if not isinstance(content, list):
             continue
@@ -78,6 +82,8 @@ def openai_messages(
             item: dict[str, Any] = {"role": "assistant", "content": text or None}
             if reasoning:
                 item["reasoning_content"] = reasoning
+            if "reasoning_content" in continuation:
+                item["reasoning_content"] = continuation["reasoning_content"]
             if tool_calls:
                 item["tool_calls"] = tool_calls
             wire.append(item)
@@ -313,6 +319,15 @@ class OpenAIProvider:
                         }
                     )
                 reasoning = openai_reasoning(message)
+                continuation = (
+                    {"openai": {"reasoning_content": (
+                        message["reasoning_content"]
+                        if isinstance(message.get("reasoning_content"), str)
+                        else reasoning
+                    )}}
+                    if reasoning or isinstance(message.get("reasoning_content"), str)
+                    else {}
+                )
                 persist_thinking(
                     self.thinking_sink,
                     reasoning=reasoning,
@@ -335,6 +350,7 @@ class OpenAIProvider:
                         tool_calls,
                         metrics,
                         reasoning=reasoning,
+                        continuation=continuation,
                     )
                 if not content:
                     raise ProviderResponseError(
@@ -349,7 +365,7 @@ class OpenAIProvider:
                     text=compact_response_text(str(text)),
                     duration_ms=duration_ms,
                 )
-                return ProviderResponse(content, [], metrics, reasoning=reasoning)
+                return ProviderResponse(content, [], metrics, reasoning=reasoning, continuation=continuation)
 
         return await retry_request(
             protocol="openai",

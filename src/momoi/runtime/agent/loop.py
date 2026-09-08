@@ -15,6 +15,7 @@ from . import (
 )
 from ..parsing import parse_tagged_bubbles, response_text
 from .protocol import (
+    assistant_history_message,
     handle_no_tool_response,
 )
 from .tool_batch import ToolBatchRequest, ToolBatchState
@@ -241,7 +242,7 @@ class AgentLoop:
                 previous_tool_name = None
                 last_sent_messages = None
                 last_sent_channel = ""
-                messages.append({"role": "assistant", "content": response.content})
+                messages.append(assistant_history_message(response.content, response.continuation))
                 if response.tool_calls:
                     messages.append(
                         {
@@ -303,6 +304,7 @@ class AgentLoop:
                     failed_rounds=failed_tool_rounds,
                     last_tool_error=last_tool_error,
                     external_effect=external_tool_used,
+                    continuation=response.continuation,
                 )
                 failed_tool_rounds = resolution.failed_rounds
                 if resolution.log_rejection:
@@ -357,7 +359,7 @@ class AgentLoop:
                 ]
                 messages.extend(
                     [
-                        {"role": "assistant", "content": response.content},
+                        assistant_history_message(response.content, response.continuation),
                         {"role": "user", "content": correction},
                     ]
                 )

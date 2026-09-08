@@ -88,6 +88,8 @@ class ProviderResponse:
     tool_calls: list[ToolCall]
     usage: dict[str, float | int | bool] | None = None
     reasoning: str = ""
+    # Opaque protocol continuation, separate from user-visible response content.
+    continuation: dict[str, Any] = field(default_factory=dict, repr=False)
 
 
 @dataclass

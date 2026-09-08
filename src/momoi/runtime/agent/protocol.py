@@ -33,6 +33,14 @@ def assistant_history_content(content: object) -> object:
     ]
 
 
+def assistant_history_message(content: object, continuation: dict | None = None) -> dict:
+    """Retain provider-owned continuation without turning it into visible text."""
+    message = {"role": "assistant", "content": assistant_history_content(content)}
+    if continuation:
+        message["provider_continuation"] = copy.deepcopy(continuation)
+    return message
+
+
 @dataclass(frozen=True)
 class NoToolResolution:
     action: Literal["retry", "return"]
@@ -53,6 +61,7 @@ def handle_no_tool_response(
     failed_rounds: int,
     last_tool_error: str,
     external_effect: bool = False,
+    continuation: dict | None = None,
 ) -> NoToolResolution:
     if workflow_correction is not None or heartbeat_turn or goal_turn or require_response:
         failed_rounds += 1
@@ -70,10 +79,9 @@ def handle_no_tool_response(
                 )
             )
     if workflow_correction is not None:
-        assistant_content = assistant_history_content(content)
         messages.extend(
             [
-                {"role": "assistant", "content": assistant_content},
+                assistant_history_message(content, continuation),
                 {"role": "user", "content": workflow_correction},
             ]
         )
@@ -81,10 +89,7 @@ def handle_no_tool_response(
     if heartbeat_turn and not harness_started:
         messages.extend(
             [
-                {
-                    "role": "assistant",
-                    "content": assistant_history_content(content),
-                },
+                assistant_history_message(content, continuation),
                 {
                     "role": "user",
                     "content": (
@@ -99,10 +104,7 @@ def handle_no_tool_response(
     if goal_turn:
         messages.extend(
             [
-                {
-                    "role": "assistant",
-                    "content": assistant_history_content(content),
-                },
+                assistant_history_message(content, continuation),
                 {
                     "role": "user",
                     "content": (
@@ -135,10 +137,7 @@ def handle_no_tool_response(
         )
     messages.extend(
         [
-            {
-                "role": "assistant",
-                "content": assistant_history_content(content),
-            },
+            assistant_history_message(content, continuation),
             {"role": "user", "content": correction},
         ]
     )
