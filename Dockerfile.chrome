@@ -31,6 +31,7 @@ PY
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip wheel --wheel-dir /wheels \
         --requirement /tmp/requirements.txt \
+        uv \
         "nap-msg @ https://github.com/RicterZ/Openclaw-NapcatQQ/archive/${NAP_MSG_COMMIT}.zip#subdirectory=nap-msg"
 
 
