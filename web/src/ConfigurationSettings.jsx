@@ -33,7 +33,7 @@ const modules = [
     icon: "voice",
     names: ["tts"],
     optional: true,
-    tip: "让 Momoi 可以发送语音消息。收到的语音由 QQ 或微信转写，无需配置识别服务。关闭合成后原有配置和密钥会保留。",
+    tip: "让 Momoi 可以发送语音消息。停用后保留原有配置和密钥。",
   },
   {
     id: "memory",
