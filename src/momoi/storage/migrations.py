@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import sqlite3
 import re
+import json
 from collections.abc import Callable
+
+from .episode_claims import render_verified_claims
 
 
 Migration = Callable[[sqlite3.Connection], None]
@@ -126,6 +129,37 @@ def _remove_obsolete_reply_context(database: sqlite3.Connection) -> None:
         database.execute(f'ALTER TABLE self_state DROP COLUMN "{column}"')
 
 
+def _neutral_episode_speaker_metadata(database: sqlite3.Connection) -> None:
+    database.execute(
+        """UPDATE conversation_episodes
+           SET emotional_context_json=json_remove(
+               json_set(emotional_context_json, '$.assistant',
+                   json_extract(emotional_context_json, '$.momoi')), '$.momoi')
+           WHERE json_valid(emotional_context_json)
+             AND json_type(emotional_context_json, '$.momoi') IS NOT NULL
+             AND json_type(emotional_context_json, '$.assistant') IS NULL"""
+    )
+    # Rebuild generated framing from structured evidence, never replace text
+    # inside titles, narratives, or source quotations.
+    rows = database.execute(
+        "SELECT id, working_summary_claims_json FROM conversation_episodes"
+    ).fetchall()
+    required = {"role", "delivery_state", "turn_id", "ordinal", "quote"}
+    for episode_id, raw in rows:
+        try:
+            claims = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(claims, list) or not claims or not all(
+            isinstance(claim, dict) and required <= claim.keys() for claim in claims
+        ):
+            continue
+        database.execute(
+            "UPDATE conversation_episodes SET working_summary=? WHERE id=?",
+            (render_verified_claims(claims), episode_id),
+        )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     _add_runtime_archive_metadata,
     _add_turn_workflow_kind,
@@ -133,6 +167,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     _remove_goal_review_header,
     _remove_heartbeat_record_header,
     _remove_obsolete_reply_context,
+    _neutral_episode_speaker_metadata,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 

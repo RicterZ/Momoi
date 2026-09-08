@@ -495,7 +495,7 @@ def test_proactive_speech_without_an_owner_message_is_kept_as_evidence():
         transcript.orphaned,
         timezone=TEST_TIMEZONE,
     )
-    assert "Committed Momoi bubbles" in evidence
+    assert "[ASSISTANT]" in evidence
     assert "<bubble>\n我看到一条新闻\n</bubble>" in evidence
     assert "[owner did not reply" in evidence
     assert "你还没睡吧" in evidence

@@ -449,7 +449,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertIn("<previous_verified_claims>\nClaim 1", prompt)
-        self.assertIn("source=MOMOI delivery=internal", prompt)
+        self.assertIn("source=ASSISTANT delivery=internal", prompt)
         self.assertIn(
             "<exact_content>\n"
             + raw
@@ -624,7 +624,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                             "narrative_summary": "",
                             "emotional_context": {
                                 "owner": "",
-                                "momoi": "",
+                                "assistant": "",
                                 "tone": "",
                             },
                             "outcomes": [],
@@ -842,7 +842,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                             "narrative_summary": "主人和桃衣持续讨论长期项目。",
                             "emotional_context": {
                                 "owner": "投入",
-                                "momoi": "配合",
+                                "assistant": "配合",
                                 "tone": "合作",
                             },
                             "outcomes": ["完成一次阶段讨论"],
@@ -1021,7 +1021,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                             "narrative_summary": "项目讨论仍在继续。",
                             "emotional_context": {
                                 "owner": "",
-                                "momoi": "",
+                                "assistant": "",
                                 "tone": "",
                             },
                             "outcomes": [],

@@ -3,6 +3,8 @@ from datetime import datetime
 from xml.sax.saxutils import escape, quoteattr
 from zoneinfo import ZoneInfo
 
+from ...conversation_roles import speaker_label
+
 from .models import (
     DEFAULT_ACTION_LIMIT,
     DEFAULT_GAP_SECONDS,
@@ -67,7 +69,7 @@ def _silence(
         return None
     if group.role == "assistant":
         if "queued" in previous.part_states:
-            return _message("user", "[previous Momoi messages still being delivered]")
+            return _message("user", "[previous assistant messages still being delivered]")
         waited = max(0.0, group.started_at - previous.ended_at)
         return _message("user", f"[owner did not reply · {_elapsed(waited)} later]")
     return _message("assistant", "[ended the Turn without replying]")
@@ -291,7 +293,7 @@ def render_proactive_bubble_evidence(
         tool_activity=tool_activity,
     )
     parts = [
-        "Committed Momoi bubbles before the retained owner transcript (pending delivery is marked):"
+        "Committed assistant bubbles before the retained owner transcript (pending delivery is marked):"
     ]
     for message in rendered:
         content = "\n".join(
@@ -302,7 +304,7 @@ def render_proactive_bubble_evidence(
         if not content:
             continue
         label = (
-            "Momoi"
+            speaker_label("assistant")
             if message.get("role") == "assistant"
             else "Conversation state"
         )

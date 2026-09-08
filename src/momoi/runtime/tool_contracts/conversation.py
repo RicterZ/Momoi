@@ -159,7 +159,7 @@ REPLY_WAIT_DECISION_SCHEMA: dict[str, Any] = {
     "description": (
         "Whether the last visible bubble leaves a real open beat. false when complete "
         "or another scheduler owns the work. true only while awaiting a reply, "
-        "reaction, incoming information, or Momoi's later continuation; it requires "
+        "reaction, incoming information, or the assistant's later continuation; it requires "
         "a visible bubble and schedules one follow-up Turn after silence."
     ),
     "oneOf": [
@@ -188,7 +188,7 @@ REPLY_WAIT_DECISION_SCHEMA: dict[str, Any] = {
                     "minLength": 1,
                     "maxLength": 300,
                     "description": (
-                        "The reply, reaction, incoming information, or Momoi "
+                        "The reply, reaction, incoming information, or assistant "
                         "continuation that would complete this beat."
                     ),
                 },

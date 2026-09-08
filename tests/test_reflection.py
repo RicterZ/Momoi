@@ -224,7 +224,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                     }
                 ],
             },
-            "[MOMOI]\n主人是医生",
+            "[ASSISTANT]\n主人是医生",
             "",
             "",
         )
@@ -241,7 +241,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
         }
         result, error = parse_reflection_finish(
             {"summary": "测试", "memories": [memory]},
-            "[MOMOI]\n直接说结论就好",
+            "[ASSISTANT]\n直接说结论就好",
             "",
             "",
         )
@@ -287,7 +287,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                     }
                 ],
             },
-            "[MOMOI]\n先复现失败，再修改并用同一个检查验证",
+            "[ASSISTANT]\n先复现失败，再修改并用同一个检查验证",
             "",
             "",
         )

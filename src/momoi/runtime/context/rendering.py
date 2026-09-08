@@ -2,6 +2,8 @@ import logging
 from xml.etree import ElementTree
 from xml.sax.saxutils import escape, quoteattr
 
+from ...conversation_roles import speaker_label
+
 from ...observability.events import log_event
 from ...storage import (
     REFLECTION_MEMORY_CAUTION,
@@ -109,12 +111,7 @@ def _episode_match_lines(
     for match in matches:
         role = str(match.get("role") or "")
         delivery = str(match.get("delivery_state") or "")
-        if role == "user":
-            source = "OWNER"
-        elif role == "assistant":
-            source = "MOMOI"
-        else:
-            source = role.upper() or "UNKNOWN"
+        source = speaker_label(role)
         attributes = {
             "source": source,
             "turn_id": match.get("turn_id"),

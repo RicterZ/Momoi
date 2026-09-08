@@ -1,5 +1,7 @@
 from collections.abc import Mapping, Sequence
 
+from ....conversation_roles import speaker_label
+
 
 def _text(value: object) -> str:
     return str(value or "").strip()
@@ -14,14 +16,10 @@ def _lines(values: object) -> str:
 
 def _speaker(message: Mapping[str, object]) -> str:
     role = _text(message.get("role")).lower()
-    if role == "user":
-        return "OWNER"
     if role == "assistant":
         delivery = _text(message.get("delivery_state")) or "unknown"
-        return f"MOMOI delivery={delivery}"
-    if role == "event":
-        return "EVENT"
-    return role.upper() or "UNKNOWN"
+        return f"{speaker_label(role)} delivery={delivery}"
+    return speaker_label(role)
 
 
 def _render_conversation_turn(

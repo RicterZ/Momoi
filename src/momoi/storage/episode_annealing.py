@@ -4,6 +4,7 @@ import math
 import time
 
 from ..observability.events import log_event
+from .episode_claims import render_verified_claims
 from .memory_values import estimate_tokens
 
 EPISODE_ANNEAL_MAX_FAILURES = 3
@@ -191,22 +192,7 @@ class EpisodeAnnealingStore:
                     "quote": quote,
                 }
             )
-        lines = []
-        for claim in normalized:
-            if claim["role"] == "user":
-                source = "OWNER"
-            elif claim["delivery_state"] == "uncertain":
-                source = "MOMOI delivery=uncertain"
-            elif claim["delivery_state"] == "internal":
-                source = "MOMOI visibility=internal"
-            else:
-                source = "MOMOI delivery=delivered"
-            lines.append(
-                f"- [source {source} turn={claim['turn_id']} "
-                f"ordinal={claim['ordinal']}] "
-                f"{json.dumps(claim['quote'], ensure_ascii=False)}"
-            )
-        working_summary = "\n".join(lines)
+        working_summary = render_verified_claims(normalized)
         if len(working_summary) > 12000:
             raise ValueError("episode summary exceeds storage budget")
         narrative_summary = narrative_summary.strip()
@@ -215,7 +201,7 @@ class EpisodeAnnealingStore:
         emotional_context = emotional_context or {}
         if (
             not isinstance(emotional_context, dict)
-            or set(emotional_context) - {"owner", "momoi", "tone"}
+            or set(emotional_context) - {"owner", "assistant", "tone"}
             or any(
                 not isinstance(value, str) or len(value.strip()) > 300
                 for value in emotional_context.values()
@@ -328,4 +314,3 @@ class EpisodeAnnealingStore:
                  AND summary_retry_at IS NOT NULL"""
         ).fetchone()
         return float(row["due"]) if row and row["due"] is not None else None
-

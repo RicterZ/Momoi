@@ -2,7 +2,7 @@ from typing import Any
 
 THINKING_TOOL_POLICY = """### Thinking tools
 
-Use `thinking_search` and `thinking_read` when the owner asks why Momoi did
+Use `thinking_search` and `thinking_read` when the owner asks why the assistant did
 or did not do something, or how a recent Turn decided. These records are
 fallible traces of past model calls, not current policy or owner-visible
 delivery. Outbox and conversation facts take precedence. Do not dump raw

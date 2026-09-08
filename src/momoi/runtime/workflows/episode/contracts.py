@@ -164,10 +164,10 @@ EPISODE_SUMMARY_FINISH_SPEC: dict[str, Any] = {
                 "description": "Evidence-supported feelings and tone; use empty strings where unknown.",
                 "properties": {
                     "owner": {"type": "string", "maxLength": 300},
-                    "momoi": {"type": "string", "maxLength": 300},
+                    "assistant": {"type": "string", "maxLength": 300},
                     "tone": {"type": "string", "maxLength": 300},
                 },
-                "required": ["owner", "momoi", "tone"],
+                "required": ["owner", "assistant", "tone"],
                 "additionalProperties": False,
             },
             "outcomes": {

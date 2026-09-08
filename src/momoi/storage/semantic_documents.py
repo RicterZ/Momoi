@@ -9,13 +9,14 @@ from typing import Iterable
 
 import numpy as np
 
+from ..conversation_roles import speaker_label
 from .integrity import decode_stored_json
 from .memory_values import estimate_tokens, token_chunk
 
 
 QUERY_TEMPLATE_VERSION = 1
 
-DOCUMENT_TEMPLATE_VERSION = 1
+DOCUMENT_TEMPLATE_VERSION = 2
 
 SEMANTIC_PROVIDER = "fastembed"
 
@@ -95,10 +96,7 @@ def _episode_summary_document(row: sqlite3.Row) -> SemanticDocument | None:
     )
 
 def _message_parts(row: sqlite3.Row) -> list[str]:
-    role = {
-        "user": "OWNER",
-        "event": "EVENT",
-    }.get(str(row["role"]), "MOMOI")
+    role = speaker_label(row["role"])
     label = (
         f"[{role} turn={row['turn_id']} ordinal={row['ordinal']} "
         f"delivery={row['delivery_state']}] "
@@ -171,4 +169,3 @@ def _episode_turn_documents(
                 )
             )
     return documents
-

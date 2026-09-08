@@ -168,7 +168,7 @@ def heartbeat_begin_spec(group_descriptions: dict[str, str]) -> dict[str, Any]:
                     "minLength": 1,
                     "maxLength": 300,
                     "description": (
-                        "What Momoi will genuinely do or experience in this Heartbeat."
+                        "What you will do or experience in this Heartbeat."
                     ),
                 },
                 "mode": {

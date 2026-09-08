@@ -1,5 +1,7 @@
 from datetime import datetime, timedelta
 
+from ..conversation_roles import speaker_label
+
 from .memory_values import truncate_tokens
 from .reflection_values import (
     _reflection_compact_value,
@@ -26,16 +28,11 @@ class ReflectionSourceStore:
             (start.timestamp(), end.timestamp()),
         ).fetchall():
             owner = row["role"] == "user"
-            if owner:
-                label = "OWNER"
-            elif row["role"] == "event":
-                label = "EVENT"
-            else:
-                label = "MOMOI"
-            if row["role"] != "event" and row["delivery_state"] == "internal":
-                label = "MOMOI INTERNAL (not sent to owner)"
-            elif row["role"] != "event" and row["delivery_state"] == "uncertain":
-                label = "MOMOI DELIVERY UNCERTAIN"
+            label = speaker_label(row["role"])
+            if row["role"] == "assistant" and row["delivery_state"] == "internal":
+                label += " INTERNAL (not sent to owner)"
+            elif row["role"] == "assistant" and row["delivery_state"] == "uncertain":
+                label += " DELIVERY UNCERTAIN"
             entries.append(
                 (
                     float(row["created_at"]),
@@ -269,4 +266,3 @@ class ReflectionSourceStore:
             "start_at": start.timestamp(),
             "end_at": end.timestamp(),
         }
-

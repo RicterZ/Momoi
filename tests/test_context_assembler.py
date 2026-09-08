@@ -184,7 +184,7 @@ class ContextAssemblerTest(unittest.TestCase):
         root = ElementTree.fromstring(rendered)
         self.assertTrue(all("id" not in node.attrib for node in root))
         self.assertTrue(all("timestamp" not in node.attrib for node in root))
-        self.assertEqual(root[0].attrib["source"], "MOMOI")
+        self.assertEqual(root[0].attrib["source"], "ASSISTANT")
         self.assertEqual(root[0].attrib["delivery"], "uncertain")
         self.assertEqual(root[1].attrib["source"], "OWNER")
         self.assertEqual(root[0].attrib["turn_id"], 'turn"<&')

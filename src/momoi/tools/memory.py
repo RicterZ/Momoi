@@ -2,6 +2,8 @@ import json
 import logging
 from typing import Any
 
+from ..conversation_roles import speaker_label
+
 from .time_range import parse_history_time_range
 from ..observability.events import log_event
 from ..models import (
@@ -61,7 +63,7 @@ def _episode_claim_excerpt(
         ranked = ranked[-4:]
     lines = []
     for _, _, _, _, claim in ranked:
-        role = "OWNER" if claim.get("role") == "user" else "MOMOI"
+        role = speaker_label(claim.get("role"))
         lines.append(
             f"- [{role} ordinal={claim.get('ordinal')}] "
             f"{json.dumps(str(claim['quote']), ensure_ascii=False)}"
@@ -78,7 +80,7 @@ def _episode_match_excerpt(episode: dict[str, object]) -> str:
     for match in episode.get("matches", []):
         if not isinstance(match, dict) or not str(match.get("content") or "").strip():
             continue
-        role = "OWNER" if match.get("role") == "user" else "MOMOI"
+        role = speaker_label(match.get("role"))
         lines.append(
             f"- [{role} ordinal={match.get('ordinal')}] "
             f"{json.dumps(str(match['content']), ensure_ascii=False)}"

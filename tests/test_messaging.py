@@ -947,9 +947,7 @@ class MessagingAsyncTest(unittest.IsolatedAsyncioTestCase):
             wire = json.dumps(provider.messages, ensure_ascii=False)
             self.assertIn("<proactive_bubbles>", wire)
             self.assertIn("刚才提醒你窗户还开着", wire)
-            self.assertIn(
-                "Committed Momoi bubbles before the retained owner transcript", wire
-            )
+            self.assertIn("[ASSISTANT]", wire)
             self.assertFalse(
                 any(
                     message.get("role") == "assistant"
