@@ -329,6 +329,7 @@ See [Provider configuration](./PROVIDERS.md#embedding) for options and setup. Co
 {
   "tools": {
     "mcp_config": "mcp.json",
+    "exec_enabled": false,
     "result_max_chars": 12000,
     "result_retention_days": 30
   }
@@ -338,8 +339,17 @@ See [Provider configuration](./PROVIDERS.md#embedding) for options and setup. Co
 | Field | Default | Description |
 | --- | --- | --- |
 | `mcp_config` | `mcp.json` | MCP server configuration path; `null` or `""` disables MCP loading |
+| `exec_enabled` | `false` | Expose the `exec` command tool to the model; editable in Settings → MCP tools |
 | `result_max_chars` | `12000` | Maximum model-visible tool-result chunk size; minimum `1000` characters |
 | `result_retention_days` | `30` | Days to retain private large-result snapshots; `0` disables age-based cleanup |
+
+`exec` runs a Bash `command`, with optional `cwd` and `timeout_seconds` (30 seconds by default, at most 120).
+The workspace is the default working directory, not a sandbox: commands have the Momoi process's file,
+credential and network permissions. Each output stream retains its last 16 KiB; timeout or cancellation
+terminates the process group. Disabling the switch removes the model tool and rejects direct invocation.
+Save `tools.exec_enabled` through `PATCH /api/settings/configuration/app` with the current revision;
+the supervisor applies the new runtime. Preconfigured Webhook `uses: exec` steps remain argv-based,
+independent of this model-tool switch, with no additional Bash interpretation.
 
 | MCP field | Default | Description |
 | --- | --- | --- |

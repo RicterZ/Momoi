@@ -261,6 +261,7 @@ def parse_config(raw, config_path: Path, *, providers=None) -> AppConfig:
         soul_prompt=soul_prompt,
         heartbeat_prompt=heartbeat_prompt,
         mcp_config=mcp_config,
+        exec_enabled=boolean(tools_raw.get("exec_enabled", False), "tools.exec_enabled"),
         notifications=NotificationConfig(
             quiet_start=quiet_start,
             quiet_end=quiet_end,

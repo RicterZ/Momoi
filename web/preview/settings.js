@@ -8,6 +8,7 @@ export function createSettingsPreview(json) {
   let applied = "preview-1";
   let login = { status: "idle" };
   let connectionTesting = false;
+  let mcpDocument = { mcpServers: {} };
   let configuration = {
     revision: "preview-1",
     app: {
@@ -75,7 +76,7 @@ export function createSettingsPreview(json) {
   return (req, res, path) => {
     if (req.method === "GET" && path === "/api/settings/mcp") {
       res.setHeader("Content-Type", "application/json");
-      res.end(JSON.stringify({ mcpServers: {} }, null, 2) + "\n");
+      res.end(JSON.stringify(mcpDocument, null, 2) + "\n");
       return true;
     }
     if (req.method === "GET" && path === "/api/settings/configuration") {
@@ -118,7 +119,8 @@ export function createSettingsPreview(json) {
     const verify =
       path === "/api/settings/channels/weixin/verify" && req.method === "POST";
     const test = req.method === "POST" && path.match(/^\/api\/settings\/providers\/([^/]+)\/test$/);
-    if (!providers && !app && !verify && !test) return false;
+    const mcp = req.method === "PATCH" && path === "/api/settings/mcp";
+    if (!providers && !app && !verify && !test && !mcp) return false;
     let raw = "";
     req.setEncoding("utf8");
     req.on("data", (chunk) => {
@@ -127,6 +129,21 @@ export function createSettingsPreview(json) {
     req.on("end", () => {
       try {
         const body = JSON.parse(raw);
+        if (mcp) {
+          if (req.headers["if-match"] !== `"${configuration.revision}"`) {
+            json(res, { error: "配置已变更，请刷新后重试。" }, 409);
+            return;
+          }
+          if (!body?.mcpServers || typeof body.mcpServers !== "object" || Array.isArray(body.mcpServers)) {
+            json(res, { error: "mcpServers 必须为对象。" }, 400);
+            return;
+          }
+          mcpDocument = body;
+          configuration = { ...configuration, revision: `preview-${++revision}` };
+          apply();
+          json(res, configuration, 202);
+          return;
+        }
         if (test) {
           const capability = test[1];
           const metadata = adapters.find(item => item.capability === capability && item.adapter === body.adapter);

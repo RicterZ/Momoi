@@ -18,6 +18,12 @@ THINKING_STAGES = {
 }
 
 _FIELDS = {
+    "tools": {
+        "label": "工具",
+        "fields": {
+            "exec_enabled": {"type": "boolean", "label": "命令执行（exec）", "default": False},
+        },
+    },
     "thinking": {
         "label": "阶段思考强度",
         "fields": {

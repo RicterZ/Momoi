@@ -24,17 +24,18 @@ logger = logging.getLogger("momoi.runtime.turns")
 class ToolSurface:
     """Projects the tool catalog exposed to each workflow."""
 
-    def __init__(self, mcp: Any, channels: dict[str, Any], *, voice_enabled: bool = False):
+    def __init__(self, mcp: Any, channels: dict[str, Any], *, voice_enabled: bool = False, exec_enabled: bool = False):
         self.mcp = mcp
         self.channel_names = list(channels)
         self.voice_enabled = voice_enabled
+        self.builtin_specs = [spec for spec in BUILTIN_TOOL_SPECS if exec_enabled or spec["name"] != "exec"]
 
     @staticmethod
     def public_specs(specs: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return [public_tool_spec(spec) for spec in specs]
 
     def owner_progress_tool_names(self) -> frozenset[str]:
-        specs = [*AGENDA_TOOL_SPECS, *BUILTIN_TOOL_SPECS, *self.mcp.tool_specs]
+        specs = [*AGENDA_TOOL_SPECS, *self.builtin_specs, *self.mcp.tool_specs]
         return frozenset(
             str(spec.get("name") or "")
             for spec in specs
@@ -106,7 +107,7 @@ class ToolSurface:
             *copy.deepcopy(MEMORY_TOOL_SPECS),
             *copy.deepcopy(THINKING_TOOL_SPECS),
             *self.public_specs(AGENDA_TOOL_SPECS),
-            *self.public_specs(BUILTIN_TOOL_SPECS),
+            *self.public_specs(self.builtin_specs),
             *([tool_enable_spec(catalog)] if catalog else []),
             copy.deepcopy(END_TURN_TOOL_SPEC),
         ]
@@ -116,7 +117,7 @@ class ToolSurface:
     def permitted_names(self, stage: str, *, agent_owned_goal: bool = False) -> frozenset[str]:
         external = {
             str(spec.get("name") or "")
-            for spec in [*BUILTIN_TOOL_SPECS, *self.mcp.tool_specs]
+            for spec in [*self.builtin_specs, *self.mcp.tool_specs]
         }
         agenda = {str(spec["name"]) for spec in AGENDA_TOOL_SPECS}
         memory = {str(spec["name"]) for spec in MEMORY_TOOL_SPECS}

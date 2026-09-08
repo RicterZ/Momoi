@@ -307,6 +307,7 @@ Goal 和 Webhook Turn 不运行自动预检索。
 {
   "tools": {
     "mcp_config": "mcp.json",
+    "exec_enabled": false,
     "result_max_chars": 12000,
     "result_retention_days": 30
   }
@@ -316,8 +317,15 @@ Goal 和 Webhook Turn 不运行自动预检索。
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
 | `mcp_config` | `mcp.json` | MCP 服务器配置路径；`null` 或 `""` 关闭 MCP 加载 |
+| `exec_enabled` | `false` | 向模型暴露 `exec` 命令执行工具；设置页的 MCP 工具中可切换 |
 | `result_max_chars` | `12000` | 模型可见的单个工具结果分段最大长度；最小值为 `1000` 个字符 |
 | `result_retention_days` | `30` | 大结果私有快照的保留天数；`0` 关闭按时间清理 |
+
+`exec` 使用 Bash 执行 `command`，可指定 `cwd` 和 `timeout_seconds`（默认 30 秒，最大 120 秒）。
+默认工作目录为 workspace，但不提供沙箱或路径隔离；命令拥有 Momoi 进程的文件、凭据和网络访问权限。
+输出保留 stdout/stderr 各自最后 16 KiB，超时或取消时终止进程组。关闭开关同时移除模型工具并拒绝直接调用。
+通过 `PATCH /api/settings/configuration/app` 提交 `tools.exec_enabled` 和当前 revision，保存后应用新运行实例。
+Webhook 的预配置 `uses: exec` 仍以 argv 执行，不受此模型工具开关影响，也不会引入 Bash 字符串解释。
 
 | MCP 字段 | 默认值 | 说明 |
 | --- | --- | --- |

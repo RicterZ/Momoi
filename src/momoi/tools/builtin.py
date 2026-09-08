@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import math
 import os
 import shutil
 import subprocess
@@ -11,6 +12,7 @@ import aiohttp
 
 from ..models import ToolCall
 from .contracts.builtin import BUILTIN_TOOL_SPECS
+from .process import run_process
 
 
 class BuiltinTools:
@@ -19,6 +21,7 @@ class BuiltinTools:
         workspace: Path | None = None,
         *,
         private_roots: tuple[Path, ...] = (),
+        exec_enabled: bool = False,
     ) -> None:
         self.workspace = (
             workspace.expanduser().resolve() if workspace is not None else Path.cwd()
@@ -26,6 +29,7 @@ class BuiltinTools:
         self.private_roots = tuple(
             path.expanduser().resolve() for path in private_roots
         )
+        self.exec_enabled = exec_enabled
 
     def resolve_path(self, value: object) -> Path:
         path = Path(str(value or "")).expanduser()
@@ -73,6 +77,10 @@ class BuiltinTools:
 
     async def execute(self, call: ToolCall) -> dict[str, Any]:
         try:
+            if call.name == "exec":
+                if not self.exec_enabled:
+                    return {"ok": False, "error": "tool_not_allowed"}
+                return await self._exec(call.arguments)
             if call.name == "curl":
                 return await self._curl(call.arguments)
             if call.name == "read_file":
@@ -100,6 +108,20 @@ class BuiltinTools:
                 "error": type(error).__name__,
                 "message": str(error)[:1000],
             }
+
+    async def _exec(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        command = arguments.get("command")
+        if not isinstance(command, str) or not command.strip():
+            raise ValueError("command must be a nonempty string")
+        timeout = arguments.get("timeout_seconds", 30)
+        if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not math.isfinite(timeout) or not 0.1 <= timeout <= 120:
+            raise ValueError("timeout_seconds must be between 0.1 and 120")
+        cwd = self.resolve_path(arguments.get("cwd"))
+        try:
+            result = await run_process(["bash", "-c", command], cwd=cwd, timeout=timeout)
+        except TimeoutError:
+            return {"ok": False, "error": "exec_timeout"}
+        return {"ok": result["exit_code"] == 0, **result}
 
     @staticmethod
     async def _curl(arguments: dict[str, Any]) -> dict[str, Any]:

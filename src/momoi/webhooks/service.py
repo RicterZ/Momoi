@@ -3,7 +3,6 @@ import hmac
 import json
 import logging
 import os
-import signal
 from collections.abc import Awaitable, Callable
 from time import monotonic
 from typing import Any
@@ -11,6 +10,7 @@ from typing import Any
 from aiohttp import web
 
 from .catalog import WorkflowError, bind_workflow, load_catalog
+from ..tools.process import run_process
 from ..config.models import WebhookConfig
 from ..observability.context import log_context
 from ..observability.events import log_event
@@ -280,47 +280,15 @@ class WebhookService:
     async def _run_exec(
         self, step: dict[str, Any]
     ) -> tuple[str, dict[str, Any], str | None]:
-        env = {**os.environ, **step["env"]}
         try:
-            process = await asyncio.create_subprocess_exec(
-                *step["argv"],
-                env=env,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                start_new_session=True,
-            )
-        except OSError as error:
-            return "failed", {}, type(error).__name__
-        try:
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(), timeout=float(step["timeout_seconds"])
+            result = await run_process(
+                step["argv"], env={**os.environ, **step["env"]},
+                timeout=float(step["timeout_seconds"]),
             )
         except TimeoutError:
-            await self._terminate(process)
             return "ambiguous", {}, "executor_timeout"
-        except asyncio.CancelledError:
-            await self._terminate(process)
-            raise
-        result = {
-            "exit_code": process.returncode,
-            "stdout_tail": stdout[-16384:].decode(errors="replace"),
-            "stderr_tail": stderr[-16384:].decode(errors="replace"),
-        }
-        if process.returncode == 0:
+        except OSError as error:
+            return "failed", {}, type(error).__name__
+        if result["exit_code"] == 0:
             return "succeeded", result, None
-        return "failed", result, f"executor_exit_{process.returncode}"
-
-    @staticmethod
-    async def _terminate(process: asyncio.subprocess.Process) -> None:
-        if process.returncode is not None:
-            return
-        try:
-            os.killpg(process.pid, signal.SIGTERM)
-            await asyncio.wait_for(process.wait(), timeout=5)
-        except (ProcessLookupError, TimeoutError):
-            if process.returncode is None:
-                try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-                await process.wait()
+        return "failed", result, f"executor_exit_{result['exit_code']}"

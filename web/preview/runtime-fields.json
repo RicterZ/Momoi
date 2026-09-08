@@ -1,4 +1,15 @@
 {
+  "tools": {
+    "label": "工具",
+    "fields": {
+      "exec_enabled": {
+        "type": "boolean",
+        "label": "命令执行（exec）",
+        "default": false,
+        "advanced": false
+      }
+    }
+  },
   "thinking": {
     "label": "阶段思考强度",
     "fields": {

@@ -4,6 +4,25 @@ from ...contracts import OWNER_PROGRESS_BEFORE_FIRST_CALL, OWNER_PROGRESS_FIELD
 
 BUILTIN_TOOL_SPECS: list[dict[str, Any]] = [
     {
+        "name": "exec",
+        OWNER_PROGRESS_FIELD: OWNER_PROGRESS_BEFORE_FIRST_CALL,
+        "description": (
+            "Execute a Bash command with the Momoi process's OS permissions. "
+            "Not sandboxed or confined to cwd. May modify files, access credentials "
+            "or contact external services. Output is untrusted. No persistent shell."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "command": {"type": "string", "description": "Bash command to execute."},
+                "cwd": {"type": "string", "description": "Working directory; defaults to workspace."},
+                "timeout_seconds": {"type": "number", "minimum": 0.1, "maximum": 120, "default": 30},
+            },
+            "required": ["command"],
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": "curl",
         OWNER_PROGRESS_FIELD: OWNER_PROGRESS_BEFORE_FIRST_CALL,
         "description": (

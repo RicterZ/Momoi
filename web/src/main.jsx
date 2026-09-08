@@ -74,8 +74,8 @@ function clearToken() {
   localStorage.removeItem(TOKEN_KEY);
 }
 
-async function api(path, { signal, method = "GET", body, token, formData, responseType } = {}) {
-  const headers = { Accept: "application/json" };
+async function api(path, { signal, method = "GET", body, token, formData, responseType, headers: extraHeaders } = {}) {
+  const headers = { Accept: "application/json", ...extraHeaders };
   if (token) headers.Authorization = `Bearer ${token}`;
   let payload = body;
   if (formData) {

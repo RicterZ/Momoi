@@ -221,7 +221,7 @@ class ConfigurationManagerTest(unittest.TestCase):
     def test_app_fields_expose_enum_types_defaults_and_are_isolated(self):
         snapshot = self.manager.snapshot()
         fields = snapshot["app_fields"]
-        self.assertEqual(set(fields), {"heartbeat", "logging", "reflection", "episode_annealing", "thinking"})
+        self.assertEqual(set(fields), {"heartbeat", "logging", "reflection", "episode_annealing", "thinking", "tools"})
         self.assertEqual(fields["logging"]["fields"]["level"]["enum"], ["TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
         self.assertEqual(fields["reflection"]["fields"]["at"]["format"], "time")
         self.assertEqual(snapshot["app"]["reflection"]["at"], "03:00")
@@ -566,6 +566,7 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
                     "logging": {"level": "TRACE"},
                     "reflection": {"enabled": True, "at": "21:45"},
                     "episode_annealing": {"enabled": True},
+                    "tools": {"exec_enabled": True},
                 }},
             )
             self.assertEqual(response.status, 200, await response.text())
@@ -577,12 +578,14 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(config.reflection.enabled)
             self.assertEqual(config.reflection.at, "21:45")
             self.assertTrue(config.episode_annealing.enabled)
+            self.assertTrue(config.exec_enabled)
             self.assertEqual(logger.level, logging.TRACE)
             # File edits use the same validation and watcher, without a reload request.
             changed = self.manager.read_app()
             for section in ("heartbeat", "reflection", "episode_annealing"):
                 changed[section]["enabled"] = False
             changed["logging"]["level"] = "INFO"
+            changed["tools"]["exec_enabled"] = False
             changed["reflection"]["at"] = "23:59"
             atomic_write(self.path, json.dumps(changed))
             await applied(self.manager.revision())
@@ -590,6 +593,7 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(config.heartbeat.enabled)
             self.assertFalse(config.reflection.enabled)
             self.assertFalse(config.episode_annealing.enabled)
+            self.assertFalse(config.exec_enabled)
             self.assertEqual(config.reflection.at, "23:59")
             self.assertEqual(logger.level, logging.INFO)
             response = await self.client.get("/api/settings/runtime")

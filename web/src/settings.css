@@ -636,6 +636,18 @@
 .settings-mcp .prompt-description { margin-top: 0; }
 .settings-mcp .prompt-field { grid-template-rows: auto minmax(0, 1fr); }
 .settings-mcp .prompt-field textarea { height: 420px; }
+.settings-exec-control {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  margin: 0 24px;
+  padding: 24px 0;
+  border-bottom: 2px solid var(--ink);
+}
+.settings-exec-control > div:first-child { flex: 1; min-width: 0; }
+.settings-exec-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 13px; }
+.settings-exec-heading h3 { margin: 0; font-size: 15px; font-weight: 750; }
+.settings-exec-warning { margin: 10px 0 0; color: #b32850; font-size: 12px; line-height: 1.8; }
 .settings-persona .quiet-button:focus-visible {
   outline: 3px solid var(--settings-focus);
   outline-offset: 3px;

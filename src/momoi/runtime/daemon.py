@@ -100,6 +100,7 @@ class MomoiDaemon(
         self.builtin_tools = BuiltinTools(
             config.workspace or config.database.parent,
             private_roots=(tool_result_root(config),),
+            exec_enabled=config.exec_enabled,
         )
         created = (
             (channel,)
@@ -124,6 +125,7 @@ class MomoiDaemon(
             self.mcp,
             self.channels,
             voice_enabled=self.services.tts is not None,
+            exec_enabled=config.exec_enabled,
         )
         self.delivery_policy = DeliveryPolicy(config, self.store)
         self.tool_executor = ToolExecutor(

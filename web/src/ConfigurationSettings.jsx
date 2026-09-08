@@ -1026,13 +1026,38 @@ function SectionHeader({ module, control }) {
   );
 }
 
-// The MCP PATCH endpoint is currently a no-op; keep editing local until it can save.
-function McpSection({ module, request, token, active, busy, previous, next }) {
+function McpSection({ module, request, token, active, busy, previous, next, data, save }) {
   const [content, setContent] = useState(null);
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const dirty = content !== null && draft !== content;
+  const [execEnabled, setExecEnabled] = useState(data.app.tools?.exec_enabled ?? false);
+  const [savedExec, setSavedExec] = useState(execEnabled);
+  const [submitting, setSubmitting] = useState(false);
+  const submitLock = useRef(false);
+  const dirty = (content !== null && draft !== content) || execEnabled !== savedExec;
+  const locked = busy || submitting;
+  async function submit(event) {
+    event.preventDefault();
+    if (!dirty || locked || submitLock.current) return;
+    submitLock.current = true;
+    setSubmitting(true);
+    setError("");
+    try {
+      if (content !== null && draft !== content) {
+        let document;
+        try { document = JSON.parse(draft); } catch { throw new Error("mcp.json 必须是有效的 JSON 对象。"); }
+        if (!document || Array.isArray(document) || typeof document !== "object") throw new Error("mcp.json 必须是有效的 JSON 对象。");
+        await save("/api/settings/mcp", document, "PATCH");
+        setContent(draft);
+      }
+      if (execEnabled !== savedExec) {
+        await save("/api/settings/configuration/app", { tools: { exec_enabled: execEnabled } }, "PATCH");
+        setSavedExec(execEnabled);
+      }
+    } catch (problem) { setError(problem.message); }
+    finally { submitLock.current = false; setSubmitting(false); }
+  }
   useEffect(() => {
     if (!active || content !== null) return;
     const controller = new AbortController();
@@ -1052,9 +1077,18 @@ function McpSection({ module, request, token, active, busy, previous, next }) {
     return () => controller.abort();
   }, [active, content, request, token]);
   return (
-    <form onSubmit={event => event.preventDefault()} data-dirty={dirty}>
+    <form onSubmit={submit} data-dirty={dirty} data-config-dirty={dirty}>
       <SectionHeader module={module} />
       <div className="settings-form-body settings-persona settings-mcp">
+        <div className="settings-exec-control">
+          <div>
+            <div className="settings-exec-heading"><h3>命令执行</h3><span className="panel-label">TOOLS // EXEC</span></div>
+            <p id="exec-warning" className="settings-exec-warning">开启后，Momoi 可通过 Bash 执行系统命令，拥有服务进程的权限，可读写或删除文件、访问凭据及网络。此工具不提供沙箱隔离，请仅在可信环境中启用。</p>
+          </div>
+          <div aria-describedby="exec-warning">
+            <Toggle checked={execEnabled} disabled={locked} hideLabel onChange={value => { setExecEnabled(value); setError(""); }}>启用命令执行</Toggle>
+          </div>
+        </div>
         <div className="prompt-card">
           <p className="prompt-description">连接外部 MCP 服务，为 Momoi 提供更多工具。</p>
           <label className="prompt-field">
@@ -1067,14 +1101,14 @@ function McpSection({ module, request, token, active, busy, previous, next }) {
               spellCheck={false}
               autoCapitalize="off"
               autoCorrect="off"
-              disabled={busy || loading || content === null}
+              disabled={locked || loading || content === null}
               aria-busy={loading}
               onChange={event => setDraft(event.target.value)}
             />
           </label>
         </div>
       </div>
-      <SaveBar busy={busy} dirty={dirty} status={error ? { text: error, error: true } : null} saveDisabled previous={previous} next={next} />
+      <SaveBar busy={locked} dirty={dirty} status={error ? { text: error, error: true } : null} previous={previous} next={next} />
     </form>
   );
 }
@@ -1113,7 +1147,7 @@ const runtimeDescriptions = {
 };
 
 function RuntimeSection({ module, data, save, saving, previous, next }) {
-  const schemas = data.app_fields || {};
+  const schemas = Object.fromEntries(Object.entries(data.app_fields || {}).filter(([name]) => name !== "tools"));
   const initial = () => Object.fromEntries(Object.entries(schemas).map(([name, schema]) => [
     name,
     Object.fromEntries(Object.entries(schema.fields).map(([key, spec]) => [key, runtimeFieldValue(spec, data.app[name]?.[key])])),
@@ -1516,7 +1550,8 @@ export default function ConfigurationSettings({
     try {
       const result = await call(path, {
         method,
-        body: { revision: revision.current, document },
+        body: path === "/api/settings/mcp" ? document : { revision: revision.current, document },
+        ...(path === "/api/settings/mcp" ? { headers: { "If-Match": `"${revision.current}"` } } : {}),
         signal: AbortSignal.any([applyController.current.signal, AbortSignal.timeout(30000)]),
       });
       revision.current = result.revision;
@@ -1646,7 +1681,7 @@ export default function ConfigurationSettings({
                       {promptContent({ next, previous, busy: saving || actionBusy })}
                     </>
                   ) : module.id === "mcp" ? (
-                    <McpSection module={module} request={request} token={token} active={activeSection === module.id} busy={saving || loading || actionBusy} previous={previous} next={next} />
+                    <McpSection module={module} data={data} save={save} request={request} token={token} active={activeSection === module.id} busy={saving || loading || actionBusy} previous={previous} next={next} />
                   ) : module.id === "runtime" ? (
                     <RuntimeSection key={generation} module={module} data={data} save={save} saving={saving || loading || actionBusy} previous={previous} next={next} />
                   ) : module.id === "channel" ? (
