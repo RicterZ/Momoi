@@ -49,6 +49,7 @@ const modules = [
     optional: true,
     tip: "关闭后停止余额查询与费用估算，本地请求量与通用 Token 用量统计仍然保留。",
   },
+  { id: "runtime", label: "运行设置" },
 ];
 const capabilityLabels = { asr: "语音识别", tts: "语音合成" };
 const adapterLabels = {
@@ -304,12 +305,13 @@ function SelectField({ label, value, onChange, options, hint }) {
   );
 }
 
-function Toggle({ checked, onChange, children, disabled = false }) {
+function Toggle({ checked, onChange, children, disabled = false, hideLabel = false }) {
   return (
     <label className="settings-toggle">
       <input
         type="checkbox"
         role="switch"
+        aria-label={hideLabel ? children : undefined}
         checked={checked}
         onChange={(event) => onChange(event.target.checked)}
         disabled={disabled}
@@ -317,7 +319,7 @@ function Toggle({ checked, onChange, children, disabled = false }) {
       <span className="settings-toggle-track" aria-hidden="true">
         <span />
       </span>
-      <span>{children}</span>
+      {!hideLabel && <span>{children}</span>}
     </label>
   );
 }
@@ -625,7 +627,7 @@ export function ApplyDialog({ progress, onClose, onRetry }) {
   return (
     <SettingsDialog title={progress.title} onClose={busy ? undefined : onClose}>
       <div id={messageId} role="status" aria-live="polite" aria-atomic="true">
-        {busy ? <Loading>{progress.message}</Loading> : <p className="confirm-copy">{progress.message}</p>}
+        {busy ? <Loading>{progress.message}</Loading> : progress.message ? <p className="confirm-copy">{progress.message}</p> : null}
       </div>
       {!busy && (
         <div className="confirm-actions">
@@ -978,6 +980,115 @@ function SectionHeader({ module, control }) {
   );
 }
 
+function TimeField({ label, value, onChange, allowDisabled = false }) {
+  const options = Array.from({ length: 48 }, (_, index) => {
+    const text = `${String(Math.floor(index / 2)).padStart(2, "0")}:${index % 2 ? "30" : "00"}`;
+    return { value: text, label: text };
+  });
+  if (allowDisabled) options.unshift({ value: "disabled", label: "禁用" });
+  return (
+    <div className="settings-time-field" role="group" aria-label={label}>
+      <span className="settings-label">{label}</span>
+      <SelectField label={label} value={value || "03:00"} options={options} onChange={onChange} />
+    </div>
+  );
+}
+
+const runtimeDescriptions = {
+  heartbeat: "心跳是 Momoi 的自主时间。她可以探索、创作、延续自己的活动，也可以休息或主动与你分享。",
+  logging: "控制运行日志的详细程度，用于查看服务状态与排查问题。",
+  reflection: "每天在设定时间回顾对话与活动，记录感受、关系变化和可复用的经验。",
+  episode_annealing: "将值得记住的对话按话题整理、生成摘要，并保留原始记录，便于日后回忆与延续。",
+};
+
+function RuntimeSection({ module, data, save, saving, previous, next }) {
+  const schemas = data.app_fields || {};
+  const initial = () => Object.fromEntries(Object.entries(schemas).map(([name, schema]) => [
+    name,
+    Object.fromEntries(Object.entries(schema.fields).map(([key, spec]) => [key, data.app[name]?.[key] ?? spec.default])),
+  ]));
+  const [draft, setDraft] = useState(initial);
+  const [saved, setSaved] = useState(initial);
+  const [status, setStatus] = useState(null);
+  const dirty = !equal(draft, saved);
+  async function submit(event) {
+    event.preventDefault();
+    if (saving || !dirty) return;
+    try {
+      const document = {};
+      for (const [name, schema] of Object.entries(schemas)) {
+        const changes = {};
+        for (const [key, spec] of Object.entries(schema.fields)) {
+          const value = draft[name][key];
+          if (value === saved[name][key]) continue;
+          if (spec.pattern && !new RegExp(spec.pattern).test(String(value))) {
+            throw new Error(`${spec.label}请使用 HH:MM 格式，例如 03:00。`);
+          }
+          changes[key] = value;
+        }
+        if (Object.keys(changes).length) document[name] = changes;
+      }
+      const result = await save("/api/settings/configuration/app", document, "PATCH");
+      const updated = Object.fromEntries(Object.entries(schemas).map(([name, schema]) => [
+        name, Object.fromEntries(Object.entries(schema.fields).map(([key, spec]) => [key, result.app[name]?.[key] ?? spec.default])),
+      ]));
+      setDraft(updated);
+      setSaved(updated);
+      setStatus(result.applyStatus);
+    } catch (error) { setStatus({ text: error.message, error: true }); }
+  }
+  return (
+    <form noValidate onSubmit={submit} data-dirty={dirty} data-config-dirty={dirty}>
+      <SectionHeader module={module} />
+      <div className="settings-form-body settings-runtime-controls">
+        {Object.entries(schemas).map(([name, schema]) => (
+          <section className="settings-runtime-group" key={name} aria-labelledby={`runtime-${name}`}>
+            <div className="settings-runtime-copy">
+              <div className="settings-voice-title">
+                <h3 id={`runtime-${name}`}>{name === "episode_annealing" ? "话题归档" : schema.label}</h3>
+                <span className="panel-label">RUNTIME // {name === "episode_annealing" ? "ARCHIVE" : name.toUpperCase()}</span>
+              </div>
+              {runtimeDescriptions[name] && <p className="settings-runtime-description" id={`runtime-${name}-description`}>{runtimeDescriptions[name]}</p>}
+            </div>
+            <fieldset className="settings-runtime-fields" disabled={saving} aria-describedby={runtimeDescriptions[name] ? `runtime-${name}-description` : undefined}>
+              {Object.entries(schema.fields).sort(([, a], [, b]) => Number(a.type === "boolean") - Number(b.type === "boolean")).map(([key, spec]) => {
+                if (name === "reflection" && key === "enabled") return null;
+                if (name === "reflection" && key === "at") return (
+                  <TimeField key={key} label={spec.label} allowDisabled
+                    value={draft[name].enabled ? draft[name][key] : "disabled"}
+                    onChange={value => {
+                      setDraft(current => ({ ...current, reflection: {
+                        ...current.reflection,
+                        enabled: value !== "disabled",
+                        at: value === "disabled" ? "03:00" : value,
+                      } }));
+                      setStatus(null);
+                    }}
+                  />
+                );
+                const onChange = value => {
+                  setDraft(current => ({ ...current, [name]: { ...current[name], [key]: value } }));
+                  setStatus(null);
+                };
+                if (spec.type === "boolean") return (
+                  <Toggle key={key} checked={draft[name][key]} disabled={saving} onChange={onChange} hideLabel>
+                    {name === "episode_annealing" ? "启用归档" : spec.label}
+                  </Toggle>
+                );
+                return spec.format === "time"
+                  ? <TimeField key={key} label={spec.label} value={draft[name][key]} onChange={onChange} />
+                  : <OptionField key={key} name={key} spec={spec} value={draft[name][key]} onChange={onChange} />;
+              })}
+            </fieldset>
+          </section>
+        ))}
+        {!Object.keys(schemas).length && <p className="settings-channel-note">当前服务尚未提供运行设置，请更新服务后刷新。</p>}
+      </div>
+      <SaveBar busy={saving} dirty={dirty} status={status} previous={previous} next={next} />
+    </form>
+  );
+}
+
 const channelOptions = [
   { value: "weixin", label: "微信" },
   { value: "napcat", label: "Napcat QQ" },
@@ -1248,7 +1359,7 @@ export default function ConfigurationSettings({
     applyController.current?.abort();
     const controller = new AbortController();
     applyController.current = controller;
-    setApplyProgress({ state: "applying", title: "正在重启服务", message: "配置已保存，正在等待新配置生效…" });
+    setApplyProgress({ state: "applying", title: "保存成功", message: "正在等待配置生效，如需重启请稍候…" });
     const outcome = await waitForConfiguration(call, target, { signal: controller.signal });
     setApplyProgress(outcome);
     return outcome;
@@ -1412,6 +1523,8 @@ export default function ConfigurationSettings({
                       <SectionHeader module={module} />
                       {promptContent({ next, previous, busy: saving || actionBusy })}
                     </>
+                  ) : module.id === "runtime" ? (
+                    <RuntimeSection key={generation} module={module} data={data} save={save} saving={saving || loading || actionBusy} previous={previous} next={next} />
                   ) : module.id === "channel" ? (
                     <ChannelSection
                       key={generation}

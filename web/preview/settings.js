@@ -1,3 +1,4 @@
+import appFields from "./runtime-fields.json" with { type: "json" };
 import adapters from "./settings-adapters.json" with { type: "json" };
 
 // Isolated, in-memory fixtures for Vite's existing MOMOI_PREVIEW mode.
@@ -8,7 +9,11 @@ export function createSettingsPreview(json) {
   let login = { status: "idle" };
   let configuration = {
     revision: "preview-1",
-    app: { channels: { primary: "weixin", enabled: { weixin: {} } } },
+    app: {
+      channels: { primary: "weixin", enabled: { weixin: {} } },
+      ...Object.fromEntries(Object.entries(appFields).map(([name, schema]) => [name, Object.fromEntries(Object.entries(schema.fields).map(([key, spec]) => [key, spec.default]))])),
+    },
+    app_fields: appFields,
     adapters,
     capabilities: {
       llm: {
@@ -168,7 +173,7 @@ export function createSettingsPreview(json) {
         } else
           configuration = {
             ...configuration,
-            app: { ...configuration.app, ...body.document },
+            app: { ...configuration.app, ...Object.fromEntries(Object.entries(body.document).map(([name, value]) => [name, appFields[name] ? { ...configuration.app[name], ...value } : value])) },
           };
         revision += 1;
         configuration.revision = `preview-${revision}`;

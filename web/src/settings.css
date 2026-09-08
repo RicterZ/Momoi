@@ -1139,3 +1139,83 @@
   margin: 0;
   text-align: center;
 }
+
+/* Each runtime feature owns one row; controls stay with their heading. */
+.settings-form-body.settings-runtime-controls {
+  padding: 4px 36px;
+  background: var(--surface);
+}
+.settings-runtime-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  min-height: 104px;
+  padding: 24px 0;
+  --control-accent: var(--blue);
+}
+.settings-runtime-group + .settings-runtime-group {
+  border-top: 2px solid var(--ink);
+}
+.settings-runtime-group:nth-child(even) { --control-accent: var(--pink); }
+.settings-runtime-copy { flex: 1; min-width: 0; }
+.settings-runtime-description {
+  max-width: 48em;
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.75;
+}
+.settings-runtime-fields {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 28px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.settings-runtime-fields .settings-toggle {
+  flex-shrink: 0;
+  gap: 12px;
+  font-size: 13px;
+}
+.settings-runtime-fields > .settings-field { width: 200px; }
+.settings-runtime-fields > .settings-field > .settings-label,
+.settings-time-field > .settings-field > .settings-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.settings-time-field {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+.settings-time-field > .settings-label { white-space: nowrap; }
+.settings-time-field > .settings-field { width: 160px; }
+.settings-runtime-fields .dash-input { height: 44px; }
+@media (min-width: 651px) and (max-width: 900px) {
+  .settings-runtime-group { flex-wrap: wrap; gap: 20px; }
+  .settings-runtime-copy { flex-basis: 100%; }
+  .settings-runtime-fields { width: 100%; flex-wrap: wrap; }
+}
+@media (max-width: 650px) {
+  .settings-form-body.settings-runtime-controls { padding: 4px 20px; }
+  .settings-runtime-group { flex-wrap: wrap; gap: 20px; }
+  .settings-runtime-copy { flex-basis: 100%; }
+  .settings-runtime-fields { flex-wrap: wrap; gap: 16px; }
+  .settings-runtime-group:has(.settings-time-field) .settings-runtime-fields {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .settings-time-field { gap: 10px; }
+  .settings-runtime-fields > .settings-field { width: 150px; }
+}

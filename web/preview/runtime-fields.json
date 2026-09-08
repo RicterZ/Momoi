@@ -1,0 +1,63 @@
+{
+  "heartbeat": {
+    "label": "心跳",
+    "fields": {
+      "enabled": {
+        "type": "boolean",
+        "label": "启用心跳",
+        "default": false,
+        "advanced": false
+      }
+    }
+  },
+  "logging": {
+    "label": "日志",
+    "fields": {
+      "level": {
+        "type": "string",
+        "label": "日志级别",
+        "default": "DEBUG",
+        "enum": [
+          "TRACE",
+          "DEBUG",
+          "INFO",
+          "WARNING",
+          "ERROR",
+          "CRITICAL"
+        ],
+        "advanced": false
+      }
+    }
+  },
+  "reflection": {
+    "label": "每日复盘",
+    "fields": {
+      "enabled": {
+        "type": "boolean",
+        "label": "启用复盘",
+        "default": false,
+        "advanced": false
+      },
+      "at": {
+        "type": "string",
+        "label": "复盘时间",
+        "default": "03:00",
+        "format": "time",
+        "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$",
+        "description": "每天执行复盘的时间（HH:MM），使用应用配置的时区。",
+        "advanced": false
+      }
+    }
+  },
+  "episode_annealing": {
+    "label": "Episode 退火",
+    "fields": {
+      "enabled": {
+        "type": "boolean",
+        "label": "启用 Episode 退火",
+        "default": true,
+        "advanced": false
+      }
+    }
+  }
+}

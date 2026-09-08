@@ -24,12 +24,10 @@ export async function waitForConfiguration(call, revision, {
       }
       if (status.applied_revision === revision) {
         if (status.state === "running" && status.runtime_active === true) {
-          return { state: "success", title: "保存并重启成功", message: "新配置已生效，服务正在运行。" };
+          return { state: "success", title: "保存成功", message: "服务已重启。" };
         }
         if (status.state === "setup") {
-          const labels = { llm: "语言模型", channel: "消息渠道", weixin_login: "微信登录" };
-          const missing = (status.missing || []).map(item => labels[item] || item).join("、");
-          return { state: "incomplete", title: "已保存，服务尚未启动", message: missing ? `还需完成：${missing}。` : "请补全配置后再启动服务。" };
+          return { state: "success", title: "保存成功", message: "" };
         }
       }
     } catch (error) {

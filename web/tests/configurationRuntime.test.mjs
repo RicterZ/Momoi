@@ -25,10 +25,10 @@ test('reports a failed revision even if the previous process was restored', asyn
   assert.match(result.message, /previous configuration restored/);
 });
 
-test('setup is saved but not a successful restart', async () => {
-  const result = await waitForConfiguration(async () => ({ ...current, state: 'setup', runtime_active: false, missing: ['weixin_login'] }), 'new', options);
-  assert.equal(result.state, 'incomplete');
-  assert.match(result.message, /微信登录/);
+test('saved setup completes without inspecting missing configuration', async () => {
+  const result = await waitForConfiguration(async () => ({ ...current, state: 'setup', runtime_active: false, get missing() { throw new Error('Missing configuration must not be inspected'); } }), 'new', options);
+  assert.equal(result.state, 'success');
+  assert.equal(result.message, '');
 });
 
 test('recovers from a transient status request failure', async () => {
