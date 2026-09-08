@@ -47,7 +47,8 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
 阶段思考强度位于运行配置 `thinking.stages`，不再位于模型 provider 配置。
 前端从 `app_fields.thinking.fields.stages.properties` 递归生成各阶段下拉框，
 使用字段的 `label`、`enum`、`default`，放在“运行配置”下。选项为 `""`（跟随模型）、
-`low`、`high`、`max`，所有字段标记 `advanced: false`。
+`low`、`medium`、`high`、`xhigh`、`max`，所有字段标记 `advanced: false`。
+五档原样发送，由服务端处理映射，前端无需为 DeepSeek 特殊处理。
 
 ```json
 {

@@ -57,13 +57,17 @@ class ModelRequestTest(unittest.IsolatedAsyncioTestCase):
             max_tokens=100, temperature=0.6, timeout_seconds=2, max_retries=0,
             thinking=ThinkingConfig(effort="high"),
         )
-        runner = self.runner({"episode_anneal": "low", "reply_followup": "max"})
+        stage_efforts = {
+            "episode_anneal": "low", "reply_followup": "max",
+            "reflection": "medium", "goal": "xhigh",
+        }
+        runner = self.runner(stage_efforts)
         for cls in (OpenAIProvider, AnthropicProvider):
             async with cls(config) as provider:
                 async def complete(system, messages, tools, required, selected):
                     return await provider.complete(system, messages, tools, require_tool=required, required_tool=selected)
 
-                for stage, expected in (("episode_anneal", "low"), ("reply_followup", "max"), ("owner", "high")):
+                for stage, expected in {**stage_efforts, "owner": "high"}.items():
                     await self.run_round(runner, stage, complete)
                     payload = payloads[-1]
                     actual = payload.get("reasoning_effort") if cls is OpenAIProvider else payload["output_config"]["effort"]

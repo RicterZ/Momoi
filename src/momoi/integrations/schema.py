@@ -2,6 +2,7 @@
 
 import copy
 
+from .request_context import THINKING_EFFORTS
 
 def field(kind="string", default=None, *, secret=False):
     value = {"type": kind}
@@ -28,7 +29,7 @@ LLM = {
                 "type": "string",
                 "label": "默认思考强度",
                 "default": "",
-                "enum": ["", "low", "high", "max"],
+                "enum": ["", *THINKING_EFFORTS],
             },
         },
     },

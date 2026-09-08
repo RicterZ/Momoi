@@ -54,7 +54,7 @@ Invalid requests return 400 without writing; stale revisions return 409.
 Stage thinking overrides belong to `config.json` under `thinking.stages`, separate
 from model providers. Render dropdowns in Runtime Settings using
 `app_fields.thinking.fields.stages.properties`; each stage declares its label,
-default, `advanced: false`, and enum `["", "low", "high", "max"]`.
+default, `advanced: false`, and enum `["", "low", "medium", "high", "xhigh", "max"]`.
 The empty string means “use model default”. Submit through the same PATCH endpoint:
 
 ```json

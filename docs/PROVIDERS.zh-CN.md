@@ -79,7 +79,8 @@ bindings:
 选择 `openai` 并填写 `https://api.deepseek.com`。DeepSeek 不是单独的模型协议。
 无需鉴权的本地接口可以省略 `api_key`。默认参数：`max_tokens: 16384`、
 `temperature: 0.6`、`timeout_seconds: 300`、`max_retries: 3`、`tool_choice: true`。
-模型的 `thinking.effort` 支持 `low`、`high`、`max`，空字符串表示不指定。
+模型的 `thinking.effort` 支持 `low`、`medium`、`high`、`xhigh`、`max`，空字符串表示不指定。
+五档原样发送，由 DeepSeek 服务端映射，前端无需特殊处理。
 阶段覆盖单独保存在 `config.json` 的 `thinking.stages`，在“运行配置”中设置，优先于模型默认值。
 旧 provider 配置里的 `thinking.stages` 需移到此位置，模型不再接受 `stages`。
 Provider 通过 `momoi.integrations.request_context.requested_thinking_effort(default)`

@@ -2,6 +2,7 @@
 
 import copy
 
+from ..integrations.request_context import THINKING_EFFORTS
 LOG_LEVELS = ("TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 THINKING_STAGES = {
     "owner": "用户对话",
@@ -29,10 +30,10 @@ _FIELDS = {
                     stage: {
                         "type": "string",
                         "label": label,
-                        "enum": ["", "low", "high", "max"],
+                        "enum": ["", *THINKING_EFFORTS],
                         "default": "",
                         "advanced": False,
-                        "description": "空字符串表示跟随模型；low / high / max 表示该阶段的思考强度。",
+                        "description": "空字符串表示跟随模型；low / medium / high / xhigh / max 表示该阶段的思考强度，原样交给服务端处理。",
                     }
                     for stage, label in THINKING_STAGES.items()
                 },

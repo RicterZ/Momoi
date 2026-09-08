@@ -91,7 +91,8 @@ The model protocols are `openai` and `anthropic`. DeepSeek uses `openai` with
 `model` and `base_url` are required. `api_key` can be omitted for an unauthenticated local
 endpoint. Defaults: `max_tokens: 16384`, `temperature: 0.6`,
 `timeout_seconds: 300`, `max_retries: 3`, `tool_choice: true`.
-Provider `thinking.effort` accepts `low`, `high`, or `max` (empty leaves the model default).
+Provider `thinking.effort` accepts `low`, `medium`, `high`, `xhigh`, or `max`
+(empty leaves the model default). Values are sent unchanged; DeepSeek maps them server-side.
 Runtime overrides in `config.json` at `thinking.stages` take precedence over it.
 Providers can read the resolved request value through
 `momoi.integrations.request_context.requested_thinking_effort(default)` without

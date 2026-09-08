@@ -6,6 +6,7 @@ from urllib.parse import urlsplit
 
 from ..config.models import ConfigError
 from .models import EmbeddingConfig, EmbeddingSpaceConfig, LLMConfig, ThinkingConfig
+from .request_context import THINKING_EFFORTS
 
 
 def fields(options, allowed):
@@ -80,8 +81,8 @@ def llm_config(options, api_format):
         raise ConfigError("move thinking.stages from provider options to config.json thinking.stages")
     fields(thinking, {"effort"})
     effort = thinking.get("effort", "")
-    if not isinstance(effort, str) or effort not in {"", "low", "high", "max"}:
-        raise ConfigError("thinking.effort must be low, high, or max")
+    if not isinstance(effort, str) or effort not in ("", *THINKING_EFFORTS):
+        raise ConfigError(f"thinking.effort must be empty or one of {', '.join(THINKING_EFFORTS)}")
     choice = options.get("tool_choice", True)
     if type(choice) is not bool:
         raise ConfigError("tool_choice must be boolean")

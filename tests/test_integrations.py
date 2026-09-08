@@ -240,12 +240,15 @@ class CatalogTest(unittest.TestCase):
         thinking = ServiceRegistry(catalog).llm.config.thinking
         self.assertEqual(thinking.effort, "high")
         self.assertFalse(hasattr(thinking, "stages"))
+        for effort in ("low", "medium", "high", "xhigh", "max"):
+            raw["bindings"]["llm"]["options"]["thinking"] = {"effort": effort}
+            self.assertEqual(ServiceRegistry(self.load(raw)).llm.config.thinking.effort, effort)
         for field, bad in [
             ("max_retries", -1),
             ("timeout_seconds", float("nan")),
             ("max_tokens", True),
             ("tool_choice", "false"),
-            ("thinking", {"effort": "medium"}),
+            ("thinking", {"effort": "invalid"}),
             ("thinking", {"effort": "high", "stages": {"reply_followup": "low"}}),
             ("unknown", "value"),
         ]:
