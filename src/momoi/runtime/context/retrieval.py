@@ -298,10 +298,13 @@ def build_plan_retrieval(
     ]
     reflection_memories = [
         {
+            "id": int(row["id"]),
             "kind": truncate_tokens(str(row.get("kind") or ""), 24),
             "key": truncate_tokens(str(row.get("key") or ""), 64),
             "content": str(row.get("content") or ""),
             "local_date": str(row.get("local_date") or "unknown"),
+            "confidence": row["confidence"],
+            "evidence": row["evidence"],
             "unit_ids": list(row.get("unit_ids") or []),
         }
         for row in ranked_memories

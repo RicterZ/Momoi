@@ -1,5 +1,6 @@
-import json
 import logging
+from xml.etree import ElementTree
+from xml.sax.saxutils import escape, quoteattr
 
 from ...observability.events import log_event
 from ...storage import (
@@ -14,10 +15,6 @@ from ..agent.budget import SECTION_BUDGET_ALLOCATOR
 from .retrieval import _merge_matches
 
 logger = logging.getLogger(__name__)
-
-
-def _supports(item: dict[str, object]) -> str:
-    return ",".join(str(value) for value in item.get("unit_ids", []))
 
 
 def _memory_lines(items: object) -> str:
@@ -83,18 +80,12 @@ def _episode_summary(episode: dict[str, object]) -> tuple[str, str]:
     return "", "empty"
 
 
-def _episode_header(episode: dict[str, object], selected: dict[str, object]) -> str:
-    parts = [f"id={episode['id']}"]
-    units = _supports(selected)
-    if units:
-        parts.append(f"units={units}")
-    relation = str(selected.get("relation") or "")
-    if relation and relation != "recent":
-        parts.append(f"relation={relation}")
+def _episode_header(episode: dict[str, object]) -> str:
+    parts = [f"id={quoteattr(str(episode['id']))}"]
     status = str(episode.get("status") or "")
-    if status and status != "open":
-        parts.append(f"status={status}")
-    return f"[episode {' '.join(parts)}]"
+    if status:
+        parts.append(f"status={quoteattr(status)}")
+    return f"<episode {' '.join(parts)}>"
 
 
 def _episode_match_lines(
@@ -112,22 +103,69 @@ def _episode_match_lines(
     if not matches or token_budget <= 0:
         return []
     per_match = max(1, token_budget // len(matches))
-    lines = ["matched_evidence:"]
+    lines = ["<matched_evidence>"]
     for match in matches:
         role = str(match.get("role") or "")
         delivery = str(match.get("delivery_state") or "")
         if role == "user":
             source = "OWNER"
         elif role == "assistant":
-            source = f"MOMOI delivery={delivery or 'unknown'}"
+            source = "MOMOI"
         else:
             source = role.upper() or "UNKNOWN"
-        lines.append(
-            f"- [{source} timestamp={match.get('timestamp') or '?'} "
-            f"turn={match.get('turn_id') or '?'}] "
-            f"{truncate_tokens(str(match['content']), per_match)}"
+        attributes = {
+            "source": source,
+            "turn_id": match.get("turn_id"),
+        }
+        content = str(match["content"])
+        if role == "assistant":
+            attributes["delivery"] = delivery or "unknown"
+        header = " ".join(
+            f"{key}={quoteattr(str(value))}"
+            for key, value in attributes.items()
+            if value is not None
         )
+        lines.append(
+            f"<message {header}>"
+            f"{escape(truncate_tokens(content, per_match))}</message>"
+        )
+    lines.append("</matched_evidence>")
     return lines
+
+
+def _fit_episode_xml(text: str, token_budget: int) -> str:
+    """Fit text nodes, keeping XML boundaries and attributes intact."""
+    root = ElementTree.fromstring(text)
+    ElementTree.indent(root, space="  ")
+
+    def serialize() -> str:
+        return ElementTree.tostring(root, encoding="unicode", short_empty_elements=False)
+
+    rendered = serialize()
+    if estimate_tokens(rendered) <= token_budget:
+        return rendered
+    leaves = [(node, node.text or "") for node in root.iter() if not len(node)]
+    sizes = [estimate_tokens(value) for _, value in leaves]
+    total = sum(sizes)
+
+    def fit(available: int) -> str:
+        for (node, value), size in zip(leaves, sizes, strict=True):
+            node.text = truncate_tokens(value, available * size // max(1, total))
+        return serialize()
+
+    rendered = fit(0)
+    if estimate_tokens(rendered) > token_budget:
+        return ""
+    low, high = 0, total
+    while low < high:
+        middle = (low + high + 1) // 2
+        candidate = fit(middle)
+        if estimate_tokens(candidate) <= token_budget:
+            low = middle
+            rendered = candidate
+        else:
+            high = middle - 1
+    return rendered
 
 
 def _episode_context(
@@ -163,24 +201,26 @@ def _episode_context(
         if episode is None:
             continue
         lines = [
-            _episode_header(episode, selected),
-            f"title: {episode['title']}",
+            _episode_header(episode),
+            f"<title>{escape(str(episode['title']))}</title>",
         ]
         summary, quality = _episode_summary(episode)
         quality_counts[quality] = quality_counts.get(quality, 0) + 1
-        lines.append(f"summary_quality: {quality}")
         lines.extend(_episode_match_lines(selected, per_raw, excluded))
-        if summary:
-            lines.append(
-                f"summary: {truncate_tokens(summary, max(1, per_summary - per_raw))}"
-            )
-        if episode["topics"]:
-            lines.append(f"topics: {json.dumps(episode['topics'], ensure_ascii=False)}")
+        lines.append(
+            "<summary>"
+            f"{escape(truncate_tokens(summary, max(1, per_summary - per_raw)))}</summary>"
+        )
         if episode["open_loops"]:
             lines.append(
-                f"open_loops: {json.dumps(episode['open_loops'], ensure_ascii=False)}"
+                "<open_loops>" + "".join(
+                    f"<item>{escape(str(item))}</item>" for item in episode["open_loops"]
+                ) + "</open_loops>"
             )
-        sections.append(truncate_tokens("\n".join(lines), per_summary))
+        lines.append("</episode>")
+        section = _fit_episode_xml("\n".join(lines), per_summary)
+        if section:
+            sections.append(section)
     rendered = "\n\n".join(sections)
     log_event(
         logger,

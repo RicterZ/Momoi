@@ -197,10 +197,12 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn(
                 "may be outdated or no longer applicable", rendered_reflection
             )
-            self.assertIn("[date=2026-07-21 tool_skill:", rendered_reflection)
+            self.assertIn('<reflection date="2026-07-21"', rendered_reflection)
+            self.assertIn('date="2026-07-21" confidence="0.8"', rendered_reflection)
+            self.assertIn("<evidence>project summary</evidence>", rendered_reflection)
             _, ranked_reflection = daemon.store.ranked_memory_context("gmail", 4)
             self.assertIn("mcp__gog__gmail_search", ranked_reflection)
-            self.assertIn("[date=2026-07-21 tool_skill:", ranked_reflection)
+            self.assertIn('date="2026-07-21" confidence="0.8"', ranked_reflection)
             stored_memories = json.loads(reflection["memories_json"])
             self.assertEqual(stored_memories[2]["kind"], "tool_skill")
             self.assertEqual(

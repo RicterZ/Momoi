@@ -4,6 +4,7 @@ import hashlib
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
+from xml.sax.saxutils import escape, quoteattr
 
 
 
@@ -65,11 +66,20 @@ def memory_snapshot_fingerprint(memory: Mapping[str, object]) -> str:
     return "sha256:" + hashlib.sha256(encoded).hexdigest()
 
 def format_reflection_memory(row: Mapping[str, object]) -> str:
-    local_date = str(row.get("local_date") or "unknown")
-    return (
-        f"- [date={local_date} {row['kind']}:{row['key']}] "
-        f"{row['content']}"
+    attributes = {
+        "date": row.get("local_date"),
+        "confidence": row.get("confidence"),
+    }
+    header = " ".join(
+        f"{key}={quoteattr(str(value))}"
+        for key, value in attributes.items()
+        if value is not None
     )
+    lines = [f"<reflection {header}>", f"  <content>{escape(str(row['content']))}</content>"]
+    if row.get("evidence"):
+        lines.append(f"  <evidence>{escape(str(row['evidence']))}</evidence>")
+    lines.append("</reflection>")
+    return "\n".join(lines)
 
 def estimate_tokens(text: str) -> int:
     from ..runtime.agent.budget import TEXT_SIZER
@@ -102,4 +112,3 @@ def token_chunk(text: str, offset: int, token_budget: int) -> tuple[str, int | N
     if low == 0:
         low = 1
     return remaining[:low] + marker, offset + low
-

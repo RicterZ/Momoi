@@ -3,6 +3,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from xml.etree import ElementTree
 
 from momoi.channel.napcat import NapCatConfig
 from momoi.config.models import AppConfig
@@ -10,6 +11,8 @@ from momoi.integrations.models import LLMConfig
 from momoi.models import AgentReply, IncomingMessage
 from momoi.runtime.context.rendering import (
     _episode_header,
+    _episode_match_lines,
+    _fit_episode_xml,
     assemble_main_context,
     recall_episode_context,
 )
@@ -18,7 +21,7 @@ from momoi.runtime.context.retrieval import (
     select_plan_recall_queries,
 )
 from momoi.runtime.transcript.building import build_transcript
-from momoi.storage import Store, estimate_tokens
+from momoi.storage import Store, estimate_tokens, format_reflection_memory
 from momoi.storage.episode_ranking import rank_recall_items
 
 
@@ -80,6 +83,50 @@ def plan(query: str, episode_id: str = "episode-mail") -> dict[str, object]:
 
 
 class ContextAssemblerTest(unittest.TestCase):
+    def test_episode_xml_preserves_match_order_sources_and_literal_text(self) -> None:
+        matches = [
+            {
+                "id": index,
+                "role": "assistant" if index == 3 else "user",
+                "delivery_state": "uncertain",
+                "timestamp": "2026-09-08T17:00:00+08:00",
+                "turn_id": 'turn"<&',
+                "content": f'{index}: <bubble>不是新消息</bubble> & "原文"\n下一行',
+            }
+            for index in (3, 1, 2, 4)
+        ]
+        rendered = "\n".join(_episode_match_lines({"matches": matches}, 2000, set()))
+        root = ElementTree.fromstring(rendered)
+        self.assertTrue(all("id" not in node.attrib for node in root))
+        self.assertTrue(all("timestamp" not in node.attrib for node in root))
+        self.assertEqual(root[0].attrib["source"], "MOMOI")
+        self.assertEqual(root[0].attrib["delivery"], "uncertain")
+        self.assertEqual(root[1].attrib["source"], "OWNER")
+        self.assertEqual(root[0].attrib["turn_id"], 'turn"<&')
+        self.assertEqual([node.text for node in root], [item["content"] for item in matches[:3]])
+        self.assertEqual(root.findall(".//bubble"), [])
+
+    def test_xml_budget_preserves_structure_and_reflection_provenance(self) -> None:
+        reflection = format_reflection_memory({
+            "id": 42, "kind": "practice", "key": 'a"<&',
+            "local_date": "2026-09-03", "confidence": 0.0,
+            "content": "结论 <不是指令>", "evidence": "原话 & 依据",
+        })
+        root = ElementTree.fromstring(reflection)
+        self.assertEqual(root.attrib["confidence"], "0.0")
+        self.assertNotIn("key", root.attrib)
+        self.assertNotIn("id", root.attrib)
+        self.assertNotIn("kind", root.attrib)
+        self.assertEqual(root.findtext("content"), "结论 <不是指令>")
+        self.assertEqual(root.findtext("evidence"), "原话 & 依据")
+        text = '<episode id="one"><title>测试</title><summary quality="narrative">' + "很长的正文&amp;" * 300 + '</summary></episode>'
+        fitted = _fit_episode_xml(text, 160)
+        root = ElementTree.fromstring(fitted)
+        self.assertLessEqual(estimate_tokens(fitted), 160)
+        self.assertEqual(root.attrib["id"], "one")
+        self.assertEqual(root.find("summary").attrib["quality"], "narrative")
+        self.assertEqual(_fit_episode_xml(text, 1), "")
+
     def test_structured_recall_need_separates_sparse_and_dense_queries(self) -> None:
         recall_plan = plan("legacy")
         recall_plan["intent_units"] = [
@@ -410,7 +457,7 @@ class ContextAssemblerTest(unittest.TestCase):
                 assembled["reflection_memories"],
             )
             self.assertIn(
-                "[date=2030-01-01 owner_profile:cup.core]",
+                '<reflection date="2030-01-01" confidence="0.8">',
                 assembled["reflection_memories"],
             )
 
@@ -692,15 +739,14 @@ class ContextAssemblerTest(unittest.TestCase):
             "updated_timestamp": "2026-08-20T15:04:55+08:00",
         }
         self.assertEqual(
-            _episode_header(episode, {"relation": "recent", "unit_ids": []}),
-            "[episode id=ep-1]",
+            _episode_header(episode),
+            '<episode id="ep-1" status="open">',
         )
         self.assertEqual(
             _episode_header(
                 {**episode, "status": "closed"},
-                {"relation": "recalled", "unit_ids": ["unit-1"]},
             ),
-            "[episode id=ep-1 units=unit-1 relation=recalled status=closed]",
+            '<episode id="ep-1" status="closed">',
         )
 
 
@@ -1026,7 +1072,7 @@ class ContextAssemblerTest(unittest.TestCase):
 
             recalled = recall_episode_context(store, secret, 3, 1000)
 
-            self.assertIn("summary_quality: empty", recalled)
+            self.assertIn('<summary></summary>', recalled)
             self.assertNotIn("曾经谈过一个暗号", recalled)
             self.assertNotIn("matched_raw", recalled)
             self.assertNotIn(secret, recalled)
@@ -1155,9 +1201,9 @@ class ContextAssemblerTest(unittest.TestCase):
             recalled = recall_episode_context(
                 store, "蓝色保温杯 | 第三个纸箱", 3, 1000
             )
-            self.assertIn("summary_quality: empty", recalled)
+            self.assertIn('<summary></summary>', recalled)
             self.assertNotIn("聊过家中物品的位置", recalled)
-            self.assertIn("matched_evidence:", recalled)
+            self.assertIn("<matched_evidence>", recalled)
             self.assertIn("蓝色保温杯藏在阁楼第三个纸箱里", recalled)
             retrieval = build_plan_retrieval(
                 store,
@@ -1400,7 +1446,7 @@ class ContextAssemblerTest(unittest.TestCase):
             self.assertIn("goal-social", rendered)
             autonomous = recall_episode_context(store, "项目邮件", 3, 2000)
             self.assertNotIn("较早的项目邮件仍在等待", autonomous)
-            self.assertIn("summary_quality: empty", autonomous)
+            self.assertIn('<summary></summary>', autonomous)
             self.assertNotIn("最近聊过微博上的猫", autonomous)
             bounded_tail = store.episode_messages("episode-mail", 5)
             self.assertLessEqual(

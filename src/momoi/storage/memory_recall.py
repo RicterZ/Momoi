@@ -77,7 +77,7 @@ class MemoryRecallStore:
             (stamp,),
         ).fetchall()
         reflection_rows = self._db.execute(
-            """SELECT rm.id, rm.kind, rm.key, rm.content, rm.confidence,
+            """SELECT rm.id, rm.kind, rm.key, rm.content, rm.confidence, rm.evidence,
                       rm.updated_at, r.local_date
                FROM reflection_memories AS rm
                LEFT JOIN reflections AS r ON r.id=rm.source_reflection_id
@@ -112,6 +112,7 @@ class MemoryRecallStore:
                     "content": str(row["content"]),
                     "local_date": str(row["local_date"] or "unknown"),
                     "confidence": confidence,
+                    "evidence": str(row["evidence"]),
                     "reliability_bonus": 0.06 * confidence,
                     "recency_floor": _MEMORY_RECENCY_FLOOR,
                     "updated_at": float(row["updated_at"]),
