@@ -38,14 +38,16 @@ bindings:
       max_tokens: 16384
       thinking:
         effort: high
-        stages:
-          reply_followup: low
   balance:
     service: deepseek_balance
     options:
       accounting: true
       timeout_seconds: 10
 ```
+
+Stage effort overrides belong to `config.json`, under `thinking.stages`, and are
+configured through Runtime Settings. Provider `thinking` only contains the model
+default `effort`; move any existing provider `thinking.stages` to `config.json`.
 
 Export `DEEPSEEK_API_KEY` in the Momoi process environment. In Docker, pass it
 through the container's `environment` or `env_file`. A credential value may also
@@ -89,8 +91,11 @@ The model protocols are `openai` and `anthropic`. DeepSeek uses `openai` with
 `model` and `base_url` are required. `api_key` can be omitted for an unauthenticated local
 endpoint. Defaults: `max_tokens: 16384`, `temperature: 0.6`,
 `timeout_seconds: 300`, `max_retries: 3`, `tool_choice: true`.
-`thinking.effort` and each value in `thinking.stages` accept `low`, `high`, or `max`.
-A stage override takes precedence over the default effort. Set `tool_choice: false`
+Provider `thinking.effort` accepts `low`, `high`, or `max` (empty leaves the model default).
+Runtime overrides in `config.json` at `thinking.stages` take precedence over it.
+Providers can read the resolved request value through
+`momoi.integrations.request_context.requested_thinking_effort(default)` without
+depending on runtime stage names. Set `tool_choice: false`
 for endpoints that do not implement tool forcing. The service's adapter selects the
 wire protocol.
 

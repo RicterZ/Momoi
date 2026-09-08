@@ -49,10 +49,6 @@ bindings:
       tool_choice: false
       thinking:
         effort: high
-        stages:
-          episode_anneal: low
-          memory_maintenance: low
-          reply_followup: low
   asr:
     service: speech_recognition
     enabled: false

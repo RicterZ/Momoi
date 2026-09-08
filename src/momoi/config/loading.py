@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..channel import load_channel_config
 from .environment import apply_env_overrides
-from .runtime_fields import LOG_LEVELS
+from .runtime_fields import LOG_LEVELS, runtime_fields
 from .models import (
     AppConfig,
     ConfigError,
@@ -46,6 +46,7 @@ def parse_config(raw, config_path: Path, *, providers=None) -> AppConfig:
         "heartbeat",
         "reflection",
         "episode_annealing",
+        "thinking",
     }
     if unknown := set(raw) - allowed:
         raise ConfigError(f"unknown configuration field: {sorted(unknown)[0]}")
@@ -141,6 +142,13 @@ def parse_config(raw, config_path: Path, *, providers=None) -> AppConfig:
     heartbeat_raw = mapping(raw.get("heartbeat", {}), "heartbeat")
     reflection_raw = mapping(raw.get("reflection", {}), "reflection")
     annealing_raw = mapping(raw.get("episode_annealing", {}), "episode_annealing")
+    from ..integrations.fields import normalize_fields
+
+    thinking = normalize_fields(
+        runtime_fields()["thinking"]["fields"],
+        raw.get("thinking", {}),
+        path="thinking",
+    )
     for name, section, allowed in (
         ("logging", logging_raw, {"level"}),
         ("heartbeat", heartbeat_raw, {"enabled", "initial_delay_seconds", "min_interval_seconds", "max_interval_seconds"}),
@@ -244,6 +252,7 @@ def parse_config(raw, config_path: Path, *, providers=None) -> AppConfig:
         memory_results=memory_results,
         database=database,
         log_level=log_level,
+        thinking_stages={stage: effort for stage, effort in thinking["stages"].items() if effort},
         timezone=app_timezone,
         max_input_tokens=max_input_tokens,
         context_compaction_ratio=context_compaction_ratio,

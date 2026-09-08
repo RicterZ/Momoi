@@ -18,6 +18,7 @@ from momoi.config.models import AppConfig
 from momoi.integrations.models import LLMConfig, ThinkingConfig
 from momoi.contracts import OWNER_PROGRESS_BEFORE_FIRST_CALL, OWNER_PROGRESS_FIELD
 from momoi.mcp.manager import MCPManager
+from momoi.integrations.request_context import model_request
 from momoi.models import (
     IncomingMessage,
     ProviderResponse,
@@ -621,7 +622,6 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                     api_format="openai",
                     thinking=ThinkingConfig(
                         effort="high",
-                        stages={"heartbeat": "low"},
                     ),
                 ),
                 dump_dir,
@@ -629,7 +629,7 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
             try:
                 async with provider:
                     with _provider_trace_logs():
-                        with log_context(stage="heartbeat"):
+                        with log_context(stage="heartbeat"), model_request(thinking_effort="low"):
                             await provider.complete(
                                 "system",
                                 [{"role": "user", "content": "测试"}],
@@ -793,13 +793,12 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                 max_retries=1,
                 thinking=ThinkingConfig(
                     effort="high",
-                    stages={"heartbeat": "low"},
                 ),
             )
         )
         try:
             async with provider:
-                with log_context(stage="heartbeat"):
+                with log_context(stage="heartbeat"), model_request(thinking_effort="low"):
                     response = await provider.complete(
                         "system",
                         [

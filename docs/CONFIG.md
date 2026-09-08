@@ -45,11 +45,35 @@ Use `PATCH /api/settings/configuration/app` with the snapshot's revision:
 }
 ```
 
-Submit any subset of these fields. Patching these four sections preserves omitted
+Submit any subset of these fields. Patching these runtime sections preserves omitted
 fields, including heartbeat intervals, reflection time and annealing limits.
 Booleans must be JSON booleans; log levels must be one of `TRACE`, `DEBUG`, `INFO`,
 `WARNING`, `ERROR`, `CRITICAL` (uppercase). Times must be `00:00`–`23:59`.
 Invalid requests return 400 without writing; stale revisions return 409.
+
+Stage thinking overrides belong to `config.json` under `thinking.stages`, separate
+from model providers. Render dropdowns in Runtime Settings using
+`app_fields.thinking.fields.stages.properties`; each stage declares its label,
+default, `advanced: false`, and enum `["", "low", "high", "max"]`.
+The empty string means “use model default”. Submit through the same PATCH endpoint:
+
+```json
+{
+  "revision": "<revision from GET /api/settings/configuration>",
+  "document": {
+    "thinking": {
+      "stages": {"episode_anneal": "low", "reply_followup": "low"}
+    }
+  }
+}
+```
+
+Partial stage updates retain omitted stages; send `""` to clear an override.
+An empty object does not clear existing overrides. Unknown stages, invalid efforts
+and null values return 400. Switching models preserves the runtime stage policy.
+The runtime resolves the request's effort; each provider handles its wire format.
+Move existing `thinking.stages` from provider options into `config.json` before
+applying the configuration: providers now accept only the default `thinking.effort`.
 
 Saving automatically reloads the business runtime while keeping the dashboard and
 container running. Poll `GET /api/settings/runtime` until `applied_revision`

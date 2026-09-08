@@ -39,6 +39,7 @@ EDITABLE = {
     "episode_annealing",
     "webhooks",
     "logging",
+    "thinking",
 }
 
 
@@ -268,6 +269,14 @@ class ConfigurationManager:
         for section, value in document.items():
             if section in controls and isinstance(value, dict):
                 previous = current.get(section, {})
+                if section == "thinking" and isinstance(value.get("stages"), dict):
+                    value = {
+                        **value,
+                        "stages": {
+                            **(previous.get("stages", {}) if isinstance(previous, dict) else {}),
+                            **value["stages"],
+                        },
+                    }
                 current[section] = {
                     **(previous if isinstance(previous, dict) else {}),
                     **value,

@@ -39,10 +39,36 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
 }
 ```
 
-可以只提交其中一个字段。这四组配置会保留未提交的字段，例如心跳间隔、复盘时间和
+可以只提交其中一个字段。这些运行配置会保留未提交的字段，例如心跳间隔、复盘时间和
 退火时限。开关必须是 JSON 布尔值；日志级别限定为大写的 `TRACE`、`DEBUG`、
 `INFO`、`WARNING`、`ERROR`、`CRITICAL`；时间范围为 `00:00`–`23:59`。
 非法参数返回 400，过期 revision 返回 409，均不写入配置。
+
+阶段思考强度位于运行配置 `thinking.stages`，不再位于模型 provider 配置。
+前端从 `app_fields.thinking.fields.stages.properties` 递归生成各阶段下拉框，
+使用字段的 `label`、`enum`、`default`，放在“运行配置”下。选项为 `""`（跟随模型）、
+`low`、`high`、`max`，所有字段标记 `advanced: false`。
+
+```json
+{
+  "revision": "<读取配置时返回的 revision>",
+  "document": {
+    "thinking": {
+      "stages": {
+        "episode_anneal": "low",
+        "reply_followup": "low"
+      }
+    }
+  }
+}
+```
+
+同样提交到 `PATCH /api/settings/configuration/app`。只提交一个阶段时保留其他阶段；
+设为 `""` 取消该阶段覆盖，提交空对象不清空已有覆盖。阶段名限定为 metadata 中的键，
+未知阶段、非法 effort 或 null 返回 400。未配置阶段使用当前模型的默认 effort。
+切换模型不修改阶段配置；运行层只把本次请求的 effort 交给 provider，由 provider 转成协议参数。
+旧配置需将 `providers.yaml` 中 `thinking.stages` 移到 `config.json` 顶层 `thinking.stages`，
+模型配置只保留 `thinking.effort`，不再接受旧位置的 `stages`。
 
 保存后自动重载业务运行实例，dashboard 和容器保持运行。通过
 `GET /api/settings/runtime` 确认 `applied_revision` 等于保存返回的 revision，

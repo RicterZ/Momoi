@@ -5,6 +5,7 @@ from typing import Any
 
 from ...observability.context import log_context, new_trace_id
 from ...models import ProviderResponse
+from ...integrations.request_context import model_request
 from ...storage import estimate_tokens
 from .context_window import ContextWindow
 from .protocol import owner_request_messages
@@ -37,9 +38,13 @@ class ModelRoundResult:
 class ModelRoundRunner:
     """Build, execute, and account for one provider request."""
 
-    def __init__(self, context_window: ContextWindow, store: Any):
+    def __init__(
+        self, context_window: ContextWindow, store: Any,
+        *, thinking_stages: dict[str, str] | None = None,
+    ):
         self.context_window = context_window
         self.store = store
+        self.thinking_stages = dict(thinking_stages or {})
 
     async def run(
         self,
@@ -74,7 +79,7 @@ class ModelRoundRunner:
             round=round_number,
             channel=channel,
             goal_id=goal_id,
-        ):
+        ), model_request(thinking_effort=self.thinking_stages.get(stage)):
             history_messages = self.context_window.fit(
                 request_system,
                 messages,

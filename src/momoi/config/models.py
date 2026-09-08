@@ -65,6 +65,7 @@ class AppConfig:
     memory_results: int
     database: Path
     log_level: str
+    thinking_stages: dict[str, str] = field(default_factory=dict)
     timezone: str = "UTC"
     max_input_tokens: int = 142222
     context_compaction_ratio: float = 0.9

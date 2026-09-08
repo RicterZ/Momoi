@@ -129,9 +129,9 @@ def anthropic_reasoning(content: list[dict[str, Any]]) -> str:
 
 
 def thinking_effort(config: LLMConfig) -> str:
-    return config.thinking.for_stage(
-        str(current_log_context().get("stage") or "")
-    )
+    from ..integrations.request_context import requested_thinking_effort
+
+    return requested_thinking_effort(config.thinking.effort)
 
 
 def log_tool_schema(protocol: str, tools: object) -> None:

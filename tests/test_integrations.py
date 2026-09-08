@@ -235,18 +235,18 @@ class CatalogTest(unittest.TestCase):
         raw = catalog_data()
         raw["bindings"]["llm"]["options"]["thinking"] = {
             "effort": "high",
-            "stages": {"reply_followup": "low"},
         }
         catalog = self.load(raw)
         thinking = ServiceRegistry(catalog).llm.config.thinking
-        self.assertEqual(thinking.for_stage("owner"), "high")
-        self.assertEqual(thinking.for_stage("reply_followup"), "low")
+        self.assertEqual(thinking.effort, "high")
+        self.assertFalse(hasattr(thinking, "stages"))
         for field, bad in [
             ("max_retries", -1),
             ("timeout_seconds", float("nan")),
             ("max_tokens", True),
             ("tool_choice", "false"),
             ("thinking", {"effort": "medium"}),
+            ("thinking", {"effort": "high", "stages": {"reply_followup": "low"}}),
             ("unknown", "value"),
         ]:
             with self.subTest(field=field):

@@ -4,10 +4,6 @@ from dataclasses import dataclass, field
 @dataclass(frozen=True)
 class ThinkingConfig:
     effort: str = ""
-    stages: dict[str, str] = field(default_factory=dict)
-
-    def for_stage(self, stage: str) -> str:
-        return str((self.stages or {}).get(stage) or self.effort)
 
 
 @dataclass(frozen=True)

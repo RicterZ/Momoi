@@ -21,7 +21,17 @@ LLM = {
     "timeout_seconds": field("number", 300),
     "max_retries": field("integer", 3),
     "tool_choice": field("boolean", True),
-    "thinking": field("object", {}),
+    "thinking": {
+        **field("object", {}),
+        "properties": {
+            "effort": {
+                "type": "string",
+                "label": "默认思考强度",
+                "default": "",
+                "enum": ["", "low", "high", "max"],
+            },
+        },
+    },
 }
 SCHEMAS = {
     ("openai", "llm"): LLM,
@@ -74,6 +84,7 @@ def builtin_schema(name, capability):
         "timeout_seconds": "请求超时（秒）",
         "max_retries": "最大重试次数",
         "tool_choice": "工具选择（Tool Choice）",
+        "thinking": "模型思考设置",
         "accounting": "费用估算",
         "secret_id": "Secret ID",
         "secret_key": "Secret Key",

@@ -3,8 +3,42 @@
 import copy
 
 LOG_LEVELS = ("TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
+THINKING_STAGES = {
+    "owner": "用户对话",
+    "heartbeat": "心跳",
+    "reply_followup": "回复跟进",
+    "webhook": "Webhook",
+    "goal": "目标执行",
+    "reflection": "每日复盘",
+    "memory_maintenance": "记忆维护",
+    "memory_operation": "记忆操作",
+    "episode_consolidate": "话题整理",
+    "episode_anneal": "话题归档",
+}
 
 _FIELDS = {
+    "thinking": {
+        "label": "阶段思考强度",
+        "fields": {
+            "stages": {
+                "type": "object",
+                "label": "运行阶段",
+                "default": {},
+                "description": "覆盖各运行阶段的思考强度；留空跟随当前模型设置。切换模型不会清空。",
+                "properties": {
+                    stage: {
+                        "type": "string",
+                        "label": label,
+                        "enum": ["", "low", "high", "max"],
+                        "default": "",
+                        "advanced": False,
+                        "description": "空字符串表示跟随模型；low / high / max 表示该阶段的思考强度。",
+                    }
+                    for stage, label in THINKING_STAGES.items()
+                },
+            },
+        },
+    },
     "heartbeat": {
         "label": "心跳",
         "fields": {

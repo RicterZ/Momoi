@@ -76,18 +76,12 @@ def llm_config(options, api_format):
     thinking = options.get("thinking", {})
     if not isinstance(thinking, dict):
         raise ConfigError("thinking must be a mapping")
-    fields(thinking, {"effort", "stages"})
+    if "stages" in thinking:
+        raise ConfigError("move thinking.stages from provider options to config.json thinking.stages")
+    fields(thinking, {"effort"})
     effort = thinking.get("effort", "")
-    stages = thinking.get("stages", {})
-    if effort not in {"", "low", "high", "max"}:
+    if not isinstance(effort, str) or effort not in {"", "low", "high", "max"}:
         raise ConfigError("thinking.effort must be low, high, or max")
-    if not isinstance(stages, dict) or any(
-        not isinstance(k, str) or not k.strip() or v not in {"low", "high", "max"}
-        for k, v in stages.items()
-    ):
-        raise ConfigError(
-            "thinking.stages must map nonempty stages to low, high, or max"
-        )
     choice = options.get("tool_choice", True)
     if type(choice) is not bool:
         raise ConfigError("tool_choice must be boolean")
@@ -101,7 +95,7 @@ def llm_config(options, api_format):
         max_retries=number(options, "max_retries", 3, integer=True, inclusive=True),
         api_format="anthropic" if api_format == "anthropic" else "openai",
         tool_choice=choice,
-        thinking=ThinkingConfig(effort, dict(stages)),
+        thinking=ThinkingConfig(effort),
     )
 
 

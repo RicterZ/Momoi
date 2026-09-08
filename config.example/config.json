@@ -1,5 +1,12 @@
 {
   "providers": "providers.yaml",
+  "thinking": {
+    "stages": {
+      "episode_anneal": "low",
+      "memory_maintenance": "low",
+      "reply_followup": "low"
+    }
+  },
   "timezone": "UTC",
   "channels": {
     "primary": "napcat",

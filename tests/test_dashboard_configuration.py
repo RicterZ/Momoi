@@ -221,7 +221,7 @@ class ConfigurationManagerTest(unittest.TestCase):
     def test_app_fields_expose_enum_types_defaults_and_are_isolated(self):
         snapshot = self.manager.snapshot()
         fields = snapshot["app_fields"]
-        self.assertEqual(set(fields), {"heartbeat", "logging", "reflection", "episode_annealing"})
+        self.assertEqual(set(fields), {"heartbeat", "logging", "reflection", "episode_annealing", "thinking"})
         self.assertEqual(fields["logging"]["fields"]["level"]["enum"], ["TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
         self.assertEqual(fields["reflection"]["fields"]["at"]["format"], "time")
         self.assertEqual(snapshot["app"]["reflection"]["at"], "03:00")
@@ -598,6 +598,78 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
             status = await response.json()
             self.assertEqual(status["state"], "running")
             self.assertEqual(status["applied_revision"], self.manager.revision())
+        finally:
+            stop.set()
+            await task
+
+    async def test_runtime_thinking_stage_schema_validation_and_partial_save(self):
+        self.client.session.headers["Authorization"] = self.auth
+        response = await self.client.get("/api/settings/configuration")
+        snapshot = await response.json()
+        fields = snapshot["app_fields"]["thinking"]["fields"]["stages"]
+        self.assertFalse(fields["advanced"])
+        self.assertEqual(fields["properties"]["episode_anneal"]["enum"], ["", "low", "high", "max"])
+        for adapter in snapshot["adapters"]:
+            if adapter["capability"] == "llm":
+                self.assertEqual(set(adapter["fields"]["thinking"]["properties"]), {"effort"})
+        providers_before = self.manager.provider_path.read_bytes()
+
+        async def save(stages):
+            return await self.client.patch("/api/settings/configuration/app", json={
+                "revision": self.manager.revision(),
+                "document": {"thinking": {"stages": stages}},
+            })
+
+        response = await save({"episode_anneal": "low", "reply_followup": "low"})
+        self.assertEqual(response.status, 200, await response.text())
+        response = await save({"episode_anneal": "max"})
+        self.assertEqual(response.status, 200)
+        self.assertEqual(self.manager.validate().thinking_stages, {"episode_anneal": "max", "reply_followup": "low"})
+        response = await save({"episode_anneal": ""})
+        self.assertEqual(response.status, 200)
+        self.assertEqual(self.manager.validate().thinking_stages, {"reply_followup": "low"})
+        self.assertEqual(self.manager.provider_path.read_bytes(), providers_before)
+        for invalid in (None, [], {"unknown": "low"}, {"owner": "medium"}, {"owner": False}, {"owner": None}):
+            before = self.path.read_bytes()
+            response = await save(invalid)
+            self.assertEqual(response.status, 400, invalid)
+            self.assertEqual(self.path.read_bytes(), before)
+        self.enable()
+        for protocol in ("anthropic", "openai"):
+            document = copy.deepcopy(LLM)
+            document["adapter"] = protocol
+            self.manager.save_binding("llm", document, self.manager.revision())
+            self.assertEqual(self.manager.validate().thinking_stages, {"reply_followup": "low"})
+
+    async def test_runtime_thinking_stages_reload_from_api_and_file(self):
+        self.enable()
+        self.client.session.headers["Authorization"] = self.auth
+        stop = asyncio.Event()
+        task = asyncio.create_task(self.runtime.run(stop))
+
+        async def applied():
+            async with asyncio.timeout(5):
+                while self.runtime.applied_revision != self.manager.revision():
+                    await asyncio.sleep(0.01)
+
+        try:
+            await applied()
+            first = self.runtime.daemon
+            response = await self.client.patch("/api/settings/configuration/app", json={
+                "revision": self.manager.revision(),
+                "document": {"thinking": {"stages": {"episode_anneal": "low", "reply_followup": "low"}}},
+            })
+            self.assertEqual(response.status, 200)
+            await applied()
+            self.assertTrue(first.closed)
+            self.assertEqual(self.runtime.daemon.config.thinking_stages, {"episode_anneal": "low", "reply_followup": "low"})
+            second = self.runtime.daemon
+            app = self.manager.read_app()
+            app["thinking"]["stages"]["episode_anneal"] = "high"
+            atomic_write(self.path, json.dumps(app))
+            await applied()
+            self.assertTrue(second.closed)
+            self.assertEqual(self.runtime.daemon.config.thinking_stages["episode_anneal"], "high")
         finally:
             stop.set()
             await task

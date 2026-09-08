@@ -158,7 +158,9 @@ class MomoiDaemon(
             self.tool_results,
         )
         self.context_window = ContextWindow(config, self.store, self.tool_results)
-        self.model_round = ModelRoundRunner(self.context_window, self.store)
+        self.model_round = ModelRoundRunner(
+            self.context_window, self.store, thinking_stages=config.thinking_stages
+        )
         self.incoming: asyncio.Queue[IncomingMessage] = asyncio.Queue()
         self._deferred_incoming: deque[IncomingMessage] = deque()
         self._owner_quiet_until: dict[str, float] = {}
