@@ -991,6 +991,7 @@ function TimeField({ label, value, onChange, allowDisabled = false }) {
   );
 }
 
+const runtimeOrder = { heartbeat: 0, episode_annealing: 1, logging: 2, reflection: 3 };
 const runtimeDescriptions = {
   heartbeat: "心跳是 Momoi 的自主时间。她可以探索、创作、延续自己的活动，也可以休息或主动与你分享。",
   logging: "控制运行日志的详细程度，用于查看服务状态与排查问题。",
@@ -1038,7 +1039,7 @@ function RuntimeSection({ module, data, save, saving, previous, next }) {
     <form noValidate onSubmit={submit} data-dirty={dirty} data-config-dirty={dirty}>
       <SectionHeader module={module} />
       <div className="settings-form-body settings-runtime-controls">
-        {Object.entries(schemas).map(([name, schema]) => (
+        {Object.entries(schemas).sort(([a], [b]) => (runtimeOrder[a] ?? 99) - (runtimeOrder[b] ?? 99)).map(([name, schema]) => (
           <section className="settings-runtime-group" key={name} aria-labelledby={`runtime-${name}`}>
             <div className="settings-runtime-copy">
               <div className="settings-voice-title">
