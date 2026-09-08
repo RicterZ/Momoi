@@ -339,7 +339,7 @@ Goal 的 `send_bubbles` / `send_voice` 调用后立即进入通用发送流程�
 ```json
 {
   "heartbeat": {
-    "enabled": false,
+    "enabled": true,
     "initial_delay_seconds": 900,
     "min_interval_seconds": 1800,
     "max_interval_seconds": 5400
@@ -349,7 +349,7 @@ Goal 的 `send_bubbles` / `send_voice` 调用后立即进入通用发送流程�
 
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
-| `enabled` | `false` | 启用自动心跳检查 |
+| `enabled` | `true` | 启用自动心跳检查 |
 | `initial_delay_seconds` | `900` | 首次心跳前的正数延迟 |
 | `min_interval_seconds` | `1800` | 正数最小间隔 |
 | `max_interval_seconds` | `5400` | 正数最大间隔 |

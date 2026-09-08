@@ -358,7 +358,7 @@ by new messages remain in place.
 ```json
 {
   "heartbeat": {
-    "enabled": false,
+    "enabled": true,
     "initial_delay_seconds": 900,
     "min_interval_seconds": 1800,
     "max_interval_seconds": 5400
@@ -368,7 +368,7 @@ by new messages remain in place.
 
 | Field | Default | Description |
 | --- | --- | --- |
-| `enabled` | `false` | Enable automatic heartbeat evaluations |
+| `enabled` | `true` | Enable automatic heartbeat evaluations |
 | `initial_delay_seconds` | `900` | Positive delay before the first heartbeat |
 | `min_interval_seconds` | `1800` | Positive minimum interval |
 | `max_interval_seconds` | `5400` | Positive maximum interval |

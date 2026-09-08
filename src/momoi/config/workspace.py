@@ -38,9 +38,9 @@ def default_config() -> dict:
         "storage": {"database": "data/momoi.sqlite3"},
         "logging": {"level": "INFO"},
         "tools": {"mcp_config": None},
-        "heartbeat": {"enabled": False},
+        "heartbeat": {"enabled": True},
         "reflection": {"enabled": False},
-        "episode_annealing": {"enabled": False},
+        "episode_annealing": {"enabled": True},
     }
 
 

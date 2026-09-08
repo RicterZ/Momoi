@@ -275,7 +275,7 @@ def parse_config(raw, config_path: Path, *, providers=None) -> AppConfig:
         ),
         dashboard=DashboardConfig(token=dashboard_token),
         heartbeat=HeartbeatConfig(
-            enabled=boolean(heartbeat_raw.get("enabled", False), "heartbeat.enabled"),
+            enabled=boolean(heartbeat_raw.get("enabled", True), "heartbeat.enabled"),
             initial_delay_seconds=positive(
                 heartbeat_raw.get("initial_delay_seconds", 900),
                 "heartbeat.initial_delay_seconds",

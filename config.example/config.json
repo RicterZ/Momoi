@@ -54,7 +54,7 @@
     "quiet_end": null
   },
   "heartbeat": {
-    "enabled": false,
+    "enabled": true,
     "initial_delay_seconds": 900,
     "min_interval_seconds": 1800,
     "max_interval_seconds": 5400

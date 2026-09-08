@@ -8,7 +8,7 @@ _FIELDS = {
     "heartbeat": {
         "label": "心跳",
         "fields": {
-            "enabled": {"type": "boolean", "label": "启用心跳", "default": False},
+            "enabled": {"type": "boolean", "label": "启用心跳", "default": True},
         },
     },
     "logging": {

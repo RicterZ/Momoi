@@ -225,7 +225,8 @@ class ConfigurationManagerTest(unittest.TestCase):
         self.assertEqual(fields["logging"]["fields"]["level"]["enum"], ["TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
         self.assertEqual(fields["reflection"]["fields"]["at"]["format"], "time")
         self.assertEqual(snapshot["app"]["reflection"]["at"], "03:00")
-        self.assertFalse(snapshot["app"]["episode_annealing"]["enabled"])
+        self.assertTrue(snapshot["app"]["episode_annealing"]["enabled"])
+        self.assertTrue(snapshot["app"]["heartbeat"]["enabled"])
         fields["logging"]["fields"]["level"]["enum"].append("INVALID")
         self.assertNotIn("INVALID", self.manager.snapshot()["app_fields"]["logging"]["fields"]["level"]["enum"])
 

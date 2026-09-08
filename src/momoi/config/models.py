@@ -35,7 +35,7 @@ class DashboardConfig:
 
 @dataclass(frozen=True)
 class HeartbeatConfig:
-    enabled: bool = False
+    enabled: bool = True
     initial_delay_seconds: float = 900
     min_interval_seconds: float = 1800
     max_interval_seconds: float = 5400
