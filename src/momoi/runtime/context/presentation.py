@@ -1,12 +1,21 @@
 import json
+from xml.sax.saxutils import escape, quoteattr
+
+
+def _attributes(values: dict[str, object]) -> str:
+    return "".join(
+        f" {key}={quoteattr(str(value))}"
+        for key, value in values.items()
+        if value is not None and value != ""
+    )
 
 
 def turn_label_ranges(values: list[str]) -> str:
     numbers = sorted(
         {
-            int(value[1:])
+            int(value[2:])
             for value in values
-            if value.startswith("T") and value[1:].isdigit()
+            if value.startswith("T-") and value[2:].isdigit()
         }
     )
     ranges: list[str] = []
@@ -18,10 +27,10 @@ def turn_label_ranges(values: list[str]) -> str:
         if number == previous + 1:
             previous = number
             continue
-        ranges.append(f"T{start}" if start == previous else f"T{start}-T{previous}")
+        ranges.append(f"T-{start}" if start == previous else f"T-{start}..T-{previous}")
         start = previous = number
     if start:
-        ranges.append(f"T{start}" if start == previous else f"T{start}-T{previous}")
+        ranges.append(f"T-{start}" if start == previous else f"T-{start}..T-{previous}")
     return ",".join(ranges)
 
 
@@ -37,11 +46,11 @@ def recent_episode_lines(
                 if turn_id in labels
             ]
         )
-        lines.append(
-            f"- id={episode['id']} title={str(episode['title'])[:120]} "
-            f"turns={episode_labels or '?'} "
-            f"last_activity={episode.get('last_activity_timestamp') or '?'}"
-        )
+        attributes = _attributes({
+            "id": episode["id"], "turns": episode_labels,
+            "last_activity": episode.get("last_activity_timestamp"),
+        })
+        lines.append(f"<episode{attributes}><title>{escape(str(episode['title'])[:120])}</title></episode>")
     return "\n".join(lines)
 
 
@@ -67,34 +76,28 @@ def heartbeat_topic_lines(items: list[dict[str, object]]) -> str:
     return "\n".join(lines)
 
 
-def heartbeat_self_state_lines(value: str) -> str:
+def heartbeat_self_state_lines(value: str = "{}", *, current_time: str = "") -> str:
     try:
         state = json.loads(value)
     except (TypeError, ValueError):
-        return value
+        state = {}
     if not isinstance(state, dict):
-        return str(value)
-    lines: list[str] = []
+        state = {}
+    lines: list[str] = [f"<time now={quoteattr(current_time)} />"] if current_time else []
     mood = state.get("mood")
     if isinstance(mood, dict):
-        fields = [
-            f"state={mood.get('state') or 'unknown'}",
-            f"intensity={mood.get('intensity') or 0}",
-        ]
-        for key in ("cause", "age_minutes", "updated_at"):
-            if mood.get(key) not in (None, "", [], {}):
-                fields.append(f"{key}={mood[key]}")
-        lines.append("mood: " + " ".join(fields))
+        attributes = _attributes({key: mood.get(key) for key in (
+            "state", "intensity", "age_minutes", "updated_at",
+        )})
+        lines.append(f"<mood{attributes}><cause>{escape(str(mood.get('cause') or ''))}</cause></mood>")
     activity = state.get("activity")
     if isinstance(activity, dict):
-        fields = []
-        for key in ("text", "result", "since"):
-            value = str(activity.get(key) or "none").replace("\n", " ")
-            fields.append(f"{key}={value}")
-        lines.append("activity: " + " ".join(fields))
+        attributes = _attributes({"since": activity.get("since")})
+        fields = [f"<{key}>{escape(str(activity.get(key) or ''))}</{key}>" for key in ("text", "result")]
+        lines.append(f"<activity{attributes}>" + "".join(fields) + "</activity>")
     if state.get("last_heartbeat_at"):
-        lines.append(f"last heartbeat: {state['last_heartbeat_at']}")
-    return "\n".join(lines) or "(none)"
+        lines.append(f"<heartbeat at={quoteattr(str(state['last_heartbeat_at']))} />")
+    return "\n".join(lines)
 
 
 def recall_context_lines(
@@ -106,6 +109,6 @@ def recall_context_lines(
         queries = [str(item) for item in value.get("queries") or []]
         if not turn_id or not queries:
             continue
-        lines.append(f"turn={turn_id} queries=" + " ; ".join(queries))
+        body = "".join(f"<query>{escape(query)}</query>" for query in queries)
+        lines.append(f"<recall turn={quoteattr(turn_id)}>{body}</recall>")
     return "\n".join(lines)
-

@@ -53,9 +53,9 @@ class ReplyFollowupWorkflow:
             ),
             (
                 "runtime_state",
-                (
-                    f"Current local time: {datetime.now(self.store.timezone).isoformat(timespec='seconds')}\n"
-                    f"{heartbeat_self_state_lines(self.store.self_state_context())}"
+                heartbeat_self_state_lines(
+                    self.store.self_state_context(),
+                    current_time=datetime.now(self.store.timezone).isoformat(timespec="seconds"),
                 ),
             ),
         )

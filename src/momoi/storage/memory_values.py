@@ -66,7 +66,7 @@ def memory_snapshot_fingerprint(memory: Mapping[str, object]) -> str:
     return "sha256:" + hashlib.sha256(encoded).hexdigest()
 
 def format_memory(row: Mapping[str, object]) -> str:
-    attributes = {"memory_id": row["id"], "kind": row["kind"], "key": row["key"]}
+    attributes = {"id": row["id"], "kind": row["kind"], "key": row["key"]}
     if row.get("activation"):
         attributes["activation"] = row["activation"]
     header = " ".join(

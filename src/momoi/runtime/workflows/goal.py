@@ -9,6 +9,7 @@ from ...observability.values import safe_preview
 from ...models import TurnDraft
 from ...llm.errors import ProviderError
 from ..agent import TurnExecutionSpec
+from ..context.presentation import heartbeat_self_state_lines
 from ..transcript.building import build_transcript
 from ..transcript.rendering import render_messages
 from ..turn_support import (
@@ -170,7 +171,7 @@ class GoalWorkflow:
             return
         now = datetime.now(self.store.timezone).isoformat(timespec="seconds")
         review_at = context_timestamp(goal["next_review_at"], self.store.timezone)
-        self_state = self.store.self_state_context()
+        self_state = heartbeat_self_state_lines(self.store.self_state_context(), current_time=now)
         recent_memories = self.store.recent_memory_context()
         long_term_memories = self.store.always_memory_context()
         conversation_rows = self._recent_conversation_rows()

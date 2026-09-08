@@ -204,9 +204,9 @@ class HeartbeatWorkflow:
             ("autonomous_heartbeat", heartbeat_event),
             (
                 "runtime_state",
-                (
-                    f"Current local time: {datetime.now(self.store.timezone).isoformat(timespec='seconds')}\n"
-                    f"{heartbeat_self_state_lines(self_context)}"
+                heartbeat_self_state_lines(
+                    self_context,
+                    current_time=datetime.now(self.store.timezone).isoformat(timespec="seconds"),
                 ),
             ),
             ("active_goals", goals),

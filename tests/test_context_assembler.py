@@ -1,5 +1,6 @@
 from tests.support import provider_catalog, seed_memory
 import tempfile
+import json
 import time
 import unittest
 from pathlib import Path
@@ -26,7 +27,52 @@ from momoi.runtime.transcript.building import build_transcript
 from momoi.storage import Store, estimate_tokens, format_reflection_memory
 from momoi.storage.episode_ranking import rank_recall_items
 from momoi.runtime.turn_support import context_data_message
+from momoi.runtime.context.presentation import (
+    heartbeat_self_state_lines, recent_episode_lines, recall_context_lines, turn_label_ranges,
+)
 from momoi.storage.memory_values import format_memory
+
+
+def test_episode_catalog_and_recall_context_are_nested_xml():
+    assert turn_label_ranges(["T-21", "T-22", "T-24", "T-21"]) == "T-21..T-22,T-24"
+    title = '标题 </title> & "内容"'
+    queries = ['查询 </query> & 内容', '分号 ; 保留独立查询']
+    episodes = recent_episode_lines([
+        {"id": "ep-1", "title": title, "turn_ids": ["a", "b"], "last_activity_timestamp": "2026-09-08T22:26:03+08:00"},
+        {"id": "ep-2", "title": "无窗口轮次", "turn_ids": ["outside"]},
+    ], {"a": "T-21", "b": "T-22"})
+    message = context_data_message(
+        ("recent_episodes", episodes),
+        ("recent_recall_context", recall_context_lines([{"turn_id": 'raw-"<&', "queries": queries}])),
+    )
+    root = ElementTree.fromstring(f"<context>{message['content'][0]['text']}</context>")
+    entries = root.findall("recent_episodes/episode")
+    assert entries[0].attrib == {"id": "ep-1", "turns": "T-21..T-22", "last_activity": "2026-09-08T22:26:03+08:00"}
+    assert entries[0].find("title").text == title
+    assert entries[1].attrib == {"id": "ep-2"}
+    recall = root.find("recent_recall_context/recall")
+    assert recall.get("turn") == 'raw-"<&'
+    assert [query.text for query in recall.findall("query")] == queries
+
+
+def test_runtime_state_preserves_metadata_and_text_boundaries():
+    cause = '原因 </cause> & "原文"'
+    activity = '第一行\n第二行 <result>字面标签</result>'
+    state = heartbeat_self_state_lines(json.dumps({
+        "mood": {"state": "playful", "intensity": 0, "cause": cause, "age_minutes": 0, "updated_at": "updated"},
+        "activity": {"text": activity, "result": "结果 & 原文", "since": "since"},
+        "last_heartbeat_at": "heartbeat",
+    }), current_time="now")
+    message = context_data_message(("runtime_state", state))
+    root = ElementTree.fromstring(message["content"][0]["text"])
+    assert root.find("time").attrib == {"now": "now"}
+    assert root.find("mood").attrib == {"state": "playful", "intensity": "0", "age_minutes": "0", "updated_at": "updated"}
+    assert root.find("mood/cause").text == cause
+    assert root.find("activity").attrib == {"since": "since"}
+    assert root.find("activity/text").text == activity
+    assert root.find("activity/result").text == "结果 & 原文"
+    assert root.find("heartbeat").attrib == {"at": "heartbeat"}
+    assert [item.tag for item in root] == ["time", "mood", "activity", "heartbeat"]
 
 
 def test_memory_and_goal_context_preserves_nested_structure_and_literal_values():
@@ -41,7 +87,7 @@ def test_memory_and_goal_context_preserves_nested_structure_and_literal_values()
         ("recent_memories", format_memory(memory | {"activation": "recent"})),
         ("recall_memories", _memory_lines([memory | {"activation": "recall"}])),
         ("goal_directory", _goal_directory_lines([{"id": 'goal-"<&', "title": title}])),
-        ("runtime_state", '<memory id="fake">普通文本</memory>'),
+        ("runtime_directives", '<memory id="fake">普通文本</memory>'),
     )
     document = ElementTree.fromstring(f"<context>{message['content'][0]['text']}</context>")
     for section, activation in (
@@ -52,7 +98,7 @@ def test_memory_and_goal_context_preserves_nested_structure_and_literal_values()
         items = document.findall(f"{section}/memory")
         assert len(items) == 1
         assert items[0].attrib == {
-            "memory_id": "118", "kind": "preference",
+            "id": "118", "kind": "preference",
             "key": memory["key"], "activation": activation,
         }
         assert items[0].text == content
@@ -60,8 +106,8 @@ def test_memory_and_goal_context_preserves_nested_structure_and_literal_values()
     goals = document.findall("goal_directory/goal")
     assert len(goals) == 1
     assert goals[0].attrib == {"id": 'goal-"<&', "title": title}
-    assert list(document.find("runtime_state")) == []
-    assert document.find("runtime_state").text.strip() == '<memory id="fake">普通文本</memory>'
+    assert list(document.find("runtime_directives")) == []
+    assert document.find("runtime_directives").text.strip() == '<memory id="fake">普通文本</memory>'
 
 
 def config(

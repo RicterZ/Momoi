@@ -3687,7 +3687,7 @@ class StorageMemoryTest(unittest.TestCase):
                 memory = ElementTree.fromstring(rendered)
                 self.assertEqual(memory.tag, "memory")
                 self.assertEqual(memory.attrib, {
-                    "memory_id": str(row["id"]), "kind": row["kind"],
+                    "id": str(row["id"]), "kind": row["kind"],
                     "key": row["key"], "activation": activation,
                 })
                 self.assertEqual(memory.text, row["content"])

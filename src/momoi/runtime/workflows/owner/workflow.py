@@ -60,8 +60,9 @@ class OwnerWorkflow:
             ),
             (
                 "runtime_state",
-                "Current local time: "
-                f"{datetime.now(self.store.timezone).isoformat(timespec='seconds')}",
+                heartbeat_self_state_lines(
+                    current_time=datetime.now(self.store.timezone).isoformat(timespec="seconds"),
+                ),
             ),
             ("recall_memories", recalled["recall_memories"]),
             ("recall_status", recalled["query_recall"]),
@@ -281,9 +282,10 @@ class OwnerWorkflow:
             ("workflow_contract", self._owner_system_prompt()),
             (
                 "runtime_state",
-                "Current local time: "
-                f"{datetime.now(self.store.timezone).isoformat(timespec='seconds')}\n"
-                f"{heartbeat_self_state_lines(self.store.self_state_context())}",
+                heartbeat_self_state_lines(
+                    self.store.self_state_context(),
+                    current_time=datetime.now(self.store.timezone).isoformat(timespec="seconds"),
+                ),
             ),
             ("runtime_directives", "\n\n".join(directives)),
             ("proactive_bubbles", proactive_bubbles),

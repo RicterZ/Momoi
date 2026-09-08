@@ -126,9 +126,12 @@ def pack_user_context(*items: tuple[str, str]) -> str:
     if unknown:
         raise ValueError(f"unknown user context section: {unknown[0]}")
     by_name = {name: value for name, value in items}
-    # These sections are serialized by the memory/goal renderers, which escape
+    # These sections are serialized by the context renderers, which escape
     # individual values. Other sections still contain plain text.
-    structured = {"long_term_memories", "recent_memories", "recall_memories", "goal_directory"}
+    structured = {
+        "long_term_memories", "recent_memories", "recall_memories", "goal_directory",
+        "recent_episodes", "recent_recall_context", "runtime_state", "episode_directory",
+    }
     return "\n\n".join(
         f"<{name}>\n{by_name[name].strip()}\n</{name}>"
         if name in structured else sections((name, by_name[name]))
