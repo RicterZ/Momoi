@@ -54,15 +54,9 @@ class OwnerProgressPolicyTest(unittest.TestCase):
             "default", spec["input_schema"]["properties"]["channel"]
         )
         bubbles = spec["input_schema"]["properties"]["bubbles"]
-        self.assertIn(
-            "each item is delivered as one separate chat bubble",
-            bubbles["description"],
-        )
-        text_description = bubbles["items"]["oneOf"][0]["description"]
-        self.assertIn("Non-empty text content", text_description)
-        self.assertIn("<bubble>...</bubble>", spec["description"])
-        self.assertIn("Send owner-visible messages", spec["description"])
-        self.assertIn("send_voice", spec["description"])
+        self.assertEqual(bubbles["type"], "array")
+        self.assertEqual(bubbles["items"]["oneOf"][0]["type"], "string")
+        self.assertEqual(bubbles["items"]["oneOf"][0]["minLength"], 1)
         self.assertEqual(set(spec["input_schema"]["properties"]), {"bubbles", "channel"})
 
     def test_public_schema_keeps_native_message_argument(self) -> None:

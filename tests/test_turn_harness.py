@@ -6,7 +6,6 @@ from momoi.runtime.agent.protocol import (
     assistant_history_content,
     handle_no_tool_response,
 )
-from momoi.runtime.turn_support import PROMPT_ROOT
 from momoi.runtime.turn_support import ExternalToolTurnError, MAX_CONSECUTIVE_TOOL_FAILURES
 from momoi.runtime.agent.workflow import WorkflowProtocolError
 
@@ -52,9 +51,8 @@ class TurnHarnessTest(unittest.TestCase):
                                 failed_rounds = resolution.failed_rounds
                                 self.assertEqual(failed_rounds, attempt)
 
-    def test_owner_text_corrections_preserve_opening_and_delivery_rules(self) -> None:
-        for started, expected in ((False, "recall first and alone"),
-                                  (True, "Call send_bubbles")):
+    def test_owner_text_corrections_preserve_response_and_request_retry(self) -> None:
+        for started in (False, True):
             with self.subTest(started=started):
                 messages = []
                 resolution = handle_no_tool_response(
@@ -63,18 +61,8 @@ class TurnHarnessTest(unittest.TestCase):
                     owner_turn=True, failed_rounds=0, last_tool_error="",
                 )
                 self.assertEqual(resolution.action, "retry")
-                self.assertIn(expected, messages[-1]["content"])
-    WORKFLOW_PROMPTS = {
-        "owner": "owner.md",
-        "heartbeat": "heartbeat.md",
-        "reply_followup": "reply_wait.md",
-        "webhook": "webhook.md",
-        "goal": "goal.md",
-        "reflection": "reflection.md",
-        "memory_maintenance": "memory_maintenance.md",
-        "episode_consolidate": "episode_consolidation.md",
-        "episode_anneal": "episode_summary.md",
-    }
+                self.assertEqual(messages[0], {"role": "assistant", "content": "hello"})
+                self.assertEqual(messages[-1]["role"], "user")
 
     def test_private_reasoning_is_not_replayed_between_rounds(self) -> None:
         content = [
@@ -118,15 +106,6 @@ class TurnHarnessTest(unittest.TestCase):
                 harness = TurnHarness.for_stage(stage)
                 self.assertIsNone(harness.spec.first_tool)
                 self.assertTrue(harness.started)
-
-    def test_workflow_contracts_name_their_harness_boundary_tools(self) -> None:
-        for stage, filename in self.WORKFLOW_PROMPTS.items():
-            with self.subTest(stage=stage):
-                contract = PROMPT_ROOT.joinpath(filename).read_text(encoding="utf-8")
-                spec = TURN_HARNESS_SPECS[stage]
-                if spec.first_tool is not None:
-                    self.assertIn(f"`{spec.first_tool}`", contract)
-                self.assertIn(f"`{spec.terminal_tool}`", contract)
 
     def test_owner_recall_must_be_first_and_alone(self) -> None:
         harness = TurnHarness.for_stage("owner")

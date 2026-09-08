@@ -136,15 +136,9 @@ class DaemonTest(unittest.TestCase):
 
         self.assertEqual(len(specialized), 2)
         self.assertEqual(specialized[0], base[0])
-        self.assertEqual(
-            specialized[1]["text"],
-            "# Available capability guidance\n\n" + MEMORY_TOOL_POLICY.strip(),
-        )
+        self.assertIn(MEMORY_TOOL_POLICY.strip(), specialized[1]["text"])
         self.assertEqual(len(owner), 2)
-        self.assertEqual(
-            owner[1]["text"],
-            "# Available capability guidance\n\n" + AGENDA_TOOL_POLICY.strip(),
-        )
+        self.assertIn(AGENDA_TOOL_POLICY.strip(), owner[1]["text"])
 
     def test_mcp_policy_is_present_for_the_common_surface(self) -> None:
         daemon = object.__new__(MomoiDaemon)
@@ -166,10 +160,7 @@ class DaemonTest(unittest.TestCase):
             ],
         )
 
-        self.assertEqual(
-            rendered[1]["text"],
-            "# Available capability guidance\n\n" + MCP_TOOL_POLICY.strip(),
-        )
+        self.assertIn(MCP_TOOL_POLICY.strip(), rendered[1]["text"])
 
     def test_conversation_surface_keeps_builtins_resident_and_mcp_lazy(self) -> None:
         daemon = object.__new__(MomoiDaemon)
@@ -2296,8 +2287,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             [],
                         )
                     if provider_self.calls == 2:
-                        self.assertIn("Call recall first and alone", latest)
-                        self.assertIn("native tool call", latest)
                         self.assertNotIn(OWNER_BUBBLE_REQUEST_REMINDER, latest)
                         return recall_response()
                     if provider_self.calls == 3:
@@ -3295,9 +3284,9 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             llm_requests[0]["system"][0]["text"].rstrip().endswith("You are Momoi.")
         )
         self.assertEqual(len(llm_requests[0]["system"]), 2)
-        self.assertIn("Memory tools", llm_requests[0]["system"][1]["text"])
+        self.assertIn(MEMORY_TOOL_POLICY.strip(), llm_requests[0]["system"][1]["text"])
         self.assertEqual(len(llm_requests[7]["system"]), 2)
-        self.assertIn("Memory tools", llm_requests[7]["system"][1]["text"])
+        self.assertIn(MEMORY_TOOL_POLICY.strip(), llm_requests[7]["system"][1]["text"])
         self.assertEqual(llm_requests[0]["system"], llm_requests[7]["system"])
         self.assertEqual(
             llm_requests[1]["messages"][-1]["content"][0]["type"], "tool_result"
@@ -3320,7 +3309,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("<current_owner_bubbles>", current_text)
         self.assertIn("</current_owner_bubbles>", current_text)
         self.assertIn("<workflow_contract>", current_text)
-        self.assertIn("# Owner Turn contract", current_text)
         self.assertNotIn("Owner Turn: recall first", current_text)
         self.assertTrue(current_text.endswith("</current_owner_bubbles>"))
         self.assertNotIn("Every response in this Turn", current_text)

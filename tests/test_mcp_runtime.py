@@ -127,7 +127,7 @@ class MCPRuntimeTest(unittest.IsolatedAsyncioTestCase):
         specs = {spec["name"]: spec for spec in current.surface.conversation_specs()}
         groups = specs["tool_enable"]["input_schema"]["properties"]["groups"]["items"]["enum"]
         self.assertEqual(groups, ["changed", "new group", "stable"])
-        self.assertIn("Updated description", specs["tool_enable"]["description"])
+        self.assertEqual(current.mcp.configs["changed"]["description"], "Updated description")
         self.assertNotIn("mcp__removed__work", specs)
         changed = current.surface.mcp_server_groups()["changed"][0]
         self.assertEqual(changed["input_schema"]["properties"]["value"]["type"], "integer")

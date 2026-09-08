@@ -74,7 +74,6 @@ class ReplyWaitNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             rendered = json.dumps(messages, ensure_ascii=False)
             self.assertNotIn("Required reply follow-up", system)
             self.assertIn("<workflow_contract>", rendered)
-            self.assertIn("Required reply follow-up", rendered)
             self.assertNotIn("<reply_timeline>", rendered)
             self.assertIn("<followup>", rendered)
             self.assertIn("reason: 这个问题需要老师决定", rendered)

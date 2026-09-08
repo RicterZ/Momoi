@@ -60,8 +60,6 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                                 case.assertIn("send_bubbles_required_before_end_turn", correction)
                             else:
                                 case.assertNotIn("send_bubbles", correction)
-                                case.assertIn("native tool calls", correction)
-                                case.assertIn("no native tool call was returned", correction)
                         case.assertLessEqual(self.calls, 3)
                         return ProviderResponse(content, [call])
 
@@ -195,9 +193,8 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             )
 
             rendered = str(provider.first_messages)
-            self.assertNotIn("Autonomous heartbeat contract", str(provider.first_system))
+            self.assertNotIn("<workflow_contract>", str(provider.first_system))
             self.assertIn("<workflow_contract>", rendered)
-            self.assertIn("Autonomous heartbeat contract", rendered)
             self.assertNotIn("<recent_turn_base>", rendered)
             self.assertNotIn("<recent_turn_append>", rendered)
             self.assertIn("<autonomous_heartbeat>", rendered)

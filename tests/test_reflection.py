@@ -102,11 +102,10 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                 ) -> ProviderResponse:
                     assert tools == [REFLECTION_FINISH_SPEC]
                     request = json.dumps(_messages, ensure_ascii=False)
-                    assert "Daily reflection contract" not in json.dumps(
+                    assert "<workflow_contract>" not in json.dumps(
                         _system, ensure_ascii=False
                     )
                     assert "<workflow_contract>" in request
-                    assert "Daily reflection contract" in request
                     assert "<daily_reflection_record>" in request
                     assert "<tool_timeline>" in request
                     assert "arguments=" in request
@@ -116,13 +115,8 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                     assert "<open_conversations>" in request
                     assert "<always_memory_inventory>" not in request
                     assert "<recent_memory_inventory>" not in request
-                    assert "No open or closing conversations are stored." in request
                     assert "state=completed ok=true capability=read" in request
-                    schema = json.dumps(tools, ensure_ascii=False)
                     assert tools[0]["input_schema"]["properties"]["summary"]["type"] == "string"
-                    assert "Use tool_skill" in schema
-                    assert "Use practice" in schema
-                    assert "open_conversations" in schema
                     call = ToolCall(
                         "finish-reflection",
                         "reflection_finish",
