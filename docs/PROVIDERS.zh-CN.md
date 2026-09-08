@@ -52,7 +52,7 @@ bindings:
 | --- | --- |
 | `version` | 必填整数 `1` |
 | `plugins` | 可选的 Python 模块名列表，启动校验前导入，模块需安装在运行环境 |
-| `credentials` | 命名凭据组，例如 `api_key` 或腾讯的 `secret_id` / `secret_key` |
+| `credentials` | 命名凭据组，例如 `api_key` |
 | `services` | 命名服务：`adapter`，以及可选的 `credentials`、`base_url`、`timeout_seconds`、`settings` |
 | `bindings` | 能力映射：`service`，可选布尔值 `enabled`（默认 `true`）和 `options` |
 
@@ -69,7 +69,6 @@ bindings:
 | `anthropic` | `llm` | Anthropic Messages 协议 |
 | `openai` | `llm` | OpenAI Chat Completions 协议 |
 | `openai` | `embedding` | OpenAI 兼容的向量接口 |
-| `tencent` | `asr` | 腾讯 SentenceRecognition |
 | `fish` | `tts` | Fish Audio 语音合成 |
 | `deepseek` | `balance` | 查询账户余额，与本地 token 统计独立 |
 
@@ -110,12 +109,6 @@ Embedding 不再接受 `base_url`；已有配置需改为完整的 `endpoint`。
 模型、维度必须与编码器匹配。使用 `momoi embedding` 命令前需要启用 binding。
 查询失败仍会退回关键词召回，并保留查询熔断机制。
 
-### ASR
-
-腾讯凭据要求 `secret_id` 和 `secret_key`。默认参数：`region: ""`、`engine: 16k_zh`、
-`timeout_seconds: 30`、`max_audio_bytes: 3145728`。音频大小限制由入站渠道执行，
-不会作为请求参数发给腾讯。微信渠道自带的转写独立于这项可选的 NapCat ASR 能力。
-
 ### TTS
 
 Fish 需要 `api_key` 和 `reference_id`。默认参数：`model: s2.1-pro-free`、
@@ -150,7 +143,7 @@ DeepSeek 余额 provider 提供用量解析与官方价格估算。账户余额�
 adapter 元数据的 `test_supported` 决定按钮是否显示；注册异步 `test(instance)`
 回调即可接入。详见[连接测试 API 规范](./PROVIDER_TEST_API.md)。测试不保存、不重载配置。
 
-`integrations/contracts` 定义 LLM、ASR、TTS、embedding、balance 能力接口，
+`integrations/contracts` 定义 LLM、TTS、embedding、balance 能力接口，
 `integrations/adapters` 实现厂商协议。`ServiceRegistry` 负责组装服务，业务代码只依赖
 能力接口，不导入具体 API 客户端。HTTP 连接池、错误分类和重试基础设施与注册表同层；
 LLM 协议特有的消息回放、工具编码、遥测和重试保留在 `llm`。
@@ -209,8 +202,6 @@ Embedding 的 `encode()` 返回归一化向量，并实现 `health()`、`close()
 读取 `ServiceRegistry.embedding_config` 会按需获取 encoder 的 `space`；禁用时
 返回禁用的语义空间且不创建 encoder。
 
-ASR 实例提供正整数 `max_audio_bytes`，供入站渠道执行限制；继承 `ASRProvider`
-时默认 3 MiB。厂商自定义参数如何转换为这一限制由 adapter 决定。
 TTS 失败抛出 `TTSError`，余额适配器抛出带脱敏详情及分类的 `IntegrationError`；
 取消操作必须向上传播。
 

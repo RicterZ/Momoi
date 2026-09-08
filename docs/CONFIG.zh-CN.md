@@ -12,6 +12,10 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
 外部 API 的端点、凭据和参数统一由 [providers.yaml](./PROVIDERS.zh-CN.md) 管理。
 主配置包含 `"providers": "providers.yaml"`，dashboard 模式自动检测服务配置变化并重建业务实例。
 
+升级已有工作区时，先备份 `providers.yaml`，删除旧的 `bindings.asr`（包括禁用的绑定），
+并删除它独占的服务和凭据；被其他服务共用的配置应保留。入站语音现在使用渠道自身的转写，
+保留旧绑定会因不支持的配置项而阻止启动。
+
 ## 运行配置接口
 
 `GET /api/settings/mcp` 原样返回 `tools.mcp_config` 指定的 JSON 文件，未指定时
@@ -163,7 +167,12 @@ NapCat 和 Weixin 的语音转写前统一添加 `[语音消息] `，随后进�
 
 ## 入站语音识别
 
-参数与接入方式见 [Provider 配置](./PROVIDERS.zh-CN.md#asr)。
+NapCat 按消息 ID 调用 `fetch_ptt_text` 转写收到的 QQ 语音，需要支持该接口的版本
+（已验证 4.18.19；[上游实现](https://github.com/NapNeko/NapCatQQ/pull/1837)）。
+QQ 可能异步生成文字，接口拒绝或返回空文字时会分别等待 2、4 秒重试两次，
+整个转写过程受 `send_timeout_seconds` 限制。失败时保留 `[QQ 语音消息暂时无法转写]` 提示。
+微信直接使用渠道提供的转写文字。两者均无需单独配置识别服务或凭据，
+语音合成开关只控制发送语音。
 
 ## 渠道
 

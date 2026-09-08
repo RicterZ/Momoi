@@ -58,7 +58,7 @@ credential references; strings containing `${NAME}` are not interpolated.
 | --- | --- |
 | `version` | Required integer `1` |
 | `plugins` | Optional list of installed Python modules imported before validation |
-| `credentials` | Named maps of credential fields, such as `api_key` or Tencent's `secret_id` / `secret_key` |
+| `credentials` | Named maps of credential fields, such as `api_key` |
 | `services` | Named service definitions: `adapter`, optional `credentials`, `base_url`, `timeout_seconds`, `settings` |
 | `bindings` | Capability map: `service`, optional boolean `enabled` (default `true`), `options` |
 
@@ -80,7 +80,6 @@ embedding stops semantic retrieval while preserving keyword recall and memory wr
 | `anthropic` | `llm` | Anthropic Messages protocol |
 | `openai` | `llm` | OpenAI Chat Completions protocol |
 | `openai` | `embedding` | OpenAI-compatible embedding endpoint |
-| `tencent` | `asr` | Tencent SentenceRecognition |
 | `fish` | `tts` | Fish Audio synthesis |
 | `deepseek` | `balance` | Live account balance, independent of local token statistics |
 
@@ -128,14 +127,6 @@ the new model. Model and dimensions must match the encoder.
 Enable this binding before using `momoi embedding` commands.
 Query failures still fall back to keyword recall and use the query circuit breaker.
 
-### ASR
-
-Tencent credentials require `secret_id` and `secret_key`. Options:
-`region: ""`, `engine: 16k_zh`, `timeout_seconds: 30`,
-`max_audio_bytes: 3145728`. The audio limit belongs to the inbound channel gate;
-it is not sent to Tencent. Weixin's channel-provided transcription is independent
-of this optional NapCat ASR integration.
-
 ### TTS
 
 Fish requires `api_key` and `reference_id`. Defaults: `model: s2.1-pro-free`,
@@ -176,7 +167,7 @@ Unsaved model and embedding settings can be tested through
 See the [connection test API specification](./PROVIDER_TEST_API.md) for the
 request and response contract. Tests do not save or reload configuration.
 
-`integrations/contracts` defines LLM, ASR, TTS, embedding and balance capabilities.
+`integrations/contracts` defines LLM, TTS, embedding and balance capabilities.
 `integrations/adapters` implements provider protocols. `ServiceRegistry` is the
 composition boundary: application code receives services through these contracts,
 and never imports concrete API clients. `HTTPTransport`, typed integration errors,
@@ -243,9 +234,6 @@ size. Custom options may use arbitrary names and nesting; neither the registry
 nor recall reads vendor option names. Reading `registry.embedding_config` lazily
 resolves the encoder's space; disabled embeddings create no encoder.
 
-ASR implementations expose a positive `max_audio_bytes` for inbound channels.
-The `ASRProvider` base class defaults to 3 MiB; adapters can derive the limit from
-their own options.
 TTS failures raise `TTSError`; balance adapters raise `IntegrationError` with
 sanitized details and an error category. Cancellation must propagate.
 

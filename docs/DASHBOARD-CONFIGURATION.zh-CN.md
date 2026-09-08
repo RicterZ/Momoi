@@ -17,7 +17,7 @@ momoi --workspace ~/.momoi run
 3. 微信点击“微信扫码登录”，在页面扫码；需要验证码时直接在页面填写。登录状态保存到工作区，并自动重新应用配置。
 4. 在“CONFIG // VOICE”“CONFIG // MEMORY”“CONFIG // BALANCE”分别配置语音、记忆和余额。每个区块独立保存。
 
-语音总开关同时控制 ASR 和 TTS，一次保存原子更新两项绑定；启用语音时可以选择只使用识别或合成。停用语音后不创建对应 provider，也不再提供 `send_voice` 工具。记忆开关仅控制 embedding 向量编码和语义检索，关键词召回与记忆写入保持可用。余额开关停止远程余额查询，不影响本地用量统计。关闭开关后点击“保存并应用”生效，原有选项和凭据保留。
+语音合成开关控制 TTS；停用后不创建合成 provider，也不再提供 `send_voice` 工具。收到的语音由 NapCat 或微信转写，不受合成开关影响。记忆开关仅控制 embedding 向量编码和语义检索，关键词召回与记忆写入保持可用。余额开关停止远程余额查询，不影响本地用量统计。关闭开关后点击“保存并应用”生效，原有选项和凭据保留。
 
 提示词编辑位于模型区块。五个区块分别使用独立的 `CONFIG // CHANNEL / MODEL / VOICE / MEMORY / BALANCE` 副标题，输入框、下拉框和复选框共用粗描边、圆角、粉蓝阴影与键盘焦点样式。
 
@@ -27,7 +27,7 @@ momoi --workspace ~/.momoi run
 
 | 模块 | 职责 |
 | --- | --- |
-| `integrations/contracts` | LLM、ASR、TTS、embedding、balance 的业务能力接口 |
+| `integrations/contracts` | LLM、TTS、embedding、balance 的业务能力接口 |
 | `integrations/registry.py` | 注册完整 `Adapter`；创建服务，管理实例和资源生命周期 |
 | `integrations/builtins.py`、`schema.py` | 内置工厂、校验入口和表单字段元数据 |
 | `integrations/fields.py` | 递归字段契约、默认值、类型及范围校验 |
@@ -77,7 +77,7 @@ Provider 配置 API 直接返回已保存的密钥原值，包括命名 credenti
 | --- | --- |
 | `GET /api/settings/configuration` | 返回 provider 原值文档、adapter 字段定义、能力配置和版本；应用配置保持现有脱敏规则 |
 | `PUT /api/settings/providers/{capability}` | 保存单项能力，正文为 `{revision, document: {adapter, enabled, options}}` |
-| `PUT /api/settings/providers` | 原子保存多项能力，正文为 `{revision, document: {asr: {...}, tts: {...}}}` |
+| `PUT /api/settings/providers` | 原子保存多项能力，正文为 `{revision, document: {tts: {...}, embedding: {...}}}` |
 | `PATCH /api/settings/configuration/app` | 合并指定运行配置区块，保留其他区块，正文为 `{revision, document}` |
 | `PUT /api/settings/configuration/{app\|providers}` | 替换可编辑运行配置或 provider 文档，正文为 `{revision, document}` |
 | `GET /api/settings/runtime` | 返回运行状态、缺失条件、保存/应用版本和微信登录状态 |

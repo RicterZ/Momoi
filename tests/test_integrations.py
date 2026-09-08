@@ -19,7 +19,6 @@ from momoi.integrations.adapters.deepseek import (
     DeepSeekBalanceProvider,
 )
 from momoi.integrations.adapters.fish import FishAudioTTSProvider
-from momoi.integrations.adapters.tencent import TencentASRProvider
 from momoi.integrations.configuration import load_provider_catalog
 from momoi.integrations.contracts.tts import AudioOutput
 from momoi.integrations.errors import ErrorCategory, IntegrationError
@@ -68,7 +67,6 @@ class CatalogTest(unittest.TestCase):
         self.assertEqual(services.balance.base_url, "https://api.deepseek.com")
         self.assertIsInstance(services.balance.accounting, DeepSeekAccounting)
         self.assertFalse(hasattr(services.llm, "accounting"))
-        self.assertIsNone(services.asr)
         self.assertIsNone(services.tts)
         self.assertNotIn("private-secret", repr(catalog))
         self.assertNotIn("private-secret", repr(services.llm.config))
@@ -95,10 +93,6 @@ class CatalogTest(unittest.TestCase):
                     "credentials": "shared",
                     "settings": {"model": "s1", "reference_id": "voice"},
                 },
-                "recognition": {
-                    "adapter": "tencent",
-                    "settings": {"secret_id": "id", "secret_key": "key"},
-                },
                 "vectors": {
                     "adapter": "openai",
                     "settings": {"endpoint": "http://localhost:8002/v1/embeddings"},
@@ -108,7 +102,6 @@ class CatalogTest(unittest.TestCase):
         raw["bindings"].update(
             {
                 "tts": {"service": "speech", "options": {"model": "s2.1-pro-free"}},
-                "asr": {"service": "recognition", "options": {"max_audio_bytes": 1024}},
                 "embedding": {
                     "service": "vectors",
                     "options": {"query_timeout_seconds": 12},
@@ -118,7 +111,6 @@ class CatalogTest(unittest.TestCase):
         services = ServiceRegistry(self.load(raw))
         self.assertIsInstance(services.tts, FishAudioTTSProvider)
         self.assertEqual(services.tts.model, "s2.1-pro-free")
-        self.assertIsInstance(services.asr, TencentASRProvider)
         self.assertEqual(
             services.embedding.config.endpoint, "http://localhost:8002/v1/embeddings"
         )
@@ -590,8 +582,7 @@ register_adapter(Adapter(__name__, 'tts', Voice, validate=validate, schema={'pre
             response = await getattr(client, method)("/api/settings/llm")
             self.assertEqual(response.status, 404)
 
-    async def test_custom_llm_asr_and_embedding_use_capability_contracts(self):
-        from momoi.integrations.contracts.asr import AudioInput
+    async def test_custom_llm_and_embedding_use_capability_contracts(self):
         from momoi.integrations.models import EmbeddingSpaceConfig
         from momoi.models import ProviderResponse
 
@@ -605,12 +596,6 @@ register_adapter(Adapter(__name__, 'tts', Voice, validate=validate, schema={'pre
 
             async def complete(self, *args, **kwargs):
                 return ProviderResponse([{"type": "text", "text": "custom"}], [])
-
-        class Recognition:
-            max_audio_bytes = 1024
-
-            async def transcribe(self, audio):
-                return audio.data.decode()
 
         class Vectors:
             def __init__(self, options, context):
@@ -638,15 +623,6 @@ register_adapter(Adapter(__name__, 'tts', Voice, validate=validate, schema={'pre
         register_adapter(
             Adapter(
                 name,
-                "asr",
-                lambda options, ctx: Recognition(),
-                validate=lambda options: None,
-                schema={},
-            )
-        )
-        register_adapter(
-            Adapter(
-                name,
                 "embedding",
                 Vectors,
                 validate=lambda options: None,
@@ -667,7 +643,6 @@ register_adapter(Adapter(__name__, 'tts', Voice, validate=validate, schema={'pre
             "services": {"custom": {"adapter": name}},
             "bindings": {
                 "llm": {"service": "custom"},
-                "asr": {"service": "custom"},
                 "embedding": {
                     "service": "custom",
                     "options": {
@@ -677,9 +652,8 @@ register_adapter(Adapter(__name__, 'tts', Voice, validate=validate, schema={'pre
             },
         }
         services = ServiceRegistry(self.load(raw))
-        model, asr, vectors = services.llm, services.asr, services.embedding
+        model, vectors = services.llm, services.embedding
         self.assertFalse(hasattr(model, "config"))
-        self.assertEqual(asr.max_audio_bytes, 1024)
         self.assertEqual(services.embedding_config.model, "custom-vector")
         self.assertFalse(hasattr(services.embedding_config, "api_key"))
         self.assertFalse(hasattr(services.embedding_config, "endpoint"))
@@ -687,6 +661,5 @@ register_adapter(Adapter(__name__, 'tts', Voice, validate=validate, schema={'pre
             self.assertEqual(
                 (await model.complete("system", [])).content[0]["text"], "custom"
             )
-            self.assertEqual(await asr.transcribe(AudioInput(b"hello", "mp3")), "hello")
             self.assertEqual(await vectors.encode(["hello"], query=True), [[1.0, 0.0]])
         self.assertTrue(vectors.closed)

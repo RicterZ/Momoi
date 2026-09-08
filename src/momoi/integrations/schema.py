@@ -37,14 +37,6 @@ LLM = {
 SCHEMAS = {
     ("openai", "llm"): LLM,
     ("anthropic", "llm"): LLM,
-    ("tencent", "asr"): {
-        "secret_id": field(secret=True),
-        "secret_key": field(secret=True),
-        "region": field(default=""),
-        "engine": field(default="16k_zh"),
-        "timeout_seconds": field("number", 30),
-        "max_audio_bytes": field("integer", 3145728),
-    },
     ("fish", "tts"): {
         "api_key": field(secret=True),
         "reference_id": field(),
@@ -87,10 +79,6 @@ def builtin_schema(name, capability):
         "tool_choice": "工具选择（Tool Choice）",
         "thinking": "模型思考设置",
         "accounting": "费用估算",
-        "secret_id": "Secret ID",
-        "secret_key": "Secret Key",
-        "region": "服务区域",
-        "engine": "识别引擎",
         "max_audio_bytes": "音频大小上限（字节）",
         "reference_id": "音色 ID",
         "format": "音频格式",
@@ -104,7 +92,6 @@ def builtin_schema(name, capability):
         spec["label"] = labels.get(key, key)
     basic = {
         "llm": {"base_url", "api_key", "model"},
-        "asr": {"secret_id", "secret_key"},
         "tts": {"api_key", "reference_id", "model"},
         "embedding": {"endpoint", "api_key", "model", "dimensions"},
         "balance": {"api_key", "base_url", "timeout_seconds", "accounting"},
@@ -113,7 +100,6 @@ def builtin_schema(name, capability):
         spec["advanced"] = key not in basic[capability]
     required = {
         "llm": {"base_url", "model"},
-        "asr": {"secret_id", "secret_key"},
         "tts": {"api_key", "reference_id"},
         "embedding": set(),
         "balance": {"api_key"},

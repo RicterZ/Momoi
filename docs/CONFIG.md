@@ -14,6 +14,11 @@ Absolute paths are accepted for every path field. `config.json` does not expand
 External API endpoints, credentials and options live in [providers.yaml](./PROVIDERS.md).
 The main config contains `"providers": "providers.yaml"`. Dashboard mode watches service changes and reloads the business runtime.
 
+When upgrading an existing workspace, remove the obsolete `bindings.asr` entry
+from `providers.yaml`, including disabled bindings, and remove its service and
+credentials if no other service uses them. Incoming voice now uses the channel's
+own transcription. Back up the file before editing; unknown bindings prevent startup.
+
 ## Runtime controls API
 
 `GET /api/settings/mcp` returns the original JSON file specified by
@@ -179,7 +184,15 @@ See [Provider configuration](./PROVIDERS.md#llm) for options and setup.
 
 ## Inbound speech recognition
 
-See [Provider configuration](./PROVIDERS.md#asr) for options and setup.
+NapCat converts incoming QQ voice messages through `fetch_ptt_text` using the
+message ID. This requires a NapCat version providing that action (verified with
+4.18.19; upstream [implementation](https://github.com/NapNeko/NapCatQQ/pull/1837)).
+QQ may generate the text asynchronously, so rejected requests or empty results
+are retried twice after 2 and 4 seconds, within `send_timeout_seconds` overall.
+Failures leave `[QQ 语音消息暂时无法转写]` in place of the recording.
+Weixin uses the transcription included by its channel. Neither requires a
+separate recognition provider or credentials. The voice synthesis switch only
+controls outgoing voice messages.
 
 ## Channels
 

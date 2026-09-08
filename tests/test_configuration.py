@@ -236,8 +236,6 @@ class ConfigurationTest(unittest.TestCase):
                     "MOMOI_WEBHOOKS_ENABLED": "true",
                     "MOMOI_WEBHOOKS_HOST": "0.0.0.0",
                     "MOMOI_WEBHOOKS_TOKEN": "env-hook",
-                    "MOMOI_ASR_SECRET_ID": "env-asr-id",
-                    "MOMOI_ASR_SECRET_KEY": "env-asr-key",
                 },
                 clear=False,
             ):

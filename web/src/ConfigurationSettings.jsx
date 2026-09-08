@@ -29,11 +29,11 @@ const modules = [
   },
   {
     id: "voice",
-    label: "语音交流",
+    label: "语音合成",
     icon: "voice",
-    names: ["asr", "tts"],
+    names: ["tts"],
     optional: true,
-    tip: "识别和合成可分别启用。关闭语音后仍可正常文字交流，原有配置和密钥会保留。",
+    tip: "让 Momoi 可以发送语音消息。收到的语音由 QQ 或微信转写，无需配置识别服务。关闭合成后原有配置和密钥会保留。",
   },
   {
     id: "memory",
@@ -54,17 +54,14 @@ const modules = [
   { id: "runtime", label: "运行设置" },
   { id: "mcp", label: "MCP 工具" },
 ];
-const capabilityLabels = { asr: "语音识别", tts: "语音合成" };
 const adapterLabels = {
   openai: "OpenAI",
   deepseek: "DeepSeek",
   anthropic: "Anthropic",
-  tencent: "腾讯云",
   fish: "Fish Audio",
 };
 const primaryFields = {
   llm: ["base_url", "api_key", "model", "thinking"],
-  asr: ["secret_id", "secret_key"],
   tts: ["api_key", "reference_id", "model"],
   embedding: ["endpoint", "api_key", "model", "dimensions"],
   balance: ["base_url", "api_key", "timeout_seconds", "accounting"],
@@ -679,7 +676,7 @@ export function SaveBar({ busy, dirty, status, next, previous, hint = "", saveDi
 
 function providerDraft(names, data, optional) {
   const enabled =
-    names.length > 1 || !optional || names.some((name) => data.capabilities[name]?.enabled);
+    !optional || names.some((name) => data.capabilities[name]?.enabled);
   return {
     enabled,
     values: Object.fromEntries(
@@ -692,7 +689,7 @@ function providerDraft(names, data, optional) {
             data.adapters.find((adapter) => adapter.capability === name)
               ?.adapter ||
             "",
-          enabled: names.length > 1 ? Boolean(data.capabilities[name]?.enabled) : true,
+          enabled: true,
           options: data.capabilities[name]?.options || {},
         },
       ]),
@@ -802,7 +799,7 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
           name,
           {
             ...normalizeProvider(name, draft.values[name], data.adapters),
-            enabled: names.length > 1 ? draft.values[name].enabled : draft.enabled,
+            enabled: draft.enabled,
           },
         ]),
       );
@@ -871,7 +868,7 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
         <SectionHeader
           module={module}
           control={
-            optional && names.length === 1 && (
+            optional && (
               <Toggle
                 checked={draft.enabled}
                 disabled={saving}
@@ -882,7 +879,7 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
             )
           }
         />
-        <div className={`settings-form-body${names.length > 1 ? " settings-voice" : ""}`}>
+        <div className="settings-form-body">
           {!draft.enabled && (
             <div className="settings-disabled">
               <div className="settings-disabled-copy">
@@ -906,7 +903,6 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
           )}
           <div
             id={configurationId}
-            className={names.length > 1 ? "settings-voice-grid" : undefined}
             hidden={!draft.enabled && !showDisabled}
           >
             {names.map((name) => {
@@ -960,33 +956,9 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
                 );
               };
               return (
-                <div key={name} className={names.length > 1 ? "settings-voice-column" : undefined}>
-                  {names.length > 1 && (
-                    <>
-                      <header className="settings-voice-heading">
-                        <div className="settings-voice-title">
-                          <h3>{capabilityLabels[name]}</h3>
-                          <span className="panel-label">VOICE // {name.toUpperCase()}</span>
-                        </div>
-                        <Toggle
-                          checked={value.enabled}
-                          disabled={saving}
-                          onChange={(enabled) => update({ ...value, enabled })}
-                        >
-                          使用{capabilityLabels[name]}
-                        </Toggle>
-                      </header>
-                      <p className="settings-voice-description">
-                        {name === "asr" ? "将接收的语音消息转换为文本（适用于 Napcat QQ 渠道；微信渠道已内置语音识别功能）" : "让 Momoi 可以发送语音消息"}
-                      </p>
-                    </>
-                  )}
+                <div key={name}>
                   <Fields
-                    disabled={
-                      !draft.enabled ||
-                      saving ||
-                      (names.length > 1 && !value.enabled)
-                    }
+                    disabled={!draft.enabled || saving}
                   >
                     <div
                       className={

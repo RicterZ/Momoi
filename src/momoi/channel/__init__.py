@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
-from ..integrations.contracts.asr import ASRProvider
 from ..models import IncomingMessage, OwnerInputStatus
 
 
@@ -38,15 +37,8 @@ class SendRejected(ChannelError):
 
 @dataclass(frozen=True)
 class IncomingVoice:
-    source: str = ""
+    message_id: str = ""
     native_text: str = ""
-    format: str = ""
-
-
-@dataclass(frozen=True)
-class ChannelDependencies:
-    asr_provider: ASRProvider | None = None
-    asr_max_audio_bytes: int = 3 * 1024 * 1024
 
 
 class Channel(Protocol):
@@ -76,14 +68,12 @@ def load_channel_config(name: str, value: object, workspace: Path) -> Any:
     return loader(value, workspace)
 
 
-def create_channel(
-    config: Any, dependencies: ChannelDependencies | None = None
-) -> Channel:
+def create_channel(config: Any) -> Channel:
     name = str(getattr(config, "plugin", ""))
     factory = getattr(_plugin(name), "create_channel", None)
     if not callable(factory):
         raise ValueError(f"channel plugin has no factory: {name}")
-    return factory(config) if dependencies is None else factory(config, dependencies)
+    return factory(config)
 
 
 async def login_channel(config: Any) -> None:

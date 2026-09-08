@@ -102,7 +102,7 @@ class ProviderConnectionTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((await response.json())["error"]["code"], "validation")
         response = await self.probe(adapter="unknown")
         self.assertEqual(response.status, 400)
-        for capability, adapter in (("asr", "tencent"), ("tts", "fish"), ("balance", "deepseek")):
+        for capability, adapter in (("tts", "fish"), ("balance", "deepseek")):
             response = await self.probe(capability, adapter, options={})
             self.assertEqual(response.status, 400)
             self.assertEqual((await response.json())["error"]["code"], "unsupported")
@@ -203,5 +203,5 @@ class ProviderConnectionTest(unittest.IsolatedAsyncioTestCase):
         schemas = {(a["capability"], a["adapter"]): a for a in adapter_schemas()}
         for capability, adapter in (("llm", "openai"), ("llm", "anthropic"), ("embedding", "openai")):
             self.assertTrue(schemas[capability, adapter]["test_supported"])
-        for capability, adapter in (("asr", "tencent"), ("tts", "fish"), ("balance", "deepseek")):
+        for capability, adapter in (("tts", "fish"), ("balance", "deepseek")):
             self.assertFalse(schemas[capability, adapter]["test_supported"])

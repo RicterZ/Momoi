@@ -19,7 +19,6 @@ from .. import (
     NotConnected,
     SendRejected,
 )
-from ...integrations.contracts.asr import ASRProvider, AudioInput
 from ...observability.events import log_event
 from ...models import IncomingMessage, OwnerInputStatus
 from .config import NapCatConfig
@@ -38,15 +37,8 @@ VOICE_UNAVAILABLE_TEXT = "[QQ 语音消息暂时无法转写]"
 class NapCatChannel:
     name = "napcat"
 
-    def __init__(
-        self,
-        config: NapCatConfig,
-        asr_provider: ASRProvider | None = None,
-        asr_max_audio_bytes: int = 3 * 1024 * 1024,
-    ) -> None:
+    def __init__(self, config: NapCatConfig) -> None:
         self.config = config
-        self.asr_provider = asr_provider
-        self.asr_max_audio_bytes = asr_max_audio_bytes
         self.quiet_seconds = config.quiet_seconds
         self.max_batch_seconds = config.max_batch_seconds
         self._session: aiohttp.ClientSession | None = None
@@ -184,11 +176,15 @@ class NapCatChannel:
         ):
             return
         async with self._inbound_lock:
-            segments = await self._convert_voice_segments(incoming_segments(payload))
+            message_id = str(payload.get("message_id") or "")
+            if not message_id:
+                return
+            segments = await self._convert_voice_segments(
+                incoming_segments(payload), message_id
+            )
             segments = await self._enrich_segments(segments)
             text = render_segments(segments)
-            message_id = str(payload.get("message_id", ""))
-            if not text or not message_id:
+            if not text:
                 return
             self_id = str(payload.get("self_id", "unknown"))
             occurred_at = float(payload.get("time") or time.time())
@@ -205,18 +201,14 @@ class NapCatChannel:
             )
 
     async def _convert_voice_segments(
-        self, segments: tuple[dict[str, Any], ...]
+        self, segments: tuple[dict[str, Any], ...], message_id: str
     ) -> tuple[dict[str, Any], ...]:
         converted: list[dict[str, Any]] = []
         for segment in segments:
             if segment.get("type") != "record":
                 converted.append(segment)
                 continue
-            data = segment.get("data")
-            data = data if isinstance(data, dict) else {}
-            text = await self.convert_voice(
-                IncomingVoice(source=str(data.get("file") or ""))
-            )
+            text = await self.convert_voice(IncomingVoice(message_id=message_id))
             converted.append(
                 {
                     "type": "text",
@@ -226,29 +218,25 @@ class NapCatChannel:
         return tuple(converted)
 
     async def convert_voice(self, voice: IncomingVoice) -> str | None:
-        provider = self.asr_provider
-        if provider is None:
-            return VOICE_UNAVAILABLE_TEXT
-        if not voice.source.strip():
+        if not voice.message_id.strip():
             return VOICE_UNAVAILABLE_TEXT
         try:
-            response = await self._request_action(
-                "get_record",
-                {"file": voice.source.strip(), "out_format": "mp3"},
-            )
-            data = response.get("data")
-            encoded = data.get("base64") if isinstance(data, dict) else None
-            if not isinstance(encoded, str) or not encoded:
-                raise ValueError("get_record returned no audio")
-            content = base64.b64decode(encoded, validate=True)
-            if not content:
-                raise ValueError("get_record returned empty audio")
-            if len(content) > self.asr_max_audio_bytes:
-                raise ValueError("audio exceeds ASR size limit")
-            text = (await provider.transcribe(AudioInput(content, "mp3"))).strip()
-            if not text:
-                raise ValueError("ASR returned empty text")
-            return text
+            async with asyncio.timeout(self.config.send_timeout_seconds):
+                # NapCat can reject the first lookup while QQ generates the text.
+                for attempt in range(3):
+                    try:
+                        response = await self._request_action(
+                            "fetch_ptt_text", {"message_id": voice.message_id.strip()}
+                        )
+                        data = response.get("data")
+                        text = data.get("text") if isinstance(data, dict) else None
+                        if not isinstance(text, str) or not text.strip():
+                            raise ValueError("fetch_ptt_text returned no text")
+                        return text.strip()
+                    except (SendRejected, ValueError):
+                        if attempt == 2:
+                            raise
+                        await asyncio.sleep(2 * (attempt + 1))
         except asyncio.CancelledError:
             raise
         except Exception as error:

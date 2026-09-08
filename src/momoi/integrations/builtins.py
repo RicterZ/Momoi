@@ -7,7 +7,6 @@ from .probes import model_probe, embedding_probe
 
 def register_builtins():
     from .registry import Adapter, register_adapter
-    from .adapters.tencent import TencentASRProvider
     from .adapters.fish import FishAudioTTSProvider
     from .adapters.embedding import EmbeddingClient
     from .adapters.deepseek import DeepSeekBalanceProvider
@@ -56,38 +55,6 @@ def register_builtins():
             validate=validate_embedding,
             schema=builtin_schema("openai", "embedding"),
             test=embedding_probe,
-        )
-    )
-
-    def validate_asr(options):
-        fields(
-            options,
-            {
-                "secret_id",
-                "secret_key",
-                "region",
-                "engine",
-                "timeout_seconds",
-                "max_audio_bytes",
-            },
-        )
-        for key in ("secret_id", "secret_key"):
-            text(options, key)
-        for key, default in [("region", ""), ("engine", "16k_zh")]:
-            text(options, key, default, empty=key == "region")
-        number(options, "timeout_seconds", 30)
-        number(options, "max_audio_bytes", 3 * 1024 * 1024, integer=True)
-
-    register_adapter(
-        Adapter(
-            "tencent",
-            "asr",
-            lambda options, ctx: TencentASRProvider(
-                **options,
-                transport=ctx.transport,
-            ),
-            validate=validate_asr,
-            schema=builtin_schema("tencent", "asr"),
         )
     )
 

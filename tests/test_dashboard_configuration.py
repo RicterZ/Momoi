@@ -230,12 +230,12 @@ class ConfigurationManagerTest(unittest.TestCase):
         fields["logging"]["fields"]["level"]["enum"].append("INVALID")
         self.assertNotIn("INVALID", self.manager.snapshot()["app_fields"]["logging"]["fields"]["level"]["enum"])
 
-    def test_voice_batch_is_atomic_and_keeps_credentials_when_disabled(self):
+    def test_provider_batch_is_atomic_and_keeps_credentials_when_disabled(self):
         voice = {
-            "asr": {
-                "adapter": "tencent",
+            "balance": {
+                "adapter": "deepseek",
                 "enabled": True,
-                "options": {"secret_id": "id", "secret_key": "secret"},
+                "options": {"api_key": "secret"},
             },
             "tts": {
                 "adapter": "fish",
@@ -245,17 +245,17 @@ class ConfigurationManagerTest(unittest.TestCase):
         }
         saved = self.manager.save_bindings(voice, self.manager.revision())
         invalid = copy.deepcopy(voice)
-        invalid["asr"]["enabled"] = False
+        invalid["balance"]["enabled"] = False
         invalid["tts"]["options"]["format"] = "invalid"
         with self.assertRaises(ConfigError):
             self.manager.save_bindings(invalid, saved["revision"])
         self.assertEqual(self.manager.revision(), saved["revision"])
-        self.assertTrue(self.manager.validate().providers.enabled("asr"))
+        self.assertTrue(self.manager.validate().providers.enabled("balance"))
         for item in voice.values():
             item["enabled"] = False
         saved = self.manager.save_bindings(voice, saved["revision"])
         catalog = self.manager.validate().providers
-        self.assertFalse(catalog.enabled("asr"))
+        self.assertFalse(catalog.enabled("balance"))
         self.assertFalse(catalog.enabled("tts"))
         self.assertEqual(catalog.options_for("tts")["api_key"], "key")
         self.assertEqual(saved["capabilities"]["tts"]["options"]["api_key"], "key")
@@ -369,7 +369,6 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
 
         self.enable()
         optional = {
-            "asr": {"adapter": "tencent", "enabled": False, "options": {}},
             "tts": {"adapter": "fish", "enabled": False, "options": {}},
             "embedding": {"adapter": "openai", "enabled": False, "options": {}},
             "balance": {"adapter": "deepseek", "enabled": False, "options": {}},
@@ -382,7 +381,6 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 200)
         daemon = MomoiDaemon(self.manager.validate())
         self.addCleanup(daemon.store.close)
-        self.assertIsNone(daemon.asr_provider)
         self.assertIsNone(daemon.bubble_delivery.tts_provider)
         self.assertIsNone(daemon.services.balance)
         self.assertIsNone(daemon.services.embedding)

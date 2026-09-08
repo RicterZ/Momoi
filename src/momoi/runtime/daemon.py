@@ -4,13 +4,11 @@ from collections import deque
 from typing import Any
 
 from ..tools.agenda import AgendaTools
-from ..integrations.contracts.asr import ASRProvider
 from ..integrations.contracts.tts import TTSProvider
 from ..integrations.registry import ServiceRegistry
 from ..tools.builtin import BuiltinTools
 from ..channel import (
     Channel,
-    ChannelDependencies,
     create_channel,
 )
 from ..config.models import AppConfig
@@ -48,18 +46,17 @@ class MomoiDaemon(
         self,
         config: AppConfig,
         channel: Channel | None = None,
-        asr_provider: ASRProvider | None = None,
         tts_provider: TTSProvider | None = None,
     ) -> None:
         self.store = None
         try:
-            self._compose(config, channel, asr_provider, tts_provider)
+            self._compose(config, channel, tts_provider)
         except BaseException:
             if self.store is not None:
                 self.store.close()
             raise
 
-    def _compose(self, config, channel, asr_provider, tts_provider):
+    def _compose(self, config, channel, tts_provider):
         if not config.providers.enabled("llm") or not config.channel_configs:
             raise ValueError("runtime requires an enabled LLM and at least one channel")
         self.config = config
@@ -81,11 +78,7 @@ class MomoiDaemon(
             config.providers,
             dump_dir=config.workspace / "llm-dumps" if config.workspace else None,
             semantic_policy=config.policies.semantic,
-            overrides={
-                k: v
-                for k, v in {"asr": asr_provider, "tts": tts_provider}.items()
-                if v is not None
-            },
+            overrides={"tts": tts_provider} if tts_provider is not None else {},
         )
         self.semantic_recall = SemanticRecallService(
             self.store,
@@ -108,26 +101,10 @@ class MomoiDaemon(
             config.workspace or config.database.parent,
             private_roots=(tool_result_root(config),),
         )
-        self.asr_provider = self.services.asr
-
-        def build_channel(item: object) -> Channel:
-            dependencies = (
-                ChannelDependencies(
-                    asr_provider=self.asr_provider,
-                    asr_max_audio_bytes=(
-                        self.asr_provider.max_audio_bytes
-                        if self.asr_provider else 3 * 1024 * 1024
-                    ),
-                )
-                if getattr(item, "plugin", "") == "napcat"
-                else None
-            )
-            return create_channel(item, dependencies)
-
         created = (
             (channel,)
             if channel is not None
-            else tuple(build_channel(item) for item in config.channel_configs)
+            else tuple(create_channel(item) for item in config.channel_configs)
         )
         self.channels = {item.name: item for item in created}
         if len(self.channels) != len(created):

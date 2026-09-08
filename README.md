@@ -401,7 +401,7 @@ Keyword recall remains available during indexing. See
 
 ### External API services
 
-LLM, ASR, TTS, embedding and account balance use capability interfaces, registered
+LLM, TTS, embedding and account balance use capability interfaces, registered
 adapters and a shared composition/lifecycle layer. Service endpoints and credentials
 live in `providers.yaml`; `config.json` references that file. A service can bind to
 multiple supported capabilities. Balance queries are independent of local token

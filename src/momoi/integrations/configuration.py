@@ -12,7 +12,7 @@ import yaml
 from ..config.models import ConfigError
 from .fields import normalize_fields
 
-CAPABILITIES = frozenset({"llm", "asr", "tts", "embedding", "balance"})
+CAPABILITIES = frozenset({"llm", "tts", "embedding", "balance"})
 
 
 class CatalogLoader(yaml.SafeLoader):

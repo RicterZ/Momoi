@@ -27,7 +27,6 @@ export function createSettingsPreview(json) {
           temperature: 0.6,
         },
       },
-      asr: { adapter: "tencent", enabled: false, options: {} },
       tts: {
         adapter: "fish",
         enabled: true,

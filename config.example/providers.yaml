@@ -3,11 +3,6 @@ version: 1
 credentials:
   model:
     api_key: replace-me
-  tencent:
-    secret_id:
-      env: TENCENT_SECRET_ID
-    secret_key:
-      env: TENCENT_SECRET_KEY
   fish:
     api_key:
       env: FISH_API_KEY
@@ -20,10 +15,6 @@ services:
     base_url: https://api.example.com
     credentials: model
     timeout_seconds: 300
-  speech_recognition:
-    adapter: tencent
-    credentials: tencent
-    timeout_seconds: 30
   speech:
     adapter: fish
     credentials: fish
@@ -49,13 +40,6 @@ bindings:
       tool_choice: false
       thinking:
         effort: high
-  asr:
-    service: speech_recognition
-    enabled: false
-    options:
-      engine: 16k_zh
-      region: ''
-      max_audio_bytes: 3145728
   tts:
     service: speech
     enabled: false

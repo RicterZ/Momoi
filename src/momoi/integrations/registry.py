@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Awaitable, Callable, TYPE_CHECKING
 
-from .contracts.asr import ASRProvider
 from .contracts.balance import BalanceProvider
 from .contracts.embedding import Embedder
 from .contracts.llm import LanguageModel
@@ -51,7 +50,7 @@ _ADAPTERS: dict[tuple[str, str], Adapter] = {}
 def register_adapter(adapter: Adapter) -> None:
     """Register one complete adapter contract, including its configuration schema."""
     name, capability = adapter.name, adapter.capability
-    if not name or capability not in {"llm", "asr", "tts", "embedding", "balance"}:
+    if not name or capability not in {"llm", "tts", "embedding", "balance"}:
         raise ValueError("invalid adapter name or capability")
     if (name, capability) in _ADAPTERS:
         raise ValueError(f"adapter already registered: {name}/{capability}")
@@ -123,7 +122,6 @@ class ServiceRegistry:
         instance = adapter.factory(options, self.context)
         methods = {
             "llm": ("complete",),
-            "asr": ("transcribe",),
             "tts": ("synthesize",),
             "embedding": ("encode", "health", "close"),
             "balance": ("balance",),
@@ -162,13 +160,6 @@ class ServiceRegistry:
             raise ValueError(
                 f"{binding.adapter}/embedding must declare an enabled space"
             )
-        if capability == "asr" and (
-            type(getattr(instance, "max_audio_bytes", None)) is not int
-            or instance.max_audio_bytes <= 0
-        ):
-            raise TypeError(
-                f"{binding.adapter}/asr must supply a positive max_audio_bytes"
-            )
         self._instances[capability] = instance
         self._owned.append(instance)
         return instance
@@ -176,10 +167,6 @@ class ServiceRegistry:
     @property
     def llm(self) -> LanguageModel:
         return self.get("llm")
-
-    @property
-    def asr(self) -> ASRProvider | None:
-        return self.get("asr")
 
     @property
     def tts(self) -> TTSProvider | None:

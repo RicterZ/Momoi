@@ -9,7 +9,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 
-from momoi.integrations.contracts.asr import ASRProvider, AudioInput
 from momoi.channel import (
     VOICE_MESSAGE_PREFIX,
     NotConnected,
@@ -48,20 +47,9 @@ from tests.support import with_owner_recall
 
 class MessagingTest(unittest.TestCase):
     def test_napcat_converts_voice_bubbles_before_emitting_message(self) -> None:
-        class Provider(ASRProvider):
-            def __init__(self) -> None:
-                self.inputs: list[AudioInput] = []
-
-            async def transcribe(self, audio: AudioInput) -> str:
-                self.inputs.append(audio)
-                return "语音转写结果"
-
         async def run() -> None:
-            provider = Provider()
             client = NapCatChannel(
                 NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
-                provider,
-                1024,
             )
             requests: list[tuple[str, dict[str, object]]] = []
 
@@ -72,7 +60,7 @@ class MessagingTest(unittest.TestCase):
                 return {
                     "status": "ok",
                     "retcode": 0,
-                    "data": {"base64": base64.b64encode(b"voice").decode()},
+                    "data": {"text": " 语音转写结果 "},
                 }
 
             client._request_action = request  # type: ignore[method-assign]
@@ -93,9 +81,8 @@ class MessagingTest(unittest.TestCase):
 
             self.assertEqual(
                 requests,
-                [("get_record", {"file": "voice.silk", "out_format": "mp3"})],
+                [("fetch_ptt_text", {"message_id": "1"})],
             )
-            self.assertEqual(provider.inputs, [AudioInput(b"voice", "mp3")])
             self.assertEqual(accepted[0].text, VOICE_MESSAGE_PREFIX + "语音转写结果")
             self.assertEqual(
                 accepted[0].segments,
@@ -105,6 +92,10 @@ class MessagingTest(unittest.TestCase):
             disabled = NapCatChannel(
                 NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20)
             )
+            async def unavailable(action, params):
+                raise NotConnected("offline")
+
+            disabled._request_action = unavailable
             placeholders: list[IncomingMessage] = []
 
             async def receive_disabled(message: IncomingMessage) -> None:
