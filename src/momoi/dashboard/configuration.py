@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import io
+from pathlib import Path
 
 import qrcode
 import qrcode.image.svg
@@ -91,6 +92,23 @@ def register_configuration_routes(app, configuration, runtime):
     async def snapshot(request):
         return web.json_response(configuration.snapshot())
 
+    async def mcp_config(request):
+        if request.method == "PATCH":
+            return web.Response(status=204)
+        reference = configuration.read_app().get("tools", {}).get("mcp_config", "mcp.json")
+        path = Path(reference) if reference else Path("mcp.json")
+        if not path.is_absolute():
+            path = configuration.path.parent / path
+        try:
+            content = path.read_bytes()
+        except FileNotFoundError:
+            if reference and reference != "mcp.json":
+                raise web.HTTPNotFound(text="MCP configuration file not found") from None
+            return web.json_response({"mcpServers": {}})
+        except OSError:
+            raise web.HTTPInternalServerError(text="Cannot read MCP configuration") from None
+        return web.Response(body=content, content_type="application/json")
+
     async def save(request):
         value = await body(request)
         try:
@@ -169,6 +187,8 @@ def register_configuration_routes(app, configuration, runtime):
 
     app.on_cleanup.append(cleanup)
     app.router.add_get("/api/settings/configuration", snapshot)
+    app.router.add_get("/api/settings/mcp", mcp_config)
+    app.router.add_patch("/api/settings/mcp", mcp_config)
     app.router.add_put("/api/settings/configuration/{section}", save)
     app.router.add_put("/api/settings/providers/{capability}", save)
     app.router.add_put("/api/settings/providers", save)

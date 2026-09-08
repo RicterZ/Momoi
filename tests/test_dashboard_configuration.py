@@ -417,6 +417,49 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(response.status, 400)
 
+    async def test_mcp_get_returns_raw_config_and_patch_never_changes_it(self):
+        path = self.path.parent / "mcp.json"
+        content = '{\n  "mcpServers": {"test": {"disabled": true, "env": {"TOKEN": "${UNSET_TOKEN}"}}}\n}\n'
+        path.write_text(content)
+        for method in ("get", "patch"):
+            response = await getattr(self.client, method)("/api/settings/mcp")
+            self.assertEqual(response.status, 401)
+        self.client.session.headers["Authorization"] = self.auth
+        response = await self.client.get("/api/settings/mcp")
+        self.assertEqual(response.status, 200)
+        self.assertEqual(response.content_type, "application/json")
+        self.assertEqual(response.headers["Cache-Control"], "no-store")
+        self.assertEqual(await response.text(), content)
+        revision = self.manager.revision()
+        self.runtime.changed.clear()
+        response = await self.client.patch("/api/settings/mcp", json={"mcpServers": {}})
+        self.assertEqual(response.status, 204)
+        self.assertEqual(await response.read(), b"")
+        self.assertEqual(path.read_text(), content)
+        self.assertEqual(self.manager.revision(), revision)
+        self.assertFalse(self.runtime.changed.is_set())
+        path.unlink()
+        response = await self.client.patch("/api/settings/mcp", data="not JSON")
+        self.assertEqual(response.status, 204)
+        self.assertFalse(path.exists())
+        response = await self.client.get("/api/settings/mcp")
+        self.assertEqual(await response.json(), {"mcpServers": {}})
+
+    async def test_mcp_get_uses_configured_path(self):
+        self.client.session.headers["Authorization"] = self.auth
+        path = self.path.parent / "custom-mcp.json"
+        path.write_text('{"mcpServers": {}, "extra": "preserved"}')
+        for reference in (path.name, str(path.resolve())):
+            app = self.manager.read_app()
+            app["tools"]["mcp_config"] = reference
+            atomic_write(self.path, json.dumps(app))
+            response = await self.client.get("/api/settings/mcp")
+            self.assertEqual(response.status, 200)
+            self.assertEqual(await response.text(), path.read_text())
+        path.unlink()
+        response = await self.client.get("/api/settings/mcp")
+        self.assertEqual(response.status, 404)
+
     async def test_runtime_controls_validate_atomically_through_http(self):
         self.client.session.headers["Authorization"] = self.auth
         for section, key, invalid in (

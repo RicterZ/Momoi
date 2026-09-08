@@ -14,6 +14,12 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
 
 ## 运行配置接口
 
+`GET /api/settings/mcp` 原样返回 `tools.mcp_config` 指定的 JSON 文件，未指定时
+读取工作区的 `mcp.json`。保留禁用服务和环境变量引用；工作区没有该文件时返回
+`{"mcpServers": {}}`，自定义路径不存在时返回 404。
+`PATCH /api/settings/mcp` 直接返回 204 空响应，不修改配置、不重载服务。
+两个方法均需要 dashboard 鉴权。
+
 鉴权后请求 `GET /api/settings/configuration`，从 `app` 读取当前配置，
 从 `app_fields` 读取控件定义。每组包含 `label` 和 `fields`，字段提供
 `type`、`default` 和 `advanced: false`；日志级别通过 `enum` 提供选项，

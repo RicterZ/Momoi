@@ -16,6 +16,13 @@ The main config contains `"providers": "providers.yaml"`. Dashboard mode watches
 
 ## Runtime controls API
 
+`GET /api/settings/mcp` returns the original JSON file specified by
+`tools.mcp_config`, falling back to workspace `mcp.json`. Disabled entries and
+environment references are preserved. Without a workspace MCP file it returns
+`{"mcpServers": {}}`; a missing custom path returns 404.
+`PATCH /api/settings/mcp` is a no-op returning 204 with no body; it neither writes
+configuration nor reloads services. Both methods require dashboard authentication.
+
 Authenticated `GET /api/settings/configuration` returns current editable values
 in `app` and control metadata in `app_fields`. Each section has `label` and
 `fields`; each field specifies its type, default and `advanced: false`.
