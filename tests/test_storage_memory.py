@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
+from xml.etree import ElementTree
 
 from momoi.tools.agenda import AgendaTools
 from momoi.tools.builtin import BuiltinTools
@@ -3673,14 +3674,23 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertIn("喜欢骑车", recalled)
             self.assertNotIn("波浪号", recalled)
             self.assertNotIn("恢复身体", recalled)
+            ranked_context, _ = store.ranked_memory_context("骑车", 6)
+            ranked_memory = ElementTree.fromstring(ranked_context)
+            self.assertEqual(ranked_memory.tag, "memory")
+            self.assertEqual(ranked_memory.get("key"), "hobby.cycling")
+            self.assertEqual(ranked_memory.text, "老师喜欢骑车")
             self.assertEqual(always.count("波浪号"), 1)
             for activation, rendered in (("always", always), ("recent", recent)):
                 row = store._db.execute(
                     "SELECT * FROM memories WHERE activation=?", (activation,)
                 ).fetchone()
-                self.assertIn(f"memory_id={row['id']}", rendered)
-                self.assertIn(f"kind={row['kind']} key={row['key']}", rendered)
-                self.assertIn(f"activation={activation}", rendered)
+                memory = ElementTree.fromstring(rendered)
+                self.assertEqual(memory.tag, "memory")
+                self.assertEqual(memory.attrib, {
+                    "memory_id": str(row["id"]), "kind": row["kind"],
+                    "key": row["key"], "activation": activation,
+                })
+                self.assertEqual(memory.text, row["content"])
             recent_row = store._db.execute(
                 "SELECT expires_at FROM memories WHERE key='current.recovery'"
             ).fetchone()
@@ -3723,7 +3733,12 @@ class StorageMemoryTest(unittest.TestCase):
             text = before["content"][0]["text"]
             self.assertEqual(text.count(content), 4)
             for activation in ("always", "recent"):
-                self.assertLess(text.index(f"key={activation}.rule.0"), text.index(f"key={activation}.rule.1"))
+                document = ElementTree.fromstring(f"<context>{text}</context>")
+                section = "long_term_memories" if activation == "always" else "recent_memories"
+                self.assertEqual(
+                    [item.get("key") for item in document.findall(f"{section}/memory")],
+                    [f"{activation}.rule.0", f"{activation}.rule.1"],
+                )
             store.add_event(IncomingMessage("later", "later", "无关的新消息", 1, 1))
             self.assertEqual(prefix(), before)
 

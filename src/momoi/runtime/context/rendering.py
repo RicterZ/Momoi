@@ -11,6 +11,7 @@ from ...storage import (
     truncate_tokens,
 )
 from ...storage.episode_ranking import rank_recall_items
+from ...storage.memory_values import format_memory
 from ..agent.budget import SECTION_BUDGET_ALLOCATOR
 from .retrieval import _merge_matches
 
@@ -21,7 +22,7 @@ def _memory_lines(items: object) -> str:
     if not isinstance(items, list):
         return ""
     return "\n".join(
-        f"- [memory_id={item['id']} {item['kind']}:{item['key']}] {item['content']}"
+        format_memory(item)
         for item in items
         if isinstance(item, dict)
         and item.get("kind") not in (None, "")
@@ -64,7 +65,8 @@ def _goal_directory_lines(items: object) -> str:
     if not isinstance(items, list):
         return ""
     return "\n".join(
-        f"- id={item['id']} title={truncate_tokens(str(item.get('title') or ''), 80)}"
+        f"<goal id={quoteattr(str(item['id']))} "
+        f"title={quoteattr(truncate_tokens(str(item.get('title') or ''), 80))} />"
         for item in items
         if isinstance(item, dict) and item.get("id")
     )

@@ -18,6 +18,7 @@ from .memory_values import (
     REFLECTION_MEMORY_CAUTION,
     MemoryRecallQuery,
     format_reflection_memory,
+    format_memory,
 )
 
 if TYPE_CHECKING:
@@ -376,7 +377,7 @@ class MemoryRecallStore:
             line = (
                 format_reflection_memory(row)
                 if row["source"] == "reflection"
-                else f"- [{row['kind']}:{row['key']}] {row['content']}"
+                else format_memory(row)
             )
             if row["source"] == "confirmed":
                 confirmed.append(line)

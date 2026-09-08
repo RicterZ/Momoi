@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 import time
 
-from .memory_values import MEMORY_ACTIVATIONS, RECENT_MEMORY_WINDOW_SECONDS
+from .memory_values import MEMORY_ACTIVATIONS, RECENT_MEMORY_WINDOW_SECONDS, format_memory
 
 
 class MemoryInventoryStore:
@@ -81,8 +81,7 @@ class MemoryInventoryStore:
     @staticmethod
     def _memory_context(rows: list[sqlite3.Row]) -> str:
         return "\n\n".join(
-            f"[memory_id={row['id']} kind={row['kind']} key={row['key']} "
-            f"activation={row['activation']}]\n{row['content']}"
+            format_memory(dict(row))
             for row in rows
         )
 
