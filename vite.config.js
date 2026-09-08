@@ -9,6 +9,18 @@ function previewThinkingCalls() {
     Math.floor(day.getTime() / 1000) + minutes * 60 + seconds;
   return [
     {
+      turn_id: "preview-recall-skip",
+      call_id: "preview-recall-skip-1",
+      created_at: at(7),
+      stage: "owner",
+      round: 1,
+      model: "deepseek-v4-flash",
+      tools: ["recall"],
+      reasoning_chars: 25,
+      excerpt: "当前上下文足以理解这条消息，无需额外检索。",
+      reasoning: "主人确认收到，当前上下文足够，无需检索历史。",
+    },
+    {
       turn_id: "preview-recall-dense",
       call_id: "preview-recall-dense-1",
       created_at: at(6),
@@ -180,6 +192,16 @@ function previewThinkingCalls() {
 
 function previewRecall(turnId) {
   const fixtures = {
+    "preview-recall-skip": {
+      revision: 1,
+      state: "recalled",
+      units: [{ id: "u1", intent: "主人确认收到", mode: "skip", queries: [], reused_from: "" }],
+      episode_actions: [],
+      memories: [],
+      reflections: [],
+      episodes: [],
+      semantic: { fallback_reason: "disabled", query_batch_size: 0 },
+    },
     "9d5db6937f765921b2d6cbe0773e5111": {
     revision: 1,
     state: "recalled",

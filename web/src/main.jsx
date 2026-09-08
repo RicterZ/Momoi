@@ -2218,18 +2218,23 @@ function RecallDetail({ recall }) {
   const evidenceCount = memories.length + episodes.length;
   const searchCount = units.filter((unit) => unit.mode === "search").length;
   const reuseCount = units.filter((unit) => unit.mode === "reuse").length;
+  const skipCount = units.filter((unit) => unit.mode === "skip").length;
+  const allSkipped = units.length > 0 && skipCount === units.length;
+  const fallbackReason = recall.semantic?.fallback_reason;
   return (
     <details className="recall-panel">
       <summary className="recall-panel-head">
         <div className="recall-panel-title">
           <span className="panel-label">MOMOI // MEMORY LOAD</span>
           <h3>本轮载入的记忆</h3>
-          <p>已为这轮思考准备好相关上下文</p>
+          <p>{allSkipped ? "当前上下文已足够，无需额外召回" : evidenceCount ? "已为这轮思考准备好相关上下文" : "本轮未召回相关记录"}</p>
         </div>
         <div className="recall-panel-summary" aria-label="召回摘要">
           {searchCount ? <span>{searchCount} 个检索</span> : null}
           {reuseCount ? <span>{reuseCount} 个沿用</span> : null}
+          {skipCount && !allSkipped ? <span>{skipCount} 个无需检索</span> : null}
           {evidenceCount ? <span>{evidenceCount} 条依据</span> : null}
+          {!evidenceCount ? <span className="is-empty">无</span> : null}
         </div>
         <span className="recall-panel-toggle" aria-hidden="true" />
       </summary>
@@ -2241,11 +2246,17 @@ function RecallDetail({ recall }) {
                 <span className="recall-unit-index" aria-hidden="true">
                   SLOT {String(unitIndex + 1).padStart(2, "0")}
                 </span>
-                <span className={`recall-mode ${unit.mode === "reuse" ? "is-reuse" : "is-search"}`}>
-                  {unit.mode === "reuse" ? "沿用" : unit.mode === "search" ? "检索" : "召回"}
+                <span className={`recall-mode ${unit.mode === "skip" ? "is-skip" : unit.mode === "reuse" ? "is-reuse" : "is-search"}`}>
+                  {unit.mode === "skip" ? "无需检索" : unit.mode === "reuse" ? "沿用" : unit.mode === "search" ? "检索" : "召回"}
                 </span>
               </header>
               <div className="recall-unit-body">
+                {unit.mode === "skip" ? (
+                  <div className="recall-skip">
+                    <p>{unit.intent || "当前上下文已足够"}</p>
+                    <span>使用已有上下文</span>
+                  </div>
+                ) : null}
                 {unit.reused_from ? (
                   <div className="recall-source">
                     <span>沿用上一轮已经确认的召回范围</span>
@@ -2364,9 +2375,9 @@ function RecallDetail({ recall }) {
             )}
           </div>
         ) : null}
-        {recall.semantic?.fallback_reason ? (
+        {searchCount > 0 && fallbackReason && fallbackReason !== "disabled" ? (
           <p className="recall-warning">
-            向量召回降级：{recall.semantic.fallback_reason}
+            向量召回降级：{fallbackReason}
           </p>
         ) : null}
       </div>

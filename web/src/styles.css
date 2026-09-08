@@ -1692,6 +1692,13 @@ a.tag:hover {
   line-height: 1;
 }
 .recall-panel-summary span:nth-child(even) { background: var(--pink-soft); }
+.recall-panel-summary .is-empty {
+  min-width: 32px;
+  text-align: center;
+  color: var(--muted);
+  background: var(--wash);
+  border-color: var(--line);
+}
 
 .recall-panel-toggle {
   display: grid;
@@ -1771,6 +1778,23 @@ a.tag:hover {
 }
 
 .recall-mode.is-reuse { background: var(--pink-soft); }
+.recall-mode.is-skip {
+  color: var(--muted);
+  background: var(--surface);
+  border-color: var(--line);
+}
+.recall-skip p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.recall-skip > span {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
 
 .recall-source {
   display: flex;
