@@ -10,11 +10,8 @@ SEGMENT_SCHEMA: dict[str, Any] = {
     "properties": {
         "type": {
             "type": "string",
-            "minLength": 1,
-            "description": (
-                "Channel-neutral type: text, image, file, video, audio, reply, "
-                "link, location, or mention."
-            ),
+            "pattern": "^[a-zA-Z0-9_-]{1,40}$",
+            "description": "Segment type, e.g. text, image, file, video, audio, record, reply, link, location, or mention.",
         },
         "data": {
             "type": "object",
@@ -34,7 +31,7 @@ CHANNEL_BUBBLE_SCHEMA: dict[str, Any] = {
             "type": "string",
             "minLength": 1,
             "description": (
-                "Non-empty text content. Put "
+                "Put "
                 "blank-line-separated text in separate bubbles. An emotion:// value "
                 "must exactly match emotion://<listed-slug> from <emotion_catalog>; "
                 "it sends a standalone reaction image."
@@ -42,6 +39,7 @@ CHANNEL_BUBBLE_SCHEMA: dict[str, Any] = {
         },
         {
             "type": "object",
+            "description": "Text may accompany images; file, video, audio, and record messages must stand alone.",
             "properties": {
                 "segments": {
                     "type": "array",
@@ -91,12 +89,7 @@ MOOD_UPDATE_SCHEMA: dict[str, Any] = {
         "state": {
             "type": "string",
             "pattern": "^[a-z][a-z0-9_-]{0,31}$",
-            "description": (
-                "Concise lowercase mood. Examples: cheerful, "
-                "excited, playful, affectionate, content, proud, hopeful, relieved, "
-                "curious, thoughtful, calm, focused, tired, down, frustrated, "
-                "worried, anxious, embarrassed, lonely, bored, restless, angry."
-            ),
+            "description": ("Current mood, e.g. curious, calm, frustrated, or tired."),
         },
         "intensity": {"type": "number", "minimum": 0, "maximum": 1},
         "cause": {"type": "string", "minLength": 1, "maxLength": 300},
@@ -114,16 +107,12 @@ MOOD_DECISION_SCHEMA: dict[str, Any] = {
     "oneOf": [
         {
             "type": "object",
-            "description": "Keep only while state, intensity, and cause remain accurate.",
             "properties": {"decision": {"type": "string", "enum": ["unchanged"]}},
             "required": ["decision"],
             "additionalProperties": False,
         },
         {
             "type": "object",
-            "description": (
-                "Replace when state, intensity, or continuing cause changed or settled."
-            ),
             "properties": {
                 "decision": {"type": "string", "enum": ["updated"]},
                 **MOOD_UPDATE_SCHEMA["properties"],
@@ -227,14 +216,29 @@ REPLY_WAIT_DECISION_SCHEMA: dict[str, Any] = {
 HEARTBEAT_STATE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
-        "activity": {"type": "string", "minLength": 1, "maxLength": 300},
-        "result": {"type": "string", "maxLength": 2000},
+        "activity": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300,
+            "description": "Actual activity or rest during this Heartbeat.",
+        },
+        "result": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "Concrete outcome; empty when none.",
+        },
         "next_check_minutes": {
             "type": "integer",
             "minimum": 1,
             "maximum": 1440,
+            "description": "Delay until the next autonomous check.",
         },
-        "reason": {"type": "string", "minLength": 1, "maxLength": 500},
+        "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "description": "Why this activity and next check fit the current situation.",
+        },
     },
     "required": [
         "activity",
@@ -248,18 +252,12 @@ HEARTBEAT_STATE_SCHEMA: dict[str, Any] = {
 END_TURN_TOOL_SPEC: dict[str, Any] = {
     "name": "end_turn",
     "description": (
-        "Terminal action for Owner, Heartbeat, Webhook, Reply Follow-up, and Goal Turns. "
-        "Goal requires only goal: submit status and result, plus next steps when open; "
-        "it commits the current Goal outcome and ends the review. Other Turns must "
-        "omit goal or set it to null. Commit private state only; never visible content. "
-        "Call once after "
-        "work and delivery. Owner requires activity; Heartbeat requires heartbeat; "
-        "other workflows must omit both. Reply Follow-up must set reply_wait.wait "
-        "to false; other chat Turns may wait only after visible bubbles."
+        "Commit private state and finish this Turn. Does not send a message. "
+        "Call alone or last after send_bubbles/send_voice in the same response; "
+        "delivery must succeed first. Other work tools must finish in earlier rounds."
     ),
     "input_schema": {
         "type": "object",
-        "description": "Private state only; no visible content or delivery fields.",
         "properties": {
             "reply_wait": REPLY_WAIT_DECISION_SCHEMA,
             "mood": MOOD_DECISION_SCHEMA,
@@ -287,6 +285,7 @@ END_TURN_TOOL_SPEC: dict[str, Any] = {
     },
 }
 
+
 def end_turn_tool_spec(
     stage: str,
     *,
@@ -309,33 +308,25 @@ def end_turn_tool_spec(
             required.append("heartbeat")
             interval = properties["heartbeat"]["properties"]["next_check_minutes"]
             interval["minimum"] = max(1, math.ceil(heartbeat_min_interval_seconds / 60))
-            interval["maximum"] = min(1440, math.floor(heartbeat_max_interval_seconds / 60))
+            interval["maximum"] = min(
+                1440, math.floor(heartbeat_max_interval_seconds / 60)
+            )
         elif stage == "reply_followup":
-            properties["reply_wait"] = copy.deepcopy(REPLY_WAIT_DECISION_SCHEMA["oneOf"][0])
+            properties["reply_wait"] = copy.deepcopy(
+                REPLY_WAIT_DECISION_SCHEMA["oneOf"][0]
+            )
         elif stage != "webhook":
             raise ValueError(f"end_turn is not available in {stage}")
         schema["required"] = required
         schema["properties"] = {key: properties[key] for key in required}
         schema["properties"]["goal"] = {"type": "null"}
-    spec["description"] = (
-        f"Finish the {stage} Turn; required fields: {', '.join(schema['required'])}. "
-        "May be called alone or last after send_bubbles/send_voice in the same response. "
-        "Same-response delivery must succeed before the Turn can finish. "
-        "Use send_bubbles/send_voice for owner-visible messages. "
-        "Other work tools must finish in earlier rounds."
-    )
     return spec
 
 
 SEND_BUBBLES_TOOL_SPEC: dict[str, Any] = {
     "name": "send_bubbles",
     "description": (
-        "Send owner-visible messages with the exact bubbles; use send_voice for speech "
-        "when available. Starts delivery immediately, independently of end_turn. "
-        "After all work and delivery results, call the current workflow's "
-        "terminal tool; end_turn may follow delivery in the same response. "
-        "Text may accompany images; files, video, audio, and "
-        "records must stand alone."
+        "Send messages to the owner. Starts delivery immediately, independently of end_turn."
     ),
     "input_schema": {
         "type": "object",

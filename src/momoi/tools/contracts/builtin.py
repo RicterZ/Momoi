@@ -103,8 +103,7 @@ BUILTIN_TOOL_SPECS: list[dict[str, Any]] = [
     {
         "name": "write_file",
         "description": (
-            "Atomically create/replace UTF-8 text; expected_sha256 guards against "
-            "concurrent changes."
+            "Atomically create or replace UTF-8 text."
         ),
         "input_schema": {
             "type": "object",
@@ -115,7 +114,10 @@ BUILTIN_TOOL_SPECS: list[dict[str, Any]] = [
                 },
                 "content": {"type": "string"},
                 "create_parents": {"type": "boolean", "default": False},
-                "expected_sha256": {"type": "string"},
+                "expected_sha256": {
+                    "type": "string",
+                    "description": "Expected current file hash; guards against concurrent changes.",
+                },
             },
             "required": ["path", "content"],
             "additionalProperties": False,

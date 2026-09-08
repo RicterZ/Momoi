@@ -4,21 +4,10 @@ from typing import Any
 MEMORY_TOOL_POLICY = """### Memory tools
 
 Use memory_operation only when authenticated owner evidence warrants adding,
-correcting, or forgetting memory. Do not record every message. Submit the exact
-owner quote and a faithful, scoped fact or description of what to forget.
-Use type=add for a new fact, replace for a correction, forget for deletion or
-explicit disproof. When a target memory_id is already shown, supply target_id;
-otherwise describe the subject. Do not invent IDs, keys, TTLs, or fetch old
-memories just to repeat them as arguments: the runtime attaches the memories
-already supplied through context, recall, and memory_search.
-
-Accepted operations are saved with this Turn and reviewed privately afterward.
-They are not yet effective memory changes. Do not resubmit an accepted operation,
-claim that deletion is complete, or treat a pending candidate as confirmed memory.
+correcting, or forgetting memory. Do not record every message or fetch old
+memories merely to repeat them as arguments. Pending requests are not confirmed
+facts or completed deletions.
 The background review handles classification, activation, expiry, and duplicates.
-Preserve the owner's polarity, object, conditions, and duration in content.
-Search memory only for an unresolved conversational need; use Episode originals
-when summaries cannot resolve evidence or wording.
 """
 
 
@@ -52,7 +41,7 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
     {
         "name": "episode_search",
         "description": (
-            "Search archived Episodes by keyword or time; empty query browses by time. "
+            "Search archived Episodes by keyword or time. "
             "Returns paginated summaries and evidence locations, not raw messages."
         ),
         "input_schema": {
@@ -105,10 +94,8 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
     {
         "name": "episode_read",
         "description": (
-            "Read paginated raw messages for an Episode id from recall or episode_search. "
-            "Returns turn_id, Episode ordinal, role, time, delivery state, and content. Use the "
-            "smallest time range; expand only when its summary cannot settle exact "
-            "wording, chronology, or evidence."
+            "Read paginated raw Episode messages with role, time, delivery state, "
+            "and evidence locations."
         ),
         "input_schema": {
             "type": "object",
@@ -166,7 +153,7 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
     {
         "name": "memory_operation",
         "description": (
-            "Submit an add, replace, or forget request supported by a current owner quote. "
+            "Submit a confirmed-memory change request. "
             "The runtime attaches recalled memories and conversation; private review runs "
             "after this Turn commits. Acceptance does not mean the change is effective. "
             "Do not repeat an accepted request."
@@ -174,12 +161,15 @@ MEMORY_TOOL_SPECS: list[dict[str, Any]] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "type": {"type": "string", "enum": ["add", "replace", "forget"]},
+                "type": {
+                    "type": "string", "enum": ["add", "replace", "forget"],
+                    "description": "add for a new fact; replace for correction; forget for deletion or explicit disproof.",
+                },
                 "content": {
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 2000,
-                    "description": "New scoped fact for add/replace; subject to forget for forget. Preserve temporal conditions.",
+                    "description": "New scoped fact for add/replace; subject to forget for forget. Preserve the owner's polarity, object, conditions, and duration.",
                 },
                 "evidence": {
                     "type": "string",

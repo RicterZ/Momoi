@@ -74,8 +74,7 @@ THINKING_TOOL_SPECS: list[dict[str, Any]] = [
     {
         "name": "thinking_read",
         "description": (
-            "Read thinking for a Turn from thinking_search; pass call_id for one call, "
-            "or omit it for all calls."
+            "Read recorded thinking for a Turn from thinking_search."
         ),
         "input_schema": {
             "type": "object",
@@ -86,7 +85,7 @@ THINKING_TOOL_SPECS: list[dict[str, Any]] = [
                 },
                 "call_id": {
                     "type": "string",
-                    "description": "Call id from thinking_search.",
+                    "description": "Call id from thinking_search; omit to read all calls in the Turn.",
                 },
             },
             "required": ["turn_id"],

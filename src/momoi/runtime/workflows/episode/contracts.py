@@ -124,11 +124,15 @@ EPISODE_CONSOLIDATION_FINISH_SPEC: dict[str, Any] = {
 
 _SUMMARY_CLAIM_SCHEMA: dict[str, Any] = {
     "type": "object",
+    "description": "Copy citation metadata from previous_verified_claims or new_messages.",
     "properties": {
         "message_id": {"type": "integer", "minimum": 1},
         "turn_id": {"type": "string", "minLength": 1},
         "ordinal": {"type": "integer", "minimum": 1},
-        "quote": {"type": "string", "minLength": 1, "maxLength": 1000},
+        "quote": {
+            "type": "string", "minLength": 1, "maxLength": 1000,
+            "description": "Exact contiguous substring of the cited raw message.",
+        },
     },
     "required": ["message_id", "turn_id", "ordinal", "quote"],
     "additionalProperties": False,
@@ -148,11 +152,16 @@ EPISODE_SUMMARY_FINISH_SPEC: dict[str, Any] = {
                 "type": "array",
                 "minItems": 1,
                 "maxItems": 64,
+                "uniqueItems": True,
                 "items": _SUMMARY_CLAIM_SCHEMA,
             },
-            "narrative_summary": {"type": "string", "maxLength": 800},
+            "narrative_summary": {
+                "type": "string", "maxLength": 800,
+                "description": "What happened and why this Episode matters as a shared experience.",
+            },
             "emotional_context": {
                 "type": "object",
+                "description": "Evidence-supported feelings and tone; use empty strings where unknown.",
                 "properties": {
                     "owner": {"type": "string", "maxLength": 300},
                     "momoi": {"type": "string", "maxLength": 300},
@@ -164,6 +173,7 @@ EPISODE_SUMMARY_FINISH_SPEC: dict[str, Any] = {
             "outcomes": {
                 "type": "array",
                 "maxItems": 12,
+                "description": "Concise completed results, decisions, or changes, not a task list.",
                 "items": {"type": "string", "minLength": 1, "maxLength": 500},
             },
         },

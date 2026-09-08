@@ -6,16 +6,15 @@ NEW_EPISODE_REF = "new:<slug>"
 RECALL_TOOL_SPEC: dict[str, Any] = {
     "name": "recall",
     "description": (
-        "Mandatory first and only action at the start of every Owner Turn. Submit "
-        "each independent intent's minimum historical scope and Episode decision. "
-        "Returns confirmed memory, dated reflection, and Episode summaries; it does "
-        "not answer the owner or perform the work."
+        "Retrieve confirmed memory, dated reflection, and Episode summaries for "
+        "the Owner Turn, and bind its archival Episode membership."
     ),
     "input_schema": {
         "type": "object",
         "properties": {
             "units": {
                 "type": "array",
+                "description": "One unit per independent owner intent.",
                 "minItems": 1,
                 "maxItems": 4,
                 "items": {
@@ -33,8 +32,7 @@ RECALL_TOOL_SPEC: dict[str, Any] = {
                             "type": "string",
                             "enum": ["search", "reuse"],
                             "description": (
-                                "search for new/changed scope; reuse only a displayed "
-                                "prior scope that fully covers this unit."
+                                "Whether to retrieve new evidence or reuse a prior query scope."
                             ),
                         },
                         "recall_queries": {
@@ -42,8 +40,7 @@ RECALL_TOOL_SPEC: dict[str, Any] = {
                             "minItems": 0,
                             "maxItems": 3,
                             "description": (
-                                "Fewest non-overlapping evidence needs; non-empty for "
-                                "search, empty for reuse."
+                                "Non-overlapping historical evidence needs."
                             ),
                             "items": {
                                 "type": "object",
@@ -81,9 +78,7 @@ RECALL_TOOL_SPEC: dict[str, Any] = {
                         },
                         "recall_from_turn_id": {
                             "type": "string",
-                            "description": (
-                                "For reuse: a Turn in recent_recall_context. Empty for search."
-                            ),
+                            "description": ("Source Turn in recent_recall_context."),
                         },
                         "episode": {
                             "type": "object",
@@ -94,12 +89,6 @@ RECALL_TOOL_SPEC: dict[str, Any] = {
                                 "action": {
                                     "type": "string",
                                     "enum": ["none", "continue", "new"],
-                                    "description": (
-                                        "none by default; continue only if this Turn advances "
-                                        "the same concrete experience; new only for a distinct "
-                                        "experience worth retaining. Proximity, mood, time, or "
-                                        "setting alone never establishes continuity."
-                                    ),
                                 },
                                 "ref": {
                                     "type": "string",
@@ -125,6 +114,22 @@ RECALL_TOOL_SPEC: dict[str, Any] = {
                         "recall_from_turn_id",
                         "episode",
                     ],
+                    "oneOf": [
+                        {
+                            "properties": {
+                                "recall_mode": {"enum": ["search"]},
+                                "recall_queries": {"minItems": 1},
+                                "recall_from_turn_id": {"const": ""},
+                            }
+                        },
+                        {
+                            "properties": {
+                                "recall_mode": {"enum": ["reuse"]},
+                                "recall_queries": {"maxItems": 0},
+                                "recall_from_turn_id": {"minLength": 1},
+                            }
+                        },
+                    ],
                     "additionalProperties": False,
                 },
             },
@@ -133,6 +138,7 @@ RECALL_TOOL_SPEC: dict[str, Any] = {
         "additionalProperties": False,
     },
 }
+
 
 def heartbeat_begin_spec(group_descriptions: dict[str, str]) -> dict[str, Any]:
     groups = {
@@ -143,10 +149,8 @@ def heartbeat_begin_spec(group_descriptions: dict[str, str]) -> dict[str, Any]:
     return {
         "name": "heartbeat_begin",
         "description": (
-            "Mandatory first action of an autonomous Heartbeat execution. Choose "
-            "the real activity, its historical scope, the MCP groups needed for "
-            "that activity, and a short evidence-dependent execution strategy. "
-            "The runtime returns recalled evidence and enables selected tools."
+            "Begin the chosen autonomous activity; retrieve its historical evidence "
+            "and enable the selected MCP groups."
         ),
         "input_schema": {
             "type": "object",
@@ -175,10 +179,7 @@ def heartbeat_begin_spec(group_descriptions: dict[str, str]) -> dict[str, Any]:
                     "type": "array",
                     "minItems": 0,
                     "maxItems": 2,
-                    "description": (
-                        "One or two non-overlapping historical needs for search; "
-                        "empty for skip."
-                    ),
+                    "description": ("Non-overlapping historical evidence needs."),
                     "items": {
                         "type": "object",
                         "properties": {
@@ -205,7 +206,10 @@ def heartbeat_begin_spec(group_descriptions: dict[str, str]) -> dict[str, Any]:
                     "type": "array",
                     "maxItems": len(group_ids),
                     "uniqueItems": True,
-                    "items": {"type": "string", **({"enum": group_ids} if group_ids else {})},
+                    "items": {
+                        "type": "string",
+                        **({"enum": group_ids} if group_ids else {}),
+                    },
                     "description": (
                         "MCP groups required by the chosen activity. "
                         + "; ".join(
@@ -223,8 +227,8 @@ def heartbeat_begin_spec(group_descriptions: dict[str, str]) -> dict[str, Any]:
                         "maxLength": 300,
                     },
                     "description": (
-                        "For work, the minimum ordered checks, result branches and "
-                        "completion or continuation condition. Empty for rest."
+                        "Minimum ordered checks, result branches, and completion "
+                        "or continuation condition."
                     ),
                 },
             },
@@ -235,6 +239,40 @@ def heartbeat_begin_spec(group_descriptions: dict[str, str]) -> dict[str, Any]:
                 "recall_queries",
                 "tool_groups",
                 "strategy",
+            ],
+            "allOf": [
+                {
+                    "oneOf": [
+                        {
+                            "properties": {
+                                "recall_mode": {"enum": ["search"]},
+                                "recall_queries": {"minItems": 1},
+                            }
+                        },
+                        {
+                            "properties": {
+                                "recall_mode": {"enum": ["skip"]},
+                                "recall_queries": {"maxItems": 0},
+                            }
+                        },
+                    ]
+                },
+                {
+                    "oneOf": [
+                        {
+                            "properties": {
+                                "mode": {"enum": ["work"]},
+                                "strategy": {"minItems": 1},
+                            }
+                        },
+                        {
+                            "properties": {
+                                "mode": {"enum": ["rest"]},
+                                "strategy": {"maxItems": 0},
+                            }
+                        },
+                    ]
+                },
             ],
             "additionalProperties": False,
         },

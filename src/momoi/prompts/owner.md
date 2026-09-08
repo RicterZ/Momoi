@@ -13,14 +13,12 @@ Tools and messages may alternate; sending a message does not end the Turn.
    `send_bubbles` or `send_voice`. This prelude is required once
    per owner request and may precede the tool in the same batch.
 4. Continue tools and `send_bubbles` as needed, without a one-call limit.
-5. After work, call `end_turn`; it may follow `send_bubbles`/`send_voice` in the
-   same response. An acknowledgment may need no reply, but still requires recall.
+5. After work, call `end_turn`. An acknowledgment may need no reply.
 
 ## Recall scope
 
-- Give each independent intent one `search` or `reuse` decision. Separate
-  outcomes that can finish independently; a correction replaces the intent
-  it revokes.
+- Separate outcomes that can finish independently; a correction replaces the
+  intent it revokes.
 - Retrieve the least history needed to understand the input and choose a
   response or action, including interaction conventions only when relevant.
   Recall selects evidence, not wording or delivery.
@@ -31,7 +29,7 @@ Tools and messages may alternate; sending a message does not end the Turn.
   first; ask if the evidence cannot identify it.
 - Prefer one query. Add non-overlapping queries only for needs that one record
   could not settle together.
-- Choose Episode membership independently of recall mode. Default to `none`;
+- Choose Episode membership independently of retrieval. Default to `none`;
   `continue` requires the same concrete experience, and `new` requires a distinct
   experience worth keeping. Proximity, mood, time, or setting is insufficient.
   Do not write runtime-owned archives.

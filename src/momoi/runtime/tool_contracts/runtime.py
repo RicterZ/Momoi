@@ -8,17 +8,15 @@ def tool_enable_spec(group_descriptions: dict[str, str]) -> dict[str, Any]:
     }
     return {
         "name": "tool_enable",
-        "description": (
-            "Enable only the MCP groups needed for the next action. Groups: "
-            + "; ".join(
-                f"{group}: {description}" for group, description in groups.items()
-            )
-        ),
+        "description": "Enable the MCP groups needed for the next action.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "groups": {
                     "type": "array",
+                    "description": "; ".join(
+                        f"{group}: {description}" for group, description in groups.items()
+                    ),
                     "minItems": 1,
                     "maxItems": max(1, len(groups)),
                     "uniqueItems": True,
@@ -34,8 +32,7 @@ def tool_enable_spec(group_descriptions: dict[str, str]) -> dict[str, Any]:
 READ_TOOL_RESULT_SPEC: dict[str, Any] = {
     "name": "read_tool_result",
     "description": (
-        "Continue a truncated tool-result snapshot without rerunning the tool. Pass "
-        "result_ref unchanged and latest next_cursor; omit cursor for the first chunk. "
+        "Continue a truncated tool-result snapshot without rerunning the tool. "
         "Cannot read workspace files."
     ),
     "input_schema": {
@@ -44,12 +41,12 @@ READ_TOOL_RESULT_SPEC: dict[str, Any] = {
             "result_ref": {
                 "type": "string",
                 "pattern": "^tr_[0-9a-f]{32}$",
-                "description": "result_ref from the truncated result.",
+                "description": "Copy result_ref unchanged from the truncated result.",
             },
             "cursor": {
                 "type": "string",
                 "minLength": 1,
-                "description": "next_cursor from the preceding chunk.",
+                "description": "Latest next_cursor from the preceding chunk; omit for the first chunk.",
             },
         },
         "required": ["result_ref"],

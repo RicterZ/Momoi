@@ -131,8 +131,7 @@ def handle_no_tool_response(
     else:
         correction = (
             "[Trusted runtime protocol error: no native tool call was returned. "
-            "Continue with native tool calls following the current workflow; "
-            "use send_bubbles or send_voice for owner-visible messages.]"
+            "Continue with native tool calls following the current workflow.]"
         )
     messages.extend(
         [

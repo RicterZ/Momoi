@@ -1,15 +1,27 @@
 from typing import Any
 
-from ....storage.memory_values import MEMORY_ACTIVATIONS, MEMORY_KINDS
+from ....storage.memory_values import (
+    ALWAYS_MEMORY_KINDS,
+    MEMORY_ACTIVATIONS,
+    MEMORY_KINDS,
+)
 
 _EVIDENCE = {
     "type": "array",
     "minItems": 1,
+    "description": "Exact owner citations supporting the change and every resolved request.",
     "items": {
         "type": "object",
         "properties": {
-            "event_id": {"type": "string"},
-            "quote": {"type": "string", "minLength": 1},
+            "event_id": {
+                "type": "string",
+                "description": "Supplied authenticated owner event ID.",
+            },
+            "quote": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Exact contiguous substring of that event.",
+            },
         },
         "required": ["event_id", "quote"],
         "additionalProperties": False,
@@ -24,21 +36,43 @@ _MEMORY = {
         "activation": {"type": "string", "enum": sorted(MEMORY_ACTIVATIONS)},
         "expires_at": {
             "type": ["number", "null"],
-            "description": "Absolute Unix expiry from owner evidence for recent; null for recall/always. Never extend a past deadline.",
+            "description": "Absolute Unix expiry derived from owner evidence; never extend a past deadline.",
         },
     },
     "required": ["kind", "key", "content", "activation", "expires_at"],
+    "oneOf": [
+        {
+            "properties": {
+                "activation": {"enum": ["recent"]},
+                "expires_at": {"type": "number"},
+            }
+        },
+        {
+            "properties": {
+                "activation": {"enum": ["recall"]},
+                "expires_at": {"type": "null"},
+            }
+        },
+        {
+            "properties": {
+                "activation": {"enum": ["always"]},
+                "expires_at": {"type": "null"},
+                "kind": {"enum": sorted(ALWAYS_MEMORY_KINDS)},
+            }
+        },
+    ],
     "additionalProperties": False,
 }
 MEMORY_OPERATION_FINISH_SPEC: dict[str, Any] = {
     "name": "memory_operation_finish",
-    "description": "Terminal action, called alone. Resolve every operation exactly once; atomically apply the complete decision batch. Omitted current memories remain unchanged.",
+    "description": "Atomically apply the complete decision batch and end this private Turn. Call alone. Omitted current memories remain unchanged.",
     "input_schema": {
         "type": "object",
         "properties": {
             "decisions": {
                 "type": "array",
                 "minItems": 1,
+                "description": "Resolve every supplied operation exactly once; combine requests concerning the same fact.",
                 "items": {
                     "type": "object",
                     "properties": {
@@ -55,6 +89,7 @@ MEMORY_OPERATION_FINISH_SPEC: dict[str, Any] = {
                         "reason": {"type": "string", "minLength": 1, "maxLength": 500},
                         "target_ids": {
                             "type": "array",
+                            "description": "Current memory IDs to replace, merge, or forget; empty for a new independent fact.",
                             "uniqueItems": True,
                             "items": {"type": "integer", "minimum": 1},
                         },

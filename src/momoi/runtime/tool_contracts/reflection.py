@@ -6,10 +6,8 @@ from ...storage.reflection_values import REFLECTION_MEMORY_KINDS
 REFLECTION_FINISH_SPEC: dict[str, Any] = {
     "name": "reflection_finish",
     "description": (
-        "Required terminal result for the private daily retrospective. It stores the "
-        "reflection record, promotes only durable evidence-backed learning, and "
-        "optionally closes finished conversations. Confirmed owner memory is read-only "
-        "in Reflection and is maintained by a separate runtime stage."
+        "Store the daily reflection, reusable learning, and conversation closures, "
+        "then end this private Turn."
     ),
     "input_schema": {
         "type": "object",
@@ -19,21 +17,15 @@ REFLECTION_FINISH_SPEC: dict[str, Any] = {
                 "minLength": 1,
                 "maxLength": 6000,
                 "description": (
-                    "A grounded, thoughtful Chinese diary of the day, not a timeline. "
-                    "Use the mood, topic, and mutation timelines together with the "
-                    "day record. Select meaningful moments, connect causes and consequences, and "
-                    "write Momoi's own feelings, opinions, changed understanding, and "
-                    "unresolved questions in coherent, elegant prose. Do not invent "
-                    "facts or expose hidden chain-of-thought."
+                    "Chinese diary of meaningful experiences, feelings, opinions, "
+                    "changed understanding, and unresolved questions."
                 ),
             },
             "conversation_actions": {
                 "type": "array",
                 "maxItems": 32,
                 "description": (
-                    "Optional housekeeping of `<open_conversations>`. Empty is valid. "
-                    "Use episode_id from that inventory only. Close a thread only when "
-                    "it is finished, expired, or superseded."
+                    "Housekeeping of <open_conversations>; empty when none is needed."
                 ),
                 "items": {
                     "type": "object",
@@ -42,7 +34,7 @@ REFLECTION_FINISH_SPEC: dict[str, Any] = {
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 128,
-                            "description": "Open or closing conversation episode id.",
+                            "description": "Episode id from <open_conversations>.",
                         },
                         "action": {
                             "type": "string",

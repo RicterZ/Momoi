@@ -4,27 +4,17 @@ from ...contracts import OWNER_PROGRESS_BEFORE_FIRST_CALL, OWNER_PROGRESS_FIELD
 
 AGENDA_TOOL_POLICY = """### Agenda tools
 
-- Every active goal needs a concrete next action and future review time.
-- A recurring goal may use an interval or daily `schedule`. Daily times use the
-  application's single configured timezone. The runtime computes each next
-  review while the Goal remains open.
-- Outside a due Goal review, `goal_update` keeps a Goal open with its latest state.
-  `goal_finish` closes it as
-  successfully completed when its success criteria are satisfied. `goal_cancel`
-  closes it without claiming success when it should no longer be pursued.
-- During a due Goal review, submit its outcome once using `end_turn.goal`; do not
-  separately call goal_update, goal_finish, or goal_cancel.
-- Use a Goal for every future action, including a one-time or recurring owner
-  notification. Use `next_review_at` once or a recurring `schedule`; describe the
-  intended notification in its success criteria and next action. At review time,
-  use current context and `send_bubbles`, then call `end_turn` with goal.status
-  set to done for a completed one-time Goal or active to keep a recurring one.
-  Never use `sleep` to cross Turns.
-- During autonomous Goal review, `send_bubbles` is available only for a useful
-  result, a needed decision, or a meaningful failure; otherwise call end_turn
-  without sending a message. Compose notifications through the Soul and follow
-  the system communication rules, including bubble boundaries.
+Use a persistent Goal for work that must cross Turns or await a condition,
+including one-time or recurring notifications. Record the intended outcome and
+maintain its state as circumstances change. A promise alone does not schedule
+execution; work that can finish now needs no Goal.
 """
+
+_REVIEW_TIME_SCHEMA = {
+    "type": "string",
+    "format": "date-time",
+    "pattern": r"T.+(?:Z|[+-]\d{2}:\d{2})$",
+}
 
 
 def _schedule_schema(description: str | None = None) -> dict[str, Any]:
@@ -46,7 +36,7 @@ def _schedule_schema(description: str | None = None) -> dict[str, Any]:
                     "kind": {"type": "string", "enum": ["daily"]},
                     "times": {
                         "type": "array",
-                        "description": "Distinct local HH:MM times.",
+                        "description": "Daily times in the application's configured timezone.",
                         "items": {
                             "type": "string",
                             "pattern": r"^(?:[01]\d|2[0-3]):[0-5]\d$",
@@ -74,27 +64,30 @@ AGENDA_TOOL_SPECS: list[dict[str, Any]] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "title": {"type": "string"},
-                "success_criteria": {"type": "string"},
+                "title": {"type": "string", "pattern": r"\S"},
+                "success_criteria": {"type": "string", "pattern": r"\S"},
                 "plan": {"type": "array", "items": {"type": "string"}},
-                "next_action": {"type": "string"},
+                "next_action": {"type": "string", "pattern": r"\S"},
                 "next_review_at": {
-                    "type": "string",
-                    "description": "ISO 8601 timestamp with timezone.",
+                    **_REVIEW_TIME_SCHEMA,
+                    "description": "Future review time for a one-time Goal.",
                 },
                 "schedule": _schedule_schema(
-                    "Recurring interval or local daily times; replaces next_review_at."
+                    "Recurrence; the runtime computes the next review."
                 ),
             },
             "required": ["title", "success_criteria", "next_action"],
+            "oneOf": [
+                {"required": ["next_review_at"], "properties": {"schedule": False}},
+                {"required": ["schedule"], "properties": {"next_review_at": False}},
+            ],
             "additionalProperties": False,
         },
     },
     {
         "name": "goal_update",
         "description": (
-            "Update an existing active, waiting, or blocked goal outside a Goal review. "
-            "During a Goal review, use end_turn.goal instead."
+            "Update an existing open Goal; omitted state fields retain their current values."
         ),
         "input_schema": {
             "type": "object",
@@ -102,30 +95,56 @@ AGENDA_TOOL_SPECS: list[dict[str, Any]] = [
                 "goal_id": {"type": "string"},
                 "status": {"type": "string", "enum": ["active", "waiting", "blocked"]},
                 "plan": {"type": "array", "items": {"type": "string"}},
-                "next_action": {"type": "string"},
-                "waiting_for": {"type": "string"},
-                "blocked_reason": {"type": "string"},
+                "next_action": {
+                    "type": "string",
+                    "description": "Next concrete step; active Goals need one.",
+                },
+                "waiting_for": {
+                    "type": "string",
+                    "description": "Unmet condition; waiting Goals need one.",
+                },
+                "blocked_reason": {
+                    "type": "string",
+                    "description": "Obstacle preventing progress; blocked Goals need one.",
+                },
                 "latest_result": {
                     "type": "string",
                     "description": (
-                        "This execution's checks, actions, sent wording, and angle, "
-                        "so the next run can vary it. Exclude owner state supplied "
-                        "fresh by memory or conversation."
+                        "Concrete checks, actions, and verified outcome. "
+                        "Exclude owner state supplied fresh by memory or conversation."
                     ),
                 },
-                "next_review_at": {"type": "string"},
+                "next_review_at": {
+                    **_REVIEW_TIME_SCHEMA,
+                    "description": "Future review; required for waiting or non-recurring active. Omit for recurring active.",
+                },
                 "schedule": _schedule_schema(),
-                "clear_schedule": {"type": "boolean"},
+                "clear_schedule": {
+                    "type": "boolean",
+                    "description": "Remove existing recurrence.",
+                },
             },
             "required": ["goal_id", "status"],
+            "allOf": [
+                {
+                    "if": {"properties": {"status": {"const": "waiting"}}},
+                    "then": {"required": ["next_review_at"]},
+                },
+                {
+                    "if": {
+                        "properties": {"clear_schedule": {"const": True}},
+                        "required": ["clear_schedule"],
+                    },
+                    "then": {"properties": {"schedule": False}},
+                },
+            ],
             "additionalProperties": False,
         },
     },
     {
         "name": "goal_finish",
         "description": (
-            "Close a goal successfully only when all success criteria are achieved. "
-            "During a Goal review, use end_turn.goal with status done instead."
+            "Close a Goal successfully when all success criteria are achieved."
         ),
         "input_schema": {
             "type": "object",
@@ -138,8 +157,7 @@ AGENDA_TOOL_SPECS: list[dict[str, Any]] = [
         "name": "goal_cancel",
         OWNER_PROGRESS_FIELD: OWNER_PROGRESS_BEFORE_FIRST_CALL,
         "description": (
-            "Close a goal without success when abandoned, obsolete, or stopped. "
-            "During a Goal review, use end_turn.goal with status cancelled instead."
+            "Close a Goal without success when abandoned, obsolete, or stopped."
         ),
         "input_schema": {
             "type": "object",
@@ -154,8 +172,7 @@ AGENDA_TOOL_SPECS: list[dict[str, Any]] = [
 GOAL_REVIEW_SCHEMA: dict[str, Any] = {
     "type": "object",
     "description": (
-        "Outcome of the current Goal review; the runtime supplies the Goal ID. "
-        "Use exactly one status branch. Sending messages is independent of this outcome."
+        "Outcome of the current Goal review; the runtime supplies the Goal ID."
     ),
     "properties": {
         **{
@@ -164,16 +181,12 @@ GOAL_REVIEW_SCHEMA: dict[str, Any] = {
             if key not in {"goal_id", "status", "latest_result"}
         },
         "next_review_at": {
-            "type": "string",
+            **_REVIEW_TIME_SCHEMA,
             "description": (
-                "Future ISO 8601 timestamp with timezone. Required for waiting and "
-                "non-recurring active Goals. Omit for recurring active, blocked, done, "
-                "or cancelled Goals."
+                "Future review. Active Goals reuse existing recurrence when omitted; "
+                "required when no recurrence remains, including after clear_schedule. "
+                "Omit for recurring active Goals."
             ),
-        },
-        "clear_schedule": {
-            "type": "boolean",
-            "description": "Remove recurrence. Cannot be true when schedule is supplied.",
         },
         "status": {
             "type": "string",
@@ -186,8 +199,7 @@ GOAL_REVIEW_SCHEMA: dict[str, Any] = {
             "pattern": r"\S",
             "description": (
                 "Concrete checks, actions, and verified outcome of this review, or the "
-                "reason for cancellation. Record what was shared when relevant to "
-                "avoid repeating it next time. This field does not send a message."
+                "reason for cancellation."
             ),
         },
     },
@@ -202,7 +214,7 @@ GOAL_REVIEW_SCHEMA: dict[str, Any] = {
             "required": ["next_action"],
         },
         {
-            "description": "Await a condition; a future review timestamp is always required.",
+            "description": "Await a condition.",
             "properties": {
                 "status": {"enum": ["waiting"]},
                 "waiting_for": {"pattern": r"\S"},
@@ -211,7 +223,7 @@ GOAL_REVIEW_SCHEMA: dict[str, Any] = {
             "required": ["waiting_for", "next_review_at"],
         },
         {
-            "description": "Cannot proceed. Explain the blocker and do not schedule a review.",
+            "description": "Cannot proceed.",
             "properties": {
                 "status": {"enum": ["blocked"]},
                 "blocked_reason": {"pattern": r"\S"},
@@ -220,9 +232,18 @@ GOAL_REVIEW_SCHEMA: dict[str, Any] = {
             "required": ["blocked_reason"],
         },
         {
-            "description": "Close the Goal. Supply only status and result.",
+            "description": "done when success criteria are met; cancelled when no longer pursued.",
             "properties": {"status": {"enum": ["done", "cancelled"]}},
             "maxProperties": 2,
+        },
+    ],
+    "allOf": [
+        {
+            "if": {
+                "properties": {"clear_schedule": {"const": True}},
+                "required": ["clear_schedule"],
+            },
+            "then": {"properties": {"schedule": False}},
         },
     ],
     "additionalProperties": False,

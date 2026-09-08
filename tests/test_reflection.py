@@ -119,7 +119,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                     assert "No open or closing conversations are stored." in request
                     assert "state=completed ok=true capability=read" in request
                     schema = json.dumps(tools, ensure_ascii=False)
-                    assert "grounded, thoughtful Chinese diary" in schema
+                    assert tools[0]["input_schema"]["properties"]["summary"]["type"] == "string"
                     assert "Use tool_skill" in schema
                     assert "Use practice" in schema
                     assert "open_conversations" in schema
