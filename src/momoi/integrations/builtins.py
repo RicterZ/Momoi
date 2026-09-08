@@ -2,6 +2,7 @@
 
 from .validation import embedding_config, fields, llm_config, number, text, url
 from .schema import builtin_schema
+from .probes import model_probe, embedding_probe
 
 
 def register_builtins():
@@ -26,6 +27,7 @@ def register_builtins():
                 ),
                 validate=lambda options, name=name: llm_config(options, name),
                 schema=builtin_schema(name, "llm"),
+                test=model_probe,
             )
         )
 
@@ -53,6 +55,7 @@ def register_builtins():
             ),
             validate=validate_embedding,
             schema=builtin_schema("openai", "embedding"),
+            test=embedding_probe,
         )
     )
 

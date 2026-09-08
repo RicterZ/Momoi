@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 import aiohttp
 
 from .errors import ProviderError, ProviderResponseError
+from ..integrations.errors import error_category
 from ..observability.events import log_event
 from ..observability.values import safe_preview
 from ..models import ProviderResponse
@@ -105,8 +106,9 @@ async def retry_request(
             break
     name = "OpenAI" if protocol == "openai" else "Anthropic"
     raise ProviderError(
-        f"{name}-compatible request failed: {type(last_error).__name__}"
-    )
+        f"{name}-compatible request failed: {type(last_error).__name__}",
+        category=error_category(last_error),
+    ) from last_error
 
 
 async def http_error(

@@ -5,7 +5,7 @@ from contextlib import AsyncExitStack
 import copy
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, TYPE_CHECKING
+from typing import Any, Awaitable, Callable, TYPE_CHECKING
 
 from .contracts.asr import ASRProvider
 from .contracts.balance import BalanceProvider
@@ -32,6 +32,7 @@ class AdapterContext:
 
 Factory = Callable[[dict[str, Any], AdapterContext], Any]
 Validator = Callable[[dict[str, Any]], None]
+ConnectionTest = Callable[[Any], Awaitable[dict[str, Any]]]
 
 
 @dataclass(frozen=True)
@@ -41,6 +42,7 @@ class Adapter:
     factory: Factory
     validate: Validator
     schema: dict[str, Any]
+    test: ConnectionTest | None = None
 
 
 _ADAPTERS: dict[tuple[str, str], Adapter] = {}
@@ -60,6 +62,8 @@ def register_adapter(adapter: Adapter) -> None:
     ):
         raise ValueError("adapter requires a factory, validator and field schema")
     validate_schema(adapter.schema)
+    if adapter.test is not None and not callable(adapter.test):
+        raise ValueError("adapter test must be callable")
     _ADAPTERS[name, capability] = copy.deepcopy(adapter)
 
 
@@ -69,6 +73,7 @@ def adapter_schemas() -> list[dict[str, Any]]:
             "adapter": name,
             "capability": capability,
             "fields": copy.deepcopy(adapter.schema),
+            "test_supported": adapter.test is not None,
         }
         for (name, capability), adapter in sorted(_ADAPTERS.items())
     ]

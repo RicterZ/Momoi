@@ -140,6 +140,11 @@ DeepSeek 余额 provider 提供用量解析与官方价格估算。账户余额�
 
 ## 扩展代码架构
 
+模型和 embedding 支持测试未保存的表单配置：
+`POST /api/settings/providers/{capability}/test`。
+adapter 元数据的 `test_supported` 决定按钮是否显示；注册异步 `test(instance)`
+回调即可接入。详见[连接测试 API 规范](./PROVIDER_TEST_API.md)。测试不保存、不重载配置。
+
 `integrations/contracts` 定义 LLM、ASR、TTS、embedding、balance 能力接口，
 `integrations/adapters` 实现厂商协议。`ServiceRegistry` 负责组装服务，业务代码只依赖
 能力接口，不导入具体 API 客户端。HTTP 连接池、错误分类和重试基础设施与注册表同层；

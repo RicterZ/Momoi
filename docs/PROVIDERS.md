@@ -164,6 +164,12 @@ Model and balance services may share credentials but remain separate bindings.
 
 ## Extend the architecture
 
+Unsaved model and embedding settings can be tested through
+`POST /api/settings/providers/{capability}/test`. Adapter metadata exposes
+`test_supported`; adapters opt in with an async `test(instance)` callback.
+See the [connection test API specification](./PROVIDER_TEST_API.md) for the
+request and response contract. Tests do not save or reload configuration.
+
 `integrations/contracts` defines LLM, ASR, TTS, embedding and balance capabilities.
 `integrations/adapters` implements provider protocols. `ServiceRegistry` is the
 composition boundary: application code receives services through these contracts,

@@ -13,6 +13,7 @@ from ..channel.weixin.api import login
 from ..channel.weixin.config import WeixinConfig
 from ..config.manager import RevisionConflict
 from ..config.models import ConfigError
+from ..integrations.testing import failure, test_connection
 
 
 class ChannelLogin:
@@ -79,6 +80,27 @@ class ChannelLogin:
 
 def register_configuration_routes(app, configuration, runtime):
     channel_login = ChannelLogin(configuration, runtime)
+    test_lock = asyncio.Lock()
+
+    async def test_provider(request):
+        capability = request.match_info["capability"]
+        try:
+            value = await request.json()
+        except ValueError:
+            value = None
+        if not isinstance(value, dict):
+            return web.json_response(
+                failure(capability, None, "validation", "请求体必须是 JSON 对象。"),
+                status=400,
+            )
+        if test_lock.locked():
+            return web.json_response(
+                failure(capability, value.get("adapter"), "busy", "已有连接测试正在进行，请稍后重试。"),
+                status=429,
+            )
+        async with test_lock:
+            status_code, result = await test_connection(capability, value)
+        return web.json_response(result, status=status_code)
 
     async def body(request):
         try:
@@ -187,6 +209,7 @@ def register_configuration_routes(app, configuration, runtime):
 
     app.on_cleanup.append(cleanup)
     app.router.add_get("/api/settings/configuration", snapshot)
+    app.router.add_post("/api/settings/providers/{capability}/test", test_provider)
     app.router.add_get("/api/settings/mcp", mcp_config)
     app.router.add_patch("/api/settings/mcp", mcp_config)
     app.router.add_put("/api/settings/configuration/{section}", save)
