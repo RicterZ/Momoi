@@ -766,23 +766,33 @@
 .settings-verification .settings-field {
   flex: 1;
 }
-.settings-loading {
+.settings-load-error-body {
   display: grid;
   place-items: center;
-  gap: 15px;
-  padding: 70px 24px;
-  border: 1px dashed #b5c4d5;
-  border-radius: 14px;
-  background: var(--surface);
+  align-content: center;
+  gap: 20px;
+  min-height: 280px;
+  padding: 48px 24px;
   text-align: center;
 }
-.settings-loading strong {
-  font-size: 16px;
-}
-.settings-loading p {
+.settings-load-error-body h3 {
   margin: 0;
+  font-size: 18px;
+  font-weight: 750;
+}
+.settings-load-error-body p {
+  margin: 10px 0 0;
   font-size: 12px;
-  color: var(--settings-muted);
+  line-height: 1.8;
+  color: var(--muted);
+}
+.settings-load-error-detail {
+  margin: 0;
+  padding: 16px 20px;
+  border-top: 2px solid var(--ink);
+  font-size: 12px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
 }
 .settings-studio .is-spinning {
   animation: settings-spin 1.5s linear infinite;

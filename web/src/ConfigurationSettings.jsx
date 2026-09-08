@@ -1547,16 +1547,21 @@ export default function ConfigurationSettings({
           <Loading>正在读取配置…</Loading>
         </div>
       ) : (
-        <div className="settings-loading" role="status">
-          <Icon name="info" />
-          <strong>暂时无法载入配置</strong>
-          <p>请检查服务状态，再点击右上角刷新。</p>
+        <section className="settings-panel settings-load-error" aria-label="配置载入失败">
+          <SectionHeader module={{ id: "configuration", label: "配置读取" }} />
+          <div className="settings-load-error-body" role="status">
+            <span className="settings-channel-off-icon" aria-hidden="true"><Icon name="info" /></span>
+            <div>
+              <h3>暂时无法载入配置</h3>
+              <p>请检查服务状态，再点击右上角刷新。</p>
+            </div>
+          </div>
           {issue && (
-            <p className="is-error" role="alert">
+            <p className="settings-load-error-detail is-error" role="alert">
               {issue}
             </p>
           )}
-        </div>
+        </section>
       )}
     </div>
   );
