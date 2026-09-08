@@ -917,6 +917,11 @@
 .settings-apply-dialog button {
   border-color: var(--ink);
 }
+.settings-connection-test-dialog .quiet-button:focus-visible {
+  outline: none;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 
 .settings-form-body.settings-channels {
   background: var(--surface);

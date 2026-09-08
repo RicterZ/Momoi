@@ -850,7 +850,7 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
   return (
     <>
       {testResult && (
-        <SettingsDialog title="连接测试" onClose={() => setTestResult(null)} returnFocusRef={testButtonRef}>
+        <SettingsDialog title="连接测试" className="settings-connection-test-dialog" onClose={() => setTestResult(null)} returnFocusRef={testButtonRef}>
           <p className={`confirm-copy${testResult.error ? " is-error" : ""}`} role={testResult.error ? "alert" : "status"}>
             {testResult.text}
           </p>
