@@ -200,6 +200,35 @@ class ConfigurationManagerTest(unittest.TestCase):
         )
         self.assertTrue(self.manager.validate().heartbeat.enabled)
 
+    def test_control_patch_preserves_existing_intervals_and_time(self):
+        initial = {
+            "heartbeat": {"enabled": True, "initial_delay_seconds": 11, "min_interval_seconds": 120, "max_interval_seconds": 360},
+            "reflection": {"enabled": True, "at": "22:15"},
+            "episode_annealing": {"enabled": True, "idle_seconds": 9, "max_seconds": 500},
+        }
+        self.manager.save_runtime(initial, self.manager.revision())
+        self.manager.save_runtime(
+            {section: {"enabled": False} for section in initial},
+            self.manager.revision(),
+        )
+        saved = self.manager.read_app()
+        for section, original in initial.items():
+            self.assertEqual(saved[section], {**original, "enabled": False})
+        self.manager.save_runtime({"reflection": {"at": "00:00"}}, self.manager.revision())
+        self.assertFalse(self.manager.validate().reflection.enabled)
+        self.assertEqual(self.manager.validate().reflection.at, "00:00")
+
+    def test_app_fields_expose_enum_types_defaults_and_are_isolated(self):
+        snapshot = self.manager.snapshot()
+        fields = snapshot["app_fields"]
+        self.assertEqual(set(fields), {"heartbeat", "logging", "reflection", "episode_annealing"})
+        self.assertEqual(fields["logging"]["fields"]["level"]["enum"], ["TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
+        self.assertEqual(fields["reflection"]["fields"]["at"]["format"], "time")
+        self.assertEqual(snapshot["app"]["reflection"]["at"], "03:00")
+        self.assertFalse(snapshot["app"]["episode_annealing"]["enabled"])
+        fields["logging"]["fields"]["level"]["enum"].append("INVALID")
+        self.assertNotIn("INVALID", self.manager.snapshot()["app_fields"]["logging"]["fields"]["level"]["enum"])
+
     def test_voice_batch_is_atomic_and_keeps_credentials_when_disabled(self):
         voice = {
             "asr": {
@@ -386,6 +415,103 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
             },
         )
         self.assertEqual(response.status, 400)
+
+    async def test_runtime_controls_validate_atomically_through_http(self):
+        self.client.session.headers["Authorization"] = self.auth
+        for section, key, invalid in (
+            ("logging", "level", "anything"),
+            ("logging", "level", "info"),
+            ("logging", "level", 20),
+            ("logging", "level", None),
+            ("heartbeat", "enabled", "false"),
+            ("reflection", "enabled", 1),
+            ("episode_annealing", "enabled", None),
+            ("reflection", "at", "24:00"),
+            ("reflection", "at", "03:60"),
+            ("reflection", "at", "3:00"),
+            ("reflection", "at", ""),
+            ("reflection", "at", None),
+            ("reflection", "time", "03:00"),
+        ):
+            with self.subTest(section=section, key=key, invalid=invalid):
+                revision = self.manager.revision()
+                before = self.path.read_bytes()
+                response = await self.client.patch(
+                    "/api/settings/configuration/app",
+                    json={"revision": revision, "document": {section: {key: invalid}}},
+                )
+                self.assertEqual(response.status, 400, await response.text())
+                self.assertEqual(self.path.read_bytes(), before)
+                self.assertEqual(self.manager.revision(), revision)
+        for level in ("TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
+            response = await self.client.patch(
+                "/api/settings/configuration/app",
+                json={"revision": self.manager.revision(), "document": {"logging": {"level": level}}},
+            )
+            self.assertEqual(response.status, 200, await response.text())
+            self.assertEqual((await response.json())["app"]["logging"]["level"], level)
+
+    async def test_runtime_controls_reload_after_http_save_and_file_edit(self):
+        import logging
+
+        self.enable()
+        self.client.session.headers["Authorization"] = self.auth
+        logger = logging.getLogger()
+        self.addCleanup(logger.setLevel, logger.level)
+        stop = asyncio.Event()
+        task = asyncio.create_task(self.runtime.run(stop))
+
+        async def applied(revision):
+            async with asyncio.timeout(5):
+                while self.runtime.applied_revision != revision:
+                    await asyncio.sleep(0.01)
+
+        try:
+            await applied(self.manager.revision())
+            first = self.runtime.daemon
+            response = await self.client.get("/api/settings/configuration")
+            snapshot = await response.json()
+            self.assertIn("enum", snapshot["app_fields"]["logging"]["fields"]["level"])
+            response = await self.client.patch(
+                "/api/settings/configuration/app",
+                json={"revision": snapshot["revision"], "document": {
+                    "heartbeat": {"enabled": True},
+                    "logging": {"level": "TRACE"},
+                    "reflection": {"enabled": True, "at": "21:45"},
+                    "episode_annealing": {"enabled": True},
+                }},
+            )
+            self.assertEqual(response.status, 200, await response.text())
+            saved = await response.json()
+            await applied(saved["revision"])
+            self.assertTrue(first.closed)
+            config = self.runtime.daemon.config
+            self.assertTrue(config.heartbeat.enabled)
+            self.assertTrue(config.reflection.enabled)
+            self.assertEqual(config.reflection.at, "21:45")
+            self.assertTrue(config.episode_annealing.enabled)
+            self.assertEqual(logger.level, logging.TRACE)
+            # File edits use the same validation and watcher, without a reload request.
+            changed = self.manager.read_app()
+            for section in ("heartbeat", "reflection", "episode_annealing"):
+                changed[section]["enabled"] = False
+            changed["logging"]["level"] = "INFO"
+            changed["reflection"]["at"] = "23:59"
+            atomic_write(self.path, json.dumps(changed))
+            await applied(self.manager.revision())
+            config = self.runtime.daemon.config
+            self.assertFalse(config.heartbeat.enabled)
+            self.assertFalse(config.reflection.enabled)
+            self.assertFalse(config.episode_annealing.enabled)
+            self.assertEqual(config.reflection.at, "23:59")
+            self.assertEqual(logger.level, logging.INFO)
+            response = await self.client.get("/api/settings/runtime")
+            status = await response.json()
+            self.assertEqual(status["state"], "running")
+            self.assertEqual(status["applied_revision"], self.manager.revision())
+        finally:
+            stop.set()
+            await task
 
     async def test_generation_replacement_invalid_reload_rollback_and_disable(self):
         self.enable()

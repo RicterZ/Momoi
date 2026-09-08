@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..channel import load_channel_config
 from .environment import apply_env_overrides
+from .runtime_fields import LOG_LEVELS
 from .models import (
     AppConfig,
     ConfigError,
@@ -140,6 +141,20 @@ def parse_config(raw, config_path: Path, *, providers=None) -> AppConfig:
     heartbeat_raw = mapping(raw.get("heartbeat", {}), "heartbeat")
     reflection_raw = mapping(raw.get("reflection", {}), "reflection")
     annealing_raw = mapping(raw.get("episode_annealing", {}), "episode_annealing")
+    for name, section, allowed in (
+        ("logging", logging_raw, {"level"}),
+        ("heartbeat", heartbeat_raw, {"enabled", "initial_delay_seconds", "min_interval_seconds", "max_interval_seconds"}),
+        ("reflection", reflection_raw, {"enabled", "at"}),
+        ("episode_annealing", annealing_raw, {"enabled", "idle_seconds", "max_seconds"}),
+    ):
+        if unknown := section.keys() - allowed:
+            raise ConfigError(f"unknown {name} field: {sorted(unknown)[0]}")
+    log_level = logging_raw.get("level", "DEBUG")
+    if not isinstance(log_level, str) or log_level not in LOG_LEVELS:
+        raise ConfigError(f"logging.level must be one of {', '.join(LOG_LEVELS)}")
+    reflection_at = clock(reflection_raw.get("at", "03:00"), "reflection.at")
+    if reflection_at is None:
+        raise ConfigError("reflection.at must use HH:MM")
     dashboard_token = str(dashboard_raw.get("token") or "")
     mcp_value = tools_raw.get("mcp_config", "mcp.json")
     mcp_config = (config_path.parent / str(mcp_value)).resolve() if mcp_value else None
@@ -228,7 +243,7 @@ def parse_config(raw, config_path: Path, *, providers=None) -> AppConfig:
         episode_raw_tail_turns=episode_raw_tail_turns,
         memory_results=memory_results,
         database=database,
-        log_level=str(logging_raw.get("level", "DEBUG")).upper(),
+        log_level=log_level,
         timezone=app_timezone,
         max_input_tokens=max_input_tokens,
         context_compaction_ratio=context_compaction_ratio,
@@ -270,7 +285,7 @@ def parse_config(raw, config_path: Path, *, providers=None) -> AppConfig:
         ),
         reflection=ReflectionConfig(
             enabled=boolean(reflection_raw.get("enabled", False), "reflection.enabled"),
-            at=clock(reflection_raw.get("at", "03:00"), "reflection.at") or "03:00",
+            at=reflection_at,
         ),
         episode_annealing=EpisodeAnnealingConfig(
             enabled=boolean(

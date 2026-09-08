@@ -14,6 +14,40 @@ Absolute paths are accepted for every path field. `config.json` does not expand
 External API endpoints, credentials and options live in [providers.yaml](./PROVIDERS.md).
 The main config contains `"providers": "providers.yaml"`. Dashboard mode watches service changes and reloads the business runtime.
 
+## Runtime controls API
+
+Authenticated `GET /api/settings/configuration` returns current editable values
+in `app` and control metadata in `app_fields`. Each section has `label` and
+`fields`; each field specifies its type, default and `advanced: false`.
+`logging.level.enum` lists allowed choices. `reflection.at` specifies
+`format: time` and a pattern for `HH:MM`, using the application's timezone.
+
+Use `PATCH /api/settings/configuration/app` with the snapshot's revision:
+
+```json
+{
+  "revision": "<revision from GET /api/settings/configuration>",
+  "document": {
+    "heartbeat": {"enabled": true},
+    "logging": {"level": "INFO"},
+    "reflection": {"enabled": true, "at": "03:00"},
+    "episode_annealing": {"enabled": true}
+  }
+}
+```
+
+Submit any subset of these fields. Patching these four sections preserves omitted
+fields, including heartbeat intervals, reflection time and annealing limits.
+Booleans must be JSON booleans; log levels must be one of `TRACE`, `DEBUG`, `INFO`,
+`WARNING`, `ERROR`, `CRITICAL` (uppercase). Times must be `00:00`–`23:59`.
+Invalid requests return 400 without writing; stale revisions return 409.
+
+Saving automatically reloads the business runtime while keeping the dashboard and
+container running. Poll `GET /api/settings/runtime` until `applied_revision`
+matches the saved revision and `state` is `running` (or `setup` when setup is
+incomplete). Direct file edits are detected within the one-second watcher interval.
+No manual container restart is required in dashboard mode.
+
 ## Fish Audio speech synthesis
 
 TTS is disabled by default and `send_voice` is hidden while disabled. When TTS

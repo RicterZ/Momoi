@@ -12,6 +12,37 @@ Momoi 从 workspace 中读取 `config.json`。默认 workspace 是 `~/.momoi`；
 外部 API 的端点、凭据和参数统一由 [providers.yaml](./PROVIDERS.zh-CN.md) 管理。
 主配置包含 `"providers": "providers.yaml"`，dashboard 模式自动检测服务配置变化并重建业务实例。
 
+## 运行配置接口
+
+鉴权后请求 `GET /api/settings/configuration`，从 `app` 读取当前配置，
+从 `app_fields` 读取控件定义。每组包含 `label` 和 `fields`，字段提供
+`type`、`default` 和 `advanced: false`；日志级别通过 `enum` 提供选项，
+复盘时间通过 `format: time` 和 `pattern` 指定 `HH:MM`，使用应用配置的时区。
+
+通过 `PATCH /api/settings/configuration/app` 提交获取到的 revision 和需要修改的字段：
+
+```json
+{
+  "revision": "<读取配置时返回的 revision>",
+  "document": {
+    "heartbeat": {"enabled": true},
+    "logging": {"level": "INFO"},
+    "reflection": {"enabled": true, "at": "03:00"},
+    "episode_annealing": {"enabled": true}
+  }
+}
+```
+
+可以只提交其中一个字段。这四组配置会保留未提交的字段，例如心跳间隔、复盘时间和
+退火时限。开关必须是 JSON 布尔值；日志级别限定为大写的 `TRACE`、`DEBUG`、
+`INFO`、`WARNING`、`ERROR`、`CRITICAL`；时间范围为 `00:00`–`23:59`。
+非法参数返回 400，过期 revision 返回 409，均不写入配置。
+
+保存后自动重载业务运行实例，dashboard 和容器保持运行。通过
+`GET /api/settings/runtime` 确认 `applied_revision` 等于保存返回的 revision，
+且 `state` 为 `running`（未完成基础配置时为 `setup`）。直接修改文件也会在一秒轮询
+周期内被检测到。dashboard 模式下无需手动重启容器。
+
 ## Fish Audio 语音合成
 
 TTS 默认关闭，关闭时不暴露 `send_voice`。启用后微信和 NapCat 请求使用相同的语音工具 schema，

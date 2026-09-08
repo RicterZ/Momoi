@@ -11,6 +11,7 @@ import yaml
 from .loading import parse_config
 from .models import ConfigError
 from .workspace import atomic_write, default_config, empty_providers
+from .runtime_fields import runtime_fields
 from ..integrations.configuration import CatalogLoader, parse_provider_catalog
 from ..integrations.registry import adapter_schemas, adapter_definition
 from ..integrations.configuration import CAPABILITIES
@@ -157,6 +158,15 @@ class ConfigurationManager:
 
     def snapshot(self):
         app, providers = self.read_app(), self.read_providers()
+        app_fields = runtime_fields()
+        app_values = {key: value for key, value in app.items() if key in EDITABLE}
+        for section, schema in app_fields.items():
+            current = app_values.get(section, {})
+            if isinstance(current, dict):
+                app_values[section] = {
+                    **{key: spec["default"] for key, spec in schema["fields"].items()},
+                    **current,
+                }
         problem = ""
         try:
             self.validate(app, providers)
@@ -167,9 +177,8 @@ class ConfigurationManager:
         return {
             "revision": self.revision(),
             "providers": copy.deepcopy(providers),
-            "app": redact(
-                {key: value for key, value in app.items() if key in EDITABLE}
-            ),
+            "app": redact(app_values),
+            "app_fields": app_fields,
             "adapters": adapter_schemas(),
             "validation_error": problem,
             "environment_overrides": sorted(
@@ -215,7 +224,16 @@ class ConfigurationManager:
         current = {
             key: value for key, value in self.read_app().items() if key in EDITABLE
         }
-        current.update(document)
+        controls = runtime_fields()
+        for section, value in document.items():
+            if section in controls and isinstance(value, dict):
+                previous = current.get(section, {})
+                current[section] = {
+                    **(previous if isinstance(previous, dict) else {}),
+                    **value,
+                }
+            else:
+                current[section] = value
         return self.save("app", current, revision)
 
     def _set_binding(self, raw, capability, document):
