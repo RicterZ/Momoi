@@ -321,8 +321,7 @@ def end_turn_tool_spec(
         f"Finish the {stage} Turn; required fields: {', '.join(schema['required'])}. "
         "May be called alone or last after send_bubbles/send_voice in the same response. "
         "Same-response delivery must succeed before the Turn can finish. "
-        "Assistant text must be empty or contain valid <bubble>...</bubble> messages; "
-        "untagged assistant text with end_turn is rejected. "
+        "Use send_bubbles/send_voice for owner-visible messages. "
         "Other work tools must finish in earlier rounds."
     )
     return spec
@@ -333,8 +332,6 @@ SEND_BUBBLES_TOOL_SPEC: dict[str, Any] = {
     "description": (
         "Send owner-visible messages with the exact bubbles; use send_voice for speech "
         "when available. Starts delivery immediately, independently of end_turn. "
-        "Explicit <bubble>...</bubble> blocks in assistant text are equivalent to this tool "
-        "and use the current channel; text outside them is not delivered. "
         "After all work and delivery results, call the current workflow's "
         "terminal tool; end_turn may follow delivery in the same response. "
         "Text may accompany images; files, video, audio, and "

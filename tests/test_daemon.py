@@ -2184,7 +2184,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         raise AssertionError(tools)
                     if self.calls == 2:
                         correction = request_text
-                        self_outer.assertIn("end_turn_text_requires_bubbles", correction)
+                        self_outer.assertIn("send_bubbles_required_before_end_turn", correction)
                         self_outer.assertIn(
                             OWNER_BUBBLE_REQUEST_REMINDER, correction
                         )
@@ -2484,7 +2484,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(provider.calls, 3)
             self.assertTrue(
                 any(
-                    "end_turn_text_requires_bubbles" in text
+                    "send_bubbles_required_before_end_turn" in text
                     for text in provider.corrections
                 )
             )

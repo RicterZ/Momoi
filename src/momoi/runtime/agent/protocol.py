@@ -9,10 +9,8 @@ from ..turn_support import ExternalToolTurnError, MAX_CONSECUTIVE_TOOL_FAILURES
 from .workflow import TurnExecutionSpec, WorkflowProtocolError
 
 OWNER_BUBBLE_REQUEST_REMINDER = (
-    "Use <bubble>...</bubble>, send_bubbles, or send_voice "
-    "for owner-visible messages. With end_turn, assistant text must be empty "
-    "or contain valid bubble blocks; "
-    "otherwise call the next work or terminal tool."
+    "Use send_bubbles or send_voice for owner-visible messages. "
+    "Call end_turn when finished; it may follow delivery in the same response."
 )
 
 _PRIVATE_REASONING_BLOCK_TYPES = frozenset(
@@ -109,7 +107,7 @@ def handle_no_tool_response(
                     "role": "user",
                     "content": (
                         "[Trusted runtime protocol error. Plain text was not stored. "
-                        "Send explicit <bubble>...</bubble> messages, continue with native tools, or call end_turn alone with the "
+                        "Use send_bubbles or send_voice to message the owner, continue with native tools, or call end_turn with the "
                         "current Goal outcome in goal when ready.]"
                     ),
                 },
@@ -127,13 +125,14 @@ def handle_no_tool_response(
     elif owner_turn:
         correction = (
             "[Trusted runtime protocol error: no native tool call was returned. "
-            "Call send_bubbles or write <bubble>...</bubble> for owner-visible messages, "
+            "Call send_bubbles or send_voice for owner-visible messages, "
             "then end_turn when ready; both may occur in the same response.]"
         )
     else:
         correction = (
             "[Trusted runtime protocol error: no native tool call was returned. "
-            "Continue with native tool calls or explicit <bubble>...</bubble> messages following the current workflow; text outside bubble blocks is not delivered.]"
+            "Continue with native tool calls following the current workflow; "
+            "use send_bubbles or send_voice for owner-visible messages.]"
         )
     messages.extend(
         [

@@ -322,7 +322,7 @@ class AgentLoop:
             harness_error = harness.validate(
                 response.tool_calls,
                 required_tool=required_tool,
-                assistant_text=response_text(response.content),
+                has_assistant_text=bool(response_text(response.content)),
             )
             if harness_error is not None:
                 failed_tool_rounds += 1

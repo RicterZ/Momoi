@@ -458,9 +458,11 @@ delivery path immediately, independently of Goal completion. Delivery and
 `end_turn` may share one response, with `end_turn` last; failed delivery prevents
 completion. Invalid outcomes return tool errors for correction.
 
-With `end_turn`, assistant text must be empty or contain valid `<bubble>...</bubble>`
-blocks. These blocks use the same delivery path as `send_bubbles`; untagged text
-causes rejection. Each Turn receives an `end_turn` schema with its own required
+Valid `<bubble>...</bubble>` blocks in assistant text become `send_bubbles` before
+harness validation. With `end_turn`, nonempty assistant text requires `send_bubbles`
+in the same response; empty text is allowed. The harness checks the normalized
+tool calls without parsing text, and text outside bubble blocks is not delivered.
+Each Turn receives an `end_turn` schema with its own required
 fields, including `activity` for Owner and `heartbeat` for Heartbeat.
 Other Turns must omit `goal` or pass `null`; the harness rejects cross-workflow
 arguments before execution. Normal conversations retain `goal_update`, `goal_finish`

@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 
 from ...models import ToolCall
-from ..parsing import parse_tagged_bubbles
 
 
 @dataclass(frozen=True)
@@ -96,7 +95,7 @@ class TurnHarness:
         calls: list[ToolCall],
         *,
         required_tool: str | None = None,
-        assistant_text: str = "",
+        has_assistant_text: bool = False,
     ) -> str | None:
         names = [call.name for call in calls]
         if any(name in self.blocked_tool_names for name in names):
@@ -134,8 +133,8 @@ class TurnHarness:
         )
         if terminal in names and not send_and_end and (len(names) != 1 or names[0] != terminal):
             return f"{terminal}_must_be_alone"
-        if "end_turn" in names and assistant_text.strip() and parse_tagged_bubbles(assistant_text) is None:
-            return "end_turn_text_requires_bubbles"
+        if "end_turn" in names and has_assistant_text and "send_bubbles" not in names:
+            return "send_bubbles_required_before_end_turn"
         permitted = (
             self.permitted_tool_names
             if self.permitted_tool_names is not None

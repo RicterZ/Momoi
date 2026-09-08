@@ -198,14 +198,16 @@ class EndTurnSchemaTest(unittest.TestCase):
                 calls = [send, end]
             else:
                 calls = [end]
-            for text in ('', ' \n ', '<bubble>消息</bubble>', '说明\n<bubble>消息</bubble>'):
-                self.assertIsNone(harness.validate(calls, assistant_text=text))
-            for text in ('未发送正文', '<bubble>未闭合', '<bubble></bubble>'):
-                self.assertEqual(harness.validate(calls, assistant_text=text), 'end_turn_text_requires_bubbles')
+            self.assertIsNone(harness.validate(calls, has_assistant_text=False))
+            self.assertEqual(
+                harness.validate(calls, has_assistant_text=True),
+                None if stage == 'reply_followup' else 'send_bubbles_required_before_end_turn',
+            )
+            self.assertIsNone(harness.validate([send, end], has_assistant_text=True))
             self.assertIsNone(harness.validate([send, end]))
         harness = TurnHarness.for_stage('owner')
         harness.accept('recall')
         self.assertIsNotNone(harness.validate([end, send]))
         self.assertIsNotNone(harness.validate([work, end]))
         self.assertIsNotNone(harness.validate([send, end, end]))
-        self.assertEqual(harness.validate([send, end], assistant_text='未发送正文'), 'end_turn_text_requires_bubbles')
+        self.assertIsNone(harness.validate([send, end], has_assistant_text=True))

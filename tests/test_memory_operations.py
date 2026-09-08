@@ -1119,8 +1119,9 @@ def test_owner_update_preserves_actual_recall_completion(daemon, recall_succeede
     assert [r.text for r in daemon.store.due_outbox()] == ['收到，不找了']
 
 
-@pytest.mark.parametrize('text', ['', '  \n ', '<bubble>收到</bubble>', '未发送的正文', '<bubble>未闭合'])
-def test_owner_terminal_text_contract_and_same_round_delivery(daemon, text):
+@pytest.mark.parametrize('use_native', [False, True])
+@pytest.mark.parametrize('text', ['', '  \n ', '<bubble>收到</bubble>', '未发送的正文', '<bubble>未闭合', '<bubble></bubble>'])
+def test_owner_terminal_text_contract_and_same_round_delivery(daemon, text, use_native):
     from types import SimpleNamespace
     from jsonschema import Draft202012Validator
     from tests.support import recall_response
@@ -1128,10 +1129,10 @@ def test_owner_terminal_text_contract_and_same_round_delivery(daemon, text):
     source = event(daemon.store)
     terminal = {'reply_wait': {'wait': False}, 'mood': {'decision': 'unchanged'},
                 'activity': {'decision': 'unchanged'}}
-    native = response(ToolCall('send', 'send_bubbles', {'bubbles': ['收到']}))
+    native = response(ToolCall('send', 'send_bubbles', {'bubbles': ['工具消息']}))
     end = response(ToolCall('end', 'end_turn', terminal))
-    valid = text in ('', '  \n ', '<bubble>收到</bubble>')
-    use_native = '<bubble>' not in text
+    tagged = text == '<bubble>收到</bubble>'
+    valid = not text.strip() or tagged or use_native
     body = ([{'type': 'text', 'text': text}] + (native.content if use_native else []) + end.content)
     combined = ProviderResponse(body, (native.tool_calls if use_native else []) + end.tool_calls)
     replies = [recall_response(), combined]
@@ -1149,7 +1150,7 @@ def test_owner_terminal_text_contract_and_same_round_delivery(daemon, text):
             assert schema == schema_seen
         schema_seen = schema
         if rejected:
-            assert 'end_turn_text_requires_bubbles' in str(messages[-1])
+            assert 'send_bubbles_required_before_end_turn' in str(messages[-1])
             assert not daemon.store.due_outbox()
         assert replies, 'Unexpected extra model round'
         reply = replies.pop(0)
@@ -1159,7 +1160,9 @@ def test_owner_terminal_text_contract_and_same_round_delivery(daemon, text):
     daemon.provider = SimpleNamespace(complete=complete, config=SimpleNamespace(api_format='anthropic'))
     asyncio.run(daemon._complete_batch_turn([source], asyncio.Event(), 'source'))
     assert not replies
-    assert [r.text for r in daemon.store.due_outbox()] == ['收到']
+    expected = (['收到'] if tagged else []) + (['工具消息'] if use_native or not valid else [])
+    queued = daemon.store._db.execute('SELECT text FROM outbox ORDER BY id').fetchall()
+    assert [r['text'] for r in queued] == expected
 
 
 def test_owner_update_after_send_supersedes_same_response_end(daemon):
