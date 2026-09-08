@@ -13,7 +13,9 @@ logger = logging.getLogger(__name__)
 
 class EpisodeAnnealingStore:
     def claim_episode_annealing_candidate(
-        self, raw_tail_turns: int, raw_token_budget: int
+        self, raw_tail_turns: int, raw_token_budget: int,
+        *, window: tuple[float, float] | None = None,
+        exclude_episode_ids: tuple[str, ...] = (),
     ) -> dict[str, object] | None:
         raw_tail_turns = max(1, raw_tail_turns)
         raw_token_budget = max(1, raw_token_budget)
@@ -42,6 +44,22 @@ class EpisodeAnnealingStore:
                 (now,),
             ).fetchall()
             for episode in episodes:
+                if episode["id"] in exclude_episode_ids:
+                    continue
+                if window is not None and not self._db.execute(
+                    """SELECT 1 FROM episode_turns et JOIN messages m ON m.turn_id=et.turn_id
+                       WHERE et.episode_id=? AND m.created_at>=? AND m.created_at<? LIMIT 1""",
+                    (episode["id"], *window),
+                ).fetchone():
+                    continue
+                # A summary advances a contiguous ordinal watermark. Never skip
+                # a turn crossing the date boundary to summarize a later one.
+                cutoff = None if window is None else self._db.execute(
+                    """SELECT MIN(et.ordinal) FROM episode_turns et
+                       JOIN messages m ON m.turn_id=et.turn_id
+                       WHERE et.episode_id=? AND m.created_at>=?""",
+                    (episode["id"], window[1]),
+                ).fetchone()[0]
                 rows = self._db.execute(
                     """SELECT et.ordinal, m.id, m.turn_id, m.role, m.content,
                               m.created_at, m.delivery_state
@@ -56,8 +74,10 @@ class EpisodeAnnealingStore:
                         episode["summarized_through_ordinal"],
                     ),
                 ).fetchall()
+                if cutoff is not None:
+                    rows = [row for row in rows if int(row["ordinal"]) < cutoff]
                 ordinals = list(dict.fromkeys(int(row["ordinal"]) for row in rows))
-                tail_turns = raw_tail_turns if episode["status"] != "closed" else 0
+                tail_turns = raw_tail_turns if window is None and episode["status"] != "closed" else 0
                 if not rows and episode["narrative_summary"]:
                     continue
                 if not rows and episode["working_summary_claims_json"] != "[]":
@@ -79,7 +99,7 @@ class EpisodeAnnealingStore:
                     continue
                 tokens = sum(estimate_tokens(str(row["content"])) for row in rows)
                 if (
-                    episode["status"] != "closed"
+                    window is None and episode["status"] != "closed"
                     and len(ordinals) <= raw_tail_turns * 2
                     and tokens <= math.ceil(raw_token_budget * 1.25)
                 ):

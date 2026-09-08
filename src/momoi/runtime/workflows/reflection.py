@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from datetime import datetime, timedelta
 from typing import Any
 
 from ...observability.events import log_event
@@ -21,6 +22,47 @@ logger = logging.getLogger("momoi.runtime.turns")
 
 
 class ReflectionWorkflow:
+    async def _prepare_reflection_episodes(self, local_date: str) -> None:
+        if not self.config.episode_annealing.enabled:
+            return
+        start = datetime.fromisoformat(local_date).replace(tzinfo=self.store.timezone)
+        window = (start.timestamp(), (start + timedelta(days=1)).timestamp())
+        consolidated = summaries = 0
+        try:
+            async with asyncio.timeout(self.config.episode_annealing.max_seconds):
+                active = self._active_annealing
+                if active is not None and not active.done():
+                    active.cancel("reflection_preparation")
+                    await asyncio.gather(active, return_exceptions=True)
+                attempted: set[str] = set()
+                while candidate := self.store.claim_episode_consolidation_candidate(
+                    minimum=1, window=window, exclude_turn_ids=tuple(attempted),
+                ):
+                    attempted.update(str(turn["turn_id"]) for turn in candidate["turns"])
+                    await self._consolidate_episode_turns(candidate)
+                    consolidated += len(candidate["turns"])
+                skipped: set[str] = set()
+                while candidate := self.store.claim_episode_annealing_candidate(
+                    self.config.episode_raw_tail_turns, self._episode_raw_token_budget(),
+                    window=window, exclude_episode_ids=tuple(skipped),
+                ):
+                    if not await self._anneal_episode_candidate(candidate):
+                        skipped.add(str(candidate["episode"]["id"]))
+                        continue
+                    summaries += 1
+        except Exception as error:
+            log_event(
+                logger, logging.WARNING, "reflection_episode_preparation_failed",
+                stage="reflection", local_date=local_date,
+                error_type=type(error).__name__,
+            )
+        else:
+            log_event(
+                logger, logging.INFO, "reflection_episodes_prepared",
+                stage="reflection", local_date=local_date,
+                classified_turns=consolidated, summary_batches=summaries,
+            )
+
     async def _complete_reflection_turn(
         self, local_date: str, stop: asyncio.Event
     ) -> None:
@@ -65,6 +107,7 @@ class ReflectionWorkflow:
             self.agenda_changed.set()
 
     async def _complete_reflection(self, local_date: str, turn_id: str) -> None:
+        await self._prepare_reflection_episodes(local_date)
         maintenance_turn_id = self._turn_id(
             "memory-maintenance",
             MEMORY_MAINTENANCE_RUN_VERSION,

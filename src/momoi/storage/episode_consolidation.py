@@ -78,11 +78,24 @@ class EpisodeConsolidationStore:
         )
 
     def _episode_consolidation_pending_rows(
-        self, limit: int
+        self, limit: int, *, window: tuple[float, float] | None = None,
+        exclude_turn_ids: tuple[str, ...] = (),
     ) -> list[sqlite3.Row]:
         limit = max(1, limit)
+        scope = ""
+        parameters: list[object] = []
+        if window is not None:
+            scope += """ AND EXISTS (
+                SELECT 1 FROM messages m WHERE m.turn_id=t.id
+                AND m.created_at>=? AND m.created_at<?)
+                AND NOT EXISTS (SELECT 1 FROM messages m
+                    WHERE m.turn_id=t.id AND m.created_at>=?)"""
+            parameters.extend((*window, window[1]))
+        if exclude_turn_ids:
+            scope += f" AND t.id NOT IN ({','.join('?' for _ in exclude_turn_ids)})"
+            parameters.extend(exclude_turn_ids)
         return self._db.execute(
-            """SELECT pending.id, pending.updated_at FROM (
+            f"""SELECT pending.id, pending.updated_at FROM (
                    SELECT t.id, t.updated_at FROM turns AS t
                    WHERE t.kind='owner' AND t.state='completed'
                      AND NOT EXISTS (
@@ -127,10 +140,11 @@ class EpisodeConsolidationStore:
                      AND EXISTS (
                          SELECT 1 FROM messages AS m WHERE m.turn_id=t.id
                      )
+                   {scope}
                    ORDER BY t.updated_at DESC LIMIT ?
                ) AS pending
                ORDER BY pending.updated_at""",
-            (limit,),
+            (*parameters, limit),
         ).fetchall()
 
     def episode_consolidation_pending_count(
@@ -143,15 +157,22 @@ class EpisodeConsolidationStore:
         limit: int = EPISODE_CONSOLIDATION_BATCH_SIZE,
         *,
         minimum: int = EPISODE_CONSOLIDATION_BATCH_SIZE,
+        window: tuple[float, float] | None = None,
+        exclude_turn_ids: tuple[str, ...] = (),
     ) -> dict[str, object] | None:
         limit = max(1, limit)
         minimum = max(1, min(minimum, limit))
-        rows = self._episode_consolidation_pending_rows(limit)
+        rows = self._episode_consolidation_pending_rows(
+            limit, window=window, exclude_turn_ids=exclude_turn_ids,
+        )
         if len(rows) < minimum:
             return None
         turn_ids = [str(row["id"]) for row in rows]
         by_turn = self._consolidation_turn_messages(turn_ids)
         oldest_updated = float(rows[0]["updated_at"])
+        context_scope = "" if window is None else """AND NOT EXISTS (
+            SELECT 1 FROM messages m WHERE m.turn_id=t.id AND m.created_at>=?)"""
+        context_parameters = (oldest_updated,) if window is None else (oldest_updated, window[1])
         context_rows = self._db.execute(
             f"""SELECT t.id, t.updated_at, et.episode_id
                FROM turns AS t
@@ -160,9 +181,10 @@ class EpisodeConsolidationStore:
                WHERE t.kind='owner' AND t.state='completed'
                  AND t.updated_at>?
                  AND {runtime_archive_kind_sql('e')} IS NULL
+                 {context_scope}
                ORDER BY t.updated_at
                LIMIT 12""",
-            (oldest_updated,),
+            context_parameters,
         ).fetchall()
         context_ids = [str(row["id"]) for row in context_rows]
         context_messages = self._consolidation_turn_messages(context_ids)

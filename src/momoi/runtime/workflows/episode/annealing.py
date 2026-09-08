@@ -50,6 +50,9 @@ class EpisodeAnnealingWorkflow:
                 consolidation_pending=self.store.episode_consolidation_pending_count(),
             )
             return False
+        return await self._anneal_episode_candidate(candidate)
+
+    async def _anneal_episode_candidate(self, candidate: dict[str, Any]) -> bool:
         episode = candidate["episode"]
         episode_id = str(episode["id"])
         through_ordinal = int(candidate["through_ordinal"])
