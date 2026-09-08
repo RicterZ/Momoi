@@ -3,8 +3,10 @@ import logging
 
 from ...observability.events import log_event
 from ...storage import (
+    REFLECTION_MEMORY_CAUTION,
     Store,
     estimate_tokens,
+    format_reflection_memory,
     truncate_tokens,
 )
 from ...storage.episode_ranking import rank_recall_items
@@ -23,6 +25,19 @@ def _memory_lines(items: object) -> str:
         return ""
     return "\n".join(
         f"- [memory_id={item['id']} {item['kind']}:{item['key']}] {item['content']}"
+        for item in items
+        if isinstance(item, dict)
+        and item.get("kind") not in (None, "")
+        and item.get("key") not in (None, "")
+        and item.get("content") not in (None, "")
+    )
+
+
+def _reflection_memory_lines(items: object) -> str:
+    if not isinstance(items, list):
+        return ""
+    return "\n".join(
+        format_reflection_memory(item)
         for item in items
         if isinstance(item, dict)
         and item.get("kind") not in (None, "")
@@ -195,9 +210,13 @@ def assemble_main_context(
         "recent_memories": str(retrieval.get("recent_memories") or ""),
         "recall_memories": _memory_lines(retrieval.get("recall_memories")),
         "query_recall": str(retrieval.get("query_recall") or ""),
-        # TODO: Restore reflection injection after evidence and applicability
-        # survive retrieval. Keep private reflection generation and storage.
-        "reflection_memories": "",
+        "reflection_memories": (
+            REFLECTION_MEMORY_CAUTION
+            + "\n"
+            + _reflection_memory_lines(retrieval.get("reflection_memories"))
+            if retrieval.get("reflection_memories")
+            else ""
+        ),
         "goal_directory": _goal_directory_lines(retrieval.get("goals")),
     }
 

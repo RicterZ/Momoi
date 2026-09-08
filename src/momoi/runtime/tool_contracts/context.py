@@ -6,7 +6,7 @@ NEW_EPISODE_REF = "new:<slug>"
 RECALL_TOOL_SPEC: dict[str, Any] = {
     "name": "recall",
     "description": (
-        "Retrieve confirmed memory and Episode summaries for "
+        "Retrieve confirmed memory, dated reflection, and Episode summaries for "
         "the Owner Turn, and bind its archival Episode membership."
     ),
     "input_schema": {
