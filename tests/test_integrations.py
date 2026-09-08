@@ -41,7 +41,7 @@ def catalog_data():
             "account": {"adapter": "deepseek", "credentials": "shared"},
         },
         "bindings": {
-            "llm": {"service": "chat", "options": {"model": "deepseek-v4-flash", "accounting": "deepseek"}},
+            "llm": {"service": "chat", "options": {"model": "deepseek-v4-flash"}},
             "balance": {"service": "account"},
         },
     }
@@ -66,8 +66,8 @@ class CatalogTest(unittest.TestCase):
         services = ServiceRegistry(catalog)
         self.assertEqual(services.llm.config.api_key, services.balance.api_key)
         self.assertEqual(services.balance.base_url, "https://api.deepseek.com")
-        self.assertIsInstance(services.llm.accounting, DeepSeekAccounting)
-        self.assertFalse(hasattr(services.llm.accounting, "balance"))
+        self.assertIsInstance(services.balance.accounting, DeepSeekAccounting)
+        self.assertFalse(hasattr(services.llm, "accounting"))
         self.assertIsNone(services.asr)
         self.assertIsNone(services.tts)
         self.assertNotIn("private-secret", repr(catalog))
@@ -83,7 +83,7 @@ class CatalogTest(unittest.TestCase):
         }
         raw["bindings"]["llm"] = {"service": "other"}
         services = ServiceRegistry(self.load(raw))
-        self.assertIsNone(services.llm.accounting)
+        self.assertFalse(hasattr(services.llm, "accounting"))
         self.assertIsInstance(services.balance, DeepSeekBalanceProvider)
 
     def test_all_five_bindings_and_option_precedence(self):
@@ -136,21 +136,31 @@ class CatalogTest(unittest.TestCase):
             adapter_definition("deepseek", "llm")
         for protocol, cls in [("openai", OpenAIProvider), ("anthropic", AnthropicProvider)]:
             schema = adapter_definition(protocol, "llm").schema
-            self.assertTrue(schema["accounting"]["advanced"])
+            self.assertNotIn("accounting", schema)
             raw = catalog_data()
             raw["services"]["chat"]["adapter"] = protocol
-            for accounting in ["none", "deepseek"]:
-                raw["bindings"]["llm"]["options"]["accounting"] = accounting
+            for accounting in [False, True]:
+                raw["bindings"]["balance"]["options"] = {"accounting": accounting}
                 services = ServiceRegistry(self.load(raw))
                 self.assertIsInstance(services.llm, cls)
-                if accounting == "none":
-                    self.assertIsNone(services.llm.accounting)
+                self.assertFalse(hasattr(services.llm, "accounting"))
+                if not accounting:
+                    self.assertIsNone(services.balance.accounting)
                 else:
-                    self.assertIsInstance(services.llm.accounting, DeepSeekAccounting)
+                    self.assertIsInstance(services.balance.accounting, DeepSeekAccounting)
                 self.assertIsInstance(services.balance, DeepSeekBalanceProvider)
-            raw["bindings"]["llm"]["options"]["accounting"] = "unknown"
+            raw["bindings"]["balance"]["enabled"] = False
+            self.assertIsNone(ServiceRegistry(self.load(raw)).balance)
+            raw["bindings"]["llm"]["options"]["accounting"] = "deepseek"
             with self.assertRaises(ConfigError):
                 self.load(raw)
+        schema = adapter_definition("deepseek", "balance").schema
+        self.assertEqual(schema["accounting"]["type"], "boolean")
+        self.assertFalse(schema["accounting"]["advanced"])
+        raw = catalog_data()
+        raw["bindings"]["balance"]["options"] = {"accounting": "deepseek"}
+        with self.assertRaises(ConfigError):
+            self.load(raw)
 
     def test_embedding_has_one_explicit_address_without_path_inference(self):
         from momoi.integrations.registry import adapter_definition
@@ -355,6 +365,8 @@ register_adapter(Adapter(__name__, 'tts', Voice, validate=validate, schema={'pre
         name = "test_" + uuid.uuid4().hex
 
         class Balance:
+            accounting = None
+
             async def balance(self):
                 return {}
 
@@ -461,15 +473,91 @@ register_adapter(Adapter(__name__, 'tts', Voice, validate=validate, schema={'pre
             self.assertNotIn("shared-key", str(caught.exception))
             response = await client.get("/api/overview")
             self.assertEqual(response.status, 200)
+            overview = await response.json()
             self.assertEqual(
-                (await response.json())["balance"]["source"], "unavailable"
+                overview["balance"]["source"], "unavailable"
             )
+            self.assertTrue(overview["usage"]["cost_available"])
             mode["status"] = 200
             mode["payload"] = {}
             with self.assertRaises(IntegrationError) as caught:
                 await provider.balance()
             self.assertEqual(caught.exception.category, ErrorCategory.INVALID_RESPONSE)
         self.assertTrue(first_session.closed)
+
+    async def test_accounting_follows_balance_provider_in_runtime_and_dashboard(self):
+        from datetime import datetime
+        from types import SimpleNamespace
+        from momoi.config.workspace import bootstrap, default_config
+        from momoi.llm.accounting import UsageAccounting
+        from momoi.runtime.daemon import MomoiDaemon
+        from momoi.runtime.supervisor import RuntimeSupervisor
+
+        class Pricing(UsageAccounting):
+            def token_rates(self, model, timestamp):
+                return (1, 2, 3)
+
+        class Account:
+            accounting = Pricing()
+
+            async def balance(self):
+                return {"source": "live", "currency": "CNY", "total_balance": "7.00", "is_available": True}
+
+        name = "account_" + uuid.uuid4().hex
+        register_adapter(Adapter(name, "balance", lambda options, ctx: Account(), lambda options: None, {}))
+        raw = catalog_data()
+        raw["credentials"]["shared"]["api_key"] = "test-key"
+        raw["services"]["account"] = {"adapter": name}
+        self.load(raw)
+        path = self.root / "config.json"
+        bootstrap(path)
+        write_app_config(path, {
+            **default_config(),
+            "providers": "providers.yaml",
+            "channels": {"primary": "napcat", "enabled": {"napcat": {"url": "ws://localhost", "owner_qq": "123"}}},
+            "storage": {"database": "usage.sqlite3"},
+        })
+        daemon = MomoiDaemon(load_config(path))
+        self.addCleanup(daemon.store.close)
+        self.assertIs(daemon.provider.usage_parser.__self__, Account.accounting)
+        self.assertTrue(daemon.store.dashboard_usage()["cost_available"])
+        # Dashboard has a separate Store and follows the supervisor's active provider.
+        supervisor = RuntimeSupervisor(None)
+        supervisor.daemon = daemon
+        store = Store(self.root / "dashboard.sqlite3")
+        self.addCleanup(store.close)
+        import time
+        now = time.time()
+        store.record_llm_call(created_at=now, turn_id="accounting", stage="owner", model="custom",
+                             metrics={"input": 1000000, "uncached": 1000000, "cache_read": 0, "output": 0, "cache_reported": False})
+        client = TestClient(TestServer(create_dashboard_app(store, token="test-secret", balance_provider=supervisor, settings=DashboardSettings(()))))
+        await client.start_server()
+        self.addAsyncCleanup(client.close)
+        client.session.headers["Authorization"] = "Bearer " + issue_dashboard_jwt("test-secret")
+        day = datetime.fromtimestamp(now, store.timezone).date().isoformat()
+        async def check(expected):
+            for endpoint in ("/api/overview", "/api/usage", f"/api/usage?date={day}"):
+                response = await client.get(endpoint)
+                self.assertEqual(response.status, 200)
+                data = await response.json()
+                usage = data["usage"] if endpoint == "/api/overview" else data
+                self.assertEqual(usage["cost_available"], expected is not None)
+                self.assertEqual(usage.get("today", usage["totals"])["estimated_cost"], expected)
+        await check(2.0)
+        # Replacement provider's pricing is consumed without vendor-specific glue.
+        class OtherPricing(Pricing):
+            def token_rates(self, model, timestamp):
+                return (4, 5, 6)
+        replacement = Account()
+        replacement.accounting = OtherPricing()
+        supervisor.daemon = SimpleNamespace(services=SimpleNamespace(balance=replacement))
+        await check(5.0)
+        replacement.accounting = None
+        await check(None)
+        self.assertEqual((await supervisor.balance())["total_balance"], "7.00")
+        supervisor.daemon = None
+        await check(None)
+        self.assertEqual((await supervisor.balance())["source"], "disabled")
 
     async def test_dashboard_exposes_only_prompt_settings(self):
         from momoi.dashboard.settings import DashboardSettings, PromptFile
@@ -508,7 +596,7 @@ register_adapter(Adapter(__name__, 'tts', Voice, validate=validate, schema={'pre
 
         class Model:
             def __init__(self, options, context):
-                self.accounting = self.usage_sink = self.thinking_sink = (
+                self.usage_sink = self.thinking_sink = (
                     self.usage_parser
                 ) = None
 

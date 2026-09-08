@@ -51,7 +51,6 @@ def merge_adjacent_roles(
 class AnthropicProvider:
     def __init__(self, config: LLMConfig, dump_dir: Path | None = None) -> None:
         self.config = config
-        self.accounting = None
         self.dump_dir = dump_dir
         self.usage_sink: Callable[..., None] | None = None
         self.usage_parser: (

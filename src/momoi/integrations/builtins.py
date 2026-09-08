@@ -13,14 +13,6 @@ def register_builtins():
     from .adapters.openai import OpenAIProvider
     from .adapters.anthropic import AnthropicProvider
 
-    def llm_factory(options, ctx, name, cls):
-        instance = cls(llm_config(options, name), ctx.dump_dir)
-        if options.get("accounting") == "deepseek":
-            from .adapters.deepseek import DeepSeekAccounting
-
-            instance.accounting = DeepSeekAccounting()
-        return instance
-
     for name, cls in [
         ("openai", OpenAIProvider),
         ("anthropic", AnthropicProvider),
@@ -29,8 +21,8 @@ def register_builtins():
             Adapter(
                 name,
                 "llm",
-                lambda options, ctx, name=name, cls=cls: llm_factory(
-                    options, ctx, name, cls
+                lambda options, ctx, name=name, cls=cls: cls(
+                    llm_config(options, name), ctx.dump_dir
                 ),
                 validate=lambda options, name=name: llm_config(options, name),
                 schema=builtin_schema(name, "llm"),
@@ -125,10 +117,11 @@ def register_builtins():
     )
 
     def validate_balance(options):
-        fields(options, {"api_key", "base_url", "timeout_seconds"})
+        fields(options, {"api_key", "base_url", "timeout_seconds", "accounting"})
         text(options, "api_key")
         url(options, "base_url", "https://api.deepseek.com")
         number(options, "timeout_seconds", 10)
+        DeepSeekBalanceProvider(**options)
 
     register_adapter(
         Adapter(

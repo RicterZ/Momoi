@@ -64,6 +64,11 @@ class RuntimeSupervisor:
                 else {"source": "disabled"}
             )
 
+    @property
+    def accounting(self):
+        provider = self.daemon.services.balance if self.daemon is not None else None
+        return provider.accounting if provider is not None else None
+
     async def _retire(self):
         if self.task is not None:
             self.stop.set()

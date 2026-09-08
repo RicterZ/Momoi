@@ -47,7 +47,7 @@ const modules = [
     icon: "coin",
     names: ["balance"],
     optional: true,
-    tip: "关闭后停止远程余额查询，本地请求量与 Token 用量统计仍然保留。",
+    tip: "关闭后停止余额查询与费用估算，本地请求量与通用 Token 用量统计仍然保留。",
   },
 ];
 const capabilityLabels = { asr: "语音识别", tts: "语音合成" };
@@ -63,7 +63,7 @@ const primaryFields = {
   asr: ["secret_id", "secret_key"],
   tts: ["api_key", "reference_id", "model"],
   embedding: ["endpoint", "api_key", "model", "dimensions"],
-  balance: ["base_url", "api_key", "timeout_seconds"],
+  balance: ["base_url", "api_key", "timeout_seconds", "accounting"],
 };
 // Hide transport tuning from the form without removing saved option values.
 const hiddenFields = {

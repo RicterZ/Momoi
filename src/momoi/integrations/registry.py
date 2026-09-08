@@ -129,7 +129,6 @@ class ServiceRegistry:
             )
         if capability == "llm":
             attributes = (
-                "accounting",
                 "usage_sink",
                 "thinking_sink",
                 "usage_parser",
@@ -138,6 +137,16 @@ class ServiceRegistry:
                 raise TypeError(
                     f"{binding.adapter}/llm must supply the LanguageModel attributes"
                 )
+        if capability == "balance" and (
+            not hasattr(instance, "accounting")
+            or (instance.accounting is not None and any(
+                not callable(getattr(instance.accounting, method, None))
+                for method in ("parse_usage", "estimate_cost")
+            ))
+        ):
+            raise TypeError(
+                f"{binding.adapter}/balance must supply accounting as None or a usage accounting strategy"
+            )
         if capability == "embedding" and not isinstance(
             getattr(instance, "space", None), EmbeddingSpaceConfig
         ):

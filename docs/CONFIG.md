@@ -419,7 +419,7 @@ Dashboard bind address and port are CLI options, not `config.json` fields.
 
 ## Account balance and token accounting
 
-See [Provider configuration](./PROVIDERS.md#account-balance-and-token-accounting) for options and setup. Balance queries are independent of local token recording; the DeepSeek LLM adapter supplies its usage parser and cost estimation.
+See [Provider configuration](./PROVIDERS.md#account-balance-and-token-accounting) for options and setup. The balance provider supplies optional usage parsing and cost estimation. Disabling it preserves generic token recording.
 
 ## Logging
 

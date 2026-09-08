@@ -133,7 +133,7 @@ class Store(
         self._recover_outbox()
         self._recover_webhooks()
 
-    def set_usage_accounting(self, plugin: UsageAccounting) -> None:
+    def set_usage_accounting(self, plugin: UsageAccounting | None) -> None:
         self._usage_accounting = plugin
 
     @property

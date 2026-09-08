@@ -81,3 +81,5 @@ bindings:
   balance:
     service: deepseek_account
     enabled: false
+    options:
+      accounting: false # Enable when the language model uses DeepSeek pricing.

@@ -1,4 +1,5 @@
 from typing import Protocol, TypedDict
+from ...llm.accounting import UsageAccounting
 
 
 class Balance(TypedDict):
@@ -9,4 +10,6 @@ class Balance(TypedDict):
 
 
 class BalanceProvider(Protocol):
+    accounting: UsageAccounting | None
+
     async def balance(self) -> Balance: ...

@@ -32,7 +32,6 @@ bindings:
     service: deepseek
     options:
       model: deepseek-v4-flash
-      accounting: deepseek
       max_tokens: 16384
       thinking:
         effort: high
@@ -41,6 +40,7 @@ bindings:
   balance:
     service: deepseek_balance
     options:
+      accounting: true
       timeout_seconds: 10
 ```
 
@@ -129,12 +129,14 @@ DeepSeek 余额需要 `api_key`，默认 `base_url: https://api.deepseek.com`、
 `timeout_seconds: 10`。后台通过 balance 能力查询余额；API 失败时显示不可用，
 不影响概览中的其他数据。
 
-Token 数量独立记录。模型高级参数 `accounting` 默认 `none`，只记录通用用量；
-选择 `deepseek` 才启用 DeepSeek 用量解析和官方价格估算，与接口协议分开配置。
-仅配置 DeepSeek 的余额服务不会给其他 LLM 套用 DeepSeek 价格。
-旧的 `adapter: deepseek` 模型绑定需改为 `adapter: openai` 并显式填写地址；需要保留
-专属统计时增加 `accounting: deepseek`。如果原服务同时用于余额，拆成两个 service，凭据仍可共享。
-禁用 balance 不影响 token 记录或 LLM 费用估算。
+DeepSeek 余额 provider 提供用量解析与官方价格估算。账户余额的基础参数
+`accounting` 是布尔值，默认 `true`。模型使用其他服务商时，在账户余额中关闭
+“费用估算”：余额仍正常查询，模型响应改用通用 Token 统计。关闭整个余额功能后，
+停止余额查询与费用估算，保留通用 Token 统计。两种模型协议均通过统一契约接入。
+
+已有配置需要删除 LLM options（包括 service settings）中的 `accounting`，
+改为在 DeepSeek balance binding 中配置 `accounting: true` 或 `false`。
+模型与余额保持独立绑定，仍可共享凭据。
 
 ## 扩展代码架构
 
@@ -156,6 +158,8 @@ Momoi 主配置。构造时不应打开网络资源。在进入注册表的 asyn
 from momoi.integrations.registry import Adapter, register_adapter
 
 class FixedBalance:
+    accounting = None
+
     def __init__(self, options, context):
         self.amount = options["amount"]
 
@@ -178,7 +182,11 @@ register_adapter(Adapter(
 凭据字段使用 `secret: True`，provider 配置 API 返回已保存的密钥原值。旧位置参数注册签名已移除。
 同一厂商新增其他 API 时，继续注册对应能力，无需修改主配置字段、业务消费者或后台。
 
-LLM 实现需提供契约中的 `accounting`、`usage_sink`、`thinking_sink`、
+余额实现需提供 `accounting`：仅查询余额时设为 `None`，支持估算时提供实现
+`parse_usage()` 和 `estimate_cost()` 的策略。运行时和 dashboard 通过契约调用，
+不判断厂商名称。计费参数由余额 adapter 的 schema 定义，显示在账户余额设置中。
+
+LLM 实现需提供契约中的 `usage_sink`、`thinking_sink`、
 `usage_parser` 和 `complete()`；不要求暴露厂商的 `config`。应用层统一通过
 `require_tool` / `required_tool` 表达工具调用要求，由 adapter 转换为厂商协议。
 需要响应的 Owner 轮次也采用这一契约，包括 Anthropic。

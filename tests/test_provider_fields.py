@@ -65,6 +65,8 @@ class ProviderFieldsTest(unittest.IsolatedAsyncioTestCase):
         self.instances = []
 
         class Balance:
+            accounting = None
+
             def __init__(instance, options, context):
                 instance.options = options
                 instance.closed = False
@@ -212,6 +214,7 @@ class ProviderFieldsTest(unittest.IsolatedAsyncioTestCase):
         result = await supervisor.balance()
 
         class Replacement:
+            accounting = None
             closed = False
 
             async def balance(self):

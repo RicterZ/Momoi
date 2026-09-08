@@ -49,8 +49,12 @@ class DeepSeekBalanceProvider:
         api_key: str,
         base_url: str = "https://api.deepseek.com",
         timeout_seconds: float = 10,
+        accounting: bool = True,
         transport: HTTPTransport | None = None,
     ) -> None:
+        if type(accounting) is not bool:
+            raise ValueError("accounting must be boolean")
+        self.accounting = DeepSeekAccounting() if accounting else None
         self.transport = transport or HTTPTransport()
         self.base_url = _root_url(str(base_url))
         self.api_key = str(api_key)

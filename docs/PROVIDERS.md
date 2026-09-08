@@ -35,7 +35,6 @@ bindings:
     service: deepseek
     options:
       model: deepseek-v4-flash
-      accounting: deepseek
       max_tokens: 16384
       thinking:
         effort: high
@@ -44,6 +43,7 @@ bindings:
   balance:
     service: deepseek_balance
     options:
+      accounting: true
       timeout_seconds: 10
 ```
 
@@ -151,14 +151,16 @@ DeepSeek balance requires `api_key`; `base_url` defaults to
 The dashboard queries the balance provider. API failure marks balance unavailable
 while the rest of the overview remains usable.
 
-Token counts are recorded from LLM responses independently. The advanced model
-option `accounting` defaults to `none` (generic usage only); `deepseek` selects
-DeepSeek usage parsing and official pricing estimates independently of protocol.
-Selecting only a DeepSeek balance binding does not apply DeepSeek prices to another LLM.
-Replace old model `adapter: deepseek` bindings with `adapter: openai` and an
-explicit URL; set `accounting: deepseek` to retain vendor statistics. A service
-shared with balance must be split into two services, which may share credentials.
-Disabling balance has no effect on token recording or LLM cost estimation.
+The DeepSeek balance provider owns its usage parser and official pricing estimates.
+Its `accounting` boolean defaults to `true`. Turn off **Cost estimation**
+in Account balance when using another model vendor: balance queries continue,
+while model responses use generic token recording. Disabling the entire balance
+capability stops balance queries and cost estimates; token recording continues.
+Both model protocols consume the selected balance provider's accounting contract.
+
+Existing configurations must remove `accounting` from LLM options (including service
+settings). Set `accounting: true` or `false` on the DeepSeek balance binding instead.
+Model and balance services may share credentials but remain separate bindings.
 
 ## Extend the architecture
 
@@ -184,6 +186,8 @@ For example, `my_balance.py` implements a fixed balance source for local testing
 from momoi.integrations.registry import Adapter, register_adapter
 
 class FixedBalance:
+    accounting = None
+
     def __init__(self, options, context):
         self.amount = options["amount"]
 
@@ -209,7 +213,12 @@ positional registration signature has been removed. Register another capability
 for the same adapter when a vendor exposes more APIs. New adapters do not require
 changes to Momoi config fields, runtime consumers, or the dashboard.
 
-LLM implementations supply `accounting`, `usage_sink`, `thinking_sink`,
+Balance implementations supply `accounting`: either `None` for balance only, or a
+strategy implementing `parse_usage()` and `estimate_cost()`. The runtime and
+dashboard use this contract without checking vendor names. Declare any pricing
+options in the balance adapter's schema; they appear in Account balance settings.
+
+LLM implementations supply `usage_sink`, `thinking_sink`,
 `usage_parser`, and `complete()` as defined by the contract. Vendor `config` is
 private to the adapter. The application expresses tool requirements through
 `require_tool` / `required_tool`, including Owner rounds requiring a response on

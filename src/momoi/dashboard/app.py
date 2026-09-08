@@ -279,8 +279,9 @@ def create_dashboard_app(
         )
 
     async def overview(request: web.Request) -> web.Response:
-        data = store.dashboard_overview()
         plugin = request.app[BALANCE_PROVIDER]
+        store.set_usage_accounting(plugin.accounting if plugin is not None else None)
+        data = store.dashboard_overview()
         if plugin is not None:
             try:
                 data["balance"] = await plugin.balance()
@@ -308,6 +309,8 @@ def create_dashboard_app(
         return web.json_response(data)
 
     async def usage(request: web.Request) -> web.Response:
+        plugin = request.app[BALANCE_PROVIDER]
+        store.set_usage_accounting(plugin.accounting if plugin is not None else None)
         if "date" in request.query:
             try:
                 return web.json_response(

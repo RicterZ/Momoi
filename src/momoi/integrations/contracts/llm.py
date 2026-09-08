@@ -1,11 +1,9 @@
 from typing import Any, Callable, Protocol
-from ...llm.accounting import UsageAccounting
 
 from ...models import ProviderResponse
 
 
 class LanguageModel(Protocol):
-    accounting: UsageAccounting | None
     usage_sink: Callable[..., None] | None
     thinking_sink: Callable[..., None] | None
     usage_parser: Callable[..., Any] | None

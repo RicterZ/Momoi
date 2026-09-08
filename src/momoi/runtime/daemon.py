@@ -94,7 +94,8 @@ class MomoiDaemon(
             client=self.services.embedding,
         )
         self.semantic_recall.start()
-        accounting = self.services.llm.accounting
+        balance = self.services.balance
+        accounting = balance.accounting if balance is not None else None
         if accounting is not None:
             self.store.set_usage_accounting(accounting)
         self.store.ensure_heartbeat(config.heartbeat)
