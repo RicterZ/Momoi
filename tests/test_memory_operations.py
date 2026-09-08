@@ -893,7 +893,7 @@ def test_tagged_text_and_native_send_both_use_delivery_tools(daemon, tagged):
     )] == expected
 
 
-@pytest.mark.parametrize('stage', ['heartbeat', 'webhook'])
+@pytest.mark.parametrize('stage', ['heartbeat', 'webhook', 'reply_followup', 'goal'])
 @pytest.mark.parametrize('with_terminal', [False, True])
 def test_non_owner_tagged_text_respects_terminal_sequence(daemon, stage, with_terminal):
     from types import SimpleNamespace
@@ -905,8 +905,14 @@ def test_non_owner_tagged_text_respects_terminal_sequence(daemon, stage, with_te
             'activity': '分享消息', 'result': '分享完成',
             'next_check_minutes': 30, 'reason': '完成本轮',
         }
+    if stage == 'reply_followup':
+        daemon.store.pending_owner_reply = lambda: {'turn_id': 'previous'}
+    if stage == 'goal':
+        from unittest.mock import Mock
+        daemon.agenda_tools.finish_review = Mock(return_value={'ok': True})
+        terminal = {'goal': {'status': 'done', 'result': '分享完成'}}
     tagged = response(ToolCall('early-end', 'end_turn', terminal)) if with_terminal else ProviderResponse([], [])
-    tagged.content.insert(0, {'type': 'text', 'text': '<bubble>刚看到一条消息</bubble>'})
+    tagged.content.insert(0, {'type': 'text', 'text': '刷到一条跟我本行有关的消息\n<bubble>刚看到一条消息</bubble>'})
     replies = []
     if stage == 'heartbeat':
         replies.append(response(ToolCall('begin', 'heartbeat_begin', {
@@ -914,8 +920,6 @@ def test_non_owner_tagged_text_respects_terminal_sequence(daemon, stage, with_te
             'recall_queries': [], 'tool_groups': [], 'strategy': ['分享当前消息'],
         })))
     replies.append(tagged)
-    if with_terminal:
-        replies.append(response(ToolCall('send', 'send_bubbles', {'bubbles': ['刚看到一条消息']})))
     replies.append(response(ToolCall('finish', 'end_turn', terminal)))
     after_tagged = False
 
@@ -923,15 +927,16 @@ def test_non_owner_tagged_text_respects_terminal_sequence(daemon, stage, with_te
         nonlocal after_tagged
         if after_tagged:
             after_tagged = False
+            result = json.loads(messages[-1]['content'][0]['content'])
+            assert result['ok'] and result['state'] == 'committed'
             if with_terminal:
-                assert 'end_turn_must_be_alone' in str(messages[-1])
-                assert not daemon.store.due_outbox()
+                assert 'end_turn_deferred_until_tool_results' in str(messages[-1])
                 calls = [b for b in messages[-2]['content'] if b['type'] == 'tool_use']
                 assert [c['name'] for c in calls] == ['send_bubbles', 'end_turn']
                 assert calls[1]['id'] == 'early-end'
-            else:
-                result = json.loads(messages[-1]['content'][0]['content'])
-                assert result['ok'] and result['state'] == 'committed'
+                assert messages[-1]['content'][1]['tool_use_id'] == 'early-end'
+            if stage == 'goal':
+                daemon.agenda_tools.finish_review.assert_not_called()
         assert replies, 'Unexpected protocol retry'
         reply = replies.pop(0)
         after_tagged = reply is tagged
@@ -942,8 +947,119 @@ def test_non_owner_tagged_text_respects_terminal_sequence(daemon, stage, with_te
     asyncio.run(daemon._run_tool_loop(
         [], [{'role': 'user', 'content': 'test'}],
         daemon.tool_surface.conversation_specs(), [], TurnDraft(),
-        execution=TurnExecutionSpec(stage, permitted_tools=daemon.tool_surface.permitted_names(stage)),
+        execution=TurnExecutionSpec(
+            stage, goal_id='test-goal' if stage == 'goal' else None,
+            permitted_tools=daemon.tool_surface.permitted_names(stage),
+        ),
         source_event_id='test', turn_id='tagged-test', delivery_channel=daemon.channel,
     ))
     assert not replies
     assert [r.text for r in daemon.store.due_outbox()] == ['刚看到一条消息']
+    if stage == 'goal':
+        daemon.agenda_tools.finish_review.assert_called_once()
+
+
+@pytest.mark.parametrize('early_bubbles', [False, True])
+def test_owner_tagged_prelude_satisfies_progress_after_recall(daemon, early_bubbles):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    from tests.support import recall_response
+
+    source = event(daemon.store)
+    work = response(ToolCall('work', 'goal_create', {}))
+    work.content.insert(0, {'type': 'text', 'text': '准备处理\n<bubble>我来安排</bubble>'})
+    replies = [recall_response(), work, response(ToolCall('end', 'end_turn', {
+        'reply_wait': {'wait': False}, 'mood': {'decision': 'unchanged'},
+        'activity': {'decision': 'unchanged'},
+    }))]
+    if early_bubbles:
+        replies.insert(0, ProviderResponse([{'type': 'text', 'text': '<bubble>太早了</bubble>'}], []))
+    calls = 0
+
+    def execute(*args, **kwargs):
+        assert [r.text for r in daemon.store.due_outbox()] == ['我来安排']
+        return {'ok': True}
+
+    daemon.agenda_tools.execute = Mock(side_effect=execute)
+
+    async def complete(_system, messages, *args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if early_bubbles and calls == 2:
+            assert 'recall_must_be_first_and_alone' in str(messages[-1])
+            assert not daemon.store.due_outbox()
+        assert replies, 'Unexpected protocol retry'
+        return replies.pop(0)
+
+    daemon.provider = SimpleNamespace(complete=complete, config=SimpleNamespace(api_format='anthropic'))
+    asyncio.run(daemon._complete_batch_turn([source], asyncio.Event(), 'source'))
+    assert not replies
+    daemon.agenda_tools.execute.assert_called_once()
+    assert [r.text for r in daemon.store.due_outbox()] == ['我来安排']
+
+
+def test_private_workflow_cannot_send_tagged_bubbles(daemon):
+    source = event(daemon.store)
+    submit(daemon.store, source)
+    calls = 0
+
+    async def complete(_system, messages, *args, **kwargs):
+        nonlocal calls
+        calls += 1
+        assert calls <= 2
+        if calls == 1:
+            return ProviderResponse([{'type': 'text', 'text': '<bubble>不能发送</bubble>'}], [])
+        assert 'tool_not_allowed' in str(messages[-1])
+        return response(ToolCall('finish', 'memory_operation_finish', {'decisions': [write(source)]}))
+
+    daemon.provider = type('Provider', (), {'complete': staticmethod(complete)})()
+    asyncio.run(daemon._complete_memory_operation_turn('source', asyncio.Event()))
+    assert calls == 2
+    assert daemon.store.active_memory('preference', 'drink')
+    assert not daemon.store.due_outbox()
+
+
+@pytest.mark.parametrize('tagged', [True, False])
+def test_goal_send_failure_is_observed_before_finish(daemon, tagged):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    from momoi.runtime.agent import TurnExecutionSpec
+
+    # A blank line is invalid within one bubble, for both delivery forms.
+    failed = response(ToolCall('early-end', 'end_turn', {
+        'goal': {'status': 'done', 'result': '未经证实的发送成功'},
+    }))
+    if tagged:
+        failed.content.insert(0, {'type': 'text', 'text': '<bubble>第一段\n\n第二段</bubble>'})
+    else:
+        send = response(ToolCall('send', 'send_bubbles', {'bubbles': ['第一段\n\n第二段']}))
+        failed = ProviderResponse(
+            send.content + failed.content, send.tool_calls + failed.tool_calls,
+        )
+    outcome = {'status': 'blocked', 'result': '发送失败'}
+    replies = [failed, response(ToolCall('finish', 'end_turn', {'goal': outcome}))]
+    daemon.agenda_tools.finish_review = Mock(return_value={'ok': True})
+
+    async def complete(_system, messages, *args, **kwargs):
+        assert replies, 'Unexpected protocol retry'
+        if len(replies) == 1:
+            results = [json.loads(b['content']) for b in messages[-1]['content']]
+            assert results[0]['error'] == 'blank_lines_must_be_separate_bubbles'
+            assert results[1]['error'] == 'end_turn_deferred_until_tool_results'
+            assert not daemon.store.due_outbox()
+            daemon.agenda_tools.finish_review.assert_not_called()
+        return replies.pop(0)
+
+    daemon.provider = SimpleNamespace(complete=complete, config=SimpleNamespace(api_format='anthropic'))
+    daemon.store.begin_turn('failed-send', 'goal', [])
+    draft = TurnDraft()
+    asyncio.run(daemon._run_tool_loop(
+        [], [{'role': 'user', 'content': 'test'}],
+        daemon.tool_surface.conversation_specs(), [], draft,
+        execution=TurnExecutionSpec('goal', goal_id='test-goal',
+                                    permitted_tools=daemon.tool_surface.permitted_names('goal')),
+        source_event_id='test', turn_id='failed-send', delivery_channel=daemon.channel,
+    ))
+    assert not replies
+    assert not daemon.store.due_outbox()
+    daemon.agenda_tools.finish_review.assert_called_once_with('test-goal', outcome, draft)

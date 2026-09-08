@@ -9,8 +9,9 @@ from ..turn_support import ExternalToolTurnError, MAX_CONSECUTIVE_TOOL_FAILURES
 from .workflow import TurnExecutionSpec, WorkflowProtocolError
 
 OWNER_BUBBLE_REQUEST_REMINDER = (
-    "Assistant text is not delivered to the owner. Use send_bubbles or send_voice "
-    "for owner-visible messages; otherwise call the next work or terminal tool."
+    "Use <bubble>...</bubble>, send_bubbles, or send_voice "
+    "for owner-visible messages. Text outside bubble blocks is not delivered; "
+    "otherwise call the next work or terminal tool."
 )
 
 _PRIVATE_REASONING_BLOCK_TYPES = frozenset(
@@ -107,7 +108,7 @@ def handle_no_tool_response(
                     "role": "user",
                     "content": (
                         "[Trusted runtime protocol error. Plain text was not stored. "
-                        "Continue with native tools, or call end_turn alone with the "
+                        "Send explicit <bubble>...</bubble> messages, continue with native tools, or call end_turn alone with the "
                         "current Goal outcome in goal when ready.]"
                     ),
                 },
@@ -125,13 +126,13 @@ def handle_no_tool_response(
     elif owner_turn:
         correction = (
             "[Trusted runtime protocol error: no native tool call was returned. "
-            "Call send_bubbles with the owner-visible bubbles, without end_turn. "
+            "Call send_bubbles or write <bubble>...</bubble> for owner-visible messages, without end_turn. "
             "After its result, call end_turn alone on the next step.]"
         )
     else:
         correction = (
             "[Trusted runtime protocol error: no native tool call was returned. "
-            "Continue with native tool calls following the current workflow; assistant text is not delivered.]"
+            "Continue with native tool calls or explicit <bubble>...</bubble> messages following the current workflow; text outside bubble blocks is not delivered.]"
         )
     messages.extend(
         [

@@ -16,12 +16,27 @@ def test_decodes_transcript_escaping_once():
 
 @pytest.mark.parametrize('text', [
     '', '普通正文', '[turn=T52]', '<bubble></bubble>',
-    '<bubble>未结束', '<bubble>好了</bubble>剩余正文',
-    '我准备发送：<bubble>好了</bubble>',
+    '<bubble>未结束',
     '<bubble>第一条</bubble><bubble>未结束',
     '<bubble><bubble>嵌套</bubble></bubble>',
-    '<bubble>第一条</bubble>[turn=T53]<bubble>第二条</bubble>',
     '```xml\n<bubble>示例</bubble>\n```',
 ])
-def test_incomplete_or_mixed_text_is_not_partially_sent(text):
+def test_incomplete_or_example_text_is_not_partially_sent(text):
     assert parse_tagged_bubbles(text) is None
+
+
+@pytest.mark.parametrize('text', [
+    '<bubble>好了</bubble>剩余正文',
+    '我准备发送：<bubble>好了</bubble>',
+    '```xml\n<bubble>示例</bubble>\n```\n<bubble>好了</bubble>',
+    '~~~xml\n<bubble>示例</bubble>\n~~~\n<bubble>好了</bubble>',
+])
+def test_extracts_only_explicit_bubbles_outside_examples(text):
+    assert parse_tagged_bubbles(text) == ['好了']
+
+
+def test_preserves_order_and_single_newlines_in_mixed_text():
+    assert parse_tagged_bubbles(
+        '刷到一条消息\n<bubble>第一行\n第二行</bubble>私有说明'
+        '<bubble>emotion://happy-dance</bubble>'
+    ) == ['第一行\n第二行', 'emotion://happy-dance']

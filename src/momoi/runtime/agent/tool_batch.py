@@ -57,6 +57,7 @@ class ToolBatchRequest:
     prepare_heartbeat_context: PrepareHeartbeatContext
     submit_owner_context: SubmitOwnerContext
     settle_owner_updates: SettleOwnerUpdates
+    defer_end_turn: bool = False
 
 
 @dataclass(frozen=True)
@@ -145,6 +146,16 @@ class ToolBatchExecutor:
                 }
             elif call.name not in allowed_tool_names:
                 result = {"ok": False, "error": "tool_not_allowed"}
+            elif call.name == "end_turn" and request.defer_end_turn:
+                result = {
+                    "ok": False,
+                    "error": "end_turn_deferred_until_tool_results",
+                    "message": (
+                        "Read this batch's send and work results before finishing. "
+                        "Do not resend committed bubbles. Handle any failures, then "
+                        "call end_turn alone with an outcome grounded in those results."
+                    ),
+                }
             elif call.name == "heartbeat_begin":
                 async def prepare_heartbeat_context(arguments):
                     prepared = await request.prepare_heartbeat_context(arguments)

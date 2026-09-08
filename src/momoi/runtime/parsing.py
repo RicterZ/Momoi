@@ -23,21 +23,29 @@ def response_text(content: list[dict[str, Any]]) -> str:
 
 
 def parse_tagged_bubbles(text: str) -> list[str] | None:
-    """Read a complete bubble transcript, preserving boundaries and inner newlines."""
-    remaining = re.sub(r"\A\s*\[turn=T\d+\]\s*", "", text).strip()
+    """Extract explicit messages from mixed text, preserving inner newlines."""
+    # Fenced examples outside bubbles are not messages. Match whole bubbles so
+    # that code fences inside a message remain part of its original content.
+    tokens = re.finditer(
+        r"(?m:^[ \t]{0,3}(`{3,}|~{3,})[^\n]*(?:\n|$)).*?"
+        r"(?m:^[ \t]{0,3}\1[ \t]*(?:\n|$)|\Z)"
+        r"|<bubble>(.*?)</bubble>|</?bubble\b",
+        text,
+        re.DOTALL,
+    )
     bubbles: list[str] = []
-    while remaining:
-        match = re.match(r"<bubble>(.*?)</bubble>", remaining, re.DOTALL)
-        if match is None:
+    for match in tokens:
+        if match.group(1) is not None:
+            continue
+        body = match.group(2)
+        if body is None:
             return None
-        body = match.group(1)
         if "<bubble" in body or "</bubble" in body:
             return None
         body = unescape(body).strip()
         if not body:
             return None
         bubbles.append(body)
-        remaining = remaining[match.end():].lstrip()
     return bubbles or None
 
 

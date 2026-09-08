@@ -260,28 +260,27 @@ class AgentLoop:
                 failed_tool_rounds = 0
                 remind_owner_bubbles = False
                 continue
-            if harness.started:
-                bubbles = parse_tagged_bubbles(response_text(response.content))
-                if bubbles is not None:
-                    call = ToolCall(
-                        f"text-bubbles:{call_id}", "send_bubbles", {"bubbles": bubbles}
-                    )
-                    # Use the normal tool path for validation, delivery, deduplication,
-                    # owner interruption, and the tool result consumed next round.
-                    response = replace(
-                        response,
-                        content=[{
-                            "type": "tool_use", "id": call.id,
-                            "name": call.name, "input": call.arguments,
-                        }, *response.content],
-                        tool_calls=[call, *response.tool_calls],
-                    )
-                    log_event(
-                        logger, logging.DEBUG, "assistant_bubbles_adapted",
-                        stage=stage, turn_id=turn_id, call_id=call_id,
-                        round=llm_round, channel=delivery_channel.name,
-                        tool_call_id=call.id, bubbles=len(bubbles),
-                    )
+            bubbles = parse_tagged_bubbles(response_text(response.content))
+            if bubbles is not None:
+                call = ToolCall(
+                    f"text-bubbles:{call_id}", "send_bubbles", {"bubbles": bubbles}
+                )
+                # Use the normal tool path for validation, delivery, deduplication,
+                # owner interruption, and the tool result consumed next round.
+                response = replace(
+                    response,
+                    content=[{
+                        "type": "tool_use", "id": call.id,
+                        "name": call.name, "input": call.arguments,
+                    }, *response.content],
+                    tool_calls=[call, *response.tool_calls],
+                )
+                log_event(
+                    logger, logging.DEBUG, "assistant_bubbles_adapted",
+                    stage=stage, turn_id=turn_id, call_id=call_id,
+                    round=llm_round, channel=delivery_channel.name,
+                    tool_call_id=call.id, bubbles=len(bubbles),
+                )
             if not response.tool_calls:
                 resolution = handle_no_tool_response(
                     messages,
@@ -313,8 +312,22 @@ class AgentLoop:
                 if resolution.action == "return":
                     return None
                 continue
+            # Sending and finishing in one response cannot establish delivery
+            # success. Execute the messages/work, then return a result for the
+            # deferred end_turn so the model can finish from observed outcomes.
+            defer_end_turn = (
+                any(
+                    call.name in {"send_bubbles", "send_voice"}
+                    for call in response.tool_calls
+                )
+                and any(call.name == "end_turn" for call in response.tool_calls)
+            )
+            executable_calls = [
+                call for call in response.tool_calls
+                if not (defer_end_turn and call.name == "end_turn")
+            ]
             harness_error = harness.validate(
-                response.tool_calls,
+                executable_calls,
                 required_tool=required_tool,
             )
             if harness_error is not None:
@@ -355,7 +368,7 @@ class AgentLoop:
                     ]
                 )
                 continue
-            harness.observe_calls(response.tool_calls)
+            harness.observe_calls(executable_calls)
             assistant_text = response_text(response.content)
             log_event(
                 logger,
@@ -437,6 +450,7 @@ class AgentLoop:
             batch = await self.tool_batch.execute(
                 ToolBatchRequest(
                     response=response,
+                    defer_end_turn=defer_end_turn,
                     messages=messages,
                     request_tools=request_tools,
                     tools=tools,

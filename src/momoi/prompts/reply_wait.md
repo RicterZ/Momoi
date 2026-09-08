@@ -8,5 +8,6 @@ remains open. This trigger is not a new owner message.
   the owner has been silent.
 - Contact is already due. Do not reconsider it, schedule another wait, or begin
   unrelated work. Use shared history and memory to make the continuation fit.
-- Call `send_bubbles` first and alone. After its result, call `end_turn` alone
+- Send `<bubble>...</bubble>` or call `send_bubbles` first, without other tools.
+  After its result, call `end_turn` alone
   with `reply_wait.wait` set to false.

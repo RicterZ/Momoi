@@ -32,7 +32,7 @@ CHANNEL_BUBBLE_SCHEMA: dict[str, Any] = {
             "type": "string",
             "minLength": 1,
             "description": (
-                "Non-empty text content. Assistant text is not delivered. Put "
+                "Non-empty text content. Put "
                 "blank-line-separated text in separate bubbles. An emotion:// value "
                 "must exactly match emotion://<listed-slug> from <emotion_catalog>; "
                 "it sends a standalone reaction image."
@@ -290,7 +290,9 @@ SEND_BUBBLES_TOOL_SPEC: dict[str, Any] = {
     "description": (
         "Send owner-visible messages with the exact bubbles; use send_voice for speech "
         "when available. Starts delivery immediately, independently of end_turn. "
-        "Assistant text is not delivered. After all work, call the current workflow's "
+        "Explicit <bubble>...</bubble> blocks in assistant text are equivalent to this tool "
+        "and use the current channel; text outside them is not delivered. "
+        "After all work and delivery results, call the current workflow's "
         "terminal tool alone. Text may accompany images; files, video, audio, and "
         "records must stand alone."
     ),

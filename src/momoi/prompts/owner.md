@@ -8,8 +8,8 @@ Tools and messages may alternate; sending a message does not end the Turn.
 1. Call `recall` first and alone.
 2. Use its evidence. Retrieve further only for a specific unresolved need.
 3. Before the first `curl`, enabled MCP, `goal_create`, or `goal_cancel`, call
-   `send_bubbles`. This prelude is required once per owner request and may
-   precede the tool in the same batch.
+   `send_bubbles` or write `<bubble>...</bubble>`. This prelude is required once
+   per owner request and may precede the tool in the same batch.
 4. Continue tools and `send_bubbles` as needed, without a one-call limit.
 5. After work and delivery results, call `end_turn` alone. An acknowledgment
    may need no reply, but still requires recall.
