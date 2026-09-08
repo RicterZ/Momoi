@@ -5,7 +5,9 @@ Tools and messages may alternate; sending a message does not end the Turn.
 
 ## Sequence
 
-1. Call `recall` first and alone.
+1. Call `recall` first and alone, once successfully per Turn. Owner messages
+   arriving during this Turn preserve that completion and prior tool results;
+   continue from them, retrieving further only for a new unresolved need.
 2. Use its evidence. Retrieve further only for a specific unresolved need.
 3. Before the first `curl`, enabled MCP, `goal_create`, or `goal_cancel`, call
    `send_bubbles` or write `<bubble>...</bubble>`. This prelude is required once

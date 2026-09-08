@@ -75,6 +75,10 @@ class TurnHarness:
         self.started = self.spec.first_tool is None
         self.progress_bubbles_seen = False
 
+    def accept_owner_update(self) -> None:
+        """Keep the Turn's completed opening; renew per-request progress rules."""
+        self.progress_bubbles_seen = False
+
     def validate_surface(self, tool_names: set[str]) -> None:
         required = {self.spec.terminal_tool}
         if self.spec.first_tool is not None:

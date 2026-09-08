@@ -122,7 +122,7 @@ class AgentLoop:
                     messages,
                     delivery_channel,
                 )
-                harness.reset()
+                harness.accept_owner_update()
                 failed_tool_rounds = 0
                 remind_owner_bubbles = False
             required_tool = harness.spec.first_tool if not harness.started else None
@@ -209,7 +209,7 @@ class AgentLoop:
                     messages,
                     delivery_channel,
                 )
-                harness.reset()
+                harness.accept_owner_update()
                 failed_tool_rounds = 0
                 remind_owner_bubbles = False
                 continue
@@ -256,7 +256,7 @@ class AgentLoop:
                     messages,
                     delivery_channel,
                 )
-                harness.reset()
+                harness.accept_owner_update()
                 failed_tool_rounds = 0
                 remind_owner_bubbles = False
                 continue
@@ -499,7 +499,7 @@ class AgentLoop:
                     messages,
                     delivery_channel,
                 )
-                harness.reset()
+                harness.accept_owner_update()
                 failed_tool_rounds = 0
                 continue
             if (

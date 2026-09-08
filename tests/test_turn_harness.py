@@ -163,8 +163,8 @@ class TurnHarnessTest(unittest.TestCase):
         self.assertIsNone(harness.validate([bubbles, curl]))
         harness.observe_calls([bubbles, curl])
         self.assertIsNone(harness.validate([curl]))
-        harness.reset()
-        harness.accept("recall")
+        harness.accept_owner_update()
+        self.assertTrue(harness.started)
         self.assertEqual(
             harness.validate([curl]),
             "send_bubbles_required_before_progress_work",

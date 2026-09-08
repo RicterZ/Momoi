@@ -817,6 +817,8 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         self.assertIn(
                             "地址改成上海", json.dumps(messages, ensure_ascii=False)
                         )
+                        self.assertIsNone(___.get("required_tool"))
+                        self.assertIn("旧地址天气", json.dumps(messages, ensure_ascii=False))
                         stale_end_turn_started.set()
                         try:
                             await finish_stale_end_turn.wait()
@@ -831,10 +833,11 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     elif provider_self.calls == 3:
                         rendered = json.dumps(messages, ensure_ascii=False)
                         self.assertIn("不用查天气了", rendered)
-                        call = ToolCall(
-                            "final-message",
-                            "send_bubbles",
-                            {"bubbles": ["收到，不查了"]},
+                        self.assertIsNone(___.get("required_tool"))
+                        self.assertIn("旧地址天气", rendered)
+                        self.assertIn('"state": "recalled"', rendered.replace('\\"', '"'))
+                        return ProviderResponse(
+                            [{"type": "text", "text": "<bubble>收到，不查了</bubble>"}], []
                         )
                     else:
                         call = ToolCall(
@@ -907,7 +910,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             ).fetchall()
             self.assertEqual(
                 [(row["revision"], row["state"]) for row in plans],
-                [(1, "superseded"), (2, "superseded"), (3, "recalled")],
+                [(1, "recalled")],
             )
             self.assertEqual(daemon.store.pending_events(), [])
             daemon.store.close()

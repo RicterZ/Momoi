@@ -63,29 +63,7 @@ class ContextAwareProvider:
         **kwargs: object,
     ) -> ProviderResponse:
         names = {str(spec.get("name") or "") for spec in tools or []}
-        last_recall = -1
-        last_current_input = -1
-        for index, message in enumerate(messages):
-            content = (
-                message.get("content")
-                if isinstance(message.get("content"), list)
-                else []
-            )
-            if any(
-                isinstance(block, dict)
-                and block.get("type") == "tool_use"
-                and block.get("name") == RECALL_TOOL_SPEC["name"]
-                for block in content
-            ):
-                last_recall = index
-            if any(
-                isinstance(block, dict)
-                and "<current_owner_bubbles>" in str(block.get("text") or "")
-                for block in content
-            ):
-                last_current_input = index
-        submitted = last_recall > last_current_input
-        if RECALL_TOOL_SPEC["name"] in names and not submitted:
+        if RECALL_TOOL_SPEC["name"] in names and kwargs.get("required_tool") == "recall":
             return recall_response()
         return await self.delegate.complete(  # type: ignore[attr-defined,no-any-return]
             system, messages, tools, **kwargs

@@ -54,7 +54,9 @@ class OwnerWorkflow:
                 "runtime_directives",
                 "[Trusted runtime update received while the previous operation was "
                 "running. Re-evaluate the next action and any planned reply using "
-                "the owner's latest intent.]",
+                "the owner's latest intent. Prior tool results and any successful "
+                "opening recall remain valid in this Turn; do not repeat the "
+                "opening recall. If it has not succeeded yet, complete it first.]",
             ),
             (
                 "runtime_state",

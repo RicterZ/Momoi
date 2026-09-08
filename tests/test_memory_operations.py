@@ -1063,3 +1063,55 @@ def test_goal_send_failure_is_observed_before_finish(daemon, tagged):
     assert not replies
     assert not daemon.store.due_outbox()
     daemon.agenda_tools.finish_review.assert_called_once_with('test-goal', outcome, draft)
+
+
+@pytest.mark.parametrize('recall_succeeded', [True, False])
+def test_owner_update_preserves_actual_recall_completion(daemon, recall_succeeded):
+    from types import SimpleNamespace
+    from tests.support import recall_response
+
+    source = event(daemon.store)
+    update = IncomingMessage('update', 'update', '先别找了', time.time(), time.time())
+    original = daemon.submit_owner_context
+    submissions = 0
+
+    async def submit_context(*args, **kwargs):
+        nonlocal submissions
+        submissions += 1
+        if submissions == 1:
+            daemon.store.add_event(update)
+            await daemon.incoming.put(update)
+            if not recall_succeeded:
+                raise ValueError('recall failed before owner update')
+        return await original(*args, **kwargs)
+
+    daemon.submit_owner_context = submit_context
+    calls = 0
+
+    async def complete(_system, messages, *args, **kwargs):
+        nonlocal calls
+        calls += 1
+        assert calls <= (4 if recall_succeeded else 5), 'Unexpected protocol retry'
+        if calls == 1:
+            return recall_response()
+        if calls == 2:
+            assert '先别找了' in str(messages)
+            assert kwargs.get('required_tool') == (None if recall_succeeded else 'recall')
+            assert 'recall' in str(messages[:-1])
+            return ProviderResponse([{'type': 'text', 'text': '<bubble>收到，不找了</bubble>'}], [])
+        if not recall_succeeded and calls == 3:
+            assert 'recall_must_be_first_and_alone' in str(messages[-1])
+            assert not daemon.store.due_outbox()
+            return recall_response()
+        if not recall_succeeded and calls == 4:
+            return ProviderResponse([{'type': 'text', 'text': '<bubble>收到，不找了</bubble>'}], [])
+        assert 'committed' in str(messages[-1])
+        return response(ToolCall('end', 'end_turn', {
+            'reply_wait': {'wait': False}, 'mood': {'decision': 'unchanged'},
+            'activity': {'decision': 'unchanged'},
+        }))
+
+    daemon.provider = SimpleNamespace(complete=complete, config=SimpleNamespace(api_format='anthropic'))
+    asyncio.run(daemon._complete_batch_turn([source], asyncio.Event(), 'source'))
+    assert submissions == (1 if recall_succeeded else 2)
+    assert [r.text for r in daemon.store.due_outbox()] == ['收到，不找了']
