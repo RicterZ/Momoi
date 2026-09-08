@@ -399,6 +399,12 @@
   align-items: center;
   min-height: 60px;
 }
+#settings-panel-balance .settings-grid-item:has(> .settings-boolean) {
+  align-self: end;
+}
+#settings-panel-balance .settings-boolean {
+  min-height: 44px;
+}
 .settings-text-button {
   display: inline-flex;
   align-items: center;
