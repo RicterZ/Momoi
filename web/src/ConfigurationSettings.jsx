@@ -49,8 +49,8 @@ const modules = [
     optional: true,
     tip: "关闭后停止余额查询与费用估算，本地请求量与通用 Token 用量统计仍然保留。",
   },
-  { id: "mcp", label: "MCP 工具" },
   { id: "runtime", label: "运行设置" },
+  { id: "mcp", label: "MCP 工具" },
 ];
 const capabilityLabels = { asr: "语音识别", tts: "语音合成" };
 const adapterLabels = {
