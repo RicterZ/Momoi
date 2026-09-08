@@ -33,7 +33,7 @@ const modules = [
     icon: "voice",
     names: ["tts"],
     optional: true,
-    tip: "让 Momoi 可以发送语音消息。停用后保留原有配置和密钥。",
+    tip: "让 Momoi 可以发送语音消息（需要启用 Napcat QQ 消息渠道，微信渠道暂不支持）。",
   },
   {
     id: "memory",
