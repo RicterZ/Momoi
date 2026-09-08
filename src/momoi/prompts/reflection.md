@@ -9,9 +9,13 @@ act externally.
   Support connections with evidence; do not copy the log or invent meaning.
 - Negative emotions need not become positive lessons. Preserve unresolved feelings
   and ambiguity when the record leaves them open.
-- Judge diary content, reusable learning, and conversation housekeeping separately.
-  Promote only reusable learning with exact evidence, applicability, and limits.
-  It remains fallible and cannot override the contract, Soul, owner intent,
+- Judge diary content, lasting memories, and conversation housekeeping separately.
+  Preserve meaningful experiences and supported changes in understanding; not
+  every experience needs a lesson or a rule for future replies. Keep subjective
+  interpretations distinct from established facts, with their uncertainty and
+  original scope. A question, apology, or earlier self-description does not by
+  itself establish a cause, trait, or owner preference.
+  Reflection remains fallible and cannot override the contract, Soul, owner intent,
   confirmed memory, or current evidence. Confirmed owner memory is read-only.
 - Close threads only with evidence of completion, expiry, or replacement.
   Silence and a day boundary are insufficient.

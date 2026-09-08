@@ -652,6 +652,9 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             ("GET", "/api/usage", None),
             ("GET", "/api/health", None),
             ("GET", "/api/memories", None),
+            ("GET", "/api/reflection-memories", None),
+            ("PATCH", "/api/reflection-memories/1", {"content": "改掉"}),
+            ("DELETE", "/api/reflection-memories/1", None),
             ("GET", "/api/emotions", None),
             ("GET", "/api/settings/prompts", None),
             ("GET", "/api/settings", None),
@@ -769,6 +772,79 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(deleted.status, 200)
         remaining = await (await self.client.get("/api/memories", headers=auth)).json()
         self.assertEqual(len(remaining["items"]), 2)
+
+    async def test_reflection_memory_management_and_diary_link(self) -> None:
+        now = time.time()
+        with self.store._db:
+            cursor = self.store._db.execute(
+                """INSERT INTO reflection_memories
+                   (kind, key, content, evidence, confidence, source_reflection_id,
+                    created_at, updated_at) VALUES
+                   ('shared_experience', 'testing', '一起完成测试。', '今天完成了测试。',
+                    0.8, 'reflection:2026-08-13', ?, ?)""",
+                (now, now),
+            )
+        memory_id = cursor.lastrowid
+        path = f"/api/reflection-memories/{memory_id}"
+        auth = self._auth()
+        response = await self.client.get("/api/reflection-memories", headers=auth)
+        items = (await response.json())["items"]
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["local_date"], "2026-08-13")
+        self.assertEqual(items[0]["confidence"], 0.8)
+
+        for content in ["", "  ", "长" * 1001, None, ["text"]]:
+            response = await self.client.patch(path, json={"content": content}, headers=auth)
+            self.assertEqual(response.status, 400)
+
+        self.store._db.execute("DELETE FROM semantic_dirty_sources")
+        self.store._db.commit()
+        response = await self.client.patch(
+            path, json={"content": "  一起验证了复盘日记。  "}, headers=auth
+        )
+        self.assertEqual(response.status, 200)
+        updated = await response.json()
+        self.assertEqual(updated["content"], "一起验证了复盘日记。")
+        self.assertEqual(updated["evidence"], items[0]["evidence"])
+        self.assertEqual(updated["source_reflection_id"], items[0]["source_reflection_id"])
+        self.assertIsNotNone(self.store._db.execute(
+            "SELECT 1 FROM semantic_dirty_sources WHERE source_type='reflection_memory' AND source_id=?",
+            (str(memory_id),),
+        ).fetchone())
+        from momoi.storage.memory_values import MemoryRecallQuery
+        recalled = self.store.rank_recalled_memories(
+            [MemoryRecallQuery("复盘日记", ("复盘日记",))], 6
+        )
+        self.assertIn(updated["content"], [item["content"] for item in recalled])
+
+        self.store._db.execute("DELETE FROM semantic_dirty_sources")
+        self.store._db.commit()
+        response = await self.client.delete(path, headers=auth)
+        self.assertEqual(response.status, 200)
+        response = await self.client.get("/api/reflection-memories", headers=auth)
+        self.assertEqual((await response.json())["items"], [])
+        self.assertEqual(self.store.rank_recalled_memories(
+            [MemoryRecallQuery("复盘日记", ("复盘日记",))], 6
+        ), [])
+        self.assertIsNotNone(self.store._db.execute(
+            "SELECT 1 FROM semantic_dirty_sources WHERE source_type='reflection_memory' AND source_id=?",
+            (str(memory_id),),
+        ).fetchone())
+        self.assertEqual((await self.client.delete(path, headers=auth)).status, 404)
+        self.assertEqual((await self.client.patch(
+            path, json={"content": "不存在"}, headers=auth
+        )).status, 404)
+
+        # Diary remains a historical snapshot, independently of current memories.
+        response = await self.client.get("/api/reflections?date=2026-08-13", headers=auth)
+        diary = await response.json()
+        self.assertEqual([item["local_date"] for item in diary["items"]], ["2026-08-13"])
+        self.assertEqual(diary["items"][0]["memories"][0]["content"], "保持验证。")
+        self.assertNotIn("next_cursor", diary)
+        response = await self.client.get("/api/reflections?date=2020-01-01", headers=auth)
+        self.assertEqual((await response.json())["items"], [])
+        response = await self.client.get("/api/reflections?date=invalid", headers=auth)
+        self.assertEqual(response.status, 400)
 
     async def test_goal_update_and_cancel(self) -> None:
         updated = await (

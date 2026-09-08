@@ -51,9 +51,9 @@ function thinkingStageLabel(stage) {
 
 const activationOrder = ["always", "recent", "recall"];
 const activationLabels = {
-  always: "持续生效",
-  recent: "近期状态",
-  recall: "需要时回忆",
+  always: "长期",
+  recent: "近期",
+  recall: "召回",
 };
 
 const goalStatuses = [
@@ -1081,7 +1081,7 @@ function ConversationDetail({ item }) {
   );
 }
 
-function Reflections({ refreshKey, token }) {
+function Reflections({ refreshKey, token, routeParam }) {
   const [items, setItems] = useState([]);
   const [status, setStatus] = useState({ loading: true });
   const [loadingMore, setLoadingMore] = useState(false);
@@ -1103,7 +1103,7 @@ function Reflections({ refreshKey, token }) {
     setHasMore(false);
     setLoadingMore(false);
     setStatus({ loading: true });
-    api(`/api/reflections?limit=${REFLECTION_PAGE}`, {
+    api(`/api/reflections?${new URLSearchParams({ limit: String(REFLECTION_PAGE), ...(routeParam ? { date: routeParam } : {}) })}`, {
       signal: controller.signal,
       token,
     })
@@ -1117,7 +1117,7 @@ function Reflections({ refreshKey, token }) {
         if (error.name !== "AbortError") setStatus({ error });
       });
     return () => controller.abort();
-  }, [refreshKey, token]);
+  }, [refreshKey, token, routeParam]);
 
   loadOlderRef.current = async () => {
     if (busy.current || cursorRef.current == null || !token) return;
@@ -1169,6 +1169,7 @@ function Reflections({ refreshKey, token }) {
     <>
       <section className="section-tools">
         <p>按日期保留 Momoi 对每天经历的整理与学习。</p>
+        {routeParam && <a className="quiet-button" href="#reflections">全部复盘</a>}
       </section>
       <section className="card-list">
         {items.map((item) => (
@@ -1182,23 +1183,26 @@ function Reflections({ refreshKey, token }) {
                 (item.error ? `等待重试：${item.error}` : "尚未生成复盘。")}
             </p>
             {!!item.memories?.length && (
-              <div className="memory-list">
-                {item.memories.map((memory) => (
-                  <div className="memory" key={`${memory.kind}:${memory.key}`}>
-                    <div className="memory-head">
-                      <span className="memory-kind">
-                        {memoryKindLabel(memory.kind)}
-                      </span>
-                      {Number.isFinite(Number(memory.confidence)) && (
-                        <span className="memory-confidence">
-                          可信度 {Math.round(Number(memory.confidence) * 100)}%
+              <div className="reflection-snapshot">
+                <p className="secondary">当日提炼 · 历史快照，当前记忆可在<a href="#memories">记忆页</a>管理。</p>
+                <div className="memory-list">
+                  {item.memories.map((memory) => (
+                    <div className="memory" key={`${memory.kind}:${memory.key}`}>
+                      <div className="memory-head">
+                        <span className="memory-kind">
+                          {memoryKindLabel(memory.kind)}
                         </span>
-                      )}
+                        {Number.isFinite(Number(memory.confidence)) && (
+                          <span className="memory-confidence">
+                            可信度 {Math.round(Number(memory.confidence) * 100)}%
+                          </span>
+                        )}
+                      </div>
+                      <p>{memory.content}</p>
+                      {memory.evidence && <small>依据：{memory.evidence}</small>}
                     </div>
-                    <p>{memory.content}</p>
-                    {memory.evidence && <small>依据：{memory.evidence}</small>}
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             )}
           </article>
@@ -1220,18 +1224,41 @@ function Reflections({ refreshKey, token }) {
 }
 
 function Memories({ refreshKey, token, onMutated }) {
-  const confirm = useConfirm();
   const [activation, setActivation] = useState("all");
+  return (
+    <DataView path="/api/memories?limit=400" refreshKey={refreshKey} token={token}>
+      {(confirmed) => (
+        <DataView path="/api/reflection-memories" refreshKey={refreshKey} token={token}>
+          {(reflections) => (
+            <MemoryInventory
+              activation={activation}
+              setActivation={setActivation}
+              items={[
+                ...confirmed.items.map((item) => ({ ...item, resource: "memories", identity: `memory:${item.id}` })),
+                ...reflections.items.map((item) => ({ ...item, resource: "reflection-memories", identity: `reflection:${item.id}`, activation: "reflection" })),
+              ]}
+              token={token}
+              onMutated={onMutated}
+            />
+          )}
+        </DataView>
+      )}
+    </DataView>
+  );
+}
+
+function MemoryInventory({ items, token, onMutated, activation, setActivation }) {
+  const confirm = useConfirm();
   const [editingId, setEditingId] = useState(null);
   const [draft, setDraft] = useState("");
   const [busyId, setBusyId] = useState(null);
   const [error, setError] = useState("");
 
   async function save(item) {
-    setBusyId(item.id);
+    setBusyId(item.identity);
     setError("");
     try {
-      await api(`/api/memories/${item.id}`, {
+      await api(`/api/${item.resource}/${item.id}`, {
         method: "PATCH",
         token,
         body: { content: draft },
@@ -1248,15 +1275,17 @@ function Memories({ refreshKey, token, onMutated }) {
   async function remove(item) {
     const ok = await confirm({
       title: "删除这条记忆？",
-      message: "删掉之后 Momoi 不会再使用它，也找不回来了。",
+      message: item.activation === "reflection"
+        ? "这条复盘记忆将从召回中移除，来源日记保留当时的记录。"
+        : "删掉之后 Momoi 不会再使用它，也找不回来了。",
       confirmLabel: "删除记忆",
       cancelLabel: "先留着",
     });
     if (!ok) return;
-    setBusyId(item.id);
+    setBusyId(item.identity);
     setError("");
     try {
-      await api(`/api/memories/${item.id}`, { method: "DELETE", token });
+      await api(`/api/${item.resource}/${item.id}`, { method: "DELETE", token });
       onMutated();
     } catch (err) {
       setError(err.message);
@@ -1265,142 +1294,147 @@ function Memories({ refreshKey, token, onMutated }) {
     }
   }
 
+  const labels = { ...activationLabels, reflection: "复盘" };
+
+  const visible =
+    activation === "all"
+      ? items
+      : items.filter((item) => item.activation === activation);
+  const groups = [...activationOrder, "reflection"]
+    .map((name) => [
+      name,
+      visible.filter((item) => item.activation === name),
+    ])
+    .filter(([, group]) => group.length);
   return (
-    <DataView path="/api/memories?limit=400" refreshKey={refreshKey} token={token}>
-      {({ items }) => {
-        const visible =
-          activation === "all"
-            ? items
-            : items.filter((item) => item.activation === activation);
-        const groups = activationOrder
-          .map((name) => [
-            name,
-            visible.filter((item) => item.activation === name),
-          ])
-          .filter(([, group]) => group.length);
-        return (
-          <>
-            <section className="section-tools">
-              <p>{visible.length} 条有效记忆</p>
-              <div className="dash-tabs" role="tablist" aria-label="记忆筛选">
-                {[["all", "全部"], ...Object.entries(activationLabels)].map(
-                  ([value, label]) => (
-                    <button
-                      type="button"
-                      role="tab"
-                      key={value}
-                      aria-selected={activation === value}
-                      className={activation === value ? "active" : ""}
-                      onClick={() => setActivation(value)}
-                    >
-                      <span>{label}</span>
-                    </button>
-                  ),
-                )}
-              </div>
-            </section>
-            {error && <p className="form-error">{error}</p>}
-            {groups.length ? (
-              groups.map(([name, group]) => (
-                <section className="memory-section" key={name}>
-                  <div className="section-tools">
-                    <p>
-                      {activationLabels[name]} · {group.length}
-                    </p>
+    <>
+      <section className="section-tools">
+        <p>{visible.length} 条记忆</p>
+        <div className="dash-tabs" role="tablist" aria-label="记忆筛选">
+          {[["all", "全部"], ...Object.entries(labels)].map(
+            ([value, label]) => (
+              <button
+                type="button"
+                role="tab"
+                key={value}
+                aria-selected={activation === value}
+                className={activation === value ? "active" : ""}
+                onClick={() => setActivation(value)}
+              >
+                <span>{label}</span>
+              </button>
+            ),
+          )}
+        </div>
+      </section>
+      {error && <p className="form-error">{error}</p>}
+      {groups.length ? (
+        groups.map(([name, group]) => (
+          <section className="memory-section" key={name}>
+            <div className="section-tools">
+              <p>
+                {labels[name]} · {group.length}
+              </p>
+            </div>
+            <section className="card-list">
+              {group.map((item) => (
+                <article className="reflection-card" key={item.identity}>
+                  <div className="card-head">
+                    <h2>{memoryKindLabel(item.kind)}</h2>
+                    <span className="status">
+                      {item.activation === "reflection"
+                        ? `置信度 ${Math.round(item.confidence * 100)}%`
+                        : labels[item.activation] || item.activation}
+                    </span>
                   </div>
-                  <section className="card-list">
-                    {group.map((item) => (
-                      <article className="reflection-card" key={item.id}>
-                        <div className="card-head">
-                          <h2>{memoryKindLabel(item.kind)}</h2>
-                          <span className="status">
-                            {activationLabels[item.activation] || item.activation}
-                          </span>
-                        </div>
-                        {editingId === item.id ? (
-                          <textarea
-                            className="edit-area"
-                            value={draft}
-                            onChange={(event) => setDraft(event.target.value)}
-                            rows={4}
-                          />
-                        ) : (
-                          <p className="summary">{item.content}</p>
-                        )}
-                        {item.evidence && (
-                          <p className="secondary">依据：{item.evidence}</p>
-                        )}
-                        <StampMeta
-                          items={[
+                  {editingId === item.identity ? (
+                    <textarea
+                      aria-label="记忆内容"
+                      maxLength={item.activation === "reflection" ? 1000 : 2000}
+                      className="edit-area"
+                      value={draft}
+                      onChange={(event) => setDraft(event.target.value)}
+                      rows={4}
+                    />
+                  ) : (
+                    <p className="summary">{item.content}</p>
+                  )}
+                  {item.evidence && (
+                    <p className="secondary">依据：{item.evidence}</p>
+                  )}
+                  <StampMeta
+                    items={[
+                      {
+                        label: "更新于",
+                        value: formatDate(item.updated_at),
+                      },
+                      ...(item.expires_at
+                        ? [
                             {
-                              label: "更新于",
-                              value: formatDate(item.updated_at),
+                              label: "有效至",
+                              value: formatDate(item.expires_at),
                             },
-                            ...(item.expires_at
-                              ? [
-                                  {
-                                    label: "有效至",
-                                    value: formatDate(item.expires_at),
-                                  },
-                                ]
-                              : []),
-                          ]}
-                        />
-                        <div className="card-actions">
-                          {editingId === item.id ? (
-                            <>
-                              <button
-                                type="button"
-                                className="quiet-button"
-                                disabled={busyId === item.id}
-                                onClick={() => save(item)}
-                              >
-                                保存
-                              </button>
-                              <button
-                                type="button"
-                                className="quiet-button pink"
-                                onClick={() => setEditingId(null)}
-                              >
-                                取消
-                              </button>
-                            </>
-                          ) : (
-                            <>
-                              <button
-                                type="button"
-                                className="quiet-button"
-                                onClick={() => {
-                                  setEditingId(item.id);
-                                  setDraft(item.content);
-                                  setError("");
-                                }}
-                              >
-                                编辑
-                              </button>
-                              <button
-                                type="button"
-                                className="quiet-button pink"
-                                disabled={busyId === item.id}
-                                onClick={() => remove(item)}
-                              >
-                                删除
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </article>
-                    ))}
-                  </section>
-                </section>
-              ))
-            ) : (
-              <Empty />
-            )}
-          </>
-        );
-      }}
-    </DataView>
+                          ]
+                        : []),
+                    ]}
+                  />
+                  <div className="card-actions">
+                    {item.activation === "reflection" && item.local_date && (
+                      <a className="memory-source-link" href={`#reflections/${item.local_date}`}>
+                        {item.local_date} 复盘日记 ↗
+                      </a>
+                    )}
+                    {editingId === item.identity ? (
+                      <>
+                        <button
+                          type="button"
+                          className="quiet-button"
+                          disabled={busyId === item.identity || !draft.trim()}
+                          onClick={() => save(item)}
+                        >
+                          保存
+                        </button>
+                        <button
+                          type="button"
+                          className="quiet-button pink"
+                          onClick={() => setEditingId(null)}
+                        >
+                          取消
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className="quiet-button"
+                          onClick={() => {
+                            setEditingId(item.identity);
+                            setDraft(item.content);
+                            setError("");
+                          }}
+                        >
+                          编辑
+                        </button>
+                        <button
+                          type="button"
+                          className="quiet-button pink"
+                          disabled={busyId === item.identity}
+                          onClick={() => remove(item)}
+                        >
+                          删除
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </article>
+              ))}
+            </section>
+          </section>
+        ))
+      ) : (
+        <Empty />
+      )}
+    </>
   );
 }
 

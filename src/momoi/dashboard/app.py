@@ -395,8 +395,37 @@ def create_dashboard_app(
             store.list_reflections(
                 _bounded_int(request, "limit", 14, 1, 90),
                 before=_optional_local_date(request, "cursor"),
+                local_date=_optional_local_date(request, "date"),
             )
         )
+
+    async def reflection_memories(request: web.Request) -> web.Response:
+        return web.json_response({"items": store.list_reflection_memories()})
+
+    async def update_reflection_memory(request: web.Request) -> web.Response:
+        try:
+            memory_id = int(request.match_info["memory_id"])
+        except ValueError:
+            raise web.HTTPBadRequest(text="invalid memory id") from None
+        payload = await _json_body(request)
+        if set(payload) != {"content"} or not isinstance(payload["content"], str):
+            raise web.HTTPBadRequest(text="content must be a string")
+        try:
+            item = store.update_reflection_memory_content(memory_id, payload["content"])
+        except ValueError as error:
+            raise web.HTTPBadRequest(text=str(error)) from None
+        if item is None:
+            raise web.HTTPNotFound(text="reflection memory not found")
+        return web.json_response(item)
+
+    async def delete_reflection_memory(request: web.Request) -> web.Response:
+        try:
+            memory_id = int(request.match_info["memory_id"])
+        except ValueError:
+            raise web.HTTPBadRequest(text="invalid memory id") from None
+        if not store.delete_reflection_memory(memory_id):
+            raise web.HTTPNotFound(text="reflection memory not found")
+        return web.json_response({"ok": True})
 
     async def memories(request: web.Request) -> web.Response:
         limit = _bounded_int(request, "limit", 200, 1, 500)
@@ -628,6 +657,9 @@ def create_dashboard_app(
     app.router.add_get("/api/conversations/episode/{record_id}", episode_conversation)
     app.router.add_get("/api/conversations/turn/{record_id}", turn_conversation)
     app.router.add_get("/api/reflections", reflections)
+    app.router.add_get("/api/reflection-memories", reflection_memories)
+    app.router.add_patch("/api/reflection-memories/{memory_id}", update_reflection_memory)
+    app.router.add_delete("/api/reflection-memories/{memory_id}", delete_reflection_memory)
     app.router.add_get("/api/memories", memories)
     app.router.add_patch("/api/memories/{memory_id}", update_memory)
     app.router.add_delete("/api/memories/{memory_id}", delete_memory)

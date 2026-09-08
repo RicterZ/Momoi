@@ -1206,6 +1206,17 @@ a.tag:hover {
 }
 .reflection-card .secondary { margin: 12px 0 0; }
 .reflection-card .stamp-meta { margin-top: 12px; }
+.memory-source-link {
+  align-self: center;
+  color: var(--ink);
+  margin-right: auto;
+  font-size: 12px;
+  font-weight: 700;
+  text-underline-offset: 4px;
+}
+.memory-source-link:hover { color: var(--pink); }
+.reflection-snapshot { margin-top: 20px; }
+.reflection-snapshot .memory-list { margin-top: 10px; }
 .reflection-card, .goal-card {
   padding: 24px 26px;
 }

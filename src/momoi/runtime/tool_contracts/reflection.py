@@ -6,7 +6,7 @@ from ...storage.reflection_values import REFLECTION_MEMORY_KINDS
 REFLECTION_FINISH_SPEC: dict[str, Any] = {
     "name": "reflection_finish",
     "description": (
-        "Store the daily reflection, reusable learning, and conversation closures, "
+        "Store the daily reflection, lasting memories, and conversation closures, "
         "then end this private Turn."
     ),
     "input_schema": {
@@ -53,6 +53,10 @@ REFLECTION_FINISH_SPEC: dict[str, Any] = {
             "memories": {
                 "type": "array",
                 "maxItems": 12,
+                "description": (
+                    "Experiences, understandings, or knowledge worth retaining beyond "
+                    "today. May be empty; do not manufacture lessons to fill the list."
+                ),
                 "items": {
                     "type": "object",
                     "properties": {
@@ -60,10 +64,13 @@ REFLECTION_FINISH_SPEC: dict[str, Any] = {
                             "type": "string",
                             "enum": sorted(REFLECTION_MEMORY_KINDS),
                             "description": (
-                                "Use tool_skill for reusable knowledge about a "
-                                "specific tool or integration. Use practice for a "
-                                "reusable method, workflow, or decision process whose "
-                                "main lesson is not a particular tool invocation."
+                                "shared_experience: meaningful experiences together; "
+                                "relationship: situated understanding of the relationship; "
+                                "self_insight: subjective understanding of your own feelings "
+                                "or tendencies; owner_profile/owner_preference: owner-stated "
+                                "facts or preferences; world_knowledge: observed knowledge; "
+                                "practice: reusable methods or decision processes; "
+                                "tool_skill: knowledge of a specific tool or integration."
                             ),
                         },
                         "key": {
@@ -73,22 +80,32 @@ REFLECTION_FINISH_SPEC: dict[str, Any] = {
                         "content": {
                             "type": "string",
                             "minLength": 1,
+                            "maxLength": 1000,
                             "description": (
-                                "Concise reusable lesson, including when it applies "
-                                "and how to verify success or avoid a known failure."
+                                "Concisely describe what happened, was understood, or was "
+                                "learned, according to kind, within the evidence's scope. "
+                                "For practice/tool_skill, include applicability and an "
+                                "observable outcome; absence of criticism is not evidence "
+                                "of success."
                             ),
                         },
                         "evidence": {
                             "type": "string",
+                            "minLength": 1,
+                            "maxLength": 500,
                             "description": (
                                 "Exact contiguous quote from the supplied day or tool "
-                                "evidence."
+                                "evidence supporting this conclusion, not merely its topic."
                             ),
                         },
                         "confidence": {
                             "type": "number",
                             "minimum": 0,
                             "maximum": 1,
+                            "description": (
+                                "Confidence that the evidence supports the recorded claim, "
+                                "including its scope; not its importance or your resolve."
+                            ),
                         },
                     },
                     "required": [

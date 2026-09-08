@@ -1,4 +1,5 @@
 import json
+import sqlite3
 import time
 
 from .integrity import decode_stored_json
@@ -84,7 +85,7 @@ class ReflectionRecordStore:
         return dict(row) if row else None
 
     def list_reflections(
-        self, limit: int = 14, *, before: str | None = None
+        self, limit: int = 14, *, before: str | None = None, local_date: str | None = None
     ) -> dict[str, object]:
         if limit <= 0:
             return {"items": []}
@@ -92,7 +93,10 @@ class ReflectionRecordStore:
         query = "SELECT * FROM reflections"
         params: list[object] = []
         cursor = str(before or "").strip()
-        if cursor:
+        if local_date:
+            query += " WHERE local_date = ?"
+            params.append(local_date)
+        elif cursor:
             query += " WHERE local_date < ?"
             params.append(cursor)
         query += " ORDER BY local_date DESC LIMIT ?"
@@ -121,3 +125,39 @@ class ReflectionRecordStore:
             payload["next_cursor"] = results[-1]["local_date"]
         return payload
 
+    def list_reflection_memories(self) -> list[dict[str, object]]:
+        rows = self._db.execute(
+            """SELECT m.*, r.local_date FROM reflection_memories AS m
+               JOIN reflections AS r ON r.id=m.source_reflection_id
+               ORDER BY m.updated_at DESC, m.id DESC"""
+        ).fetchall()
+        return [self._reflection_memory_public_dict(row) for row in rows]
+
+    def _reflection_memory_public_dict(self, row: sqlite3.Row) -> dict[str, object]:
+        item = dict(row)
+        add_context_timestamps(item, ("created_at", "updated_at"), self._timezone)
+        return item
+
+    def update_reflection_memory_content(
+        self, memory_id: int, content: str
+    ) -> dict[str, object] | None:
+        text = content.strip()
+        if not text or len(text) > 1000:
+            raise ValueError("content must contain between 1 and 1000 characters")
+        with self._db:
+            self._db.execute(
+                "UPDATE reflection_memories SET content=?, updated_at=? WHERE id=?",
+                (text, time.time(), memory_id),
+            )
+        row = self._db.execute(
+            """SELECT m.*, r.local_date FROM reflection_memories AS m
+               JOIN reflections AS r ON r.id=m.source_reflection_id WHERE m.id=?""",
+            (memory_id,),
+        ).fetchone()
+        return self._reflection_memory_public_dict(row) if row else None
+
+    def delete_reflection_memory(self, memory_id: int) -> bool:
+        with self._db:
+            return self._db.execute(
+                "DELETE FROM reflection_memories WHERE id=?", (memory_id,)
+            ).rowcount > 0
