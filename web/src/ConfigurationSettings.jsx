@@ -63,7 +63,7 @@ const adapterLabels = {
   fish: "Fish Audio",
 };
 const primaryFields = {
-  llm: ["base_url", "api_key", "model"],
+  llm: ["base_url", "api_key", "model", "thinking"],
   asr: ["secret_id", "secret_key"],
   tts: ["api_key", "reference_id", "model"],
   embedding: ["endpoint", "api_key", "model", "dimensions"],
@@ -933,7 +933,18 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
               );
               const update = (next) =>
                 change({ ...draft, values: { ...draft.values, [name]: next } });
-              const renderField = ([key, spec]) => (
+              const renderField = ([key, spec]) => {
+                if (name === "llm" && key === "thinking" && spec.properties?.effort?.enum) {
+                  const effort = spec.properties.effort;
+                  return <SelectField key={`${value.adapter}-${key}`} label={effort.label || "默认思考强度"}
+                    value={value.options.thinking?.effort ?? effort.default ?? ""}
+                    options={effort.enum.map(option => ({ value: option, label: option === "" ? "服务商默认" : option }))}
+                    onChange={next => update({ ...value, options: { ...value.options,
+                      thinking: { ...value.options.thinking, effort: next },
+                    } })}
+                  />;
+                }
+                return (
                 <OptionField
                   key={`${value.adapter}-${key}`}
                   name={key}
@@ -946,7 +957,8 @@ function ProviderSection({ module, data, save, saving, testProvider, testing, ne
                     })
                   }
                 />
-              );
+                );
+              };
               return (
                 <div key={name} className={names.length > 1 ? "settings-voice-column" : undefined}>
                   {names.length > 1 && (

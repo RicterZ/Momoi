@@ -54,7 +54,22 @@
       "thinking": {
         "type": "object",
         "default": {},
-        "label": "thinking",
+        "properties": {
+          "effort": {
+            "type": "string",
+            "label": "默认思考强度",
+            "default": "",
+            "enum": [
+              "",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ]
+          }
+        },
+        "label": "模型思考设置",
         "advanced": true
       }
     },
@@ -266,7 +281,22 @@
       "thinking": {
         "type": "object",
         "default": {},
-        "label": "thinking",
+        "properties": {
+          "effort": {
+            "type": "string",
+            "label": "默认思考强度",
+            "default": "",
+            "enum": [
+              "",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ]
+          }
+        },
+        "label": "模型思考设置",
         "advanced": true
       }
     },
