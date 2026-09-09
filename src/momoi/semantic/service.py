@@ -11,6 +11,7 @@ from ..integrations.models import EmbeddingSpaceConfig
 from ..observability.events import log_event
 from ..policies import SemanticPolicy
 from ..storage import MemoryRecallQuery, Store
+from ..storage.semantic_documents import DOCUMENT_TEMPLATE_VERSION, QUERY_TEMPLATE_VERSION
 from ..storage.episode_ranking import EpisodeRecallQuery
 from ..integrations.contracts.embedding import Embedder
 from ..integrations.errors import error_category
@@ -36,6 +37,7 @@ class SemanticRecallService:
         policy: SemanticPolicy = SemanticPolicy(),
         client: Embedder | None,
     ) -> None:
+        self.reranker = None
         self.store = store
         self.config = config
         self.policy = policy
@@ -64,7 +66,9 @@ class SemanticRecallService:
             self.degraded_reason = "building_initial_space"
             return
         if (
-            str(space["model"]) != self.config.model
+            int(space["document_template_version"]) != DOCUMENT_TEMPLATE_VERSION
+            or int(space["query_template_version"]) != QUERY_TEMPLATE_VERSION
+            or str(space["model"]) != self.config.model
             or int(space["dimensions"]) != self.config.dimensions
             or str(space["calibration_profile"]) != self.config.calibration_profile
         ):
@@ -99,7 +103,9 @@ class SemanticRecallService:
         episode_after: float | None = None,
         episode_before: float | None = None,
         output_limit: int = 8,
+        episode_context: str = "",
     ) -> DenseRecallEvidence:
+        queries = list(queries)
         expressions = self._expressions(queries)
         if not expressions:
             return DenseRecallEvidence(
@@ -198,7 +204,7 @@ class SemanticRecallService:
                 episode_id: DenseEpisodeHit(episode_id, **values)
                 for episode_id, values in episode_values.items()
             }
-        return DenseRecallEvidence(
+        evidence = DenseRecallEvidence(
             space_id=self.snapshot.space_id,
             calibration_profile=self.config.calibration_profile,
             memory=memory,
@@ -207,6 +213,13 @@ class SemanticRecallService:
             request_ms=request_ms,
             search_ms=(time.monotonic() - search_started) * 1000,
         )
+
+        if include_episode and self.reranker is not None:
+            evidence = await self.reranker.rerank(
+                queries, evidence, after=episode_after, before=episode_before,
+                context=episode_context,
+            )
+        return evidence
 
     async def maintain_once(self, *, allow_encoding: bool = True) -> bool:
         if not self.config.enabled:

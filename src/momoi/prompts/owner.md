@@ -33,3 +33,16 @@ Tools and messages may alternate; sending a message does not end the Turn.
   `continue` requires the same concrete experience, and `new` requires a distinct
   experience worth keeping. Proximity, mood, time, or setting is insufficient.
   Do not write runtime-owned archives.
+
+Episode recall matches evidence-grounded cues as well as source content. Describe
+the missing event naturally in semantic queries; use supported, distinctive names
+or event phrases as sparse anchors. Stored cue wording need not be known. Keep
+the owner's language and literal identifiers, source participants, and uncertain
+premises intact. Use explicit participants where pronouns are ambiguous. Do not
+supply guessed answers, hypothetical alternatives, or unsupported query details.
+If context cannot resolve a reference, seek clarification before searching.
+
+A recalled `<episode confidence="...">` contains a bounded query-relevance signal,
+not a calibrated probability or a measure of factual truth. An absent value means
+no query-specific score is available. Establish what happened from the Episode's
+source evidence, accounting for speaker, time, modality, and uncertainty.

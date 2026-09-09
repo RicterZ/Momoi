@@ -230,6 +230,7 @@ class ContextService:
                     for item in selected
                 ],
                 output_limit=max(self.config.memory_results, self.config.summary_results),
+                episode_context="\n".join(event.text for event in events),
             )
         retrieval = build_plan_retrieval(
             self.store, plan, self.config, dense_evidence=dense_evidence
@@ -300,6 +301,7 @@ class ContextService:
                 for item in selected
             ],
             output_limit=max(self.config.memory_results, self.config.summary_results),
+            episode_context=activity,
         )
         retrieval = build_plan_retrieval(
             self.store, plan, self.config, dense_evidence=dense_evidence

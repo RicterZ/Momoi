@@ -188,6 +188,7 @@ class EpisodeIndexStore:
             episode["narrative_summary"],
             episode["emotional_context"],
             episode["outcomes"],
+            episode["recall_cues"],
             episode["topics"],
             episode["entities"],
             episode["open_loops"],

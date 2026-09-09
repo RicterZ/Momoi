@@ -4,6 +4,7 @@ from typing import Any
 
 from ....observability.events import log_event
 from ....models import ToolCall
+from ....semantic.episode_cue_verifier import verify_episode_cues
 from ....storage import EPISODE_CONSOLIDATION_BATCH_SIZE, estimate_tokens
 from ...agent import AgentWorkflow
 from ...turn_support import EPISODE_SUMMARY_SYSTEM_PROMPT
@@ -110,6 +111,13 @@ class EpisodeAnnealingWorkflow:
         async def execute_tool(call: ToolCall) -> dict[str, Any]:
             nonlocal workflow_complete, workflow_result
             try:
+                claims = self.store.validate_episode_summary_claims(
+                    episode_id, int(candidate["through_ordinal"]),
+                    call.arguments.get("claims", []),
+                )
+                cues = await verify_episode_cues(
+                    self.provider, call.arguments.get("recall_cues"), claims,
+                )
                 working_summary = self.store.finish_episode_annealing(
                     episode_id,
                     int(candidate["through_ordinal"]),
@@ -119,6 +127,7 @@ class EpisodeAnnealingWorkflow:
                     ),
                     emotional_context=call.arguments.get("emotional_context"),
                     outcomes=call.arguments.get("outcomes"),
+                    recall_cues=cues,
                 )
             except (TypeError, ValueError) as error:
                 return {

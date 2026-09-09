@@ -57,7 +57,12 @@ RECALL_TOOL_SPEC: dict[str, Any] = {
                                             "missing from supplied context, using supported "
                                             "subjects and preserving unresolved references. "
                                             "Do not embed a presumed answer, inferred owner "
-                                            "preference, or intended response strategy."
+                                            "preference, or intended response strategy. "
+                                            "Name participants explicitly as owner/assistant rather "
+                                            "than ambiguous first/second-person pronouns. "
+                                            "Use the owner message language, preserving literal "
+                                            "names and IDs. "
+                                            "Describe an uncertain premise as something to verify."
                                         ),
                                     },
                                     "keywords": {
@@ -67,7 +72,8 @@ RECALL_TOOL_SPEC: dict[str, Any] = {
                                         "items": {"type": "string", "maxLength": 60},
                                         "description": (
                                             "Sparse OR anchors: literal canonical names, "
-                                            "IDs, titles, or exact phrases. No verbs, "
+                                            "IDs, titles, or distinctive supported event phrases. "
+                                            "No standalone verbs, "
                                             "pronouns, generic words, or inferred answers; "
                                             "empty if no reliable anchor exists."
                                         ),

@@ -395,6 +395,7 @@ def build_plan_retrieval(
             "search_score": float(row.get("search_score") or 0),
             "semantic_score": float(row.get("semantic_score") or 0),
             "matched_queries": matched_queries,
+            "relevance_confidence": row.get("relevance_confidence"),
             "is_recent": episode_id in recent_episode_ids,
         }
 
@@ -451,6 +452,7 @@ def build_plan_retrieval(
         existing["matched_queries"] = list(
             selected.get("matched_queries") or []
         )
+        existing["relevance_confidence"] = selected.get("relevance_confidence")
         existing["is_recent"] = True
     episodes = rank_recall_items(episodes)
     recall_index: list[str] = []
@@ -603,6 +605,10 @@ def build_plan_retrieval(
         embedding_request_ms=round(dense_evidence.request_ms, 2) if dense_evidence else 0,
         embedding_search_ms=round(dense_evidence.search_ms, 2) if dense_evidence else 0,
         embedding_fallback=dense_evidence.fallback_reason if dense_evidence else "disabled",
+        episode_rerank_ms=round(dense_evidence.rerank_ms, 2) if dense_evidence else 0,
+        episode_rerank_attempts=dense_evidence.rerank_attempts if dense_evidence else 0,
+        episode_rerank_fallback=dense_evidence.rerank_fallback_reason if dense_evidence else "",
+
     )
     log_event(
         logger,

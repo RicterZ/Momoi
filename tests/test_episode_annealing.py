@@ -846,6 +846,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                                 "tone": "合作",
                             },
                             "outcomes": ["完成一次阶段讨论"],
+                            "recall_cues": ["阶段讨论回顾"],
                         },
                     )
 
@@ -858,6 +859,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(episode["emotional_context"]["tone"], "合作")
             self.assertEqual(episode["outcomes"], ["完成一次阶段讨论"])
+            self.assertEqual(episode["recall_cues"], ["阶段讨论回顾"])
             daemon.store.close()
 
     async def test_third_failure_abandons_episode_and_other_lines_continue(

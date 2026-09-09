@@ -236,6 +236,7 @@ CREATE TABLE IF NOT EXISTS conversation_episodes (
     working_summary_claims_json TEXT NOT NULL DEFAULT '[]',
     narrative_summary TEXT NOT NULL DEFAULT '',
     emotional_context_json TEXT NOT NULL DEFAULT '{}',
+    recall_cues_json TEXT NOT NULL DEFAULT '[]',
     outcomes_json TEXT NOT NULL DEFAULT '[]',
     summarized_through_ordinal INTEGER NOT NULL DEFAULT 0
         CHECK (summarized_through_ordinal >= 0),
@@ -504,7 +505,7 @@ END;
 DROP TRIGGER IF EXISTS semantic_episodes_update;
 CREATE TRIGGER semantic_episodes_update
 AFTER UPDATE OF status, title, working_summary, narrative_summary,
-                outcomes_json, summarized_through_ordinal,
+                outcomes_json, recall_cues_json, summarized_through_ordinal,
                 topics_json, entities_json, open_loops_json
 ON conversation_episodes BEGIN
     INSERT INTO semantic_dirty_sources(source_type, source_id, changed_at)

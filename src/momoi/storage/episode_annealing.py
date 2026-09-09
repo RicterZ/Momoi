@@ -4,6 +4,7 @@ import math
 import time
 
 from ..observability.events import log_event
+from .episode_cues import normalize_cues
 from .episode_claims import render_verified_claims
 from .memory_values import estimate_tokens
 
@@ -141,16 +142,7 @@ class EpisodeAnnealingStore:
                 }
         return None
 
-    def finish_episode_annealing(
-        self,
-        episode_id: str,
-        through_ordinal: int,
-        claims: list[object],
-        *,
-        narrative_summary: str = "",
-        emotional_context: dict[str, object] | None = None,
-        outcomes: list[object] | None = None,
-    ) -> str:
+    def validate_episode_summary_claims(self, episode_id, through_ordinal, claims):
         if not 1 <= len(claims) <= 64:
             raise ValueError("episode summary needs 1 to 64 evidence claims")
         normalized: list[dict[str, object]] = []
@@ -212,6 +204,20 @@ class EpisodeAnnealingStore:
                     "quote": quote,
                 }
             )
+        return normalized
+
+    def finish_episode_annealing(
+        self,
+        episode_id: str,
+        through_ordinal: int,
+        claims: list[object],
+        *,
+        narrative_summary: str = "",
+        emotional_context: dict[str, object] | None = None,
+        outcomes: list[object] | None = None,
+        recall_cues: list[object] | None = None,
+    ) -> str:
+        normalized = self.validate_episode_summary_claims(episode_id, through_ordinal, claims)
         working_summary = render_verified_claims(normalized)
         if len(working_summary) > 12000:
             raise ValueError("episode summary exceeds storage budget")
@@ -228,6 +234,7 @@ class EpisodeAnnealingStore:
             )
         ):
             raise ValueError("invalid episode emotional context")
+        recall_cues = normalize_cues(recall_cues, normalized)
         outcomes = outcomes or []
         if (
             not isinstance(outcomes, list)
@@ -245,7 +252,7 @@ class EpisodeAnnealingStore:
                 """UPDATE conversation_episodes
                    SET working_summary=?, working_summary_claims_json=?,
                        narrative_summary=?, emotional_context_json=?,
-                       outcomes_json=?,
+                       outcomes_json=?, recall_cues_json=?,
                        summarized_through_ordinal=?,
                        summary_claimed_at=NULL, summary_retry_at=NULL,
                        summary_failure_count=0, summary_abandoned_at=NULL,
@@ -270,6 +277,7 @@ class EpisodeAnnealingStore:
                         ensure_ascii=False,
                         separators=(",", ":"),
                     ),
+                    json.dumps(recall_cues, ensure_ascii=False),
                     through_ordinal,
                     time.time(),
                     episode_id,

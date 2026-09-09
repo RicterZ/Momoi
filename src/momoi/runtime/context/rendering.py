@@ -1,4 +1,5 @@
 import logging
+import math
 from xml.etree import ElementTree
 from xml.sax.saxutils import escape, quoteattr
 
@@ -84,11 +85,21 @@ def _episode_summary(episode: dict[str, object]) -> tuple[str, str]:
     return "", "empty"
 
 
-def _episode_header(episode: dict[str, object]) -> str:
+def _episode_header(
+    episode: dict[str, object], selected: dict[str, object] | None = None
+) -> str:
     parts = [f"id={quoteattr(str(episode['id']))}"]
     status = str(episode.get("status") or "")
     if status:
         parts.append(f"status={quoteattr(status)}")
+    confidence = (selected or {}).get("relevance_confidence")
+    if (
+        isinstance(confidence, (int, float))
+        and not isinstance(confidence, bool)
+        and math.isfinite(confidence)
+        and 0 <= confidence <= 1
+    ):
+        parts.append(f'confidence="{confidence:.3f}"')
     return f"<episode {' '.join(parts)}>"
 
 
@@ -200,7 +211,7 @@ def _episode_context(
         if episode is None:
             continue
         lines = [
-            _episode_header(episode),
+            _episode_header(episode, selected),
             f"<title>{escape(str(episode['title']))}</title>",
         ]
         summary, quality = _episode_summary(episode)
@@ -284,6 +295,7 @@ def recall_episode_context(
             "matched_keywords": row.get("matched_keywords", []),
             "keyword_match_count": row.get("keyword_match_count", 0),
             "search_score": row.get("search_score", 0),
+            "relevance_confidence": row.get("relevance_confidence"),
         },
         _merge_matches,
         max_results,

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .episode_cues import stored_cue_texts
+
 import hashlib
 import json
 import math
@@ -16,7 +18,7 @@ from .memory_values import estimate_tokens, token_chunk
 
 QUERY_TEMPLATE_VERSION = 1
 
-DOCUMENT_TEMPLATE_VERSION = 2
+DOCUMENT_TEMPLATE_VERSION = 3
 
 SEMANTIC_PROVIDER = "fastembed"
 
@@ -78,6 +80,7 @@ def _episode_summary_document(row: sqlite3.Row) -> SemanticDocument | None:
     parts: list[str] = []
     for label, value in (
         ("Title", row["title"]),
+        ("Recall cues (retrieval hints)", "；".join(stored_cue_texts(row["recall_cues_json"]))),
         ("Topics", "；".join(_json_strings(row["topics_json"]))),
         ("Entities", "；".join(_json_strings(row["entities_json"]))),
         ("Narrative", row["narrative_summary"]),

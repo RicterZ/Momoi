@@ -36,3 +36,35 @@ Rules:
   filler, and superseded detail.
 - Support every summary detail and emotion with selected claims. Preserve
   completed outcomes without inventing future commitments.
+
+Generate `recall_cues` in the same operation as the summary. Cues are bounded,
+distinct retrieval labels for the Episode's events and corrections, not new
+facts or behavioral instructions. Use only supported event descriptions and
+established aliases; an empty list is valid. Regenerate them from the retained
+evidence instead of accumulating old labels. Choose cues for their ability to
+distinguish this Episode from others, not to enumerate every retained sentence.
+
+Each cue must preserve its source's participants, attribution, modality, and
+uncertainty. Distinguish owner statements, assistant statements, suggestions,
+proposals, role narration, and completed actions. A verified quotation establishes
+that a statement was made; it does not independently verify the event described.
+Use explicit participants when pronouns could change the speaker or actor.
+These retrieval labels use neutral event descriptions; the narrative summary's
+first-person perspective does not change source attribution.
+
+Copy each claim's message_id, turn_id, ordinal and quotation together from the
+same source block. Treat identifiers as opaque; never infer them from ordering.
+
+Each cue is an object with `text` and `evidence_message_ids`. Cite only message
+IDs included in the claims you retain in this submission. A cue's entire meaning
+must be supported by those linked claims, including who said or did what. This
+link is retrieval provenance, not independent verification of a speaker's story.
+
+Read the retained evidence as a chronological whole before choosing labels.
+When a later statement corrects an earlier claim, use one cue describing that
+correction; do not also preserve the superseded claim as a completed outcome.
+For every action, distinguish intent, attempt, reported completion, and
+independently confirmed result. Preserve explicit failures and corrections.
+Write participants as OWNER or ASSISTANT rather than first-person pronouns.
+Prefer a few discriminative event labels to one label per sentence. Repeated
+acknowledgements of the same event do not require separate cues.

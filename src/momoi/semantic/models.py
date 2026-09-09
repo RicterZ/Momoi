@@ -50,6 +50,12 @@ class DenseEpisodeHit:
 
 
 @dataclass(frozen=True)
+class EpisodeRerankMatch:
+    rank: int
+    evidence_message_ids: tuple[int, ...]
+
+
+@dataclass(frozen=True)
 class DenseRecallEvidence:
     space_id: str = ""
     calibration_profile: str = ""
@@ -61,6 +67,10 @@ class DenseRecallEvidence:
     request_ms: float = 0.0
     search_ms: float = 0.0
     fallback_reason: str = ""
+    reranked_episodes: dict[str, dict[str, EpisodeRerankMatch]] = field(default_factory=dict)
+    rerank_ms: float = 0.0
+    rerank_attempts: int = 0
+    rerank_fallback_reason: str = ""
 
     def thresholds(self, document_type: str) -> DenseThresholds | None:
         values = CALIBRATION_PROFILES.get(self.calibration_profile, {}).get(

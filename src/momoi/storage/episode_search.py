@@ -83,12 +83,12 @@ class StringEpisodeSearchBackend:
     ) -> list[EpisodeSearchHit]:
         hits: list[EpisodeSearchHit] = []
         for document in documents:
-            field_matches = tuple(
+            field_matches = tuple(dict.fromkeys(
                 field.name
                 for field in document.fields
                 if self.text_backend.search_one(alternative, (field.text,))
                 is not None
-            )
+            ))
             all_message_matches = tuple(
                 message
                 for message in document.messages

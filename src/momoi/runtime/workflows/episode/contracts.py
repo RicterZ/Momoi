@@ -170,6 +170,22 @@ EPISODE_SUMMARY_FINISH_SPEC: dict[str, Any] = {
                 "required": ["owner", "assistant", "tone"],
                 "additionalProperties": False,
             },
+            "recall_cues": {
+                "type": "array", "maxItems": 8, "uniqueItems": True,
+                "description": "Distinctive retrieval labels linked to retained evidence. Preserve participants and modality. Empty if none.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "text": {"type": "string", "minLength": 1, "maxLength": 100},
+                        "evidence_message_ids": {
+                            "type": "array", "minItems": 1, "maxItems": 8,
+                            "items": {"type": "integer"}, "uniqueItems": True,
+                        },
+                    },
+                    "required": ["text", "evidence_message_ids"],
+                    "additionalProperties": False,
+                },
+            },
             "outcomes": {
                 "type": "array",
                 "maxItems": 12,
@@ -182,6 +198,7 @@ EPISODE_SUMMARY_FINISH_SPEC: dict[str, Any] = {
             "narrative_summary",
             "emotional_context",
             "outcomes",
+            "recall_cues",
         ],
         "additionalProperties": False,
     },

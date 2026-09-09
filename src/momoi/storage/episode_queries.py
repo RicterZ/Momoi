@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .episode_cues import stored_cue_texts
+
 import json
 import sqlite3
 from typing import TYPE_CHECKING
@@ -142,6 +144,10 @@ class EpisodeQueryStore:
                     EpisodeSearchField(
                         "narrative_summary",
                         str(row["narrative_summary"] or ""),
+                    ),
+                    *(
+                        EpisodeSearchField("recall_cue", str(value))
+                        for value in stored_cue_texts(str(row["recall_cues_json"] or "[]"))
                     ),
                     *(
                         EpisodeSearchField("topic", str(value))

@@ -160,6 +160,16 @@ def _neutral_episode_speaker_metadata(database: sqlite3.Connection) -> None:
         )
 
 
+def _add_episode_recall_cues(database: sqlite3.Connection) -> None:
+    if "recall_cues_json" not in _columns(database, "conversation_episodes"):
+        database.execute(
+            "ALTER TABLE conversation_episodes ADD COLUMN "
+            "recall_cues_json TEXT NOT NULL DEFAULT '[]'"
+        )
+    # schema.sql recreates semantic_episodes_update on every open, including
+    # its cue column dependency, before these additive migrations run.
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     _add_runtime_archive_metadata,
     _add_turn_workflow_kind,
@@ -168,6 +178,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     _remove_heartbeat_record_header,
     _remove_obsolete_reply_context,
     _neutral_episode_speaker_metadata,
+    _add_episode_recall_cues,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 

@@ -5,6 +5,7 @@ import sqlite3
 import time
 import uuid
 
+from .episode_cues import cue_texts
 from .integrity import decode_stored_json
 from .timestamps import add_context_timestamps
 
@@ -68,6 +69,18 @@ class EpisodeRecordStore:
             expected_type=list,
             fallback=[],
         )
+        episode["recall_cues"] = decode_stored_json(
+            episode.pop("recall_cues_json"),
+            entity="conversation_episode",
+            record_id=episode_id,
+            field="recall_cues_json",
+            expected_type=list,
+            fallback=[],
+        )
+        episode["recall_cue_sources"] = [
+            cue for cue in episode["recall_cues"] if isinstance(cue, dict)
+        ]
+        episode["recall_cues"] = cue_texts(episode["recall_cues"])
         episode.pop("summary", None)
         for name in ("topics", "entities", "open_loops"):
             episode[name] = json.loads(str(episode.pop(f"{name}_json")))

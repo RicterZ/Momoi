@@ -36,6 +36,8 @@ _MIN_SELECTIVE_LITERAL_CHARS = 3
 _SHORT_LITERAL_TURN_SUPPORT = 3
 _SHORT_LITERAL_CONFIDENCE_CEILING = _RELEVANCE_CONFIDENCE_FLOOR - 0.001
 _FIELD_WEIGHTS = {
+    # Historical replay: larger boosts did not consistently improve rank.
+    "recall_cue": 3.3,
     "title": 3.0,
     "topic": 2.7,
     "entity": 2.7,
@@ -120,8 +122,10 @@ def _message_weight(message: EpisodeSearchMessage) -> float:
 
 
 def _hit_strength(hit: EpisodeSearchHit) -> float:
+    # A multi-valued field is one evidence source, regardless of value count.
+    fields = dict.fromkeys(hit.field_matches)
     signals = [
-        *(_FIELD_WEIGHTS.get(field, 1.0) for field in hit.field_matches),
+        *(_FIELD_WEIGHTS.get(field, 1.0) for field in fields),
         *(_message_weight(message) for message in hit.matches),
     ]
     if not signals:
@@ -292,8 +296,12 @@ def rank_episode_matches(
             if dense_evidence is not None
             else {}
         )
+        reviewed = (
+            dense_evidence.reranked_episodes.get(query.dense_expression)
+            if dense_evidence is not None else None
+        )
         document_by_id = {document.episode_id: document for document in documents}
-        for episode_id in set(sparse_by_episode).union(dense_by_episode):
+        for episode_id in (reviewed if reviewed is not None else set(sparse_by_episode).union(dense_by_episode)):
             sparse_score, hits = sparse_by_episode.get(episode_id, (0.0, []))
             dense_hit = dense_by_episode.get(episode_id)
             document = document_by_id.get(episode_id)
@@ -342,6 +350,8 @@ def rank_episode_matches(
                 + 0.20 * agreement
                 + corroboration
             ) * _priority_weight(query.priority)
+            if reviewed is not None:
+                hybrid_score = _priority_weight(query.priority) / (1 + reviewed[episode_id].rank)
             state = episodes.setdefault(
                 episode_id,
                 {
@@ -364,6 +374,12 @@ def rank_episode_matches(
             message_matches = {
                 message.id: message for hit in hits for message in hit.matches
             }
+            if reviewed is not None:
+                cited_ids = set(reviewed[episode_id].evidence_message_ids)
+                message_matches = {
+                    message.id: message for message in document.messages
+                    if message.id in cited_ids
+                }
             alternatives = tuple(
                 dict.fromkeys(hit.alternative for hit in hits)
             )
@@ -426,6 +442,8 @@ def rank_episode_matches(
             assert isinstance(eligibility, list)
             eligibility.append(
                 {
+                    "reviewed": reviewed is not None,
+                    "dense_confidence": dense_score,
                     "sparse": sparse_score > 0,
                     "sparse_confidence": query_confidence,
                     "cosine": raw_cosine,
@@ -442,6 +460,8 @@ def rank_episode_matches(
             )
             channels = state["channels"]
             assert isinstance(channels, set)
+            if reviewed is not None:
+                channels.add("evidence_rerank")
             if sparse_score > 0:
                 channels.add("sparse")
             if raw_cosine is not None:
@@ -480,7 +500,7 @@ def rank_episode_matches(
                 all_matches.values(),
                 key=lambda message: (message.ordinal, message.id),
                 reverse=True,
-            )[:4]
+            )[:8 if "evidence_rerank" in state["channels"] else 4]
         )
         query_rows = state["queries"]
         assert isinstance(query_rows, list)
@@ -510,7 +530,10 @@ def rank_episode_matches(
                 episode_id=episode_id,
                 score=score,
                 semantic_score=semantic_score,
-                relevance_confidence=relevance_confidence,
+                relevance_confidence=max(
+                    relevance_confidence,
+                    max((float(item["dense_confidence"]) for item in eligibility), default=0.0),
+                ),
                 last_activity_at=last_activity_at,
                 salience=salience,
                 matches=ordered_matches,
@@ -531,7 +554,7 @@ def rank_episode_matches(
         )
         # Keep admission separate from ranking. Stash the decision without
         # changing the public immutable result shape.
-        state["admitted"] = sparse_admitted or dense_only_admitted or support_admitted
+        state["admitted"] = any(item["reviewed"] for item in eligibility) or sparse_admitted or dense_only_admitted or support_admitted
     ranked.sort(
         key=lambda hit: (
             hit.score,
