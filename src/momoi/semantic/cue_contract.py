@@ -1,26 +1,32 @@
 """Shared retrieval intent for archived cues and current memory queries."""
 
 EVENT_RETRIEVAL_CONTRACT = (
-    "用对话所用语言表达记忆检索的场景、意图及关联内容、人物、任务或关键词。"
-    "保留有助于区分话题的名称和标识，不编造事实，不把无关事件串联起来。"
+    "Use the conversation's language to express the retrieval scenario, intent, and "
+    "related content, people, tasks, or keywords. Preserve names and identifiers that "
+    "help distinguish topics. Do not invent facts or connect unrelated events. "
 )
 
 CUE_ARCHIVE_CONTRACT = EVENT_RETRIEVAL_CONTRACT + (
-    "recall_cues 输出 3-5 个用于之后语义匹配的查询式段落。"
-    "请额外思考“什么情景下可能会需要这些信息”"
-    "“这些信息和什么内容、人物、任务、关键词关联”，"
-    "每条 text 写成自然语言短句，包含可匹配的场景、意图或关联内容。"
-    "写未来可能的查询需求，不要把摘要拆成事实列表，也不要在查询里复述完整答案。"
-    "不同线索覆盖不同检索角度，不为凑数重复改写；信息不足时可以少于三条或为空。"
-    "evidence_message_ids 引用能够满足该检索需求的已保留消息；"
-    "未来的查询情景本身不需要已经发生，但其中的事实前提必须有来源，"
-    "保留转述、纠正、否定、梦境及计划与实际发生的区别。"
+    "Return 3-5 query-like passages in recall_cues for later semantic matching. "
+    "Consider when this information might be needed and which content, people, "
+    "tasks, or keywords it relates to. Write each text as a short natural-language "
+    "sentence expressing a matchable scenario, intent, or related content. "
+    "Describe possible future retrieval needs; do not split the summary into a fact "
+    "list or repeat the full answer in the query. Cover distinct retrieval angles "
+    "without redundant paraphrases to meet a quota; return fewer than three cues "
+    "or none when information is insufficient. evidence_message_ids must reference "
+    "retained messages that can satisfy the retrieval need. The future query scenario "
+    "need not have occurred, but its factual premises must have sources. Preserve "
+    "attribution, corrections, negation, and the distinction between dreams, plans, "
+    "and actual events."
 )
 
 CUE_QUERY_CONTRACT = EVENT_RETRIEVAL_CONTRACT + (
-    "根据当前对话，写出现在需要查找什么历史信息的自然语言查询。"
-    "归档线索描述“未来什么情景会需要这段记忆”，当前查询描述这个需求本身，"
-    "两者围绕相同的场景、意图及关联内容进行语义匹配。"
-    "只用已知上下文限定查询、消解指代，不猜测未知答案，不要求知道原线索措辞。"
-    "该查询同时检索话题摘要和逐条独立 embedding 的 CUES。"
+    "Based on the current conversation, write a natural-language query describing "
+    "the historical information needed now. Archived cues describe future scenarios "
+    "in which a memory might be needed; the current query expresses that need itself. "
+    "Both are matched semantically through the same scenarios, intents, and related "
+    "content. Use only known context to narrow the query and resolve references. "
+    "Do not guess unknown answers; knowing the original cue wording is unnecessary. "
+    "The query searches both episode summaries and individually embedded CUES."
 )
