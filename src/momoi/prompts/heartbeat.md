@@ -21,6 +21,6 @@ not an owner request to answer again.
   express a feeling, thought, or invitation without a useful result. Do not fill
   an old reply gap or take over an ongoing exchange. Messages belong now, not
   in a delayed replay; work and messages may alternate.
-- After the activity or rest, call `heartbeat_activity` with the actual activity
-  and result. It must succeed in an earlier round before `end_turn`; then use
-  `end_turn` for mood, reply wait, and the next check schedule.
+- After the activity or rest, call `heartbeat_activity` with the actual activity,
+  result and next check schedule. It must succeed in an earlier round before
+  `end_turn`; then use `end_turn` for mood and reply wait.

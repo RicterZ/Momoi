@@ -20,9 +20,7 @@ Tools and messages may alternate; sending a message does not end the Turn.
 This is an Owner Turn. Put visible text in `send_bubbles.bubbles` or use
 `send_voice`. Do not write `[tool_call] ... -> ok` as a substitute for a tool call.
 
-For `end_turn`, supply `reply_wait` and `mood` objects. Omit `heartbeat` and
-`goal`; their presence in the shared tool catalog or historical runtime state
-does not make this a Heartbeat or Goal Turn.
+For `end_turn`, supply only `reply_wait` and `mood` objects.
 Example when finished and the persistent mood is unchanged:
 `{"reply_wait":{"wait":false},"mood":{"decision":"unchanged"}}`.
 `mood.decision=unchanged` permits only `decision`; do not copy existing mood

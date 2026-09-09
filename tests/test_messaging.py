@@ -569,28 +569,12 @@ class MessagingTest(unittest.TestCase):
         )
         self.assertIsNone(old_shape)
         self.assertEqual(error, "legacy_reply_wait_fields_not_allowed")
-        heartbeat, error = parse_response(
-            {
-                "reply_wait": {"wait": False},
-                "mood": {"decision": "unchanged"},
-                "heartbeat": {
-                    "next_check_minutes": 10,
-                    "reason": "有值得保留的想法",
-                },
-            },
-            require_heartbeat=True,
-        )
-        self.assertIsNone(error)
-        self.assertEqual(heartbeat.heartbeat["next_check_minutes"], 10)
-        invalid_heartbeat, error = parse_response(
-            {
-                "reply_wait": {"wait": False},
-                "mood": {"decision": "unchanged"},
-            },
-            require_heartbeat=True,
-        )
-        self.assertIsNone(invalid_heartbeat)
-        self.assertEqual(error, "invalid_heartbeat_state")
+        heartbeat, error = parse_response({
+            "reply_wait": {"wait": False}, "mood": {"decision": "unchanged"},
+            "heartbeat": {"next_check_minutes": 10, "reason": "later"},
+        })
+        self.assertIsNone(heartbeat)
+        self.assertEqual(error, "unexpected_end_turn_fields")
         empty_bubbles, error = parse_bubbles({"bubbles": []})
         self.assertIsNone(empty_bubbles)
         self.assertEqual(error, "bubbles_must_be_a_non_empty_array")

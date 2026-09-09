@@ -17,5 +17,5 @@ not owner speech or a request to reopen old conversation.
 - After work, call `end_turn`. With nothing to share,
   finish silently; do not send a receipt or announce that nothing changed.
 
-For `end_turn`, supply `reply_wait` and `mood`; omit `heartbeat` and `goal`.
+For `end_turn`, supply only `reply_wait` and `mood`.
 Shared historical heartbeat state does not authorize heartbeat scheduling here.

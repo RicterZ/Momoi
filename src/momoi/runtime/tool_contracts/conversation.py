@@ -1,6 +1,4 @@
 import copy
-import json
-import math
 from typing import Any
 
 from ...tools.contracts.agenda import GOAL_REVIEW_SCHEMA
@@ -196,7 +194,7 @@ REPLY_WAIT_DECISION_SCHEMA: dict[str, Any] = {
 HEARTBEAT_ACTIVITY_TOOL_SPEC: dict[str, Any] = {
     "name": "heartbeat_activity",
     "description": (
-        "Record this Heartbeat's actual activity or rest and its result. "
+        "Record this Heartbeat's actual activity or rest, its result and next check schedule. "
         "Visible in every conversation workflow, callable only during Heartbeat. "
         "Must succeed before end_turn, in an earlier round. "
         "Stages the latest report for atomic commit when the Heartbeat completes."
@@ -205,176 +203,99 @@ HEARTBEAT_ACTIVITY_TOOL_SPEC: dict[str, Any] = {
         "type": "object",
         "properties": {
             "activity": {
-                "type": "string", "minLength": 1, "maxLength": 300,
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300,
                 "description": "Actual activity or rest during this Heartbeat.",
             },
             "result": {
-                "type": "string", "maxLength": 2000,
+                "type": "string",
+                "maxLength": 2000,
                 "description": "Concrete outcome; empty when none.",
             },
+            "next_check_minutes": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1440,
+                "description": "Minutes until the next autonomous check; obey the interval bounds in the current Heartbeat context.",
+            },
+            "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500,
+                "description": "Why this next check fits the current situation.",
+            },
         },
-        "required": ["activity", "result"],
+        "required": ["activity", "result", "next_check_minutes", "reason"],
         "additionalProperties": False,
     },
 }
 
-HEARTBEAT_STATE_SCHEMA: dict[str, Any] = {
-    "type": "object",
+GOAL_REVIEW_TOOL_SPEC: dict[str, Any] = {
+    "name": "goal_review",
     "description": (
-        "Required ONLY in the current heartbeat workflow. Omit the entire heartbeat "
-        "field in owner, webhook, reply_followup and goal Turns, even when runtime_state "
-        "shows a previous heartbeat or its schedule. Historical state is not an instruction "
-        "to write this field. Use the configured interval bounds from the current workflow."
+        "Stage the current Goal's result and next action or schedule. Callable only "
+        "during a Goal Turn; the runtime supplies its ID. Must succeed in an earlier "
+        "round before end_turn({}). Changes commit only when that Turn completes."
     ),
-    "properties": {
-        "next_check_minutes": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 1440,
-            "description": "Delay until the next autonomous check.",
-        },
-        "reason": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 500,
-            "description": "Why this activity and next check fit the current situation.",
-        },
-    },
-    "required": [
-        "next_check_minutes",
-        "reason",
-    ],
-    "additionalProperties": False,
+    "input_schema": GOAL_REVIEW_SCHEMA,
 }
+
 
 END_TURN_EXAMPLE = {"reply_wait": {"wait": False}, "mood": {"decision": "unchanged"}}
 
 END_TURN_TOOL_SPEC: dict[str, Any] = {
     "name": "end_turn",
     "description": (
-        "Commit private state and finish this Turn. Does not send a message. "
-        "Call alone or last after send_bubbles/send_voice in the same response; "
-        "delivery must succeed first. Other work tools must finish in earlier rounds. "
-        "reply_wait and mood are objects, not false or a mood-name string. "
-        "Shared contract: owner/webhook require reply_wait and mood; heartbeat also requires "
-        "heartbeat and an earlier successful heartbeat_activity; reply_followup requires "
-        "reply_wait.wait=false; goal accepts only goal. Runtime enforces stage permissions "
-        "and configured heartbeat intervals. Do not write [tool_call] text or invent execution results. "
-        "Conversation example (adapt to actual state): "
-        + json.dumps(END_TURN_EXAMPLE, ensure_ascii=False)
+        "Finish this Turn and commit its staged state. Does not send a message. "
+        "Call alone or last after successful send_bubbles/send_voice; other work tools "
+        "must finish in earlier rounds. For owner, webhook, heartbeat and reply_followup, "
+        "supply mood and reply_wait objects; reply_followup requires wait=false. "
+        "Heartbeat requires an earlier successful heartbeat_activity. For Goal, call "
+        "goal_review successfully first, then end_turn with empty arguments {}."
     ),
     "input_schema": {
         "type": "object",
-        "examples": [
-            copy.deepcopy(END_TURN_EXAMPLE),
-            {"reply_wait": {"wait": False}, "mood": {
-                "decision": "updated", "state": "calm", "intensity": 0.3,
-                "cause": "事情已处理完，心情平静下来"}},
-            {"reply_wait": {"wait": True, "delay_minutes": 3,
-                            "expected_information": "主人选择的见面时间",
-                            "reason": "若未回复，补充可选时间以便安排"},
-             "mood": {"decision": "unchanged"}},
-            {**copy.deepcopy(END_TURN_EXAMPLE), "heartbeat": {
-                "next_check_minutes": 30, "reason": "当前无待处理事项，稍后检查"}},
-            {"goal": {"status": "done", "result": "已完成检查并验证结果"}},
-        ],
         "properties": {
             "reply_wait": REPLY_WAIT_DECISION_SCHEMA,
             "mood": MOOD_DECISION_SCHEMA,
-            "heartbeat": HEARTBEAT_STATE_SCHEMA,
-            "goal": {"default": None, "oneOf": [{"type": "null"}, GOAL_REVIEW_SCHEMA]},
         },
         "oneOf": [
             {
-                "title": "Owner, webhook or reply follow-up completion",
-                "description": "Omit heartbeat. reply_followup additionally requires reply_wait.wait=false.",
-                "examples": [copy.deepcopy(END_TURN_EXAMPLE)],
+                "title": "Conversation completion",
                 "required": ["reply_wait", "mood"],
-                "properties": {"goal": {"type": "null"}, "heartbeat": False},
+                "examples": [copy.deepcopy(END_TURN_EXAMPLE)],
             },
             {
-                "title": "Goal completion only",
-                "description": "Only in the goal workflow; submit only goal. Omit reply_wait, mood and heartbeat.",
-                "examples": [{"goal": {"status": "done", "result": "已完成检查并验证结果"}}],
-                "required": ["goal"],
-                "properties": {
-                    "goal": {"type": "object"},
-                    "reply_wait": False,
-                    "mood": False,
-                    "heartbeat": False,
-                },
-            },
-            {
-                "title": "Heartbeat completion only",
-                "description": "Only in the heartbeat workflow after heartbeat_activity succeeds. The example interval must be adapted to configured bounds.",
-                "examples": [{**copy.deepcopy(END_TURN_EXAMPLE), "heartbeat": {
-                    "next_check_minutes": 30, "reason": "当前无待处理事项，稍后检查"}}],
-                "required": ["reply_wait", "mood", "heartbeat"],
-                "properties": {"goal": {"type": "null"}},
+                "title": "Goal completion after goal_review",
+                "maxProperties": 0,
+                "examples": [{}],
             },
         ],
+        "examples": [copy.deepcopy(END_TURN_EXAMPLE), {}],
         "additionalProperties": False,
     },
 }
 
 
-def end_turn_tool_spec(
-    stage: str,
-    *,
-    heartbeat_min_interval_seconds: int = 60,
-    heartbeat_max_interval_seconds: int = 86400,
-) -> dict[str, Any]:
-    """Build a private error contract, never a provider-visible tool projection.
-
-    All conversation stages send END_TURN_TOOL_SPEC unchanged. This projection
-    only supplies stage-specific missing fields and examples in error results.
-    """
+def end_turn_tool_spec(stage: str) -> dict[str, Any]:
+    """Stage-specific error guidance; provider-visible schemas remain unchanged."""
     spec = copy.deepcopy(END_TURN_TOOL_SPEC)
     schema = spec["input_schema"]
     schema.pop("oneOf")
-    properties = schema["properties"]
     if stage == "goal":
-        schema["properties"] = {"goal": copy.deepcopy(GOAL_REVIEW_SCHEMA)}
-        schema["required"] = ["goal"]
-    else:
-        required = ["reply_wait", "mood"]
-        if stage == "heartbeat":
-            required.append("heartbeat")
-            interval = properties["heartbeat"]["properties"]["next_check_minutes"]
-            interval["minimum"] = max(1, math.ceil(heartbeat_min_interval_seconds / 60))
-            interval["maximum"] = min(
-                1440, math.floor(heartbeat_max_interval_seconds / 60)
-            )
-        elif stage == "reply_followup":
-            properties["reply_wait"] = copy.deepcopy(
+        schema["properties"] = {}
+        schema["required"] = []
+        schema["examples"] = [{}]
+    elif stage in {"owner", "heartbeat", "webhook", "reply_followup"}:
+        schema["required"] = ["reply_wait", "mood"]
+        schema["examples"] = [copy.deepcopy(END_TURN_EXAMPLE)]
+        if stage == "reply_followup":
+            schema["properties"]["reply_wait"] = copy.deepcopy(
                 REPLY_WAIT_DECISION_SCHEMA["oneOf"][0]
             )
-        elif stage not in {"webhook", "owner"}:
-            raise ValueError(f"end_turn is not available in {stage}")
-        schema["required"] = required
-        schema["properties"] = {key: properties[key] for key in required}
-        schema["properties"]["goal"] = {"type": "null"}
-    example = copy.deepcopy(END_TURN_EXAMPLE)
-    if stage == "goal":
-        example = {"goal": {"status": "done", "result": "已完成检查并验证结果"}}
-    elif stage == "heartbeat":
-        example["heartbeat"] = {
-            "next_check_minutes": interval["minimum"],
-            "reason": "当前无待处理事项，稍后检查",
-        }
-    schema["examples"] = [example]
-    if stage != "goal":
-        updated = copy.deepcopy(example)
-        updated["mood"] = {"decision": "updated", "state": "calm", "intensity": 0.3, "cause": "事情已处理完，心情平静下来"}
-        schema["examples"].append(updated)
-        if stage != "reply_followup":
-            waiting = copy.deepcopy(example)
-            waiting["reply_wait"] = {
-                "wait": True, "delay_minutes": 3,
-                "expected_information": "主人选择的见面时间",
-                "reason": "若未回复，补充可选时间以便安排",
-            }
-            schema["examples"].append(waiting)
+    else:
+        raise ValueError(f"end_turn is not available in {stage}")
     return spec
 
 
@@ -382,9 +303,9 @@ def end_turn_correction(error: str, schema: dict[str, Any], arguments: dict[str,
     hints = {
         "end_turn_must_be_alone": "Call end_turn alone, or last after send_bubbles/send_voice. Finish all other tools in earlier rounds.",
         "send_bubbles_required_before_end_turn": "Plain assistant text is not delivery. Send it with send_bubbles/send_voice before end_turn.",
-        "goal_required_in_end_turn": "This is a Goal Turn: supply only goal with its actual status and result; follow the status-specific required fields.",
-        "goal_end_turn_only_accepts_goal": "Remove all fields except goal in this Goal Turn.",
-        "goal_not_allowed_in_end_turn": "This is not a Goal Turn; omit goal and supply reply_wait and mood objects.",
+        "goal_review_required_before_end_turn": "Call goal_review successfully in an earlier round, then end_turn({}).",
+        "goal_end_turn_requires_empty_arguments": "Submit the Goal outcome through goal_review; end_turn accepts only {} in this stage.",
+        "unexpected_end_turn_fields": "end_turn accepts only mood and reply_wait. Submit Goal outcomes through goal_review and Heartbeat activity and schedule through heartbeat_activity.",
         "heartbeat_activity_required_before_end_turn": "Call heartbeat_activity successfully in an earlier round, then retry end_turn.",
         "invalid_mood_decision": 'mood must be {"decision":"unchanged"} or {"decision":"updated","state":"calm","intensity":0.3,"cause":"具体原因"}. A string is invalid.',
         "invalid_reply_wait_decision": f'reply_wait must be {{"wait":false}} or an object with wait=true, delay_minutes (integer {REPLY_WAIT_MIN_MINUTES}-{REPLY_WAIT_MAX_MINUTES}), expected_information and reason. A boolean is invalid; wait=false accepts no other fields.',
@@ -392,15 +313,12 @@ def end_turn_correction(error: str, schema: dict[str, Any], arguments: dict[str,
         "reply_followup_cannot_schedule_another_wait": 'This follow-up cannot schedule another follow-up; use reply_wait={"wait":false}.',
         "reply_followup_bubble_required": "Deliver this follow-up with send_bubbles or send_voice before ending.",
         "bubbles_not_allowed_in_end_turn": "Send bubbles through send_bubbles first; remove bubbles from end_turn.",
-        "heartbeat_state_not_allowed": "Remove heartbeat; it is only valid in a Heartbeat Turn.",
         "activity_not_allowed_in_end_turn": "Remove activity; record Heartbeat activity through heartbeat_activity before ending.",
         "legacy_reply_wait_fields_not_allowed": "Remove expects_reply, reply_expectation and schedule_reply_wait; use the reply_wait object.",
     }
     missing = [key for key in schema.get("required", []) if key not in arguments]
     message = hints.get(error, "Correct the arguments to match this stage's schema and retry end_turn as a native tool call.")
     field_errors = []
-    if error == "heartbeat_state_not_allowed":
-        field_errors.append({"path": "$.heartbeat", "issue": "forbidden_in_current_workflow", "expected": "field omitted"})
     if error == "invalid_mood_decision":
         mood = arguments.get("mood")
         if isinstance(mood, dict) and mood.get("decision") == "unchanged":
@@ -421,9 +339,6 @@ def end_turn_correction(error: str, schema: dict[str, Any], arguments: dict[str,
         field_errors.append({"path": "$." + key, "issue": "required_in_current_workflow"})
     if missing:
         message = "Supply all missing fields: " + ", ".join(missing) + ". " + message
-    if error in {"heartbeat_interval_out_of_range", "invalid_heartbeat_state"}:
-        interval = schema["properties"]["heartbeat"]["properties"]["next_check_minutes"]
-        message = f'heartbeat requires next_check_minutes (integer {interval["minimum"]}-{interval["maximum"]}) and a nonempty reason (at most 500 characters).'
     return {
         "field_errors": field_errors,
         "message": message,

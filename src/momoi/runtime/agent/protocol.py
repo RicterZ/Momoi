@@ -194,25 +194,12 @@ def parse_end_turn(
     *,
     execution: TurnExecutionSpec,
     visible_since_owner_update: bool,
-    heartbeat_min_interval_seconds: int,
-    heartbeat_max_interval_seconds: int,
 ) -> tuple[AgentReply | None, str | None]:
     if not execution.require_response:
         return None, "end_turn_not_allowed"
-    reply, error = parse_response(
-        arguments,
-        require_heartbeat=execution.heartbeat,
-    )
+    reply, error = parse_response(arguments)
     if reply is None:
         return None, error
-    if execution.heartbeat and reply.heartbeat:
-        seconds = int(reply.heartbeat["next_check_minutes"]) * 60
-        if not (
-            heartbeat_min_interval_seconds
-            <= seconds
-            <= heartbeat_max_interval_seconds
-        ):
-            return None, "heartbeat_interval_out_of_range"
     if reply.expects_reply and not visible_since_owner_update:
         return None, "reply_expectation_without_visible_bubble"
     if execution.reply_followup:

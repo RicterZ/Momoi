@@ -12,7 +12,7 @@ from ...storage import estimate_tokens
 from ..tool_contracts.context import RECALL_TOOL_SPEC, heartbeat_begin_spec
 from ..tool_contracts.current_state import current_state_finish_spec
 from ..tool_contracts.conversation import (
-    END_TURN_TOOL_SPEC, HEARTBEAT_ACTIVITY_TOOL_SPEC, send_bubbles_tool_spec,
+    END_TURN_TOOL_SPEC, HEARTBEAT_ACTIVITY_TOOL_SPEC, GOAL_REVIEW_TOOL_SPEC, send_bubbles_tool_spec,
 )
 from ..tool_contracts.runtime import (
     READ_TOOL_RESULT_SPEC,
@@ -105,6 +105,7 @@ class ToolSurface:
             copy.deepcopy(RECALL_TOOL_SPEC),
             heartbeat_begin_spec(catalog),
             copy.deepcopy(HEARTBEAT_ACTIVITY_TOOL_SPEC),
+            copy.deepcopy(GOAL_REVIEW_TOOL_SPEC),
             self.send_bubbles_spec(),
             *([copy.deepcopy(SEND_VOICE_TOOL_SPEC)] if self.voice_enabled else []),
             READ_TOOL_RESULT_SPEC,
@@ -164,6 +165,7 @@ class ToolSurface:
             goal_agenda = {"goal_create"} if not agent_owned_goal else set()
             return frozenset(
                 {
+                    "goal_review",
                     "memory_search",
                     *voice,
                     "send_bubbles",

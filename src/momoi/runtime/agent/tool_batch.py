@@ -172,6 +172,15 @@ class ToolBatchExecutor:
             elif call.name == "heartbeat_activity":
                 result = record_heartbeat_activity(
                     call, heartbeat_turn=execution.heartbeat, draft=request.draft,
+                    minimum_seconds=self.config.heartbeat.min_interval_seconds,
+                    maximum_seconds=self.config.heartbeat.max_interval_seconds,
+                )
+            elif call.name == "goal_review":
+                result = (
+                    self.agenda_tools.finish_review(
+                        execution.goal_id, call.arguments, request.draft,
+                    )
+                    if execution.goal_id else {"ok": False, "error": "tool_not_allowed"}
                 )
             elif call.name == "recall":
                 result = await recall_owner_context(
@@ -213,27 +222,19 @@ class ToolBatchExecutor:
                         ),
                     }
                 elif execution.goal_id:
-                    result = self.agenda_tools.finish_review(
-                        execution.goal_id, call.arguments["goal"], request.draft,
-                    )
+                    result = {"ok": True, "state": "completed"}
                 else:
                     reply, error = parse_end_turn(
                         call.arguments,
                         execution=execution,
                         visible_since_owner_update=visible,
-                        heartbeat_min_interval_seconds=self.config.heartbeat.min_interval_seconds,
-                        heartbeat_max_interval_seconds=self.config.heartbeat.max_interval_seconds,
                     )
                     result = (
                         {"ok": True, "state": "completed"}
                         if reply is not None else {"ok": False, "error": error}
                     )
                     if error:
-                        schema = end_turn_tool_spec(
-                            execution.stage,
-                            heartbeat_min_interval_seconds=self.config.heartbeat.min_interval_seconds,
-                            heartbeat_max_interval_seconds=self.config.heartbeat.max_interval_seconds,
-                        )["input_schema"]
+                        schema = end_turn_tool_spec(execution.stage)["input_schema"]
                         result.update(end_turn_correction(error, schema, call.arguments))
                 ended = bool(result.get("ok"))
                 log_event(

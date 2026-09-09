@@ -444,12 +444,12 @@ nothing useful.
 ### Completing a Goal review
 
 A Goal review uses one sequence: work → optional `send_bubbles` / `send_voice` →
-`end_turn`. Its `goal` object records the result, updates the task and ends the
-review in one call. `active`, `waiting` and `blocked` keep the Goal; `done` and
+`goal_review` → `end_turn({})`. The review tool stages the result and task changes;
+they commit when the Turn finishes. `active`, `waiting` and `blocked` keep the Goal; `done` and
 `cancelled` close it. The runtime supplies the current Goal ID. For example:
 
 ```json
-{"goal": {"status": "done", "result": "Downloaded and verified the file"}}
+{"status": "done", "result": "Downloaded and verified the file"}
 ```
 
 Continuing requires `next_action` and a future `next_review_at`; recurring active
@@ -463,11 +463,11 @@ Valid `<bubble>...</bubble>` blocks in assistant text become `send_bubbles` befo
 harness validation. With `end_turn`, nonempty assistant text requires `send_bubbles`
 in the same response; empty text is allowed. The harness checks the normalized
 tool calls without parsing text, and text outside bubble blocks is not delivered.
-Each Turn receives an `end_turn` schema with its own required
-fields, including `activity` for Owner and `heartbeat` for Heartbeat.
-Other Turns must omit `goal` or pass `null`; the harness rejects cross-workflow
-arguments before execution. Normal conversations retain `goal_update`, `goal_finish`
-and `goal_cancel` for task management; Goal reviews use the terminal outcome instead.
+All conversation stages receive the same tool schemas; the harness enforces
+stage permissions. `end_turn` accepts `mood` and `reply_wait` for conversations,
+or `{}` after `goal_review` for Goals. Heartbeats first stage activity, result,
+`next_check_minutes` and `reason` through `heartbeat_activity`. Normal conversations
+retain `goal_update`, `goal_finish` and `goal_cancel` for task management.
 
 ## Owner controls
 

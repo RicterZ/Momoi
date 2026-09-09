@@ -352,12 +352,8 @@ class DaemonTest(unittest.TestCase):
         self.assertFalse(END_TURN_TOOL_SPEC["input_schema"]["additionalProperties"])
         self.assertEqual(END_TURN_TOOL_SPEC["name"], "end_turn")
         self.assertNotIn("heartbeat", END_TURN_TOOL_SPEC["input_schema"]["oneOf"][0]["required"])
-        self.assertIn("heartbeat", END_TURN_TOOL_SPEC["input_schema"]["properties"])
+        self.assertNotIn("heartbeat", END_TURN_TOOL_SPEC["input_schema"]["properties"])
         self.assertIn("mood", END_TURN_TOOL_SPEC["input_schema"]["oneOf"][0]["required"])
-        self.assertNotIn(
-            "continue_waiting_for_reply",
-            END_TURN_TOOL_SPEC["input_schema"]["properties"]["heartbeat"]["properties"],
-        )
         self.assertNotIn("activity", END_TURN_TOOL_SPEC["input_schema"]["oneOf"][0]["required"])
         self.assertNotIn("activity", END_TURN_TOOL_SPEC["input_schema"]["properties"])
 
@@ -1933,6 +1929,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         call = ToolCall("activity-one", "heartbeat_activity", {
                             "activity": "整理小游戏关卡灵感",
                             "result": "读完一条游戏新闻并记下玩法联想",
+                            "next_check_minutes": 2, "reason": "完成本次灵感整理",
                         })
                     elif self.calls == 4:
                         call = ToolCall(
@@ -1941,10 +1938,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             {
                                 "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
-                                "heartbeat": {
-                                    "next_check_minutes": 2,
-                                    "reason": "完成本次灵感整理",
-                                },
                             },
                         )
                     elif self.calls == 5:
@@ -1986,6 +1979,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         call = ToolCall("activity-two", "heartbeat_activity", {
                             "activity": "整理小游戏关卡灵感",
                             "result": "已建立自己的关卡草案任务继续整理",
+                            "next_check_minutes": 2, "reason": "有具体的新点子才分享",
                         })
                     else:
                         call = ToolCall(
@@ -1999,10 +1993,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                     "reason": "想听老师对新关卡点子的看法",
                                 },
                                 "mood": {"decision": "unchanged"},
-                                "heartbeat": {
-                                    "next_check_minutes": 2,
-                                    "reason": "有具体的新点子才分享",
-                                },
                             },
                         )
                     return ProviderResponse(

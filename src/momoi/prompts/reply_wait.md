@@ -10,5 +10,5 @@ remains open. This trigger is not a new owner message.
   unrelated work. Use shared history and memory to make the continuation fit.
 - Call `send_bubbles` or `send_voice` first, then `end_turn`.
 
-For `end_turn`, supply `reply_wait` and `mood`; omit `heartbeat` and `goal`.
+For `end_turn`, supply only `reply_wait` and `mood`.
 Shared historical heartbeat state does not authorize heartbeat scheduling here.

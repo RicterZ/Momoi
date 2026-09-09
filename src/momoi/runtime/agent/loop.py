@@ -352,12 +352,8 @@ class AgentLoop:
                 correction = []
                 # Stage-specific guidance belongs only in appended error results.
                 end_schema = (
-                    end_turn_tool_spec(
-                        stage,
-                        heartbeat_min_interval_seconds=self.config.heartbeat.min_interval_seconds,
-                        heartbeat_max_interval_seconds=self.config.heartbeat.max_interval_seconds,
-                    )["input_schema"]
-                    if any(spec["name"] == "end_turn" for spec in request_tools)
+                    end_turn_tool_spec(stage)["input_schema"]
+                    if workflow is None and any(spec["name"] == "end_turn" for spec in request_tools)
                     else None
                 )
                 for call in response.tool_calls:

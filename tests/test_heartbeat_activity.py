@@ -46,14 +46,18 @@ def activity(**overrides):
     return ToolCall(
         "activity",
         "heartbeat_activity",
-        {"activity": "reading", "result": "finished", **overrides},
+        {"activity": "reading", "result": "finished", "next_check_minutes": 30, "reason": "rest", **overrides},
     )
 
 
 def test_visible_tool_schema_is_stable_and_permissions_are_separate(daemon):
     canonical = copy.deepcopy(HEARTBEAT_ACTIVITY_TOOL_SPEC)
+    original = daemon.tool_surface.conversation_specs()
     for stage in ("owner", "goal", "heartbeat", "webhook", "reply_followup"):
         specs = daemon.tool_surface.conversation_specs()
+        assert specs == original
+        assert "goal_review" in {tool["name"] for tool in specs}
+        assert ("goal_review" in daemon.tool_surface.permitted_names(stage)) == (stage == "goal")
         assert (
             next(tool for tool in specs if tool["name"] == "heartbeat_activity")
             == canonical
@@ -100,6 +104,20 @@ def test_heartbeat_requires_successful_activity_and_reset_clears_gate():
     assert harness.validate([end]) == "heartbeat_activity_required_before_end_turn"
 
 
+@pytest.mark.parametrize("minutes,valid", [(3, True), (10, True), (2, False), (11, False), (True, False), (3.5, False)])
+def test_heartbeat_schedule_respects_configured_limits_without_mutating_on_error(minutes, valid):
+    draft = TurnDraft()
+    baseline = record_heartbeat_activity(activity(next_check_minutes=5), heartbeat_turn=True, draft=draft,
+                                         minimum_seconds=180, maximum_seconds=600)
+    assert baseline["ok"]
+    before = copy.deepcopy(draft.heartbeat_activity)
+    result = record_heartbeat_activity(activity(next_check_minutes=minutes), heartbeat_turn=True, draft=draft,
+                                       minimum_seconds=180, maximum_seconds=600)
+    assert result["ok"] is valid
+    if not valid:
+        assert draft.heartbeat_activity == before
+
+
 @pytest.mark.parametrize(
     "args",
     [
@@ -142,7 +160,6 @@ def test_real_heartbeat_retries_gate_and_commits_only_on_completion(daemon, canc
         {
             "mood": {"decision": "unchanged"},
             "reply_wait": {"wait": False},
-            "heartbeat": {"next_check_minutes": 30, "reason": "rest"},
         },
     )
     invalid = activity(activity="")

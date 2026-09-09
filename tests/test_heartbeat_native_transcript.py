@@ -34,10 +34,6 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                 })
                 finish = ToolCall("finish", "end_turn", {
                     "reply_wait": {"wait": False}, "mood": {"decision": "unchanged"},
-                    "heartbeat": {
-                        "next_check_minutes": 30,
-                        "reason": "No activity was needed.",
-                    },
                 })
 
                 class Provider:
@@ -47,7 +43,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                         self.calls += 1
                         call = begin if self.calls == 1 else finish
                         if self.calls == 3:
-                            call = ToolCall("activity", "heartbeat_activity", {"activity": "resting", "result": ""})
+                            call = ToolCall("activity", "heartbeat_activity", {"activity": "resting", "result": "", "next_check_minutes": 30, "reason": "No activity was needed."})
                         content = [{"type": "tool_use", "id": call.id,
                                     "name": call.name, "input": call.arguments}]
                         if self.calls == 2:
@@ -155,7 +151,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                             },
                         )
                     elif self.calls == 2:
-                        call = ToolCall("activity", "heartbeat_activity", {"activity": "resting", "result": ""})
+                        call = ToolCall("activity", "heartbeat_activity", {"activity": "resting", "result": "", "next_check_minutes": 30, "reason": "No activity was needed."})
                     else:
                         call = ToolCall(
                             "finish",
@@ -163,10 +159,6 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                             {
                                 "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
-                                "heartbeat": {
-                                    "next_check_minutes": 30,
-                                    "reason": "No activity was needed.",
-                                },
                             },
                         )
                     return ProviderResponse(
@@ -335,7 +327,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                     elif self.calls == 3:
                         case.assertIn("mcp__demo__read", names)
                         case.assertIn("dynamic heartbeat tool works", str(messages[-1]))
-                        call = ToolCall("activity", "heartbeat_activity", {"activity": "inspect demo state", "result": "planning complete"})
+                        call = ToolCall("activity", "heartbeat_activity", {"activity": "inspect demo state", "result": "planning complete", "next_check_minutes": 30, "reason": "test"})
                     else:
                         call = ToolCall(
                             "finish",
@@ -343,10 +335,6 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                             {
                                 "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
-                                "heartbeat": {
-                                    "next_check_minutes": 30,
-                                    "reason": "test",
-                                },
                             },
                         )
                     return ProviderResponse(

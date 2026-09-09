@@ -7,19 +7,43 @@ from ..tool_contracts.context import recall_correction
 
 
 def record_heartbeat_activity(
-    call: ToolCall, *, heartbeat_turn: bool, draft: TurnDraft,
+    call: ToolCall,
+    *,
+    heartbeat_turn: bool,
+    draft: TurnDraft,
+    minimum_seconds: int = 60,
+    maximum_seconds: int = 86400,
 ) -> dict[str, object]:
     if not heartbeat_turn:
         return {"ok": False, "error": "tool_not_allowed"}
     args = call.arguments
     if (
-        not isinstance(args, dict) or set(args) != {"activity", "result"}
-        or not isinstance(args["activity"], str) or not args["activity"].strip()
+        not isinstance(args, dict)
+        or set(args) != {"activity", "result", "next_check_minutes", "reason"}
+        or not isinstance(args["activity"], str)
+        or not args["activity"].strip()
         or len(args["activity"]) > 300
-        or not isinstance(args["result"], str) or len(args["result"]) > 2000
+        or not isinstance(args["result"], str)
+        or len(args["result"]) > 2000
     ):
         return {"ok": False, "error": "invalid_heartbeat_activity"}
-    draft.heartbeat_activity = {key: value.strip() for key, value in args.items()}
+    if (
+        type(args["next_check_minutes"]) is not int
+        or not 1 <= args["next_check_minutes"] <= 1440
+        or not minimum_seconds <= args["next_check_minutes"] * 60 <= maximum_seconds
+        or not isinstance(args["reason"], str)
+        or not args["reason"].strip()
+        or len(args["reason"]) > 500
+    ):
+        return {
+            "ok": False,
+            "error": "invalid_heartbeat_schedule",
+            "message": f"Supply next_check_minutes within {minimum_seconds}-{maximum_seconds} seconds and a nonempty reason (at most 500 characters).",
+        }
+    draft.heartbeat_activity = {
+        key: value.strip() if isinstance(value, str) else value
+        for key, value in args.items()
+    }
     return {"ok": True, "state": "staged"}
 
 

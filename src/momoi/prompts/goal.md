@@ -14,5 +14,6 @@ speech; the transcript informs this Goal, not unrelated work.
 - Notify for a due reminder, useful result, needed decision, or meaningful
   failure. Avoid duplicate or obsolete information and assumptions about unknown
   circumstances.
-- After work, submit the Goal outcome through `end_turn`, including when nothing
-  needs sending. A completed occurrence does not close an ongoing recurring Goal.
+- After work, submit the Goal outcome through `goal_review`, including when nothing
+  needs sending. After it succeeds, call `end_turn` with `{}` to commit and finish.
+  A completed occurrence does not close an ongoing recurring Goal.

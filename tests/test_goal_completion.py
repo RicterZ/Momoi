@@ -38,96 +38,97 @@ def response(call):
 
 
 class GoalBoundaryTest(unittest.TestCase):
-    def test_shared_schema_accepts_chat_or_goal_without_mixing(self):
+    def test_shared_end_turn_schema_accepts_chat_or_empty_goal_completion(self):
         from jsonschema import Draft202012Validator
         from momoi.runtime.tool_contracts.conversation import END_TURN_TOOL_SPEC
 
-        schema = END_TURN_TOOL_SPEC["input_schema"]
-        Draft202012Validator.check_schema(schema)
-        validator = Draft202012Validator(schema)
+        check = Draft202012Validator(END_TURN_TOOL_SPEC["input_schema"])
         chat = {"reply_wait": {"wait": False}, "mood": {"decision": "unchanged"}}
-        goal = {"status": "done", "result": "Verified"}
-        for args in (chat, {**chat, "goal": None}, {"goal": goal}):
-            self.assertTrue(validator.is_valid(args))
-        for args in (
-            {},
-            {"goal": None},
-            {**chat, "goal": goal},
-            {"goal": {**goal, "goal_id": "other"}},
-            {"goal": {"status": "done"}},
-        ):
-            self.assertFalse(validator.is_valid(args))
+        self.assertTrue(check.is_valid(chat))
+        self.assertTrue(check.is_valid({}))
+        for args in ({"goal": {}}, {**chat, "goal": None}, {"mood": chat["mood"]}):
+            self.assertFalse(check.is_valid(args))
 
     def test_goal_schema_requires_status_specific_outcomes(self):
         from jsonschema import Draft202012Validator
-        from momoi.runtime.tool_contracts.conversation import END_TURN_TOOL_SPEC
+        from momoi.runtime.tool_contracts.conversation import GOAL_REVIEW_TOOL_SPEC
 
-        validator = Draft202012Validator(END_TURN_TOOL_SPEC["input_schema"])
+        validator = Draft202012Validator(GOAL_REVIEW_TOOL_SPEC["input_schema"])
         valid = [
             {"status": "done", "result": "Verified"},
             {"status": "cancelled", "result": "Owner stopped the task"},
-            {"status": "active", "result": "Step 1 complete", "next_action": "Step 2", "next_review_at": future()},
-            {"status": "active", "result": "Periodic check complete", "next_action": "Check again"},
-            {"status": "waiting", "result": "Submitted", "waiting_for": "Approval", "next_review_at": future()},
-            {"status": "blocked", "result": "Could not connect", "blocked_reason": "Missing credentials"},
+            {
+                "status": "active",
+                "result": "Step 1 complete",
+                "next_action": "Step 2",
+                "next_review_at": future(),
+            },
+            {
+                "status": "active",
+                "result": "Periodic check complete",
+                "next_action": "Check again",
+            },
+            {
+                "status": "waiting",
+                "result": "Submitted",
+                "waiting_for": "Approval",
+                "next_review_at": future(),
+            },
+            {
+                "status": "blocked",
+                "result": "Could not connect",
+                "blocked_reason": "Missing credentials",
+            },
         ]
         for outcome in valid:
             with self.subTest(outcome=outcome):
-                self.assertTrue(validator.is_valid({"goal": outcome}))
+                self.assertTrue(validator.is_valid(outcome))
         for status in ("active", "waiting", "blocked"):
             with self.subTest(missing_fields=status):
-                self.assertFalse(validator.is_valid({"goal": {"status": status, "result": "Checked"}}))
+                self.assertFalse(
+                    validator.is_valid({"status": status, "result": "Checked"})
+                )
         invalid = [
             {"status": "done", "result": "Verified", "next_action": "More work"},
             {"status": "cancelled", "result": "Stopped", "plan": []},
             {"status": "waiting", "result": "Submitted", "waiting_for": "Approval"},
-            {"status": "blocked", "result": "Failed", "blocked_reason": "Credentials", "next_review_at": future()},
+            {
+                "status": "blocked",
+                "result": "Failed",
+                "blocked_reason": "Credentials",
+                "next_review_at": future(),
+            },
             {"status": "active", "result": "Checked", "next_action": "  "},
             {"status": "done", "result": "  "},
         ]
         for outcome in invalid:
             with self.subTest(outcome=outcome):
-                self.assertFalse(validator.is_valid({"goal": outcome}))
+                self.assertFalse(validator.is_valid(outcome))
 
-    def test_goal_argument_is_restricted_by_trusted_turn_stage(self):
+    def test_goal_review_permission_and_completion_gate(self):
+        review = ToolCall("review", "goal_review", {"status": "done", "result": "done"})
+        end = ToolCall("end", "end_turn", {})
         for stage in ("owner", "heartbeat", "webhook", "reply_followup"):
-            harness = TurnHarness.for_stage(stage)
-            harness.started = True
-            if stage == "heartbeat":
-                harness.accept("heartbeat_activity")
-            for goal in ({"status": "done", "result": "done"}, {}, "", False, []):
-                with self.subTest(stage=stage, goal=goal):
-                    self.assertEqual(
-                        harness.validate([ToolCall("end", "end_turn", {"goal": goal})]),
-                        "goal_not_allowed_in_end_turn",
-                    )
-            for args in ({}, {"goal": None}):
-                self.assertIsNone(harness.validate([ToolCall("end", "end_turn", args)]))
+            harness = TurnHarness.for_stage(
+                stage, permitted_tool_names=frozenset({"goal_review"})
+            )
+            self.assertEqual(harness.validate([review]), "tool_not_allowed")
         harness = TurnHarness.for_stage("goal")
-        for args in ({}, {"goal": None}, {"goal": []}, {"goal": False}):
-            self.assertEqual(
-                harness.validate([ToolCall("end", "end_turn", args)]),
-                "goal_required_in_end_turn",
-            )
-        goal = {"status": "done", "result": "done"}
-        self.assertIsNone(
-            harness.validate([ToolCall("end", "end_turn", {"goal": goal})])
-        )
-        for name in ("reply_wait", "mood", "activity", "heartbeat", "goal_id"):
-            self.assertEqual(
-                harness.validate(
-                    [ToolCall("end", "end_turn", {"goal": goal, name: None})]
-                ),
-                "goal_end_turn_only_accepts_goal",
-            )
         self.assertEqual(
-            harness.validate(
-                [
-                    ToolCall("end", "end_turn", {"goal": goal}),
-                    ToolCall("send", "send_bubbles", {}),
-                ]
-            ),
-            "end_turn_must_be_alone",
+            harness.validate([end]), "goal_review_required_before_end_turn"
+        )
+        self.assertIsNone(harness.validate([review]))
+        self.assertEqual(harness.validate([review, end]), "end_turn_must_be_alone")
+        harness.accept("goal_review")
+        self.assertIsNone(harness.validate([end]))
+        for args in ({"goal": {}}, {"mood": {}}, {"reply_wait": {"wait": False}}):
+            self.assertEqual(
+                harness.validate([ToolCall("bad", "end_turn", args)]),
+                "goal_end_turn_requires_empty_arguments",
+            )
+        harness.reset()
+        self.assertEqual(
+            harness.validate([end]), "goal_review_required_before_end_turn"
         )
 
 
@@ -191,7 +192,7 @@ class GoalCompletionTest(unittest.IsolatedAsyncioTestCase):
         )
         return remaining, seen
 
-    async def test_all_outcomes_end_goal_turn_with_one_call(self):
+    async def test_all_outcomes_stage_then_commit_goal_turn(self):
         outcomes = [
             {"status": "done", "result": "File validated"},
             {"status": "cancelled", "result": "Superseded by another task"},
@@ -216,18 +217,38 @@ class GoalCompletionTest(unittest.IsolatedAsyncioTestCase):
         for outcome in outcomes:
             with self.subTest(status=outcome["status"]):
                 goal_id = self.create_goal()
+                original = copy.deepcopy(self.daemon.store.goal(goal_id))
+
+                def inspect(index, messages):
+                    if index == 1:
+                        self.assertEqual(
+                            self.daemon.store.goal(goal_id)["status"],
+                            original["status"],
+                        )
+                        self.assertEqual(
+                            self.daemon.store.goal(goal_id)["latest_result"],
+                            original["latest_result"],
+                        )
+                        self.assertIn('"staged"', str(messages[-1]))
+
                 remaining, seen = self.provider(
-                    [ToolCall("end", "end_turn", {"goal": outcome})]
+                    [
+                        ToolCall("end", "goal_review", outcome),
+                        ToolCall("commit", "end_turn", {}),
+                    ],
+                    inspect=inspect,
                 )
                 await self.daemon._complete_goal_turn(goal_id, asyncio.Event())
                 self.assertEqual(remaining, [])
-                self.assertEqual(len(seen), 1)
+                self.assertEqual(len(seen), 2)
                 goal = self.daemon.store.goal(goal_id)
                 self.assertEqual(goal["status"], outcome["status"])
                 self.assertEqual(goal["latest_result"], outcome["result"])
                 historical = self.daemon.store.recent_conversation_messages(1, 10000)
                 self.assertEqual([item["role"] for item in historical], ["goal"])
-                transcript = build_transcript(historical, timezone=self.daemon.store.timezone)
+                transcript = build_transcript(
+                    historical, timezone=self.daemon.store.timezone
+                )
                 self.assertIn(f"Status: {outcome['status']}", str(transcript.messages))
                 self.assertIn(outcome["result"], str(transcript.messages))
                 self.assertIn('<goal id="G', str(transcript.messages))
@@ -248,9 +269,19 @@ class GoalCompletionTest(unittest.IsolatedAsyncioTestCase):
     async def test_next_goal_reads_immutable_review_result_without_a_message(self):
         store = self.daemon.store
         initial_window = store.transcript_window_turn_limit(4, 8)
-        self.provider([ToolCall("finish-first", "end_turn", {"goal": {
-            "status": "done", "result": "Checked: no notification needed",
-        }})])
+        self.provider(
+            [
+                ToolCall(
+                    "finish-first",
+                    "goal_review",
+                    {
+                        "status": "done",
+                        "result": "Checked: no notification needed",
+                    },
+                ),
+                ToolCall("commit", "end_turn", {}),
+            ]
+        )
         await self.daemon._complete_goal_turn(self.goal_id, asyncio.Event())
         original = store.recent_conversation_messages(10, 10000)
         self.assertEqual(len(original), 1)
@@ -260,11 +291,14 @@ class GoalCompletionTest(unittest.IsolatedAsyncioTestCase):
         # Editing the live Goal cannot rewrite an earlier review's snapshot.
         with store._db:
             store._db.execute(
-                "UPDATE goals SET latest_result='New live result' WHERE id=?", (self.goal_id,),
+                "UPDATE goals SET latest_result='New live result' WHERE id=?",
+                (self.goal_id,),
             )
         other_goal = self.create_goal()
 
         def inspect(_round, messages):
+            if _round:
+                return
             history = str(messages)
             self.assertIn(f'<goal id="{stable_id}"', history)
             self.assertIn("Checked: no notification needed", history)
@@ -277,10 +311,25 @@ class GoalCompletionTest(unittest.IsolatedAsyncioTestCase):
             for tag in ("episode_directory", "recall_memories", "reflection_memories"):
                 self.assertNotIn(f"<{tag}>", current)
 
-        self.provider([ToolCall("finish-next", "end_turn", {"goal": {
-            "status": "done", "result": "Second review complete",
-        }})], inspect=inspect)
-        with patch.object(store, "ranked_memory_context", side_effect=AssertionError("unexpected pre-retrieval")):
+        self.provider(
+            [
+                ToolCall(
+                    "finish-next",
+                    "goal_review",
+                    {
+                        "status": "done",
+                        "result": "Second review complete",
+                    },
+                ),
+                ToolCall("commit", "end_turn", {}),
+            ],
+            inspect=inspect,
+        )
+        with patch.object(
+            store,
+            "ranked_memory_context",
+            side_effect=AssertionError("unexpected pre-retrieval"),
+        ):
             await self.daemon._complete_goal_turn(other_goal, asyncio.Event())
         self.assertEqual(store.transcript_window_turn_limit(4, 8), initial_window + 1)
         reviews = store.recent_conversation_messages(10, 10000)
@@ -304,15 +353,30 @@ class GoalCompletionTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(expected), 4)
 
         def inspect(_round, messages):
+            if _round:
+                return
             current = messages[-1]["content"][0]["text"]
-            self.assertIn("<recent_goals>\n" + ", ".join(expected) + "\n</recent_goals>", current)
+            self.assertIn(
+                "<recent_goals>\n" + ", ".join(expected) + "\n</recent_goals>", current
+            )
             history = str(messages[:-1])
             for identifier in expected:
                 self.assertEqual(history.count(f'<goal id="{identifier}"'), 1)
 
-        self.provider([ToolCall("finish", "end_turn", {"goal": {
-            "status": "done", "result": "Complete",
-        }})], inspect=inspect)
+        self.provider(
+            [
+                ToolCall(
+                    "finish",
+                    "goal_review",
+                    {
+                        "status": "done",
+                        "result": "Complete",
+                    },
+                ),
+                ToolCall("commit", "end_turn", {}),
+            ],
+            inspect=inspect,
+        )
         await self.daemon._complete_goal_turn(self.goal_id, asyncio.Event())
 
     async def test_recurring_goal_keeps_its_schedule_without_extra_update(self):
@@ -321,15 +385,14 @@ class GoalCompletionTest(unittest.IsolatedAsyncioTestCase):
             [
                 ToolCall(
                     "end",
-                    "end_turn",
+                    "goal_review",
                     {
-                        "goal": {
-                            "status": "active",
-                            "result": "Checked",
-                            "next_action": "Check again",
-                        }
+                        "status": "active",
+                        "result": "Checked",
+                        "next_action": "Check again",
                     },
-                )
+                ),
+                ToolCall("commit", "end_turn", {}),
             ]
         )
         await self.daemon._complete_goal_turn(goal_id, asyncio.Event())
@@ -343,9 +406,14 @@ class GoalCompletionTest(unittest.IsolatedAsyncioTestCase):
     async def test_messages_deliver_before_finish_and_survive_invalid_outcome(self):
         async def inspect(index, messages):
             if index in (1, 2, 3):
-                self.assertEqual(self.daemon.store.goal(self.goal_id)["status"], "active")
                 self.assertEqual(
-                    self.daemon.store._db.execute("SELECT COUNT(*) FROM notifications").fetchone()[0], 0
+                    self.daemon.store.goal(self.goal_id)["status"], "active"
+                )
+                self.assertEqual(
+                    self.daemon.store._db.execute(
+                        "SELECT COUNT(*) FROM notifications"
+                    ).fetchone()[0],
+                    0,
                 )
             if index == 1:
                 result = json.loads(messages[-1]["content"][0]["content"])
@@ -353,7 +421,9 @@ class GoalCompletionTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result["provenance"]["source"], "runtime")
                 self.assertEqual(self.daemon.store.due_outbox()[0].text, "文件已验证")
                 stop = asyncio.Event()
-                self.daemon.channel.send_message = AsyncMock(side_effect=lambda *_: stop.set())
+                self.daemon.channel.send_message = AsyncMock(
+                    side_effect=lambda *_: stop.set()
+                )
                 await asyncio.wait_for(self.daemon._outbox_worker(stop), 1)
                 self.daemon.channel.send_message.assert_awaited_once()
                 self.assertEqual(self.daemon.store.due_outbox(), [])
@@ -362,37 +432,89 @@ class GoalCompletionTest(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(error["ok"])
                 self.assertEqual(error["error"], "invalid_goal_outcome")
             if index == 3:
-                self.assertEqual(self.daemon.store.due_outbox()[0].text, "下载目录也清理完了")
+                self.assertEqual(
+                    self.daemon.store.due_outbox()[0].text, "下载目录也清理完了"
+                )
 
         remaining, seen = self.provider(
             [
                 ToolCall("notice", "send_bubbles", {"bubbles": ["文件已验证"]}),
-                ToolCall("invalid", "end_turn", {"goal": {"status": "waiting", "result": "waiting"}}),
+                ToolCall(
+                    "invalid", "goal_review", {"status": "waiting", "result": "waiting"}
+                ),
                 ToolCall("more", "send_bubbles", {"bubbles": ["下载目录也清理完了"]}),
-                ToolCall("end", "end_turn", {"goal": {"status": "done", "result": "File validated"}}),
-            ], inspect,
+                ToolCall(
+                    "end", "goal_review", {"status": "done", "result": "File validated"}
+                ),
+                ToolCall("commit", "end_turn", {}),
+            ],
+            inspect,
         )
         await self.daemon._complete_goal_turn(self.goal_id, asyncio.Event())
         self.assertEqual(remaining, [])
-        self.assertEqual(len(seen), 4)
+        self.assertEqual(len(seen), 5)
         self.assertEqual(self.daemon.store.goal(self.goal_id)["status"], "done")
         rows = self.daemon.store._db.execute(
             "SELECT content, delivery_state FROM messages WHERE outbox_id IS NOT NULL ORDER BY id"
         ).fetchall()
-        self.assertEqual([tuple(row) for row in rows], [
-            ("文件已验证", "delivered"), ("下载目录也清理完了", "queued"),
-        ])
-        self.assertEqual(self.daemon.store._db.execute("SELECT COUNT(*) FROM outbox").fetchone()[0], 2)
+        self.assertEqual(
+            [tuple(row) for row in rows],
+            [
+                ("文件已验证", "delivered"),
+                ("下载目录也清理完了", "queued"),
+            ],
+        )
+        self.assertEqual(
+            self.daemon.store._db.execute("SELECT COUNT(*) FROM outbox").fetchone()[0],
+            2,
+        )
 
     async def test_message_is_not_lost_when_goal_fails_before_finish(self):
         def inspect(index, messages):
             if index == 1:
                 raise RuntimeError("provider unavailable")
 
-        self.provider([ToolCall("notice", "send_bubbles", {"bubbles": ["已完成第一步"]})], inspect)
+        self.provider(
+            [ToolCall("notice", "send_bubbles", {"bubbles": ["已完成第一步"]})], inspect
+        )
         await self.daemon._complete_goal_turn(self.goal_id, asyncio.Event())
         self.assertEqual(self.daemon.store.goal(self.goal_id)["status"], "active")
-        self.assertEqual([row.text for row in self.daemon.store.due_outbox()], ["已完成第一步"])
+        self.assertEqual(
+            [row.text for row in self.daemon.store.due_outbox()], ["已完成第一步"]
+        )
+
+    async def test_staged_goal_review_is_discarded_on_cancel_or_provider_failure(self):
+        for cancelled in (False, True):
+            goal_id = self.create_goal()
+            original = copy.deepcopy(self.daemon.store.goal(goal_id))
+
+            def inspect(index, _messages):
+                if index == 1:
+                    self.assertEqual(
+                        self.daemon.store.goal(goal_id)["status"], "active"
+                    )
+                    if cancelled:
+                        raise asyncio.CancelledError
+                    raise RuntimeError("provider unavailable before end_turn")
+
+            self.provider(
+                [
+                    ToolCall(
+                        "review",
+                        "goal_review",
+                        {"status": "done", "result": "not committed"},
+                    )
+                ],
+                inspect,
+            )
+            if cancelled:
+                with self.assertRaises(asyncio.CancelledError):
+                    await self.daemon._complete_goal_turn(goal_id, asyncio.Event())
+            else:
+                await self.daemon._complete_goal_turn(goal_id, asyncio.Event())
+            actual = self.daemon.store.goal(goal_id)
+            self.assertEqual(actual["status"], original["status"])
+            self.assertNotEqual(actual["latest_result"], "not committed")
 
     async def test_goal_outcome_validation_never_mutates_draft_on_failure(self):
         invalid = [
@@ -435,7 +557,7 @@ class GoalCompletionTest(unittest.IsolatedAsyncioTestCase):
 
         def inspect(index, messages):
             if index == 1:
-                self.assertIn("goal_not_allowed_in_end_turn", str(messages[-1]))
+                self.assertIn("unexpected_end_turn_fields", str(messages[-1]))
                 self.assertEqual(self.daemon.store.goal(self.goal_id), original)
 
         remaining, seen = self.provider(
@@ -445,7 +567,7 @@ class GoalCompletionTest(unittest.IsolatedAsyncioTestCase):
                     "end_turn",
                     {**ordinary, "goal": {"status": "done", "result": "wrong"}},
                 ),
-                ToolCall("correct", "end_turn", {**ordinary, "goal": None}),
+                ToolCall("correct", "end_turn", ordinary),
             ],
             inspect,
         )

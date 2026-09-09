@@ -199,9 +199,10 @@ class TurnHarnessTest(unittest.TestCase):
             ),
             "end_turn_required",
         )
+        harness.accept("goal_review")
         self.assertIsNone(
             harness.validate(
-                [ToolCall("finish", "end_turn", {"goal": {"status": "done", "result": "done"}})],
+                [ToolCall("finish", "end_turn", {})],
                 required_tool="end_turn",
             )
         )

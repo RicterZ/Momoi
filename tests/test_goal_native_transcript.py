@@ -18,7 +18,6 @@ from momoi.models import (
     TurnDraft,
 )
 from momoi.runtime import MomoiDaemon
-from momoi.runtime.tool_contracts.conversation import end_turn_tool_spec
 
 
 class GoalNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
@@ -117,12 +116,11 @@ class GoalNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                         )
                     if self.calls == 2:
                         call = ToolCall("premature-finish", "end_turn", {})
-                    else:
+                    elif self.calls == 3:
                         call = ToolCall(
                             "finish",
-                            "end_turn",
+                            "goal_review",
                             {
-                                "goal": {
                                     "status": "waiting",
                                     "waiting_for": "下一次检查",
                                     "result": "本次检查正常",
@@ -130,9 +128,10 @@ class GoalNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                                         datetime.now(ZoneInfo("UTC"))
                                         + timedelta(hours=1)
                                     ).isoformat(),
-                                }
                             },
                         )
+                    else:
+                        call = ToolCall("commit", "end_turn", {})
                     return ProviderResponse(
                         [
                             {
@@ -150,7 +149,8 @@ class GoalNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             await daemon._complete_goal_turn(goal_id, asyncio.Event())
 
             end_turn = next(tool for tool in provider.first_tools if tool["name"] == "end_turn")
-            self.assertEqual(end_turn["input_schema"], end_turn_tool_spec("goal")["input_schema"])
+            from momoi.runtime.tool_contracts.conversation import END_TURN_TOOL_SPEC
+            self.assertEqual(end_turn["input_schema"], END_TURN_TOOL_SPEC["input_schema"])
             rendered = str(provider.first_messages)
             self.assertNotIn("<workflow_contract>", str(provider.first_system))
             self.assertIn("<workflow_contract>", rendered)
@@ -170,7 +170,7 @@ class GoalNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn("两点了", previous_speech)
             self.assertIn("记得喝水", previous_speech)
             self.assertEqual(previous_speech.count('delivery="queued"'), 1)
-            self.assertEqual(provider.calls, 3)
+            self.assertEqual(provider.calls, 4)
             expected_surface = [
                 str(tool["name"]) for tool in daemon.tool_surface.conversation_specs()
             ]
@@ -179,7 +179,7 @@ class GoalNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(
                 provider.required_tools,
-                [None, None, None],
+                [None, None, None, None],
             )
             self.assertEqual(daemon.store.goal(goal_id)["status"], "waiting")
             self.assertEqual(

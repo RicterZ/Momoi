@@ -30,7 +30,7 @@ TURN_HARNESS_SPECS = {
                 {"send_bubbles", "send_voice", "curl", "read_tool_result", "end_turn"}
             ),
         ),
-        TurnHarnessSpec("goal", None, "end_turn"),
+        TurnHarnessSpec("goal", None, "end_turn", required_before_end=frozenset({"goal_review"})),
         TurnHarnessSpec("reflection", None, "reflection_finish"),
         TurnHarnessSpec("memory_maintenance", None, "memory_maintenance_finish"),
         TurnHarnessSpec("memory_operation", None, "memory_operation_finish", permitted_tools=frozenset({"memory_operation_finish", "memory_operation_search"})),
@@ -104,6 +104,8 @@ class TurnHarness:
         has_assistant_text: bool = False,
     ) -> str | None:
         names = [call.name for call in calls]
+        if "goal_review" in names and self.spec.stage != "goal":
+            return "tool_not_allowed"
         if "current_state_finish" in names and self.spec.stage != "current_state_maintenance":
             return "tool_not_allowed"
         if "heartbeat_activity" in names and self.spec.stage != "heartbeat":
@@ -161,14 +163,9 @@ class TurnHarness:
                 continue
             if call.argument_error or not isinstance(call.arguments, dict):
                 return "invalid_end_turn_arguments"
-            goal = call.arguments.get("goal")
             if self.spec.stage == "goal":
-                if not isinstance(goal, dict):
-                    return "goal_required_in_end_turn"
-                if set(call.arguments) != {"goal"}:
-                    return "goal_end_turn_only_accepts_goal"
-            elif goal is not None:
-                return "goal_not_allowed_in_end_turn"
+                if call.arguments:
+                    return "goal_end_turn_requires_empty_arguments"
         if (
             self.spec.require_bubbles_before_progress_work
             and not self.progress_bubbles_seen

@@ -897,16 +897,12 @@ def test_non_owner_tagged_text_respects_terminal_sequence(daemon, stage, with_te
     from momoi.runtime.agent import TurnExecutionSpec
 
     terminal = {'reply_wait': {'wait': False}, 'mood': {'decision': 'unchanged'}}
-    if stage == 'heartbeat':
-        terminal['heartbeat'] = {
-            'next_check_minutes': 30, 'reason': '完成本轮',
-        }
     if stage == 'reply_followup':
         daemon.store.pending_owner_reply = lambda: {'turn_id': 'previous'}
     if stage == 'goal':
         from unittest.mock import Mock
         daemon.agenda_tools.finish_review = Mock(return_value={'ok': True})
-        terminal = {'goal': {'status': 'done', 'result': '分享完成'}}
+        terminal = {}
     tagged = response(ToolCall('early-end', 'end_turn', terminal)) if with_terminal else ProviderResponse([], [])
     tagged.content.insert(0, {'type': 'text', 'text': '刷到一条跟我本行有关的消息\n<bubble>刚看到一条消息</bubble>'})
     if native_send:
@@ -923,7 +919,10 @@ def test_non_owner_tagged_text_respects_terminal_sequence(daemon, stage, with_te
         })))
         replies.append(response(ToolCall('activity', 'heartbeat_activity', {
             'activity': '分享消息', 'result': '分享完成',
+            'next_check_minutes': 30, 'reason': '完成本轮',
         })))
+    if stage == 'goal':
+        replies.append(response(ToolCall('review', 'goal_review', {'status': 'done', 'result': '分享完成'})))
     replies.append(tagged)
     if not with_terminal:
         replies.append(response(ToolCall('finish', 'end_turn', terminal)))
@@ -936,7 +935,7 @@ def test_non_owner_tagged_text_respects_terminal_sequence(daemon, stage, with_te
             result = json.loads(messages[-1]['content'][0]['content'])
             assert result['ok'] and result['state'] == 'committed'
             if stage == 'goal':
-                daemon.agenda_tools.finish_review.assert_not_called()
+                daemon.agenda_tools.finish_review.assert_called_once()
         assert replies, 'Unexpected protocol retry'
         reply = replies.pop(0)
         after_tagged = reply is tagged
@@ -1025,9 +1024,7 @@ def test_goal_send_failure_is_observed_before_finish(daemon, tagged):
     from momoi.runtime.agent import TurnExecutionSpec
 
     # A blank line is invalid within one bubble, for both delivery forms.
-    failed = response(ToolCall('early-end', 'end_turn', {
-        'goal': {'status': 'done', 'result': '未经证实的发送成功'},
-    }))
+    failed = response(ToolCall('early-end', 'end_turn', {}))
     if tagged:
         failed.content.insert(0, {'type': 'text', 'text': '<bubble>第一段\n\n第二段</bubble>'})
     else:
@@ -1036,17 +1033,19 @@ def test_goal_send_failure_is_observed_before_finish(daemon, tagged):
             send.content + failed.content, send.tool_calls + failed.tool_calls,
         )
     outcome = {'status': 'blocked', 'result': '发送失败'}
-    replies = [failed, response(ToolCall('finish', 'end_turn', {'goal': outcome}))]
+    replies = [response(ToolCall('review-first', 'goal_review', {'status': 'active', 'result': '准备尝试发送'})),
+               failed, response(ToolCall('review-failure', 'goal_review', outcome)),
+               response(ToolCall('finish', 'end_turn', {}))]
     daemon.agenda_tools.finish_review = Mock(return_value={'ok': True})
 
     async def complete(_system, messages, *args, **kwargs):
         assert replies, 'Unexpected protocol retry'
-        if len(replies) == 1:
+        if len(replies) == 2:
             results = [json.loads(b['content']) for b in messages[-1]['content']]
             assert results[0]['error'] == 'blank_lines_must_be_separate_bubbles'
             assert results[1]['error'] == 'end_turn_delivery_failed'
             assert not daemon.store.due_outbox()
-            daemon.agenda_tools.finish_review.assert_not_called()
+            daemon.agenda_tools.finish_review.assert_called_once()
         return replies.pop(0)
 
     daemon.provider = SimpleNamespace(complete=complete, config=SimpleNamespace(api_format='anthropic'))
@@ -1061,7 +1060,8 @@ def test_goal_send_failure_is_observed_before_finish(daemon, tagged):
     ))
     assert not replies
     assert not daemon.store.due_outbox()
-    daemon.agenda_tools.finish_review.assert_called_once_with('test-goal', outcome, draft)
+    assert daemon.agenda_tools.finish_review.call_count == 2
+    daemon.agenda_tools.finish_review.assert_called_with('test-goal', outcome, draft)
 
 
 @pytest.mark.parametrize('recall_succeeded', [True, False])
@@ -1139,7 +1139,7 @@ def test_owner_terminal_text_contract_and_same_round_delivery(daemon, text, use_
     async def complete(_system, messages, tools, **kwargs):
         nonlocal rejected, schema_seen
         schema = next(tool['input_schema'] for tool in tools if tool['name'] == 'end_turn')
-        assert set(schema['required']) == {'reply_wait', 'mood'}
+        assert set(schema['properties']) == {'reply_wait', 'mood'}
         assert Draft202012Validator(schema).is_valid(terminal)
         if schema_seen is not None:
             assert schema == schema_seen

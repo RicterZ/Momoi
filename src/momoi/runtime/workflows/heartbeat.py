@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import math
 import time
 from datetime import datetime
 from typing import Any
@@ -198,7 +199,12 @@ class HeartbeatWorkflow:
             for message_id in group.message_ids
         ))
         artifact_root = self.tool_executor.artifact_root.resolve()
-        heartbeat_event = f"Autonomous artifact directory: {artifact_root}"
+        heartbeat_event = (
+            f"Autonomous artifact directory: {artifact_root}\n"
+            "heartbeat_activity.next_check_minutes: integer "
+            f"{max(1, math.ceil(self.config.heartbeat.min_interval_seconds / 60))}-"
+            f"{min(1440, math.floor(self.config.heartbeat.max_interval_seconds / 60))} minutes."
+        )
         current_input = pack_current_turn_context(
             self.store, "heartbeat",
             ("workflow_contract", self._heartbeat_system_prompt()),
@@ -261,12 +267,11 @@ class HeartbeatWorkflow:
             heartbeat_owner_event_revision=owner_event_revision,
             delivery_channel=delivery_channel,
         )
-        if not isinstance(reply, AgentReply) or reply.heartbeat is None:
-            raise RuntimeError("Heartbeat Turn ended without end_turn heartbeat state")
+        if not isinstance(reply, AgentReply):
+            raise RuntimeError("Heartbeat Turn ended without end_turn")
         if draft.heartbeat_activity is None:
             raise RuntimeError("Heartbeat Turn ended without heartbeat_activity")
         decision = {
-            **reply.heartbeat,
             **draft.heartbeat_activity,
             "messages": reply.messages,
             "reply_expectation": reply.reply_expectation,

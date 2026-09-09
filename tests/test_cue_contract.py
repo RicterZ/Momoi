@@ -7,7 +7,7 @@ from momoi.runtime.workflows.episode.contracts import EPISODE_SUMMARY_FINISH_SPE
 
 def descriptions(value, name):
     if isinstance(value, dict):
-        if name in value:
+        if name in value and isinstance(value[name], dict):
             yield value[name].get('description', '')
         for child in value.values():
             yield from descriptions(child, name)

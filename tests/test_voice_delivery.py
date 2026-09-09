@@ -261,13 +261,12 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
                         calls.append(ToolCall("recall", "recall", {}))
                     elif stage == "heartbeat":
                         calls.append(ToolCall("begin", "heartbeat_begin", {"tool_groups": []}))
-                        calls.append(ToolCall("activity", "heartbeat_activity", {"activity": "resting", "result": ""}))
+                        calls.append(ToolCall("activity", "heartbeat_activity", {"activity": "resting", "result": "", "next_check_minutes": 30, "reason": "rest"}))
                     calls.append(ToolCall("voice", "send_voice", {"text": self.text}))
                     end = {"reply_wait": {"wait": False}, "mood": {"decision": "unchanged"}}
-                    if stage == "heartbeat":
-                        end["heartbeat"] = {"next_check_minutes": 30, "reason": "rest"}
                     if stage == "goal":
-                        end = {"goal": {"status": "done", "result": "voice delivered"}}
+                        calls.append(ToolCall("review", "goal_review", {"status": "done", "result": "voice delivered"}))
+                        end = {}
                     calls.append(ToolCall("end", "end_turn", end))
 
                     async def complete(_system, _messages, tools, **kwargs):
@@ -279,7 +278,7 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
                         if call.name == "end_turn":
                             sent = json.loads(_messages[-1]["content"][0]["content"])
                             self.assertTrue(sent["ok"])
-                            self.assertEqual(sent["state"], "committed")
+                            self.assertEqual(sent["state"], "staged" if stage == "goal" else "committed")
                             self.assertEqual(daemon.store.due_outbox()[0].kind, "voice")
                             self.assertTrue(daemon.outbox_changed.is_set())
                         return ProviderResponse([
@@ -329,7 +328,7 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
                     [tool for tool in tools if tool["name"] != "end_turn"],
                 )
                 terminal_schema = next(tool["input_schema"] for tool in request_tools if tool["name"] == "end_turn")
-                self.assertEqual(terminal_schema["required"], ["reply_wait", "mood"])
+                self.assertEqual(set(terminal_schema["properties"]), {"reply_wait", "mood"})
                 if rounds == 1:
                     call = ToolCall("voice", "send_voice", {"text": self.text})
                 else:
@@ -391,10 +390,11 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
                             call = ToolCall("fallback", "send_bubbles", {
                                 "bubbles": ["老师你好"],
                             })
+                        elif stage == "goal" and rounds == 3:
+                            call = ToolCall("review", "goal_review", {"status": "done", "result": "text fallback prepared"})
                         else:
-                            self.assertEqual(rounds, 3)
-                            end = ({"goal": {"status": "done", "result": "text fallback prepared"}}
-                                   if stage == "goal" else {"reply_wait": {"wait": False}, "mood": {"decision": "unchanged"}})
+                            self.assertEqual(rounds, 4 if stage == "goal" else 3)
+                            end = ({} if stage == "goal" else {"reply_wait": {"wait": False}, "mood": {"decision": "unchanged"}})
                             call = ToolCall("end", "end_turn", end)
                         return ProviderResponse([{
                             "type": "tool_use", "id": call.id, "name": call.name, "input": call.arguments,
@@ -408,7 +408,7 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
                         source_event_id="test", turn_id=turn_id, delivery_channel=daemon.channel,
                     )
                     provider.synthesize.assert_awaited_once()
-                    self.assertEqual(rounds, 3)
+                    self.assertEqual(rounds, 4 if stage == "goal" else 3)
                     self.assertFalse(draft.notification_messages)
                     self.assertEqual([(row.kind, row.text) for row in daemon.store.due_outbox()],
                                      [("text", "老师你好")])

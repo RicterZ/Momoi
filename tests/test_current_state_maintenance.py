@@ -192,7 +192,7 @@ def test_allowed_end_turn_captures_exact_chain_and_waits_for_commit(daemon, kind
                     ToolCall(
                         "activity",
                         "heartbeat_activity",
-                        {"activity": "rest", "result": ""},
+                        {"activity": "rest", "result": "", "next_check_minutes": 30, "reason": "rest"},
                     )
                 ),
             ]
@@ -203,10 +203,9 @@ def test_allowed_end_turn_captures_exact_chain_and_waits_for_commit(daemon, kind
             response(ToolCall("send", "send_bubbles", {"bubbles": ["followup"]}))
         )
     end = {"mood": {"decision": "unchanged"}, "reply_wait": {"wait": False}}
-    if kind == "heartbeat":
-        end["heartbeat"] = {"next_check_minutes": 30, "reason": "rest"}
     if kind == "goal":
-        end = {"goal": {"status": "done", "result": "done"}}
+        end = {}
+        calls.append(response(ToolCall("review", "goal_review", {"status": "done", "result": "done"})))
         daemon.agenda_tools.finish_review = lambda *args: {"ok": True}
     calls.append(response(ToolCall("end", "end_turn", end)))
     systems = []

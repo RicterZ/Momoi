@@ -23,11 +23,6 @@ class EndTurnTest(unittest.TestCase):
                 expected_information="Which game to play next",
                 reason="Suggest another game if the owner is still undecided",
             )
-        if stage == "heartbeat":
-            result["heartbeat"] = {
-                "reason": "Taking a break",
-                "next_check_minutes": 30,
-            }
         return result
 
     def parse(self, stage, arguments, *, visible=True):
@@ -38,8 +33,6 @@ class EndTurnTest(unittest.TestCase):
             arguments,
             execution=execution,
             visible_since_owner_update=visible,
-            heartbeat_min_interval_seconds=300,
-            heartbeat_max_interval_seconds=3600,
         )
 
     def test_all_chat_stages_return_private_state_without_messages(self):
@@ -83,27 +76,13 @@ class EndTurnTest(unittest.TestCase):
         self.assertIsNone(reply)
         self.assertEqual(error, "reply_followup_cannot_schedule_another_wait")
 
-    def test_workflow_specific_state_cannot_cross_stages(self):
+    def test_business_fields_are_rejected_by_every_chat_stage(self):
         for stage in self.STAGES:
-            for field in ("activity", "heartbeat"):
+            for field in ("heartbeat", "goal", "unknown"):
                 with self.subTest(stage=stage, field=field):
-                    arguments = self.arguments(stage)
-                    if field in arguments:
-                        del arguments[field]
-                        expected = "invalid_heartbeat_state"
-                    else:
-                        arguments[field] = (
-                            {"decision": "unchanged"}
-                            if field == "activity"
-                            else self.arguments("heartbeat")["heartbeat"]
-                        )
-                        expected = (
-                            "activity_not_allowed_in_end_turn"
-                            if field == "activity" else "heartbeat_state_not_allowed"
-                        )
-                    reply, error = self.parse(stage, arguments)
+                    reply, error = self.parse(stage, {**self.arguments(stage), field: {}})
                     self.assertIsNone(reply)
-                    self.assertEqual(error, expected)
+                    self.assertEqual(error, "unexpected_end_turn_fields")
 
     def test_end_turn_keeps_owner_rule_that_bubbles_use_send_bubbles(self):
         for stage in self.STAGES:
@@ -112,15 +91,6 @@ class EndTurnTest(unittest.TestCase):
                 reply, error = self.parse(stage, arguments)
                 self.assertIsNone(reply)
                 self.assertEqual(error, "bubbles_not_allowed_in_end_turn")
-
-    def test_heartbeat_review_time_respects_runtime_limits(self):
-        for minutes in (4, 61):
-            with self.subTest(minutes=minutes):
-                arguments = self.arguments("heartbeat")
-                arguments["heartbeat"]["next_check_minutes"] = minutes
-                reply, error = self.parse("heartbeat", arguments)
-                self.assertIsNone(reply)
-                self.assertEqual(error, "heartbeat_interval_out_of_range")
 
     def test_private_maintenance_keeps_its_own_terminal_tools(self):
         for stage in (
@@ -145,19 +115,18 @@ class EndTurnSchemaTest(unittest.TestCase):
         arguments = EndTurnTest()
         expected = {
             'owner': {'reply_wait', 'mood'},
-            'heartbeat': {'reply_wait', 'mood', 'heartbeat'},
+            'heartbeat': {'reply_wait', 'mood'},
             'webhook': {'reply_wait', 'mood'},
             'reply_followup': {'reply_wait', 'mood'},
-            'goal': {'goal'},
+            'goal': set(),
         }
         for stage, required in expected.items():
             with self.subTest(stage=stage):
-                spec = end_turn_tool_spec(stage, heartbeat_min_interval_seconds=300,
-                                          heartbeat_max_interval_seconds=3600)
+                spec = end_turn_tool_spec(stage)
                 schema = spec['input_schema']
                 Draft202012Validator.check_schema(schema)
                 validator = Draft202012Validator(schema)
-                args = {'goal': {'status': 'done', 'result': '完成'}} if stage == 'goal' else arguments.arguments(stage)
+                args = {} if stage == 'goal' else arguments.arguments(stage)
                 self.assertEqual(set(schema['required']), required)
                 self.assertTrue(validator.is_valid(args))
                 for field in required:
@@ -165,15 +134,10 @@ class EndTurnSchemaTest(unittest.TestCase):
                 for field in {'activity', 'heartbeat', 'goal'} - required:
                     self.assertFalse(validator.is_valid({**args, field: {}}))
                 if stage != 'goal':
-                    self.assertTrue(validator.is_valid({**args, 'goal': None}))
+                    self.assertFalse(validator.is_valid({**args, 'goal': None}))
                 if stage == 'reply_followup':
                     self.assertFalse(validator.is_valid(arguments.arguments(stage, wait=True)))
-                if stage == 'heartbeat':
-                    for minutes in (4, 61):
-                        args['heartbeat']['next_check_minutes'] = minutes
-                        self.assertFalse(validator.is_valid(args))
-                self.assertEqual(spec, end_turn_tool_spec(stage, heartbeat_min_interval_seconds=300,
-                                                         heartbeat_max_interval_seconds=3600))
+                self.assertEqual(spec, end_turn_tool_spec(stage))
 
     def test_terminal_text_and_delivery_boundary(self):
         from momoi.models import ToolCall

@@ -124,8 +124,6 @@ def parse_reply_wait_decision(
 
 def parse_response(
     arguments: dict[str, Any],
-    *,
-    require_heartbeat: bool = False,
 ) -> tuple[AgentReply | None, str | None]:
     if "bubbles" in arguments:
         return None, "bubbles_not_allowed_in_end_turn"
@@ -146,34 +144,11 @@ def parse_response(
     reply_wait, error = parse_reply_wait_decision(arguments.get("reply_wait"))
     if reply_wait is None:
         return None, error
-    heartbeat = arguments.get("heartbeat")
-    if require_heartbeat:
-        if not isinstance(heartbeat, dict):
-            return None, "invalid_heartbeat_state"
-        required = {
-            "next_check_minutes",
-            "reason",
-        }
-        if set(heartbeat) != required:
-            return None, "invalid_heartbeat_state"
-        if (
-            not isinstance(heartbeat["next_check_minutes"], int)
-            or isinstance(heartbeat["next_check_minutes"], bool)
-            or not isinstance(heartbeat["reason"], str)
-            or not heartbeat["reason"].strip()
-            or len(heartbeat["reason"]) > 500
-        ):
-            return None, "invalid_heartbeat_state"
-        heartbeat = {
-            **heartbeat,
-            "reason": heartbeat["reason"].strip(),
-        }
-    elif heartbeat is not None:
-        return None, "heartbeat_state_not_allowed"
+    if set(arguments) - {"mood", "reply_wait"}:
+        return None, "unexpected_end_turn_fields"
     return AgentReply(
         messages,
         mood_update=mood,
-        heartbeat=heartbeat if require_heartbeat else None,
         reply_wait=reply_wait,
     ), None
 
