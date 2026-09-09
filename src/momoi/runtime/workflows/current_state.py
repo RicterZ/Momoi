@@ -68,15 +68,13 @@ class CurrentStateWorkflow:
         latest = pack_current_turn_context(
             self.store,
             task["source_stage"],
+            ("state_update_contract", live_prompt(PROMPT_PATH, "")),
             include_empty=True,
         )
         request = (
-            live_prompt(PROMPT_PATH, "")
-            + "\n\n"
-            + f"<completed_turn stage={quoteattr(task['source_stage'])} "
-            + f"input_message_index={quoteattr(str(task['input_index']))} "
-            + f"committed_at={quoteattr(self.store.context_timestamp(task['committed_at']))} />\n"
-            + f"<time now={quoteattr(now)} />\n"
+            f"<turn id={quoteattr(source_turn_id)} "
+            + f"committed_at={quoteattr(self.store.context_timestamp(task['committed_at']))} "
+            + f"now={quoteattr(now)} />\n\n"
             + latest
         )
         messages = copy.deepcopy(task["messages"])

@@ -7,6 +7,7 @@ from importlib.resources import files
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
+from xml.etree import ElementTree
 
 import pytest
 
@@ -310,11 +311,23 @@ def test_maintenance_reuses_chain_only_appends_user_task_and_never_recurses(daem
         assert system == original_system
         assert messages[:-1] == original_messages
         assert messages[-1]["role"] == "user"
-        assert (
-            '<completed_turn stage="owner" input_message_index="1"'
-            in messages[-1]["content"]
+        root = ElementTree.fromstring(
+            "<request>" + messages[-1]["content"] + "</request>"
         )
-        assert "<current_state />" in messages[-1]["content"]
+        assert [node.tag for node in root] == [
+            "turn",
+            "current_state",
+            "state_update_contract",
+        ]
+        assert root.find("turn").attrib == {
+            "id": "source",
+            "committed_at": daemon.store.context_timestamp(
+                task_row(daemon.store)["committed_at"]
+            ),
+            "now": root.find("turn").get("now"),
+        }
+        assert root.find("current_state").findall("slot") == []
+        assert root.find("state_update_contract").text.strip()
         assert tools == original_tools
         return finish(
             {
