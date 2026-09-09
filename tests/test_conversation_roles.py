@@ -72,7 +72,7 @@ def test_speaker_migration_changes_metadata_not_names_or_quotes(tmp_path):
             ("old generated framing", raw_claims, '{"owner":"开心","momoi":"配合","tone":"轻松"}',
              "桃井是对话提到的人", episode_id),
         )
-        store._db.execute(f"PRAGMA user_version={SCHEMA_VERSION - 1}")
+        store._db.execute(f"PRAGMA user_version={6}")
     store.close()
     migrated = Store(path)
     try:

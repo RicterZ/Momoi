@@ -170,6 +170,22 @@ def _add_episode_recall_cues(database: sqlite3.Connection) -> None:
     # its cue column dependency, before these additive migrations run.
 
 
+def _add_episode_cue_vectors(database: sqlite3.Connection) -> None:
+    # SQLite CHECK constraints require a table rebuild. Preserve vectors and
+    # queue state, and recreate the original indexes on the replacement table.
+    sql = database.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='semantic_documents'").fetchone()[0]
+    if "'episode_cue'" in sql:
+        return
+    indexes = [row[0] for row in database.execute("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='semantic_documents' AND sql IS NOT NULL")]
+    replacement = sql.replace('semantic_documents', 'semantic_documents_with_cues', 1).replace("'episode_turn'", "'episode_turn', 'episode_cue'")
+    database.execute(replacement)
+    database.execute("INSERT INTO semantic_documents_with_cues SELECT * FROM semantic_documents")
+    database.execute("DROP TABLE semantic_documents")
+    database.execute("ALTER TABLE semantic_documents_with_cues RENAME TO semantic_documents")
+    for index in indexes:
+        database.execute(index)
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     _add_runtime_archive_metadata,
     _add_turn_workflow_kind,
@@ -179,6 +195,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     _remove_obsolete_reply_context,
     _neutral_episode_speaker_metadata,
     _add_episode_recall_cues,
+    _add_episode_cue_vectors,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 

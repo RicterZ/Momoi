@@ -35,6 +35,12 @@ _CONFIDENCE_QUERY_MATCH_WEIGHT = 0.10
 _MIN_SELECTIVE_LITERAL_CHARS = 3
 _SHORT_LITERAL_TURN_SUPPORT = 3
 _SHORT_LITERAL_CONFIDENCE_CEILING = _RELEVANCE_CONFIDENCE_FLOOR - 0.001
+# Topic-level historical replay: 2.0 was the smallest cue coefficient
+# reaching 10/10 best-topic hits in the 12-query development pool; 2.5
+# added no benefit. Sparse cue field weight remains independently calibrated.
+_DENSE_RANK_WEIGHT = 0.55
+_CUE_RANK_WEIGHT = 2.0
+
 _FIELD_WEIGHTS = {
     # Historical replay: larger boosts did not consistently improve rank.
     "recall_cue": 3.3,
@@ -92,6 +98,8 @@ class RankedEpisodeHit:
     agreement_bonus: float = 0.0
     corroboration_bonus: float = 0.0
     dense_only: bool = False
+    cue_cosine: float | None = None
+    admission_routes: tuple[str, ...] = ()
 
 
 def _idf(document_count: int, document_frequency: int) -> float:
@@ -296,12 +304,8 @@ def rank_episode_matches(
             if dense_evidence is not None
             else {}
         )
-        reviewed = (
-            dense_evidence.reranked_episodes.get(query.dense_expression)
-            if dense_evidence is not None else None
-        )
         document_by_id = {document.episode_id: document for document in documents}
-        for episode_id in (reviewed if reviewed is not None else set(sparse_by_episode).union(dense_by_episode)):
+        for episode_id in set(sparse_by_episode).union(dense_by_episode):
             sparse_score, hits = sparse_by_episode.get(episode_id, (0.0, []))
             dense_hit = dense_by_episode.get(episode_id)
             document = document_by_id.get(episode_id)
@@ -331,7 +335,12 @@ def rank_episode_matches(
                 if turn_thresholds is not None and turn_cosine is not None
                 else 0.0
             )
-            dense_score = max(summary_dense, turn_dense)
+            cue_cosine = dense_hit.cue_cosine if dense_hit is not None else None
+            cue_thresholds = (dense_evidence.thresholds("episode_cue")
+                if dense_evidence is not None else None)
+            cue_dense = (cue_thresholds.calibrated(cue_cosine)
+                if cue_thresholds is not None and cue_cosine is not None else 0.0)
+            dense_score = max(summary_dense, turn_dense, cue_dense)
             normalized_sparse = 1.0 - math.exp(-sparse_score)
             sparse_component = _saturate_sparse_score(sparse_score)
             agreement = (
@@ -346,12 +355,11 @@ def rank_episode_matches(
             )
             hybrid_score = (
                 sparse_component
-                + 0.55 * dense_score
+                + max(_DENSE_RANK_WEIGHT * max(summary_dense, turn_dense),
+                      _CUE_RANK_WEIGHT * cue_dense)
                 + 0.20 * agreement
                 + corroboration
             ) * _priority_weight(query.priority)
-            if reviewed is not None:
-                hybrid_score = _priority_weight(query.priority) / (1 + reviewed[episode_id].rank)
             state = episodes.setdefault(
                 episode_id,
                 {
@@ -364,6 +372,7 @@ def rank_episode_matches(
                     "eligibility": [],
                     "channels": set(),
                     "dense_cosines": [],
+                    "cue_cosines": [],
                     "agreement_bonus": 0.0,
                     "corroboration_bonus": 0.0,
                 },
@@ -374,12 +383,6 @@ def rank_episode_matches(
             message_matches = {
                 message.id: message for hit in hits for message in hit.matches
             }
-            if reviewed is not None:
-                cited_ids = set(reviewed[episode_id].evidence_message_ids)
-                message_matches = {
-                    message.id: message for message in document.messages
-                    if message.id in cited_ids
-                }
             alternatives = tuple(
                 dict.fromkeys(hit.alternative for hit in hits)
             )
@@ -427,7 +430,7 @@ def rank_episode_matches(
             )
             query_confidence = _query_relevance_confidence(query_evidence)
             raw_cosine = max(
-                (value for value in (summary_cosine, turn_cosine) if value is not None),
+                (value for value in (summary_cosine, turn_cosine, cue_cosine) if value is not None),
                 default=None,
             )
             threshold_pairs = tuple(
@@ -435,6 +438,7 @@ def rank_episode_matches(
                 for cosine, threshold in (
                     (summary_cosine, summary_thresholds),
                     (turn_cosine, turn_thresholds),
+                    (cue_cosine, cue_thresholds),
                 )
                 if cosine is not None and threshold is not None
             )
@@ -442,7 +446,6 @@ def rank_episode_matches(
             assert isinstance(eligibility, list)
             eligibility.append(
                 {
-                    "reviewed": reviewed is not None,
                     "dense_confidence": dense_score,
                     "sparse": sparse_score > 0,
                     "sparse_confidence": query_confidence,
@@ -460,10 +463,12 @@ def rank_episode_matches(
             )
             channels = state["channels"]
             assert isinstance(channels, set)
-            if reviewed is not None:
-                channels.add("evidence_rerank")
             if sparse_score > 0:
                 channels.add("sparse")
+            if cue_cosine is not None:
+                state["cue_cosines"].append(cue_cosine)
+                if cue_dense > 0:
+                    channels.add("cue_dense")
             if raw_cosine is not None:
                 channels.add("dense")
                 dense_cosines = state["dense_cosines"]
@@ -500,7 +505,7 @@ def rank_episode_matches(
                 all_matches.values(),
                 key=lambda message: (message.ordinal, message.id),
                 reverse=True,
-            )[:8 if "evidence_rerank" in state["channels"] else 4]
+            )[:4]
         )
         query_rows = state["queries"]
         assert isinstance(query_rows, list)
@@ -508,21 +513,26 @@ def rank_episode_matches(
             evidence
             for _, evidence in sorted(query_rows, key=lambda item: item[0])
         )
-        relevance_confidence = _relevance_confidence(ranked_queries)
         eligibility = state["eligibility"]
         assert isinstance(eligibility, list)
-        sparse_admitted = relevance_confidence >= minimum_confidence
-        dense_only_admitted = any(
-            not bool(item["sparse"])
-            and bool(item["dense_only_pass"])
-            for item in eligibility
-        )
-        support_admitted = any(
-            bool(item["sparse"])
-            and bool(item["support_pass"])
-            and float(item["hybrid_confidence"]) >= minimum_confidence
-            for item in eligibility
-        )
+        # The returned confidence and the gate must use the same score. Keep
+        # independent query needs independent, but apply the caller's floor to
+        # every admission route, including strong semantic-only matches.
+        admission_scores: dict[str, float] = {}
+        for item in eligibility:
+            routes = {}
+            if item["sparse"]:
+                routes["sparse"] = float(item["sparse_confidence"])
+                if item["support_pass"]:
+                    routes["hybrid"] = float(item["hybrid_confidence"])
+            if item["dense_only_pass"]:
+                routes["semantic"] = float(item["dense_confidence"])
+            for route, confidence in routes.items():
+                admission_scores[route] = max(admission_scores.get(route, 0.0), confidence)
+        relevance_confidence = max(admission_scores.values(), default=0.0)
+        admission_routes = tuple(sorted(route for route, confidence in admission_scores.items()
+                                       if confidence >= minimum_confidence))
+        dense_only_admitted = "semantic" in admission_routes
         keywords = state["keywords"]
         assert isinstance(keywords, set)
         ranked.append(
@@ -530,10 +540,8 @@ def rank_episode_matches(
                 episode_id=episode_id,
                 score=score,
                 semantic_score=semantic_score,
-                relevance_confidence=max(
-                    relevance_confidence,
-                    max((float(item["dense_confidence"]) for item in eligibility), default=0.0),
-                ),
+                relevance_confidence=relevance_confidence,
+                admission_routes=admission_routes,
                 last_activity_at=last_activity_at,
                 salience=salience,
                 matches=ordered_matches,
@@ -545,6 +553,7 @@ def rank_episode_matches(
                     if state["dense_cosines"]
                     else None
                 ),
+                cue_cosine=max(state["cue_cosines"], default=None),
                 agreement_bonus=float(state["agreement_bonus"]),
                 corroboration_bonus=float(state["corroboration_bonus"]),
                 dense_only=dense_only_admitted and not any(
@@ -554,7 +563,7 @@ def rank_episode_matches(
         )
         # Keep admission separate from ranking. Stash the decision without
         # changing the public immutable result shape.
-        state["admitted"] = any(item["reviewed"] for item in eligibility) or sparse_admitted or dense_only_admitted or support_admitted
+        state["admitted"] = relevance_confidence >= minimum_confidence
     ranked.sort(
         key=lambda hit: (
             hit.score,

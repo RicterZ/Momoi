@@ -178,6 +178,24 @@ class EpisodeQueryStore:
             )
         return rows_by_id, documents
 
+    def _episode_topic_documents(self):
+        """Topic retrieval never loads raw messages or context plans."""
+        rows = self._db.execute("""SELECT e.*, COALESCE((
+            SELECT MAX(t.updated_at) FROM episode_turns et JOIN turns t ON t.id=et.turn_id
+            WHERE et.episode_id=e.id), e.updated_at) AS last_activity_at
+            FROM conversation_episodes e""").fetchall()
+        documents = []
+        for row in rows:
+            fields = [EpisodeSearchField("title", row["title"]),
+                      EpisodeSearchField("narrative_summary", row["narrative_summary"]),
+                      EpisodeSearchField("summary", row["summary"])]
+            for name, column in (("topic", "topics_json"), ("entity", "entities_json")):
+                fields.extend(EpisodeSearchField(name, str(value)) for value in json.loads(row[column] or "[]"))
+            fields.extend(EpisodeSearchField("recall_cue", text) for text in stored_cue_texts(row["recall_cues_json"]))
+            documents.append(EpisodeSearchDocument(str(row["id"]), tuple(fields),
+                float(row["last_activity_at"]), float(row["salience"]), ()))
+        return {str(row["id"]): row for row in rows}, documents
+
     def _ranked_episode_results(
         self,
         queries: list[EpisodeRecallQuery],
@@ -187,14 +205,14 @@ class EpisodeQueryStore:
         before: float | None = None,
         offset: int = 0,
         minimum_confidence: float | None = None,
+        topics_only: bool = False,
         dense_evidence: DenseRecallEvidence | None = None,
     ) -> list[dict[str, object]]:
         if max_results <= 0 or offset < 0 or not queries:
             return []
-        rows_by_id, documents = self._episode_search_documents(
-            after=after,
-            before=before,
-        )
+        rows_by_id, documents = (self._episode_topic_documents()
+            if topics_only and after is None and before is None else
+            self._episode_search_documents(after=after, before=before))
         matches = self._episode_query.match_many(
             [query.expression for query in queries],
             documents,
@@ -246,6 +264,8 @@ class EpisodeQueryStore:
             episode["relevance_confidence"] = hit.relevance_confidence
             episode["channels"] = list(hit.channels)
             episode["dense_cosine"] = hit.dense_cosine
+            episode["cue_cosine"] = hit.cue_cosine
+            episode["admission_routes"] = list(hit.admission_routes)
             episode["agreement_bonus"] = hit.agreement_bonus
             episode["corroboration_bonus"] = hit.corroboration_bonus
             episode["dense_only"] = hit.dense_only
@@ -266,6 +286,21 @@ class EpisodeQueryStore:
             ]
             results.append(episode)
         return results
+
+    def topic_conversation_time(self, episode_id: str):
+        row = self._db.execute(
+            """SELECT MIN(m.created_at), MAX(m.created_at)
+               FROM episode_turns e JOIN messages m ON m.turn_id=e.turn_id
+               WHERE e.episode_id=?""", (episode_id,),
+        ).fetchone()
+        if row[0] is None:
+            return None
+        return {"start": self.context_timestamp(row[0]),
+                "end": self.context_timestamp(row[1])}
+
+    def search_topic_queries(self, queries, max_results, *, dense_evidence=None, minimum_confidence=None):
+        return self._ranked_episode_results(queries, max_results,
+            topics_only=True, dense_evidence=dense_evidence, minimum_confidence=minimum_confidence)
 
     def search_episode_queries(
         self,

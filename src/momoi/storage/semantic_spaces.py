@@ -131,7 +131,7 @@ class SemanticSpaceStore:
                     """SELECT DISTINCT CASE WHEN document_type='episode_turn'
                                              THEN parent_id ELSE source_id END AS id
                        FROM semantic_documents WHERE space_id=?
-                         AND document_type IN ('episode_summary','episode_turn')
+                         AND document_type IN ('episode_summary','episode_turn','episode_cue')
                          AND state='ready'""",
                     (row["id"],),
                 ).fetchall()

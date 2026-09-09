@@ -66,5 +66,7 @@ correction; do not also preserve the superseded claim as a completed outcome.
 For every action, distinguish intent, attempt, reported completion, and
 independently confirmed result. Preserve explicit failures and corrections.
 Write participants as OWNER or ASSISTANT rather than first-person pronouns.
+Each cue is embedded independently: make its event and participants intelligible
+without relying on neighboring cues or the narrative summary.
 Prefer a few discriminative event labels to one label per sentence. Repeated
 acknowledgements of the same event do not require separate cues.

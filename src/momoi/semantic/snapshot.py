@@ -80,7 +80,7 @@ class SegmentedVectorSnapshot:
             key
             for key in self._latest
             if (
-                key[0] in {"episode_summary", "episode_turn"}
+                key[0] in {"episode_summary", "episode_turn", "episode_cue"}
                 and source_type == "episode"
                 and any(
                     meta.key == key and meta.parent_id == source_id
@@ -121,7 +121,7 @@ class SegmentedVectorSnapshot:
             scores = query_vectors @ segment.vectors.T
             for query_index in range(scores.shape[0]):
                 row_scores = scores[query_index]
-                if document_types.issubset({"episode_summary", "episode_turn"}):
+                if document_types.issubset({"episode_summary", "episode_turn", "episode_cue"}):
                     indices = range(len(row_scores))
                 else:
                     take = min(width, len(row_scores))
@@ -143,7 +143,7 @@ class SegmentedVectorSnapshot:
                     candidates[query_index].append((meta, float(row_scores[index])))
         for query_index, hits in candidates.items():
             hits.sort(key=lambda item: item[1], reverse=True)
-            if document_types.issubset({"episode_summary", "episode_turn"}):
+            if document_types.issubset({"episode_summary", "episode_turn", "episode_cue"}):
                 best: dict[tuple[str, str], tuple[VectorMetadata, float]] = {}
                 for meta, score in hits:
                     key = (meta.parent_id or meta.source_id, meta.document_type)

@@ -14,7 +14,7 @@ from momoi.storage.episode_search import (
     StringEpisodeSearchBackend,
 )
 from momoi.storage.migrations import SCHEMA_VERSION
-from momoi.storage.semantic_documents import _episode_summary_document
+from momoi.storage.semantic_documents import _episode_summary_document, _episode_cue_documents
 from tests.test_episode_search import document
 from tests.test_episode_annealing import add_turn, config
 from momoi.runtime import MomoiDaemon
@@ -126,7 +126,7 @@ class EpisodeCuesTest(unittest.TestCase):
             self.assertTrue(any("初次" in r[0] for r in terms))
             source = store._db.execute("SELECT * FROM conversation_episodes").fetchone()
             before = _episode_summary_document(source).content
-            self.assertIn("Recall cues (retrieval hints): 初次 交流", before)
+            self.assertEqual(_episode_cue_documents(source)[0].content, "初次 交流")
             for invalid in ([""], ["x" * 101], ["x"] * 9, "phrase", [1], {}):
                 with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                     finish(invalid)
@@ -147,7 +147,8 @@ class EpisodeCuesTest(unittest.TestCase):
                 store.search_episode_queries([EpisodeRecallQuery("初次 交流")], 8), []
             )
             source = store._db.execute("SELECT * FROM conversation_episodes").fetchone()
-            self.assertNotEqual(_episode_summary_document(source).content, before)
+            self.assertEqual(_episode_summary_document(source).content, before)
+            self.assertEqual(_episode_cue_documents(source), [])
             self.assertIsNotNone(
                 store._db.execute(
                     "SELECT * FROM semantic_dirty_sources WHERE source_id='episode-main'"
@@ -166,7 +167,7 @@ class EpisodeCuesTest(unittest.TestCase):
                 db.execute(
                     "ALTER TABLE conversation_episodes DROP COLUMN recall_cues_json"
                 )
-                db.execute(f"PRAGMA user_version={SCHEMA_VERSION - 1}")
+                db.execute(f"PRAGMA user_version={7}")
             for _ in range(2):
                 store = Store(path)
                 self.assertEqual(store.episode("legacy")["recall_cues"], [])

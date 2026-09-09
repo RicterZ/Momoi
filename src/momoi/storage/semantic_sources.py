@@ -6,6 +6,7 @@ from .semantic_documents import (
     SemanticDocument,
     _episode_summary_document,
     _episode_turn_documents,
+    _episode_cue_documents,
 )
 
 
@@ -277,7 +278,7 @@ class SemanticSourceStore:
             (source_id,),
         ).fetchall()
         summary = _episode_summary_document(episode)
-        return ([summary] if summary else []) + _episode_turn_documents(
+        return ([summary] if summary else []) + _episode_cue_documents(episode) + _episode_turn_documents(
             source_id, list(rows)
         ), True
 

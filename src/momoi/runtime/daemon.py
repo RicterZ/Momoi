@@ -18,7 +18,6 @@ from ..tools.thinking import ThinkingTools
 from ..mcp.manager import MCPManager
 from ..models import AgentReply, IncomingMessage
 from ..semantic.service import SemanticRecallService
-from ..semantic.episode_reranker import EpisodeEvidenceReranker
 from ..storage import Store
 from ..webhooks.service import WebhookService
 from .jobs import AutonomousJob
@@ -117,9 +116,6 @@ class MomoiDaemon(
             primary_name = str(getattr(config.channel, "plugin", ""))
             self.channel = self.channels[primary_name]
         self.provider = self.services.llm
-        self.semantic_recall.reranker = EpisodeEvidenceReranker(
-            self.store, lambda: self.provider
-        )
         self.provider.usage_sink = self.store.record_llm_call
         self.provider.thinking_sink = self.store.record_thinking_call
         if accounting is not None:

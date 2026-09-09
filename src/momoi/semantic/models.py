@@ -10,6 +10,7 @@ CALIBRATION_PROFILES: dict[str, dict[str, tuple[float, float, float]]] = {
         "reflection_memory": (0.58, 0.75, 0.87),
         "episode_summary": (0.52, 0.81, 0.84),
         "episode_turn": (0.56, 0.81, 0.86),
+        "episode_cue": (0.52, 0.72, 0.84),
     }
 }
 
@@ -39,20 +40,15 @@ class DenseEpisodeHit:
     episode_id: str
     summary_cosine: float | None = None
     turn_cosine: float | None = None
+    cue_cosine: float | None = None
 
     @property
     def cosine(self) -> float:
         return max(
             value
-            for value in (self.summary_cosine, self.turn_cosine)
+            for value in (self.summary_cosine, self.turn_cosine, self.cue_cosine)
             if value is not None
         )
-
-
-@dataclass(frozen=True)
-class EpisodeRerankMatch:
-    rank: int
-    evidence_message_ids: tuple[int, ...]
 
 
 @dataclass(frozen=True)
@@ -67,10 +63,6 @@ class DenseRecallEvidence:
     request_ms: float = 0.0
     search_ms: float = 0.0
     fallback_reason: str = ""
-    reranked_episodes: dict[str, dict[str, EpisodeRerankMatch]] = field(default_factory=dict)
-    rerank_ms: float = 0.0
-    rerank_attempts: int = 0
-    rerank_fallback_reason: str = ""
 
     def thresholds(self, document_type: str) -> DenseThresholds | None:
         values = CALIBRATION_PROFILES.get(self.calibration_profile, {}).get(

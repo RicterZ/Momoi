@@ -37,7 +37,6 @@ class SemanticRecallService:
         policy: SemanticPolicy = SemanticPolicy(),
         client: Embedder | None,
     ) -> None:
-        self.reranker = None
         self.store = store
         self.config = config
         self.policy = policy
@@ -79,6 +78,14 @@ class SemanticRecallService:
                 calibration_profile=self.config.calibration_profile,
             )
             self._needs_reconciliation = True
+            # A document-template upgrade does not invalidate the encoder's
+            # coordinate space. Keep the previous index available while rebuilding.
+            if (str(space["model"]) == self.config.model
+                    and int(space["dimensions"]) == self.config.dimensions
+                    and str(space["calibration_profile"]) == self.config.calibration_profile
+                    and int(space["query_template_version"]) == QUERY_TEMPLATE_VERSION):
+                self.snapshot.load(str(space["id"]))
+                self.degraded_reason = ""
             return
         self.snapshot.load(str(space["id"]))
         self._needs_reconciliation = True
@@ -103,7 +110,6 @@ class SemanticRecallService:
         episode_after: float | None = None,
         episode_before: float | None = None,
         output_limit: int = 8,
-        episode_context: str = "",
     ) -> DenseRecallEvidence:
         queries = list(queries)
         expressions = self._expressions(queries)
@@ -166,7 +172,7 @@ class SemanticRecallService:
         episode_types = (
             {"episode_turn"}
             if episode_after is not None or episode_before is not None
-            else {"episode_summary", "episode_turn"}
+            else {"episode_summary", "episode_cue"}
         )
         episode_hits: dict[int, list[tuple[VectorMetadata, float]]] = {}
         if include_episode:
@@ -195,7 +201,7 @@ class SemanticRecallService:
                 field_name = (
                     "summary_cosine"
                     if meta.document_type == "episode_summary"
-                    else "turn_cosine"
+                    else "cue_cosine" if meta.document_type == "episode_cue" else "turn_cosine"
                 )
                 values = episode_values.setdefault(episode_id, {})
                 values[field_name] = max(cosine, values.get(field_name, -1.0))
@@ -214,11 +220,6 @@ class SemanticRecallService:
             search_ms=(time.monotonic() - search_started) * 1000,
         )
 
-        if include_episode and self.reranker is not None:
-            evidence = await self.reranker.rerank(
-                queries, evidence, after=episode_after, before=episode_before,
-                context=episode_context,
-            )
         return evidence
 
     async def maintain_once(self, *, allow_encoding: bool = True) -> bool:

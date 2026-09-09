@@ -380,7 +380,7 @@ CREATE TABLE IF NOT EXISTS semantic_documents (
     document_type TEXT NOT NULL CHECK (
         document_type IN (
             'confirmed_memory', 'reflection_memory',
-            'episode_summary', 'episode_turn'
+            'episode_summary', 'episode_turn', 'episode_cue'
         )
     ),
     source_id TEXT NOT NULL,

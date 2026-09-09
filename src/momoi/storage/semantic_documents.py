@@ -18,7 +18,7 @@ from .memory_values import estimate_tokens, token_chunk
 
 QUERY_TEMPLATE_VERSION = 1
 
-DOCUMENT_TEMPLATE_VERSION = 3
+DOCUMENT_TEMPLATE_VERSION = 4
 
 SEMANTIC_PROVIDER = "fastembed"
 
@@ -80,12 +80,10 @@ def _episode_summary_document(row: sqlite3.Row) -> SemanticDocument | None:
     parts: list[str] = []
     for label, value in (
         ("Title", row["title"]),
-        ("Recall cues (retrieval hints)", "；".join(stored_cue_texts(row["recall_cues_json"]))),
         ("Topics", "；".join(_json_strings(row["topics_json"]))),
         ("Entities", "；".join(_json_strings(row["entities_json"]))),
         ("Narrative", row["narrative_summary"]),
         ("Outcomes", "；".join(_json_strings(row["outcomes_json"]))),
-        ("Evidence summary", row["working_summary"]),
         ("Summary", row["summary"]),
     ):
         text = str(value or "").strip()
@@ -97,6 +95,13 @@ def _episode_summary_document(row: sqlite3.Row) -> SemanticDocument | None:
     return SemanticDocument(
         "episode_summary", episode_id, episode_id, 0, "\n".join(parts)
     )
+
+
+def _episode_cue_documents(row) -> list[SemanticDocument]:
+    """One independently searchable vector per cue, owned by its Episode."""
+    episode_id = str(row["id"])
+    return [SemanticDocument("episode_cue", episode_id, episode_id, index, text)
+            for index, text in enumerate(stored_cue_texts(row["recall_cues_json"]))]
 
 def _message_parts(row: sqlite3.Row) -> list[str]:
     role = speaker_label(row["role"])

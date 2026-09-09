@@ -159,6 +159,7 @@ def build_plan_retrieval(
     plan: dict[str, object],
     config: AppConfig,
     dense_evidence: DenseRecallEvidence | None = None,
+    selected_episode_rows: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
     recent_episode_ids: set[str] = set()
     episodes: list[dict[str, object]] = []
@@ -261,7 +262,7 @@ def build_plan_retrieval(
         )
         for item in recall_queries
     ]
-    episode_rows = store.search_episode_queries(
+    episode_rows = selected_episode_rows if selected_episode_rows is not None else store.search_topic_queries(
         episode_queries,
         max(0, config.summary_results),
         dense_evidence=dense_evidence,
@@ -455,6 +456,9 @@ def build_plan_retrieval(
         existing["relevance_confidence"] = selected.get("relevance_confidence")
         existing["is_recent"] = True
     episodes = rank_recall_items(episodes)
+    if selected_episode_rows is not None:
+        order = {str(row["id"]): i for i, row in enumerate(selected_episode_rows)}
+        episodes.sort(key=lambda item: order.get(str(item["episode_id"]), len(order)))
     recall_index: list[str] = []
     no_retrieval_units = [
         str(unit["id"])
@@ -605,9 +609,6 @@ def build_plan_retrieval(
         embedding_request_ms=round(dense_evidence.request_ms, 2) if dense_evidence else 0,
         embedding_search_ms=round(dense_evidence.search_ms, 2) if dense_evidence else 0,
         embedding_fallback=dense_evidence.fallback_reason if dense_evidence else "disabled",
-        episode_rerank_ms=round(dense_evidence.rerank_ms, 2) if dense_evidence else 0,
-        episode_rerank_attempts=dense_evidence.rerank_attempts if dense_evidence else 0,
-        episode_rerank_fallback=dense_evidence.rerank_fallback_reason if dense_evidence else "",
 
     )
     log_event(

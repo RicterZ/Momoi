@@ -1252,7 +1252,7 @@ class ContextAssemblerTest(unittest.TestCase):
             reopened.close()
 
 
-    def test_turn_keywords_rank_episode_and_inject_matched_evidence(
+    def test_detail_search_does_not_inject_raw_matches_into_topic_recall(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1296,31 +1296,11 @@ class ContextAssemblerTest(unittest.TestCase):
                 config(directory),
             )
             self.assertEqual(retrieval["version"], 6)
-            self.assertIn("episode_hits=", retrieval["query_recall"])
+            self.assertIn("misses=", retrieval["query_recall"])
             self.assertNotIn("turn_hits=", retrieval["query_recall"])
-            selected = next(
-                item
-                for item in retrieval["episodes"]
-                if item["episode_id"] == "episode-old"
-            )
-            self.assertGreater(selected["search_score"], 0)
-            self.assertIn(
-                "rare-turn",
-                {
-                    turn_id
-                    for query in selected["matched_queries"]
-                    for turn_id in query["turn_ids"]
-                },
-            )
-            assembled = assemble_main_context(
-                store,
-                retrieval,
-                1000,
-            )
-            self.assertIn(
-                "蓝色保温杯藏在阁楼第三个纸箱里",
-                "\n".join(assembled.values()),
-            )
+            self.assertFalse(any(item["relation"] == "recalled" for item in retrieval["episodes"]))
+            assembled = assemble_main_context(store, retrieval, 1000)
+            self.assertNotIn("蓝色保温杯藏在阁楼第三个纸箱里", "\n".join(assembled.values()))
             self.assertIn(
                 "蓝色保温杯藏在阁楼第三个纸箱里",
                 store.conversation_episode("episode-old")["messages"][0]["content"],
@@ -1506,7 +1486,7 @@ class ContextAssemblerTest(unittest.TestCase):
             )
             self.assertTrue(
                 any(
-                    item["title"] == "项目邮件" and item["evidence"]
+                    item["title"] == "项目邮件" and not item["evidence"]
                     for item in recall_logs["context_recall_episode_results"][
                         "results"
                     ]
