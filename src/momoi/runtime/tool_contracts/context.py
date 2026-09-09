@@ -24,7 +24,7 @@ RECALL_EXAMPLES = [
 
 def recall_correction(message: str) -> dict[str, Any]:
     return {
-        "message": message + " Retry recall alone as a native tool call; it has not succeeded yet.",
+        "message": message + " Retry recall as a native tool call; it has not succeeded yet.",
         "hint": (
             "Put intent fields inside units (1-4 objects), not at the top level. "
             "Use JSON arrays/objects, never JSON-encoded strings. search requires 1-3 queries "
@@ -42,7 +42,8 @@ RECALL_TOOL_SPEC: dict[str, Any] = {
     "description": (
         "Retrieve confirmed memory, dated reflection, and Episode summaries for "
         "the Owner Turn, and bind its archival Episode membership. "
-        "Call first and alone as a native tool, and retry until successful before other tools. "
+        "Include once in the opening tool batch; independent tools may accompany it. "
+        "Retry until successful; wait for its results before dependent calls. "
         "Arguments must contain units, an array of intent objects; do not flatten its fields "
         "or stringify nested JSON. Minimal example when context is sufficient: "
         + json.dumps(RECALL_SKIP_EXAMPLE, ensure_ascii=False)

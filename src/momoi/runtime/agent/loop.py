@@ -129,6 +129,9 @@ class AgentLoop:
                 failed_tool_rounds = 0
                 remind_owner_bubbles = False
             required_tool = harness.spec.first_tool if not harness.started else None
+            if required_tool == "recall":
+                # The harness requires recall within the batch, not an exclusive tool choice.
+                required_tool = None
             if (required_tool == "send_bubbles" and voice_allowed
                     and (permitted_tools is None or "send_voice" in permitted_tools)):
                 # The harness accepts either delivery form for the opening reply.
@@ -358,9 +361,9 @@ class AgentLoop:
                 )
                 for call in response.tool_calls:
                     detail = {}
-                    if harness_error == "recall_must_be_first_and_alone":
+                    if harness_error == "recall_required_once_in_opening_batch":
                         detail = recall_correction(
-                            "recall must succeed first and alone before sending or ending this Turn."
+                            "Include exactly one recall in the opening batch; independent tools may accompany it."
                         )
                     elif call.name == "end_turn" and end_schema is not None:
                         detail = end_turn_correction(

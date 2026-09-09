@@ -1,31 +1,21 @@
 # Owner Turn contract
 
 Respond to `<current_owner_bubbles>` using shared history and recalled memory.
-Tools and messages may alternate; sending a message does not end the Turn.
 
-## Sequence
+Typical flow:
+recall → … → send_bubbles? / send_voice? → … → end_turn
 
-1. Call `recall` first and alone, once successfully per Turn. Owner messages
-   arriving during this Turn preserve that completion and prior tool results;
-   continue from them, retrieving further only for a new unresolved need.
-2. Use its evidence. Retrieve further only for a specific unresolved need.
-3. Before the first `curl`, enabled MCP, `goal_create`, or `goal_cancel`, call
-   `send_bubbles` or `send_voice`. This prelude is required once
-   per owner request and may precede the tool in the same batch.
-4. Continue tools and `send_bubbles` as needed, without a one-call limit.
-5. After work, call `end_turn`. An acknowledgment may need no reply.
+Your workflow may involve multiple activities and tool calls. You may call
+multiple independent tools in one response; wait for results before making
+dependent calls.
 
-## Delivery and completion arguments
-
-This is an Owner Turn. Put visible text in `send_bubbles.bubbles` or use
-`send_voice`. Do not write `[tool_call] ... -> ok` as a substitute for a tool call.
-
-For `end_turn`, supply only `reply_wait` and `mood` objects.
-Example when finished and the persistent mood is unchanged:
-`{"reply_wait":{"wait":false},"mood":{"decision":"unchanged"}}`.
-`mood.decision=unchanged` permits only `decision`; do not copy existing mood
-fields into it. When updating, use `decision=updated` with `state`, `intensity`
-and `cause`. Choose truthful decisions; the example is not a default outcome.
+- Include exactly one `recall` in the opening batch; independent tools may
+  accompany it. Retry until recall succeeds. New owner messages preserve that
+  completion and prior tool results; continue from them.
+- Before the first `curl`, enabled MCP, `goal_create`, or `goal_cancel` per owner
+  request, send a prelude via `send_bubbles` or `send_voice`; it may precede the
+  tool in the same batch.
+- An acknowledgment may need no reply. Choose truthful mood and reply-wait decisions.
 
 ## Recall scope
 

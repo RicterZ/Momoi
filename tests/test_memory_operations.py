@@ -984,7 +984,7 @@ def test_owner_tagged_prelude_satisfies_progress_after_recall(daemon, early_bubb
         nonlocal calls
         calls += 1
         if early_bubbles and calls == 2:
-            assert 'recall_must_be_first_and_alone' in str(messages[-1])
+            assert 'recall_required_once_in_opening_batch' in str(messages[-1])
             assert not daemon.store.due_outbox()
         assert replies, 'Unexpected protocol retry'
         return replies.pop(0)
@@ -1095,11 +1095,11 @@ def test_owner_update_preserves_actual_recall_completion(daemon, recall_succeede
             return recall_response()
         if calls == 2:
             assert '先别找了' in str(messages)
-            assert kwargs.get('required_tool') == (None if recall_succeeded else 'recall')
+            assert kwargs.get('required_tool') is None
             assert 'recall' in str(messages[:-1])
             return ProviderResponse([{'type': 'text', 'text': '<bubble>收到，不找了</bubble>'}], [])
         if not recall_succeeded and calls == 3:
-            assert 'recall_must_be_first_and_alone' in str(messages[-1])
+            assert 'recall_required_once_in_opening_batch' in str(messages[-1])
             assert not daemon.store.due_outbox()
             return recall_response()
         if not recall_succeeded and calls == 4:
@@ -1177,7 +1177,7 @@ def test_owner_skip_completes_recall_gate_and_sends_without_search(daemon):
 
     async def complete(_system, messages, _tools, **kwargs):
         assert replies, 'Unexpected recall retry'
-        assert kwargs.get('required_tool') == ('recall' if len(replies) == 3 else None)
+        assert kwargs.get('required_tool') is None
         if len(replies) == 2:
             assert 'no_retrieval_units=u1' in str(messages[-1])
         return replies.pop(0)
@@ -1188,6 +1188,71 @@ def test_owner_skip_completes_recall_gate_and_sends_without_search(daemon):
     dense.assert_not_awaited()
     assert not replies
     assert [r.text for r in daemon.store.due_outbox()] == ['好！']
+
+
+@pytest.mark.parametrize('recall_position', [0, 1, 2])
+@pytest.mark.parametrize('failed_recall', [False, True])
+def test_owner_opening_batch_preserves_order_and_retries_only_failed_recall(
+    daemon, recall_position, failed_recall,
+):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    source = event(daemon.store, text="安排一下")
+    arguments = {'units': [{
+        'intent': '安排任务', 'recall_mode': 'skip', 'recall_queries': [],
+        'recall_from_turn_id': '', 'episode': {'action': 'none'},
+    }]}
+    opening = [
+        ToolCall('say', 'send_bubbles', {'bubbles': ['我来安排']}),
+        ToolCall('work', 'goal_create', {}),
+    ]
+    opening.insert(recall_position, ToolCall(
+        'recall', 'recall', {'units': []} if failed_recall else arguments,
+    ))
+    replies = [ProviderResponse(
+        [{'type': 'tool_use', 'id': c.id, 'name': c.name, 'input': c.arguments}
+         for c in opening], opening,
+    )]
+    if failed_recall:
+        replies.append(response(ToolCall('retry', 'recall', arguments)))
+    replies.append(response(ToolCall('end', 'end_turn', {
+        'reply_wait': {'wait': False}, 'mood': {'decision': 'unchanged'},
+    })))
+    calls = 0
+    tools_seen = None
+
+    def execute(*args, **kwargs):
+        assert [r.text for r in daemon.store.due_outbox()] == ['我来安排']
+        recalled = daemon.store.context_plan('source')
+        assert bool(recalled) == (recall_position < 2 and not failed_recall)
+        return {'ok': True}
+
+    daemon.agenda_tools.execute = Mock(side_effect=execute)
+
+    async def complete(_system, messages, tools, **kwargs):
+        nonlocal calls, tools_seen
+        calls += 1
+        assert replies, 'Unexpected protocol retry'
+        assert kwargs.get('required_tool') is None
+        assert kwargs.get('require_tool') is True
+        if tools_seen is None:
+            tools_seen = copy.deepcopy(tools)
+        assert tools == tools_seen
+        if calls == 2:
+            blocks = messages[-1]['content']
+            assert [b['tool_use_id'] for b in blocks] == [c.id for c in opening]
+            results = [json.loads(b['content']) for b in blocks]
+            assert results[recall_position]['ok'] is not failed_recall
+            assert all(r['ok'] for i, r in enumerate(results) if i != recall_position)
+        return replies.pop(0)
+
+    daemon.provider = SimpleNamespace(complete=complete, config=SimpleNamespace(api_format='anthropic'))
+    asyncio.run(daemon._complete_batch_turn([source], asyncio.Event(), 'source'))
+    assert not replies
+    daemon.agenda_tools.execute.assert_called_once()
+    assert [r.text for r in daemon.store.due_outbox()] == ['我来安排']
+    assert daemon.store.context_plan('source')
 
 
 def test_owner_update_after_send_supersedes_same_response_end(daemon):

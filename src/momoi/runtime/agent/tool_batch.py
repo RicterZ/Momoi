@@ -195,14 +195,6 @@ class ToolBatchExecutor:
                     request.draft.memory_context.update(self.store.memory_snapshots(
                         [item["id"] for item in recalled if isinstance(item.get("id"), int)]
                     ))
-            elif not request.harness.started and execution.authority == "owner":
-                result = {
-                    "ok": False,
-                    "error": "context_not_submitted",
-                    "message": (
-                        "Call recall first to decide what history this input depends on."
-                    ),
-                }
             elif call.name == "end_turn":
                 fields = dict(
                     stage=execution.stage, turn_id=request.turn_id,

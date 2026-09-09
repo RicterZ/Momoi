@@ -3250,7 +3250,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("end_turn", second_tools)
         self.assertEqual(
             llm_requests[0]["tool_choice"],
-            {"type": "tool", "name": "recall"},
+            {"type": "any"},
         )
         self.assertNotIn("Context planning protocol", str(llm_requests[0]["system"]))
         self.assertIn("send_bubbles", second_tools)

@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from momoi.models import ProviderResponse, ToolCall
+from momoi.observability.context import current_log_context
 from momoi.runtime.tool_contracts.context import RECALL_TOOL_SPEC
 
 
@@ -50,6 +51,7 @@ class ContextAwareProvider:
 
     def __init__(self, delegate: object) -> None:
         self.delegate = delegate
+        self.recalled_turns: set[str] = set()
 
     @property
     def config(self) -> object:
@@ -63,7 +65,11 @@ class ContextAwareProvider:
         **kwargs: object,
     ) -> ProviderResponse:
         names = {str(spec.get("name") or "") for spec in tools or []}
-        if RECALL_TOOL_SPEC["name"] in names and kwargs.get("required_tool") == "recall":
+        context = current_log_context()
+        turn_id = str(context.get("turn_id", ""))
+        if (RECALL_TOOL_SPEC["name"] in names and context.get("stage") == "owner"
+                and turn_id not in self.recalled_turns):
+            self.recalled_turns.add(turn_id)
             return recall_response()
         return await self.delegate.complete(  # type: ignore[attr-defined,no-any-return]
             system, messages, tools, **kwargs

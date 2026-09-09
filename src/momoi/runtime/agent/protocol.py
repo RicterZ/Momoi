@@ -110,7 +110,7 @@ def handle_no_tool_response(
                     "content": (
                         "[Trusted runtime protocol error. Plain text was not stored. "
                         "Use send_bubbles or send_voice to message the owner, continue with native tools, or call end_turn with the "
-                        "current Goal outcome in goal when ready.]"
+                        "empty arguments after goal_review succeeds.]"
                     ),
                 },
             ]
@@ -121,8 +121,8 @@ def handle_no_tool_response(
     if owner_turn and not harness_started:
         correction = (
             "[Trusted runtime protocol error: no native tool call was returned. Call "
-            "recall first and alone as a native tool call; never write or imitate tool "
-            "syntax in text.]"
+            "recall as a native tool in the opening batch; independent tools may "
+            "accompany it. Never write or imitate tool syntax in text.]"
         )
     elif owner_turn:
         correction = (

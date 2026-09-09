@@ -110,18 +110,34 @@ class TurnHarnessTest(unittest.TestCase):
                 self.assertIsNone(harness.spec.first_tool)
                 self.assertTrue(harness.started)
 
-    def test_owner_recall_must_be_first_and_alone(self) -> None:
+    def test_owner_opening_batch_requires_exactly_one_recall_in_any_position(self) -> None:
         harness = TurnHarness.for_stage("owner")
         recall = ToolCall("recall", "recall", {})
         send = ToolCall("send", "send_bubbles", {"bubbles": ["ok"]})
 
-        self.assertEqual(
-            harness.validate([recall, send]),
-            "recall_must_be_first_and_alone",
-        )
-        self.assertIsNone(harness.validate([recall]))
+        for calls in ([recall], [recall, send], [send, recall]):
+            self.assertIsNone(harness.validate(calls, required_tool="recall"))
+        for calls in ([], [send], [recall, recall], [send, recall, recall]):
+            self.assertEqual(
+                harness.validate(calls), "recall_required_once_in_opening_batch",
+            )
+        end = ToolCall("end", "end_turn", {})
+        self.assertEqual(harness.validate([recall, end]), "end_turn_must_be_alone")
         harness.accept("recall")
         self.assertEqual(harness.validate([recall]), "recall_already_completed")
+        self.assertIsNone(harness.validate([send]))
+        harness.accept_owner_update()
+        self.assertEqual(harness.validate([send, recall]), "recall_already_completed")
+
+    def test_owner_opening_batch_still_requires_prelude_before_progress_work(self) -> None:
+        harness = TurnHarness.for_stage("owner", progress_tool_names=frozenset({"curl"}))
+        recall = ToolCall("recall", "recall", {})
+        send = ToolCall("send", "send_bubbles", {"bubbles": ["checking"]})
+        work = ToolCall("work", "curl", {})
+        self.assertIsNone(harness.validate([send, work, recall]))
+        self.assertEqual(
+            harness.validate([recall, work, send]), "send_bubbles_required_before_progress_work",
+        )
 
     def test_owner_progress_tools_require_preceding_bubbles_once(self) -> None:
         harness = TurnHarness.for_stage(

@@ -128,7 +128,10 @@ class TurnHarness:
                 first == "send_bubbles" and len(names) == 2
                 and names[0] in first_names and names[1] == "end_turn"
             )
-            if not opening_send_and_end and (len(names) != 1 or names[0] not in first_names):
+            if first == "recall":
+                if names.count("recall") != 1:
+                    return "recall_required_once_in_opening_batch"
+            elif not opening_send_and_end and (len(names) != 1 or names[0] not in first_names):
                 return f"{first}_must_be_first_and_alone"
         elif first is not None and any(name in first_names for name in names):
             return f"{first}_already_completed"
