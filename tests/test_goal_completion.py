@@ -93,6 +93,8 @@ class GoalBoundaryTest(unittest.TestCase):
         for stage in ("owner", "heartbeat", "webhook", "reply_followup"):
             harness = TurnHarness.for_stage(stage)
             harness.started = True
+            if stage == "heartbeat":
+                harness.accept("heartbeat_activity")
             for goal in ({"status": "done", "result": "done"}, {}, "", False, []):
                 with self.subTest(stage=stage, goal=goal):
                     self.assertEqual(

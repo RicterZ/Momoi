@@ -663,3 +663,31 @@ CREATE TABLE IF NOT EXISTS memory_operation_batches (
     updated_at REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS memory_operation_pending ON memory_operation_batches(state,retry_at,created_at);
+
+-- Independent short-lived state. No runtime producer/consumer is wired yet.
+CREATE TABLE IF NOT EXISTS current_state_revision (
+    id INTEGER PRIMARY KEY CHECK(id=1),
+    revision INTEGER NOT NULL DEFAULT 0
+);
+INSERT OR IGNORE INTO current_state_revision(id) VALUES(1);
+CREATE TABLE IF NOT EXISTS current_state_slots (
+    id TEXT PRIMARY KEY,
+    subject TEXT NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    expires_at REAL NOT NULL CHECK(expires_at>created_at),
+    source_turn_id TEXT NOT NULL,
+    UNIQUE(subject,key)
+);
+CREATE INDEX IF NOT EXISTS current_state_expiry ON current_state_slots(expires_at);
+CREATE TABLE IF NOT EXISTS current_state_changes (
+    revision INTEGER PRIMARY KEY,
+    operation_id TEXT NOT NULL UNIQUE,
+    request_json TEXT NOT NULL,
+    source_turn_id TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    added_json TEXT NOT NULL,
+    removed_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS current_state_change_source ON current_state_changes(source_turn_id);

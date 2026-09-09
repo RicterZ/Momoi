@@ -111,27 +111,6 @@ class TurnCommitStore:
                 )
             self._index_turn_episode_terms(turn_id)
             self._apply_mood_update(reply.mood_update, now)
-            if reply.activity_update is not None:
-                current_activity = self._db.execute(
-                    "SELECT activity, activity_since FROM self_state WHERE id=1"
-                ).fetchone()
-                activity_text = str(reply.activity_update["text"])
-                activity_since = (
-                    current_activity["activity_since"]
-                    if current_activity is not None
-                    and current_activity["activity"] == activity_text
-                    else now
-                )
-                self._db.execute(
-                    """UPDATE self_state SET activity=?, activity_result=?,
-                       activity_since=?, updated_at=? WHERE id=1""",
-                    (
-                        activity_text,
-                        str(reply.activity_update["result"])[:2000],
-                        activity_since,
-                        now,
-                    ),
-                )
             self._queue_memory_operations(turn_id, draft, events, now)
             self._apply_goal_mutations(draft, now)
             self._append_turn_journal(
@@ -141,11 +120,6 @@ class TurnCommitStore:
                     "channel": target_channel,
                     "reply_wait": reply.reply_wait,
                     "mood_change": reply.mood_update,
-                    **(
-                        {"activity_change": reply.activity_update}
-                        if reply.activity_update
-                        else {}
-                    ),
                     "mutations": {
                         "memory_operations": draft.memory_operations if draft else [],
                         "goals": list(draft.goals.values()) if draft else [],

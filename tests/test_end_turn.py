@@ -23,12 +23,8 @@ class EndTurnTest(unittest.TestCase):
                 expected_information="Which game to play next",
                 reason="Suggest another game if the owner is still undecided",
             )
-        if stage == "owner":
-            result["activity"] = {"decision": "unchanged"}
-        elif stage == "heartbeat":
+        if stage == "heartbeat":
             result["heartbeat"] = {
-                "activity": "thinking about games",
-                "result": "",
                 "reason": "Taking a break",
                 "next_check_minutes": 30,
             }
@@ -94,10 +90,7 @@ class EndTurnTest(unittest.TestCase):
                     arguments = self.arguments(stage)
                     if field in arguments:
                         del arguments[field]
-                        expected = (
-                            "invalid_activity_decision"
-                            if field == "activity" else "invalid_heartbeat_state"
-                        )
+                        expected = "invalid_heartbeat_state"
                     else:
                         arguments[field] = (
                             {"decision": "unchanged"}
@@ -105,7 +98,7 @@ class EndTurnTest(unittest.TestCase):
                             else self.arguments("heartbeat")["heartbeat"]
                         )
                         expected = (
-                            "activity_update_not_allowed"
+                            "activity_not_allowed_in_end_turn"
                             if field == "activity" else "heartbeat_state_not_allowed"
                         )
                     reply, error = self.parse(stage, arguments)
@@ -151,7 +144,7 @@ class EndTurnSchemaTest(unittest.TestCase):
 
         arguments = EndTurnTest()
         expected = {
-            'owner': {'reply_wait', 'mood', 'activity'},
+            'owner': {'reply_wait', 'mood'},
             'heartbeat': {'reply_wait', 'mood', 'heartbeat'},
             'webhook': {'reply_wait', 'mood'},
             'reply_followup': {'reply_wait', 'mood'},
@@ -192,6 +185,8 @@ class EndTurnSchemaTest(unittest.TestCase):
         for stage in ('owner', 'heartbeat', 'webhook', 'reply_followup'):
             harness = TurnHarness.for_stage(stage)
             harness.started = True
+            if stage == 'heartbeat':
+                harness.accept('heartbeat_activity')
             # Reply-followup must use its opening send before it is marked started.
             if stage == 'reply_followup':
                 harness.started = False

@@ -35,7 +35,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                 finish = ToolCall("finish", "end_turn", {
                     "reply_wait": {"wait": False}, "mood": {"decision": "unchanged"},
                     "heartbeat": {
-                        "activity": "resting", "result": "", "next_check_minutes": 30,
+                        "next_check_minutes": 30,
                         "reason": "No activity was needed.",
                     },
                 })
@@ -46,6 +46,8 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                     async def complete(self, _system, messages, _tools, **_kwargs):
                         self.calls += 1
                         call = begin if self.calls == 1 else finish
+                        if self.calls == 3:
+                            call = ToolCall("activity", "heartbeat_activity", {"activity": "resting", "result": ""})
                         content = [{"type": "tool_use", "id": call.id,
                                     "name": call.name, "input": call.arguments}]
                         if self.calls == 2:
@@ -60,7 +62,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                                 case.assertIn("send_bubbles_required_before_end_turn", correction)
                             else:
                                 case.assertNotIn("send_bubbles", correction)
-                        case.assertLessEqual(self.calls, 3)
+                        case.assertLessEqual(self.calls, 4)
                         return ProviderResponse(content, [call])
 
                 provider = Provider()
@@ -68,7 +70,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                 turn_id = daemon._turn_id("heartbeat-text-recovery")
                 daemon.store.begin_turn(turn_id, "heartbeat", [f"heartbeat:{turn_id}"])
                 await daemon._complete_heartbeat(turn_id, owner_event_revision=0)
-                self.assertEqual(provider.calls, 3)
+                self.assertEqual(provider.calls, 4)
                 self.assertEqual(daemon.store._db.execute(
                     "SELECT COUNT(*) FROM outbox WHERE turn_id=?", (turn_id,),
                 ).fetchone()[0], 0)
@@ -152,6 +154,8 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                                 "strategy": [],
                             },
                         )
+                    elif self.calls == 2:
+                        call = ToolCall("activity", "heartbeat_activity", {"activity": "resting", "result": ""})
                     else:
                         call = ToolCall(
                             "finish",
@@ -160,8 +164,6 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                                 "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
                                 "heartbeat": {
-                                    "activity": "resting",
-                                    "result": "",
                                     "next_check_minutes": 30,
                                     "reason": "No activity was needed.",
                                 },
@@ -210,7 +212,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                     for tool in daemon.tool_surface.conversation_specs()
                 ],
             )
-            self.assertEqual(provider.calls, 2)
+            self.assertEqual(provider.calls, 3)
             self.assertEqual(
                 [message["role"] for message in provider.first_messages],
                 ["user", "user", "assistant", "user", "user", "user"],
@@ -330,9 +332,11 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                         case.assertIn("mcp__demo__read", names)
                         case.assertIn('"state": "started"', str(messages[-1]))
                         call = ToolCall("read-demo", "mcp__demo__read", {})
-                    else:
+                    elif self.calls == 3:
                         case.assertIn("mcp__demo__read", names)
                         case.assertIn("dynamic heartbeat tool works", str(messages[-1]))
+                        call = ToolCall("activity", "heartbeat_activity", {"activity": "inspect demo state", "result": "planning complete"})
+                    else:
                         call = ToolCall(
                             "finish",
                             "end_turn",
@@ -340,8 +344,6 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                                 "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
                                 "heartbeat": {
-                                    "activity": "inspect demo state",
-                                    "result": "planning complete",
                                     "next_check_minutes": 30,
                                     "reason": "test",
                                 },
@@ -367,7 +369,7 @@ class HeartbeatNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                 turn_id,
                 owner_event_revision=0,
             )
-            self.assertEqual(provider.calls, 3)
+            self.assertEqual(provider.calls, 4)
             self.assertNotEqual(provider.surfaces[0], provider.surfaces[1])
             self.assertEqual(provider.surfaces[1], provider.surfaces[2])
             daemon.store.close()

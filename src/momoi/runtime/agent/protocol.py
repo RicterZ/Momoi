@@ -202,7 +202,6 @@ def parse_end_turn(
     reply, error = parse_response(
         arguments,
         require_heartbeat=execution.heartbeat,
-        allow_activity_update=execution.stage == "owner",
     )
     if reply is None:
         return None, error

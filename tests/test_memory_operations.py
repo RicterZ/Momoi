@@ -742,7 +742,6 @@ def test_owner_recall_snapshot_reaches_private_queue(daemon):
                 {
                     "reply_wait": {"wait": False},
                     "mood": {"decision": "unchanged"},
-                    "activity": {"decision": "unchanged"},
                 },
             )
         )
@@ -810,7 +809,6 @@ def test_owner_assistant_text_never_becomes_a_delivered_bubble(daemon):
         response(ToolCall('send', 'send_bubbles', {'bubbles': ['这是气泡']})),
         response(ToolCall('end', 'end_turn', {
             'reply_wait': {'wait': False}, 'mood': {'decision': 'unchanged'},
-            'activity': {'decision': 'unchanged'},
         })),
     ]
     for reply in replies:
@@ -853,7 +851,6 @@ def test_owner_tagged_text_uses_delivery_tool_and_then_end_turn(daemon, caplog):
         assert sent['provenance']['tool'] == 'send_bubbles'
         return response(ToolCall('end', 'end_turn', {
             'reply_wait': {'wait': False}, 'mood': {'decision': 'unchanged'},
-            'activity': {'decision': 'unchanged'},
         }))
 
     daemon.provider = SimpleNamespace(complete=complete, config=SimpleNamespace(api_format='anthropic'))
@@ -877,7 +874,6 @@ def test_tagged_text_and_native_send_both_use_delivery_tools(daemon, tagged):
     send.content.insert(0, {'type': 'text', 'text': '<bubble>正文气泡</bubble>' if tagged else '普通正文'})
     replies = [recall_response(), send, response(ToolCall('end', 'end_turn', {
         'reply_wait': {'wait': False}, 'mood': {'decision': 'unchanged'},
-        'activity': {'decision': 'unchanged'},
     }))]
 
     async def complete(*args, **kwargs):
@@ -903,7 +899,6 @@ def test_non_owner_tagged_text_respects_terminal_sequence(daemon, stage, with_te
     terminal = {'reply_wait': {'wait': False}, 'mood': {'decision': 'unchanged'}}
     if stage == 'heartbeat':
         terminal['heartbeat'] = {
-            'activity': '分享消息', 'result': '分享完成',
             'next_check_minutes': 30, 'reason': '完成本轮',
         }
     if stage == 'reply_followup':
@@ -925,6 +920,9 @@ def test_non_owner_tagged_text_respects_terminal_sequence(daemon, stage, with_te
         replies.append(response(ToolCall('begin', 'heartbeat_begin', {
             'activity': '分享消息', 'mode': 'work', 'recall_mode': 'skip',
             'recall_queries': [], 'tool_groups': [], 'strategy': ['分享当前消息'],
+        })))
+        replies.append(response(ToolCall('activity', 'heartbeat_activity', {
+            'activity': '分享消息', 'result': '分享完成',
         })))
     replies.append(tagged)
     if not with_terminal:
@@ -972,7 +970,6 @@ def test_owner_tagged_prelude_satisfies_progress_after_recall(daemon, early_bubb
     work.content.insert(0, {'type': 'text', 'text': '准备处理\n<bubble>我来安排</bubble>'})
     replies = [recall_response(), work, response(ToolCall('end', 'end_turn', {
         'reply_wait': {'wait': False}, 'mood': {'decision': 'unchanged'},
-        'activity': {'decision': 'unchanged'},
     }))]
     if early_bubbles:
         replies.insert(0, ProviderResponse([{'type': 'text', 'text': '<bubble>太早了</bubble>'}], []))
@@ -1110,7 +1107,6 @@ def test_owner_update_preserves_actual_recall_completion(daemon, recall_succeede
         assert 'committed' in str(messages[-1])
         return response(ToolCall('end', 'end_turn', {
             'reply_wait': {'wait': False}, 'mood': {'decision': 'unchanged'},
-            'activity': {'decision': 'unchanged'},
         }))
 
     daemon.provider = SimpleNamespace(complete=complete, config=SimpleNamespace(api_format='anthropic'))
@@ -1127,8 +1123,7 @@ def test_owner_terminal_text_contract_and_same_round_delivery(daemon, text, use_
     from tests.support import recall_response
 
     source = event(daemon.store)
-    terminal = {'reply_wait': {'wait': False}, 'mood': {'decision': 'unchanged'},
-                'activity': {'decision': 'unchanged'}}
+    terminal = {'reply_wait': {'wait': False}, 'mood': {'decision': 'unchanged'}}
     native = response(ToolCall('send', 'send_bubbles', {'bubbles': ['工具消息']}))
     end = response(ToolCall('end', 'end_turn', terminal))
     tagged = text == '<bubble>收到</bubble>'
@@ -1144,7 +1139,7 @@ def test_owner_terminal_text_contract_and_same_round_delivery(daemon, text, use_
     async def complete(_system, messages, tools, **kwargs):
         nonlocal rejected, schema_seen
         schema = next(tool['input_schema'] for tool in tools if tool['name'] == 'end_turn')
-        assert set(schema['required']) == {'reply_wait', 'mood', 'activity'}
+        assert set(schema['required']) == {'reply_wait', 'mood'}
         assert Draft202012Validator(schema).is_valid(terminal)
         if schema_seen is not None:
             assert schema == schema_seen
@@ -1170,8 +1165,7 @@ def test_owner_skip_completes_recall_gate_and_sends_without_search(daemon):
     from unittest.mock import patch
 
     source = event(daemon.store, text="收到")
-    terminal = {'reply_wait': {'wait': False}, 'mood': {'decision': 'unchanged'},
-                'activity': {'decision': 'unchanged'}}
+    terminal = {'reply_wait': {'wait': False}, 'mood': {'decision': 'unchanged'}}
     replies = [
         response(ToolCall('recall', 'recall', {'units': [{
             'intent': '主人确认收到', 'recall_mode': 'skip', 'recall_queries': [],
@@ -1215,8 +1209,7 @@ def test_owner_update_after_send_supersedes_same_response_end(daemon):
         return result
 
     daemon.bubble_delivery.dispatch = send_and_interrupt
-    terminal = {'reply_wait': {'wait': False}, 'mood': {'decision': 'unchanged'},
-                'activity': {'decision': 'unchanged'}}
+    terminal = {'reply_wait': {'wait': False}, 'mood': {'decision': 'unchanged'}}
     def combined(text, name):
         end = response(ToolCall(name, 'end_turn', terminal))
         end.content.insert(0, {'type': 'text', 'text': f'<bubble>{text}</bubble>'})
@@ -1247,7 +1240,6 @@ def test_owner_end_turn_reports_all_missing_fields_together(daemon):
     replies = [recall_response(), response(ToolCall('missing', 'end_turn', {})),
                response(ToolCall('corrected', 'end_turn', {
                    'reply_wait': {'wait': False}, 'mood': {'decision': 'unchanged'},
-                   'activity': {'decision': 'unchanged'},
                }))]
 
     async def complete(_system, messages, *args, **kwargs):
@@ -1255,7 +1247,7 @@ def test_owner_end_turn_reports_all_missing_fields_together(daemon):
         if len(replies) == 1:
             result = json.loads(messages[-1]['content'][0]['content'])
             assert not result['ok']
-            assert all(field in result['message'] for field in ('mood', 'activity', 'reply_wait'))
+            assert all(field in result['message'] for field in ('mood', 'reply_wait'))
         return replies.pop(0)
 
     daemon.provider = SimpleNamespace(complete=complete, config=SimpleNamespace(api_format='anthropic'))

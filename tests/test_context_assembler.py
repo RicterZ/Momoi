@@ -68,11 +68,11 @@ def test_runtime_state_preserves_metadata_and_text_boundaries():
     assert root.find("time").attrib == {"now": "now"}
     assert root.find("mood").attrib == {"state": "playful", "intensity": "0", "age_minutes": "0", "updated_at": "updated"}
     assert root.find("mood/cause").text == cause
-    assert root.find("activity").attrib == {"since": "since"}
-    assert root.find("activity/text").text == activity
-    assert root.find("activity/result").text == "结果 & 原文"
+    assert root.find("last_heartbeat_activity").attrib == {"at": "heartbeat", "since": "since"}
+    assert root.find("last_heartbeat_activity/text").text == activity
+    assert root.find("last_heartbeat_activity/result").text == "结果 & 原文"
     assert root.find("heartbeat").attrib == {"at": "heartbeat"}
-    assert [item.tag for item in root] == ["time", "mood", "activity", "heartbeat"]
+    assert [item.tag for item in root] == ["time", "mood", "last_heartbeat_activity", "heartbeat"]
 
 
 def test_memory_and_goal_context_preserves_nested_structure_and_literal_values():

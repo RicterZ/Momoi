@@ -26,7 +26,6 @@ from momoi.runtime.agent import TurnExecutionSpec
 from momoi.runtime.agent.context_window import ContextWindow
 from momoi.runtime.agent.tool_surface import ToolSurface
 from momoi.runtime.tool_contracts.conversation import (
-    ACTIVITY_DECISION_SCHEMA,
     MOOD_UPDATE_SCHEMA,
 )
 from momoi.mcp.prompt import MCP_TOOL_POLICY
@@ -360,16 +359,7 @@ class DaemonTest(unittest.TestCase):
             END_TURN_TOOL_SPEC["input_schema"]["properties"]["heartbeat"]["properties"],
         )
         self.assertNotIn("activity", END_TURN_TOOL_SPEC["input_schema"]["oneOf"][0]["required"])
-        self.assertIn("activity", END_TURN_TOOL_SPEC["input_schema"]["properties"])
-        activity_shapes = ACTIVITY_DECISION_SCHEMA["oneOf"]
-        self.assertEqual(
-            [shape["properties"]["decision"]["enum"][0] for shape in activity_shapes],
-            ["unchanged", "updated"],
-        )
-        self.assertEqual(
-            set(activity_shapes[1]["required"]),
-            {"decision", "text", "result"},
-        )
+        self.assertNotIn("activity", END_TURN_TOOL_SPEC["input_schema"]["properties"])
 
     def test_context_budget_drops_old_history_and_truncates_tool_results(self) -> None:
         daemon = object.__new__(MomoiDaemon)
@@ -711,7 +701,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                         arguments = {
                             "reply_wait": {"wait": False},
                             "mood": {"decision": "unchanged"},
-                            "activity": {"decision": "unchanged"},
                         }
                     call = ToolCall(
                         f"end_turn-{provider_self.calls}",
@@ -837,7 +826,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             {
                                 "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
-                                "activity": {"decision": "unchanged"},
                             },
                         )
                     return ProviderResponse(
@@ -1430,7 +1418,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             {
                                 "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
-                                "activity": {"decision": "unchanged"},
                             },
                         )
                     return ProviderResponse([], [call])
@@ -1527,7 +1514,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             {
                                 "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
-                                "activity": {"decision": "unchanged"},
                             },
                         )
                     return ProviderResponse([], [call])
@@ -1652,7 +1638,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 {
                                     "reply_wait": {"wait": False},
                                     "mood": {"decision": "unchanged"},
-                                    "activity": {"decision": "unchanged"},
                                 },
                             )
                         ]
@@ -1940,6 +1925,11 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             {"url": "https://news.example/today"},
                         )
                     elif self.calls == 3:
+                        call = ToolCall("activity-one", "heartbeat_activity", {
+                            "activity": "整理小游戏关卡灵感",
+                            "result": "读完一条游戏新闻并记下玩法联想",
+                        })
+                    elif self.calls == 4:
                         call = ToolCall(
                             "heartbeat-first-finish",
                             "end_turn",
@@ -1947,14 +1937,12 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
                                 "heartbeat": {
-                                    "activity": "整理小游戏关卡灵感",
-                                    "result": "读完一条游戏新闻并记下玩法联想",
                                     "next_check_minutes": 2,
                                     "reason": "完成本次灵感整理",
                                 },
                             },
                         )
-                    elif self.calls == 4:
+                    elif self.calls == 5:
                         call = ToolCall(
                             "heartbeat-begin-two",
                             "heartbeat_begin",
@@ -1970,7 +1958,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 ],
                             },
                         )
-                    elif self.calls == 5:
+                    elif self.calls == 6:
                         call = ToolCall(
                             "heartbeat-goal",
                             "goal_create",
@@ -1983,12 +1971,17 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 ).isoformat(),
                             },
                         )
-                    elif self.calls == 6:
+                    elif self.calls == 7:
                         call = ToolCall(
                             "heartbeat-live",
                             "send_bubbles",
                             {"bubbles": ["刚想到一个关卡点子！"]},
                         )
+                    elif self.calls == 8:
+                        call = ToolCall("activity-two", "heartbeat_activity", {
+                            "activity": "整理小游戏关卡灵感",
+                            "result": "已建立自己的关卡草案任务继续整理",
+                        })
                     else:
                         call = ToolCall(
                             f"heartbeat-{self.calls}",
@@ -2002,8 +1995,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 },
                                 "mood": {"decision": "unchanged"},
                                 "heartbeat": {
-                                    "activity": "整理小游戏关卡灵感",
-                                    "result": "已建立自己的关卡草案任务继续整理",
                                     "next_check_minutes": 2,
                                     "reason": "有具体的新点子才分享",
                                 },
@@ -2064,7 +2055,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             goal = daemon.store.list_goals()[0]
             self.assertEqual(goal["authority"], "agent")
             self.assertEqual(goal["title"], "继续整理关卡点子")
-            self.assertEqual(provider.calls, 7)
+            self.assertEqual(provider.calls, 9)
             daemon.store.close()
 
 
@@ -2194,7 +2185,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             {
                                 "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
-                                "activity": {"decision": "unchanged"},
                             },
                         )
                     return ProviderResponse(
@@ -2304,7 +2294,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             {
                                 "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
-                                "activity": {"decision": "unchanged"},
                             },
                         )
                     return ProviderResponse(
@@ -2435,7 +2424,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             {
                                 "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
-                                "activity": {"decision": "unchanged"},
                             },
                         )
                     return ProviderResponse(
@@ -2602,7 +2590,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                 {
                                     "reply_wait": {"wait": False},
                                     "mood": {"decision": "unchanged"},
-                                    "activity": {"decision": "unchanged"},
                                 },
                             )
                         ]
@@ -3174,7 +3161,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                             "input": {
                                 "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
-                                "activity": {"decision": "unchanged"},
                             },
                         }
                     ],

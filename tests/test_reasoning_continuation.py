@@ -28,7 +28,7 @@ class ReasoningContinuationTest(unittest.IsolatedAsyncioTestCase):
         # Include empty and whitespace-only values: replay must be lossless.
         thoughts = [" first thought\n", "", "  ", "fix arguments", "send reply", "finish"]
         recall = recall_response().tool_calls[0]
-        finish = {"reply_wait": {"wait": False}, "mood": {"decision": "unchanged"}, "activity": {"decision": "unchanged"}}
+        finish = {"reply_wait": {"wait": False}, "mood": {"decision": "unchanged"}}
         actions = [
             ("end_turn", json.dumps(finish)),  # Rejected: recall must be first.
             (recall.name, json.dumps(recall.arguments)),

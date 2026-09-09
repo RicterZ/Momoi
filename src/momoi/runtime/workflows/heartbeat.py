@@ -262,8 +262,11 @@ class HeartbeatWorkflow:
         )
         if not isinstance(reply, AgentReply) or reply.heartbeat is None:
             raise RuntimeError("Heartbeat Turn ended without end_turn heartbeat state")
+        if draft.heartbeat_activity is None:
+            raise RuntimeError("Heartbeat Turn ended without heartbeat_activity")
         decision = {
             **reply.heartbeat,
+            **draft.heartbeat_activity,
             "messages": reply.messages,
             "reply_expectation": reply.reply_expectation,
             "schedule_reply_wait": reply.should_schedule_reply_wait,

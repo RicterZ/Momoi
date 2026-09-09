@@ -261,12 +261,11 @@ class VoiceDeliveryTest(unittest.IsolatedAsyncioTestCase):
                         calls.append(ToolCall("recall", "recall", {}))
                     elif stage == "heartbeat":
                         calls.append(ToolCall("begin", "heartbeat_begin", {"tool_groups": []}))
+                        calls.append(ToolCall("activity", "heartbeat_activity", {"activity": "resting", "result": ""}))
                     calls.append(ToolCall("voice", "send_voice", {"text": self.text}))
                     end = {"reply_wait": {"wait": False}, "mood": {"decision": "unchanged"}}
-                    if stage == "owner":
-                        end["activity"] = {"decision": "unchanged"}
                     if stage == "heartbeat":
-                        end["heartbeat"] = {"activity": "resting", "result": "", "next_check_minutes": 30, "reason": "rest"}
+                        end["heartbeat"] = {"next_check_minutes": 30, "reason": "rest"}
                     if stage == "goal":
                         end = {"goal": {"status": "done", "result": "voice delivered"}}
                     calls.append(ToolCall("end", "end_turn", end))

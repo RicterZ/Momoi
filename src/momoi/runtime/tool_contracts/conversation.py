@@ -123,38 +123,6 @@ MOOD_DECISION_SCHEMA: dict[str, Any] = {
     ],
 }
 
-ACTIVITY_DECISION_SCHEMA: dict[str, Any] = {
-    "oneOf": [
-        {
-            "type": "object",
-            "description": "Keep the current activity text and result unchanged.",
-            "properties": {"decision": {"type": "string", "enum": ["unchanged"]}},
-            "required": ["decision"],
-            "additionalProperties": False,
-        },
-        {
-            "type": "object",
-            "description": "Replace a contradicted activity text or result.",
-            "properties": {
-                "decision": {"type": "string", "enum": ["updated"]},
-                "text": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 300,
-                    "description": "Concise corrected Current self state activity.",
-                },
-                "result": {
-                    "type": "string",
-                    "maxLength": 2000,
-                    "description": "Corrected outcome; empty if none is now true.",
-                },
-            },
-            "required": ["decision", "text", "result"],
-            "additionalProperties": False,
-        },
-    ]
-}
-
 REPLY_WAIT_DECISION_SCHEMA: dict[str, Any] = {
     "description": (
         "Whether the last visible bubble leaves a real open beat. false when complete "
@@ -213,20 +181,34 @@ REPLY_WAIT_DECISION_SCHEMA: dict[str, Any] = {
     ],
 }
 
+HEARTBEAT_ACTIVITY_TOOL_SPEC: dict[str, Any] = {
+    "name": "heartbeat_activity",
+    "description": (
+        "Record this Heartbeat's actual activity or rest and its result. "
+        "Visible in every conversation workflow, callable only during Heartbeat. "
+        "Must succeed before end_turn, in an earlier round. "
+        "Stages the latest report for atomic commit when the Heartbeat completes."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "activity": {
+                "type": "string", "minLength": 1, "maxLength": 300,
+                "description": "Actual activity or rest during this Heartbeat.",
+            },
+            "result": {
+                "type": "string", "maxLength": 2000,
+                "description": "Concrete outcome; empty when none.",
+            },
+        },
+        "required": ["activity", "result"],
+        "additionalProperties": False,
+    },
+}
+
 HEARTBEAT_STATE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
-        "activity": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 300,
-            "description": "Actual activity or rest during this Heartbeat.",
-        },
-        "result": {
-            "type": "string",
-            "maxLength": 2000,
-            "description": "Concrete outcome; empty when none.",
-        },
         "next_check_minutes": {
             "type": "integer",
             "minimum": 1,
@@ -241,8 +223,6 @@ HEARTBEAT_STATE_SCHEMA: dict[str, Any] = {
         },
     },
     "required": [
-        "activity",
-        "result",
         "next_check_minutes",
         "reason",
     ],
@@ -261,7 +241,6 @@ END_TURN_TOOL_SPEC: dict[str, Any] = {
         "properties": {
             "reply_wait": REPLY_WAIT_DECISION_SCHEMA,
             "mood": MOOD_DECISION_SCHEMA,
-            "activity": ACTIVITY_DECISION_SCHEMA,
             "heartbeat": HEARTBEAT_STATE_SCHEMA,
             "goal": {"default": None, "oneOf": [{"type": "null"}, GOAL_REVIEW_SCHEMA]},
         },
@@ -276,7 +255,6 @@ END_TURN_TOOL_SPEC: dict[str, Any] = {
                     "goal": {"type": "object"},
                     "reply_wait": False,
                     "mood": False,
-                    "activity": False,
                     "heartbeat": False,
                 },
             },
@@ -302,9 +280,7 @@ def end_turn_tool_spec(
         schema["required"] = ["goal"]
     else:
         required = ["reply_wait", "mood"]
-        if stage == "owner":
-            required.append("activity")
-        elif stage == "heartbeat":
+        if stage == "heartbeat":
             required.append("heartbeat")
             interval = properties["heartbeat"]["properties"]["next_check_minutes"]
             interval["minimum"] = max(1, math.ceil(heartbeat_min_interval_seconds / 60))
@@ -315,7 +291,7 @@ def end_turn_tool_spec(
             properties["reply_wait"] = copy.deepcopy(
                 REPLY_WAIT_DECISION_SCHEMA["oneOf"][0]
             )
-        elif stage != "webhook":
+        elif stage not in {"webhook", "owner"}:
             raise ValueError(f"end_turn is not available in {stage}")
         schema["required"] = required
         schema["properties"] = {key: properties[key] for key in required}

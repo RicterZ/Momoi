@@ -11,6 +11,7 @@ from ..search import (
     StringSearchBackend,
 )
 from .context_plans import ContextPlanStore
+from .current_state import CurrentStateManager
 from .delivery import DeliveryStore
 from .episode_search import (
     EpisodeQueryService,
@@ -129,6 +130,7 @@ class Store(
         )
         self._usage_accounting: UsageAccounting | None = None
         self._initialize_database()
+        self.current_state = CurrentStateManager(self._db)
         self._recover_emotion_outbox()
         self._recover_outbox()
         self._recover_webhooks()

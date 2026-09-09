@@ -9,7 +9,7 @@ from .turn_workflow import turn_workflow_kind_sql
 BASELINE_MOOD_STATE = "calm"
 BASELINE_MOOD_INTENSITY = 0.35
 BASELINE_MOOD_CAUSE = "resting baseline"
-DEFAULT_ACTIVITY = "spending time freely"
+DEFAULT_ACTIVITY = ""
 
 
 class LifecycleStore:
@@ -116,4 +116,3 @@ class LifecycleStore:
                    )""",
                 (now,),
             )
-

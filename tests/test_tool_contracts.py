@@ -7,6 +7,7 @@ from jsonschema import Draft202012Validator, FormatChecker
 
 from momoi.runtime.tool_contracts.context import RECALL_TOOL_SPEC, heartbeat_begin_spec
 from momoi.runtime.tool_contracts.conversation import (
+    HEARTBEAT_ACTIVITY_TOOL_SPEC,
     end_turn_tool_spec,
     send_bubbles_tool_spec,
 )
@@ -32,6 +33,7 @@ from momoi.tools.contracts.thinking import THINKING_TOOL_SPECS
 
 
 SPECS = [
+    HEARTBEAT_ACTIVITY_TOOL_SPEC,
     RECALL_TOOL_SPEC,
     heartbeat_begin_spec({}),
     heartbeat_begin_spec({"web": "Browse"}),

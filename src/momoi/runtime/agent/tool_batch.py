@@ -16,7 +16,9 @@ from ..turn_support import (
 )
 from .harness import TurnHarness
 from .protocol import assistant_history_message, parse_end_turn
-from .runtime_tools import begin_heartbeat, enable_tools, recall_owner_context
+from .runtime_tools import (
+    begin_heartbeat, enable_tools, recall_owner_context, record_heartbeat_activity,
+)
 from .workflow import AgentWorkflow, TurnExecutionSpec
 
 
@@ -165,6 +167,10 @@ class ToolBatchExecutor:
                     tools=request.tools,
                     tool_surface=self.tool_surface,
                     prepare_context=prepare_heartbeat_context,
+                )
+            elif call.name == "heartbeat_activity":
+                result = record_heartbeat_activity(
+                    call, heartbeat_turn=execution.heartbeat, draft=request.draft,
                 )
             elif call.name == "recall":
                 result = await recall_owner_context(

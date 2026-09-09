@@ -1,8 +1,25 @@
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from ...models import IncomingMessage, ToolCall
+from ...models import IncomingMessage, ToolCall, TurnDraft
 from .tool_surface import ToolSurface
+
+
+def record_heartbeat_activity(
+    call: ToolCall, *, heartbeat_turn: bool, draft: TurnDraft,
+) -> dict[str, object]:
+    if not heartbeat_turn:
+        return {"ok": False, "error": "tool_not_allowed"}
+    args = call.arguments
+    if (
+        not isinstance(args, dict) or set(args) != {"activity", "result"}
+        or not isinstance(args["activity"], str) or not args["activity"].strip()
+        or len(args["activity"]) > 300
+        or not isinstance(args["result"], str) or len(args["result"]) > 2000
+    ):
+        return {"ok": False, "error": "invalid_heartbeat_activity"}
+    draft.heartbeat_activity = {key: value.strip() for key, value in args.items()}
+    return {"ok": True, "state": "staged"}
 
 
 async def begin_heartbeat(

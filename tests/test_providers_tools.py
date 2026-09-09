@@ -1246,7 +1246,6 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                             {
                                 "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
-                                "activity": {"decision": "unchanged"},
                             },
                         )
                     return ProviderResponse(
@@ -1328,7 +1327,6 @@ class ProvidersToolsAsyncTest(unittest.IsolatedAsyncioTestCase):
                             {
                                 "reply_wait": {"wait": False},
                                 "mood": {"decision": "unchanged"},
-                                "activity": {"decision": "unchanged"},
                             },
                         )
                     return ProviderResponse(

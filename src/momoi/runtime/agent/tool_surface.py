@@ -10,7 +10,9 @@ from ...tools.contracts.memory import MEMORY_TOOL_SPECS
 from ...tools.contracts.thinking import THINKING_TOOL_SPECS
 from ...storage import estimate_tokens
 from ..tool_contracts.context import RECALL_TOOL_SPEC, heartbeat_begin_spec
-from ..tool_contracts.conversation import END_TURN_TOOL_SPEC, send_bubbles_tool_spec
+from ..tool_contracts.conversation import (
+    END_TURN_TOOL_SPEC, HEARTBEAT_ACTIVITY_TOOL_SPEC, send_bubbles_tool_spec,
+)
 from ..tool_contracts.runtime import (
     READ_TOOL_RESULT_SPEC,
     tool_enable_spec,
@@ -101,6 +103,7 @@ class ToolSurface:
         tools = [
             copy.deepcopy(RECALL_TOOL_SPEC),
             heartbeat_begin_spec(catalog),
+            copy.deepcopy(HEARTBEAT_ACTIVITY_TOOL_SPEC),
             self.send_bubbles_spec(),
             *([copy.deepcopy(SEND_VOICE_TOOL_SPEC)] if self.voice_enabled else []),
             READ_TOOL_RESULT_SPEC,
@@ -142,6 +145,7 @@ class ToolSurface:
             return frozenset(
                 {
                     "heartbeat_begin",
+                    "heartbeat_activity",
                     "end_turn",
                     *shared,
                     *agenda,

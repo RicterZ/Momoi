@@ -186,6 +186,32 @@ def _add_episode_cue_vectors(database: sqlite3.Connection) -> None:
         database.execute(index)
 
 
+def _restore_last_heartbeat_activity(database: sqlite3.Connection) -> None:
+    # Owner end_turn used to overwrite these columns. Recover only the exact
+    # heartbeat represented by the timestamp, never a deleted or older event.
+    state = database.execute("SELECT last_heartbeat_at,activity_since FROM self_state WHERE id=1").fetchone()
+    if state is None:
+        return
+    record = database.execute(
+        """SELECT content,created_at FROM messages WHERE created_at=?
+           AND delivery_state='internal'
+           AND json_extract(source_event_ids_json,'$[0]')='heartbeat-record:' || turn_id
+           ORDER BY id DESC LIMIT 1""", (state[0],),
+    ).fetchone()
+    activity = result = ""
+    at = float(state[0] if state[0] is not None else state[1])
+    if record and str(record[0]).startswith("Activity: "):
+        body = str(record[0])[len("Activity: "):]
+        if "\nResult: " in body:
+            activity, result = body.split("\nResult: ", 1)
+            if result == "(no concrete result recorded)":
+                result = ""
+    database.execute(
+        "UPDATE self_state SET activity=?,activity_result=?,activity_since=? WHERE id=1",
+        (activity, result, at),
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     _add_runtime_archive_metadata,
     _add_turn_workflow_kind,
@@ -196,6 +222,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     _neutral_episode_speaker_metadata,
     _add_episode_recall_cues,
     _add_episode_cue_vectors,
+    _restore_last_heartbeat_activity,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 

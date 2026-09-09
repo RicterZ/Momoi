@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from ...models import ToolCall
 
@@ -12,13 +12,15 @@ class TurnHarnessSpec:
     terminal_tool: str
     require_bubbles_before_progress_work: bool = False
     permitted_tools: frozenset[str] | None = None
+    required_before_end: frozenset[str] = frozenset()
 
 
 TURN_HARNESS_SPECS = {
     spec.stage: spec
     for spec in (
         TurnHarnessSpec("owner", "recall", "end_turn", True),
-        TurnHarnessSpec("heartbeat", "heartbeat_begin", "end_turn"),
+        TurnHarnessSpec("heartbeat", "heartbeat_begin", "end_turn",
+                        required_before_end=frozenset({"heartbeat_activity"})),
         TurnHarnessSpec("reply_followup", "send_bubbles", "end_turn"),
         TurnHarnessSpec(
             "webhook",
@@ -48,6 +50,7 @@ class TurnHarness:
     started: bool = False
     progress_bubbles_seen: bool = False
     blocked_tool_names: frozenset[str] = frozenset()
+    completed_tools: set[str] = field(default_factory=set)
 
     def __post_init__(self) -> None:
         self.reset()
@@ -74,13 +77,14 @@ class TurnHarness:
     def reset(self) -> None:
         self.started = self.spec.first_tool is None
         self.progress_bubbles_seen = False
+        self.completed_tools.clear()
 
     def accept_owner_update(self) -> None:
         """Keep the Turn's completed opening; renew per-request progress rules."""
         self.progress_bubbles_seen = False
 
     def validate_surface(self, tool_names: set[str]) -> None:
-        required = {self.spec.terminal_tool}
+        required = {self.spec.terminal_tool, *self.spec.required_before_end}
         if self.spec.first_tool is not None:
             required.add(self.spec.first_tool)
         missing = required - tool_names
@@ -98,6 +102,8 @@ class TurnHarness:
         has_assistant_text: bool = False,
     ) -> str | None:
         names = [call.name for call in calls]
+        if "heartbeat_activity" in names and self.spec.stage != "heartbeat":
+            return "tool_not_allowed"
         if any(name in self.blocked_tool_names for name in names):
             return "tool_not_allowed"
         first = self.spec.first_tool
@@ -135,6 +141,10 @@ class TurnHarness:
             return f"{terminal}_must_be_alone"
         if "end_turn" in names and has_assistant_text and "send_bubbles" not in names:
             return "send_bubbles_required_before_end_turn"
+        if terminal in names:
+            missing = self.spec.required_before_end - self.completed_tools
+            if missing:
+                return f"{sorted(missing)[0]}_required_before_end_turn"
         permitted = (
             self.permitted_tool_names
             if self.permitted_tool_names is not None
@@ -176,6 +186,7 @@ class TurnHarness:
             self.progress_bubbles_seen = True
 
     def accept(self, tool_name: str) -> None:
+        self.completed_tools.add(tool_name)
         if tool_name == self.spec.first_tool or (
             self.spec.first_tool == "send_bubbles" and tool_name == "send_voice"
         ):

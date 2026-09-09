@@ -39,7 +39,6 @@ class AgentReply:
     mood_update: dict[str, Any] | None = None
     heartbeat: dict[str, Any] | None = None
     reply_wait: dict[str, Any] | None = None
-    activity_update: dict[str, Any] | None = None
 
     @property
     def should_schedule_reply_wait(self) -> bool:
@@ -94,6 +93,7 @@ class ProviderResponse:
 
 @dataclass
 class TurnDraft:
+    heartbeat_activity: dict[str, str] | None = None
     memory_operations: list[dict[str, Any]] = field(default_factory=list)
     memory_context: dict[int, dict[str, Any]] = field(default_factory=dict)
     memory_conversation: list[dict[str, Any]] = field(default_factory=list)
