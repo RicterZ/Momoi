@@ -16,9 +16,8 @@ CURRENT_STATE_SOURCE_STAGES = frozenset({"owner", "goal", "heartbeat", "webhook"
 CURRENT_STATE_CHANGE_SCHEMA = {
     "type": "object",
     "description": (
-        "Maintain short-lived current facts from new evidence. Return empty add and delete "
-        "arrays when nothing changes. Do not infer facts from mood, silence or hypothetical "
-        "scenarios. Long-term preferences belong to memory; scheduled work belongs to goals. "
+        "Return empty add and delete arrays when nothing changes. "
+        "Long-term preferences belong to memory; scheduled work belongs to goals. "
         "All changes are validated and committed atomically."
     ),
     "properties": {
