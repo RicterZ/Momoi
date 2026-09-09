@@ -81,11 +81,11 @@ class CurrentStateWorkflow:
         )
         messages = copy.deepcopy(task["messages"])
         messages.append({"role": "user", "content": request})
-        spec = {
-            "name": "current_state_finish",
-            "description": "Commit the private current-state change set and finish maintenance.",
-            "input_schema": self.store.current_state.change_schema(),
-        }
+        # Retain exact schemas and order, including enabled MCP tools. Tasks staged
+        # before tool snapshots were introduced cannot recover their original surface.
+        tools = copy.deepcopy(task.get("tools"))
+        if tools is None:
+            tools = self.tool_surface.conversation_specs()
 
         async def execute_tool(call):
             nonlocal complete
@@ -117,7 +117,7 @@ class CurrentStateWorkflow:
             preserve_transcript=True,
         )
         await self._run_agent_workflow(
-            task["system"], messages, [spec], turn_id, workflow
+            task["system"], messages, tools, turn_id, workflow
         )
         if not complete:
             raise RuntimeError("state_maintenance_incomplete")

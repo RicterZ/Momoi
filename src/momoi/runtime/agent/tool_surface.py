@@ -10,6 +10,7 @@ from ...tools.contracts.memory import MEMORY_TOOL_SPECS
 from ...tools.contracts.thinking import THINKING_TOOL_SPECS
 from ...storage import estimate_tokens
 from ..tool_contracts.context import RECALL_TOOL_SPEC, heartbeat_begin_spec
+from ..tool_contracts.current_state import current_state_finish_spec
 from ..tool_contracts.conversation import (
     END_TURN_TOOL_SPEC, HEARTBEAT_ACTIVITY_TOOL_SPEC, send_bubbles_tool_spec,
 )
@@ -112,6 +113,7 @@ class ToolSurface:
             *self.public_specs(AGENDA_TOOL_SPECS),
             *self.public_specs(self.builtin_specs),
             *([tool_enable_spec(catalog)] if catalog else []),
+            current_state_finish_spec(),
             copy.deepcopy(END_TURN_TOOL_SPEC),
         ]
         self._log_conversation_surface(tools)

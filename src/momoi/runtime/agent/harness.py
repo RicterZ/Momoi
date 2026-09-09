@@ -104,6 +104,8 @@ class TurnHarness:
         has_assistant_text: bool = False,
     ) -> str | None:
         names = [call.name for call in calls]
+        if "current_state_finish" in names and self.spec.stage != "current_state_maintenance":
+            return "tool_not_allowed"
         if "heartbeat_activity" in names and self.spec.stage != "heartbeat":
             return "tool_not_allowed"
         if any(name in self.blocked_tool_names for name in names):

@@ -8,7 +8,7 @@ from .current_state_contract import CURRENT_STATE_SOURCE_STAGES
 
 class CurrentStateTaskStore:
     def stage_current_state_task(
-        self, source_turn_id, source_stage, system, messages, input_index
+        self, source_turn_id, source_stage, system, messages, input_index, tools
     ):
         if source_stage not in CURRENT_STATE_SOURCE_STAGES:
             raise ValueError("current_state_source_not_allowed")
@@ -18,7 +18,12 @@ class CurrentStateTaskStore:
         if row is None or tuple(row) != (source_stage, "running"):
             return False
         payload = json.dumps(
-            {"system": system, "messages": messages, "input_index": input_index},
+            {
+                "system": system,
+                "messages": messages,
+                "input_index": input_index,
+                "tools": tools,
+            },
             ensure_ascii=False,
         )
         with self._db:

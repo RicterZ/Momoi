@@ -103,7 +103,7 @@ class AgentLoop:
                 stage,
                 heartbeat_min_interval_seconds=self.config.heartbeat.min_interval_seconds,
                 heartbeat_max_interval_seconds=self.config.heartbeat.max_interval_seconds,
-            ) if tool["name"] == "end_turn" else tool
+            ) if tool["name"] == "end_turn" and workflow is None else tool
             for tool in tools
         ]
         harness.validate_surface({str(tool["name"]) for tool in tools})
@@ -439,7 +439,9 @@ class AgentLoop:
             if batch.ended:
                 if stage in CURRENT_STATE_SOURCE_STAGES:
                     self.store.stage_current_state_task(
-                        turn_id, stage, model_round.request_system, messages, history_messages,
+                        turn_id, stage, model_round.request_system,
+                        [*model_round.request_messages, *messages[len(model_round.request_messages):]],
+                        history_messages, model_round.request_tools,
                     )
                 return batch.reply
             if workflow is not None and workflow.is_complete():

@@ -1,3 +1,4 @@
+import copy
 import json
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -34,6 +35,7 @@ class ModelRoundResult:
     history_messages: int
     remind_owner_bubbles: bool
     request_system: list[dict[str, Any]]
+    request_messages: list[dict[str, Any]]
 
 
 class ModelRoundRunner:
@@ -136,6 +138,7 @@ class ModelRoundRunner:
         self.store.record_turn_usage(turn_id, input_tokens, output_tokens)
         return ModelRoundResult(
             request_system=request_system,
+            request_messages=copy.deepcopy(request_messages),
             response=response,
             request_tools=request_tools,
             call_id=call_id,

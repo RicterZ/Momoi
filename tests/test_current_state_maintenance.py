@@ -24,6 +24,7 @@ from momoi.runtime import MomoiDaemon
 from momoi.runtime.agent import TurnExecutionSpec
 from momoi.runtime.agent.harness import TURN_HARNESS_SPECS, TurnHarness
 from momoi.runtime.jobs import AutonomousJob
+from momoi.runtime.tool_contracts.current_state import current_state_finish_spec
 from momoi.storage import Store
 from momoi.storage.current_state import SlotInput
 from momoi.storage.current_state_contract import CURRENT_STATE_SOURCE_STAGES
@@ -125,7 +126,20 @@ def stage(store, source="source", kind="owner", *, commit=True):
         },
     ]
     system = [{"type": "text", "text": "ORIGINAL_SYSTEM"}]
-    assert store.stage_current_state_task(source, kind, system, messages, 1)
+    tools = [
+        {
+            "name": "mcp__test__lookup",
+            "description": "Enabled MCP tool",
+            "input_schema": {"type": "object"},
+        },
+        current_state_finish_spec(),
+        {
+            "name": "end_turn",
+            "description": "Original stage contract",
+            "input_schema": {"type": "object"},
+        },
+    ]
+    assert store.stage_current_state_task(source, kind, system, messages, 1, tools)
     if commit:
         store.complete_background_turn(source)
     return system, messages
@@ -195,9 +209,13 @@ def test_allowed_end_turn_captures_exact_chain_and_waits_for_commit(daemon, kind
         daemon.agenda_tools.finish_review = lambda *args: {"ok": True}
     calls.append(response(ToolCall("end", "end_turn", end)))
     systems = []
+    surfaces = []
+    request_chains = []
 
     async def complete(system, messages, tools, **kwargs):
         systems.append(copy.deepcopy(system))
+        surfaces.append(copy.deepcopy(tools))
+        request_chains.append(copy.deepcopy(messages))
         assert calls, str(messages[-1])
         return calls.pop(0)
 
@@ -230,13 +248,28 @@ def test_allowed_end_turn_captures_exact_chain_and_waits_for_commit(daemon, kind
     row = task_row(daemon.store)
     assert row["state"] == "staged"
     payload = json.loads(row["payload_json"])
-    assert payload["messages"] == messages
+    assert payload["messages"] == [
+        *request_chains[-1],
+        *messages[len(request_chains[-1]) :],
+    ]
     assert payload["system"] == systems[-1]
+    assert payload["tools"] == surfaces[-1]
+    assert "current_state_finish" in {tool["name"] for tool in surfaces[0]}
     assert payload["input_index"] == 1
     assert daemon.store.pending_current_state_task() is None
     daemon.store.complete_background_turn(source)
     assert daemon.store.pending_current_state_task() == source
     assert task_row(daemon.store)["state"] == "pending"
+
+    async def maintain(system, messages, tools, **kwargs):
+        assert tools == surfaces[-1]
+        assert system == systems[-1]
+        assert messages[:-1] == payload["messages"]
+        return finish()
+
+    daemon.provider.complete = maintain
+    asyncio.run(daemon._complete_current_state_task(source))
+    assert task_row(daemon.store)["state"] == "completed"
 
 
 @pytest.mark.parametrize(
@@ -244,7 +277,7 @@ def test_allowed_end_turn_captures_exact_chain_and_waits_for_commit(daemon, kind
 )
 def test_other_stages_never_schedule_state_maintenance(daemon, kind):
     with pytest.raises(ValueError, match="source_not_allowed"):
-        daemon.store.stage_current_state_task("none", kind, [], [], 0)
+        daemon.store.stage_current_state_task("none", kind, [], [], 0, [])
     assert task_row(daemon.store) is None
 
 
@@ -268,6 +301,7 @@ def test_commit_rollback_cancel_and_delete_never_leave_runnable_task(daemon):
 
 def test_maintenance_reuses_chain_only_appends_user_task_and_never_recurses(daemon):
     original_system, original_messages = stage(daemon.store)
+    original_tools = json.loads(task_row(daemon.store)["payload_json"])["tools"]
     before = [tuple(row) for row in daemon.store._db.execute("SELECT * FROM messages")]
     requests = []
 
@@ -281,7 +315,7 @@ def test_maintenance_reuses_chain_only_appends_user_task_and_never_recurses(daem
             in messages[-1]["content"]
         )
         assert "<current_state />" in messages[-1]["content"]
-        assert [tool["name"] for tool in tools] == ["current_state_finish"]
+        assert tools == original_tools
         return finish(
             {
                 "delete": [],
@@ -560,8 +594,7 @@ def test_worker_waits_for_webhook_commit_then_maintains_before_next_owner(daemon
         calls = []
 
         async def complete(_system, _messages, tools, **kwargs):
-            names = {tool["name"] for tool in tools}
-            if names == {"current_state_finish"}:
+            if task_row(daemon.store) and task_row(daemon.store)["state"] == "running":
                 calls.append("maintenance")
                 assert daemon.store.turn_workflow_kind("source") == "webhook"
                 return finish(
@@ -650,3 +683,50 @@ def test_retry_uses_latest_snapshot_and_then_advances_queue(daemon):
     assert task_row(daemon.store)["attempts"] == 2
     assert task_row(daemon.store)["state"] == "completed"
     assert daemon.store.pending_current_state_task() == "second"
+
+
+@pytest.mark.parametrize(
+    "kind", sorted(set(TURN_HARNESS_SPECS) - {"current_state_maintenance"})
+)
+def test_visible_state_tool_cannot_execute_outside_maintenance(daemon, kind):
+    assert "current_state_finish" in {
+        spec["name"] for spec in daemon.tool_surface.conversation_specs()
+    }
+    harness = TurnHarness.for_stage(
+        kind,
+        permitted_tool_names=frozenset({"current_state_finish"}),
+    )
+    assert (
+        harness.validate(
+            [ToolCall("state", "current_state_finish", {"add": [], "delete": []})]
+        )
+        == "tool_not_allowed"
+    )
+
+
+@pytest.mark.parametrize("name", ["end_turn", "mcp__test__lookup"])
+def test_maintenance_preserves_visible_tools_but_rejects_their_execution(daemon, name):
+    stage(daemon.store)
+    tools_before = json.loads(task_row(daemon.store)["payload_json"])["tools"]
+    count = 0
+
+    async def complete(_system, messages, tools, **kwargs):
+        nonlocal count
+        count += 1
+        assert tools == tools_before
+        if count == 1:
+            return response(ToolCall("forbidden", name, {}))
+        assert "tool_not_allowed" in str(messages[-1])
+        return finish()
+
+    daemon.provider = SimpleNamespace(
+        complete=complete, config=SimpleNamespace(api_format="anthropic")
+    )
+    with patch.object(
+        daemon.tool_surface,
+        "conversation_specs",
+        side_effect=AssertionError("must use saved schemas"),
+    ):
+        asyncio.run(daemon._complete_current_state_task("source"))
+    assert count == 2
+    assert task_row(daemon.store)["state"] == "completed"
