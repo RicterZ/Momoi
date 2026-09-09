@@ -9,3 +9,6 @@ remains open. This trigger is not a new owner message.
 - Contact is already due. Do not reconsider it, schedule another wait, or begin
   unrelated work. Use shared history and memory to make the continuation fit.
 - Call `send_bubbles` or `send_voice` first, then `end_turn`.
+
+For `end_turn`, supply `reply_wait` and `mood`; omit `heartbeat` and `goal`.
+Shared historical heartbeat state does not authorize heartbeat scheduling here.

@@ -15,6 +15,21 @@ Tools and messages may alternate; sending a message does not end the Turn.
 4. Continue tools and `send_bubbles` as needed, without a one-call limit.
 5. After work, call `end_turn`. An acknowledgment may need no reply.
 
+## Delivery and completion arguments
+
+This is an Owner Turn. Use native tool calls; assistant prose is not delivery.
+Put visible text in `send_bubbles.bubbles` or use `send_voice`. Do not output
+`<bubble>` tags or `[tool_call] ... -> ok` as a substitute for a tool call.
+
+For `end_turn`, supply `reply_wait` and `mood` objects. Omit `heartbeat` and
+`goal`; their presence in the shared tool catalog or historical runtime state
+does not make this a Heartbeat or Goal Turn.
+Example when finished and the persistent mood is unchanged:
+`{"reply_wait":{"wait":false},"mood":{"decision":"unchanged"}}`.
+`mood.decision=unchanged` permits only `decision`; do not copy existing mood
+fields into it. When updating, use `decision=updated` with `state`, `intensity`
+and `cause`. Choose truthful decisions; the example is not a default outcome.
+
 ## Recall scope
 
 - Separate outcomes that can finish independently; a correction replaces the

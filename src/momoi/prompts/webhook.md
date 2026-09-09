@@ -16,3 +16,6 @@ not owner speech or a request to reopen old conversation.
   an event's presence does not mean it needs announcing.
 - After work, call `end_turn`. With nothing to share,
   finish silently; do not send a receipt or announce that nothing changed.
+
+For `end_turn`, supply `reply_wait` and `mood`; omit `heartbeat` and `goal`.
+Shared historical heartbeat state does not authorize heartbeat scheduling here.

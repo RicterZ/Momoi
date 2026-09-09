@@ -14,6 +14,7 @@ from ..turn_support import (
     tool_error_block,
     tool_result_block,
 )
+from ..tool_contracts.conversation import end_turn_correction, end_turn_tool_spec
 from .harness import TurnHarness
 from .protocol import assistant_history_message, parse_end_turn
 from .runtime_tools import (
@@ -228,15 +229,12 @@ class ToolBatchExecutor:
                         if reply is not None else {"ok": False, "error": error}
                     )
                     if error:
-                        schema = next(
-                            spec["input_schema"] for spec in request.request_tools
-                            if spec["name"] == "end_turn"
-                        )
-                        missing = [
-                            key for key in schema["required"] if key not in call.arguments
-                        ]
-                        if missing:
-                            result["message"] = "Supply all missing fields: " + ", ".join(missing)
+                        schema = end_turn_tool_spec(
+                            execution.stage,
+                            heartbeat_min_interval_seconds=self.config.heartbeat.min_interval_seconds,
+                            heartbeat_max_interval_seconds=self.config.heartbeat.max_interval_seconds,
+                        )["input_schema"]
+                        result.update(end_turn_correction(error, schema, call.arguments))
                 ended = bool(result.get("ok"))
                 log_event(
                     logger, TRACE, "end_turn_accepted" if ended else "end_turn_rejected",

@@ -237,3 +237,106 @@ def test_memory_write_activation_matches_runtime(activation, kind, expiry, valid
                     {"owner": "喝茶"},
                     720,
                 )
+
+
+@pytest.mark.parametrize("spec", [RECALL_TOOL_SPEC, *(
+    end_turn_tool_spec(stage, heartbeat_min_interval_seconds=180, heartbeat_max_interval_seconds=600)
+    for stage in ("owner", "heartbeat", "goal", "reply_followup", "webhook")
+)])
+def test_recall_and_end_turn_examples_match_actual_stage_schema(spec):
+    check = validator(spec)
+    for example in spec["input_schema"]["examples"]:
+        check.validate(example)
+
+
+def test_recall_rejects_observed_flattened_and_stringified_arguments():
+    check = validator(RECALL_TOOL_SPEC)
+    unit = copy.deepcopy(RECALL_TOOL_SPEC["input_schema"]["examples"][0]["units"][0])
+    assert not check.is_valid(unit)
+    for key, value in (("recall_queries", "[]"), ("episode", '{"action":"none"}')):
+        assert not check.is_valid({"units": [{**unit, key: value}]})
+    for episode in ({"action": "continue"}, {"action": "new", "ref": "plain-id"},
+                    {"action": "new", "ref": "new:valid", "title": " "}):
+        assert not check.is_valid({"units": [{**unit, "episode": episode}]})
+
+
+def test_end_turn_correction_explains_wrong_types_and_uses_stage_example():
+    from momoi.runtime.tool_contracts.conversation import end_turn_correction
+    for stage in ("owner", "heartbeat", "goal", "reply_followup"):
+        spec = end_turn_tool_spec(stage)
+        detail = end_turn_correction("invalid_mood_decision", spec["input_schema"], {})
+        validator(spec).validate(detail["example_arguments"])
+        assert "Supply all missing fields:" in detail["message"]
+    schema = end_turn_tool_spec("owner")["input_schema"]
+    assert "A boolean is invalid" in end_turn_correction("invalid_reply_wait_decision", schema, {})["message"]
+    assert "A string is invalid" in end_turn_correction("invalid_mood_decision", schema, {})["message"]
+
+
+def test_heartbeat_correction_uses_configured_interval():
+    from momoi.runtime.tool_contracts.conversation import end_turn_correction
+    schema = end_turn_tool_spec("heartbeat", heartbeat_min_interval_seconds=180,
+                                heartbeat_max_interval_seconds=600)["input_schema"]
+    detail = end_turn_correction("heartbeat_interval_out_of_range", schema, {})
+    assert "integer 3-10" in detail["message"]
+
+
+def test_shared_end_turn_examples_remain_fixed_after_private_corrections():
+    import json
+    from momoi.runtime.tool_contracts.conversation import END_TURN_TOOL_SPEC, end_turn_correction
+    before = json.dumps(END_TURN_TOOL_SPEC, ensure_ascii=False)
+    for example in END_TURN_TOOL_SPEC["input_schema"]["examples"]:
+        validator(END_TURN_TOOL_SPEC).validate(example)
+    for stage in ("owner", "heartbeat", "goal", "reply_followup", "webhook"):
+        schema = end_turn_tool_spec(stage, heartbeat_min_interval_seconds=180,
+                                    heartbeat_max_interval_seconds=600)["input_schema"]
+        detail = end_turn_correction("invalid_end_turn_arguments", schema, {})
+        detail["example_arguments"].clear()
+        assert json.dumps(END_TURN_TOOL_SPEC, ensure_ascii=False) == before
+
+
+def test_end_turn_branch_examples_are_unambiguous_and_valid():
+    from momoi.runtime.tool_contracts.conversation import END_TURN_TOOL_SPEC
+    schema = END_TURN_TOOL_SPEC["input_schema"]
+    for branch in schema["oneOf"]:
+        for example in branch["examples"]:
+            validator(END_TURN_TOOL_SPEC).validate(example)
+            assert sum(Draft202012Validator(candidate).is_valid(example)
+                       for candidate in schema["oneOf"]) == 1
+
+
+def test_observed_unchanged_with_update_fields_is_invalid_and_correction_is_precise():
+    from momoi.runtime.parsing import parse_response
+    from momoi.runtime.tool_contracts.conversation import END_TURN_TOOL_SPEC, end_turn_correction
+    args = {"reply_wait": {"wait": False}, "mood": {
+        "decision": "unchanged", "state": "content_peaceful", "intensity": 0.7,
+        "cause": "在老师怀里相拥入睡",
+    }}
+    assert not validator(END_TURN_TOOL_SPEC).is_valid(args)
+    reply, error = parse_response(args)
+    assert reply is None and error == "invalid_mood_decision"
+    detail = end_turn_correction(error, end_turn_tool_spec("owner")["input_schema"], args)
+    assert {item["path"] for item in detail["field_errors"]} == {
+        "$.mood.state", "$.mood.intensity", "$.mood.cause",
+    }
+    assert "permits ONLY decision" in detail["message"]
+    repaired = copy.deepcopy(args)
+    for item in detail["field_errors"]:
+        repaired["mood"].pop(item["path"].split(".")[-1])
+    validator(END_TURN_TOOL_SPEC).validate(repaired)
+    assert parse_response(repaired)[1] is None
+
+
+def test_shared_schema_heartbeat_shape_still_requires_runtime_stage_check():
+    from momoi.runtime.parsing import parse_response
+    from momoi.runtime.tool_contracts.conversation import END_TURN_TOOL_SPEC, end_turn_correction
+    args = {"reply_wait": {"wait": False}, "mood": {"decision": "unchanged"},
+            "heartbeat": {"next_check_minutes": 60, "reason": "稍后检查"}}
+    # The shared schema must accept a valid Heartbeat shape. It cannot know
+    # which trusted workflow is executing; runtime must enforce that boundary.
+    validator(END_TURN_TOOL_SPEC).validate(args)
+    assert parse_response(args, require_heartbeat=True)[1] is None
+    reply, error = parse_response(args)
+    assert reply is None and error == "heartbeat_state_not_allowed"
+    detail = end_turn_correction(error, end_turn_tool_spec("owner")["input_schema"], args)
+    assert detail["field_errors"] == [{"path": "$.heartbeat",
+        "issue": "forbidden_in_current_workflow", "expected": "field omitted"}]

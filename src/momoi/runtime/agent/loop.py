@@ -19,13 +19,15 @@ from .protocol import (
     handle_no_tool_response,
 )
 from .tool_batch import ToolBatchRequest, ToolBatchState
-from ..tool_contracts.conversation import end_turn_tool_spec
+from ..tool_contracts.conversation import end_turn_tool_spec, end_turn_correction
+from ..tool_contracts.context import recall_correction
 from ...storage.current_state_contract import CURRENT_STATE_SOURCE_STAGES
 from ..turn_support import (
     ExternalToolTurnError,
     MAX_CONSECUTIVE_TOOL_FAILURES,
     OwnerMessagesChanged,
     tool_error_block as _tool_error_block,
+    tool_result_block,
 )
 
 logger = logging.getLogger("momoi.runtime.turns")
@@ -98,14 +100,6 @@ class AgentLoop:
             permitted_tool_names=permitted_tools,
             blocked_tool_names=frozenset() if voice_allowed else frozenset({"send_voice"}),
         )
-        tools = [
-            end_turn_tool_spec(
-                stage,
-                heartbeat_min_interval_seconds=self.config.heartbeat.min_interval_seconds,
-                heartbeat_max_interval_seconds=self.config.heartbeat.max_interval_seconds,
-            ) if tool["name"] == "end_turn" and workflow is None else tool
-            for tool in tools
-        ]
         harness.validate_surface({str(tool["name"]) for tool in tools})
         while True:
             if reply_wait_turn and self.store.pending_owner_reply() is None:
@@ -355,10 +349,31 @@ class AgentLoop:
                         )
                     )
                     raise error_type(harness_error)
-                correction = [
-                    _tool_error_block(call.id, harness_error)
-                    for call in response.tool_calls
-                ]
+                correction = []
+                # Stage-specific guidance belongs only in appended error results.
+                end_schema = (
+                    end_turn_tool_spec(
+                        stage,
+                        heartbeat_min_interval_seconds=self.config.heartbeat.min_interval_seconds,
+                        heartbeat_max_interval_seconds=self.config.heartbeat.max_interval_seconds,
+                    )["input_schema"]
+                    if any(spec["name"] == "end_turn" for spec in request_tools)
+                    else None
+                )
+                for call in response.tool_calls:
+                    detail = {}
+                    if harness_error == "recall_must_be_first_and_alone":
+                        detail = recall_correction(
+                            "recall must succeed first and alone before sending or ending this Turn."
+                        )
+                    elif call.name == "end_turn" and end_schema is not None:
+                        detail = end_turn_correction(
+                            harness_error, end_schema,
+                            call.arguments if isinstance(call.arguments, dict) else {},
+                        )
+                    correction.append(tool_result_block(call.id, {
+                        "ok": False, "error": harness_error, **detail,
+                    }))
                 messages.extend(
                     [
                         assistant_history_message(response.content, response.continuation),

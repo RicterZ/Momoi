@@ -32,6 +32,36 @@ def config(directory: str) -> AppConfig:
 
 
 class RecallEpisodeBindingTest(unittest.IsolatedAsyncioTestCase):
+    async def test_malformed_recall_returns_actionable_example_without_persistence(self):
+        from jsonschema import Draft202012Validator
+        from momoi.runtime.tool_contracts.context import RECALL_TOOL_SPEC, RECALL_SKIP_EXAMPLE
+        import copy
+
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(config(directory))
+            self.addCleanup(daemon.store.close)
+            event = IncomingMessage("bad:shape", "1", "晚安", 1, 1)
+            daemon.store.add_event(event)
+            turn_id = daemon._turn_id(event.event_id)
+            daemon.store.begin_turn(turn_id, "owner", [event.event_id])
+            unit = copy.deepcopy(RECALL_SKIP_EXAMPLE["units"][0])
+            for arguments, path in (
+                (unit, "units:"),
+                ({"units": [{**unit, "recall_queries": "[]"}]}, "units[0].recall_queries"),
+                ({"units": [{**unit, "episode": '{"action":"none"}'}]}, "units[0].episode"),
+            ):
+                with self.subTest(path=path):
+                    result = await recall_owner_context(
+                        ToolCall("bad", "recall", arguments), current_events=[event],
+                        turn_id=turn_id, submit_context=daemon.submit_owner_context,
+                    )
+                    self.assertFalse(result["ok"])
+                    self.assertEqual(result["error"], "invalid_recall")
+                    self.assertIn(path, result["message"])
+                    self.assertIn("has not succeeded yet", result["message"])
+                    Draft202012Validator(RECALL_TOOL_SPEC["input_schema"]).validate(result["example_arguments"])
+                    self.assertIsNone(daemon.store.context_plan(turn_id))
+
     async def test_skip_preserves_episode_routing_without_retrieval(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(config(directory))

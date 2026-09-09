@@ -3,6 +3,7 @@ from typing import Any
 
 from ...models import IncomingMessage, ToolCall, TurnDraft
 from .tool_surface import ToolSurface
+from ..tool_contracts.context import recall_correction
 
 
 def record_heartbeat_activity(
@@ -88,7 +89,7 @@ async def recall_owner_context(
     try:
         recalled = await submit_context(current_events, turn_id, call.arguments)
     except ValueError as error:
-        return {"ok": False, "error": "invalid_recall", "message": str(error)}
+        return {"ok": False, "error": "invalid_recall", **recall_correction(str(error))}
     return {
         "ok": True,
         "state": "recalled",

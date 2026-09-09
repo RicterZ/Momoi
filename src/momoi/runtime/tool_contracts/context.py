@@ -1,3 +1,5 @@
+import copy
+import json
 from typing import Any
 
 from ...semantic.cue_contract import CUE_QUERY_CONTRACT
@@ -5,18 +7,52 @@ from ...semantic.cue_contract import CUE_QUERY_CONTRACT
 
 NEW_EPISODE_REF = "new:<slug>"
 
+RECALL_SKIP_EXAMPLE = {"units": [{
+    "intent": "主人道晚安", "recall_mode": "skip", "recall_queries": [],
+    "recall_from_turn_id": "", "episode": {"action": "none"},
+}]}
+RECALL_EXAMPLES = [
+    RECALL_SKIP_EXAMPLE,
+    {"units": [{"intent": "查询此前约定的见面时间", "recall_mode": "search",
+                "recall_queries": [{"semantic": "此前约定的见面时间", "keywords": []}],
+                "recall_from_turn_id": "", "episode": {"action": "none"}}]},
+    {"units": [{"intent": "继续讨论已检索的约定", "recall_mode": "reuse",
+                "recall_queries": [], "recall_from_turn_id": "<displayed-recalled-turn-id>",
+                "episode": {"action": "none"}}]},
+]
+
+
+def recall_correction(message: str) -> dict[str, Any]:
+    return {
+        "message": message + " Retry recall alone as a native tool call; it has not succeeded yet.",
+        "hint": (
+            "Put intent fields inside units (1-4 objects), not at the top level. "
+            "Use JSON arrays/objects, never JSON-encoded strings. search requires 1-3 queries "
+            "and an empty recall_from_turn_id; reuse requires [] and a displayed recalled Turn id; "
+            "skip requires [] and an empty id. episode is an object: none, continue with a "
+            "candidate ref, or new with new:<slug> and title. Choose from actual evidence; "
+            "the example only illustrates skip when supplied context is sufficient."
+        ),
+        "example_arguments": copy.deepcopy(RECALL_SKIP_EXAMPLE),
+    }
+
+
 RECALL_TOOL_SPEC: dict[str, Any] = {
     "name": "recall",
     "description": (
         "Retrieve confirmed memory, dated reflection, and Episode summaries for "
-        "the Owner Turn, and bind its archival Episode membership."
+        "the Owner Turn, and bind its archival Episode membership. "
+        "Call first and alone as a native tool, and retry until successful before other tools. "
+        "Arguments must contain units, an array of intent objects; do not flatten its fields "
+        "or stringify nested JSON. Minimal example when context is sufficient: "
+        + json.dumps(RECALL_SKIP_EXAMPLE, ensure_ascii=False)
     ),
     "input_schema": {
         "type": "object",
         "properties": {
             "units": {
                 "type": "array",
-                "description": "One unit per independent owner intent.",
+                "description": "Required wrapper: one object per independent owner intent, not a JSON string.",
                 "minItems": 1,
                 "maxItems": 4,
                 "items": {
@@ -24,6 +60,8 @@ RECALL_TOOL_SPEC: dict[str, Any] = {
                     "properties": {
                         "intent": {
                             "type": "string",
+                            "minLength": 1,
+                            "pattern": r"\S",
                             "maxLength": 160,
                             "description": (
                                 "Objectively describe the owner's current request or "
@@ -102,6 +140,18 @@ RECALL_TOOL_SPEC: dict[str, Any] = {
                                 },
                             },
                             "required": ["action"],
+                            "oneOf": [
+                                {"properties": {"action": {"const": "none"},
+                                                "ref": {"const": ""}, "title": {"const": ""}}},
+                                {"required": ["ref"], "properties": {
+                                    "action": {"const": "continue"},
+                                    "ref": {"minLength": 1, "description": "Copy an actual candidate Episode id."},
+                                    "title": {"const": ""}}},
+                                {"required": ["ref", "title"], "properties": {
+                                    "action": {"const": "new"},
+                                    "ref": {"pattern": "^new:[a-z0-9][a-z0-9_-]{0,39}$"},
+                                    "title": {"minLength": 1, "pattern": r"\S"}}},
+                            ],
                             "additionalProperties": False,
                         },
                     },
@@ -139,6 +189,7 @@ RECALL_TOOL_SPEC: dict[str, Any] = {
                 },
             },
         },
+        "examples": copy.deepcopy(RECALL_EXAMPLES),
         "required": ["units"],
         "additionalProperties": False,
     },

@@ -1868,6 +1868,11 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     tools: list[dict[str, object]],
                     **___: object,
                 ) -> ProviderResponse:
+                    # Every heartbeat round keeps the shared schema, including
+                    # retries and configured interval limits, for prefix caching.
+                    terminal = next(tool for tool in tools if tool["name"] == "end_turn")
+                    if terminal != END_TURN_TOOL_SPEC:
+                        raise AssertionError("Heartbeat changed the shared end_turn schema")
                     self.calls += 1
                     names = {str(tool["name"]) for tool in tools}
                     if self.calls == 1:
@@ -2131,6 +2136,10 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     tools: list[dict[str, object]],
                     **_: object,
                 ) -> ProviderResponse:
+                    self_outer.assertEqual(
+                        next(tool for tool in tools if tool["name"] == "end_turn"),
+                        END_TURN_TOOL_SPEC,
+                    )
                     self.calls += 1
                     request_text = json.dumps(messages, ensure_ascii=False)
                     if self.calls == 1:

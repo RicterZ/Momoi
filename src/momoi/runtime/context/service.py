@@ -78,7 +78,7 @@ class ContextService:
         episodes: list[dict[str, object]] = []
         raw_units = arguments.get("units")
         if not isinstance(raw_units, list) or not raw_units:
-            raise ValueError("recall requires at least one intent unit")
+            raise ValueError("units: required nonempty JSON array of intent objects; wrap fields as {\"units\":[{...}]}")
         candidate_rows = self.store.recent_conversation_messages(
             self.store.transcript_window_turn_limit(
                 self.config.transcript_turns_min,
@@ -98,6 +98,11 @@ class ContextService:
         for index, raw in enumerate(raw_units if isinstance(raw_units, list) else [], 1):
             if not isinstance(raw, dict):
                 raise ValueError("each recall unit must be an object")
+            path = f"units[{index - 1}]"
+            if not isinstance(raw.get("recall_queries"), list):
+                raise ValueError(f"{path}.recall_queries: expected a JSON array, not a string; use [] for skip/reuse")
+            if not isinstance(raw.get("episode"), dict):
+                raise ValueError(f'{path}.episode: expected a JSON object, e.g. {{"action":"none"}}, not a string')
             unit_id = f"u{index}"
             mode = str(raw.get("recall_mode") or "search")
             queries = [
@@ -114,10 +119,10 @@ class ContextService:
             ][:3]
             from_turn_id = str(raw.get("recall_from_turn_id") or "")
             if mode not in {"search", "reuse", "skip"}:
-                raise ValueError("recall_mode must be search, reuse, or skip")
+                raise ValueError(f"{path}.recall_mode: must be search, reuse, or skip")
             if mode == "search":
                 if not queries:
-                    raise ValueError("search recall requires at least one query")
+                    raise ValueError(f'{path}.recall_queries: search requires at least one object with nonempty semantic, e.g. [{{"semantic":"此前约定的时间","keywords":[]}}]')
                 from_turn_id = ""
             elif mode == "skip":
                 if (
@@ -125,12 +130,12 @@ class ContextService:
                     or raw.get("recall_from_turn_id") != ""
                 ):
                     raise ValueError(
-                        "skip requires empty recall_queries and recall_from_turn_id"
+                        f'{path}: skip requires empty recall_queries=[] and recall_from_turn_id=""'
                     )
             elif not from_turn_id or not self.store.recall_reuse_candidates(
                 [from_turn_id]
             ):
-                raise ValueError("reuse requires a displayed recalled Turn")
+                raise ValueError(f"{path}.recall_from_turn_id: reuse requires an actual displayed recalled Turn id from recent_recall_context")
             units.append(
                 {
                     "id": unit_id,
@@ -170,7 +175,7 @@ class ContextService:
                 binding["title"] = title[:80]
                 binding["episode_ref"] = reference
             else:
-                raise ValueError("episode reference does not match its action")
+                raise ValueError(f"{path}.episode: episode reference does not match its action; continue requires ref copied from a candidate Episode; new requires ref matching new:[a-z0-9][a-z0-9_-]{{0,39}} and a nonempty title")
             episodes.append(binding)
         return {
             "version": 7,
