@@ -91,6 +91,7 @@ USER_CONTEXT_SECTION_ORDER = (
     "long_term_memories",
     "recent_memories",
     "goal_directory",
+    "current_state",
     "active_goals",
     "proactive_bubbles",
     "recent_episodes",
@@ -131,6 +132,7 @@ def pack_user_context(*items: tuple[str, str]) -> str:
     structured = {
         "long_term_memories", "recent_memories", "recall_memories", "goal_directory",
         "recent_episodes", "recent_recall_context", "runtime_state", "episode_directory",
+        "current_state",
     }
     return "\n\n".join(
         f"<{name}>\n{by_name[name].strip()}\n</{name}>"

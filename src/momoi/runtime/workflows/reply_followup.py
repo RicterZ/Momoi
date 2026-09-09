@@ -3,12 +3,12 @@ from typing import Any
 
 from ...models import AgentReply, TurnDraft
 from ..agent import TurnExecutionSpec
+from ..context.current_state import pack_current_turn_context
 from ..context.presentation import heartbeat_self_state_lines
 from ..transcript.building import build_transcript
 from ..transcript.rendering import render_messages
 from ..turn_support import (
     context_data_message as _context_data_message,
-    pack_user_context as _pack_user_context,
 )
 
 
@@ -44,7 +44,8 @@ class ReplyFollowupWorkflow:
             timezone=self.store.timezone,
             tool_activity=tool_activity,
         )
-        current_input = _pack_user_context(
+        current_input = pack_current_turn_context(
+            self.store, "reply_followup",
             ("workflow_contract", self._reply_wait_system_prompt()),
             (
                 "followup",

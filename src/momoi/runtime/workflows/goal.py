@@ -9,6 +9,7 @@ from ...observability.values import safe_preview
 from ...models import TurnDraft
 from ...llm.errors import ProviderError
 from ..agent import TurnExecutionSpec
+from ..context.current_state import pack_current_turn_context
 from ..context.presentation import heartbeat_self_state_lines
 from ..transcript.building import build_transcript
 from ..transcript.rendering import render_messages
@@ -19,7 +20,6 @@ from ..turn_support import (
     TurnBudgetExceeded,
     context_data_message as _context_data_message,
     live_prompt as _live_prompt,
-    pack_user_context as _pack_user_context,
     reconciliation_message as _reconciliation_message,
     turn_tool_names as _turn_tool_names,
 )
@@ -212,7 +212,8 @@ class GoalWorkflow:
             f"Recurring schedule: {goal['schedule'] or 'none'}\n"
             f"Scheduled review time: {review_at}"
         )
-        current_input = _pack_user_context(
+        current_input = pack_current_turn_context(
+            self.store, "goal",
             (
                 "workflow_contract",
                 _live_prompt(GOAL_PROMPT_PATH, GOAL_SYSTEM_PROMPT),

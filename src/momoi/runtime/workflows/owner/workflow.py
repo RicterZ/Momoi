@@ -17,13 +17,13 @@ from ...transcript.rendering import (
     render_messages,
     turn_labels,
 )
+from ...context.current_state import pack_current_turn_context
 from ...context.presentation import heartbeat_self_state_lines
 from ...turn_support import (
     ExternalToolTurnError,
     TurnBudgetExceeded,
     owner_content_blocks as _owner_content_blocks,
     owner_context_message as _owner_context_message,
-    pack_user_context as _pack_user_context,
     provider_failure_message as _provider_failure_message,
     reconciliation_message as _reconciliation_message,
     turn_tool_names as _turn_tool_names,
@@ -48,7 +48,8 @@ class OwnerWorkflow:
         the Turn ran, and the owner's latest words.
         """
 
-        runtime_text = _pack_user_context(
+        runtime_text = pack_current_turn_context(
+            self.store, "owner",
             ("workflow_contract", self._owner_system_prompt()),
             (
                 "runtime_directives",
@@ -68,6 +69,7 @@ class OwnerWorkflow:
             ("recall_status", recalled["query_recall"]),
             ("reflection_memories", recalled["reflection_memories"]),
             ("episode_directory", recalled["episodes"]),
+            include_empty=True,
         )
         content = _owner_content_blocks(
             updates, channel.content_blocks, self.store.timezone, runtime_text
@@ -278,7 +280,8 @@ class OwnerWorkflow:
             ("recent_memories", self.store._memory_context([row for row in injected_memories.values() if row["activation"] == "recent"])),
             ("goal_directory", recalled["goal_directory"]),
         )
-        runtime_text = _pack_user_context(
+        runtime_text = pack_current_turn_context(
+            self.store, "owner",
             ("workflow_contract", self._owner_system_prompt()),
             (
                 "runtime_state",

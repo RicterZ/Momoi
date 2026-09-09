@@ -6,6 +6,7 @@ future chat-cleanup integration can restore an earlier revision without guessing
 """
 
 from collections.abc import Callable, Sequence
+import copy
 from dataclasses import asdict, dataclass
 import json
 import math
@@ -13,6 +14,17 @@ import re
 import sqlite3
 import time
 import uuid
+
+from .current_state_contract import (
+    CURRENT_STATE_CHANGE_SCHEMA,
+    ID_MAX_LENGTH,
+    KEY_MAX_LENGTH,
+    KEY_PATTERN,
+    MAX_SLOTS,
+    MAX_TTL_SECONDS,
+    SUBJECT_MAX_LENGTH,
+    VALUE_MAX_LENGTH,
+)
 
 
 class StateConflict(ValueError):
@@ -65,8 +77,8 @@ def _text(value, name, limit):
 
 
 class CurrentStateManager:
-    MAX_TTL_SECONDS = 7 * 86400
-    MAX_SLOTS = 128
+    MAX_TTL_SECONDS = MAX_TTL_SECONDS
+    MAX_SLOTS = MAX_SLOTS
 
     def __init__(
         self, database: sqlite3.Connection, *, clock: Callable[[], float] = time.time
@@ -95,6 +107,44 @@ class CurrentStateManager:
         return StateSnapshot(
             rows[0][0],
             tuple(StateSlot(*tuple(row)[1:]) for row in rows if row[1] is not None),
+        )
+
+    @classmethod
+    def change_schema(cls) -> dict:
+        """Detached schema for callers; mutation does not alter the shared contract."""
+        schema = copy.deepcopy(CURRENT_STATE_CHANGE_SCHEMA)
+        schema["properties"]["add"]["maxItems"] = cls.MAX_SLOTS
+        schema["properties"]["delete"]["maxItems"] = cls.MAX_SLOTS
+        schema["properties"]["add"]["items"]["properties"]["ttl_seconds"]["maximum"] = (
+            cls.MAX_TTL_SECONDS
+        )
+        return schema
+
+    def apply_arguments(
+        self,
+        arguments: object,
+        *,
+        source_turn_id: str,
+        operation_id: str,
+        expected_revision: int,
+    ) -> StateChange:
+        """Consume the schema's JSON shape, keeping runtime metadata caller-owned."""
+        if not isinstance(arguments, dict) or set(arguments) != {"add", "delete"}:
+            raise ValueError("invalid_change_set")
+        added, deleted = arguments["add"], arguments["delete"]
+        if not isinstance(added, list) or not isinstance(deleted, list):
+            raise ValueError("invalid_change_set")
+        fields = set(
+            CURRENT_STATE_CHANGE_SCHEMA["properties"]["add"]["items"]["required"]
+        )
+        if any(not isinstance(item, dict) or set(item) != fields for item in added):
+            raise ValueError("invalid_slot_input")
+        return self.apply(
+            add=[SlotInput(**item) for item in added],
+            delete=deleted,
+            source_turn_id=source_turn_id,
+            operation_id=operation_id,
+            expected_revision=expected_revision,
         )
 
     @staticmethod
@@ -148,18 +198,18 @@ class CurrentStateManager:
         for item in add:
             if not isinstance(item, SlotInput):
                 raise ValueError("invalid_slot_input")
-            subject = _text(item.subject, "subject", 128)
-            key = _text(item.key, "key", 64)
-            if re.fullmatch(r"[a-z][a-z0-9_.-]*", key) is None:
+            subject = _text(item.subject, "subject", SUBJECT_MAX_LENGTH)
+            key = _text(item.key, "key", KEY_MAX_LENGTH)
+            if re.fullmatch(KEY_PATTERN, item.key) is None:
                 raise ValueError("invalid_key")
-            value = _text(item.value, "value", 512)
+            value = _text(item.value, "value", VALUE_MAX_LENGTH)
             if (
                 type(item.ttl_seconds) is not int
                 or not 1 <= item.ttl_seconds <= self.MAX_TTL_SECONDS
             ):
                 raise ValueError("invalid_ttl")
             inputs.append(asdict(SlotInput(subject, key, value, item.ttl_seconds)))
-        ids = [_text(value, "slot_id", 128) for value in delete]
+        ids = [_text(value, "slot_id", ID_MAX_LENGTH) for value in delete]
         if len(set(ids)) != len(ids):
             raise ValueError("duplicate_delete")
         return self._mutate(

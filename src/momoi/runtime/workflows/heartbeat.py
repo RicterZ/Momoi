@@ -11,6 +11,7 @@ from ...models import AgentReply, TurnDraft
 from ...reply_wait import REPLY_FOLLOWUP_RETRY_SECONDS
 from ...storage import estimate_tokens, truncate_tokens
 from ..agent import TurnExecutionSpec
+from ..context.current_state import pack_current_turn_context
 from ..context.presentation import (
     heartbeat_self_state_lines,
     heartbeat_topic_lines,
@@ -20,7 +21,6 @@ from ..transcript.rendering import render_messages
 from ..turn_support import (
     ExternalToolTurnError,
     context_data_message as _context_data_message,
-    pack_user_context as _pack_user_context,
     reconciliation_message as _reconciliation_message,
     turn_tool_names as _turn_tool_names,
 )
@@ -199,7 +199,8 @@ class HeartbeatWorkflow:
         ))
         artifact_root = self.tool_executor.artifact_root.resolve()
         heartbeat_event = f"Autonomous artifact directory: {artifact_root}"
-        current_input = _pack_user_context(
+        current_input = pack_current_turn_context(
+            self.store, "heartbeat",
             ("workflow_contract", self._heartbeat_system_prompt()),
             ("autonomous_heartbeat", heartbeat_event),
             (

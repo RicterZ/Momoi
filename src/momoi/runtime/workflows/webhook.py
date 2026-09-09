@@ -4,6 +4,7 @@ from typing import Any
 from ...channel import Channel
 from ...models import AgentReply, TurnDraft
 from ..agent import TurnExecutionSpec
+from ..context.current_state import pack_current_turn_context
 from ..context.presentation import heartbeat_self_state_lines
 from ..transcript.building import build_transcript
 from ..transcript.rendering import render_messages
@@ -12,7 +13,6 @@ from ..turn_support import (
     WEBHOOK_SYSTEM_PROMPT,
     context_data_message as _context_data_message,
     live_prompt as _live_prompt,
-    pack_user_context as _pack_user_context,
 )
 
 
@@ -51,7 +51,8 @@ class WebhookWorkflow:
             self_state,
             current_time=datetime.now(self.store.timezone).isoformat(timespec="seconds"),
         )
-        current_input = _pack_user_context(
+        current_input = pack_current_turn_context(
+            self.store, "webhook",
             (
                 "workflow_contract",
                 _live_prompt(WEBHOOK_PROMPT_PATH, WEBHOOK_SYSTEM_PROMPT),
