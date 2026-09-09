@@ -34,15 +34,15 @@ Tools and messages may alternate; sending a message does not end the Turn.
   experience worth keeping. Proximity, mood, time, or setting is insufficient.
   Do not write runtime-owned archives.
 
-Episode recall matches episode metadata and evidence-grounded event cues. The
-semantic query searches both summary and cue embeddings; there is no separate
-query-cue generation step. Follow the shared event representation in the tool schema. Describe
-the missing event naturally in semantic queries; use supported, distinctive names
-or event phrases as sparse anchors. Stored cue wording need not be known. Keep
-the owner's language and literal identifiers, source participants, and uncertain
-premises intact. Use explicit participants where pronouns are ambiguous. Do not
-supply guessed answers, hypothetical alternatives, or unsupported query details.
-If context cannot resolve a reference, seek clarification before searching.
+Episode recall matches episode metadata and query-like cues describing future
+situations in which each memory would be useful. The semantic query searches both
+summary and cue embeddings; there is no separate query-cue generation step.
+Follow the shared retrieval contract in the tool schema: describe the current
+need naturally, with known people, tasks and associated content. Use distinctive
+names or phrases as sparse anchors; stored cue wording need not be known.
+Preserve the owner's language, literal identifiers and uncertain premises.
+Resolve pronouns from context without guessing an unknown answer or adding a
+new retrieval need. If context cannot resolve a reference, seek clarification.
 
 A recalled `<episode confidence="...">` contains a bounded query-relevance signal,
 not a calibrated probability or a measure of factual truth. An absent value means

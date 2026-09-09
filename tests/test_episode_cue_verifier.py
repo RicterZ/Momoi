@@ -34,3 +34,15 @@ class EpisodeCueVerifierTest(unittest.IsolatedAsyncioTestCase):
                 await verify_episode_cues(provider, [
                     {'text': 'OWNER 说很累', 'evidence_message_ids': [17]}],
                     [{'message_id': 17}])
+
+
+def test_query_cue_can_reference_all_messages_needed_for_its_retrieval_intent():
+    from momoi.storage.episode_cues import normalize_cues
+
+    # One retrieval intent can span more messages than the number of cues.
+    claims = [{"message_id": i} for i in range(1, 11)]
+    cues = [{"text": "回顾多轮修改后的最终约定时", "evidence_message_ids": list(range(1, 11))}]
+    assert normalize_cues(cues, claims) == cues
+    import pytest
+    with pytest.raises(ValueError, match="retained verified claims"):
+        normalize_cues(cues, claims[:-1])

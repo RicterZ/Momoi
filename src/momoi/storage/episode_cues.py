@@ -44,7 +44,7 @@ def normalize_cues(values: object, claims: Sequence[dict[str, object]]) -> list[
             continue
         ids = value["evidence_message_ids"]
         if (
-            not isinstance(ids, list) or not 1 <= len(ids) <= 8
+            not isinstance(ids, list) or not ids
             or any(type(id) is not int or id not in evidence_ids for id in ids)
         ):
             raise ValueError("cue must link to retained verified claims")

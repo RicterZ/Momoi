@@ -1,24 +1,26 @@
-"""Shared event representation for archived cues and retrieval queries."""
+"""Shared retrieval intent for archived cues and current memory queries."""
 
 EVENT_RETRIEVAL_CONTRACT = (
-    "Describe one distinguishable event or ongoing concern in self-contained, neutral language. "
-    "Identify participants as OWNER and ASSISTANT; preserve literal names, identifiers, "
-    "the object, action or relationship, and supported distinguishing circumstances. "
-    "Preserve attribution, uncertainty, negation, corrections and whether an action is "
-    "a dream, proposal, attempt or reported completion. Do not invent missing details "
-    "or connect unrelated events merely because they share an entity or keyword. "
-    "Use the conversation language; do not replace an event with generic topic tags. "
+    "用对话所用语言表达记忆检索的场景、意图及关联内容、人物、任务或关键词。"
+    "保留有助于区分话题的名称和标识，不编造事实，不把无关事件串联起来。"
 )
 
 CUE_ARCHIVE_CONTRACT = EVENT_RETRIEVAL_CONTRACT + (
-    "For archived cues, use only retained evidence and link every cue to supporting "
-    "message IDs. A reported event is not independently verified. Each cue must make "
-    "sense when embedded alone; retain the corrected account instead of superseded facts."
+    "recall_cues 输出 3-5 个用于之后语义匹配的查询式段落。"
+    "请额外思考“什么情景下可能会需要这些信息”"
+    "“这些信息和什么内容、人物、任务、关键词关联”，"
+    "每条 text 写成自然语言短句，包含可匹配的场景、意图或关联内容。"
+    "写未来可能的查询需求，不要把摘要拆成事实列表，也不要在查询里复述完整答案。"
+    "不同线索覆盖不同检索角度，不为凑数重复改写；信息不足时可以少于三条或为空。"
+    "evidence_message_ids 引用能够满足该检索需求的已保留消息；"
+    "未来的查询情景本身不需要已经发生，但其中的事实前提必须有来源，"
+    "保留转述、纠正、否定、梦境及计划与实际发生的区别。"
 )
 
 CUE_QUERY_CONTRACT = EVENT_RETRIEVAL_CONTRACT + (
-    "For retrieval, describe the missing information rather than inventing its answer. "
-    "Known details constrain the search; unknown details remain unknown. Resolve pronouns "
-    "from supplied context only. Exact stored cue wording need not be known. This semantic "
-    "query searches both episode summaries and independently embedded event cues."
+    "根据当前对话，写出现在需要查找什么历史信息的自然语言查询。"
+    "归档线索描述“未来什么情景会需要这段记忆”，当前查询描述这个需求本身，"
+    "两者围绕相同的场景、意图及关联内容进行语义匹配。"
+    "只用已知上下文限定查询、消解指代，不猜测未知答案，不要求知道原线索措辞。"
+    "该查询同时检索话题摘要和逐条独立 embedding 的 CUES。"
 )

@@ -173,14 +173,14 @@ EPISODE_SUMMARY_FINISH_SPEC: dict[str, Any] = {
                 "additionalProperties": False,
             },
             "recall_cues": {
-                "type": "array", "maxItems": 8, "uniqueItems": True,
+                "type": "array", "maxItems": 5, "uniqueItems": True,
                 "description": CUE_ARCHIVE_CONTRACT + " Empty if none.",
                 "items": {
                     "type": "object",
                     "properties": {
                         "text": {"type": "string", "minLength": 1, "maxLength": 100},
                         "evidence_message_ids": {
-                            "type": "array", "minItems": 1, "maxItems": 8,
+                            "type": "array", "minItems": 1,
                             "items": {"type": "integer"}, "uniqueItems": True,
                         },
                     },

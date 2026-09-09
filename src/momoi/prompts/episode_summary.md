@@ -37,40 +37,19 @@ Rules:
 - Support every summary detail and emotion with selected claims. Preserve
   completed outcomes without inventing future commitments.
 
-Follow the shared event representation in the `recall_cues` tool schema, also
-used by owner and heartbeat retrieval queries. Archive only supported events;
-retrieval queries describe missing information and must not presume its answer.
+Generate `recall_cues` together with the summary, following the shared retrieval
+contract in the tool schema. Think about future situations in which this memory
+would be useful, and the associated intentions, people, tasks and content.
+Write 3-5 distinct query-like short passages, not factual mini-summaries or a
+list of who said what. Use fewer when distinct useful angles are exhausted.
+Regenerate cues from the retained evidence instead of accumulating old cues.
 
-Generate `recall_cues` in the same operation as the summary. Cues are bounded,
-distinct retrieval labels for the Episode's events and corrections, not new
-facts or behavioral instructions. Use only supported event descriptions and
-established aliases; an empty list is valid. Regenerate them from the retained
-evidence instead of accumulating old labels. Choose cues for their ability to
-distinguish this Episode from others, not to enumerate every retained sentence.
-
-Each cue must preserve its source's participants, attribution, modality, and
-uncertainty. Distinguish owner statements, assistant statements, suggestions,
-proposals, role narration, and completed actions. A verified quotation establishes
-that a statement was made; it does not independently verify the event described.
-Use explicit participants when pronouns could change the speaker or actor.
-These retrieval labels use neutral event descriptions; the narrative summary's
-first-person perspective does not change source attribution.
+Each cue is an object with `text` and `evidence_message_ids`. Cite messages retained
+in this submission that contain information useful for that retrieval need.
+The future retrieval situation need not have happened; factual premises must
+remain supported, including attribution, uncertainty, corrections, and the
+difference between dreams, proposals and completed actions. The source link is
+retrieval provenance, not independent verification of a speaker's story.
 
 Copy each claim's message_id, turn_id, ordinal and quotation together from the
 same source block. Treat identifiers as opaque; never infer them from ordering.
-
-Each cue is an object with `text` and `evidence_message_ids`. Cite only message
-IDs included in the claims you retain in this submission. A cue's entire meaning
-must be supported by those linked claims, including who said or did what. This
-link is retrieval provenance, not independent verification of a speaker's story.
-
-Read the retained evidence as a chronological whole before choosing labels.
-When a later statement corrects an earlier claim, use one cue describing that
-correction; do not also preserve the superseded claim as a completed outcome.
-For every action, distinguish intent, attempt, reported completion, and
-independently confirmed result. Preserve explicit failures and corrections.
-Write participants as OWNER or ASSISTANT rather than first-person pronouns.
-Each cue is embedded independently: make its event and participants intelligible
-without relying on neighboring cues or the narrative summary.
-Prefer a few discriminative event labels to one label per sentence. Repeated
-acknowledgements of the same event do not require separate cues.

@@ -14,6 +14,8 @@ Distinguish plans, dreams, completed actions and corrections; do not invent fact
 Judge every candidate independently. Keep all relevant topics, even after finding
 a best match, then order them by usefulness to the current need, strongest first.
 Input order is not a relevance verdict. Do not fill a quota or assume an answer exists.
+Cues describe possible future retrieval needs, not proof those situations happened.
+Check relevance against the topic content; a cue must not invent an event or answer.
 Empty summary or cues mean missing metadata, not proof that the topic is irrelevant.
 updated_at is metadata modification time, not event time. If provided, conversation_time
 is the range of linked conversation timestamps, not a guarantee that every described
