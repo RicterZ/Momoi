@@ -633,7 +633,7 @@ function CurrentStatePanel({ state, token }) {
               <li className="current-state-row" key={slot.id}>
                 <span className="current-state-dot" aria-hidden="true" />
                 <div className="current-state-content">
-                  {slot.subject !== "owner" && <span className="panel-label">{slot.subject === "assistant" ? "MOMOI" : slot.subject}</span>}
+                  <span className="panel-label">{slot.subject}</span>
                   <p>{slot.value}</p>
                   <span className="current-state-recorded">记录于 {formatDate(slot.created_at)}</span>
                 </div>
