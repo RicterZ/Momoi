@@ -2,17 +2,18 @@
 import asyncio
 
 from ..integrations.request_context import model_request
+from ..observability.context import log_context
 
 
 class SelectionProtocolError(ValueError):
     """The response cannot be mapped to the supplied structured candidates."""
 
 
-async def select_structured(provider, system, messages, spec, parse, *, timeout, thinking_effort="low"):
+async def select_structured(provider, system, messages, spec, parse, *, timeout, thinking_effort="low", stage=None):
     async def run():
         conversation = list(messages)
         for attempt in range(2):
-            with model_request(thinking_effort=thinking_effort):
+            with log_context(stage=stage), model_request(thinking_effort=thinking_effort):
                 response = await provider.complete(
                     system, conversation, [spec], required_tool=spec["name"],
                 )

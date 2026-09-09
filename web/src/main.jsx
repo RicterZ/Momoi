@@ -31,16 +31,18 @@ const navItems = [
 ];
 
 const thinkingStageLabels = {
-  owner: "主人对话",
-  webhook: "Webhook",
-  heartbeat: "心跳",
-  reflection: "复盘",
-  goal: "目标执行",
-  memory_maintenance: "记忆整理",
-  memory_operation: "记忆操作",
-  episode_anneal: "对话记忆整理",
-  episode_consolidate: "对话归并",
-  reply_followup: "回复跟进",
+  owner: "对话 · 主人交流",
+  webhook: "事件 · Webhook",
+  heartbeat: "心跳 · 自主活动",
+  reflection: "记忆 · 每日复盘",
+  goal: "目标 · 执行",
+  memory_maintenance: "记忆 · 维护整理",
+  memory_operation: "记忆 · 操作",
+  episode_anneal: "对话 · 记忆整理",
+  topic_selection: "CUES · 话题筛选",
+  episode_cue_admit: "CUES · 线索校验",
+  episode_consolidate: "对话 · 归并整理",
+  reply_followup: "对话 · 回复跟进",
 };
 
 function thinkingStageLabel(stage) {
@@ -1957,6 +1959,8 @@ function thinkingStageCode(stage) {
       memory_maintenance: "TIDY",
       memory_operation: "记忆操作",
       episode_anneal: "MEM",
+      topic_selection: "CUES",
+      episode_cue_admit: "CUES",
       episode_consolidate: "MERGE",
       reply_followup: "FOLLOW",
     }[String(stage || "").trim()] || "MOMOI"

@@ -66,7 +66,7 @@ async def select_topics(provider, store, request, queries, candidates, *, thinki
     try:
         selected, attempts = await select_structured(
             provider, SYSTEM, [{"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],
-            spec, parse, timeout=45, thinking_effort=thinking_effort,
+            spec, parse, timeout=45, thinking_effort=thinking_effort, stage="topic_selection",
         )
     except Exception as error:
         # Unfiltered broad candidates are not safe substitutes for selected topics.

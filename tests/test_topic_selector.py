@@ -96,6 +96,8 @@ def test_configured_effort_applies_to_initial_call_and_repair():
         seen = []
 
         async def complete(*args, **kwargs):
+            from momoi.observability.context import current_log_context
+            assert current_log_context()['stage'] == 'topic_selection'
             seen.append(requested_thinking_effort('provider-default'))
             return response([9] if len(seen) == 1 else [0])
 

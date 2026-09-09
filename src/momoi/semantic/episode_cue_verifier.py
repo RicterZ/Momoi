@@ -50,6 +50,6 @@ async def verify_episode_cues(provider, cues, claims):
             "claims": claims,
             "cues": [{"cue_index": index, **cue}
                      for index, cue in enumerate(normalized)],
-        }, ensure_ascii=False)}], SPEC, parse, timeout=30,
+        }, ensure_ascii=False)}], SPEC, parse, timeout=30, stage="episode_cue_admit",
     )
     return admitted
