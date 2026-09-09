@@ -12,6 +12,7 @@ from ..search import (
 )
 from .context_plans import ContextPlanStore
 from .current_state import CurrentStateManager
+from .current_state_tasks import CurrentStateTaskStore
 from .delivery import DeliveryStore
 from .episode_search import (
     EpisodeQueryService,
@@ -60,6 +61,7 @@ from .webhooks import WebhookStore
 from .lifecycle import LifecycleStore
 
 class Store(
+    CurrentStateTaskStore,
     LifecycleStore,
     GoalStore,
     EmotionStore,

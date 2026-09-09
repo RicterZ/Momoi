@@ -14,6 +14,7 @@ TurnWorkflowKind = Literal[
     "memory_operation",
     "episode_consolidate",
     "episode_anneal",
+    "current_state_maintenance",
 ]
 
 TURN_WORKFLOW_KINDS = frozenset(
@@ -28,6 +29,7 @@ TURN_WORKFLOW_KINDS = frozenset(
         "memory_operation",
         "episode_consolidate",
         "episode_anneal",
+        "current_state_maintenance",
     }
 )
 

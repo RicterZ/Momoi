@@ -1,7 +1,7 @@
 """Single source for state mutation fields, limits and model-facing guidance.
 
-No tool is exposed yet. A future maintenance workflow can use this schema and
-pass its validated arguments to CurrentStateManager.apply_arguments.
+The private maintenance workflow uses this schema and passes its arguments to
+CurrentStateManager.apply_arguments. Foreground end_turn does not carry state.
 """
 
 MAX_SLOTS = 128
@@ -11,6 +11,7 @@ KEY_MAX_LENGTH = 64
 KEY_PATTERN = r"^[a-z][a-z0-9_.-]*(?![\s\S])"
 VALUE_MAX_LENGTH = 512
 ID_MAX_LENGTH = 128
+CURRENT_STATE_SOURCE_STAGES = frozenset({"owner", "goal", "heartbeat", "webhook", "reply_followup"})
 
 CURRENT_STATE_CHANGE_SCHEMA = {
     "type": "object",

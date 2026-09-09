@@ -33,6 +33,7 @@ class ModelRoundResult:
     call_id: str
     history_messages: int
     remind_owner_bubbles: bool
+    request_system: list[dict[str, Any]]
 
 
 class ModelRoundRunner:
@@ -65,6 +66,7 @@ class ModelRoundRunner:
         round_number: int,
         channel: str,
         goal_id: str | None,
+        preserve_transcript: bool = False,
     ) -> ModelRoundResult:
         request_system = (
             system_policy(system, request_tools)
@@ -80,12 +82,13 @@ class ModelRoundRunner:
             channel=channel,
             goal_id=goal_id,
         ), model_request(thinking_effort=self.thinking_stages.get(stage)):
-            history_messages = self.context_window.fit(
-                request_system,
-                messages,
-                request_tools,
-                history_messages,
-            )
+            if not preserve_transcript:
+                history_messages = self.context_window.fit(
+                    request_system,
+                    messages,
+                    request_tools,
+                    history_messages,
+                )
             request_messages = (
                 owner_request_messages(
                     messages,
@@ -132,6 +135,7 @@ class ModelRoundRunner:
         )
         self.store.record_turn_usage(turn_id, input_tokens, output_tokens)
         return ModelRoundResult(
+            request_system=request_system,
             response=response,
             request_tools=request_tools,
             call_id=call_id,

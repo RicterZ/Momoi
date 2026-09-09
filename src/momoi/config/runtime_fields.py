@@ -16,6 +16,7 @@ THINKING_STAGES = {
     "memory_operation": "记忆操作",
     "episode_consolidate": "话题整理",
     "episode_anneal": "话题归档",
+    "current_state_maintenance": "当前状态维护",
 }
 
 _FIELDS = {

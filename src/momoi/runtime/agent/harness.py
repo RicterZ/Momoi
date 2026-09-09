@@ -36,6 +36,8 @@ TURN_HARNESS_SPECS = {
         TurnHarnessSpec("memory_operation", None, "memory_operation_finish", permitted_tools=frozenset({"memory_operation_finish", "memory_operation_search"})),
         TurnHarnessSpec("episode_consolidate", None, "episode_consolidation_finish"),
         TurnHarnessSpec("episode_anneal", None, "episode_summary_finish"),
+        TurnHarnessSpec("current_state_maintenance", None, "current_state_finish",
+                        permitted_tools=frozenset({"current_state_finish"})),
     )
 }
 

@@ -209,7 +209,7 @@ CREATE TABLE IF NOT EXISTS turns (
     workflow_kind TEXT CHECK (workflow_kind IN (
         'owner', 'webhook', 'goal', 'heartbeat', 'reply_followup',
         'reflection', 'memory_maintenance', 'memory_operation', 'episode_consolidate',
-        'episode_anneal'
+        'episode_anneal', 'current_state_maintenance'
     )),
     source_ids_json TEXT NOT NULL,
     state TEXT NOT NULL CHECK (
@@ -691,3 +691,28 @@ CREATE TABLE IF NOT EXISTS current_state_changes (
     removed_json TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS current_state_change_source ON current_state_changes(source_turn_id);
+
+CREATE TABLE IF NOT EXISTS current_state_tasks (
+    source_turn_id TEXT PRIMARY KEY REFERENCES turns(id) ON DELETE CASCADE,
+    source_stage TEXT NOT NULL CHECK(source_stage IN ('owner','goal','heartbeat','webhook','reply_followup')),
+    state TEXT NOT NULL CHECK(state IN ('staged','pending','running','completed')),
+    payload_json TEXT,
+    created_at REAL NOT NULL,
+    committed_at REAL,
+    retry_at REAL NOT NULL DEFAULT 0,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    maintenance_turn_id TEXT REFERENCES turns(id) ON DELETE SET NULL,
+    error TEXT
+);
+CREATE INDEX IF NOT EXISTS current_state_task_pending ON current_state_tasks(state,committed_at);
+CREATE TRIGGER IF NOT EXISTS current_state_source_completed
+AFTER UPDATE OF state ON turns WHEN NEW.state='completed' AND OLD.state<>'completed'
+BEGIN
+    UPDATE current_state_tasks SET state='pending',committed_at=NEW.updated_at
+    WHERE source_turn_id=NEW.id AND state='staged';
+END;
+CREATE TRIGGER IF NOT EXISTS current_state_source_cancelled
+AFTER UPDATE OF state ON turns WHEN NEW.state='cancelled'
+BEGIN
+    DELETE FROM current_state_tasks WHERE source_turn_id=NEW.id;
+END;

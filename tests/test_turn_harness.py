@@ -19,6 +19,7 @@ class TurnHarnessTest(unittest.TestCase):
                         workflow = stage in {
                             "reflection", "memory_maintenance", "memory_operation",
                             "episode_consolidate", "episode_anneal",
+                            "current_state_maintenance",
                         }
                         messages = []
                         failed_rounds = 0
@@ -90,6 +91,7 @@ class TurnHarnessTest(unittest.TestCase):
                 "memory_maintenance", "memory_operation",
                 "episode_consolidate",
                 "episode_anneal",
+                "current_state_maintenance",
             },
         )
 
@@ -101,6 +103,7 @@ class TurnHarnessTest(unittest.TestCase):
             "memory_maintenance", "memory_operation",
             "episode_consolidate",
             "episode_anneal",
+            "current_state_maintenance",
         }:
             with self.subTest(stage=stage):
                 harness = TurnHarness.for_stage(stage)

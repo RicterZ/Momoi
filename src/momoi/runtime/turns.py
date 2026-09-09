@@ -3,6 +3,7 @@ import uuid
 
 from .context.service import ContextService
 from .prompt_renderer import PromptRenderer
+from .workflows.current_state import CurrentStateWorkflow
 from .agent.loop import AgentLoop
 from .workflows import (
     EpisodeAnnealingWorkflow,
@@ -19,6 +20,7 @@ from .workflows import (
 
 
 class TurnRunner(
+    CurrentStateWorkflow,
     EpisodeAnnealingWorkflow,
     EpisodeConsolidationWorkflow,
     WebhookWorkflow,

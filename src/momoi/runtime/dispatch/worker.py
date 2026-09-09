@@ -20,6 +20,7 @@ class AgentWorker:
                 kind, item = await self._next_work()
                 if kind == "webhook":
                     prompt, turn_id, future = item
+                    committed = self._webhook_commits.get(turn_id)
                     if future.cancelled():
                         continue
                     self._webhook_turn_active = True
@@ -37,6 +38,8 @@ class AgentWorker:
                     else:
                         if not future.done():
                             future.set_result(reply)
+                        if committed is not None:
+                            await committed
                     finally:
                         self._webhook_turn_active = False
                     continue
@@ -45,7 +48,9 @@ class AgentWorker:
                     assert isinstance(job, AutonomousJob)
                     self._stop_requested = False
                     requeue_memory_maintenance = False
-                    if job.kind == "heartbeat":
+                    if job.kind == "current_state_maintenance":
+                        work = self._complete_current_state_task(job.id)
+                    elif job.kind == "heartbeat":
                         target_channel = self._manual_heartbeat_channel
                         self._manual_heartbeat_channel = None
                         work = self._complete_heartbeat_turn(stop, target_channel)
@@ -90,7 +95,7 @@ class AgentWorker:
                                 local_date=local_date,
                                 reason="owner_stop",
                             )
-                        elif job.kind in {"memory_maintenance", "memory_operation"}:
+                        elif job.kind in {"memory_maintenance", "memory_operation", "current_state_maintenance"}:
                             log_event(
                                 logger,
                                 logging.INFO,
@@ -110,6 +115,8 @@ class AgentWorker:
                                 reason="owner_stop",
                             )
                     finally:
+                        if job.kind == "current_state_maintenance":
+                            self._queued_current_state.discard(job.id)
                         if job.kind == "memory_operation":
                             self._queued_memory_operations.discard(job.id)
                         if job.kind == "memory_maintenance":
@@ -201,6 +208,9 @@ class AgentWorker:
         self._deferred_incoming.extend(item for item in queued if item is not stopped)
         if stopped is not None:
             return "owner", stopped
+        state_id = self.store.pending_current_state_task()
+        if state_id is not None:
+            return "goal", AutonomousJob.current_state(state_id)
         if self._deferred_incoming:
             return "owner", self._deferred_incoming.popleft()
         if not self.webhook_requests.empty():
@@ -271,5 +281,16 @@ class AgentWorker:
 
     async def _request_webhook_turn(self, prompt: str, turn_id: str) -> AgentReply:
         future: asyncio.Future[AgentReply] = asyncio.get_running_loop().create_future()
+        self._webhook_commits[turn_id] = asyncio.get_running_loop().create_future()
         await self.webhook_requests.put((prompt, turn_id, future))
-        return await future
+        try:
+            return await future
+        except BaseException:
+            self._webhook_turn_settled(turn_id)
+            raise
+
+    def _webhook_turn_settled(self, turn_id: str) -> None:
+        committed = self._webhook_commits.pop(turn_id, None)
+        if committed is not None and not committed.done():
+            committed.set_result(None)
+        self.agenda_changed.set()

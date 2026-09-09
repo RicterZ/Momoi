@@ -159,6 +159,10 @@ class Scheduler:
                 await self.autonomous.put(AutonomousJob.goal(str(goal["id"])))
                 continue
             operation_id = self.store.pending_memory_operation()
+            state_id = self.store.pending_current_state_task()
+            if state_id is not None and state_id not in self._queued_current_state:
+                self._queued_current_state.add(state_id)
+                self.autonomous.put_nowait(AutonomousJob.current_state(state_id))
             if operation_id is not None and operation_id not in self._queued_memory_operations:
                 self._enqueue_memory_operation(operation_id)
                 continue

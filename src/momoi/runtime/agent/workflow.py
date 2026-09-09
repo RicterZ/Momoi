@@ -68,3 +68,4 @@ class AgentWorkflow:
     is_complete: Callable[[], bool]
     completion_result: Callable[[], dict[str, object] | None]
     no_tool_correction: str
+    preserve_transcript: bool = False

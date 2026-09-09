@@ -43,13 +43,13 @@ def _add_turn_workflow_kind(database: sqlite3.Connection) -> None:
         )
 
 
-def _add_memory_operation_workflow(database: sqlite3.Connection) -> None:
+def _add_turn_workflow(database: sqlite3.Connection, workflow: str) -> None:
     sql = str(
         database.execute(
             "SELECT sql FROM sqlite_master WHERE type='table' AND name='turns'"
         ).fetchone()[0]
     )
-    if "'memory_operation'" in sql:
+    if f"'{workflow}'" in sql:
         return
     objects = [
         row[0]
@@ -61,7 +61,7 @@ def _add_memory_operation_workflow(database: sqlite3.Connection) -> None:
         r'CREATE TABLE ["`\[]?turns["`\]]?', "CREATE TABLE turns_new", sql, count=1
     )
     replacement = replacement.replace(
-        "'memory_maintenance'", "'memory_maintenance', 'memory_operation'"
+        "'memory_maintenance'", f"'memory_maintenance', '{workflow}'"
     )
     database.commit()
     database.execute("PRAGMA foreign_keys=OFF")
@@ -84,6 +84,14 @@ def _add_memory_operation_workflow(database: sqlite3.Connection) -> None:
                 raise ValueError("foreign key violation after turns migration")
     finally:
         database.execute("PRAGMA foreign_keys=ON")
+
+
+def _add_memory_operation_workflow(database: sqlite3.Connection) -> None:
+    _add_turn_workflow(database, "memory_operation")
+
+
+def _add_current_state_workflow(database: sqlite3.Connection) -> None:
+    _add_turn_workflow(database, "current_state_maintenance")
 
 
 def _remove_goal_review_header(database: sqlite3.Connection) -> None:
@@ -223,6 +231,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     _add_episode_recall_cues,
     _add_episode_cue_vectors,
     _restore_last_heartbeat_activity,
+    _add_current_state_workflow,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 

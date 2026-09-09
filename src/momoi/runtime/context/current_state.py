@@ -3,12 +3,11 @@
 from xml.sax.saxutils import escape, quoteattr
 
 from ...storage import Store
+from ...storage.current_state_contract import CURRENT_STATE_SOURCE_STAGES
 from ..turn_support import pack_user_context
 
 
-CURRENT_STATE_STAGES = frozenset(
-    {"owner", "goal", "heartbeat", "webhook", "reply_followup"}
-)
+CURRENT_STATE_STAGES = CURRENT_STATE_SOURCE_STAGES
 
 
 def pack_current_turn_context(

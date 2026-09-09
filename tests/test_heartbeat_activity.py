@@ -17,7 +17,7 @@ from momoi.runtime.agent.runtime_tools import record_heartbeat_activity
 from momoi.runtime.context.presentation import heartbeat_self_state_lines
 from momoi.runtime.tool_contracts.conversation import HEARTBEAT_ACTIVITY_TOOL_SPEC
 from momoi.storage import Store
-from momoi.storage.migrations import SCHEMA_VERSION
+from momoi.storage.migrations import MIGRATIONS, _restore_last_heartbeat_activity
 from tests.support import provider_catalog
 
 
@@ -210,7 +210,7 @@ def test_upgrade_recovers_exact_heartbeat_not_owner_overwrite(tmp_path, record):
                 "INSERT INTO messages(turn_id,role,content,created_at,delivery_state,source_event_ids_json) VALUES ('beat','assistant',?,100,'internal',?)",
                 (record, json.dumps(["heartbeat-record:beat"])),
             )
-        store._db.execute(f"PRAGMA user_version={SCHEMA_VERSION - 1}")
+        store._db.execute(f"PRAGMA user_version={MIGRATIONS.index(_restore_last_heartbeat_activity)}")
     store.close()
     store = Store(path)
     try:

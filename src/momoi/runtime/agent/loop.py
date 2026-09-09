@@ -20,6 +20,7 @@ from .protocol import (
 )
 from .tool_batch import ToolBatchRequest, ToolBatchState
 from ..tool_contracts.conversation import end_turn_tool_spec
+from ...storage.current_state_contract import CURRENT_STATE_SOURCE_STAGES
 from ..turn_support import (
     ExternalToolTurnError,
     MAX_CONSECUTIVE_TOOL_FAILURES,
@@ -196,6 +197,7 @@ class AgentLoop:
                     channel=delivery_channel.name,
                     goal_id=autonomous_goal_id,
                     round_number=llm_round,
+                    preserve_transcript=workflow is not None and workflow.preserve_transcript,
                 )
             except OwnerMessagesChanged as interruption:
                 updates = list(interruption.updates)
@@ -435,6 +437,10 @@ class AgentLoop:
                 failed_tool_rounds = 0
                 continue
             if batch.ended:
+                if stage in CURRENT_STATE_SOURCE_STAGES:
+                    self.store.stage_current_state_task(
+                        turn_id, stage, model_round.request_system, messages, history_messages,
+                    )
                 return batch.reply
             if workflow is not None and workflow.is_complete():
                 return workflow.completion_result() or {"ok": True}

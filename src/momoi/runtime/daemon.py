@@ -187,6 +187,8 @@ class MomoiDaemon(
         self._manual_heartbeat_channel: str | None = None
         self._queued_memory_maintenance: set[str] = set()
         self._queued_memory_operations: set[str] = set()
+        self._queued_current_state: set[str] = set()
+        self._webhook_commits: dict[str, asyncio.Future[None]] = {}
         self.webhooks = (
             WebhookService(
                 config.webhooks,
@@ -195,6 +197,7 @@ class MomoiDaemon(
                 self._request_webhook_turn,
                 self.outbox_changed.set,
                 self.channel.name,
+                turn_settled=self._webhook_turn_settled,
             )
             if config.webhooks.enabled
             else None
@@ -204,6 +207,7 @@ class MomoiDaemon(
         if self.config.episode_annealing.enabled:
             self.episode_annealing_requested.set()
         self.store.recover_memory_operations()
+        self.store.recover_current_state_tasks()
         for turn_id in self.store.recover_memory_maintenance_turns():
             self._enqueue_memory_maintenance(turn_id)
         for event in self.store.pending_events():

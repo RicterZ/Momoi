@@ -29,6 +29,8 @@ class WebhookService:
         complete_turn: Callable[[str, str], Awaitable[AgentReply]],
         wake_outbox: Callable[[], None],
         primary_channel: str = "",
+        *,
+        turn_settled: Callable[[str], None] | None = None,
     ) -> None:
         if config.workflows is None or config.executors is None:
             raise WorkflowError("webhook paths are not configured")
@@ -38,6 +40,7 @@ class WebhookService:
         self.complete_turn = complete_turn
         self.wake_outbox = wake_outbox
         self.primary_channel = primary_channel
+        self.turn_settled = turn_settled
         self.workflows, self.executors = load_catalog(
             config.workflows, config.executors, set(channel_variables)
         )
@@ -174,21 +177,21 @@ class WebhookService:
                         turn_id=turn_id,
                         step_kind="message",
                     )
-                    with log_context(
-                        stage="webhook",
-                        workflow_id=workflow_id,
-                        run_id=run_id,
-                        step_index=index,
-                        turn_id=turn_id,
-                    ):
-                        reply = await self.complete_turn(str(step["prompt"]), turn_id)
-                    outbox_ids = self.store.commit_webhook_reply(
-                        run_id,
-                        index,
-                        turn_id,
-                        reply,
-                        self.primary_channel,
-                    )
+                    try:
+                        with log_context(
+                            stage="webhook",
+                            workflow_id=workflow_id,
+                            run_id=run_id,
+                            step_index=index,
+                            turn_id=turn_id,
+                        ):
+                            reply = await self.complete_turn(str(step["prompt"]), turn_id)
+                        outbox_ids = self.store.commit_webhook_reply(
+                            run_id, index, turn_id, reply, self.primary_channel,
+                        )
+                    finally:
+                        if self.turn_settled is not None:
+                            self.turn_settled(turn_id)
                     if not outbox_ids:
                         continue
                     self.wake_outbox()
