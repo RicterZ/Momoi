@@ -2179,3 +2179,9 @@ a.tag:hover {
   .recall-evidence-toggle { padding: 12px 16px 12px 12px; }
   .recall-evidence-body { padding: 12px; }
 }
+
+.recall-cues { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.recall-cues-label { color: var(--muted); font-size: 10px; font-weight: 750; letter-spacing: .06em; }
+.recall-cues-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+.recall-cues-list > span { padding: 4px 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 4px; color: var(--ink); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; max-width: 100%; }
+.recall-evidence-group.is-episode > ul { grid-template-columns: minmax(0, 1fr); }

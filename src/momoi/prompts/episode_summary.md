@@ -37,6 +37,10 @@ Rules:
 - Support every summary detail and emotion with selected claims. Preserve
   completed outcomes without inventing future commitments.
 
+Follow the shared event representation in the `recall_cues` tool schema, also
+used by owner and heartbeat retrieval queries. Archive only supported events;
+retrieval queries describe missing information and must not presume its answer.
+
 Generate `recall_cues` in the same operation as the summary. Cues are bounded,
 distinct retrieval labels for the Episode's events and corrections, not new
 facts or behavioral instructions. Use only supported event descriptions and

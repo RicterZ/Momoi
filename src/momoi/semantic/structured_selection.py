@@ -8,11 +8,11 @@ class SelectionProtocolError(ValueError):
     """The response cannot be mapped to the supplied structured candidates."""
 
 
-async def select_structured(provider, system, messages, spec, parse, *, timeout):
+async def select_structured(provider, system, messages, spec, parse, *, timeout, thinking_effort="low"):
     async def run():
         conversation = list(messages)
         for attempt in range(2):
-            with model_request(thinking_effort="low"):
+            with model_request(thinking_effort=thinking_effort):
                 response = await provider.complete(
                     system, conversation, [spec], required_tool=spec["name"],
                 )

@@ -160,6 +160,7 @@ def build_plan_retrieval(
     config: AppConfig,
     dense_evidence: DenseRecallEvidence | None = None,
     selected_episode_rows: list[dict[str, object]] | None = None,
+    topic_selection: dict[str, object] | None = None,
 ) -> dict[str, object]:
     recent_episode_ids: set[str] = set()
     episodes: list[dict[str, object]] = []
@@ -386,6 +387,7 @@ def build_plan_retrieval(
         recalled_episode_rows[episode_id] = {
             "episode_id": episode_id,
             "relation": "recalled",
+            "recall_cues": list(row.get("recall_cues") or []),
             "is_new": False,
             "matches": list(row.get("matches") or []),
             "unit_ids": unit_ids,
@@ -522,6 +524,7 @@ def build_plan_retrieval(
         "uncertainty": plan.get("uncertainty", []),
         "query_recall": "\n".join(recall_index),
         "effective_recall_queries": effective_recall_queries,
+        "topic_selection": topic_selection or {},
         "semantic_recall": {
             "space_id": dense_evidence.space_id if dense_evidence else "",
             "profile": dense_evidence.calibration_profile if dense_evidence else "",
@@ -567,6 +570,8 @@ def build_plan_retrieval(
                 for item in row.get("matched_queries") or []
                 if isinstance(item, dict)
             ],
+            "cue_cosine": row.get("cue_cosine"),
+            "recall_cues": row.get("recall_cues") or [],
             "matched_keywords": row.get("matched_keywords") or [],
             "channels": row.get("channels") or [],
             "cosine": row.get("dense_cosine"),

@@ -2400,6 +2400,14 @@ function RecallDetail({ recall }) {
                             {item.title || "未命名聊天记录"} <span aria-hidden="true">↗</span>
                           </a>
                           {item.summary ? <p>{item.summary}</p> : null}
+                          {Array.isArray(item.cues) && item.cues.length > 0 ? (
+                            <div className="recall-cues">
+                              <span className="recall-cues-label">CUES · 检索线索</span>
+                              <div className="recall-cues-list">
+                                {item.cues.map((cue, index) => <span key={index}>{cue}</span>)}
+                              </div>
+                            </div>
+                          ) : null}
                         </li>
                       )}
                     />

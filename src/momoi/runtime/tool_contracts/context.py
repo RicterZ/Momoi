@@ -1,5 +1,7 @@
 from typing import Any
 
+from ...semantic.cue_contract import CUE_QUERY_CONTRACT
+
 
 NEW_EPISODE_REF = "new:<slug>"
 
@@ -52,18 +54,7 @@ RECALL_TOOL_SPEC: dict[str, Any] = {
                                         "type": "string",
                                         "minLength": 1,
                                         "maxLength": 240,
-                                        "description": (
-                                            "Objectively describe the historical information "
-                                            "missing from supplied context, using supported "
-                                            "subjects and preserving unresolved references. "
-                                            "Do not embed a presumed answer, inferred owner "
-                                            "preference, or intended response strategy. "
-                                            "Name participants explicitly as owner/assistant rather "
-                                            "than ambiguous first/second-person pronouns. "
-                                            "Use the owner message language, preserving literal "
-                                            "names and IDs. "
-                                            "Describe an uncertain premise as something to verify."
-                                        ),
+                                        "description": CUE_QUERY_CONTRACT,
                                     },
                                     "keywords": {
                                         "type": "array",
@@ -201,6 +192,7 @@ def heartbeat_begin_spec(group_descriptions: dict[str, str]) -> dict[str, Any]:
                                 "type": "string",
                                 "minLength": 1,
                                 "maxLength": 240,
+                                "description": CUE_QUERY_CONTRACT,
                             },
                             "keywords": {
                                 "type": "array",

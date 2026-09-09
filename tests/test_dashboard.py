@@ -147,6 +147,9 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
                     "sparse_keywords=测试聊天\n"
                     "hits=此前测试聊天的约定"
                 ),
+                "topic_selection": {"candidates": [{
+                    "episode_id": "episode-one", "cues": ["本次实际读取的线索"],
+                }]},
                 "semantic_recall": {
                     "fallback_reason": "",
                     "query_batch_size": 1,
@@ -576,6 +579,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         ).json()
         self.assertEqual(detail["items"][0]["reasoning"], "决定先说明为什么没有提醒。")
         self.assertEqual(detail["recall"]["revision"], 1)
+        self.assertEqual(detail["recall"]["episodes"][0]["cues"], ["本次实际读取的线索"])
         self.assertEqual(detail["recall"]["units"][0]["mode"], "search")
         self.assertEqual(
             detail["recall"]["units"][0]["queries"][0]["semantic"],

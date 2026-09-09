@@ -14,7 +14,13 @@ _NEW_EPISODE_SLUG = re.compile(r"new:[a-z0-9][a-z0-9_-]{0,39}")
 
 
 class ContextService:
-    async def _select_recall_topics(self, request, selected, dense_evidence):
+    async def _select_recall_topics(self, request, selected, dense_evidence, diagnostics=None):
+        if diagnostics is not None:
+            diagnostics.update(
+                status="skipped", skip_reason="no_queries" if not selected else "disabled",
+                fallback_reason=dense_evidence.fallback_reason if dense_evidence else "disabled",
+                candidate_count=0, selected_ids=[], candidates=[],
+            )
         if not selected or self.config.summary_results <= 0:
             return []
         queries = [EpisodeRecallQuery(
@@ -27,7 +33,11 @@ class ContextService:
             queries, TOPIC_CANDIDATE_LIMIT, dense_evidence=dense_evidence,
             minimum_confidence=0,
         )
-        return await select_topics(self.provider, self.store, request, queries, candidates)
+        return await select_topics(
+            self.provider, self.store, request, queries, candidates,
+            thinking_effort=self.config.thinking_stages.get("topic_selection", "low"),
+            diagnostics=diagnostics,
+        )
 
     def _context_compaction_tokens(self) -> int:
         return context_compaction_tokens(self.config)
@@ -248,12 +258,14 @@ class ContextService:
                 ],
                 output_limit=max(self.config.memory_results, TOPIC_CANDIDATE_LIMIT),
             )
+        topic_selection = {}
         topic_rows = await self._select_recall_topics(
-            "\n".join(event.text for event in events), selected, dense_evidence
+            "\n".join(event.text for event in events), selected, dense_evidence, topic_selection
         )
         retrieval = build_plan_retrieval(
             self.store, plan, self.config, dense_evidence=dense_evidence,
             selected_episode_rows=topic_rows,
+            topic_selection=topic_selection,
         )
         stored = self.store.save_context_retrieval(
             turn_id, int(saved["revision"]), retrieval, state="recalled"
@@ -322,10 +334,12 @@ class ContextService:
             ],
             output_limit=max(self.config.memory_results, TOPIC_CANDIDATE_LIMIT),
         )
-        topic_rows = await self._select_recall_topics(activity, selected, dense_evidence)
+        topic_selection = {}
+        topic_rows = await self._select_recall_topics(activity, selected, dense_evidence, topic_selection)
         retrieval = build_plan_retrieval(
             self.store, plan, self.config, dense_evidence=dense_evidence,
             selected_episode_rows=topic_rows,
+            topic_selection=topic_selection,
         )
         return {
             "plan": plan,

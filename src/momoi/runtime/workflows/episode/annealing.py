@@ -135,6 +135,9 @@ class EpisodeAnnealingWorkflow:
                     "error": "invalid_episode_summary",
                     "message": str(error),
                 }
+            log_event(logger, logging.INFO, "episode_cues_archived",
+                      stage="episode_anneal", episode_id=episode_id,
+                      cue_count=len(cues), cues=cues)
             workflow_complete = True
             workflow_result = {
                 "ok": True,

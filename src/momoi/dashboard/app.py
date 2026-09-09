@@ -120,6 +120,11 @@ def _dashboard_recall(store: Store, turn_id: str) -> dict[str, object] | None:
         for unit in plan.get("intent_units") or []
         if isinstance(unit, dict)
     ]
+    selection = retrieval.get("topic_selection") or {}
+    cue_snapshots = {
+        str(item.get("episode_id")): item.get("cues", [])
+        for item in selection.get("candidates", []) if isinstance(item, dict)
+    } if isinstance(selection, dict) else {}
     episodes: list[dict[str, object]] = []
     seen_episodes: set[str] = set()
     for selected in retrieval.get("episodes") or []:
@@ -135,6 +140,7 @@ def _dashboard_recall(store: Store, turn_id: str) -> dict[str, object] | None:
                 "id": episode_id,
                 "title": str(episode.get("title") or ""),
                 "relation": str(selected.get("relation") or ""),
+                "cues": cue_snapshots.get(episode_id, selected.get("recall_cues", [])),
                 "summary": str(
                     episode.get("narrative_summary")
                     or episode.get("working_summary")

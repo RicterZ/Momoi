@@ -34,7 +34,9 @@ Tools and messages may alternate; sending a message does not end the Turn.
   experience worth keeping. Proximity, mood, time, or setting is insufficient.
   Do not write runtime-owned archives.
 
-Episode recall matches evidence-grounded cues as well as source content. Describe
+Episode recall matches episode metadata and evidence-grounded event cues. The
+semantic query searches both summary and cue embeddings; there is no separate
+query-cue generation step. Follow the shared event representation in the tool schema. Describe
 the missing event naturally in semantic queries; use supported, distinctive names
 or event phrases as sparse anchors. Stored cue wording need not be known. Keep
 the owner's language and literal identifiers, source participants, and uncertain

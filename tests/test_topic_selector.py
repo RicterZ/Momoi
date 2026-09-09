@@ -63,6 +63,7 @@ def test_runtime_prefilter_bypasses_gate_and_keeps_selection_order(tmp_path):
         service = ContextService()
         service.store = store
         service.config = config(str(tmp_path), summary_results=3)
+        service.config.thinking_stages["topic_selection"] = "medium"
         plan = {'version': 7, 'intent_units': [{'id': 'u', 'recall_queries': [
             {'semantic': 'shared topic', 'keywords': ['shared']}]}], 'episode_actions': []}
         queries, *_ = select_plan_recall_queries(plan)
@@ -70,6 +71,7 @@ def test_runtime_prefilter_bypasses_gate_and_keeps_selection_order(tmp_path):
 
         async def complete(system, messages, tools, **kwargs):
             payload = json.loads(messages[0]['content'])
+            assert requested_thinking_effort() == "medium"
             captured.append(payload)
             return response(list(reversed(range(len(payload['candidates'])))))
 
@@ -84,3 +86,25 @@ def test_runtime_prefilter_bypasses_gate_and_keeps_selection_order(tmp_path):
         assert empty['episodes'] == []
     finally:
         store.close()
+
+
+def test_configured_effort_applies_to_initial_call_and_repair():
+    from momoi.integrations.request_context import model_request
+    rows = [dict(id='a', title='topic')]
+    store = SimpleNamespace(topic_conversation_time=lambda _: None)
+    for effort in ['low', 'medium', 'high', 'xhigh', 'max', '']:
+        seen = []
+
+        async def complete(*args, **kwargs):
+            seen.append(requested_thinking_effort('provider-default'))
+            return response([9] if len(seen) == 1 else [0])
+
+        async def run():
+            with model_request(thinking_effort='high'):
+                result = await select_topics(SimpleNamespace(complete=complete), store,
+                                             'request', [], rows, thinking_effort=effort)
+                assert requested_thinking_effort() == 'high'
+                return result
+
+        assert asyncio.run(run()) == rows
+        assert seen == [effort or 'provider-default'] * 2

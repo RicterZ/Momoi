@@ -241,6 +241,7 @@ function previewRecall(turnId) {
         title: "洗衣完成后的提醒",
         relation: "recalled",
         summary: "Webhook 报告洗衣完成，Momoi 当时选择了静默。",
+        cues: ["洗衣完成后根据当前对话决定是否提醒", "Webhook 报告完成，Momoi 选择静默", "未发送提醒，老师随后追问原因"],
       },
     ],
     semantic: { fallback_reason: "", query_batch_size: 1 },

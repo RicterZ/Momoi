@@ -660,10 +660,10 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 200, await response.text())
         response = await save({"episode_anneal": "max"})
         self.assertEqual(response.status, 200)
-        self.assertEqual(self.manager.validate().thinking_stages, {"episode_anneal": "max", "reply_followup": "low"})
+        self.assertEqual(self.manager.validate().thinking_stages, {"episode_anneal": "max", "reply_followup": "low", "topic_selection": "low"})
         response = await save({"episode_anneal": ""})
         self.assertEqual(response.status, 200)
-        self.assertEqual(self.manager.validate().thinking_stages, {"reply_followup": "low"})
+        self.assertEqual(self.manager.validate().thinking_stages, {"reply_followup": "low", "topic_selection": "low"})
         self.assertEqual(self.manager.provider_path.read_bytes(), providers_before)
         for effort in ("low", "medium", "high", "xhigh", "max", ""):
             response = await save({"owner": effort})
@@ -679,7 +679,23 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
             document = copy.deepcopy(LLM)
             document["adapter"] = protocol
             self.manager.save_binding("llm", document, self.manager.revision())
-            self.assertEqual(self.manager.validate().thinking_stages, {"reply_followup": "low"})
+            self.assertEqual(self.manager.validate().thinking_stages, {"reply_followup": "low", "topic_selection": "low"})
+
+    async def test_topic_selection_default_save_and_follow_model(self):
+        self.client.session.headers["Authorization"] = self.auth
+        response = await self.client.get("/api/settings/configuration")
+        snapshot = await response.json()
+        field = snapshot["app_fields"]["thinking"]["fields"]["stages"]["properties"]["topic_selection"]
+        self.assertEqual(field["default"], "low")
+        self.assertEqual(self.manager.validate().thinking_stages["topic_selection"], "low")
+        for effort in ("medium", "", "low"):
+            response = await self.client.patch("/api/settings/configuration/app", json={
+                "revision": self.manager.revision(),
+                "document": {"thinking": {"stages": {"topic_selection": effort}}},
+            })
+            self.assertEqual(response.status, 200, await response.text())
+            self.assertEqual(self.manager.validate().thinking_stages["topic_selection"], effort)
+            self.assertEqual(self.manager.read_app()["thinking"]["stages"]["topic_selection"], effort)
 
     async def test_runtime_thinking_stages_reload_from_api_and_file(self):
         self.enable()
@@ -702,14 +718,16 @@ class DashboardConfigurationTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.status, 200)
             await applied()
             self.assertTrue(first.closed)
-            self.assertEqual(self.runtime.daemon.config.thinking_stages, {"episode_anneal": "low", "reply_followup": "low"})
+            self.assertEqual(self.runtime.daemon.config.thinking_stages, {"episode_anneal": "low", "reply_followup": "low", "topic_selection": "low"})
             second = self.runtime.daemon
             app = self.manager.read_app()
             app["thinking"]["stages"]["episode_anneal"] = "high"
+            app["thinking"]["stages"]["topic_selection"] = "medium"
             atomic_write(self.path, json.dumps(app))
             await applied()
             self.assertTrue(second.closed)
             self.assertEqual(self.runtime.daemon.config.thinking_stages["episode_anneal"], "high")
+            self.assertEqual(self.runtime.daemon.config.thinking_stages["topic_selection"], "medium")
         finally:
             stop.set()
             await task

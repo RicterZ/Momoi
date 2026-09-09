@@ -37,7 +37,7 @@ def default_config() -> dict:
         "context": {},
         "storage": {"database": "data/momoi.sqlite3"},
         "logging": {"level": "INFO"},
-        "thinking": {"stages": {}},
+        "thinking": {"stages": {"topic_selection": "low"}},
         "tools": {"mcp_config": "mcp.json"},
         "heartbeat": {"enabled": True},
         "reflection": {"enabled": False},

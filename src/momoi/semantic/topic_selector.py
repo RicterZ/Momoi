@@ -8,14 +8,19 @@ from pathlib import Path
 
 from .structured_selection import SelectionProtocolError, select_structured
 from ..storage.episode_cues import cue_texts
+from ..observability.events import log_event
 
 logger = logging.getLogger(__name__)
 TOPIC_CANDIDATE_LIMIT = 8
 SYSTEM = (Path(__file__).resolve().parents[1] / "prompts/topic_selection.md").read_text().strip()
 
 
-async def select_topics(provider, store, request, queries, candidates):
+async def select_topics(provider, store, request, queries, candidates, *, thinking_effort="low", diagnostics=None):
+    diagnostics = diagnostics if diagnostics is not None else {}
+    diagnostics.update(status="no_candidates", thinking_effort=thinking_effort or "model",
+                       candidate_count=len(candidates), selected_ids=[], candidates=[], attempts=0, elapsed_ms=0)
     if not candidates:
+        log_event(logger, logging.INFO, "topic_selection", **diagnostics)
         return []
     if len(candidates) > TOPIC_CANDIDATE_LIMIT:
         raise ValueError("too many topic candidates")
@@ -31,6 +36,15 @@ async def select_topics(provider, store, request, queries, candidates):
             "conversation_time": store.topic_conversation_time(str(row["id"])),
         } for i, row in enumerate(candidates)],
     }
+    diagnostics["queries"] = payload["retrieval_queries"]
+    diagnostics["candidates"] = [{
+        "episode_id": str(row["id"]), "title": row["title"],
+        "prefilter_rank": i + 1, "score": row.get("search_score"),
+        "cue_cosine": row.get("cue_cosine"), "channels": row.get("channels", []),
+        "cues": cue_texts(row.get("recall_cues")),
+        "cue_keyword_hit": any("recall_cue" in q.get("field_matches", [])
+                               for q in row.get("matched_queries", [])),
+    } for i, row in enumerate(candidates)]
     spec = {
         "name": "select_topics",
         "description": "Select relevant topic indices, best first; empty when none is relevant.",
@@ -52,12 +66,16 @@ async def select_topics(provider, store, request, queries, candidates):
     try:
         selected, attempts = await select_structured(
             provider, SYSTEM, [{"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],
-            spec, parse, timeout=45,
+            spec, parse, timeout=45, thinking_effort=thinking_effort,
         )
-    except Exception:
+    except Exception as error:
         # Unfiltered broad candidates are not safe substitutes for selected topics.
-        logger.exception("Topic selection failed; returning no newly recalled topics")
+        diagnostics.update(status="failed", error_type=type(error).__name__,
+                           elapsed_ms=(time.monotonic()-started)*1000)
+        log_event(logger, logging.WARNING, "topic_selection", **diagnostics)
         return []
-    logger.info("Topic selection candidates=%d selected=%d attempts=%d elapsed_ms=%.0f effort=low",
-                len(candidates), len(selected), attempts, (time.monotonic()-started)*1000)
+    diagnostics.update(status="selected" if selected else "empty", attempts=attempts,
+                       selected_ids=[str(row["id"]) for row in selected],
+                       elapsed_ms=(time.monotonic()-started)*1000)
+    log_event(logger, logging.INFO, "topic_selection", **diagnostics)
     return selected

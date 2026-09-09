@@ -252,7 +252,11 @@ def parse_config(raw, config_path: Path, *, providers=None) -> AppConfig:
         memory_results=memory_results,
         database=database,
         log_level=log_level,
-        thinking_stages={stage: effort for stage, effort in thinking["stages"].items() if effort},
+        # Keep explicit follow-model distinct from the selector's missing-key low default.
+        thinking_stages={
+            stage: effort for stage, effort in thinking["stages"].items()
+            if effort or stage == "topic_selection"
+        },
         timezone=app_timezone,
         max_input_tokens=max_input_tokens,
         context_compaction_ratio=context_compaction_ratio,

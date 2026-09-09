@@ -1,5 +1,7 @@
 from typing import Any
 
+from ....semantic.cue_contract import CUE_ARCHIVE_CONTRACT
+
 
 _TURN_IDS_SCHEMA: dict[str, Any] = {
     "type": "array",
@@ -172,7 +174,7 @@ EPISODE_SUMMARY_FINISH_SPEC: dict[str, Any] = {
             },
             "recall_cues": {
                 "type": "array", "maxItems": 8, "uniqueItems": True,
-                "description": "Distinctive retrieval labels linked to retained evidence. Preserve participants and modality. Empty if none.",
+                "description": CUE_ARCHIVE_CONTRACT + " Empty if none.",
                 "items": {
                     "type": "object",
                     "properties": {

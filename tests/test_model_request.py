@@ -34,7 +34,7 @@ class ModelRequestTest(unittest.IsolatedAsyncioTestCase):
         )
 
     def test_all_runtime_stages_have_metadata(self):
-        self.assertEqual(set(THINKING_STAGES), set(TURN_HARNESS_SPECS))
+        self.assertEqual(set(THINKING_STAGES), set(TURN_HARNESS_SPECS) | {"topic_selection"})
 
     async def test_runtime_stage_overrides_reach_both_provider_wire_formats(self):
         payloads = []

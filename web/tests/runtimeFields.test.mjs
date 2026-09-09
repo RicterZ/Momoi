@@ -24,3 +24,12 @@ test("handles recursively nested schema and unchanged object values", () => {
   assert.deepEqual(runtimeFieldChanges(nested, { stages: { ...saved.stages, owner: "xhigh" } }, saved), { stages: { owner: "xhigh" } });
   assert.equal(runtimeFieldChanges({ type: "object" }, { value: 1 }, { value: 1 }), undefined);
 });
+
+test("topic selection defaults to low but explicit follow-model survives edits", () => {
+  const stages = { properties: { topic_selection: { default: "low" }, owner: { default: "" } } };
+  const saved = runtimeFieldValue(stages, {});
+  assert.equal(saved.topic_selection, "low");
+  assert.equal(runtimeFieldValue(stages, { topic_selection: "" }).topic_selection, "");
+  assert.deepEqual(runtimeFieldChanges(stages, { ...saved, topic_selection: "medium" }, saved), { topic_selection: "medium" });
+  assert.deepEqual(runtimeFieldChanges(stages, { ...saved, topic_selection: "" }, saved), { topic_selection: "" });
+});
