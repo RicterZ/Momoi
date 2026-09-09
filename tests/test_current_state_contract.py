@@ -65,6 +65,7 @@ def test_schema_and_manager_accept_same_input_and_enforce_replacement(manager):
         ("value", "v" * 513),
         ("ttl_seconds", 0),
         ("ttl_seconds", True),
+        ("ttl_seconds", 86401),
         ("ttl_seconds", 604801),
         ("extra", "field"),
     ],
@@ -107,3 +108,14 @@ def test_callers_cannot_modify_shared_schema(manager):
     changed = manager.change_schema()
     changed["properties"]["add"]["items"]["properties"]["key"]["pattern"] = "anything"
     assert manager.change_schema() == original
+
+
+def test_exactly_24_hours_is_accepted_by_schema_and_manager(manager):
+    args = arguments()
+    args["add"][0]["ttl_seconds"] = 86400
+    assert Draft202012Validator(manager.change_schema()).is_valid(args)
+    change = manager.apply_arguments(
+        args, source_turn_id="day", operation_id="day", expected_revision=0,
+    )
+    slot = change.added[0]
+    assert slot.expires_at - slot.created_at == 86400

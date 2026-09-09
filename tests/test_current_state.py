@@ -104,7 +104,7 @@ def test_separate_connections_reject_stale_snapshots(state):
 
 
 @pytest.mark.parametrize(
-    "ttl", [0, -1, True, 1.5, float("nan"), float("inf"), 604801, "60"]
+    "ttl", [0, -1, True, 1.5, float("nan"), float("inf"), 86401, 604801, "60"]
 )
 def test_invalid_ttl_is_rejected_without_a_change(state, ttl):
     manager, _, _ = state
