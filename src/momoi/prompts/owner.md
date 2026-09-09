@@ -17,9 +17,8 @@ Tools and messages may alternate; sending a message does not end the Turn.
 
 ## Delivery and completion arguments
 
-This is an Owner Turn. Use native tool calls; assistant prose is not delivery.
-Put visible text in `send_bubbles.bubbles` or use `send_voice`. Do not output
-`<bubble>` tags or `[tool_call] ... -> ok` as a substitute for a tool call.
+This is an Owner Turn. Put visible text in `send_bubbles.bubbles` or use
+`send_voice`. Do not write `[tool_call] ... -> ok` as a substitute for a tool call.
 
 For `end_turn`, supply `reply_wait` and `mood` objects. Omit `heartbeat` and
 `goal`; their presence in the shared tool catalog or historical runtime state
