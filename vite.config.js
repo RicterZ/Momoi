@@ -2,12 +2,27 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { createSettingsPreview } from "./web/preview/settings.js";
 
+const previewStateStartedAt = Math.floor(Date.now() / 1000);
+function previewCurrentState() {
+  return { revision: 2, slots: [
+    { id: "preview-working", subject: "owner", key: "activity", value: "正在收尾工作，预计一小时内忙完就休息。", created_at: previewStateStartedAt - 720, expires_at: previewStateStartedAt + 2880, source_turn_id: "preview-state" },
+    { id: "preview-travel", subject: "owner", key: "location", value: "今晚住在酒店，明早返回。", created_at: previewStateStartedAt - 1800, expires_at: previewStateStartedAt + 28800, source_turn_id: "preview-state" },
+  ] };
+}
+
 function previewThinkingCalls() {
   const day = new Date();
   day.setHours(21, 1, 49, 0);
   const at = (minutes, seconds = 0) =>
     Math.floor(day.getTime() / 1000) + minutes * 60 + seconds;
   return [
+    {
+      turn_id: "preview-state", call_id: "preview-state-1",
+      created_at: at(8), stage: "current_state_maintenance", round: 1,
+      model: "deepseek-v4-flash", tools: ["current_state_finish"], reasoning_chars: 38,
+      excerpt: "记录正在收尾工作的当前状态，有效时间为一小时。",
+      reasoning: "用户明确说正在收尾工作，预计一小时内结束。增加当前状态，TTL 设为 3600 秒。",
+    },
     {
       turn_id: "preview-recall-skip",
       call_id: "preview-recall-skip-1",
@@ -806,9 +821,14 @@ function previewUsageApi() {
           return;
         }
         const records = previewRecords();
+        if (req.method === "GET" && path === "/api/current-state") {
+          json(res, previewCurrentState());
+          return;
+        }
         if (req.method === "GET" && path === "/api/overview") {
           const now = previewNow();
           json(res, {
+            current_state: previewCurrentState(),
             counts: {
               conversations: records.conversations.length,
               messages: 42,

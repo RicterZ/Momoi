@@ -43,6 +43,7 @@ const thinkingStageLabels = {
   episode_cue_admit: "CUES · 线索校验",
   episode_consolidate: "对话 · 归并整理",
   reply_followup: "对话 · 回复跟进",
+  current_state_maintenance: "记忆 · 当前状态",
 };
 
 function thinkingStageLabel(stage) {
@@ -536,10 +537,11 @@ function OverviewBody({ data, token, routeParam }) {
           days={narrow ? 7 : 30}
         />
       </OverviewSection>
-      <OverviewSection label="Now" note="当前活动与心情">
+      <OverviewSection label="Now" note="当前状态、活动与心情">
+        <CurrentStatePanel state={data.current_state} token={token} />
         <div className="overview-grid">
           <article className="panel">
-            <span className="panel-label">Current activity</span>
+            <span className="panel-label">Momoi activity</span>
             <h2 className="state-name">{data.activity.name}</h2>
             <p className="state-detail">
               {data.activity.result || "Momoi 正在按自己的节奏生活。"}
@@ -596,6 +598,55 @@ function OverviewSection({ label, note, children }) {
       </div>
       {children}
     </section>
+  );
+}
+
+function CurrentStatePanel({ state, token }) {
+  const [current, setCurrent] = useState(state);
+  const [now, setNow] = useState(() => Date.now() / 1000);
+  useEffect(() => { setCurrent(state); }, [state]);
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = window.setInterval(() => {
+      setNow(Date.now() / 1000);
+      api("/api/current-state", { token, signal: controller.signal })
+        .then(setCurrent)
+        .catch(() => {});
+    }, 15000);
+    return () => { window.clearInterval(timer); controller.abort(); };
+  }, [token]);
+  const slots = (current?.slots || []).filter(slot => slot.expires_at > now);
+  return (
+    <article className="panel current-state-panel" aria-label="Current state">
+      <div className="current-state-heading">
+        <span className="panel-label">Current state</span>
+        <span className="current-state-count">{slots.length} 条状态</span>
+      </div>
+      {slots.length ? (
+        <ul className="current-state-list">
+          {slots.map(slot => {
+            const minutes = Math.max(1, Math.ceil((slot.expires_at - now) / 60));
+            const remaining = minutes >= 60
+              ? `${Math.floor(minutes / 60)} 小时${minutes % 60 ? ` ${minutes % 60} 分钟` : ""}`
+              : `${minutes} 分钟`;
+            return (
+              <li className="current-state-row" key={slot.id}>
+                <span className="current-state-dot" aria-hidden="true" />
+                <div className="current-state-content">
+                  {slot.subject !== "owner" && <span className="panel-label">{slot.subject === "assistant" ? "MOMOI" : slot.subject}</span>}
+                  <p>{slot.value}</p>
+                  <span className="current-state-recorded">记录于 {formatDate(slot.created_at)}</span>
+                </div>
+                <time className="current-state-expiry" dateTime={new Date(slot.expires_at * 1000).toISOString()} title={`有效至 ${formatDate(slot.expires_at)}`}>
+                  <span>剩余有效时间</span>
+                  <strong>{remaining}</strong>
+                </time>
+              </li>
+            );
+          })}
+        </ul>
+      ) : <p className="current-state-empty">暂无有效的当前状态</p>}
+    </article>
   );
 }
 
@@ -1963,6 +2014,7 @@ function thinkingStageCode(stage) {
       episode_cue_admit: "CUES",
       episode_consolidate: "MERGE",
       reply_followup: "FOLLOW",
+      current_state_maintenance: "STATE",
     }[String(stage || "").trim()] || "MOMOI"
   );
 }

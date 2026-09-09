@@ -19,6 +19,7 @@ from momoi.dashboard.auth import (
 )
 from momoi.dashboard.settings import DashboardSettings, PromptFile
 from momoi.storage import Store
+from momoi.storage.current_state import SlotInput
 
 
 def _dashboard_frontend_built() -> bool:
@@ -262,6 +263,28 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(touch.content_type, "image/png")
         unknown = await self.client.get("/not-a-static-file")
         self.assertEqual(unknown.status, 404)
+
+    async def test_dashboard_current_state_excludes_expired_slots_without_mutating(self) -> None:
+        now = time.time()
+        self.store.current_state._clock = lambda: now
+        change = self.store.current_state.apply(
+            add=[SlotInput("owner", "activity", "working", 3600),
+                 SlotInput("owner", "location", "home", 1)],
+            source_turn_id="turn-one", operation_id="dashboard-state", expected_revision=0,
+        )
+        self.store.current_state._clock = lambda: now + 2
+        response = await self.client.get("/api/current-state", headers=self._auth())
+        self.assertEqual(response.status, 200)
+        state = await response.json()
+        self.assertEqual(state["revision"], change.revision)
+        self.assertEqual(len(state["slots"]), 1)
+        self.assertEqual(state["slots"][0]["value"], "working")
+        self.assertEqual(state["slots"][0]["expires_at"], now + 3600)
+        overview = await (await self.client.get("/api/overview", headers=self._auth())).json()
+        self.assertEqual(overview["current_state"], state)
+        self.assertEqual(len(self.store.current_state.history()), 1)
+        unauthorized = await self.client.get("/api/current-state")
+        self.assertEqual(unauthorized.status, 401)
 
     async def test_dashboard_exposes_read_only_records(self) -> None:
         auth = self._auth()

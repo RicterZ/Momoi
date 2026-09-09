@@ -1,5 +1,6 @@
 import sqlite3
 import time
+from dataclasses import asdict
 
 from .memory_values import RECENT_MEMORY_WINDOW_SECONDS
 from .timestamps import add_context_timestamps
@@ -12,6 +13,10 @@ def _dashboard_unix(value: object) -> float | None:
 
 
 class DashboardStore:
+    def dashboard_current_state(self) -> dict[str, object]:
+        snapshot = self.current_state.snapshot()
+        return {"revision": snapshot.revision, "slots": [asdict(slot) for slot in snapshot.slots]}
+
     def dashboard_overview(self) -> dict[str, object]:
         counts = {
             "conversations": int(
@@ -62,6 +67,7 @@ class DashboardStore:
         waiting = bool(str(state.get("pending_reply_expectation") or "").strip())
         return {
             "counts": counts,
+            "current_state": self.dashboard_current_state(),
             "mood": {
                 "state": state["mood_state"],
                 "intensity": state["mood_intensity"],

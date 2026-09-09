@@ -284,6 +284,9 @@ def create_dashboard_app(
             }
         )
 
+    async def current_state(request: web.Request) -> web.Response:
+        return web.json_response(store.dashboard_current_state())
+
     async def overview(request: web.Request) -> web.Response:
         plugin = request.app[BALANCE_PROVIDER]
         store.set_usage_accounting(plugin.accounting if plugin is not None else None)
@@ -655,6 +658,7 @@ def create_dashboard_app(
     app.router.add_post("/api/auth/token", issue_token)
     app.router.add_get("/api/health", health)
     app.router.add_get("/api/overview", overview)
+    app.router.add_get("/api/current-state", current_state)
     app.router.add_get("/api/usage", usage)
     app.router.add_get("/api/thinking", thinking)
     app.router.add_get("/api/thinking/calls/{call_id}", thinking_call)

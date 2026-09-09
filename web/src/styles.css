@@ -589,6 +589,28 @@ main.is-record .error {
   padding: 27px;
 }
 .panel:last-child { box-shadow: 4px 4px 0 var(--pink); }
+.current-state-panel { margin-bottom: 20px; }
+.current-state-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.current-state-count { color: var(--muted); font-size: 11px; font-weight: 750; font-variant-numeric: tabular-nums; }
+.current-state-list { list-style: none; margin: 20px 0 0; padding: 0; }
+.current-state-row { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: start; gap: 16px; padding: 18px 0; }
+.current-state-row:first-child { padding-top: 0; }
+.current-state-row:last-child { padding-bottom: 0; }
+.current-state-row + .current-state-row { border-top: 1px dashed var(--line); }
+.current-state-dot { width: 8px; height: 8px; margin-top: 8px; border: 1.5px solid var(--ink); background: var(--blue); box-shadow: 2px 2px 0 var(--blue-soft); }
+.current-state-row:nth-child(even) .current-state-dot { background: var(--pink); }
+.current-state-content { min-width: 0; }
+.current-state-content p { margin: 0 0 8px; font-size: 16px; font-weight: 650; line-height: 1.7; overflow-wrap: anywhere; }
+.current-state-recorded { color: var(--muted); font-size: 11px; }
+.current-state-expiry { display: grid; gap: 5px; padding: 10px 14px; border-radius: 8px; background: var(--blue-soft); text-align: right; white-space: nowrap; }
+.current-state-expiry span { color: var(--muted); font-size: 10px; }
+.current-state-expiry strong { font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.current-state-empty { margin: 20px 0 0; color: var(--muted); font-size: 14px; }
+@media (max-width: 600px) {
+  .current-state-panel { padding: 20px; }
+  .current-state-row { grid-template-columns: 8px minmax(0, 1fr); gap: 10px 12px; }
+  .current-state-expiry { grid-column: 2; display: flex; align-items: baseline; gap: 10px; justify-self: start; text-align: left; padding: 7px 10px; }
+}
 .panel-label, .meta-label {
   color: var(--muted);
   font-size: 10px;
