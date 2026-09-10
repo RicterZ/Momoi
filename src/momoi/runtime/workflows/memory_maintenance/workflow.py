@@ -221,7 +221,6 @@ class MemoryMaintenanceWorkflow:
             context_memories=context,
             memory_directory=inventory,
             owner_evidence=evidence,
-            topic_context="",
         )
         owner_marker = self.store.latest_owner_event_marker()
         messages: list[dict[str, Any]] = [{"role": "user", "content": request}]

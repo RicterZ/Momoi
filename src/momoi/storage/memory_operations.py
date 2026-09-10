@@ -65,7 +65,7 @@ class MemoryOperationStore:
         records = []
         for event_id, content in evidence.items():
             row = self._db.execute(
-                "SELECT occurred_at,received_at FROM events WHERE id=?", (event_id,)
+                "SELECT occurred_at FROM events WHERE id=?", (event_id,)
             ).fetchone()
             if row:
                 records.append(
@@ -74,7 +74,6 @@ class MemoryOperationStore:
                         "content": content,
                         "occurred_at": self.context_timestamp(row["occurred_at"]),
                         "occurred_at_unix": row["occurred_at"],
-                        "received_at": row["received_at"],
                     }
                 )
         return records

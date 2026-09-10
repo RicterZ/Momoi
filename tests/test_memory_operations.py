@@ -421,12 +421,14 @@ def test_real_workflow_prompt_tool_correction_commit_and_usage(daemon):
             "memory_operation_search",
             "memory_operation_finish",
         }
-        request = json.loads(messages[0]["content"][0]["text"])
-        assert request["current_memories"][0]["id"] == memory_id
-        assert request["visible_memory_ids"] == [memory_id]
-        assert not request["outdated_visible_snapshots"]
-        assert request["conversation_context"][0]["content"] == "相关上文"
-        assert request["owner_evidence"][0]["content"] == source.text
+        from xml.etree.ElementTree import fromstring
+        request = fromstring("<request>" + messages[1]["content"][0]["text"] + "</request>")
+        current = request.find("current_memories/memory")
+        assert current.get("id") == str(memory_id)
+        assert current.get("visible") == "true"
+        assert len(request.find("outdated_visible_snapshots")) == 0
+        assert messages[0]["content"] == "相关上文"
+        assert request.find("owner_evidence/event").text == source.text
         decisions = [] if len(calls) == 1 else [write(source)]
         return response(
             ToolCall(

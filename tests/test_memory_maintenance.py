@@ -111,16 +111,13 @@ class MemoryMaintenanceProtocolTest(unittest.TestCase):
                     "content": "卧室改成冷光",
                 }
             ],
-            topic_context="卧室照明",
         )
         self.assertIn("<mutable_memories>", rendered)
         self.assertIn(memory_snapshot_fingerprint(mutable), rendered)
-        self.assertIn("<memory_directory>", rendered)
-        self.assertIn("event_id=owner-1", rendered)
-        directory = rendered.split("<memory_directory>", 1)[1].split(
-            "</memory_directory>", 1
-        )[0]
-        self.assertNotIn("snapshot_fingerprint", directory)
+        from xml.etree.ElementTree import fromstring
+        root = fromstring("<request>" + rendered + "</request>")
+        self.assertEqual(root.find("owner_evidence/event").get("id"), "owner-1")
+        self.assertEqual(len(root.find("memory_directory")), 0)
 
     def test_related_recent_facets_form_one_atomic_group(self) -> None:
         rows = [

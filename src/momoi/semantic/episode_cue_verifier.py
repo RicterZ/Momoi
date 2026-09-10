@@ -1,6 +1,7 @@
 """Semantic admission for generated cue text, after source citation validation."""
-import json
+from xml.etree.ElementTree import Element, SubElement, tostring
 
+from ..conversation_roles import speaker_label
 from ..storage.episode_cues import normalize_cues
 from .structured_selection import SelectionProtocolError, select_structured
 
@@ -35,6 +36,31 @@ SPEC = {
 }
 
 
+def render_cue_review(claims, cues):
+    root = Element("cue_review")
+    sources = SubElement(root, "sources")
+    turns = {}
+    messages = {}
+    # Keep uncited claims too: a later correction can invalidate a cited fragment.
+    for claim in sorted(claims, key=lambda item: (item.get("ordinal", 0), item["message_id"])):
+        message_id = claim["message_id"]
+        if message_id not in messages:
+            attrs = {"id": str(message_id), "source": speaker_label(claim.get("role", ""))}
+            turn_id = claim.get("turn_id")
+            if turn_id:
+                attrs["turn"] = turns.setdefault(turn_id, f"T-{len(turns) + 1}")
+            if claim.get("role") == "assistant" and claim.get("delivery_state") in {"uncertain", "internal"}:
+                attrs["delivery"] = claim["delivery_state"]
+            messages[message_id] = SubElement(sources, "message", attrs)
+        SubElement(messages[message_id], "quote").text = str(claim.get("quote", ""))
+    candidates = SubElement(root, "cues")
+    for index, cue in enumerate(cues):
+        SubElement(candidates, "cue", {
+            "index": str(index), "sources": " ".join(map(str, cue["evidence_message_ids"])),
+        }).text = cue["text"]
+    return tostring(root, encoding="unicode")
+
+
 async def verify_episode_cues(provider, cues, claims):
     normalized = normalize_cues(cues, claims)
     # Legacy labels remain readable. New generation uses structured provenance.
@@ -51,10 +77,7 @@ async def verify_episode_cues(provider, cues, claims):
         return [cue for i, cue in enumerate(normalized) if i in set(indices)]
 
     admitted, _attempts = await select_structured(
-        provider, SYSTEM, [{"role": "user", "content": json.dumps({
-            "claims": claims,
-            "cues": [{"cue_index": index, **cue}
-                     for index, cue in enumerate(normalized)],
-        }, ensure_ascii=False)}], SPEC, parse, timeout=30, stage="episode_cue_admit",
+        provider, SYSTEM, [{"role": "user", "content": render_cue_review(claims, normalized)}],
+        SPEC, parse, timeout=30, stage="episode_cue_admit",
     )
     return admitted

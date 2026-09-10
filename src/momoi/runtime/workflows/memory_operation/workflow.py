@@ -1,5 +1,4 @@
 import asyncio
-import json
 import logging
 import time
 from pathlib import Path
@@ -9,8 +8,10 @@ from ....models import ToolCall
 from ....observability.events import log_event
 from ....storage import MemoryRecallQuery
 from ...agent import AgentWorkflow
+from ..memory_rendering import memory_record
 from .contracts import MEMORY_OPERATION_FINISH_SPEC, MEMORY_OPERATION_SEARCH_SPEC
 from .parsing import parse_decisions
+from .rendering import render_memory_operation_request
 
 logger = logging.getLogger("momoi.runtime.turns")
 PROMPT_PATH = Path(__file__).resolve().parents[3] / "prompts" / "memory_operation.md"
@@ -63,19 +64,13 @@ class MemoryOperationWorkflow:
             evidence[item["event_id"]] = item["content"]
         evidence_records = self.store.memory_operation_evidence_records(evidence)
         # Whole records with stable IDs, no global memory directory and no second foreground recall.
-        request = {
-            "current_time": self.store.context_timestamp(time.time()),
-            "current_unix_time": time.time(),
-            "max_recent_ttl_hours": self.memory_tools.policy.recent_max_ttl_hours,
-            "operation_requests": batch["operations"],
-            "visible_memory_ids": sorted(visible),
-            "outdated_visible_snapshots": [
-                row for key, row in visible.items() if snapshots.get(key) != row
-            ],
-            "current_memories": list(snapshots.values()),
-            "owner_evidence": evidence_records,
-            "conversation_context": batch["conversation"],
-        }
+        now = time.time()
+        request = render_memory_operation_request(
+            now=now, timestamp=self.store.context_timestamp(now),
+            max_recent_ttl_hours=self.memory_tools.policy.recent_max_ttl_hours,
+            operations=batch["operations"], visible=visible, snapshots=snapshots,
+            evidence=evidence_records,
+        )
         complete = False
         completion: dict[str, Any] | None = None
 
@@ -112,7 +107,7 @@ class MemoryOperationWorkflow:
                     evidence[item["event_id"]] = item["content"]
                 return {
                     "ok": True,
-                    "memories": list(related.values()),
+                    "memories": [memory_record(row) for row in related.values()],
                     "owner_evidence": self.store.memory_operation_evidence_records(
                         {item["event_id"]: item["content"] for item in related_evidence}
                     ),
@@ -138,6 +133,7 @@ class MemoryOperationWorkflow:
 
         workflow = AgentWorkflow(
             stage="memory_operation",
+            preserve_transcript=True,
             tool_names=frozenset(
                 {"memory_operation_finish", "memory_operation_search"}
             ),
@@ -150,12 +146,13 @@ class MemoryOperationWorkflow:
         await self._run_agent_workflow(
             PROMPT_PATH.read_text(),
             [
+                *batch["conversation"],
                 {
                     "role": "user",
                     "content": [
                         {
                             "type": "text",
-                            "text": json.dumps(request, ensure_ascii=False),
+                            "text": request,
                             "cache_control": {"type": "ephemeral"},
                         }
                     ],

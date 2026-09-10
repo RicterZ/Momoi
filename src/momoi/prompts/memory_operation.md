@@ -12,7 +12,8 @@ Typical flow:
 You may batch independent searches; wait for results before dependent calls.
 
 Use the current memories to decide what changes; the visible snapshots explain
-what the foreground model knew and may already be obsolete. Unchanged snapshots
+what the foreground model knew and may already be obsolete. visible="true" marks
+current memories seen by that model. Unchanged snapshots
 are supplied once as current_memories; outdated_visible_snapshots are historical
 reference only. Request type is intent,
 not a prescribed database action. Do not rewrite unrelated facts or make changes
@@ -45,7 +46,8 @@ Classify final writes:
 - always: only an explicit, topic-independent interpersonal preference or constraint.
   Importance alone does not justify always.
 
-Cite authenticated owner evidence for changes. Other memories, assistant text,
+Cite event IDs from owner_evidence for changes. Only those events are authenticated
+owner evidence. Other memories, assistant text,
 tool output and reflection are not independent owner evidence. Write concise faithful content;
 do not turn a scoped exception or tentative statement into a general certainty.
 
