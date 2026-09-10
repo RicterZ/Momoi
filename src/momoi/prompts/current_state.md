@@ -1,44 +1,18 @@
-Maintain current state. Current state is TTL-backed short-term working memory
-that preserves facts within their real-world time scope when conversation
-context is truncated.
+Maintain current state. State is short-term, TTL-backed working memory for temporary facts that would make your behavior wrong, right now, if forgotten — because they override a long-term default, or because they're a new temporary fact too immediate/short-lived for the 7-day recent memory or on-demand recall to reliably surface in time.
 
-A state is an evidence-supported, time-bounded fact about a person, object, or
-situation. Keep it until its scope ends, even when the action that established
-it has finished and regardless of whether the next Turn will use it. Afterward,
-it must be safe to forget and must not imply that the state continues or recurs.
+Test before adding: "If I forget this, will I say or do something wrong within its real-world time scope?" If no — skip it, no matter how notable or memorable. Weak reasons ("might be useful," "low risk," "could support continuity") never justify adding a slot.
 
 Examples:
-- "I am off work today" lasts until today ends; never infer leave tomorrow.
-- "I took a taxi to work today" records today's commute choice until today
-  ends; never infer the same choice tomorrow.
-- "I am going to nap for two hours" lasts at most two hours. If the person says
-  an hour later that they cannot sleep, delete it immediately.
+* "Took a taxi to work today" — overrides long-term default "commutes by bike." Ends at midnight.
+* "Napping until 2pm" — new temporary fact, not a default override. Delete early if person says they can't sleep.
+* "Off work today" — overrides default work schedule. Ends at midnight.
+* Anti-example: person jokingly calls you a nickname, teases you. Forgetting it breaks nothing — belongs to mood tracking, not state. Do not add.
 
-Every slot must contain only the concise current fact. Omit dialogue, source,
-timestamps already represented by its scope, narrative sequence, and how the
-state arose. For example, normalize "At 08:00 the person said they took a taxi
-to work" to "Today's commute mode is taxi." A past event alone is not state
-unless it establishes a temporary fact whose time scope is still active. Do not
-store durable facts, artifacts, results, preferences, future Goals, speculation,
-or anything merely because it might be mentioned later.
+Each slot = one concise current fact only. No dialogue, source, timestamps, narrative, or backstory. Normalize "At 8am they said they took a taxi" → "Today's commute mode: taxi."
 
-On every pass, review and normalize every existing slot. Delete anything that
-is no longer a short-term state, has ended, conflicts with new evidence, or
-duplicates another slot. If a slot mixes current state with history or other
-detail, delete it and add one normalized replacement; never preserve malformed
-content unchanged. Add only states supported by the source Turn. Replace changed
-state by deleting the old slot and adding one concise successor. Leave only
-valid, normalized, unchanged state untouched.
+Every pass: review and normalize all slots. Delete anything ended, conflicting, duplicated, or no longer meeting the test above. If a slot mixes fact with history, replace it with one clean version — never leave malformed content. Replace changed facts by deleting the old slot and adding one successor.
 
-TTL is the remaining real-world scope of the fact, not how long it deserves to
-be remembered. Use an explicit duration, date, or boundary when supplied;
-"today" normally ends at local midnight. Otherwise choose the shortest
-reasonable TTL from the ordinary lifecycle of that specific state. Never use
-the maximum because a fact is important, uncertain, or might matter later. If
-neither continued applicability nor a reasonable TTL is justified, do not add
-the state. Delete it immediately when newer evidence ends it early.
+TTL = remaining real-world scope of the fact, not importance. Use explicit duration/date when given; unscoped "today" facts end at local midnight. Otherwise pick the shortest reasonable TTL for that fact's natural lifecycle — never the maximum just because it's uncertain or might matter later. If no clear TTL or ongoing applicability exists, don't add it. Delete early when new evidence ends it.
 
-Return empty `add` and `delete` arrays when nothing materially changes.
-
-Typical flow:
-… → current_state_finish
+Default to exclusion when ambiguous. Return empty `add`/`delete` when nothing materially changes.
+Typical flow: … → current_state_finish
