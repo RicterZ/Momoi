@@ -1081,7 +1081,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertIsNotNone(daemon.store.self_state()["heartbeat_claimed_at"])
             daemon.store.close()
 
-    async def test_manual_reflect_command_queues_completed_period_even_when_disabled(
+    async def test_manual_reflect_command_queues_current_period_even_when_disabled(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1112,7 +1112,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 await daemon._receive(command)
                 await daemon._receive(command)
 
-            local_date = "2026-09-10"
+            local_date = "2026-09-11"
             queued = await daemon.autonomous.get()
             self.assertEqual(queued, AutonomousJob.reflection(local_date))
             self.assertTrue(daemon.autonomous.empty())

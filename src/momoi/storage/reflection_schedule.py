@@ -23,14 +23,15 @@ class ReflectionScheduleStore:
         at: str = "03:00",
     ) -> dict[str, object] | None:
         now = time.time() if now is None else now
-        local_date, scheduled_at, _ = self._reflection_slot(now, at)
+        _, _, scheduled = self._reflection_slot(now, at)
+        local_date = scheduled.date().isoformat()
         reflection_id = f"reflection:{local_date}"
         with self._db:
             self._db.execute(
                 """INSERT OR IGNORE INTO reflections
                    (id, local_date, state, scheduled_at, created_at)
                    VALUES (?, ?, 'pending', ?, ?)""",
-                (reflection_id, local_date, scheduled_at, now),
+                (reflection_id, local_date, now, now),
             )
             row = self._db.execute(
                 "SELECT * FROM reflections WHERE id=?",
@@ -39,9 +40,9 @@ class ReflectionScheduleStore:
             if row is None or row["state"] == "running":
                 return None
             self._db.execute(
-                """UPDATE reflections SET state='running', claimed_at=?,
+                """UPDATE reflections SET state='running', claimed_at=?, scheduled_at=?,
                    retry_at=NULL, error=NULL WHERE id=?""",
-                (now, reflection_id),
+                (now, now, reflection_id),
             )
             claimed = self._db.execute(
                 "SELECT * FROM reflections WHERE id=?",
@@ -61,9 +62,14 @@ class ReflectionScheduleStore:
         reflection_id = f"reflection:{local_date}"
         with self._db:
             self._db.execute(
-                """INSERT OR IGNORE INTO reflections
+                """INSERT INTO reflections
                    (id, local_date, state, scheduled_at, created_at)
-                   VALUES (?, ?, 'pending', ?, ?)""",
+                   VALUES (?, ?, 'pending', ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET state='pending',
+                     scheduled_at=excluded.scheduled_at, claimed_at=NULL,
+                     retry_at=NULL, error=NULL
+                   WHERE reflections.scheduled_at<excluded.scheduled_at
+                     AND reflections.state<>'running'""",
                 (reflection_id, local_date, scheduled_at, now),
             )
             row = self._db.execute(
@@ -93,10 +99,13 @@ class ReflectionScheduleStore:
             now, config.at
         )
         row = self._db.execute(
-            "SELECT state, retry_at FROM reflections WHERE local_date=?",
+            "SELECT state, retry_at, scheduled_at FROM reflections WHERE local_date=?",
             (local_date,),
         ).fetchone()
         if row is None:
+            return scheduled_at
+        # A manual run covers only part of this period; the full scheduled run is still due.
+        if row["scheduled_at"] < scheduled_at and row["state"] != "running":
             return scheduled_at
         if row["state"] == "pending":
             return max(scheduled_at, float(row["retry_at"] or 0))

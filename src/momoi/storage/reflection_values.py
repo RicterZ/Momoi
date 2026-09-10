@@ -16,13 +16,16 @@ REFLECTION_MEMORY_KINDS = {
     "tool_skill",
 }
 
-def reflection_window(local_date: str, at: str, timezone: ZoneInfo) -> tuple[float, float]:
-    """The configured local-time interval starting on local_date, end exclusive."""
+def reflection_window(
+    local_date: str, at: str, timezone: ZoneInfo, *, end_at: float | None = None,
+) -> tuple[float, float]:
+    """The configured interval, optionally cut short at a manual trigger (end exclusive)."""
     hour, minute = map(int, at.split(":"))
     start = datetime.fromisoformat(local_date).replace(
         hour=hour, minute=minute, tzinfo=timezone,
     )
-    return start.timestamp(), (start + timedelta(days=1)).timestamp()
+    end = (start + timedelta(days=1)).timestamp()
+    return start.timestamp(), end if end_at is None else min(end, end_at)
 
 def _reflection_json(
     value: object,

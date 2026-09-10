@@ -21,10 +21,14 @@ logger = logging.getLogger("momoi.runtime.turns")
 
 
 class ReflectionWorkflow:
-    async def _prepare_reflection_episodes(self, local_date: str, *, at: str | None = None) -> None:
+    async def _prepare_reflection_episodes(
+        self, local_date: str, *, at: str | None = None, end_at: float | None = None,
+    ) -> None:
         if not self.config.episode_annealing.enabled:
             return
-        window = reflection_window(local_date, at or self.config.reflection.at, self.store.timezone)
+        window = reflection_window(
+            local_date, at or self.config.reflection.at, self.store.timezone, end_at=end_at,
+        )
         consolidated = summaries = 0
         try:
             async with asyncio.timeout(self.config.episode_annealing.max_seconds):
@@ -107,7 +111,11 @@ class ReflectionWorkflow:
     async def _complete_reflection(self, local_date: str, turn_id: str) -> None:
         # Keep this run's preparation and evidence on the same window if config reloads.
         reflection_at = self.config.reflection.at
-        await self._prepare_reflection_episodes(local_date, at=reflection_at)
+        reflection = self.store.reflection(local_date)
+        # scheduled_at is the trigger time: the fixed boundary for scheduled runs,
+        # or the command time for manual runs. Queueing/retries must not extend it.
+        end_at = float(reflection["scheduled_at"]) if reflection is not None else None
+        await self._prepare_reflection_episodes(local_date, at=reflection_at, end_at=end_at)
         maintenance_turn_id = self._turn_id(
             "memory-maintenance",
             MEMORY_MAINTENANCE_RUN_VERSION,
@@ -117,6 +125,7 @@ class ReflectionWorkflow:
         source = self.store.reflection_source(
             local_date,
             at=reflection_at,
+            end_at=end_at,
         )
         window = (source["start_at"], source["end_at"])
         rows = self.store.conversation_messages_for_turns(None, window=window)

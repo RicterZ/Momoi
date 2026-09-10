@@ -9,9 +9,9 @@ from .transcripts import _MESSAGE_TIME_SQL
 
 class ReflectionSourceStore:
     def reflection_source(
-        self, local_date: str, *, at: str = "03:00"
+        self, local_date: str, *, at: str = "03:00", end_at: float | None = None,
     ) -> dict[str, object]:
-        start, end = reflection_window(local_date, at, self._timezone)
+        start, end = reflection_window(local_date, at, self._timezone, end_at=end_at)
         mood_entries: list[str] = []
         for row in self._db.execute(
             """SELECT turn_id, created_at, payload_json FROM turn_journal

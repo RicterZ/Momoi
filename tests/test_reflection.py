@@ -544,10 +544,10 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
             )
             daemon = MomoiDaemon(config)
             first_now = datetime(
-                2026, 7, 22, 12, 54, tzinfo=ZoneInfo("Asia/Shanghai")
+                2026, 7, 21, 12, 54, tzinfo=ZoneInfo("Asia/Shanghai")
             ).timestamp()
             second_now = datetime(
-                2026, 7, 22, 13, 7, tzinfo=ZoneInfo("Asia/Shanghai")
+                2026, 7, 21, 13, 7, tzinfo=ZoneInfo("Asia/Shanghai")
             ).timestamp()
             occurred = datetime(
                 2026, 7, 21, 12, 0, tzinfo=ZoneInfo("Asia/Shanghai")
@@ -642,6 +642,8 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(second["state"], "running")
             self.assertNotEqual(first["claimed_at"], second["claimed_at"])
+            self.assertEqual(first["scheduled_at"], first_now)
+            self.assertEqual(second["scheduled_at"], second_now)
             await daemon._complete_reflection_turn("2026-07-21", asyncio.Event())
             overwritten = daemon.store.reflection("2026-07-21")
             self.assertEqual(overwritten["state"], "completed")

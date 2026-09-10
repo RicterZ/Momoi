@@ -45,7 +45,7 @@ def test_reflection_reads_material_after_small_batch_and_summary(daemon):
     for name, at in [("older", start - 1), ("day-1", start + 1), ("day-2", end - 1), ("later", end)]:
         add_turn(daemon, name, at)
     assert daemon.store.claim_episode_consolidation_candidate() is None
-    daemon.store.claim_manual_reflection(end + 3600)
+    daemon.store.claim_due_reflection(ReflectionConfig(enabled=True), end + 3600)
     stages = []
 
     async def workflow(_system, messages, _tools, turn_id, workflow):
@@ -124,7 +124,7 @@ def test_preparation_skips_disabled_and_does_not_retry_deferred_batch(daemon):
 def test_preparation_failure_keeps_original_reflection_material(daemon, failure, caplog):
     start, end = day_window()
     add_turn(daemon, "pending", start + 1)
-    daemon.store.claim_manual_reflection(end + 3600)
+    daemon.store.claim_due_reflection(ReflectionConfig(enabled=True), end + 3600)
     daemon._consolidate_episode_turns = AsyncMock(side_effect=failure)
 
     async def reflect(_system, messages, _tools, turn_id, workflow):
@@ -213,7 +213,7 @@ def test_reflection_uses_configured_window_and_complete_transcript(daemon, at):
             "INSERT INTO messages(turn_id,role,content,created_at,delivery_state,source_event_ids_json) "
             "VALUES ('last-in-window','assistant','outside reply',?,'delivered','[]')", (end,),
         )
-    claimed = daemon.store.claim_manual_reflection(end, at=at)
+    claimed = daemon.store.claim_due_reflection(ReflectionConfig(enabled=True, at=at), end)
     assert claimed["local_date"] == "2026-09-08"
     source = daemon.store.reflection_source("2026-09-08", at=at)
     assert (source["start_at"], source["end_at"]) == (start, end)
@@ -270,15 +270,78 @@ def test_episode_timeline_selects_same_period_without_extracts(daemon):
     assert "verbatim-chat-extract" not in daemon.store.open_conversation_inventory_context()
 
 
-@pytest.mark.parametrize("offset,local_date", [(-1, "2026-09-07"), (0, "2026-09-08"), (3600, "2026-09-08")])
-def test_manual_and_scheduled_reflection_select_same_completed_window(daemon, offset, local_date):
+@pytest.mark.parametrize("offset,local_date", [(-1, "2026-09-08"), (0, "2026-09-09"), (3600, "2026-09-09")])
+def test_manual_reflection_selects_current_period(daemon, offset, local_date):
     config = ReflectionConfig(enabled=True, at="04:30")
     _, end = reflection_window("2026-09-08", config.at, daemon.store.timezone)
-    due = daemon.store.claim_due_reflection(config, end + offset)
-    daemon.store.restore_completed_reflection_claim(local_date)
     manual = daemon.store.claim_manual_reflection(end + offset, at=config.at)
-    assert due["local_date"] == manual["local_date"] == local_date
-    assert due["scheduled_at"] == manual["scheduled_at"]
+    assert manual["local_date"] == local_date
+    assert manual["scheduled_at"] == end + offset
+
+
+def test_manual_reflection_does_not_skip_later_full_reflection(daemon):
+    config = ReflectionConfig(enabled=True, at="04:30")
+    start, end = reflection_window("2026-09-08", config.at, daemon.store.timezone)
+    manual = daemon.store.claim_manual_reflection(start + 3600, at=config.at)
+    assert manual["local_date"] == "2026-09-08"
+    # Do not claim over an in-flight manual run when the scheduled boundary passes.
+    assert daemon.store.claim_due_reflection(config, end) is None
+    assert daemon.store.next_reflection_due_at(config, end) is None
+    daemon.store.restore_completed_reflection_claim("2026-09-08")
+    assert daemon.store.next_reflection_due_at(config, end) == end
+    scheduled = daemon.store.claim_due_reflection(config, end + 10)
+    assert scheduled["local_date"] == "2026-09-08"
+    assert scheduled["scheduled_at"] == end
+    daemon.store.restore_completed_reflection_claim("2026-09-08")
+    assert daemon.store.claim_due_reflection(config, end + 20) is None
+    assert daemon.store.next_reflection_due_at(config, end + 20) == end + 86400
+
+
+@pytest.mark.parametrize("at,offset", [("03:00", 0), ("03:00", 11 * 3600), ("04:30", 23 * 3600)])
+def test_manual_reflection_transcript_and_timelines_stop_at_command(daemon, at, offset):
+    daemon.config = replace(
+        daemon.config, reflection=ReflectionConfig(at=at),
+        episode_annealing=EpisodeAnnealingConfig(enabled=False),
+    )
+    start, _ = reflection_window("2026-09-08", at, daemon.store.timezone)
+    trigger = start + offset
+    for name, timestamp in [("before", start - 1), ("inside", start), ("after", trigger)]:
+        add_turn(daemon, name, timestamp)
+        daemon.store.create_episode(name, episode_id=name)
+        with daemon.store._db:
+            daemon.store._db.execute(
+                "UPDATE conversation_episodes SET created_at=?, updated_at=?, narrative_summary=? WHERE id=?",
+                (timestamp, timestamp, "summary:" + name, name),
+            )
+        daemon.store.append_turn_journal(name, "final", {
+            "mood_change": {"state": name, "intensity": 0.5, "cause": "test"},
+        }, created_at=timestamp)
+    manual = daemon.store.claim_manual_reflection(trigger, at=at)
+    assert manual["local_date"] == "2026-09-08"
+    prepare = AsyncMock()
+    daemon._prepare_reflection_episodes = prepare
+
+    async def reflect(_system, messages, _tools, turn_id, workflow):
+        transcript = json.dumps(messages[:-1], ensure_ascii=False)
+        final_input = messages[-1]["content"][0]["text"]
+        episode_timeline = re.search(r"<episode_timeline>\n(.*?)\n</episode_timeline>", final_input, re.S)[1]
+        mood_timeline = re.search(r"<mood_timeline>\n(.*?)\n</mood_timeline>", final_input, re.S)[1]
+        assert ("inside完成项目" in transcript) == (offset > 0)
+        assert ("id=inside " in episode_timeline) == (offset > 0)
+        assert ("state=inside " in mood_timeline) == (offset > 0)
+        for name in ["before", "after"]:
+            assert name + "完成项目" not in transcript
+            assert f"id={name} " not in episode_timeline
+            assert f"state={name} " not in mood_timeline
+        result = await workflow.execute_tool(ToolCall("finish", "reflection_finish", {
+            "summary": "手动复盘", "memories": [], "conversation_actions": [],
+        }))
+        assert result["ok"]
+        return workflow.completion_result()
+
+    daemon._run_agent_workflow = reflect
+    asyncio.run(daemon._complete_reflection("2026-09-08", "manual-test"))
+    prepare.assert_awaited_once_with("2026-09-08", at=at, end_at=trigger)
 
 
 def test_reflection_window_keeps_wall_clock_time_across_dst():
