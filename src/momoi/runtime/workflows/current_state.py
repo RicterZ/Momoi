@@ -98,11 +98,7 @@ class CurrentStateWorkflow:
         labels = [f"T-{next_label + index}" for index in range(len(tasks))]
         for task, label in zip(tasks, labels, strict=True):
             suffix = copy.deepcopy(task["messages"][task["input_index"] :])
-            marker = (
-                f"<turn id={quoteattr(label)} "
-                f"stage={quoteattr(str(task['source_stage']))} "
-                f"committed_at={quoteattr(self.store.context_timestamp(task['committed_at']))} />"
-            )
+            marker = f"<turn id={quoteattr(label)} />"
             if suffix:
                 suffix[0] = _mark_turn_input(suffix[0], marker)
             messages.extend(suffix)

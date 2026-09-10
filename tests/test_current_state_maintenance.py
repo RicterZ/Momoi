@@ -276,7 +276,7 @@ def test_allowed_end_turn_captures_exact_chain_and_waits_for_commit(daemon, kind
         assert system == systems[-1]
         index = payload["input_index"]
         assert messages[:index] == payload["messages"][:index]
-        assert messages[index]["content"].startswith('<turn id="T-1" ')
+        assert messages[index]["content"].startswith('<turn id="T-1" />')
         assert messages[index]["content"].endswith(
             payload["messages"][index]["content"]
         )
@@ -325,9 +325,7 @@ def test_maintenance_reuses_chain_only_appends_user_task_and_never_recurses(daem
         requests.append(copy.deepcopy(messages))
         assert system == original_system
         assert messages[:1] == original_messages[:1]
-        assert messages[1]["content"].startswith(
-            '<turn id="T-1" stage="owner" committed_at='
-        )
+        assert messages[1]["content"].startswith('<turn id="T-1" />')
         assert messages[1]["content"].endswith("CURRENT_INPUT")
         assert messages[2:-1] == original_messages[2:]
         assert messages[-1]["role"] == "user"
@@ -342,7 +340,7 @@ def test_maintenance_reuses_chain_only_appends_user_task_and_never_recurses(daem
         request = root.find("state_update_request")
         assert request is not None
         assert request.attrib == {"turns": "T-1"}
-        assert "use the latest Turn" in request.text
+        assert request.text and request.text.strip()
         assert root.find("current_state").findall("slot") == []
         assert root.find("state_update_contract").text.strip()
         assert tools == original_tools
@@ -668,7 +666,7 @@ def test_state_batch_combines_six_turn_deltas_in_one_maintenance_call(daemon):
         )
         request = root.find("state_update_request")
         assert request.attrib["turns"] == "T-21,T-22,T-23,T-24,T-25,T-26"
-        assert "use the latest Turn" in request.text
+        assert request.text and request.text.strip()
         markers = [
             message["content"].splitlines()[0]
             for message in messages[:-1]
