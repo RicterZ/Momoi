@@ -5,6 +5,7 @@ import time
 
 from .current_state_contract import CURRENT_STATE_SOURCE_STAGES
 
+# Trigger threshold; a claim includes every eligible pending Turn.
 CURRENT_STATE_BATCH_SIZE = 6
 CURRENT_STATE_FULL_IDLE_SECONDS = 60
 CURRENT_STATE_PARTIAL_IDLE_SECONDS = 300
@@ -69,7 +70,7 @@ class CurrentStateTaskStore:
             )
             self._db.execute("DELETE FROM current_state_tasks WHERE state='staged'")
 
-    def claim_current_state_batch(self, source_turn_id, limit=CURRENT_STATE_BATCH_SIZE):
+    def claim_current_state_batch(self, source_turn_id):
         with self._db:
             self._db.execute("BEGIN IMMEDIATE")
             while True:
@@ -105,8 +106,8 @@ class CurrentStateTaskStore:
                    JOIN turns t ON t.id=q.source_turn_id
                    WHERE q.state='pending' AND q.retry_at<=?
                      AND t.state='completed' AND t.failure_reason IS NULL
-                   ORDER BY q.committed_at,q.rowid LIMIT ?""",
-                (time.time(), max(1, int(limit))),
+                   ORDER BY q.committed_at,q.rowid""",
+                (time.time(),),
             ).fetchall()
             if not rows or str(rows[0]["source_turn_id"]) != source_turn_id:
                 return None

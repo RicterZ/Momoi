@@ -690,11 +690,21 @@ def test_state_batch_combines_six_turn_deltas_in_one_maintenance_call(daemon):
     )
 
 
-def test_seventh_turn_waits_for_partial_idle_deadline(daemon):
-    for index in range(CURRENT_STATE_BATCH_SIZE + 1):
+@pytest.mark.parametrize("count", [7, 8])
+def test_state_batch_includes_turns_arriving_after_threshold(daemon, count):
+    for index in range(CURRENT_STATE_BATCH_SIZE):
         stage(daemon.store, f"source-{index}")
 
-    async def complete(_system, _messages, _tools, **_kwargs):
+    calls = []
+
+    async def complete(_system, messages, _tools, **_kwargs):
+        calls.append(copy.deepcopy(messages))
+        root = ElementTree.fromstring(
+            "<request>" + messages[-1]["content"] + "</request>"
+        )
+        assert root.find("state_update_request").attrib["turns"].split(",") == [
+            f"T-{index + 1}" for index in range(count)
+        ]
         return finish()
 
     daemon.provider = SimpleNamespace(
@@ -707,23 +717,19 @@ def test_seventh_turn_waits_for_partial_idle_deadline(daemon):
             loop.time() - CURRENT_STATE_FULL_IDLE_SECONDS
         )
         assert daemon._current_state_batch_ready()
+        # Additional completed Turns before execution belong to the same claim.
+        for index in range(CURRENT_STATE_BATCH_SIZE, count):
+            stage(daemon.store, f"source-{index}")
         await daemon._complete_current_state_task("source-0")
 
-        status = daemon.store.current_state_batch_status()
-        assert status is not None
-        assert status["source_turn_id"] == f"source-{CURRENT_STATE_BATCH_SIZE}"
-        assert status["count"] == 1
-
-        daemon._last_owner_activity_at = (
-            loop.time() - CURRENT_STATE_PARTIAL_IDLE_SECONDS + 1
-        )
+        assert daemon.store.current_state_batch_status() is None
         assert not daemon._current_state_batch_ready()
-        daemon._last_owner_activity_at = (
-            loop.time() - CURRENT_STATE_PARTIAL_IDLE_SECONDS
-        )
-        assert daemon._current_state_batch_ready()
+        rows = [task_row(daemon.store, f"source-{index}") for index in range(count)]
+        assert all(row["state"] == "completed" for row in rows)
+        assert len({row["maintenance_turn_id"] for row in rows}) == 1
 
     asyncio.run(run())
+    assert len(calls) == 1
 
 
 def test_retry_uses_latest_snapshot_and_then_advances_queue(daemon):
