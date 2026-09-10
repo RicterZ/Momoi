@@ -83,12 +83,14 @@ def finish(arguments=None):
 def test_current_state_prompt_defines_projection_instead_of_cumulative_summary():
     prompt = files("momoi.prompts").joinpath("current_state.md").read_text()
     prompt = " ".join(prompt.split())
-    assert "Current state is a delta" in prompt
-    assert "not a transcript summary or complete snapshot" in prompt
-    assert "Add only genuinely new state" in prompt
+    assert "condition or ongoing situation" in prompt
+    assert "remains true beyond the source Turn" in prompt
+    assert "A momentary or completed event is not a state" in prompt
+    assert "review all existing slots" in prompt
+    assert "delete anything that is not a state" in prompt
+    assert "Add only genuinely new states supported by the source Turn" in prompt
     assert "Leave unchanged state out" in prompt
     assert "delete conflicting or redundant slots" in prompt
-    assert "without preserving its history" in prompt
     assert "Do not renew or duplicate state" in prompt
     assert "latest mutually compatible facts" in prompt
     assert "Prefer one sentence per slot" in prompt
