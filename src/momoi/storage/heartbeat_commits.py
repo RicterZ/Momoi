@@ -17,6 +17,7 @@ class HeartbeatCommitStore:
         pending_reply_turn_id: str,
         reason: str,
         mood_update: dict[str, object] | None,
+        draft: TurnDraft | None = None,
         notification_channel: str = "",
     ) -> int:
         state = self.self_state()
@@ -31,6 +32,7 @@ class HeartbeatCommitStore:
             messages=[],
             reason=reason,
             pending_reply_turn_id=pending_reply_turn_id,
+            draft=draft,
             notification_channel=notification_channel,
             reply_followup_only=True,
         )
@@ -179,9 +181,12 @@ class HeartbeatCommitStore:
                     delivery_states
                     and delivery_states <= {"failed", "superseded"}
                 )
-                if reply_followup_only and not (
-                    followup_delivered or followup_failed
-                ):
+                awaiting_followup_delivery = bool(
+                    reply_followup_only
+                    and progress_rows
+                    and not (followup_delivered or followup_failed)
+                )
+                if awaiting_followup_delivery:
                     self._db.execute(
                         """UPDATE self_state SET pending_reply_next_check_at=NULL
                            WHERE id=1"""
@@ -195,7 +200,11 @@ class HeartbeatCommitStore:
                            pending_reply_next_check_at=NULL
                            WHERE id=1"""
                     )
-                if reply_followup_only and not followup_failed:
+                    if reply_followup_only and not progress_rows:
+                        self._release_reply_episode_hold(
+                            str(pending_reply_turn_id), now
+                        )
+                if reply_followup_only and progress_rows and not followup_failed:
                     self._db.execute(
                         "UPDATE turns SET updated_at=? WHERE id=?",
                         (now, pending_reply_turn_id),
@@ -236,6 +245,8 @@ class HeartbeatCommitStore:
                     self._index_turn_episode_terms(str(pending_reply_turn_id))
             self._apply_mood_update(mood_update, now)
             if reply_followup_only:
+                self._apply_goal_mutations(draft, now)
+                self._queue_memory_operations(turn_id, draft, memory_events or [], now)
                 self._db.execute(
                     """UPDATE self_state SET heartbeat_claimed_at=NULL,
                        heartbeat_claim_kind=NULL, updated_at=? WHERE id=1""",
@@ -426,4 +437,3 @@ class HeartbeatCommitStore:
                 (now, turn_id),
             )
         return len(messages) + len(progress_rows)
-

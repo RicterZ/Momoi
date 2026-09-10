@@ -56,18 +56,14 @@ class EndTurnTest(unittest.TestCase):
                 self.assertTrue(reply.should_schedule_reply_wait)
                 self.assertEqual(reply.reply_wait_delay_minutes, 3)
 
-    def test_silent_close_is_allowed_except_for_required_followup(self):
+    def test_silent_close_is_allowed_for_every_chat_stage(self):
         for stage in self.STAGES:
             with self.subTest(stage=stage):
                 reply, error = self.parse(
                     stage, self.arguments(stage), visible=False
                 )
-                if stage == "reply_followup":
-                    self.assertIsNone(reply)
-                    self.assertEqual(error, "reply_followup_bubble_required")
-                else:
-                    self.assertIsNone(error)
-                    self.assertIsNotNone(reply)
+                self.assertIsNone(error)
+                self.assertIsNotNone(reply)
 
     def test_followup_cannot_start_another_wait(self):
         reply, error = self.parse(
@@ -191,16 +187,11 @@ class EndTurnSchemaTest(unittest.TestCase):
             harness.started = True
             if stage == 'heartbeat':
                 harness.accept('heartbeat_activity')
-            # Reply-followup must use its opening send before it is marked started.
-            if stage == 'reply_followup':
-                harness.started = False
-                calls = [send, end]
-            else:
-                calls = [end]
+            calls = [end]
             self.assertIsNone(harness.validate(calls, has_assistant_text=False))
             self.assertEqual(
                 harness.validate(calls, has_assistant_text=True),
-                None if stage == 'reply_followup' else 'send_bubbles_required_before_end_turn',
+                'send_bubbles_required_before_end_turn',
             )
             self.assertIsNone(harness.validate([send, end], has_assistant_text=True))
             self.assertIsNone(harness.validate([send, end]))

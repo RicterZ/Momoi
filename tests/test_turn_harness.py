@@ -230,15 +230,27 @@ class TurnHarnessTest(unittest.TestCase):
             harness.validate_surface(set())
         harness.validate_surface({"recall", "send_bubbles", "end_turn"})
 
-    def test_heartbeat_and_reply_wait_have_explicit_first_states(self) -> None:
+    def test_only_heartbeat_has_an_explicit_opening_in_autonomous_chat(self) -> None:
         self.assertEqual(
             TurnHarness.for_stage("heartbeat").spec.first_tool,
             "heartbeat_begin",
         )
         self.assertEqual(
             TurnHarness.for_stage("reply_followup").spec.first_tool,
-            "send_bubbles",
+            None,
         )
+
+    def test_reply_followup_can_work_before_or_after_optional_delivery(self) -> None:
+        harness = TurnHarness.for_stage("reply_followup")
+        work = ToolCall("work", "read_file", {"path": "notes.txt"})
+        send = ToolCall("send", "send_bubbles", {"bubbles": ["我再看看"]})
+        end = ToolCall("end", "end_turn", {})
+
+        self.assertIsNone(harness.validate([work]))
+        self.assertIsNone(harness.validate([send]))
+        harness.accept("send_bubbles")
+        self.assertIsNone(harness.validate([work]))
+        self.assertIsNone(harness.validate([end]))
 
     def test_terminal_tool_must_be_alone_for_every_stage(self) -> None:
         work = ToolCall("work", "work", {})

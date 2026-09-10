@@ -21,7 +21,7 @@ TURN_HARNESS_SPECS = {
         TurnHarnessSpec("owner", "recall", "end_turn", True),
         TurnHarnessSpec("heartbeat", "heartbeat_begin", "end_turn",
                         required_before_end=frozenset({"heartbeat_activity"})),
-        TurnHarnessSpec("reply_followup", "send_bubbles", "end_turn"),
+        TurnHarnessSpec("reply_followup", None, "end_turn"),
         TurnHarnessSpec(
             "webhook",
             None,

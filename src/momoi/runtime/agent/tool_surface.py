@@ -131,19 +131,18 @@ class ToolSurface:
         shared = {"send_bubbles", "read_tool_result"}
         voice = {"send_voice"} if self.voice_enabled else set()
         shared.update(voice)
+        general_chat = {
+            "recall",
+            "tool_enable",
+            "end_turn",
+            *shared,
+            *agenda,
+            *memory,
+            *thinking,
+            *external,
+        }
         if stage == "owner":
-            return frozenset(
-                {
-                    "recall",
-                    "tool_enable",
-                    "end_turn",
-                    *shared,
-                    *agenda,
-                    *memory,
-                    *thinking,
-                    *external,
-                }
-            )
+            return frozenset(general_chat)
         if stage == "heartbeat":
             return frozenset(
                 {
@@ -160,7 +159,7 @@ class ToolSurface:
         if stage == "webhook":
             return frozenset({"send_bubbles", "curl", "read_tool_result", "end_turn", *voice})
         if stage == "reply_followup":
-            return frozenset({"send_bubbles", "end_turn", *voice})
+            return frozenset(general_chat)
         if stage == "goal":
             goal_agenda = {"goal_create"} if not agent_owned_goal else set()
             return frozenset(

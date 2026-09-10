@@ -81,12 +81,13 @@ class ReplyFollowupWorkflow:
                 ],
             },
         ]
+        draft = TurnDraft()
         reply = await self._run_tool_loop(
             system,
             messages,
             self.tool_surface.conversation_specs(),
             [],
-            TurnDraft(),
+            draft,
             execution=TurnExecutionSpec(
                 "reply_followup",
                 permitted_tools=self.tool_surface.permitted_names("reply_followup"),
@@ -109,6 +110,7 @@ class ReplyFollowupWorkflow:
             pending_reply_turn_id=str(pending["source_turn"]),
             reason=str(pending["reason"]),
             mood_update=reply.mood_update,
+            draft=draft,
             notification_channel=delivery_channel.name,
         )
         self.agenda_changed.set()

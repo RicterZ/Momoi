@@ -1227,7 +1227,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
 
 
 
-    async def test_reply_followup_requires_message_and_cannot_rearm(self) -> None:
+    async def test_reply_followup_can_end_silently_and_cannot_rearm(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             daemon = MomoiDaemon(
                 AppConfig(
@@ -1272,21 +1272,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     provider_self.calls += 1
                     if provider_self.calls == 1:
                         call = ToolCall(
-                            "early-end_turn",
-                            "end_turn",
-                            {
-                                "reply_wait": {"wait": False},
-                                "mood": {"decision": "unchanged"},
-                            },
-                        )
-                    elif provider_self.calls == 2:
-                        call = ToolCall(
-                            "required-message",
-                            "send_bubbles",
-                            {"bubbles": ["老师还没回答我呢"]},
-                        )
-                    elif provider_self.calls == 3:
-                        call = ToolCall(
                             "rearm",
                             "end_turn",
                             {
@@ -1297,6 +1282,17 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                                     "reason": "还想再等一次",
                                 },
                                 "mood": {"decision": "unchanged"},
+                            },
+                        )
+                    elif provider_self.calls == 2:
+                        call = ToolCall(
+                            "related-work",
+                            "goal_create",
+                            {
+                                "title": "跟进此前约定",
+                                "success_criteria": "完成相关后续工作",
+                                "next_action": "检查约定事项",
+                                "next_review_at": "2099-01-01T00:00:00+08:00",
                             },
                         )
                     else:
@@ -1318,12 +1314,13 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 owner_event_revision=0,
             )
 
-            self.assertEqual(provider.calls, 4)
-            self.assertIsNotNone(daemon.store.pending_owner_reply())
-            outbox = daemon.store.due_outbox()
-            self.assertEqual([row.text for row in outbox], ["老师还没回答我呢"])
-            daemon.store.mark_sent(outbox[0].id)
+            self.assertEqual(provider.calls, 3)
+            self.assertEqual(daemon.store.due_outbox(), [])
             self.assertIsNone(daemon.store.pending_owner_reply())
+            self.assertEqual(
+                [goal["title"] for goal in daemon.store.list_goals()],
+                ["跟进此前约定"],
+            )
             daemon.store.close()
 
     async def test_owner_mcp_tool_is_resident_from_the_first_round(self) -> None:

@@ -2630,6 +2630,41 @@ class StorageMemoryTest(unittest.TestCase):
             )
             store.close()
 
+    def test_silent_reply_followup_consumes_wait_and_releases_episode(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "momoi.sqlite3")
+            store.commit_turn(
+                [],
+                "",
+                AgentReply(
+                    ["晚点再确认"],
+                    reply_wait={
+                        "wait": True,
+                        "delay_minutes": 1,
+                        "expected_information": "是否继续",
+                        "reason": "等待决定",
+                    },
+                ),
+                turn_id="silent-source",
+            )
+            store.mark_sent(store.due_outbox()[0].id)
+            store.begin_turn(
+                "silent-followup", "reply_followup", ["reply-followup:1060"]
+            )
+
+            store.commit_reply_followup(
+                "silent-followup",
+                owner_event_revision=0,
+                notification_config=NotificationConfig(),
+                pending_reply_turn_id="silent-source",
+                reason="等待决定",
+                mood_update=None,
+            )
+
+            self.assertIsNone(store.pending_owner_reply())
+            self.assertEqual(store.due_outbox(), [])
+            store.close()
+
     def test_wait_false_does_not_start_reply_schedule(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")

@@ -279,6 +279,31 @@ def test_shared_end_turn_examples_remain_fixed_after_private_corrections():
         assert json.dumps(END_TURN_TOOL_SPEC, ensure_ascii=False) == before
 
 
+def test_reply_followup_permits_general_conversation_tools_only():
+    from types import SimpleNamespace
+
+    from momoi.runtime.agent.tool_surface import ToolSurface
+
+    surface = ToolSurface(SimpleNamespace(tool_specs=[]), {})
+    permitted = surface.permitted_names("reply_followup")
+
+    assert {
+        "recall",
+        "send_bubbles",
+        "read_file",
+        "goal_create",
+        "memory_search",
+        "thinking_search",
+        "end_turn",
+    } <= permitted
+    assert {
+        "heartbeat_begin",
+        "heartbeat_activity",
+        "goal_review",
+        "current_state_finish",
+    }.isdisjoint(permitted)
+
+
 def test_end_turn_branch_examples_are_unambiguous_and_valid():
     from momoi.runtime.tool_contracts.conversation import END_TURN_TOOL_SPEC
     schema = END_TURN_TOOL_SPEC["input_schema"]

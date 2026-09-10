@@ -203,8 +203,6 @@ def parse_end_turn(
     if reply.expects_reply and not visible_since_owner_update:
         return None, "reply_expectation_without_visible_bubble"
     if execution.reply_followup:
-        if not visible_since_owner_update:
-            return None, "reply_followup_bubble_required"
         if reply.should_schedule_reply_wait:
             return None, "reply_followup_cannot_schedule_another_wait"
     return reply, None
