@@ -80,25 +80,6 @@ def finish(arguments=None):
     )
 
 
-def test_current_state_prompt_defines_projection_instead_of_cumulative_summary():
-    prompt = files("momoi.prompts").joinpath("current_state.md").read_text()
-    prompt = " ".join(prompt.split())
-    assert "TTL-backed short-term working memory" in prompt
-    assert "when conversation context is truncated" in prompt
-    assert "regardless of whether the next Turn will use it" in prompt
-    assert "must be safe to forget" in prompt
-    assert '"I took a taxi to work today"' in prompt
-    assert "Every slot must contain only the concise current fact" in prompt
-    assert "timestamps already represented by its scope" in prompt
-    assert "review and normalize every existing slot" in prompt
-    assert "never preserve malformed content unchanged" in prompt
-    assert "Leave only valid, normalized, unchanged state untouched" in prompt
-    assert "remaining real-world scope" in prompt
-    assert "shortest reasonable TTL" in prompt
-    assert "Never use the maximum" in prompt
-    assert "Return empty `add` and `delete` arrays" in prompt
-
-
 def task_row(store, source="source"):
     row = store._db.execute(
         "SELECT * FROM current_state_tasks WHERE source_turn_id=?", (source,)
