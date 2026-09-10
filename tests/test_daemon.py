@@ -341,10 +341,14 @@ class DaemonTest(unittest.TestCase):
             [False, True],
         )
         self.assertEqual(
-            wait_shapes[1]["properties"]["delay_minutes"]["minimum"], 1
+            END_TURN_TOOL_SPEC["input_schema"]["properties"]["reply_wait"]
+            ["properties"]["delay_minutes"]["minimum"],
+            1,
         )
         self.assertEqual(
-            wait_shapes[1]["properties"]["delay_minutes"]["maximum"], 10
+            END_TURN_TOOL_SPEC["input_schema"]["properties"]["reply_wait"]
+            ["properties"]["delay_minutes"]["maximum"],
+            10,
         )
         terminal_properties = END_TURN_TOOL_SPEC["input_schema"]["properties"]
         for visible_field in ("message", "messages", "text", "content", "delivery"):

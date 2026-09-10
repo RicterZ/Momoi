@@ -33,7 +33,7 @@ class DeepSeekAccountingTest(unittest.TestCase):
         )
 
 
-    def test_peak_and_offpeak_after_cutoff(self) -> None:
+    def test_legacy_peak_and_offpeak_before_v41_pricing(self) -> None:
         plugin = _plugin()
         peak = datetime(2026, 8, 17, 10, 0, tzinfo=SHANGHAI).timestamp()
         offpeak = datetime(2026, 8, 17, 21, 0, tzinfo=SHANGHAI).timestamp()
@@ -49,6 +49,56 @@ class DeepSeekAccountingTest(unittest.TestCase):
         self.assertEqual(plugin.token_rates("deepseek-v4-flash", lunch), (0.05, 1.5, 4.5))
         self.assertEqual(plugin.token_rates("deepseek-v4-flash", afternoon), (0.10, 3.0, 9.0))
         self.assertEqual(plugin.token_rates("deepseek-v4-flash", evening), (0.05, 1.5, 4.5))
+
+    def test_v41_flash_prices_start_at_beijing_noon(self) -> None:
+        plugin = _plugin()
+        before = datetime(2026, 9, 10, 11, 59, 59, tzinfo=SHANGHAI).timestamp()
+        start = datetime(2026, 9, 10, 12, 0, tzinfo=SHANGHAI).timestamp()
+        afternoon = datetime(2026, 9, 10, 14, 0, tzinfo=SHANGHAI).timestamp()
+        evening = datetime(2026, 9, 10, 18, 0, tzinfo=SHANGHAI).timestamp()
+
+        self.assertEqual(plugin.token_rates("deepseek-v4-flash", before), (0.10, 3.0, 9.0))
+        self.assertEqual(plugin.token_rates("deepseek-v4-flash", start), (0.02, 1.0, 4.0))
+        self.assertEqual(plugin.token_rates("deepseek-v4-flash", afternoon), (0.04, 2.0, 8.0))
+        self.assertEqual(plugin.token_rates("deepseek-v4-flash", evening), (0.02, 1.0, 4.0))
+        self.assertEqual(plugin.token_rates("deepseek-flash", afternoon), (0.04, 2.0, 8.0))
+        self.assertEqual(
+            plugin.token_rates("deepseek-v4-flash-vision-exp", afternoon),
+            (0.04, 2.0, 8.0),
+        )
+        self.assertAlmostEqual(
+            plugin.estimate_cost(
+                "deepseek-flash",
+                afternoon,
+                cache_read=500_000,
+                uncached=500_000,
+                output=100_000,
+            ),
+            1.82,
+        )
+
+    def test_v41_peak_windows_apply_only_on_weekdays(self) -> None:
+        plugin = _plugin()
+        friday_peak = datetime(2026, 9, 11, 9, 0, tzinfo=SHANGHAI).timestamp()
+        friday_lunch = datetime(2026, 9, 11, 12, 0, tzinfo=SHANGHAI).timestamp()
+        saturday_peak_hours = datetime(2026, 9, 12, 10, 0, tzinfo=SHANGHAI).timestamp()
+
+        self.assertEqual(plugin.token_rates("deepseek-flash", friday_peak), (0.04, 2.0, 8.0))
+        self.assertEqual(plugin.token_rates("deepseek-flash", friday_lunch), (0.02, 1.0, 4.0))
+        self.assertEqual(
+            plugin.token_rates("deepseek-flash", saturday_peak_hours),
+            (0.02, 1.0, 4.0),
+        )
+
+    def test_v4_pro_routes_to_flash_pricing_from_september_14_noon(self) -> None:
+        plugin = _plugin()
+        before = datetime(2026, 9, 14, 11, 59, 59, tzinfo=SHANGHAI).timestamp()
+        start = datetime(2026, 9, 14, 12, 0, tzinfo=SHANGHAI).timestamp()
+        afternoon = datetime(2026, 9, 14, 14, 0, tzinfo=SHANGHAI).timestamp()
+
+        self.assertEqual(plugin.token_rates("deepseek-v4-pro", before), (0.30, 9.0, 27.0))
+        self.assertEqual(plugin.token_rates("deepseek-v4-pro", start), (0.02, 1.0, 4.0))
+        self.assertEqual(plugin.token_rates("deepseek-v4-pro", afternoon), (0.04, 2.0, 8.0))
 
     def test_parse_usage_reads_deepseek_billing_fields(self) -> None:
         plugin = _plugin()
