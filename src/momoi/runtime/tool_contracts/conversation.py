@@ -98,6 +98,7 @@ MOOD_UPDATE_SCHEMA: dict[str, Any] = {
 }
 
 MOOD_DECISION_SCHEMA: dict[str, Any] = {
+    "type": "object",
     "description": (
         "JSON object, never a mood name string. Use {\"decision\": \"unchanged\"} only "
         "when the persistent mood remains accurate; unchanged permits ONLY decision, so omit "
@@ -106,87 +107,78 @@ MOOD_DECISION_SCHEMA: dict[str, Any] = {
         "intensity, or continuing cause changes, including natural settling. Keep it "
         "only while all three remain accurate; ignore a reaction that is truly momentary."
     ),
+    "properties": {
+        "decision": {"type": "string", "enum": ["unchanged", "updated"]},
+        **MOOD_UPDATE_SCHEMA["properties"],
+    },
+    "required": ["decision"],
+    "additionalProperties": False,
+    "examples": [
+        {"decision": "unchanged"},
+        {"decision": "updated", "state": "calm", "intensity": 0.3,
+         "cause": "The task is complete and I feel settled."},
+    ],
     "oneOf": [
         {
-            "type": "object",
-            "title": "Keep the existing mood without resubmitting it",
-            "description": 'Exactly {"decision":"unchanged"}. Do not copy current state, intensity or cause here.',
-            "examples": [{"decision": "unchanged"}],
-            "properties": {"decision": {"type": "string", "enum": ["unchanged"]}},
-            "required": ["decision"],
-            "additionalProperties": False,
+            "properties": {"decision": {"enum": ["unchanged"]}},
+            "maxProperties": 1,
         },
         {
-            "type": "object",
-            "title": "Update the persistent mood",
-            "description": "Set decision=updated and supply all three update fields.",
-            "examples": [{"decision": "updated", "state": "calm", "intensity": 0.3,
-                          "cause": "事情已处理完，心情平静下来"}],
-            "properties": {
-                "decision": {"type": "string", "enum": ["updated"]},
-                **MOOD_UPDATE_SCHEMA["properties"],
-            },
-            "required": ["decision", *MOOD_UPDATE_SCHEMA["required"]],
-            "additionalProperties": False,
+            "properties": {"decision": {"enum": ["updated"]}},
+            "required": list(MOOD_UPDATE_SCHEMA["required"]),
         },
     ],
 }
 
 REPLY_WAIT_DECISION_SCHEMA: dict[str, Any] = {
+    "type": "object",
     "description": (
-        "JSON object, never a bare boolean: {\"wait\": false} when complete. "
+        "JSON object, never a bare boolean or JSON-encoded string. "
+        "When wait=false, send only {\"wait\":false}; omit all other fields. "
+        "When wait=true, include delay_minutes, expected_information and reason. "
         "Whether the last visible bubble leaves a real open beat. false when complete "
         "or another scheduler owns the work. true only while awaiting a reply, "
         "reaction, incoming information, or the assistant's later continuation; it requires "
         "a visible bubble and schedules one follow-up Turn after silence."
     ),
+    "properties": {
+        "wait": {"type": "boolean"},
+        "delay_minutes": {
+            "type": "integer",
+            "minimum": REPLY_WAIT_MIN_MINUTES,
+            "maximum": REPLY_WAIT_MAX_MINUTES,
+            "description": "Whole minutes after successful bubble delivery.",
+        },
+        "expected_information": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300,
+            "description": (
+                "The reply, reaction, incoming information, or assistant "
+                "continuation that would complete this beat."
+            ),
+        },
+        "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "description": (
+                "Concrete new conversational move for the one silent-owner "
+                "follow-up; do not merely restate what is awaited."
+            ),
+        },
+    },
+    "required": ["wait"],
+    "additionalProperties": False,
+    "examples": [{"wait": False}],
     "oneOf": [
         {
-            "type": "object",
-            "description": "Complete; no follow-up for this beat.",
-            "properties": {
-                "wait": {"type": "boolean", "enum": [False]},
-            },
-            "required": ["wait"],
-            "additionalProperties": False,
+            "properties": {"wait": {"enum": [False]}},
+            "maxProperties": 1,
         },
         {
-            "type": "object",
-            "description": "Open; after delay_minutes of silence, run one follow-up Turn.",
-            "properties": {
-                "wait": {"type": "boolean", "enum": [True]},
-                "delay_minutes": {
-                    "type": "integer",
-                    "minimum": REPLY_WAIT_MIN_MINUTES,
-                    "maximum": REPLY_WAIT_MAX_MINUTES,
-                    "description": "Whole minutes after successful bubble delivery.",
-                },
-                "expected_information": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 300,
-                    "description": (
-                        "The reply, reaction, incoming information, or assistant "
-                        "continuation that would complete this beat."
-                    ),
-                },
-                "reason": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 500,
-                    "description": (
-                        "Concrete new conversational move for the one silent-owner "
-                        "follow-up; do not merely restate what is awaited."
-                    ),
-                },
-            },
-            "required": [
-                "wait",
-                "delay_minutes",
-                "expected_information",
-                "reason",
-            ],
-            "additionalProperties": False,
+            "properties": {"wait": {"enum": [True]}},
+            "required": ["delay_minutes", "expected_information", "reason"],
         },
     ],
 }
@@ -291,9 +283,9 @@ def end_turn_tool_spec(stage: str) -> dict[str, Any]:
         schema["required"] = ["reply_wait", "mood"]
         schema["examples"] = [copy.deepcopy(END_TURN_EXAMPLE)]
         if stage == "reply_followup":
-            schema["properties"]["reply_wait"] = copy.deepcopy(
-                REPLY_WAIT_DECISION_SCHEMA["oneOf"][0]
-            )
+            wait_schema = schema["properties"]["reply_wait"]
+            wait_schema.pop("oneOf")
+            wait_schema["properties"] = {"wait": {"type": "boolean", "enum": [False]}}
     else:
         raise ValueError(f"end_turn is not available in {stage}")
     return spec

@@ -108,6 +108,46 @@ if __name__ == "__main__":
 
 
 class EndTurnSchemaTest(unittest.TestCase):
+    def test_decision_schema_matches_runtime_validation(self):
+        import json
+        from jsonschema import Draft202012Validator
+        from momoi.runtime.tool_contracts.conversation import END_TURN_TOOL_SPEC
+
+        schema = END_TURN_TOOL_SPEC['input_schema']
+        Draft202012Validator.check_schema(schema)
+        validator = Draft202012Validator(schema)
+        updated = EndTurnTest().arguments('heartbeat')['mood']
+        waiting = EndTurnTest().arguments('heartbeat', wait=True)['reply_wait']
+        moods = [
+            ({'decision': 'unchanged'}, True), (updated, True),
+            (json.dumps({'decision': 'unchanged'}), False),
+            (json.dumps(updated), False), ('calm', False), ({}, False),
+            ({'decision': 'unchanged', 'state': 'calm'}, False),
+            ({**updated, 'decision': 'unknown'}, False),
+            ({k: v for k, v in updated.items() if k != 'cause'}, False),
+            ({**updated, 'intensity': 2}, False),
+            ({**updated, 'intensity': '0.3'}, False),
+            ({**updated, 'unexpected': 1}, False),
+        ]
+        waits = [
+            ({'wait': False}, True), (waiting, True),
+            (json.dumps({'wait': False}), False), (False, False), ({}, False),
+            ({'wait': True}, False), ({'wait': 'false'}, False),
+            ({'wait': False, 'delay_minutes': 3}, False),
+            ({**waiting, 'delay_minutes': 0}, False),
+            ({**waiting, 'unexpected': 1}, False),
+        ]
+        for mood, valid_mood in moods:
+            for wait, valid_wait in waits:
+                with self.subTest(mood=mood, wait=wait):
+                    args = {'mood': mood, 'reply_wait': wait}
+                    expected = valid_mood and valid_wait
+                    self.assertEqual(validator.is_valid(args), expected)
+                    reply, error = EndTurnTest().parse('heartbeat', args)
+                    self.assertEqual(reply is not None and error is None, expected)
+        self.assertTrue(validator.is_valid({}))
+        self.assertFalse(validator.is_valid('{}'))
+
     def test_each_stage_schema_requires_exact_private_state(self):
         from jsonschema import Draft202012Validator
         from momoi.runtime.tool_contracts.conversation import end_turn_tool_spec
