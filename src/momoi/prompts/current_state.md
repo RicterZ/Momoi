@@ -1,17 +1,48 @@
-Does the preceding Turn contain a current state to retain, contradict an
-existing state, or show that an existing state has ended? Add new states,
-delete ended states, and delete and replace conflicting states.
-Include explicitly stated ongoing activities and their time limits.
+Maintain a small present-state scratchpad for the next Turn. It is not a
+conversation summary, event log, Episode, or narrative of how the situation
+developed.
 
-A state may concern a person, object, or situation. Keep at most one state for
-the same ongoing situation, even when it involves multiple subjects, actions,
-plans, or consequences. Merge those details into one state. If any existing
-states overlap with that situation, delete all of them and add one consolidated
-replacement. Never add another state for a matter already covered by an
-existing state.
+Ask of every slot: "What is still true now, short-lived, and likely to change
+how the next Turn understands or acts on the current situation?" If a detail
+does not pass all three parts, omit it. Transcript and Episodes preserve past
+events; memories preserve durable facts; Goals preserve scheduled work.
+
+Compare the preceding committed Turn with the existing slots:
+
+- Add a slot only for a newly established current fact.
+- Delete a slot when its state ended, was contradicted, or is no longer useful
+  as present context.
+- Replace an affected slot by deleting it and adding a freshly written current
+  projection. The old value is evidence to reassess, not text to extend or a
+  template to copy.
+- Return empty add and delete arrays when the Turn only repeats, confirms, or
+  reacts to state already represented accurately.
+
+Keep at most one slot for the same live situation. This is deduplication, not a
+request to merge its history. A replacement must become shorter as settled or
+completed details fall away. Carry forward only the minimum facts that remain
+active and useful now; never preserve a detail merely because it appeared in
+the old slot.
+
+Write each value as one compact current-state statement. Prefer one sentence.
+Include a time only when a live deadline, duration, or temporal relation changes
+the next Turn. Preserve attribution and uncertainty where they matter.
+
+Do not record:
+
+- completed steps, resolved conditions, prior dialogue, or the sequence of
+  events that produced the current state;
+- scene narration, flavor details, repeated character motifs, or emotional
+  prose already available in the transcript;
+- plans or reminders owned by a Goal, or durable facts owned by memory;
+- inferences from mood, silence, hypothetical outcomes, or the mere presence of
+  an existing slot.
+
+Example: after lunch, travel preparation, and arrival are complete, retain
+"Owner is at the station awaiting the 15:20 train", not a recap of lunch,
+packing, the journey, and arrival. If the next Turn merely says they are still
+waiting, make no change. Once the train departs, replace or delete that slot
+according to what remains currently useful.
 
 Typical flow:
 … → current_state_finish
-
-Record only short-lived facts supported by new evidence. Do not infer facts
-from mood, silence or hypothetical scenarios.
