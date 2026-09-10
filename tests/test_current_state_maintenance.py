@@ -83,18 +83,16 @@ def finish(arguments=None):
 def test_current_state_prompt_defines_projection_instead_of_cumulative_summary():
     prompt = files("momoi.prompts").joinpath("current_state.md").read_text()
     prompt = " ".join(prompt.split())
-    assert "not a conversation summary" in prompt
-    assert "not text to extend or a template to copy" in prompt
-    assert "This is deduplication, not a request to merge its history" in prompt
-    assert "Return empty add and delete arrays" in prompt
-    assert "The output is a delta, not a complete snapshot" in prompt
-    assert "newest explicit evidence" in prompt
-    assert "replace it atomically" in prompt
-    assert "Never retain both old and new versions" in prompt
-    assert "A duplicate is not a new state" in prompt
-    assert "mutually compatible" in prompt
-    assert "completed steps" in prompt
-    assert "Prefer one sentence" in prompt
+    assert "Current state is a delta" in prompt
+    assert "not a transcript summary or complete snapshot" in prompt
+    assert "Add only genuinely new state" in prompt
+    assert "Leave unchanged state out" in prompt
+    assert "delete conflicting or redundant slots" in prompt
+    assert "without preserving its history" in prompt
+    assert "Do not renew or duplicate state" in prompt
+    assert "latest mutually compatible facts" in prompt
+    assert "Prefer one sentence per slot" in prompt
+    assert "Return empty `add` and `delete` arrays" in prompt
 
 
 def task_row(store, source="source"):
