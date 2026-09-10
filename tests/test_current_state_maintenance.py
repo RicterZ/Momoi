@@ -274,7 +274,13 @@ def test_allowed_end_turn_captures_exact_chain_and_waits_for_commit(daemon, kind
     async def maintain(system, messages, tools, **kwargs):
         assert tools == surfaces[-1]
         assert system == systems[-1]
-        assert messages[:-1] == payload["messages"]
+        index = payload["input_index"]
+        assert messages[:index] == payload["messages"][:index]
+        assert messages[index]["content"].startswith('<turn id="T-1" ')
+        assert messages[index]["content"].endswith(
+            payload["messages"][index]["content"]
+        )
+        assert messages[index + 1 : -1] == payload["messages"][index + 1 :]
         return finish()
 
     daemon.provider.complete = maintain
@@ -318,25 +324,25 @@ def test_maintenance_reuses_chain_only_appends_user_task_and_never_recurses(daem
     async def complete(system, messages, tools, **kwargs):
         requests.append(copy.deepcopy(messages))
         assert system == original_system
-        assert messages[:-1] == original_messages
+        assert messages[:1] == original_messages[:1]
+        assert messages[1]["content"].startswith(
+            '<turn id="T-1" stage="owner" committed_at='
+        )
+        assert messages[1]["content"].endswith("CURRENT_INPUT")
+        assert messages[2:-1] == original_messages[2:]
         assert messages[-1]["role"] == "user"
         root = ElementTree.fromstring(
             "<request>" + messages[-1]["content"] + "</request>"
         )
         assert [node.tag for node in root] == [
-            "turns",
+            "state_update_request",
             "current_state",
             "state_update_contract",
         ]
-        turns = root.find("turns")
-        assert turns is not None and turns.get("now")
-        assert [node.attrib for node in turns.findall("turn")] == [{
-            "id": "source",
-            "stage": "owner",
-            "committed_at": daemon.store.context_timestamp(
-                task_row(daemon.store)["committed_at"]
-            ),
-        }]
+        request = root.find("state_update_request")
+        assert request is not None
+        assert request.attrib == {"turns": "T-1"}
+        assert "use the latest Turn" in request.text
         assert root.find("current_state").findall("slot") == []
         assert root.find("state_update_contract").text.strip()
         assert tools == original_tools
@@ -640,6 +646,8 @@ def test_state_batch_combines_six_turn_deltas_in_one_maintenance_call(daemon):
     for index in range(CURRENT_STATE_BATCH_SIZE):
         stage(daemon.store, f"source-{index}")
         payload = json.loads(task_row(daemon.store, f"source-{index}")["payload_json"])
+        if index == 0:
+            payload["messages"][0]["content"] = '<bubble turn="T-20">HISTORICAL</bubble>'
         payload["messages"][payload["input_index"]]["content"] = f"CURRENT-{index}"
         with daemon.store._db:
             daemon.store._db.execute(
@@ -658,7 +666,18 @@ def test_state_batch_combines_six_turn_deltas_in_one_maintenance_call(daemon):
         root = ElementTree.fromstring(
             "<request>" + messages[-1]["content"] + "</request>"
         )
-        assert len(root.find("turns").findall("turn")) == CURRENT_STATE_BATCH_SIZE
+        request = root.find("state_update_request")
+        assert request.attrib["turns"] == "T-21,T-22,T-23,T-24,T-25,T-26"
+        assert "use the latest Turn" in request.text
+        markers = [
+            message["content"].splitlines()[0]
+            for message in messages[:-1]
+            if isinstance(message.get("content"), str)
+            and message["content"].startswith("<turn id=")
+        ]
+        assert [
+            ElementTree.fromstring(marker).attrib["id"] for marker in markers
+        ] == [f"T-{index}" for index in range(21, 21 + CURRENT_STATE_BATCH_SIZE)]
         return finish()
 
     daemon.provider = SimpleNamespace(

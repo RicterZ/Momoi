@@ -2,8 +2,9 @@
 
 import asyncio
 import copy
+import json
 import logging
-from datetime import datetime
+import re
 from xml.sax.saxutils import quoteattr
 
 from ...observability.events import log_event
@@ -16,6 +17,24 @@ from ..turn_support import PROMPT_ROOT, live_prompt
 logger = logging.getLogger(__name__)
 PROMPT_PATH = PROMPT_ROOT.joinpath("current_state.md")
 MAINTENANCE_TIMEOUT_SECONDS = 30
+
+
+def _next_turn_label(messages) -> int:
+    labels = [
+        int(value)
+        for value in re.findall(r"\bT-(\d+)\b", json.dumps(messages, ensure_ascii=False))
+    ]
+    return max(labels, default=0) + 1
+
+
+def _mark_turn_input(message, marker):
+    marked = copy.deepcopy(message)
+    content = marked.get("content")
+    if isinstance(content, list):
+        content.insert(0, {"type": "text", "text": marker})
+    else:
+        marked["content"] = f"{marker}\n{str(content or '')}"
+    return marked
 
 
 class CurrentStateWorkflow:
@@ -67,24 +86,33 @@ class CurrentStateWorkflow:
         turn_id = batch["turn_id"]
         complete = False
         snapshot = self.store.current_state.snapshot()
-        now = datetime.now(self.store.timezone).isoformat(timespec="seconds")
         latest = pack_current_turn_context(
             self.store,
             tasks[-1]["source_stage"],
             ("state_update_contract", live_prompt(PROMPT_PATH, "")),
             include_empty=True,
         )
-        turns = "\n".join(
-            f"<turn id={quoteattr(str(task['source_turn_id']))} "
-            f"stage={quoteattr(str(task['source_stage']))} "
-            f"committed_at={quoteattr(self.store.context_timestamp(task['committed_at']))} />"
-            for task in tasks
-        )
-        request = f"<turns now={quoteattr(now)}>\n{turns}\n</turns>\n\n{latest}"
         first = tasks[0]
         messages = copy.deepcopy(first["messages"][: first["input_index"]])
-        for task in tasks:
-            messages.extend(copy.deepcopy(task["messages"][task["input_index"] :]))
+        next_label = _next_turn_label(messages)
+        labels = [f"T-{next_label + index}" for index in range(len(tasks))]
+        for task, label in zip(tasks, labels, strict=True):
+            suffix = copy.deepcopy(task["messages"][task["input_index"] :])
+            marker = (
+                f"<turn id={quoteattr(label)} "
+                f"stage={quoteattr(str(task['source_stage']))} "
+                f"committed_at={quoteattr(self.store.context_timestamp(task['committed_at']))} />"
+            )
+            if suffix:
+                suffix[0] = _mark_turn_input(suffix[0], marker)
+            messages.extend(suffix)
+        request = (
+            f"<state_update_request turns={quoteattr(','.join(labels))}>\n"
+            "Infer current state changes from the conversation records above for "
+            "these Turns. If evidence conflicts, use the latest Turn.\n"
+            "</state_update_request>\n\n"
+            + latest
+        )
         messages.append({"role": "user", "content": request})
         # Retain exact schemas and order, including enabled MCP tools. Tasks staged
         # before tool snapshots were introduced cannot recover their original surface.
