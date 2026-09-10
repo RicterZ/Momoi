@@ -87,6 +87,12 @@ def test_current_state_prompt_defines_projection_instead_of_cumulative_summary()
     assert "not text to extend or a template to copy" in prompt
     assert "This is deduplication, not a request to merge its history" in prompt
     assert "Return empty add and delete arrays" in prompt
+    assert "The output is a delta, not a complete snapshot" in prompt
+    assert "newest explicit evidence" in prompt
+    assert "replace it atomically" in prompt
+    assert "Never retain both old and new versions" in prompt
+    assert "A duplicate is not a new state" in prompt
+    assert "mutually compatible" in prompt
     assert "completed steps" in prompt
     assert "Prefer one sentence" in prompt
 
