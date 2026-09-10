@@ -1,3 +1,5 @@
+Infer current state changes from the conversation records above for pending_turns. If evidence conflicts, use the latest Turn.
+
 Maintain current state. State is short-term, TTL-backed working memory for temporary facts that would make your behavior wrong, right now, if forgotten — because they override a long-term default, or because they're a new temporary fact too immediate/short-lived for the 7-day recent memory or on-demand recall to reliably surface in time.
 
 Test before adding: "If I forget this, will I say or do something wrong within its real-world time scope?" If no — skip it, no matter how notable or memorable. Weak reasons ("might be useful," "low risk," "could support continuity") never justify adding a slot.

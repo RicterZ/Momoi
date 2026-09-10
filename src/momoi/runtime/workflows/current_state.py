@@ -4,13 +4,13 @@ import asyncio
 import copy
 import logging
 from time import time
-from xml.sax.saxutils import quoteattr
 
 from ...observability.events import log_event
 from ...storage.current_state import StateConflict
 from ..agent import AgentWorkflow
 from ..context.current_state import pack_current_turn_context
 from ..transcript.maintenance import maintenance_transcript
+from ..transcript.rendering import render_pending_turns
 from ..turn_support import PROMPT_ROOT, live_prompt, context_data_message
 
 
@@ -71,6 +71,7 @@ class CurrentStateWorkflow:
         latest = pack_current_turn_context(
             self.store,
             tasks[-1]["source_stage"],
+            ("runtime_state", f"Current local time: {self.store.context_timestamp(time())}"),
             ("state_update_contract", live_prompt(PROMPT_PATH, "")),
             include_empty=True,
         )
@@ -87,14 +88,7 @@ class CurrentStateWorkflow:
         if context:
             messages.insert(0, context)
         labels = [turn_labels[value] for value in source_turn_ids]
-        request = (
-            f"<state_update_request turns={quoteattr(','.join(labels))} "
-            f"now={quoteattr(self.store.context_timestamp(time()))}>\n"
-            "Infer current state changes from the conversation records above for "
-            "these Turns. If evidence conflicts, use the latest Turn.\n"
-            "</state_update_request>\n\n"
-            + latest
-        )
+        request = render_pending_turns(labels) + "\n\n" + latest
         messages.append({"role": "user", "content": request})
         # Retain exact schemas and order, including enabled MCP tools. Tasks staged
         # before tool snapshots were introduced cannot recover their original surface.

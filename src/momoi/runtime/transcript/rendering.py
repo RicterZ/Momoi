@@ -49,6 +49,10 @@ def turn_labels(groups: Sequence[TranscriptGroup]) -> dict[str, str]:
         for index, turn_id in enumerate(dict.fromkeys(ordered), 1)
     }
 
+def render_pending_turns(labels: Sequence[str]) -> str:
+    references = "\n".join(f"<turn id={quoteattr(label)} />" for label in labels)
+    return "<pending_turns>\n" + (references or "none") + "\n</pending_turns>"
+
 def _silence(
     group: TranscriptGroup, previous: TranscriptGroup | None
 ) -> dict[str, object] | None:

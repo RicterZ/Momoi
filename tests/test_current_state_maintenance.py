@@ -325,15 +325,13 @@ def test_maintenance_preserves_tools_without_replaying_source_chain(daemon):
             "<request>" + messages[-1]["content"] + "</request>"
         )
         assert [node.tag for node in root] == [
-            "state_update_request",
+            "pending_turns",
             "current_state",
+            "runtime_state",
             "state_update_contract",
         ]
-        request = root.find("state_update_request")
-        assert request is not None
-        assert request.attrib["turns"] == "T-1"
-        assert request.attrib["now"]
-        assert request.text and request.text.strip()
+        assert [node.attrib for node in root.findall("pending_turns/turn")] == [{"id": "T-1"}]
+        assert root.find("runtime_state").text.strip()
         assert root.find("current_state").findall("slot") == []
         assert root.find("state_update_contract").text.strip()
         assert tools == original_tools
@@ -655,9 +653,9 @@ def test_state_batch_uses_committed_transcript_including_turns_outside_window(da
         root = ElementTree.fromstring(
             "<request>" + messages[-1]["content"] + "</request>"
         )
-        request = root.find("state_update_request")
-        assert request.attrib["turns"].split(",") == [f"T-{index + 1}" for index in range(count)]
-        assert request.text and request.text.strip()
+        assert [node.attrib["id"] for node in root.findall("pending_turns/turn")] == [
+            f"T-{index + 1}" for index in range(count)
+        ]
         bubbles = [
             ElementTree.fromstring(block["text"][block["text"].index("<bubble"):])
             for message in messages[:-1]
@@ -695,7 +693,7 @@ def test_state_batch_includes_turns_arriving_after_threshold(daemon, count):
         root = ElementTree.fromstring(
             "<request>" + messages[-1]["content"] + "</request>"
         )
-        assert root.find("state_update_request").attrib["turns"].split(",") == [
+        assert [node.attrib["id"] for node in root.findall("pending_turns/turn")] == [
             f"T-{index + 1}" for index in range(count)
         ]
         return finish()

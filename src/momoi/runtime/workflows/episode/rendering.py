@@ -2,6 +2,7 @@ from collections.abc import Mapping, Sequence
 from xml.sax.saxutils import quoteattr
 
 from ....conversation_roles import speaker_label
+from ...transcript.rendering import render_pending_turns
 
 
 def _text(value: object) -> str:
@@ -52,11 +53,11 @@ def render_episode_consolidation_request(candidate: Mapping[str, object]) -> str
         else []
     )
 
-    pending_text = "\n\n".join(
-        _render_turn_reference(turn, include_episode=False)
+    pending_text = render_pending_turns([
+        str(turn["turn_id"])
         for turn in pending_turns
         if isinstance(turn, Mapping)
-    )
+    ])
     context_text = "\n\n".join(
         _render_turn_reference(turn, include_episode=True)
         for turn in context_turns
@@ -86,9 +87,8 @@ def render_episode_consolidation_request(candidate: Mapping[str, object]) -> str
         episode_blocks.append("\n".join(lines))
 
     return (
-        "<pending_turns>\n"
-        + (pending_text or "none")
-        + "\n</pending_turns>\n\n<later_context_turns>\n"
+        pending_text
+        + "\n\n<later_context_turns>\n"
         + (context_text or "none")
         + "\n</later_context_turns>\n\n<candidate_episodes>\n"
         + ("\n\n".join(episode_blocks) or "none")
