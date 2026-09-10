@@ -5,6 +5,9 @@ from time import time
 from ...observability.events import log_event
 from ...observability.values import safe_preview
 from ...storage import (
+    CURRENT_STATE_BATCH_SIZE,
+    CURRENT_STATE_FULL_IDLE_SECONDS,
+    CURRENT_STATE_PARTIAL_IDLE_SECONDS,
     EPISODE_CONSOLIDATION_DEFER_TIMEOUT_SECONDS,
 )
 from ..jobs import AutonomousJob
@@ -14,6 +17,32 @@ AGENDA_POLL_SECONDS = 5
 
 
 class Scheduler:
+    def _current_state_maintenance_is_idle(self) -> bool:
+        active = self._active_turn
+        if active is not None and not active.done():
+            return False
+        if self._webhook_turn_active:
+            return False
+        if (
+            not self.incoming.empty()
+            or self._deferred_incoming
+            or not self.webhook_requests.empty()
+        ):
+            return False
+        return not bool(self.store.heartbeat_conversation_snapshot()["owner_busy"])
+
+    def _current_state_batch_ready(self) -> bool:
+        status = self.store.current_state_batch_status()
+        if status is None or status["retry_at"] > time():
+            return False
+        idle_seconds = (
+            CURRENT_STATE_FULL_IDLE_SECONDS
+            if status["count"] >= CURRENT_STATE_BATCH_SIZE
+            else CURRENT_STATE_PARTIAL_IDLE_SECONDS
+        )
+        quiet_for = asyncio.get_running_loop().time() - self._last_owner_activity_at
+        return self._current_state_maintenance_is_idle() and quiet_for >= idle_seconds
+
     def _episode_annealing_is_idle(self) -> bool:
         active = self._active_turn
         if active is not None and not active.done():
@@ -159,8 +188,13 @@ class Scheduler:
                 await self.autonomous.put(AutonomousJob.goal(str(goal["id"])))
                 continue
             operation_id = self.store.pending_memory_operation()
-            state_id = self.store.pending_current_state_task()
-            if state_id is not None and state_id not in self._queued_current_state:
+            state = self.store.current_state_batch_status()
+            state_id = str(state["source_turn_id"]) if state else None
+            if (
+                state_id is not None
+                and self._current_state_batch_ready()
+                and state_id not in self._queued_current_state
+            ):
                 self._queued_current_state.add(state_id)
                 self.autonomous.put_nowait(AutonomousJob.current_state(state_id))
             if operation_id is not None and operation_id not in self._queued_memory_operations:

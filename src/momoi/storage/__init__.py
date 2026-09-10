@@ -14,6 +14,11 @@ from .episode_consolidation import (
     EPISODE_CONSOLIDATION_BATCH_SIZE,
     EPISODE_CONSOLIDATION_DEFER_TIMEOUT_SECONDS,
 )
+from .current_state_tasks import (
+    CURRENT_STATE_BATCH_SIZE,
+    CURRENT_STATE_FULL_IDLE_SECONDS,
+    CURRENT_STATE_PARTIAL_IDLE_SECONDS,
+)
 from .store import Store
 from .semantic_documents import (
     DOCUMENT_TEMPLATE_VERSION,
@@ -37,6 +42,9 @@ __all__ = [
     "memory_snapshot_fingerprint",
     "truncate_tokens",
     "DOCUMENT_TEMPLATE_VERSION",
+    "CURRENT_STATE_BATCH_SIZE",
+    "CURRENT_STATE_FULL_IDLE_SECONDS",
+    "CURRENT_STATE_PARTIAL_IDLE_SECONDS",
     "EPISODE_CONSOLIDATION_BATCH_SIZE",
     "EPISODE_CONSOLIDATION_DEFER_TIMEOUT_SECONDS",
     "QUERY_TEMPLATE_VERSION",

@@ -29,6 +29,11 @@ from momoi.runtime.tool_contracts.current_state import current_state_finish_spec
 from momoi.storage import Store
 from momoi.storage.current_state import SlotInput
 from momoi.storage.current_state_contract import CURRENT_STATE_SOURCE_STAGES
+from momoi.storage.current_state_tasks import (
+    CURRENT_STATE_BATCH_SIZE,
+    CURRENT_STATE_FULL_IDLE_SECONDS,
+    CURRENT_STATE_PARTIAL_IDLE_SECONDS,
+)
 from momoi.storage.migrations import MIGRATIONS, _add_current_state_workflow
 from momoi.webhooks.catalog import bind_workflow
 from momoi.webhooks.service import WebhookService
@@ -85,6 +90,11 @@ def task_row(store, source="source"):
         "SELECT * FROM current_state_tasks WHERE source_turn_id=?", (source,)
     ).fetchone()
     return dict(row) if row else None
+
+
+def pending_state_source(store):
+    status = store.current_state_batch_status()
+    return str(status["source_turn_id"]) if status else None
 
 
 def stage(store, source="source", kind="owner", *, commit=True):
@@ -256,9 +266,9 @@ def test_allowed_end_turn_captures_exact_chain_and_waits_for_commit(daemon, kind
     assert payload["tools"] == surfaces[-1]
     assert "current_state_finish" in {tool["name"] for tool in surfaces[0]}
     assert payload["input_index"] == 1
-    assert daemon.store.pending_current_state_task() is None
+    assert pending_state_source(daemon.store) is None
     daemon.store.complete_background_turn(source)
-    assert daemon.store.pending_current_state_task() == source
+    assert pending_state_source(daemon.store) == source
     assert task_row(daemon.store)["state"] == "pending"
 
     async def maintain(system, messages, tools, **kwargs):
@@ -290,7 +300,7 @@ def test_commit_rollback_cancel_and_delete_never_leave_runnable_task(daemon):
             )
             raise RuntimeError("commit failed")
     assert task_row(daemon.store)["state"] == "staged"
-    assert daemon.store.pending_current_state_task() is None
+    assert pending_state_source(daemon.store) is None
     daemon.store.cancel_turn("source")
     assert task_row(daemon.store) is None
     stage(daemon.store, "delete-me")
@@ -314,17 +324,19 @@ def test_maintenance_reuses_chain_only_appends_user_task_and_never_recurses(daem
             "<request>" + messages[-1]["content"] + "</request>"
         )
         assert [node.tag for node in root] == [
-            "turn",
+            "turns",
             "current_state",
             "state_update_contract",
         ]
-        assert root.find("turn").attrib == {
+        turns = root.find("turns")
+        assert turns is not None and turns.get("now")
+        assert [node.attrib for node in turns.findall("turn")] == [{
             "id": "source",
+            "stage": "owner",
             "committed_at": daemon.store.context_timestamp(
                 task_row(daemon.store)["committed_at"]
             ),
-            "now": root.find("turn").get("now"),
-        }
+        }]
         assert root.find("current_state").findall("slot") == []
         assert root.find("state_update_contract").text.strip()
         assert tools == original_tools
@@ -367,7 +379,7 @@ def test_maintenance_reuses_chain_only_appends_user_task_and_never_recurses(daem
     child = task_row(daemon.store)["maintenance_turn_id"]
     assert daemon.store.turn_workflow_kind(child) == "current_state_maintenance"
     assert daemon.store.turn_usage(child)["llm_calls"] == 1
-    assert daemon.store.pending_current_state_task() is None
+    assert pending_state_source(daemon.store) is None
     asyncio.run(daemon._complete_current_state_task("source"))
     assert len(requests) == 1
 
@@ -485,25 +497,27 @@ def test_failed_maintenance_preserves_source_and_retries_without_overwriting(
             == "completed"
         )
         if failure != "cancel":
-            assert daemon.store.pending_current_state_task() is None
+            assert daemon.store.current_state_batch_status()["retry_at"] > time.time()
 
 
 def test_restart_recovers_in_order_and_does_not_reapply_committed_changes(daemon):
     stage(daemon.store)
     stage(daemon.store, "second")
-    claimed = daemon.store.claim_current_state_task("source")
-    assert daemon.store.pending_current_state_task() is None
-    assert daemon.store.claim_current_state_task("second") is None
+    claimed = daemon.store.claim_current_state_batch("source")
+    assert claimed["source_turn_ids"] == ["source", "second"]
+    assert daemon.store.current_state_batch_status() is None
+    assert daemon.store.claim_current_state_batch("second") is None
     daemon.store.current_state.apply_arguments(
         {"add": [], "delete": []},
-        source_turn_id="source",
-        operation_id="current-state:source",
+        source_turn_id="second",
+        operation_id=f"current-state:{claimed['turn_id']}",
         expected_revision=0,
     )
     daemon.store.recover_current_state_tasks()
-    assert daemon.store.pending_current_state_task() == "source"
-    assert daemon.store.claim_current_state_task("source") is None
+    assert pending_state_source(daemon.store) == "source"
+    assert daemon.store.claim_current_state_batch("source") is None
     assert task_row(daemon.store)["state"] == "completed"
+    assert task_row(daemon.store, "second")["state"] == "completed"
     assert (
         daemon.store._db.execute(
             "SELECT state FROM turns WHERE id=?", (claimed["turn_id"],)
@@ -511,17 +525,15 @@ def test_restart_recovers_in_order_and_does_not_reapply_committed_changes(daemon
         == "completed"
     )
     assert daemon.store.current_state.snapshot().revision == 1
-    assert daemon.store.pending_current_state_task() == "second"
+    assert pending_state_source(daemon.store) is None
 
 
-def test_worker_prioritizes_maintenance_before_next_owner_but_not_stop(daemon):
+def test_owner_input_precedes_already_queued_state_maintenance(daemon):
     stage(daemon.store)
+    daemon.autonomous.put_nowait(AutonomousJob.current_state("source"))
     event = IncomingMessage("new", "new", "hello", time.time(), time.time())
     daemon.incoming.put_nowait(event)
-    assert asyncio.run(daemon._next_work()) == (
-        "goal",
-        AutonomousJob.current_state("source"),
-    )
+    assert asyncio.run(daemon._next_work()) == ("owner", event)
     stop = IncomingMessage("stop", "stop", "/stop", time.time(), time.time())
     daemon.incoming.put_nowait(stop)
     assert asyncio.run(daemon._next_work()) == ("owner", stop)
@@ -545,7 +557,7 @@ def test_actual_old_schema_upgrade_preserves_foreign_keys_and_supports_new_stage
     try:
         assert store.turn_workflow_kind("old") == "owner"
         stage(store)
-        task = store.claim_current_state_task("source")
+        task = store.claim_current_state_batch("source")
         assert store.turn_workflow_kind(task["turn_id"]) == "current_state_maintenance"
         assert store._db.execute("PRAGMA foreign_key_check").fetchall() == []
     finally:
@@ -594,85 +606,81 @@ def test_webhook_service_settles_after_commit_or_failure(daemon, commit_fails):
             with pytest.raises(RuntimeError, match="commit failed"):
                 asyncio.run(service._execute(run, asyncio.Event()))
         assert settled == ["staged"]
-        assert daemon.store.pending_current_state_task() is None
+        assert pending_state_source(daemon.store) is None
     else:
         asyncio.run(service._execute(run, asyncio.Event()))
         assert settled == ["pending"]
 
 
-def test_worker_waits_for_webhook_commit_then_maintains_before_next_owner(daemon):
-    async def run():
-        stop = asyncio.Event()
-        calls = []
+@pytest.mark.parametrize(
+    "count,quiet_seconds,ready",
+    [
+        (CURRENT_STATE_BATCH_SIZE, CURRENT_STATE_FULL_IDLE_SECONDS - 1, False),
+        (CURRENT_STATE_BATCH_SIZE, CURRENT_STATE_FULL_IDLE_SECONDS, True),
+        (1, CURRENT_STATE_PARTIAL_IDLE_SECONDS - 1, False),
+        (1, CURRENT_STATE_PARTIAL_IDLE_SECONDS, True),
+    ],
+)
+def test_state_batch_uses_full_and_partial_idle_thresholds(
+    daemon, count, quiet_seconds, ready
+):
+    for index in range(count):
+        stage(daemon.store, f"source-{index}")
 
-        async def complete(_system, _messages, tools, **kwargs):
-            if task_row(daemon.store) and task_row(daemon.store)["state"] == "running":
-                calls.append("maintenance")
-                assert daemon.store.turn_workflow_kind("source") == "webhook"
-                return finish(
-                    {
-                        "delete": [],
-                        "add": [
-                            {
-                                "subject": "owner",
-                                "key": "location",
-                                "value": "home",
-                                "ttl_seconds": 60,
-                            }
-                        ],
-                    }
-                )
-            calls.append("webhook")
-            return response(
-                ToolCall(
-                    "end",
-                    "end_turn",
-                    {
-                        "mood": {"decision": "unchanged"},
-                        "reply_wait": {"wait": False},
-                    },
-                )
-            )
-
-        async def owner_turn(*args):
-            calls.append("owner")
-            assert daemon.store.current_state.snapshot().slots[0].value == "home"
-            stop.set()
-
-        daemon.provider = SimpleNamespace(
-            complete=complete, config=SimpleNamespace(api_format="anthropic")
+    async def check():
+        daemon._last_owner_activity_at = (
+            asyncio.get_running_loop().time() - quiet_seconds
         )
-        daemon._complete_batch_turn = owner_turn
-        worker = asyncio.create_task(daemon._agent_worker(stop))
-        try:
-            reply = await asyncio.wait_for(
-                daemon._request_webhook_turn("current input", "source"), 1
-            )
-            assert isinstance(reply, AgentReply)
-            assert task_row(daemon.store)["state"] == "staged"
-            daemon.incoming.put_nowait(
-                IncomingMessage("next", "next", "hello", time.time(), time.time())
-            )
-            await asyncio.sleep(0)
-            assert calls == ["webhook"]
-            daemon.store.complete_background_turn("source")
-            daemon._webhook_turn_settled("source")
-            await asyncio.wait_for(worker, 3)
-            assert calls == ["webhook", "maintenance", "owner"]
-            assert not daemon._webhook_commits
-        finally:
-            worker.cancel()
-            await asyncio.gather(worker, return_exceptions=True)
+        assert daemon._current_state_batch_ready() is ready
 
-    asyncio.run(run())
+    asyncio.run(check())
+
+
+def test_state_batch_combines_six_turn_deltas_in_one_maintenance_call(daemon):
+    for index in range(CURRENT_STATE_BATCH_SIZE):
+        stage(daemon.store, f"source-{index}")
+        payload = json.loads(task_row(daemon.store, f"source-{index}")["payload_json"])
+        payload["messages"][payload["input_index"]]["content"] = f"CURRENT-{index}"
+        with daemon.store._db:
+            daemon.store._db.execute(
+                "UPDATE current_state_tasks SET payload_json=? WHERE source_turn_id=?",
+                (json.dumps(payload), f"source-{index}"),
+            )
+
+    calls = 0
+
+    async def complete(_system, messages, _tools, **kwargs):
+        nonlocal calls
+        calls += 1
+        rendered = str(messages)
+        for index in range(CURRENT_STATE_BATCH_SIZE):
+            assert rendered.count(f"CURRENT-{index}") == 1
+        root = ElementTree.fromstring(
+            "<request>" + messages[-1]["content"] + "</request>"
+        )
+        assert len(root.find("turns").findall("turn")) == CURRENT_STATE_BATCH_SIZE
+        return finish()
+
+    daemon.provider = SimpleNamespace(
+        complete=complete, config=SimpleNamespace(api_format="anthropic")
+    )
+    asyncio.run(daemon._complete_current_state_task("source-0"))
+
+    assert calls == 1
+    assert all(
+        task_row(daemon.store, f"source-{index}")["state"] == "completed"
+        for index in range(CURRENT_STATE_BATCH_SIZE)
+    )
 
 
 def test_retry_uses_latest_snapshot_and_then_advances_queue(daemon):
     stage(daemon.store)
     stage(daemon.store, "second")
-    claimed = daemon.store.claim_current_state_task("source")
-    daemon.store.release_current_state_task("source", claimed["turn_id"], "provider")
-    assert daemon.store.pending_current_state_task() is None
+    claimed = daemon.store.claim_current_state_batch("source")
+    daemon.store.release_current_state_batch(
+        claimed["source_turn_ids"], claimed["turn_id"], "provider"
+    )
+    assert daemon.store.current_state_batch_status()["retry_at"] > time.time()
     daemon.store.current_state.apply(
         add=[SlotInput("owner", "location", "home", 60)],
         source_turn_id="newer",
@@ -681,7 +689,7 @@ def test_retry_uses_latest_snapshot_and_then_advances_queue(daemon):
     )
     with daemon.store._db:
         daemon.store._db.execute(
-            "UPDATE current_state_tasks SET retry_at=0 WHERE source_turn_id='source'"
+            "UPDATE current_state_tasks SET retry_at=0"
         )
 
     async def complete(_system, messages, _tools, **kwargs):
@@ -694,7 +702,8 @@ def test_retry_uses_latest_snapshot_and_then_advances_queue(daemon):
     asyncio.run(daemon._complete_current_state_task("source"))
     assert task_row(daemon.store)["attempts"] == 2
     assert task_row(daemon.store)["state"] == "completed"
-    assert daemon.store.pending_current_state_task() == "second"
+    assert task_row(daemon.store, "second")["state"] == "completed"
+    assert pending_state_source(daemon.store) is None
 
 
 @pytest.mark.parametrize(

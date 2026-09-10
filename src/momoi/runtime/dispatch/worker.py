@@ -49,6 +49,10 @@ class AgentWorker:
                     self._stop_requested = False
                     requeue_memory_maintenance = False
                     if job.kind == "current_state_maintenance":
+                        if not self._current_state_batch_ready():
+                            self._queued_current_state.discard(job.id)
+                            self.agenda_changed.set()
+                            continue
                         work = self._complete_current_state_task(job.id)
                     elif job.kind == "heartbeat":
                         target_channel = self._manual_heartbeat_channel
@@ -208,9 +212,6 @@ class AgentWorker:
         self._deferred_incoming.extend(item for item in queued if item is not stopped)
         if stopped is not None:
             return "owner", stopped
-        state_id = self.store.pending_current_state_task()
-        if state_id is not None:
-            return "goal", AutonomousJob.current_state(state_id)
         if self._deferred_incoming:
             return "owner", self._deferred_incoming.popleft()
         if not self.webhook_requests.empty():
