@@ -8,7 +8,9 @@ from ...storage import (
     CURRENT_STATE_BATCH_SIZE,
     CURRENT_STATE_FULL_IDLE_SECONDS,
     CURRENT_STATE_PARTIAL_IDLE_SECONDS,
+    EPISODE_CONSOLIDATION_BATCH_SIZE,
     EPISODE_CONSOLIDATION_DEFER_TIMEOUT_SECONDS,
+    EPISODE_CONSOLIDATION_PARTIAL_IDLE_SECONDS,
 )
 from ..jobs import AutonomousJob
 
@@ -60,18 +62,28 @@ class Scheduler:
 
     async def _wait_for_episode_annealing_ready(
         self, stop: asyncio.Event
-    ) -> bool | None:
+    ) -> int | None:
         loop = asyncio.get_running_loop()
         while not stop.is_set():
+            pending_count = self.store.episode_consolidation_pending_count()
+            partial_batch = 0 < pending_count < EPISODE_CONSOLIDATION_BATCH_SIZE
+            idle_seconds = (
+                EPISODE_CONSOLIDATION_PARTIAL_IDLE_SECONDS
+                if partial_batch
+                else self.config.episode_annealing.idle_seconds
+            )
+            consolidation_minimum = (
+                1 if partial_batch else EPISODE_CONSOLIDATION_BATCH_SIZE
+            )
             quiet_for = loop.time() - self._last_owner_activity_at
             if (
                 self._episode_annealing_is_idle()
-                and quiet_for >= self.config.episode_annealing.idle_seconds
+                and quiet_for >= idle_seconds
             ):
-                return True
+                return consolidation_minimum
             remaining = max(
                 0.05,
-                self.config.episode_annealing.idle_seconds - quiet_for,
+                idle_seconds - quiet_for,
             )
             try:
                 await asyncio.wait_for(
@@ -103,10 +115,14 @@ class Scheduler:
             self.episode_annealing_requested.clear()
             if not self.config.episode_annealing.enabled:
                 continue
-            ready = await self._wait_for_episode_annealing_ready(stop)
-            if ready is None:
+            consolidation_minimum = await self._wait_for_episode_annealing_ready(stop)
+            if consolidation_minimum is None:
                 return
-            task = asyncio.create_task(self._run_episode_annealing_once())
+            task = asyncio.create_task(
+                self._run_episode_annealing_once(
+                    consolidation_minimum=consolidation_minimum
+                )
+            )
             self._active_annealing = task
             try:
                 completed = await task

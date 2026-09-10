@@ -690,6 +690,42 @@ def test_state_batch_combines_six_turn_deltas_in_one_maintenance_call(daemon):
     )
 
 
+def test_seventh_turn_waits_for_partial_idle_deadline(daemon):
+    for index in range(CURRENT_STATE_BATCH_SIZE + 1):
+        stage(daemon.store, f"source-{index}")
+
+    async def complete(_system, _messages, _tools, **_kwargs):
+        return finish()
+
+    daemon.provider = SimpleNamespace(
+        complete=complete, config=SimpleNamespace(api_format="anthropic")
+    )
+
+    async def run():
+        loop = asyncio.get_running_loop()
+        daemon._last_owner_activity_at = (
+            loop.time() - CURRENT_STATE_FULL_IDLE_SECONDS
+        )
+        assert daemon._current_state_batch_ready()
+        await daemon._complete_current_state_task("source-0")
+
+        status = daemon.store.current_state_batch_status()
+        assert status is not None
+        assert status["source_turn_id"] == f"source-{CURRENT_STATE_BATCH_SIZE}"
+        assert status["count"] == 1
+
+        daemon._last_owner_activity_at = (
+            loop.time() - CURRENT_STATE_PARTIAL_IDLE_SECONDS + 1
+        )
+        assert not daemon._current_state_batch_ready()
+        daemon._last_owner_activity_at = (
+            loop.time() - CURRENT_STATE_PARTIAL_IDLE_SECONDS
+        )
+        assert daemon._current_state_batch_ready()
+
+    asyncio.run(run())
+
+
 def test_retry_uses_latest_snapshot_and_then_advances_queue(daemon):
     stage(daemon.store)
     stage(daemon.store, "second")

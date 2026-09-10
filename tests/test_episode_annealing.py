@@ -28,7 +28,9 @@ from momoi.runtime.turn_support import (
     EPISODE_SUMMARY_SYSTEM_PROMPT,
 )
 from momoi.storage import (
+    EPISODE_CONSOLIDATION_BATCH_SIZE,
     EPISODE_CONSOLIDATION_DEFER_TIMEOUT_SECONDS,
+    EPISODE_CONSOLIDATION_PARTIAL_IDLE_SECONDS,
     estimate_tokens,
 )
 
@@ -299,9 +301,6 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                     ),
                 )
             )
-            daemon.store.commit_turn(
-                [], "pending", AgentReply([]), turn_id="pending-1"
-            )
             loop = asyncio.get_running_loop()
             daemon._last_owner_activity_at = loop.time()
 
@@ -312,6 +311,29 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
             )
 
             self.assertTrue(ready)
+            self.assertGreaterEqual(loop.time() - started_at, 0.015)
+            daemon.store.close()
+
+    async def test_partial_consolidation_uses_five_minute_idle_timeout(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(config(directory))
+            daemon.store.commit_turn(
+                [], "pending", AgentReply([]), turn_id="pending-1"
+            )
+            loop = asyncio.get_running_loop()
+            daemon._last_owner_activity_at = (
+                loop.time() - EPISODE_CONSOLIDATION_PARTIAL_IDLE_SECONDS + 0.02
+            )
+
+            started_at = loop.time()
+            minimum = await asyncio.wait_for(
+                daemon._wait_for_episode_annealing_ready(asyncio.Event()),
+                timeout=0.2,
+            )
+
+            self.assertEqual(minimum, 1)
             self.assertGreaterEqual(loop.time() - started_at, 0.015)
             daemon.store.close()
 
@@ -343,7 +365,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                 timeout=0.2,
             )
 
-            self.assertTrue(ready)
+            self.assertEqual(ready, EPISODE_CONSOLIDATION_BATCH_SIZE)
             self.assertGreaterEqual(
                 asyncio.get_running_loop().time() - started_at,
                 0.015,
@@ -368,6 +390,70 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
 
             self.assertFalse(await daemon._run_episode_annealing_once())
             self.assertEqual(candidates, [])
+            daemon.store.close()
+
+    async def test_partial_consolidation_is_claimed_after_partial_timeout(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(config(directory))
+            daemon.store.commit_turn(
+                [], "pending", AgentReply([]), turn_id="pending-1"
+            )
+            candidates: list[dict[str, object]] = []
+
+            async def consolidate(candidate: dict[str, object]) -> bool:
+                candidates.append(candidate)
+                daemon.store.apply_episode_consolidation(
+                    ["pending-1"],
+                    [{
+                        "action": "ignore",
+                        "turn_ids": ["pending-1"],
+                        "reason": "test",
+                    }],
+                    allow_ignore_latest=True,
+                )
+                return True
+
+            daemon._consolidate_episode_turns = consolidate  # type: ignore[method-assign]
+
+            self.assertFalse(
+                await daemon._run_episode_annealing_once(consolidation_minimum=1)
+            )
+            self.assertEqual(len(candidates), 1)
+            self.assertEqual(candidates[0]["turns"][0]["turn_id"], "pending-1")
+            daemon.store.close()
+
+    async def test_seventh_consolidation_turn_keeps_worker_awake_for_partial_timeout(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(config(directory))
+            for ordinal in range(1, EPISODE_CONSOLIDATION_BATCH_SIZE + 2):
+                daemon.store.commit_turn(
+                    [],
+                    f"pending-{ordinal}",
+                    AgentReply([]),
+                    turn_id=f"pending-{ordinal}",
+                )
+
+            async def consolidate(candidate: dict[str, object]) -> bool:
+                turn_ids = [str(turn["turn_id"]) for turn in candidate["turns"]]
+                daemon.store.apply_episode_consolidation(
+                    turn_ids,
+                    [{
+                        "action": "ignore",
+                        "turn_ids": turn_ids,
+                        "reason": "test",
+                    }],
+                    allow_ignore_latest=True,
+                )
+                return True
+
+            daemon._consolidate_episode_turns = consolidate  # type: ignore[method-assign]
+
+            self.assertTrue(await daemon._run_episode_annealing_once())
+            self.assertEqual(daemon.store.episode_consolidation_pending_count(), 1)
             daemon.store.close()
 
     def test_consolidation_prompt_is_human_readable_and_drops_storage_metadata(

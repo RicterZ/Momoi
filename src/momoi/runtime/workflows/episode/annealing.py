@@ -15,17 +15,23 @@ logger = logging.getLogger(__name__)
 
 
 class EpisodeAnnealingWorkflow:
-    async def _run_episode_annealing_once(self) -> bool:
+    async def _run_episode_annealing_once(
+        self,
+        *,
+        consolidation_minimum: int = EPISODE_CONSOLIDATION_BATCH_SIZE,
+    ) -> bool:
         pending_count = self.store.episode_consolidation_pending_count()
         log_event(
             logger,
             logging.DEBUG,
             "episode_maintenance_selection",
             stage="episode_anneal",
-            consolidation_minimum=EPISODE_CONSOLIDATION_BATCH_SIZE,
+            consolidation_minimum=consolidation_minimum,
             consolidation_pending=pending_count,
         )
-        consolidation = self.store.claim_episode_consolidation_candidate()
+        consolidation = self.store.claim_episode_consolidation_candidate(
+            minimum=consolidation_minimum
+        )
         if consolidation is not None:
             log_event(
                 logger,
@@ -36,8 +42,7 @@ class EpisodeAnnealingWorkflow:
                 context_turns=len(consolidation.get("context_turns") or []),
             )
             archived = await self._consolidate_episode_turns(consolidation)
-            remaining = self.store.claim_episode_consolidation_candidate()
-            if remaining is not None and archived:
+            if archived and self.store.episode_consolidation_pending_count() > 0:
                 return True
         candidate = self.store.claim_episode_annealing_candidate(
             self.config.episode_raw_tail_turns, self._episode_raw_token_budget()
