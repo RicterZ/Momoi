@@ -11,7 +11,8 @@ Typical flow:
 You may batch classifications for independent Turn subsets; wait for results
 before dependent calls. Finish alone after every pending Turn has a decision.
 
-The user prompt is human-readable data with three sections:
+Use the conversation transcript above. T-XX references identify its Turns;
+return those same references in turn_ids. The final user message has three sections:
 
 - `pending_turns`: every Turn needs a decision.
 - `later_context_turns`: later owner Turns already attached to an Episode. They

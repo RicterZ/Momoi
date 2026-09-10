@@ -1,4 +1,5 @@
 from collections.abc import Mapping, Sequence
+from xml.sax.saxutils import quoteattr
 
 from ....conversation_roles import speaker_label
 
@@ -22,41 +23,11 @@ def _speaker(message: Mapping[str, object]) -> str:
     return speaker_label(role)
 
 
-def _render_conversation_turn(
-    turn: Mapping[str, object],
-    number: int,
-    *,
-    include_episode: bool,
-) -> str:
-    lines = [
-        f"Turn {number}",
-        f"  turn id: {_text(turn.get('turn_id'))}",
-    ]
+def _render_turn_reference(turn, *, include_episode):
+    attributes = f" id={quoteattr(str(turn['turn_id']))}"
     if include_episode:
-        lines.extend(
-            [
-                f"  attached episode id: {_text(turn.get('episode_id'))}",
-                f"  attached episode title: {_text(turn.get('episode_title'))}",
-            ]
-        )
-    messages = turn.get("messages")
-    if not isinstance(messages, Sequence) or isinstance(messages, (str, bytes)):
-        messages = []
-    lines.append("  messages:")
-    rendered_messages = 0
-    for message_number, message in enumerate(messages, 1):
-        if not isinstance(message, Mapping):
-            continue
-        rendered_messages += 1
-        content = str(message.get("content") or "")
-        timestamp = _text(message.get("timestamp")) or "unknown"
-        lines.append(
-            f"    {message_number}. [{_speaker(message)} timestamp={timestamp}]"
-        )
-        lines.extend(f"       {line}" for line in content.splitlines() or [""])
-    if not rendered_messages:
-        lines.append("    none")
-    return "\n".join(lines)
+        attributes += f" episode_id={quoteattr(str(turn.get('episode_id') or ''))}"
+    return f"<turn{attributes} />"
 
 
 def render_episode_consolidation_request(candidate: Mapping[str, object]) -> str:
@@ -82,13 +53,13 @@ def render_episode_consolidation_request(candidate: Mapping[str, object]) -> str
     )
 
     pending_text = "\n\n".join(
-        _render_conversation_turn(turn, number, include_episode=False)
-        for number, turn in enumerate(pending_turns, 1)
+        _render_turn_reference(turn, include_episode=False)
+        for turn in pending_turns
         if isinstance(turn, Mapping)
     )
     context_text = "\n\n".join(
-        _render_conversation_turn(turn, number, include_episode=True)
-        for number, turn in enumerate(context_turns, 1)
+        _render_turn_reference(turn, include_episode=True)
+        for turn in context_turns
         if isinstance(turn, Mapping)
     )
     episode_blocks: list[str] = []

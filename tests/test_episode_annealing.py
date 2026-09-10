@@ -4,6 +4,7 @@ import re
 import tempfile
 import time
 import unittest
+from xml.etree import ElementTree
 from dataclasses import replace
 from pathlib import Path
 
@@ -456,14 +457,14 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(daemon.store.episode_consolidation_pending_count(), 1)
             daemon.store.close()
 
-    def test_consolidation_prompt_is_human_readable_and_drops_storage_metadata(
+    def test_consolidation_prompt_references_transcript_without_copying_messages(
         self,
     ) -> None:
         prompt = render_episode_consolidation_request(
             {
                 "turns": [
                     {
-                        "turn_id": "turn-1",
+                        "turn_id": "T-1",
                         "timestamp": "updated-at-is-redundant",
                         "messages": [
                             {
@@ -494,15 +495,10 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
             }
         )
 
-        self.assertTrue(prompt.startswith("<pending_turns>\nTurn 1"))
-        self.assertIn("[OWNER timestamp=2026-08-20T12:00:00+08:00]", prompt)
-        self.assertIn("今天把项目做完了", prompt)
-        self.assertIn("<candidate_episodes>\nEpisode 1", prompt)
-        self.assertIn("  created at: 2026-08-19T20:00:00+08:00", prompt)
-        self.assertNotIn("created_at", prompt)
-        self.assertNotIn("updated-at-is-redundant", prompt)
-        self.assertNotIn("message id:", prompt)
-        self.assertFalse(prompt.startswith("{"))
+        root = ElementTree.fromstring("<request>" + prompt + "</request>")
+        self.assertEqual(root.find("pending_turns/turn").attrib, {"id": "T-1"})
+        self.assertNotIn("今天把项目做完了", prompt)
+        self.assertIsNotNone(root.find("candidate_episodes"))
 
     def test_annealing_prompt_preserves_exact_quoteable_text(self) -> None:
         raw = '第一行 <tag attr="x"> & \\n\n第二行：不要改空白'
@@ -1047,9 +1043,9 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                                 "episode_consolidation_finish", {}
                             )
                         ids = re.findall(
-                            r"^  turn id: (.+)$",
+                            r'<turn id="([^"]+)"',
                             prompt_section(
-                                str(messages[0]["content"]), "pending_turns"
+                                str(messages[-1]["content"]), "pending_turns"
                             ),
                             re.MULTILINE,
                         )
@@ -1194,7 +1190,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                             "decisions": [
                                 {
                                     "action": action,
-                                    "turn_ids": [turn_ids[calls - 1]],
+                                    "turn_ids": [f"T-{calls}"],
                                     "reason": "bounded test decision",
                                 }
                             ]

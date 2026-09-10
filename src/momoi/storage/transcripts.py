@@ -167,6 +167,32 @@ class TranscriptStore:
         if not turns:
             return []
         turn_ids = [str(row["id"]) for row in turns]
+        rows = self.conversation_messages_for_turns(turn_ids)
+        by_turn: dict[str, list[dict[str, object]]] = {}
+        for item in rows:
+            by_turn.setdefault(str(item["turn_id"]), []).append(item)
+        selected: list[list[dict[str, object]]] = []
+        used = 0
+        for turn_id in turn_ids:
+            group = by_turn.get(turn_id, [])
+            if not group:
+                continue
+            size = sum(estimate_tokens(str(item["content"])) for item in group)
+            if selected and used + size > token_budget:
+                break
+            if not selected and size > token_budget:
+                per_message = max(1, token_budget // len(group))
+                for item in group:
+                    item["content"] = truncate_tokens(str(item["content"]), per_message)
+                size = sum(estimate_tokens(str(item["content"])) for item in group)
+            selected.append(group)
+            used += size
+        return [item for group in reversed(selected) for item in group]
+
+    def conversation_messages_for_turns(self, turn_ids):
+        """Use the shared timeline projection without dropping required evidence."""
+        if not turn_ids:
+            return []
         placeholders = ",".join("?" for _ in turn_ids)
         rows = self._db.execute(
             f"""SELECT m.id, m.turn_id,
@@ -188,28 +214,12 @@ class TranscriptStore:
                 ORDER BY m.id""",
             tuple(turn_ids),
         ).fetchall()
-        by_turn: dict[str, list[dict[str, object]]] = {}
+        result = []
         for row in rows:
             item = dict(row)
             item["timestamp"] = self.context_timestamp(item["created_at"])
-            by_turn.setdefault(str(row["turn_id"]), []).append(item)
-        selected: list[list[dict[str, object]]] = []
-        used = 0
-        for turn_id in turn_ids:
-            group = by_turn.get(turn_id, [])
-            if not group:
-                continue
-            size = sum(estimate_tokens(str(item["content"])) for item in group)
-            if selected and used + size > token_budget:
-                break
-            if not selected and size > token_budget:
-                per_message = max(1, token_budget // len(group))
-                for item in group:
-                    item["content"] = truncate_tokens(str(item["content"]), per_message)
-                size = sum(estimate_tokens(str(item["content"])) for item in group)
-            selected.append(group)
-            used += size
-        return [item for group in reversed(selected) for item in group]
+            result.append(item)
+        return result
 
     def turn_activity(self, turn_ids: list[str]) -> dict[str, list[dict[str, object]]]:
         """Return each Turn's work in the order it happened.

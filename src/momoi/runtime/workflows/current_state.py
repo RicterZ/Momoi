@@ -2,39 +2,21 @@
 
 import asyncio
 import copy
-import json
 import logging
-import re
+from time import time
 from xml.sax.saxutils import quoteattr
 
 from ...observability.events import log_event
 from ...storage.current_state import StateConflict
 from ..agent import AgentWorkflow
 from ..context.current_state import pack_current_turn_context
-from ..turn_support import PROMPT_ROOT, live_prompt
+from ..transcript.maintenance import maintenance_transcript
+from ..turn_support import PROMPT_ROOT, live_prompt, context_data_message
 
 
 logger = logging.getLogger(__name__)
 PROMPT_PATH = PROMPT_ROOT.joinpath("current_state.md")
 MAINTENANCE_TIMEOUT_SECONDS = 30
-
-
-def _next_turn_label(messages) -> int:
-    labels = [
-        int(value)
-        for value in re.findall(r"\bT-(\d+)\b", json.dumps(messages, ensure_ascii=False))
-    ]
-    return max(labels, default=0) + 1
-
-
-def _mark_turn_input(message, marker):
-    marked = copy.deepcopy(message)
-    content = marked.get("content")
-    if isinstance(content, list):
-        content.insert(0, {"type": "text", "text": marker})
-    else:
-        marked["content"] = f"{marker}\n{str(content or '')}"
-    return marked
 
 
 class CurrentStateWorkflow:
@@ -92,18 +74,22 @@ class CurrentStateWorkflow:
             ("state_update_contract", live_prompt(PROMPT_PATH, "")),
             include_empty=True,
         )
-        first = tasks[0]
-        messages = copy.deepcopy(first["messages"][: first["input_index"]])
-        next_label = _next_turn_label(messages)
-        labels = [f"T-{next_label + index}" for index in range(len(tasks))]
-        for task, label in zip(tasks, labels, strict=True):
-            suffix = copy.deepcopy(task["messages"][task["input_index"] :])
-            marker = f"<turn id={quoteattr(label)} />"
-            if suffix:
-                suffix[0] = _mark_turn_input(suffix[0], marker)
-            messages.extend(suffix)
+        rows = {row["id"]: row for row in self._recent_conversation_rows()}
+        rows.update({row["id"]: row for row in
+                     self.store.conversation_messages_for_turns(source_turn_ids)})
+        messages, turn_labels = maintenance_transcript(
+            self.store, list(rows.values()), source_turn_ids,
+        )
+        context = context_data_message(
+            ("long_term_memories", self.store.always_memory_context()),
+            ("recent_memories", self.store.recent_memory_context()),
+        )
+        if context:
+            messages.insert(0, context)
+        labels = [turn_labels[value] for value in source_turn_ids]
         request = (
-            f"<state_update_request turns={quoteattr(','.join(labels))}>\n"
+            f"<state_update_request turns={quoteattr(','.join(labels))} "
+            f"now={quoteattr(self.store.context_timestamp(time()))}>\n"
             "Infer current state changes from the conversation records above for "
             "these Turns. If evidence conflicts, use the latest Turn.\n"
             "</state_update_request>\n\n"

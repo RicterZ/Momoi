@@ -150,14 +150,14 @@ def stage(store, source="source", kind="owner", *, commit=True):
             "input_schema": {"type": "object"},
         },
     ]
-    assert store.stage_current_state_task(source, kind, system, messages, 1, tools)
+    assert store.stage_current_state_task(source, kind, system, tools)
     if commit:
         store.complete_background_turn(source)
     return system, messages
 
 
 @pytest.mark.parametrize("kind", sorted(CURRENT_STATE_SOURCE_STAGES))
-def test_allowed_end_turn_captures_exact_chain_and_waits_for_commit(daemon, kind):
+def test_allowed_end_turn_captures_tool_surface_and_waits_for_commit(daemon, kind):
     source = "source"
     daemon.store.begin_turn(source, kind, [])
     calls = []
@@ -258,14 +258,10 @@ def test_allowed_end_turn_captures_exact_chain_and_waits_for_commit(daemon, kind
     row = task_row(daemon.store)
     assert row["state"] == "staged"
     payload = json.loads(row["payload_json"])
-    assert payload["messages"] == [
-        *request_chains[-1],
-        *messages[len(request_chains[-1]) :],
-    ]
+    assert set(payload) == {"system", "tools"}
     assert payload["system"] == systems[-1]
     assert payload["tools"] == surfaces[-1]
     assert "current_state_finish" in {tool["name"] for tool in surfaces[0]}
-    assert payload["input_index"] == 1
     assert pending_state_source(daemon.store) is None
     daemon.store.complete_background_turn(source)
     assert pending_state_source(daemon.store) == source
@@ -274,13 +270,9 @@ def test_allowed_end_turn_captures_exact_chain_and_waits_for_commit(daemon, kind
     async def maintain(system, messages, tools, **kwargs):
         assert tools == surfaces[-1]
         assert system == systems[-1]
-        index = payload["input_index"]
-        assert messages[:index] == payload["messages"][:index]
-        assert messages[index]["content"].startswith('<turn id="T-1" />')
-        assert messages[index]["content"].endswith(
-            payload["messages"][index]["content"]
-        )
-        assert messages[index + 1 : -1] == payload["messages"][index + 1 :]
+        assert ElementTree.fromstring(messages[0]["content"]).attrib == {
+            "id": "T-1", "evidence": "none",
+        }
         return finish()
 
     daemon.provider.complete = maintain
@@ -293,7 +285,7 @@ def test_allowed_end_turn_captures_exact_chain_and_waits_for_commit(daemon, kind
 )
 def test_other_stages_never_schedule_state_maintenance(daemon, kind):
     with pytest.raises(ValueError, match="source_not_allowed"):
-        daemon.store.stage_current_state_task("none", kind, [], [], 0, [])
+        daemon.store.stage_current_state_task("none", kind, [], [])
     assert task_row(daemon.store) is None
 
 
@@ -315,8 +307,8 @@ def test_commit_rollback_cancel_and_delete_never_leave_runnable_task(daemon):
     assert task_row(daemon.store, "delete-me") is None
 
 
-def test_maintenance_reuses_chain_only_appends_user_task_and_never_recurses(daemon):
-    original_system, original_messages = stage(daemon.store)
+def test_maintenance_preserves_tools_without_replaying_source_chain(daemon):
+    original_system, _ = stage(daemon.store)
     original_tools = json.loads(task_row(daemon.store)["payload_json"])["tools"]
     before = [tuple(row) for row in daemon.store._db.execute("SELECT * FROM messages")]
     requests = []
@@ -324,10 +316,10 @@ def test_maintenance_reuses_chain_only_appends_user_task_and_never_recurses(daem
     async def complete(system, messages, tools, **kwargs):
         requests.append(copy.deepcopy(messages))
         assert system == original_system
-        assert messages[:1] == original_messages[:1]
-        assert messages[1]["content"].startswith('<turn id="T-1" />')
-        assert messages[1]["content"].endswith("CURRENT_INPUT")
-        assert messages[2:-1] == original_messages[2:]
+        assert len(messages) == 2
+        assert ElementTree.fromstring(messages[0]["content"]).attrib == {
+            "id": "T-1", "evidence": "none",
+        }
         assert messages[-1]["role"] == "user"
         root = ElementTree.fromstring(
             "<request>" + messages[-1]["content"] + "</request>"
@@ -339,7 +331,8 @@ def test_maintenance_reuses_chain_only_appends_user_task_and_never_recurses(daem
         ]
         request = root.find("state_update_request")
         assert request is not None
-        assert request.attrib == {"turns": "T-1"}
+        assert request.attrib["turns"] == "T-1"
+        assert request.attrib["now"]
         assert request.text and request.text.strip()
         assert root.find("current_state").findall("slot") == []
         assert root.find("state_update_contract").text.strip()
@@ -640,17 +633,15 @@ def test_state_batch_uses_full_and_partial_idle_thresholds(
     asyncio.run(check())
 
 
-def test_state_batch_combines_six_turn_deltas_in_one_maintenance_call(daemon):
-    for index in range(CURRENT_STATE_BATCH_SIZE):
+@pytest.mark.parametrize("count", [6, 7, 8])
+def test_state_batch_uses_committed_transcript_including_turns_outside_window(daemon, count):
+    for index in range(count):
         stage(daemon.store, f"source-{index}")
-        payload = json.loads(task_row(daemon.store, f"source-{index}")["payload_json"])
-        if index == 0:
-            payload["messages"][0]["content"] = '<bubble turn="T-20">HISTORICAL</bubble>'
-        payload["messages"][payload["input_index"]]["content"] = f"CURRENT-{index}"
         with daemon.store._db:
             daemon.store._db.execute(
-                "UPDATE current_state_tasks SET payload_json=? WHERE source_turn_id=?",
-                (json.dumps(payload), f"source-{index}"),
+                "INSERT INTO messages(turn_id,role,content,created_at,delivery_state,source_event_ids_json) "
+                "VALUES (?,'user',?,?,'delivered','[]')",
+                (f"source-{index}", f"CURRENT-{index}", time.time()),
             )
 
     calls = 0
@@ -659,23 +650,25 @@ def test_state_batch_combines_six_turn_deltas_in_one_maintenance_call(daemon):
         nonlocal calls
         calls += 1
         rendered = str(messages)
-        for index in range(CURRENT_STATE_BATCH_SIZE):
+        for index in range(count):
             assert rendered.count(f"CURRENT-{index}") == 1
         root = ElementTree.fromstring(
             "<request>" + messages[-1]["content"] + "</request>"
         )
         request = root.find("state_update_request")
-        assert request.attrib["turns"] == "T-21,T-22,T-23,T-24,T-25,T-26"
+        assert request.attrib["turns"].split(",") == [f"T-{index + 1}" for index in range(count)]
         assert request.text and request.text.strip()
-        markers = [
-            message["content"].splitlines()[0]
+        bubbles = [
+            ElementTree.fromstring(block["text"][block["text"].index("<bubble"):])
             for message in messages[:-1]
-            if isinstance(message.get("content"), str)
-            and message["content"].startswith("<turn id=")
+            if message["role"] == "user"
+            for block in message["content"]
         ]
-        assert [
-            ElementTree.fromstring(marker).attrib["id"] for marker in markers
-        ] == [f"T-{index}" for index in range(21, 21 + CURRENT_STATE_BATCH_SIZE)]
+        assert [bubble.attrib["turn"] for bubble in bubbles] == [
+            f"T-{index + 1}" for index in range(count)
+        ]
+        assert "CURRENT_INPUT" not in rendered
+        assert "TOOL_EVIDENCE" not in rendered
         return finish()
 
     daemon.provider = SimpleNamespace(
@@ -686,7 +679,7 @@ def test_state_batch_combines_six_turn_deltas_in_one_maintenance_call(daemon):
     assert calls == 1
     assert all(
         task_row(daemon.store, f"source-{index}")["state"] == "completed"
-        for index in range(CURRENT_STATE_BATCH_SIZE)
+        for index in range(count)
     )
 
 

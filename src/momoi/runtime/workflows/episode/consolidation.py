@@ -1,10 +1,12 @@
 import asyncio
+import copy
 import logging
 from typing import Any
 
 from ....observability.events import log_event
 from ....models import ToolCall
 from ...agent import AgentWorkflow
+from ...transcript.maintenance import maintenance_transcript
 from ...turn_support import EPISODE_CONSOLIDATION_SYSTEM_PROMPT
 from .contracts import (
     EPISODE_CLASSIFY_TURNS_SPEC,
@@ -34,8 +36,20 @@ class EpisodeConsolidationWorkflow:
         )
         if state in {"completed", "cancelled"}:
             return False
-        user_prompt = render_episode_consolidation_request(candidate)
-        request = [{"role": "user", "content": user_prompt}]
+        source_turn_ids = [*turn_ids, *[str(item["turn_id"]) for item in context_items]]
+        request, labels = maintenance_transcript(
+            self.store,
+            self.store.conversation_messages_for_turns(source_turn_ids),
+            source_turn_ids,
+        )
+        source_ids = {labels[value]: value for value in source_turn_ids}
+        referenced = copy.deepcopy(candidate)
+        for key in ("turns", "context_turns"):
+            for item in referenced.get(key, []):
+                item["turn_id"] = labels[str(item["turn_id"])]
+        turn_ids = [labels[value] for value in turn_ids]
+        user_prompt = render_episode_consolidation_request(referenced)
+        request.append({"role": "user", "content": user_prompt})
         candidate_episode_ids = [
             str(episode["id"])
             for episode in candidate["candidate_episodes"]
@@ -46,7 +60,9 @@ class EpisodeConsolidationWorkflow:
         workflow_result: dict[str, object] | None = None
 
         def remaining() -> list[str]:
-            return self.store.episode_consolidation_remaining(turn_ids)
+            return [labels[value] for value in self.store.episode_consolidation_remaining(
+                [source_ids[value] for value in turn_ids]
+            )]
 
         async def execute_tool(call: ToolCall) -> dict[str, Any]:
             nonlocal workflow_complete, workflow_result
@@ -121,9 +137,13 @@ class EpisodeConsolidationWorkflow:
                     "remaining_turn_ids": pending,
                 }
             try:
+                stored_decisions = [
+                    {**decision, "turn_ids": [source_ids[value] for value in decision["turn_ids"]]}
+                    for decision in decisions
+                ]
                 linked, deferred = self.store.apply_episode_consolidation(
-                    selected,
-                    decisions,
+                    [source_ids[value] for value in selected],
+                    stored_decisions,
                     candidate_episode_ids,
                     allow_ignore_latest=True,
                 )
@@ -146,6 +166,7 @@ class EpisodeConsolidationWorkflow:
 
         workflow = AgentWorkflow(
             stage="episode_consolidate",
+            preserve_transcript=True,
             tool_names=frozenset(
                 {"episode_classify_turns", "episode_consolidation_finish"}
             ),
@@ -189,5 +210,4 @@ class EpisodeConsolidationWorkflow:
         except Exception as error:
             self.store.record_turn_failure(turn_id, type(error).__name__)
             raise
-
 

@@ -454,8 +454,7 @@ class AgentLoop:
                 if stage in CURRENT_STATE_SOURCE_STAGES:
                     self.store.stage_current_state_task(
                         turn_id, stage, model_round.request_system,
-                        [*model_round.request_messages, *messages[len(model_round.request_messages):]],
-                        history_messages, model_round.request_tools,
+                        model_round.request_tools,
                     )
                 return batch.reply
             if workflow is not None and workflow.is_complete():

@@ -49,8 +49,8 @@ def test_reflection_reads_material_after_small_batch_and_summary(daemon):
     async def workflow(_system, messages, _tools, turn_id, workflow):
         stages.append(workflow.stage)
         if workflow.stage == "episode_consolidate":
-            ids = re.findall(r"  turn id: (\S+)", messages[0]["content"])
-            assert ids == ["day-1", "day-2"]
+            ids = re.findall(r'<turn id="([^"]+)"', messages[-1]["content"])
+            assert ids == ["T-1", "T-2"]
             result = await workflow.execute_tool(ToolCall("classify", "episode_classify_turns", {
                 "decisions": [{"action": "new", "key": "project", "title": "我和老师完成项目",
                                "turn_ids": ids, "topics": [], "entities": [], "open_loops": [], "salience": 0.5}],

@@ -7,7 +7,8 @@ _TURN_IDS_SCHEMA: dict[str, Any] = {
     "type": "array",
     "minItems": 1,
     "uniqueItems": True,
-    "items": {"type": "string", "minLength": 1},
+    "description": "T-XX references from pending_turns in this request's transcript.",
+    "items": {"type": "string", "pattern": "^T-[1-9][0-9]*$"},
 }
 _TAGS_SCHEMA: dict[str, Any] = {
     "type": "array",

@@ -210,6 +210,9 @@ def render_messages(
     for group_index, group in enumerate(groups):
         if group.role in {"event", "goal", "heartbeat"}:
             lines = []
+            for turn_id in group.turn_ids:
+                if (labels or {}).get(turn_id):
+                    lines.append(f"<turn id={quoteattr(labels[turn_id])} />")
             for index, content in enumerate(group.parts):
                 lines.append(
                     render_event(
