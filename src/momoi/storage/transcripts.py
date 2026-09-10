@@ -49,6 +49,9 @@ _HEARTBEAT_RECORD_SQL = """(
     AND json_extract(m.source_event_ids_json, '$[0]')='heartbeat-record:' || m.turn_id
 )"""
 
+_MESSAGE_TIME_SQL = """CASE WHEN m.role='event' THEN COALESCE(wr.created_at, m.created_at)
+                            ELSE m.created_at END"""
+
 
 class TranscriptStore:
     def transcript_window_turn_limit(
@@ -189,18 +192,26 @@ class TranscriptStore:
             used += size
         return [item for group in reversed(selected) for item in group]
 
-    def conversation_messages_for_turns(self, turn_ids):
+    def conversation_messages_for_turns(self, turn_ids, *, window=None):
         """Use the shared timeline projection without dropping required evidence."""
-        if not turn_ids:
+        if turn_ids is not None and not turn_ids:
             return []
-        placeholders = ",".join("?" for _ in turn_ids)
+        if turn_ids is None and window is None:
+            raise ValueError("conversation window is required without turn ids")
+        scope = "1"
+        parameters = []
+        if turn_ids is not None:
+            scope = f"m.turn_id IN ({','.join('?' for _ in turn_ids)})"
+            parameters.extend(turn_ids)
+        if window is not None:
+            scope += f" AND ({_MESSAGE_TIME_SQL})>=? AND ({_MESSAGE_TIME_SQL})<?"
+            parameters.extend(window)
         rows = self._db.execute(
             f"""SELECT m.id, m.turn_id,
                        CASE WHEN {_GOAL_RECORD_SQL} THEN 'goal'
                             WHEN {_HEARTBEAT_RECORD_SQL} THEN 'heartbeat' ELSE m.role END AS role,
                        m.content,
-                       CASE WHEN m.role='event' THEN COALESCE(wr.created_at, m.created_at)
-                            ELSE m.created_at END AS created_at,
+                       {_MESSAGE_TIME_SQL} AS created_at,
                        m.delivery_state,
                        CASE WHEN m.role='event'
                             THEN 'webhook:' || COALESCE(wr.workflow_id, 'unknown')
@@ -209,10 +220,10 @@ class TranscriptStore:
                 LEFT JOIN webhook_steps AS ws
                   ON m.turn_id=('webhook:' || ws.run_id || ':' || ws.step_index)
                 LEFT JOIN webhook_runs AS wr ON wr.id=ws.run_id
-                WHERE m.turn_id IN ({placeholders})
+                WHERE {scope}
                   AND ({_GOAL_RECORD_SQL} OR {_HEARTBEAT_RECORD_SQL} OR m.role IN ('user', 'event') OR m.delivery_state IN ('delivered', 'uncertain', 'queued'))
                 ORDER BY m.id""",
-            tuple(turn_ids),
+            tuple(parameters),
         ).fetchall()
         result = []
         for row in rows:

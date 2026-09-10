@@ -19,16 +19,18 @@ class ReflectionScheduleStore:
     def claim_manual_reflection(
         self,
         now: float | None = None,
+        *,
+        at: str = "03:00",
     ) -> dict[str, object] | None:
         now = time.time() if now is None else now
-        local_date = datetime.fromtimestamp(now, self._timezone).date().isoformat()
+        local_date, scheduled_at, _ = self._reflection_slot(now, at)
         reflection_id = f"reflection:{local_date}"
         with self._db:
             self._db.execute(
                 """INSERT OR IGNORE INTO reflections
                    (id, local_date, state, scheduled_at, created_at)
                    VALUES (?, ?, 'pending', ?, ?)""",
-                (reflection_id, local_date, now, now),
+                (reflection_id, local_date, scheduled_at, now),
             )
             row = self._db.execute(
                 "SELECT * FROM reflections WHERE id=?",
@@ -122,4 +124,3 @@ class ReflectionScheduleStore:
                    WHERE local_date=? AND state='running'""",
                 (local_date,),
             )
-

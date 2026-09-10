@@ -8,9 +8,11 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from momoi.config.models import EpisodeAnnealingConfig
+from momoi.config.models import EpisodeAnnealingConfig, ReflectionConfig
 from momoi.models import ToolCall
 from momoi.runtime import MomoiDaemon
+from momoi.runtime.transcript.maintenance import maintenance_transcript
+from momoi.storage.reflection_values import reflection_window
 from tests.test_episode_annealing import annealing_items, config
 
 
@@ -34,7 +36,7 @@ def add_turn(daemon, name, at):
 
 
 def day_window():
-    start = datetime(2026, 9, 8, tzinfo=ZoneInfo("Asia/Shanghai"))
+    start = datetime(2026, 9, 8, 3, tzinfo=ZoneInfo("Asia/Shanghai"))
     return start.timestamp(), (start + timedelta(days=1)).timestamp()
 
 
@@ -43,7 +45,7 @@ def test_reflection_reads_material_after_small_batch_and_summary(daemon):
     for name, at in [("older", start - 1), ("day-1", start + 1), ("day-2", end - 1), ("later", end)]:
         add_turn(daemon, name, at)
     assert daemon.store.claim_episode_consolidation_candidate() is None
-    daemon.store.claim_manual_reflection(start + 3600)
+    daemon.store.claim_manual_reflection(end + 3600)
     stages = []
 
     async def workflow(_system, messages, _tools, turn_id, workflow):
@@ -120,9 +122,9 @@ def test_preparation_skips_disabled_and_does_not_retry_deferred_batch(daemon):
 
 @pytest.mark.parametrize("failure", [RuntimeError("provider failed"), TimeoutError()])
 def test_preparation_failure_keeps_original_reflection_material(daemon, failure, caplog):
-    start, _ = day_window()
+    start, end = day_window()
     add_turn(daemon, "pending", start + 1)
-    daemon.store.claim_manual_reflection(start + 3600)
+    daemon.store.claim_manual_reflection(end + 3600)
     daemon._consolidate_episode_turns = AsyncMock(side_effect=failure)
 
     async def reflect(_system, messages, _tools, turn_id, workflow):
@@ -137,7 +139,8 @@ def test_preparation_failure_keeps_original_reflection_material(daemon, failure,
     daemon._run_agent_workflow = reflect
     asyncio.run(daemon._complete_reflection("2026-09-08", "reflection-test"))
     assert "reflection_episode_preparation_failed" in caplog.text
-    assert "pending完成项目" in daemon.store.reflection_source("2026-09-08", 4000)["text"]
+    rows = daemon.store.conversation_messages_for_turns(["pending"])
+    assert rows[0]["content"] == "pending完成项目"
     assert daemon.store.reflection("2026-09-08")["state"] == "completed"
 
 
@@ -189,3 +192,118 @@ def test_preparation_propagates_cancellation(daemon):
     daemon._consolidate_episode_turns = AsyncMock(side_effect=asyncio.CancelledError)
     with pytest.raises(asyncio.CancelledError):
         asyncio.run(daemon._prepare_reflection_episodes("2026-09-08"))
+
+
+@pytest.mark.parametrize("at", ["03:00", "04:30", "00:00"])
+def test_reflection_uses_configured_window_and_complete_transcript(daemon, at):
+    daemon.config = replace(
+        daemon.config,
+        reflection=ReflectionConfig(at=at),
+        episode_annealing=EpisodeAnnealingConfig(enabled=False),
+    )
+    start, end = reflection_window("2026-09-08", at, daemon.store.timezone)
+    add_turn(daemon, "before-window", start - 1)
+    count = daemon.config.transcript_turns_max + 10
+    for index in range(count):
+        add_turn(daemon, f"in-window-{index:02d}", start + index)
+    add_turn(daemon, "last-in-window", end - 1)
+    add_turn(daemon, "after-window", end)
+    with daemon.store._db:
+        daemon.store._db.execute(
+            "INSERT INTO messages(turn_id,role,content,created_at,delivery_state,source_event_ids_json) "
+            "VALUES ('last-in-window','assistant','outside reply',?,'delivered','[]')", (end,),
+        )
+    claimed = daemon.store.claim_manual_reflection(end, at=at)
+    assert claimed["local_date"] == "2026-09-08"
+    source = daemon.store.reflection_source("2026-09-08", at=at)
+    assert (source["start_at"], source["end_at"]) == (start, end)
+    rows = daemon.store.conversation_messages_for_turns(None, window=(start, end))
+    assert len(rows) == count + 1
+    expected_messages, _ = maintenance_transcript(daemon.store, rows, [], window=(start, end))
+
+    async def reflect(_system, messages, _tools, turn_id, workflow):
+        assert workflow.preserve_transcript
+        assert messages[:-1] == expected_messages
+        final_input = messages[-1]["content"][0]["text"]
+        for row in rows:
+            assert row["content"] not in final_input
+        for section in (
+            "daily_reflection_record", "tool_timeline", "runtime_state", "reflection_scope",
+            "topic_timeline", "mutation_timeline", "episode_directory",
+        ):
+            assert f"<{section}>" not in final_input
+        result = await workflow.execute_tool(ToolCall("finish", "reflection_finish", {
+            "summary": "完成复盘", "memories": [], "conversation_actions": [],
+        }))
+        assert result["ok"]
+        return workflow.completion_result()
+
+    daemon._run_agent_workflow = reflect
+    asyncio.run(daemon._complete_reflection("2026-09-08", "reflection-test"))
+    assert daemon.store.reflection("2026-09-08")["state"] == "completed"
+
+
+def test_episode_timeline_selects_same_period_without_extracts(daemon):
+    start, end = reflection_window("2026-09-08", "04:30", daemon.store.timezone)
+    add_turn(daemon, "linked-turn", start)
+    for name, created, updated in [
+        ("before", start - 10, start - 1), ("after", end, end + 1),
+        ("created", start, end + 1), ("updated", start - 10, end - 1),
+        ("linked", start - 10, end + 1),
+    ] + [(f"extra-{i:02d}", start + i, start + i) for i in range(20)]:
+        daemon.store.create_episode(name, episode_id=name)
+        with daemon.store._db:
+            daemon.store._db.execute(
+                "UPDATE conversation_episodes SET created_at=?, updated_at=?, "
+                "narrative_summary=?, working_summary=? WHERE id=?",
+                (created, updated, f"summary:{name}", "verbatim-chat-extract", name),
+            )
+    daemon.store.link_turn_to_episode("linked", "linked-turn")
+    timeline = daemon.store.reflection_source("2026-09-08", at="04:30")["episode_timeline"]
+    for name in ["created", "updated", "linked", *[f"extra-{i:02d}" for i in range(20)]]:
+        assert f"id={name} " in timeline
+        assert f"summary:{name}" in timeline
+    for name in ["before", "after"]:
+        assert f"id={name} " not in timeline
+    assert "verbatim-chat-extract" not in timeline
+    assert "linked-turn完成项目" not in timeline
+    assert "verbatim-chat-extract" not in daemon.store.open_conversation_inventory_context()
+
+
+@pytest.mark.parametrize("offset,local_date", [(-1, "2026-09-07"), (0, "2026-09-08"), (3600, "2026-09-08")])
+def test_manual_and_scheduled_reflection_select_same_completed_window(daemon, offset, local_date):
+    config = ReflectionConfig(enabled=True, at="04:30")
+    _, end = reflection_window("2026-09-08", config.at, daemon.store.timezone)
+    due = daemon.store.claim_due_reflection(config, end + offset)
+    daemon.store.restore_completed_reflection_claim(local_date)
+    manual = daemon.store.claim_manual_reflection(end + offset, at=config.at)
+    assert due["local_date"] == manual["local_date"] == local_date
+    assert due["scheduled_at"] == manual["scheduled_at"]
+
+
+def test_reflection_window_keeps_wall_clock_time_across_dst():
+    timezone = ZoneInfo("America/New_York")
+    start, end = reflection_window("2026-03-07", "03:00", timezone)
+    assert datetime.fromtimestamp(start, timezone).hour == 3
+    assert datetime.fromtimestamp(end, timezone).hour == 3
+    assert end - start == 23 * 3600
+
+
+def test_webhook_transcript_uses_reception_time_for_window(daemon):
+    start, end = day_window()
+    for name, received, archived in [("included", start, end), ("excluded", start - 1, start)]:
+        with daemon.store._db:
+            daemon.store._db.execute(
+                "INSERT INTO webhook_runs(id,workflow_id,plan_json,state,created_at,updated_at) "
+                "VALUES (?,'test','{}','succeeded',?,?)", (name, received, archived),
+            )
+            daemon.store._db.execute(
+                "INSERT INTO webhook_steps(run_id,step_index,step_id,kind,state) "
+                "VALUES (?,0,'step','message','succeeded')", (name,),
+            )
+            daemon.store._db.execute(
+                "INSERT INTO messages(turn_id,role,content,created_at,delivery_state,source_event_ids_json) "
+                "VALUES (?,'event',?,?,'internal','[]')", (f"webhook:{name}:0", name, archived),
+            )
+    rows = daemon.store.conversation_messages_for_turns(None, window=(start, end))
+    assert [(row["content"], row["created_at"]) for row in rows] == [("included", start)]

@@ -240,7 +240,7 @@ class ConversationViewStore:
         if limit <= 0:
             return []
         rows = self._db.execute(
-            f"""SELECT e.id, e.status, e.title, e.working_summary, e.open_loops_json,
+            f"""SELECT e.id, e.status, e.title, e.narrative_summary, e.open_loops_json,
                       e.updated_at,
                       COALESCE((
                           SELECT MAX(t.updated_at) FROM episode_turns AS et
@@ -282,7 +282,7 @@ class ConversationViewStore:
             "Leave it unchanged when it may still continue."
         ]
         for row in rows:
-            summary = " ".join(str(row["working_summary"] or "").split())[:240]
+            summary = " ".join(str(row["narrative_summary"] or "").split())[:240]
             loops = json.dumps(row["open_loops"], ensure_ascii=False)
             lines.append(
                 f"episode_id={row['id']} status={row['status']} title={row['title']} "

@@ -6,6 +6,7 @@ import pytest
 
 from momoi.conversation_roles import speaker_label
 from momoi.runtime.workflows.episode.rendering import _speaker
+from momoi.storage.reflection_values import reflection_window
 from momoi.storage import Store
 from momoi.storage.episode_claims import render_verified_claims
 from momoi.storage.migrations import SCHEMA_VERSION
@@ -47,13 +48,11 @@ def test_reflection_preserves_delivery_and_owner_evidence(tmp_path):
                     "INSERT INTO messages(turn_id,role,content,created_at,delivery_state,source_event_ids_json) VALUES (?,?,?,?,?,'[]')",
                     ("turn", role, content, at + index, delivery),
                 )
-        result = store.reflection_source("2026-09-08", 4000)
-        assert result["owner_text"] == "老师提到桃井"
-        for (role, delivery, content), label in zip(rows, [
-            "OWNER", "ASSISTANT", "ASSISTANT INTERNAL (not sent to owner)",
-            "ASSISTANT DELIVERY UNCERTAIN", "EVENT",
-        ], strict=True):
-            assert f"{label}]\n{content}" in result["text"]
+        window = reflection_window("2026-09-08", "03:00", store.timezone)
+        result = store.conversation_messages_for_turns(None, window=window)
+        assert [(row["role"], row["delivery_state"], row["content"]) for row in result] == [
+            row for row in rows if row[:2] != ("assistant", "internal")
+        ]
     finally:
         store.close()
 

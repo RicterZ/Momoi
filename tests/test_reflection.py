@@ -67,6 +67,13 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                 ('{"subject":"project summary"}', occurred, occurred),
             )
             daemon.store._db.commit()
+            with daemon.store._db:
+                daemon.store._db.execute(
+                    """INSERT INTO messages
+                       (turn_id, role, content, created_at, delivery_state, source_event_ids_json)
+                       VALUES ('tool-turn', 'assistant', '查到了项目邮件。', ?, 'delivered', '[]')""",
+                    (occurred + 3,),
+                )
             daemon.store.append_turn_journal(
                 "tool-turn",
                 "tool_call",
@@ -106,16 +113,14 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                         _system, ensure_ascii=False
                     )
                     assert "<workflow_contract>" in request
-                    assert "<daily_reflection_record>" in request
-                    assert "<tool_timeline>" in request
-                    assert "arguments=" in request
-                    assert "project summary" in request
-                    assert "result_trust=untrusted_tool_data" in request
-                    assert "<runtime_state>" in request
+                    final_input = json.dumps(_messages[-1], ensure_ascii=False)
+                    for section in ("daily_reflection_record", "tool_timeline", "runtime_state", "reflection_scope"):
+                        assert f"<{section}>" not in final_input
+                    assert "我不吃香菜" in json.dumps(_messages[:-1], ensure_ascii=False)
+                    assert "我不吃香菜" not in final_input
                     assert "<open_conversations>" in request
                     assert "<always_memory_inventory>" not in request
                     assert "<recent_memory_inventory>" not in request
-                    assert "state=completed ok=true capability=read" in request
                     assert tools[0]["input_schema"]["properties"]["summary"]["type"] == "string"
                     call = ToolCall(
                         "finish-reflection",
@@ -539,10 +544,10 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
             )
             daemon = MomoiDaemon(config)
             first_now = datetime(
-                2026, 7, 21, 12, 54, tzinfo=ZoneInfo("Asia/Shanghai")
+                2026, 7, 22, 12, 54, tzinfo=ZoneInfo("Asia/Shanghai")
             ).timestamp()
             second_now = datetime(
-                2026, 7, 21, 13, 7, tzinfo=ZoneInfo("Asia/Shanghai")
+                2026, 7, 22, 13, 7, tzinfo=ZoneInfo("Asia/Shanghai")
             ).timestamp()
             occurred = datetime(
                 2026, 7, 21, 12, 0, tzinfo=ZoneInfo("Asia/Shanghai")

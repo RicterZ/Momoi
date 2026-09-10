@@ -1081,7 +1081,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertIsNotNone(daemon.store.self_state()["heartbeat_claimed_at"])
             daemon.store.close()
 
-    async def test_manual_reflect_command_queues_current_day_even_when_disabled(
+    async def test_manual_reflect_command_queues_completed_period_even_when_disabled(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1107,10 +1107,12 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 1,
                 channel="napcat",
             )
-            await daemon._receive(command)
-            await daemon._receive(command)
+            now = datetime(2026, 9, 11, 4, tzinfo=ZoneInfo("Asia/Shanghai")).timestamp()
+            with patch("momoi.storage.reflection_schedule.time.time", return_value=now):
+                await daemon._receive(command)
+                await daemon._receive(command)
 
-            local_date = datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
+            local_date = "2026-09-10"
             queued = await daemon.autonomous.get()
             self.assertEqual(queued, AutonomousJob.reflection(local_date))
             self.assertTrue(daemon.autonomous.empty())
@@ -1125,16 +1127,17 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 (local_date,),
             )
             daemon.store._db.commit()
-            await daemon._receive(
-                IncomingMessage(
-                    "qq:manual-reflect-again",
-                    "manual-reflect-again",
-                    "/reflect",
-                    2,
-                    2,
-                    channel="napcat",
+            with patch("momoi.storage.reflection_schedule.time.time", return_value=now + 60):
+                await daemon._receive(
+                    IncomingMessage(
+                        "qq:manual-reflect-again",
+                        "manual-reflect-again",
+                        "/reflect",
+                        2,
+                        2,
+                        channel="napcat",
+                    )
                 )
-            )
             self.assertEqual(
                 await daemon.autonomous.get(), AutonomousJob.reflection(local_date)
             )

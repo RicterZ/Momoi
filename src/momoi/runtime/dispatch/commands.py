@@ -133,7 +133,7 @@ class CommandRouter:
             )
             return
         if message.text.strip() == "/reflect":
-            reflection = self.store.claim_manual_reflection()
+            reflection = self.store.claim_manual_reflection(at=self.config.reflection.at)
             if reflection is not None:
                 log_event(
                     logger,

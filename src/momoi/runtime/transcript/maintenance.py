@@ -6,10 +6,15 @@ from .building import build_transcript
 from .rendering import render_messages, turn_labels
 
 
-def maintenance_transcript(store, rows, required_turn_ids):
+def maintenance_transcript(store, rows, required_turn_ids, *, window=None):
     activity = store.turn_activity(list(dict.fromkeys(
         [str(row["turn_id"]) for row in rows] + list(required_turn_ids)
     )))
+    if window is not None:
+        activity = {
+            turn_id: [record for record in records if window[0] <= record["at"] < window[1]]
+            for turn_id, records in activity.items()
+        }
     transcript = build_transcript(rows, timezone=store.timezone, tool_activity=activity)
     groups = [*transcript.orphaned, *transcript.groups]
     labels = turn_labels(groups)
