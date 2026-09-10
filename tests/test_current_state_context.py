@@ -189,10 +189,13 @@ def test_cues_audit_receives_only_cues_and_claims(daemon):
     cues = [{"text": "When recalling owner tiredness", "evidence_message_ids": [17]}]
 
     async def complete(_system, messages, _tools, **_kwargs):
-        assert json.loads(messages[0]["content"]) == {
-            "claims": claims,
-            "cues": [{"cue_index": 0, **cues[0]}],
-        }
+        from xml.etree.ElementTree import fromstring
+        request = fromstring(messages[0]["content"])
+        assert [node.tag for node in request] == ["sources", "cues"]
+        assert request.find("sources/message").get("source") == "OWNER"
+        assert request.findtext("sources/message/quote") == claims[0]["quote"]
+        assert request.find("cues/cue").get("sources") == "17"
+        assert request.findtext("cues/cue") == cues[0]["text"]
         return SimpleNamespace(
             tool_calls=[
                 ToolCall("admit", "episode_cue_admit", {"supported_indices": [0]})

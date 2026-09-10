@@ -1,4 +1,3 @@
-from ....storage import memory_snapshot_fingerprint
 from .contracts import (
     MEMORY_MAINTENANCE_FINISH_SPEC,
     MEMORY_MAINTENANCE_RUN_VERSION,
@@ -18,7 +17,6 @@ __all__ = [
     "MemoryMaintenanceWorkflow",
     "build_atomic_memory_groups",
     "filter_owner_evidence_for_memories",
-    "memory_snapshot_fingerprint",
     "pack_memory_groups",
     "parse_memory_maintenance_result",
     "render_memory_maintenance_request",

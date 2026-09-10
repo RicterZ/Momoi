@@ -22,13 +22,6 @@ _EVIDENCE_SCHEMA = {
     "required": ["event_id", "quote"],
     "additionalProperties": False,
 }
-_FINGERPRINT_SCHEMA = {
-    "type": "string",
-    "pattern": "^sha256:[0-9a-f]{64}$",
-    "description": (
-        "Copy the supplied snapshot_fingerprint verbatim."
-    ),
-}
 
 MEMORY_MAINTENANCE_FINISH_SPEC: dict[str, object] = {
     "name": "memory_maintenance_finish",
@@ -39,10 +32,6 @@ MEMORY_MAINTENANCE_FINISH_SPEC: dict[str, object] = {
         "type": "object",
         "description": "Cover every mutable id exactly once: unchanged in reviewed_ids, changed, or deferred in regroup anchor_ids.",
         "properties": {
-            "version": {
-                "type": "integer",
-                "enum": [1],
-            },
             "reviewed_ids": {
                 "type": "array",
                 "uniqueItems": True,
@@ -74,9 +63,6 @@ MEMORY_MAINTENANCE_FINISH_SPEC: dict[str, object] = {
                                     "description": (
                                         "Target id from <mutable_memories>."
                                     ),
-                                },
-                                "snapshot_fingerprint": {
-                                    **_FINGERPRINT_SCHEMA,
                                 },
                                 "content": {
                                     "type": "string",
@@ -125,7 +111,6 @@ MEMORY_MAINTENANCE_FINISH_SPEC: dict[str, object] = {
                             "required": [
                                 "action",
                                 "memory_id",
-                                "snapshot_fingerprint",
                                 "content",
                                 "activation",
                                 "expires_at",
@@ -159,17 +144,6 @@ MEMORY_MAINTENANCE_FINISH_SPEC: dict[str, object] = {
                                     "description": (
                                         "Other mutable ids absorbed by survivor_id. "
                                         "Each source is retired through superseded_by."
-                                    ),
-                                },
-                                "snapshot_fingerprints": {
-                                    "type": "object",
-                                    "additionalProperties": {
-                                        **_FINGERPRINT_SCHEMA,
-                                    },
-                                    "description": (
-                                        "Exactly one entry for survivor_id and every "
-                                        "source_id. Keys are decimal id strings; values "
-                                        "are copied verbatim."
                                     ),
                                 },
                                 "content": {
@@ -219,7 +193,6 @@ MEMORY_MAINTENANCE_FINISH_SPEC: dict[str, object] = {
                                 "action",
                                 "survivor_id",
                                 "source_ids",
-                                "snapshot_fingerprints",
                                 "content",
                                 "activation",
                                 "expires_at",
@@ -245,9 +218,6 @@ MEMORY_MAINTENANCE_FINISH_SPEC: dict[str, object] = {
                                         "Mutable id to retire."
                                     ),
                                 },
-                                "snapshot_fingerprint": {
-                                    **_FINGERPRINT_SCHEMA,
-                                },
                                 "evidence": _EVIDENCE_SCHEMA,
                                 "reason": {
                                     "type": "string",
@@ -262,7 +232,6 @@ MEMORY_MAINTENANCE_FINISH_SPEC: dict[str, object] = {
                             "required": [
                                 "action",
                                 "memory_id",
-                                "snapshot_fingerprint",
                                 "evidence",
                                 "reason",
                             ],
@@ -318,7 +287,6 @@ MEMORY_MAINTENANCE_FINISH_SPEC: dict[str, object] = {
             },
         },
         "required": [
-            "version",
             "reviewed_ids",
             "changes",
             "regroup_requests",

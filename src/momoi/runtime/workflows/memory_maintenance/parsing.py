@@ -1,7 +1,7 @@
 from collections.abc import Mapping
 from typing import Any
 
-from ....storage import MEMORY_ACTIVATIONS, memory_snapshot_fingerprint
+from ....storage import MEMORY_ACTIVATIONS
 from .contracts import MAINTENANCE_ACTIONS
 
 
@@ -48,7 +48,6 @@ def parse_memory_maintenance_result(
     owner_evidence: Mapping[str, str],
 ) -> tuple[dict[str, Any] | None, str | None]:
     expected_keys = {
-        "version",
         "reviewed_ids",
         "changes",
         "regroup_requests",
@@ -60,8 +59,6 @@ def parse_memory_maintenance_result(
         return None, (
             f"result: expected keys {sorted(expected_keys)}; got {sorted(value)}"
         )
-    if value.get("version") != 1:
-        return None, f"version: expected 1; got {value.get('version')!r}"
     summary = value.get("summary")
     reviewed = value.get("reviewed_ids")
     changes = value.get("changes")
@@ -192,7 +189,6 @@ def parse_memory_maintenance_result(
             required = {
                 "action",
                 "memory_id",
-                "snapshot_fingerprint",
                 "content",
                 "activation",
                 "expires_at",
@@ -212,7 +208,6 @@ def parse_memory_maintenance_result(
                 "action",
                 "survivor_id",
                 "source_ids",
-                "snapshot_fingerprints",
                 "content",
                 "activation",
                 "expires_at",
@@ -251,7 +246,6 @@ def parse_memory_maintenance_result(
             required = {
                 "action",
                 "memory_id",
-                "snapshot_fingerprint",
                 "evidence",
                 "reason",
             }
@@ -300,10 +294,10 @@ def parse_memory_maintenance_result(
                     None,
                     f"{path}.content: maximum length is 2000; got {len(content)}",
                 )
-            if activation not in MAINTENANCE_ACTIVATIONS:
+            if activation not in MEMORY_ACTIVATIONS:
                 return None, (
                     f"{path}.activation: expected one of "
-                    f"{sorted(MAINTENANCE_ACTIVATIONS)}; got {activation!r}"
+                    f"{sorted(MEMORY_ACTIVATIONS)}; got {activation!r}"
                 )
             if isinstance(expires_at, bool):
                 return None, f"{path}.expires_at: expected number or null; got boolean"
@@ -315,15 +309,6 @@ def parse_memory_maintenance_result(
                     )
         if action == "replace":
             memory_id = int(item["memory_id"])
-            expected_fingerprint = memory_snapshot_fingerprint(
-                mutable_memories[memory_id]
-            )
-            actual_fingerprint = item.get("snapshot_fingerprint")
-            if actual_fingerprint != expected_fingerprint:
-                return None, (
-                    f"{path}.snapshot_fingerprint: expected "
-                    f"{expected_fingerprint!r}; got {actual_fingerprint!r}"
-                )
             if item.get("activation") == "always":
                 current_activation = mutable_memories[memory_id].get("activation")
                 if current_activation != "always":
@@ -340,34 +325,9 @@ def parse_memory_maintenance_result(
             parsed["content"] = str(item["content"]).strip()
             parsed["evidence"] = evidence
         elif action == "merge":
-            survivor_id = item.get("survivor_id")
             source_ids = item.get("source_ids")
             evidence_event_ids = item.get("evidence_event_ids")
-            fingerprints = item.get("snapshot_fingerprints")
-            assert isinstance(survivor_id, int)
             assert isinstance(source_ids, list)
-            if not isinstance(fingerprints, dict):
-                return None, (
-                    f"{path}.snapshot_fingerprints: expected object; "
-                    f"got {fingerprints!r}"
-                )
-            expected_keys = {str(memory_id) for memory_id in target_ids}
-            if set(fingerprints) != expected_keys:
-                return None, (
-                    f"{path}.snapshot_fingerprints: expected keys "
-                    f"{sorted(expected_keys)}; got {sorted(fingerprints)}"
-                )
-            for memory_id in sorted(target_ids):
-                fingerprint_path = f"{path}.snapshot_fingerprints.{memory_id}"
-                expected_fingerprint = memory_snapshot_fingerprint(
-                    mutable_memories[memory_id]
-                )
-                actual_fingerprint = fingerprints[str(memory_id)]
-                if actual_fingerprint != expected_fingerprint:
-                    return None, (
-                        f"{fingerprint_path}: expected {expected_fingerprint!r}; "
-                        f"got {actual_fingerprint!r}"
-                    )
             if item.get("activation") == "always":
                 for memory_id in sorted(target_ids):
                     current_activation = mutable_memories[memory_id].get("activation")
@@ -401,18 +361,6 @@ def parse_memory_maintenance_result(
             parsed["evidence_event_ids"] = sorted(evidence_event_ids)
             parsed["content"] = str(item["content"]).strip()
         else:
-            memory_id = int(item["memory_id"])
-            if item.get("snapshot_fingerprint") != memory_snapshot_fingerprint(
-                mutable_memories[memory_id]
-            ):
-                expected_fingerprint = memory_snapshot_fingerprint(
-                    mutable_memories[memory_id]
-                )
-                return None, (
-                    f"{path}.snapshot_fingerprint: expected "
-                    f"{expected_fingerprint!r}; "
-                    f"got {item.get('snapshot_fingerprint')!r}"
-                )
             evidence, error = _parse_evidence(
                 item.get("evidence"), owner_evidence, f"{path}.evidence"
             )
@@ -457,13 +405,9 @@ def parse_memory_maintenance_result(
         )
 
     return {
-        "version": 1,
         "reviewed_ids": sorted(reviewed_ids),
         "completed_ids": sorted(reviewed_ids | changed_ids),
         "changes": parsed_changes,
         "regroup_requests": parsed_regroup,
         "summary": summary.strip(),
     }, None
-
-
-MAINTENANCE_ACTIVATIONS = set(MEMORY_ACTIVATIONS)

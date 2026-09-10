@@ -1,6 +1,5 @@
 from xml.etree.ElementTree import Element
 
-from ....storage import memory_snapshot_fingerprint
 from ..memory_rendering import memory_element, owner_evidence_element, xml_sections
 
 
@@ -14,9 +13,7 @@ def render_memory_maintenance_request(*, mutable_memories, context_memories,
         for memory in rows:
             if memory["id"] in supplied:
                 continue
-            node = memory_element(memory)
-            node.set("snapshot_fingerprint", memory_snapshot_fingerprint(memory))
-            section.append(node)
+            section.append(memory_element(memory))
             supplied.add(memory["id"])
     for memory in memory_directory:
         if memory["id"] not in supplied:

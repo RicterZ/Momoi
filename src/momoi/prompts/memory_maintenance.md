@@ -26,7 +26,7 @@ Assess relationship → choose action → check evidence → set activation → 
 
 - Owner quotes are factual evidence.
 - Existing memory content is a claim to audit, not evidence.
-- Topic context, Episode prose, assistant advice, search and tool
+- Episode prose, assistant advice, search and tool
   results may locate a memory but cannot establish an owner fact.
 
 **Activation**

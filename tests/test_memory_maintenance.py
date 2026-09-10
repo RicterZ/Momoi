@@ -15,7 +15,6 @@ from momoi.runtime.workflows.memory_maintenance import (
     MEMORY_MAINTENANCE_FINISH_SPEC,
     build_atomic_memory_groups,
     filter_owner_evidence_for_memories,
-    memory_snapshot_fingerprint,
     pack_memory_groups,
     parse_memory_maintenance_result,
     render_memory_maintenance_request,
@@ -56,11 +55,10 @@ class MemoryMaintenanceProtocolTest(unittest.TestCase):
             [variant["properties"]["action"]["enum"][0] for variant in variants],
             ["replace", "merge", "retire"],
         )
-        merge = variants[1]["properties"]
-        self.assertEqual(
-            merge["snapshot_fingerprints"]["additionalProperties"]["pattern"],
-            "^sha256:[0-9a-f]{64}$",
-        )
+        for variant in variants:
+            self.assertNotIn("snapshot_fingerprint", variant["properties"])
+            self.assertNotIn("snapshot_fingerprints", variant["properties"])
+        self.assertNotIn("version", properties)
 
     def test_parser_rejects_text_wrapped_results(self) -> None:
         result, error = parse_memory_maintenance_result(
@@ -95,7 +93,7 @@ class MemoryMaintenanceProtocolTest(unittest.TestCase):
             any(1 in batch and 41 in batch for batch in batches)
         )
 
-    def test_renderer_keeps_directory_read_only_and_includes_fingerprints(
+    def test_renderer_keeps_directory_read_only_without_fingerprints(
         self,
     ) -> None:
         mutable = memory(1, "home.light", "卧室灯使用暖光。")
@@ -113,7 +111,7 @@ class MemoryMaintenanceProtocolTest(unittest.TestCase):
             ],
         )
         self.assertIn("<mutable_memories>", rendered)
-        self.assertIn(memory_snapshot_fingerprint(mutable), rendered)
+        self.assertNotIn("snapshot_fingerprint", rendered)
         from xml.etree.ElementTree import fromstring
         root = fromstring("<request>" + rendered + "</request>")
         self.assertEqual(root.find("owner_evidence/event").get("id"), "owner-1")
@@ -189,7 +187,6 @@ class MemoryMaintenanceProtocolTest(unittest.TestCase):
             2: memory(2, "food.spicy", "主人不吃辣。", activation="always"),
         }
         text = {
-            "version": 1,
             "reviewed_ids": [1],
             "changes": [],
             "regroup_requests": [
@@ -213,7 +210,6 @@ class MemoryMaintenanceProtocolTest(unittest.TestCase):
         self.assertEqual(result["regroup_requests"][0]["anchor_ids"], [2])
 
         incomplete = {
-            "version": 1,
             "reviewed_ids": [1],
             "changes": [],
             "regroup_requests": [],
@@ -229,18 +225,16 @@ class MemoryMaintenanceProtocolTest(unittest.TestCase):
         self.assertIsNone(result)
         self.assertIn("mutable ids have no decision", error)
 
-    def test_parser_validates_replace_fingerprint_and_exact_owner_quote(
+    def test_parser_validates_replace_and_exact_owner_quote(
         self,
     ) -> None:
         row = memory(1, "home.light", "卧室灯使用暖光。")
         payload = {
-            "version": 1,
             "reviewed_ids": [],
             "changes": [
                 {
                     "action": "replace",
                     "memory_id": 1,
-                    "snapshot_fingerprint": memory_snapshot_fingerprint(row),
                     "content": "卧室灯使用冷光。",
                     "activation": "recall",
                     "expires_at": None,
@@ -287,17 +281,6 @@ class MemoryMaintenanceProtocolTest(unittest.TestCase):
         self.assertIsNone(result)
         self.assertIn("not an exact contiguous substring", error)
 
-        payload["changes"][0]["evidence"]["quote"] = "卧室灯改成冷光"
-        payload["changes"][0]["snapshot_fingerprint"] = "sha256:stale"
-        result, error = parse_memory_maintenance_result(
-            payload,
-            mutable_memories={1: row},
-            context_ids=set(),
-            directory_ids={1},
-            owner_evidence={"owner-1": "以后卧室灯改成冷光"},
-        )
-        self.assertIsNone(result)
-        self.assertIn("snapshot_fingerprint: expected", error)
 
     def test_parser_requires_owner_evidence_ids_for_merge(self) -> None:
         rows = {
@@ -308,10 +291,6 @@ class MemoryMaintenanceProtocolTest(unittest.TestCase):
             "action": "merge",
             "survivor_id": 1,
             "source_ids": [2],
-            "snapshot_fingerprints": {
-                str(memory_id): memory_snapshot_fingerprint(row)
-                for memory_id, row in rows.items()
-            },
             "content": "计划去长寿湖，单程三四小时。",
             "activation": "recent",
             "expires_at": 2000000000,
@@ -319,7 +298,6 @@ class MemoryMaintenanceProtocolTest(unittest.TestCase):
             "reason": "同一次短期行程。",
         }
         payload = {
-            "version": 1,
             "reviewed_ids": [],
             "changes": [change],
             "regroup_requests": [],
@@ -341,32 +319,8 @@ class MemoryMaintenanceProtocolTest(unittest.TestCase):
             ["owner-1", "owner-2"],
         )
 
-        change["snapshot_fingerprints"]["1"] = change["snapshot_fingerprints"][
-            "1"
-        ].removeprefix("sha256:")
-        result, error = parse_memory_maintenance_result(
-            payload,
-            mutable_memories=rows,
-            context_ids=set(),
-            directory_ids=set(rows),
-            owner_evidence={
-                "owner-1": "计划去长寿湖",
-                "owner-2": "单程三四小时",
-            },
-        )
-        self.assertIsNone(result)
-        self.assertIn("snapshot_fingerprints.1: expected", error)
-        change["snapshot_fingerprints"] = {
-            str(memory_id): memory_snapshot_fingerprint(row)
-            for memory_id, row in rows.items()
-        }
-
         rows[1]["activation"] = "always"
         change["activation"] = "always"
-        change["snapshot_fingerprints"] = {
-            str(memory_id): memory_snapshot_fingerprint(row)
-            for memory_id, row in rows.items()
-        }
         result, error = parse_memory_maintenance_result(
             payload,
             mutable_memories=rows,
@@ -382,10 +336,6 @@ class MemoryMaintenanceProtocolTest(unittest.TestCase):
 
         rows[1]["activation"] = "recent"
         change["activation"] = "recent"
-        change["snapshot_fingerprints"] = {
-            str(memory_id): memory_snapshot_fingerprint(row)
-            for memory_id, row in rows.items()
-        }
         change["evidence_event_ids"] = ["qq:owner-1"]
         result, error = parse_memory_maintenance_result(
             payload,
@@ -601,19 +551,17 @@ class MemoryMaintenanceExecutionTest(unittest.IsolatedAsyncioTestCase):
                         f"finish-{calls}",
                         "memory_maintenance_finish",
                         {
-                            "version": 1,
                             "reviewed_ids": [],
                             "changes": [
                                 {
                                     "action": "replace",
                                     "memory_id": memory_id,
-                                    "snapshot_fingerprint": "missing-prefix",
                                     "content": "主人可以吃辣。",
                                     "activation": "always",
                                     "expires_at": None,
                                     "evidence": {
                                         "event_id": "owner-1",
-                                        "quote": "我可以吃辣",
+                                        "quote": "未提供的引文",
                                     },
                                     "reason": "主人更新偏好。",
                                 }
@@ -646,7 +594,7 @@ class MemoryMaintenanceExecutionTest(unittest.IsolatedAsyncioTestCase):
             ).fetchone()
             self.assertEqual(row["state"], "running")
             self.assertEqual(row["stage"], "memory_maintenance_queued")
-            self.assertIn("snapshot_fingerprint: expected", row["failure_reason"])
+            self.assertIn("not an exact contiguous substring", row["failure_reason"])
             self.assertTrue(
                 any(
                     getattr(record, "momoi_event", "")
@@ -691,11 +639,6 @@ class MemoryMaintenanceExecutionTest(unittest.IsolatedAsyncioTestCase):
                     20,
                 )
             )
-            snapshot = next(
-                item
-                for item in daemon.store.maintenance_memory_inventory()
-                if item["id"] == memory_id
-            )
             turn_id = "maintenance-bootstrap"
             daemon.store.queue_memory_maintenance_turn(turn_id, "manual:test")
             call_contexts: list[dict[str, object]] = []
@@ -712,7 +655,6 @@ class MemoryMaintenanceExecutionTest(unittest.IsolatedAsyncioTestCase):
                     assert _kwargs["require_tool"] is True
                     call_contexts.append(current_log_context())
                     payload = {
-                        "version": 1,
                         "reviewed_ids": (
                             [memory_id] if len(call_contexts) == 1 else []
                         ),
@@ -720,9 +662,6 @@ class MemoryMaintenanceExecutionTest(unittest.IsolatedAsyncioTestCase):
                             {
                                 "action": "replace",
                                 "memory_id": memory_id,
-                                "snapshot_fingerprint": (
-                                    memory_snapshot_fingerprint(snapshot)
-                                ),
                                 "content": "主人可以吃辣。",
                                 "activation": "always",
                                 "expires_at": None,
@@ -854,7 +793,6 @@ class MemoryMaintenanceExecutionTest(unittest.IsolatedAsyncioTestCase):
             )
             memory_id = int(cursor.lastrowid)
             daemon.store._db.commit()
-            snapshot = daemon.store.maintenance_memory_inventory()[0]
             turn_id = "maintenance-apply"
             daemon.store.queue_memory_maintenance_turn(turn_id, "manual:test")
 
@@ -869,15 +807,11 @@ class MemoryMaintenanceExecutionTest(unittest.IsolatedAsyncioTestCase):
                     assert _tools == [MEMORY_MAINTENANCE_FINISH_SPEC]
                     assert _kwargs["require_tool"] is True
                     payload = {
-                        "version": 1,
                         "reviewed_ids": [],
                         "changes": [
                             {
                                 "action": "replace",
                                 "memory_id": memory_id,
-                                "snapshot_fingerprint": (
-                                    memory_snapshot_fingerprint(snapshot)
-                                ),
                                 "content": "主人可以吃辣。",
                                 "activation": "always",
                                 "expires_at": None,

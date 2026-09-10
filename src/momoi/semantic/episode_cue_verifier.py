@@ -17,7 +17,7 @@ Check every part of each cue: actor, speaker, attribution, time, modality,
 negation, action status, and emotion. An assistant's guess about the owner is
 not the owner's statement. Do not infer gender or emotion from a neutral
 utterance. A quotation proves a statement, not that the claimed action occurred.
-Check all claims for later corrections, not just the cited fragments. A cue that
+Check all sources for later corrections, not just the cited fragments. A cue that
 presents a corrected or failed action as completed is unsupported. Figurative
 play or dream narration must not be presented as a physical event. Reject the
 whole cue if any detail is unsupported; do not rewrite or supplement evidence.

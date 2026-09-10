@@ -13,7 +13,7 @@ You may batch independent searches; wait for results before dependent calls.
 
 Use the current memories to decide what changes; the visible snapshots explain
 what the foreground model knew and may already be obsolete. visible="true" marks
-current memories seen by that model. Unchanged snapshots
+memory IDs present in its context, not necessarily their current contents. Unchanged snapshots
 are supplied once as current_memories; outdated_visible_snapshots are historical
 reference only. Request type is intent,
 not a prescribed database action. Do not rewrite unrelated facts or make changes
