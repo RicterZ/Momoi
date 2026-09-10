@@ -83,17 +83,19 @@ def finish(arguments=None):
 def test_current_state_prompt_defines_projection_instead_of_cumulative_summary():
     prompt = files("momoi.prompts").joinpath("current_state.md").read_text()
     prompt = " ".join(prompt.split())
-    assert "condition or ongoing situation" in prompt
-    assert "remains true beyond the source Turn" in prompt
-    assert "A momentary or completed event is not a state" in prompt
-    assert "review all existing slots" in prompt
-    assert "delete anything that is not a state" in prompt
-    assert "Add only genuinely new states supported by the source Turn" in prompt
-    assert "Leave unchanged state out" in prompt
-    assert "delete conflicting or redundant slots" in prompt
-    assert "Do not renew or duplicate state" in prompt
-    assert "latest mutually compatible facts" in prompt
-    assert "Prefer one sentence per slot" in prompt
+    assert "TTL-backed short-term working memory" in prompt
+    assert "when conversation context is truncated" in prompt
+    assert "regardless of whether the next Turn will use it" in prompt
+    assert "must be safe to forget" in prompt
+    assert '"I took a taxi to work today"' in prompt
+    assert "Every slot must contain only the concise current fact" in prompt
+    assert "timestamps already represented by its scope" in prompt
+    assert "review and normalize every existing slot" in prompt
+    assert "never preserve malformed content unchanged" in prompt
+    assert "Leave only valid, normalized, unchanged state untouched" in prompt
+    assert "remaining real-world scope" in prompt
+    assert "shortest reasonable TTL" in prompt
+    assert "Never use the maximum" in prompt
     assert "Return empty `add` and `delete` arrays" in prompt
 
 
