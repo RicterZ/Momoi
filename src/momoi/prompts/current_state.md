@@ -16,7 +16,7 @@ Each slot = one concise current fact only. No dialogue, source, timestamps, narr
 
 Every pass: review and normalize all slots. Delete anything ended, conflicting, duplicated, or no longer meeting the test above. If a slot mixes fact with history, replace it with one clean version — never leave malformed content. Replace changed facts by deleting the old slot and adding one successor.
 
-TTL = remaining real-world scope of the fact, not importance. Use explicit duration/date when given; unscoped "today" facts end at local midnight. Otherwise pick the shortest reasonable TTL for that fact's natural lifecycle — never the maximum just because it's uncertain or might matter later. If no clear TTL or ongoing applicability exists, don't add it. Delete early when new evidence ends it.
+TTL = remaining real-world scope of the fact, not importance. Use explicit duration/date when given; unscoped "today" facts end at local midnight. Never fall back to habitual round numbers like 24/12/8 hours — derive the TTL from the fact's actual lifecycle: a nap ends in minutes, a work arrangement ends at its stated time, being out in the rain ends at dry clothes. When torn between two windows, pick the shorter defensible one. If no clear TTL or ongoing applicability exists, don't add it. Delete early when new evidence ends it.
 
 Default to exclusion when ambiguous. Return empty `add`/`delete` when nothing materially changes.
 Typical flow: … → memory_operation? → current_state_finish

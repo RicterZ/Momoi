@@ -150,6 +150,58 @@ def test_subjects_capacity_and_expired_dimension_reuse(state):
     assert len(manager.history()[-1].removed) == 1
 
 
+def test_capacity_accepts_net_neutral_change_set(state):
+    manager, _, _ = state
+    manager.MAX_SLOTS = 2
+    first = add(manager, operation="a").added[0]
+    manager.apply(
+        add=[SlotInput("assistant", "writing", "drafting", 100)],
+        source_turn_id="b",
+        operation_id="b",
+        expected_revision=1,
+    )
+    with pytest.raises(ValueError, match="capacity"):
+        manager.apply(
+            add=[SlotInput("owner", "location", "home", 10)],
+            source_turn_id="c",
+            operation_id="c",
+            expected_revision=2,
+        )
+    change = manager.apply(
+        add=[SlotInput("owner", "location", "home", 10)],
+        delete=[first.id],
+        source_turn_id="c",
+        operation_id="c-net",
+        expected_revision=2,
+    )
+    assert change.removed == (first,)
+    assert len(manager.snapshot().slots) == 2
+
+
+def test_capacity_note_in_packed_context_above_soft_threshold(state):
+    from momoi.runtime.context.current_state import pack_current_turn_context
+
+    _, _, store = state
+    manager = store.current_state
+    for index in range(9):
+        manager.apply(
+            add=[SlotInput("owner", f"dim{index}", "x", 3600)],
+            source_turn_id=f"t{index}",
+            operation_id=f"op{index}",
+            expected_revision=manager.snapshot().revision,
+        )
+    packed = pack_current_turn_context(store, "owner", ("runtime_state", "x"))
+    assert '<capacity used="9" limit="12">' in packed
+    manager.apply(
+        delete=[manager.snapshot().slots[0].id],
+        source_turn_id="t9",
+        operation_id="op9",
+        expected_revision=manager.snapshot().revision,
+    )
+    packed = pack_current_turn_context(store, "owner", ("runtime_state", "x"))
+    assert "<capacity" not in packed
+
+
 def test_restore_preserves_original_ttl_and_can_undo_deletions(state):
     manager, now, _ = state
     original = add(manager).added[0]

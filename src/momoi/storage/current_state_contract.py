@@ -4,7 +4,8 @@ The private maintenance workflow uses this schema and passes its arguments to
 CurrentStateManager.apply_arguments. Foreground end_turn does not carry state.
 """
 
-MAX_SLOTS = 128
+MAX_SLOTS = 12
+SLOT_SOFT_WARNING_THRESHOLD = 8
 MAX_TTL_SECONDS = 24 * 3600
 SUBJECT_MAX_LENGTH = 128
 KEY_MAX_LENGTH = 64

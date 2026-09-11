@@ -311,7 +311,10 @@ class CurrentStateManager:
                     )
                     after[slot.id] = slot
             if len(after) > self.MAX_SLOTS:
-                raise ValueError("slot_capacity_exceeded")
+                raise ValueError(
+                    f"slot_capacity_exceeded: at most {self.MAX_SLOTS} slots; "
+                    "delete ended or weaker slots in the same change set, then resubmit"
+                )
             removed = tuple(slot for key, slot in before.items() if key not in after)
             added = tuple(slot for key, slot in after.items() if key not in before)
             self._db.executemany(

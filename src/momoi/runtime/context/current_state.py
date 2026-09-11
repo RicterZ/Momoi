@@ -3,7 +3,11 @@
 from xml.sax.saxutils import escape, quoteattr
 
 from ...storage import Store
-from ...storage.current_state_contract import CURRENT_STATE_SOURCE_STAGES
+from ...storage.current_state_contract import (
+    CURRENT_STATE_SOURCE_STAGES,
+    MAX_SLOTS,
+    SLOT_SOFT_WARNING_THRESHOLD,
+)
 from ..turn_support import pack_user_context
 
 
@@ -31,6 +35,12 @@ def pack_current_turn_context(
             f" {key}={quoteattr(value)}" for key, value in attributes.items()
         )
         slots.append(f"<slot{rendered}>{escape(slot.value)}</slot>")
+    if len(slots) > SLOT_SOFT_WARNING_THRESHOLD:
+        slots.append(
+            f"<capacity used={quoteattr(str(len(slots)))} "
+            f"limit={quoteattr(str(MAX_SLOTS))}>Approaching the slot limit: "
+            "tighten, merge, or delete weak slots before adding new ones.</capacity>"
+        )
     packed = pack_user_context(("current_state", "\n".join(slots)), *items)
     # Mid-Turn owner updates must explicitly invalidate a prior nonempty snapshot.
     if include_empty and not slots:
