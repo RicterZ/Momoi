@@ -1,10 +1,11 @@
 """Bounded topic selection over metadata, independent of the chat transcript."""
 from __future__ import annotations
 
-import json
 import logging
 import time
+from collections.abc import Mapping, Sequence
 from pathlib import Path
+from xml.etree.ElementTree import Element, SubElement, indent, tostring
 
 from .structured_selection import SelectionProtocolError, select_structured
 from ..storage.episode_cues import cue_texts
@@ -13,6 +14,57 @@ from ..observability.events import log_event
 logger = logging.getLogger(__name__)
 TOPIC_CANDIDATE_LIMIT = 8
 SYSTEM = (Path(__file__).resolve().parents[1] / "prompts/topic_selection.md").read_text().strip()
+
+
+def _text(parent: Element, tag: str, value: object) -> Element:
+    node = SubElement(parent, tag)
+    node.text = str(value or "")
+    return node
+
+
+def _text_list(parent: Element, tag: str, item_tag: str, values: object) -> None:
+    node = SubElement(parent, tag)
+    if not isinstance(values, Sequence) or isinstance(values, (str, bytes)):
+        return
+    for value in values:
+        _text(node, item_tag, value)
+
+
+def render_topic_selection_request(payload: Mapping[str, object]) -> str:
+    root = Element("topic_selection")
+    _text(root, "current_request", payload.get("current_request"))
+
+    queries = SubElement(root, "retrieval_queries")
+    for value in payload.get("retrieval_queries") or []:
+        if not isinstance(value, Mapping):
+            continue
+        query = SubElement(queries, "query")
+        _text(query, "semantic", value.get("semantic"))
+        _text(query, "keywords", value.get("keywords"))
+
+    candidates = SubElement(root, "candidates")
+    for value in payload.get("candidates") or []:
+        if not isinstance(value, Mapping):
+            continue
+        candidate = SubElement(candidates, "candidate", {"index": str(value["index"])})
+        _text(candidate, "title", value.get("title"))
+        _text(candidate, "summary", value.get("summary"))
+        _text_list(candidate, "topics", "topic", value.get("topics"))
+        _text_list(candidate, "cues", "cue", value.get("cues"))
+        conversation_time = value.get("conversation_time")
+        if isinstance(conversation_time, Mapping):
+            SubElement(
+                candidate,
+                "conversation_time",
+                {
+                    key: str(conversation_time[key])
+                    for key in ("start", "end")
+                    if conversation_time.get(key) not in (None, "")
+                },
+            )
+
+    indent(root, space="  ")
+    return tostring(root, encoding="unicode")
 
 
 async def select_topics(provider, store, request, queries, candidates, *, thinking_effort="low", diagnostics=None):
@@ -65,7 +117,9 @@ async def select_topics(provider, store, request, queries, candidates, *, thinki
     started = time.monotonic()
     try:
         selected, attempts = await select_structured(
-            provider, SYSTEM, [{"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],
+            provider,
+            SYSTEM,
+            [{"role": "user", "content": render_topic_selection_request(payload)}],
             spec, parse, timeout=45, thinking_effort=thinking_effort, stage="topic_selection",
         )
     except Exception as error:

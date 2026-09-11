@@ -1,7 +1,7 @@
 import asyncio
-import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
+from xml.etree import ElementTree
 
 from momoi.integrations.request_context import requested_thinking_effort
 from momoi.models import ProviderResponse, ToolCall
@@ -21,11 +21,14 @@ def test_topic_selection_preserves_all_eight_and_model_order_without_evidence():
 
     async def complete(system, messages, tools, **kwargs):
         assert requested_thinking_effort() == 'low'
-        payload = json.loads(messages[0]['content'])
+        payload = ElementTree.fromstring(messages[0]['content'])
         assert 'PRIVATE RAW TEXT' not in messages[0]['content']
-        assert payload['candidates'][0]['cues'] == ['cue']
-        assert payload['candidates'][0]['conversation_time']['start'] == 'start'
-        assert 'updated_at' not in payload['candidates'][0]
+        candidate = payload.find('candidates/candidate')
+        assert payload.findtext('current_request') == 'request'
+        assert payload.findtext('retrieval_queries/query/semantic') == 'topic'
+        assert [node.text for node in candidate.findall('cues/cue')] == ['cue']
+        assert candidate.find('conversation_time').attrib == {'start': 'start', 'end': 'end'}
+        assert candidate.find('updated_at') is None
         return response(list(reversed(range(8))))
 
     provider = SimpleNamespace(complete=complete)
@@ -70,14 +73,14 @@ def test_runtime_prefilter_bypasses_gate_and_keeps_selection_order(tmp_path):
         captured = []
 
         async def complete(system, messages, tools, **kwargs):
-            payload = json.loads(messages[0]['content'])
+            payload = ElementTree.fromstring(messages[0]['content'])
             assert requested_thinking_effort() == "medium"
             captured.append(payload)
-            return response(list(reversed(range(len(payload['candidates'])))))
+            return response(list(reversed(range(len(payload.findall('candidates/candidate'))))))
 
         service.provider = SimpleNamespace(complete=complete)
         selected = asyncio.run(service._select_recall_topics('shared topic', queries, None))
-        assert len(captured[0]['candidates']) == len(selected) == 8
+        assert len(captured[0].findall('candidates/candidate')) == len(selected) == 8
         retrieval = build_plan_retrieval(store, plan, service.config, selected_episode_rows=selected)
         assert [r['episode_id'] for r in retrieval['episodes']] == [r['id'] for r in selected]
         rendered = assemble_main_context(store, retrieval, 8000)['episodes']
