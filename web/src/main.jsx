@@ -40,7 +40,7 @@ const thinkingStageLabels = {
   memory_operation: "记忆 · 操作",
   episode_anneal: "对话 · 话题摘要",
   topic_selection: "CUES · 话题筛选",
-  episode_cue_admit: "CUES · 线索校验",
+  episode_cue_admit: "CUES · 线索准入",
   episode_consolidate: "对话 · 话题归并",
   reply_followup: "对话 · 回复跟进",
   current_state_maintenance: "记忆 · 当前状态",
