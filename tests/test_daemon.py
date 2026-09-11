@@ -334,7 +334,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 [row.text for row in daemon.store.due_outbox()], ["合并两条后回复"]
             )
-            self.assertTrue(daemon.episode_annealing_requested.is_set())
+            self.assertTrue(daemon._episode_annealing_dirty)
             self.assertEqual(daemon.store.pending_events(), [])
             daemon.store.close()
 
@@ -519,12 +519,12 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
 
             daemon._run_episode_annealing_once = anneal  # type: ignore[method-assign]
             daemon._touch_owner_activity("napcat")
-            worker = asyncio.create_task(
-                daemon._episode_annealing_worker(asyncio.Event())
-            )
-            daemon.episode_annealing_requested.set()
+            daemon._episode_annealing_dirty = True
             await asyncio.sleep(0.01)
-            self.assertFalse(started.is_set())
+            self.assertFalse(daemon._episode_annealing_ready())
+            await asyncio.sleep(0.05)
+            self.assertTrue(daemon._episode_annealing_ready())
+            daemon._maybe_start_episode_annealing()
             await started.wait()
 
             await daemon._receive(
@@ -543,11 +543,9 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     break
                 await asyncio.sleep(0)
             self.assertIsNone(daemon._active_annealing)
+            self.assertTrue(daemon._episode_annealing_dirty)
             self.assertEqual((await daemon.incoming.get()).text, "新消息优先")
 
-            worker.cancel()
-            with self.assertRaises(asyncio.CancelledError):
-                await worker
             daemon.store.close()
 
     async def test_failed_episode_annealing_does_not_delay_other_work(self) -> None:
@@ -567,14 +565,15 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     memory_results=2,
                     database=Path(directory) / "momoi.sqlite3",
                     log_level="INFO",
+                    episode_annealing=EpisodeAnnealingConfig(
+                        idle_seconds=0.05,
+                        max_seconds=1,
+                    ),
                 )
             )
             stop = asyncio.Event()
             second_run = asyncio.Event()
             calls = 0
-
-            async def ready(_stop: asyncio.Event) -> bool:
-                return False
 
             async def anneal(**_: object) -> bool:
                 nonlocal calls
@@ -585,10 +584,10 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 stop.set()
                 return False
 
-            daemon._wait_for_episode_annealing_ready = ready  # type: ignore[method-assign]
             daemon._run_episode_annealing_once = anneal  # type: ignore[method-assign]
-            worker = asyncio.create_task(daemon._episode_annealing_worker(stop))
-            daemon.episode_annealing_requested.set()
+            daemon._episode_annealing_dirty = True
+            daemon._last_owner_activity_at = -1.0
+            worker = asyncio.create_task(daemon._scheduler_worker(stop))
 
             await asyncio.wait_for(second_run.wait(), timeout=1)
             await asyncio.wait_for(worker, timeout=1)

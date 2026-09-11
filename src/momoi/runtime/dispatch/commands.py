@@ -169,6 +169,6 @@ class CommandRouter:
             if annealing is not None and not annealing.done():
                 annealing.cancel("owner_update")
             if self.config.episode_annealing.enabled:
-                self.episode_annealing_requested.set()
+                self._episode_annealing_dirty = True
             self._owner_message_changed.set()
             self._touch_owner_activity(message.channel)

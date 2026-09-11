@@ -75,49 +75,14 @@ class AgentWorker:
                     except asyncio.CancelledError:
                         if not self._stop_requested:
                             raise
-                        if job.kind == "heartbeat":
-                            self.store.release_heartbeat_claim(
-                                self._heartbeat_retry_delay()
-                            )
-                            log_event(
-                                logger,
-                                logging.INFO,
-                                "turn_cancelled",
-                                stage="heartbeat",
-                                reason="owner_stop",
-                            )
-                        elif job.kind == "reflection":
-                            local_date = job.id
-                            self.store.release_reflection(
-                                local_date, "owner_stop", delay_seconds=3600
-                            )
-                            log_event(
-                                logger,
-                                logging.INFO,
-                                "turn_cancelled",
-                                stage="reflection",
-                                local_date=local_date,
-                                reason="owner_stop",
-                            )
-                        elif job.kind in {"memory_maintenance", "memory_operation", "current_state_maintenance"}:
-                            log_event(
-                                logger,
-                                logging.INFO,
-                                "turn_cancelled",
-                                stage=job.kind,
-                                turn_id=job.id,
-                                reason="owner_stop",
-                            )
-                        else:
-                            self.store.release_goal_claim(job.id, defer_seconds=900)
-                            log_event(
-                                logger,
-                                logging.INFO,
-                                "turn_cancelled",
-                                stage="goal",
-                                goal_id=job.id,
-                                reason="owner_stop",
-                            )
+                        log_event(
+                            logger,
+                            logging.INFO,
+                            "turn_cancelled",
+                            stage=job.kind,
+                            reason="owner_stop",
+                            **self._release_autonomous_claim(job),
+                        )
                     finally:
                         if job.kind == "current_state_maintenance":
                             self._queued_current_state.discard(job.id)
@@ -251,6 +216,28 @@ class AgentWorker:
                 if not task.done():
                     task.cancel()
             raise
+
+    def _release_autonomous_claim(self, job: AutonomousJob) -> dict[str, object]:
+        """Release a scheduler-claimed job stopped by the owner.
+
+        Queue-backed jobs (current state, memory) release themselves in their
+        own CancelledError handling; only scheduler claims need it here.
+        Returns the turn_cancelled log fields for the job kind.
+        """
+        if job.kind == "heartbeat":
+            self.store.release_heartbeat_claim(self._heartbeat_retry_delay())
+            return {}
+        if job.kind == "reflection":
+            self.store.release_reflection(job.id, "owner_stop", delay_seconds=3600)
+            return {"local_date": job.id}
+        if job.kind in {
+            "memory_maintenance",
+            "memory_operation",
+            "current_state_maintenance",
+        }:
+            return {"turn_id": job.id}
+        self.store.release_goal_claim(job.id, defer_seconds=900)
+        return {"goal_id": job.id}
 
     def _next_autonomous(self) -> AutonomousJob:
         return self._prioritize_autonomous(self.autonomous.get_nowait())

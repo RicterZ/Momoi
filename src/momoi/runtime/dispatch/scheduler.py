@@ -19,7 +19,7 @@ AGENDA_POLL_SECONDS = 5
 
 
 class Scheduler:
-    def _current_state_maintenance_is_idle(self) -> bool:
+    def _maintenance_is_idle(self, *, autonomous_queue_empty: bool = False) -> bool:
         active = self._active_turn
         if active is not None and not active.done():
             return False
@@ -31,132 +31,104 @@ class Scheduler:
             or not self.webhook_requests.empty()
         ):
             return False
+        if autonomous_queue_empty and not self.autonomous.empty():
+            return False
         return not bool(self.store.heartbeat_conversation_snapshot()["owner_busy"])
+
+    def _idle_quiet_seconds(self) -> float:
+        return asyncio.get_running_loop().time() - self._last_owner_activity_at
+
+    @staticmethod
+    def _batch_idle_seconds(
+        pending_count: int,
+        *,
+        batch_size: int,
+        full_idle_seconds: float,
+        partial_idle_seconds: float,
+    ) -> float:
+        """A partial batch runs after the short idle; anything else waits in full."""
+
+        partial = 0 < pending_count < batch_size
+        return partial_idle_seconds if partial else full_idle_seconds
 
     def _current_state_batch_ready(self) -> bool:
         status = self.store.current_state_batch_status()
         if status is None or status["retry_at"] > time():
             return False
-        idle_seconds = (
-            CURRENT_STATE_FULL_IDLE_SECONDS
-            if status["count"] >= CURRENT_STATE_BATCH_SIZE
-            else CURRENT_STATE_PARTIAL_IDLE_SECONDS
+        idle_seconds = self._batch_idle_seconds(
+            status["count"],
+            batch_size=CURRENT_STATE_BATCH_SIZE,
+            full_idle_seconds=CURRENT_STATE_FULL_IDLE_SECONDS,
+            partial_idle_seconds=CURRENT_STATE_PARTIAL_IDLE_SECONDS,
         )
-        quiet_for = asyncio.get_running_loop().time() - self._last_owner_activity_at
-        return self._current_state_maintenance_is_idle() and quiet_for >= idle_seconds
+        return self._maintenance_is_idle() and self._idle_quiet_seconds() >= idle_seconds
 
-    def _episode_annealing_is_idle(self) -> bool:
-        active = self._active_turn
+    def _episode_annealing_ready(self) -> bool:
+        if not self.config.episode_annealing.enabled:
+            return False
+        active = self._active_annealing
         if active is not None and not active.done():
             return False
-        if self._webhook_turn_active:
-            return False
-        if (
-            not self.incoming.empty()
-            or self._deferred_incoming
-            or not self.webhook_requests.empty()
-            or not self.autonomous.empty()
-        ):
-            return False
-        return not bool(self.store.heartbeat_conversation_snapshot()["owner_busy"])
-
-    async def _wait_for_episode_annealing_ready(
-        self, stop: asyncio.Event
-    ) -> int | None:
-        loop = asyncio.get_running_loop()
-        while not stop.is_set():
-            pending_count = self.store.episode_consolidation_pending_count()
-            partial_batch = 0 < pending_count < EPISODE_CONSOLIDATION_BATCH_SIZE
-            idle_seconds = (
-                EPISODE_CONSOLIDATION_PARTIAL_IDLE_SECONDS
-                if partial_batch
-                else self.config.episode_annealing.idle_seconds
-            )
-            consolidation_minimum = (
-                1 if partial_batch else EPISODE_CONSOLIDATION_BATCH_SIZE
-            )
-            quiet_for = loop.time() - self._last_owner_activity_at
-            if (
-                self._episode_annealing_is_idle()
-                and quiet_for >= idle_seconds
-            ):
-                return consolidation_minimum
-            remaining = max(
-                0.05,
-                idle_seconds - quiet_for,
-            )
-            try:
-                await asyncio.wait_for(
-                    self.episode_annealing_requested.wait(),
-                    timeout=min(1.0, remaining),
-                )
-            except TimeoutError:
-                pass
-            else:
-                self.episode_annealing_requested.clear()
-        return None
-
-    async def _wait_for_episode_annealing_retry(self) -> None:
         retry_at = self.store.next_episode_annealing_retry_at()
-        if retry_at is None:
-            return
-        delay = max(1.0, retry_at - time())
-        try:
-            await asyncio.wait_for(
-                self.episode_annealing_requested.wait(),
-                timeout=delay,
-            )
-        except TimeoutError:
-            self.episode_annealing_requested.set()
+        retry_due = retry_at is not None and retry_at <= time()
+        if not self._episode_annealing_dirty and not retry_due:
+            return False
+        idle_seconds = self._batch_idle_seconds(
+            self.store.episode_consolidation_pending_count(),
+            batch_size=EPISODE_CONSOLIDATION_BATCH_SIZE,
+            full_idle_seconds=self.config.episode_annealing.idle_seconds,
+            partial_idle_seconds=EPISODE_CONSOLIDATION_PARTIAL_IDLE_SECONDS,
+        )
+        return (
+            self._maintenance_is_idle(autonomous_queue_empty=True)
+            and self._idle_quiet_seconds() >= idle_seconds
+        )
 
-    async def _episode_annealing_worker(self, stop: asyncio.Event) -> None:
-        while not stop.is_set():
-            await self.episode_annealing_requested.wait()
-            self.episode_annealing_requested.clear()
-            if not self.config.episode_annealing.enabled:
-                continue
-            consolidation_minimum = await self._wait_for_episode_annealing_ready(stop)
-            if consolidation_minimum is None:
-                return
-            task = asyncio.create_task(
-                self._run_episode_annealing_once(
-                    consolidation_minimum=consolidation_minimum
-                )
+    def _episode_consolidation_minimum(self) -> int:
+        pending = self.store.episode_consolidation_pending_count()
+        return (
+            1 if 0 < pending < EPISODE_CONSOLIDATION_BATCH_SIZE
+            else EPISODE_CONSOLIDATION_BATCH_SIZE
+        )
+
+    def _maybe_start_episode_annealing(self) -> None:
+        if not self._episode_annealing_ready():
+            return
+        self._episode_annealing_dirty = False
+        task = asyncio.create_task(
+            self._run_episode_annealing_once(
+                consolidation_minimum=self._episode_consolidation_minimum()
             )
-            self._active_annealing = task
-            try:
-                completed = await task
-            except asyncio.CancelledError:
-                current = asyncio.current_task()
-                if stop.is_set() or (current is not None and current.cancelling()):
-                    raise
-                log_event(
-                    logger,
-                    logging.DEBUG,
-                    "episode_anneal_cancelled",
-                    stage="episode_anneal",
-                    reason="owner_update",
-                )
-                self.episode_annealing_requested.set()
-            except Exception as error:
-                log_event(
-                    logger,
-                    logging.WARNING,
-                    "episode_anneal_failure",
-                    stage="episode_anneal",
-                    error_type=type(error).__name__,
-                    reason=safe_preview(str(error), 300),
-                )
-                # The failed Episode remains protected by its persisted retry
-                # deadline; wake the worker so other eligible work can proceed.
-                self.episode_annealing_requested.set()
-            else:
-                if completed:
-                    self.episode_annealing_requested.set()
-                else:
-                    await self._wait_for_episode_annealing_retry()
-            finally:
-                self._active_annealing = None
+        )
+        self._active_annealing = task
+        task.add_done_callback(self._episode_annealing_finished)
+
+    def _episode_annealing_finished(self, task: asyncio.Task[bool]) -> None:
+        self._active_annealing = None
+        if task.cancelled():
+            log_event(
+                logger,
+                logging.DEBUG,
+                "episode_anneal_cancelled",
+                stage="episode_anneal",
+                reason="preempted",
+            )
+            self._episode_annealing_dirty = True
+        elif (error := task.exception()) is not None:
+            log_event(
+                logger,
+                logging.WARNING,
+                "episode_anneal_failure",
+                stage="episode_anneal",
+                error_type=type(error).__name__,
+                reason=safe_preview(str(error), 300),
+            )
+            # The failed Episode remains protected by its persisted retry
+            # deadline; re-evaluate so other eligible work can proceed.
+            self._episode_annealing_dirty = True
+        elif task.result():
+            self._episode_annealing_dirty = True
+        self.agenda_changed.set()
 
     async def _scheduler_worker(self, stop: asyncio.Event) -> None:
         while not stop.is_set():
@@ -173,7 +145,7 @@ class Scheduler:
                     ignored=expired_deferrals,
                     timeout_seconds=EPISODE_CONSOLIDATION_DEFER_TIMEOUT_SECONDS,
                 )
-                self.episode_annealing_requested.set()
+                self._episode_annealing_dirty = True
             notification = self.store.claim_due_notification(self.config.notifications)
             if notification is not None:
                 if self.store.queue_notification(
@@ -248,12 +220,14 @@ class Scheduler:
                 )
                 await self.autonomous.put(AutonomousJob.heartbeat())
                 continue
+            self._maybe_start_episode_annealing()
             due_times = [
                 due
                 for due in (
                     self.store.next_notification_due_at(),
                     self.store.next_goal_due_at(),
                     self.store.next_memory_operation_due_at(),
+                    self.store.next_episode_annealing_retry_at(),
                     self.store.next_reflection_due_at(
                         self.config.reflection,
                     ),

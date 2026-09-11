@@ -29,12 +29,14 @@ class SegmentedVectorSnapshot:
         self.space_id = ""
         self._segments: list[_VectorSegment] = []
         self._latest: dict[tuple[str, str, int], int] = {}
+        self._by_parent: dict[str, set[tuple[str, str, int]]] = {}
         self._generation = 0
 
     def load(self, space_id: str) -> None:
         self.space_id = space_id
         self._segments = []
         self._latest = {}
+        self._by_parent = {}
         self._generation = 0
         for rows in self.store.semantic_ready_documents(space_id):
             self._append(rows)
@@ -58,13 +60,16 @@ class SegmentedVectorSnapshot:
             self._generation += 1
             generation = self._generation
             self._latest[key] = generation
+            parent_id = str(row["parent_id"] or "")
+            if parent_id:
+                self._by_parent.setdefault(parent_id, set()).add(key)
             vectors.append(vector)
             metadata.append(
                 VectorMetadata(
                     key,
                     key[0],
                     key[1],
-                    str(row["parent_id"] or ""),
+                    parent_id,
                     float(row["starts_at"]) if row["starts_at"] is not None else None,
                     float(row["ends_at"]) if row["ends_at"] is not None else None,
                     generation,
@@ -76,17 +81,14 @@ class SegmentedVectorSnapshot:
             )
 
     def replace_source(self, source_type: str, source_id: str) -> None:
+        parent_keys = self._by_parent.get(source_id, ())
         stale = [
             key
             for key in self._latest
             if (
                 key[0] in {"episode_summary", "episode_turn", "episode_cue"}
                 and source_type == "episode"
-                and any(
-                    meta.key == key and meta.parent_id == source_id
-                    for segment in self._segments
-                    for meta in segment.metadata
-                )
+                and key in parent_keys
             )
             or (key[0] == source_type and key[1] == source_id)
             or (

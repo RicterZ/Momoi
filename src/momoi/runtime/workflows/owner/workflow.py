@@ -358,4 +358,4 @@ class OwnerWorkflow:
         self.outbox_changed.set()
         self.agenda_changed.set()
         if self.config.episode_annealing.enabled:
-            self.episode_annealing_requested.set()
+            self._episode_annealing_dirty = True

@@ -183,6 +183,9 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                 )
 
             stop = asyncio.Event()
+            # Keep the owner busy so the scheduler's annealing trigger stays
+            # idle; this test only exercises deferral cleanup.
+            daemon._last_owner_activity_at = asyncio.get_running_loop().time()
             worker = asyncio.create_task(daemon._scheduler_worker(stop))
             for _ in range(100):
                 expired = daemon.store._db.execute(
@@ -211,7 +214,7 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                 decisions["deferred-fresh"],
                 ("deferred", "still waiting for context"),
             )
-            self.assertTrue(daemon.episode_annealing_requested.is_set())
+            self.assertTrue(daemon._episode_annealing_dirty)
             self.assertEqual(
                 daemon.store._db.execute(
                     """SELECT COUNT(*) FROM turns
@@ -304,15 +307,11 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
             )
             loop = asyncio.get_running_loop()
             daemon._last_owner_activity_at = loop.time()
+            daemon._episode_annealing_dirty = True
 
-            started_at = loop.time()
-            ready = await asyncio.wait_for(
-                daemon._wait_for_episode_annealing_ready(asyncio.Event()),
-                timeout=0.2,
-            )
-
-            self.assertTrue(ready)
-            self.assertGreaterEqual(loop.time() - started_at, 0.015)
+            self.assertFalse(daemon._episode_annealing_ready())
+            await asyncio.sleep(0.03)
+            self.assertTrue(daemon._episode_annealing_ready())
             daemon.store.close()
 
     async def test_partial_consolidation_uses_five_minute_idle_timeout(
@@ -327,15 +326,12 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
             daemon._last_owner_activity_at = (
                 loop.time() - EPISODE_CONSOLIDATION_PARTIAL_IDLE_SECONDS + 0.02
             )
+            daemon._episode_annealing_dirty = True
 
-            started_at = loop.time()
-            minimum = await asyncio.wait_for(
-                daemon._wait_for_episode_annealing_ready(asyncio.Event()),
-                timeout=0.2,
-            )
-
-            self.assertEqual(minimum, 1)
-            self.assertGreaterEqual(loop.time() - started_at, 0.015)
+            self.assertFalse(daemon._episode_annealing_ready())
+            self.assertEqual(daemon._episode_consolidation_minimum(), 1)
+            await asyncio.sleep(0.03)
+            self.assertTrue(daemon._episode_annealing_ready())
             daemon.store.close()
 
     async def test_full_consolidation_batch_uses_owner_idle_timeout(
@@ -359,18 +355,15 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                     turn_id=f"pending-{ordinal}",
                 )
             daemon._last_owner_activity_at = asyncio.get_running_loop().time()
+            daemon._episode_annealing_dirty = True
 
-            started_at = asyncio.get_running_loop().time()
-            ready = await asyncio.wait_for(
-                daemon._wait_for_episode_annealing_ready(asyncio.Event()),
-                timeout=0.2,
+            self.assertFalse(daemon._episode_annealing_ready())
+            self.assertEqual(
+                daemon._episode_consolidation_minimum(),
+                EPISODE_CONSOLIDATION_BATCH_SIZE,
             )
-
-            self.assertEqual(ready, EPISODE_CONSOLIDATION_BATCH_SIZE)
-            self.assertGreaterEqual(
-                asyncio.get_running_loop().time() - started_at,
-                0.015,
-            )
+            await asyncio.sleep(0.03)
+            self.assertTrue(daemon._episode_annealing_ready())
             daemon.store.close()
 
     async def test_partial_consolidation_is_never_claimed(

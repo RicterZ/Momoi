@@ -206,7 +206,7 @@ class ReflectionWorkflow:
             self._enqueue_memory_maintenance(maintenance_turn_id)
             self.agenda_changed.set()
             if self.config.episode_annealing.enabled:
-                self.episode_annealing_requested.set()
+                self._episode_annealing_dirty = True
             workflow_complete = True
             workflow_result = {
                 "ok": True,

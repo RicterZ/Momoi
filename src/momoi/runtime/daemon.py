@@ -158,7 +158,7 @@ class MomoiDaemon(
             tuple[str, str, asyncio.Future[AgentReply]]
         ] = asyncio.Queue()
         self.autonomous: asyncio.Queue[AutonomousJob] = asyncio.Queue()
-        self.episode_annealing_requested = asyncio.Event()
+        self._episode_annealing_dirty = False
         self.outbox_changed = asyncio.Event()
         self.bubble_delivery = BubbleDelivery(
             self.store,
@@ -205,7 +205,7 @@ class MomoiDaemon(
 
     async def run(self, stop: asyncio.Event) -> None:
         if self.config.episode_annealing.enabled:
-            self.episode_annealing_requested.set()
+            self._episode_annealing_dirty = True
         self.store.recover_memory_operations()
         self.store.recover_current_state_tasks()
         for turn_id in self.store.recover_memory_maintenance_turns():
@@ -223,9 +223,6 @@ class MomoiDaemon(
                     tasks.append(group.create_task(self._agent_worker(stop)))
                     tasks.append(group.create_task(self._scheduler_worker(stop)))
                     tasks.append(group.create_task(self._outbox_worker(stop)))
-                    tasks.append(
-                        group.create_task(self._episode_annealing_worker(stop))
-                    )
                     tasks.append(
                         group.create_task(
                             self.semantic_recall.run_worker(

@@ -772,7 +772,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
                     )
 
             daemon.provider = Provider()
-            daemon.episode_annealing_requested.clear()
+            daemon._episode_annealing_dirty = False
             await daemon._complete_reflection_turn("2026-07-21", asyncio.Event())
             closed = daemon.store.episode("trip-kyoto")
             kept = daemon.store.episode("chat-today")
@@ -780,5 +780,5 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
             self.assertIsNotNone(closed["closed_at"])
             self.assertEqual(closed["open_loops"], [])
             self.assertEqual(kept["status"], "open")
-            self.assertTrue(daemon.episode_annealing_requested.is_set())
+            self.assertTrue(daemon._episode_annealing_dirty)
             daemon.store.close()
