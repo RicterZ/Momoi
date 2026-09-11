@@ -38,10 +38,10 @@ const thinkingStageLabels = {
   goal: "目标 · 执行",
   memory_maintenance: "记忆 · 维护整理",
   memory_operation: "记忆 · 操作",
-  episode_anneal: "对话 · 记忆整理",
+  episode_anneal: "对话 · 话题摘要",
   topic_selection: "CUES · 话题筛选",
   episode_cue_admit: "CUES · 线索校验",
-  episode_consolidate: "对话 · 归并整理",
+  episode_consolidate: "对话 · 话题归并",
   reply_followup: "对话 · 回复跟进",
   current_state_maintenance: "记忆 · 当前状态",
 };

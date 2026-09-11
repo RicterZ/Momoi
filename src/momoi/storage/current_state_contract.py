@@ -74,8 +74,8 @@ CURRENT_STATE_CHANGE_SCHEMA = {
                         "maximum": MAX_TTL_SECONDS,
                         "description": (
                             "How long new evidence justifies retaining this fact, starting at commit time. "
-                            "If it needs to remain available longer than 24 hours, create a recent memory "
-                            "(activation=recent) through the memory workflow instead of a current-state slot. "
+                            "If it needs to remain available longer than 24 hours, it is durable — "
+                            "file it through memory_operation instead of a current-state slot. "
                             "Seeing or reusing a slot is not evidence for renewal. Expiry means unknown, "
                             "not that the opposite state holds. Renewal requires fresh evidence and delete + add."
                         ),
