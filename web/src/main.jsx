@@ -52,10 +52,9 @@ function thinkingStageLabel(stage) {
   return thinkingStageLabels[key] || key;
 }
 
-const activationOrder = ["always", "recent", "recall"];
+const activationOrder = ["always", "recall"];
 const activationLabels = {
   always: "长期",
-  recent: "近期",
   recall: "召回",
 };
 
@@ -343,7 +342,6 @@ function memoryKindLabel(kind) {
       preference: "你的偏好",
       relationship: "相处方式",
       shared: "共同经历",
-      episodic: "具体经历",
       routine: "日常习惯",
       owner_profile: "关于你",
       owner_preference: "你的偏好",
