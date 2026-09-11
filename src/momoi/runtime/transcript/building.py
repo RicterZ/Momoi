@@ -4,7 +4,6 @@ from zoneinfo import ZoneInfo
 from ..agent.budget import TEXT_SIZER
 from .models import (
     DEFAULT_ACTION_LIMIT,
-    DEFAULT_GAP_SECONDS,
     VISIBLE_ASSISTANT_STATES,
     Transcript,
     TranscriptGroup,
@@ -178,7 +177,6 @@ def build_transcript(
     timezone: ZoneInfo,
     max_groups: int = 0,
     token_budget: int = 0,
-    gap_seconds: float = DEFAULT_GAP_SECONDS,
     tool_activity: Mapping[str, Sequence[Mapping[str, object]]] | None = None,
     action_limit: int = DEFAULT_ACTION_LIMIT,
 ) -> Transcript:
@@ -192,7 +190,6 @@ def build_transcript(
         messages=render_messages(
             groups,
             timezone=timezone,
-            gap_seconds=gap_seconds,
             tool_activity=tool_activity,
             action_limit=action_limit,
         ),

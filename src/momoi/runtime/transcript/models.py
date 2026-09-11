@@ -7,8 +7,6 @@ def text_value(value: object) -> str:
 
 VISIBLE_ASSISTANT_STATES = frozenset({"delivered", "uncertain", "queued"})
 
-DEFAULT_GAP_SECONDS = 30 * 60
-
 DEFAULT_ACTION_LIMIT = 12
 
 @dataclass(frozen=True)

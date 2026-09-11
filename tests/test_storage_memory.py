@@ -1608,6 +1608,34 @@ class StorageMemoryTest(unittest.TestCase):
                 self.assertEqual([row["content"] for row in rows], [body, header + body, header + body])
                 store.close()
 
+    def test_owner_timestamp_migration_restores_received_event(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "momoi.sqlite3"
+            store = Store(path)
+            event = IncomingMessage("event-1", "1", "正文", 100, 200)
+            store.add_event(event)
+            store.commit_turn(
+                [event],
+                "1970-01-01T00:01:40+00:00 正文",
+                AgentReply([]),
+                turn_id="legacy-owner",
+            )
+            version = int(store._db.execute("PRAGMA user_version").fetchone()[0])
+            with store._db:
+                store._db.execute(
+                    "UPDATE messages SET content=?, created_at=? WHERE turn_id=?",
+                    ("1970-01-01T00:01:40+00:00 正文", 100, "legacy-owner"),
+                )
+                store._db.execute(f"PRAGMA user_version={version - 1}")
+            store.close()
+
+            reopened = Store(path)
+            row = reopened._db.execute(
+                "SELECT content, created_at FROM messages WHERE turn_id='legacy-owner'"
+            ).fetchone()
+            self.assertEqual((row["content"], row["created_at"]), ("正文", 200))
+            reopened.close()
+
     def test_database_migrations_are_versioned_and_reject_newer_schema(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "momoi.sqlite3"

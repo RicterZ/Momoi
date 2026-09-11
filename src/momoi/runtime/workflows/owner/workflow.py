@@ -5,7 +5,6 @@ from datetime import datetime
 from typing import Any
 
 from ....channel import Channel
-from ....context_time import context_timestamp
 from ....observability.events import log_event
 from ....observability.values import safe_preview
 from ....models import AgentReply, IncomingMessage, TurnDraft
@@ -192,10 +191,7 @@ class OwnerWorkflow:
         self.store.record_turn_failure(turn_id, failure_reason)
 
     def _render_batch(self, batch: list[IncomingMessage]) -> str:
-        return "\n".join(
-            f"{context_timestamp(message.occurred_at, self.store.timezone)} {message.text}"
-            for message in batch
-        )
+        return "\n".join(message.text for message in batch)
 
     def _apply_reconciliation_commands(self, batch: list[IncomingMessage]) -> str:
         results: list[str] = []

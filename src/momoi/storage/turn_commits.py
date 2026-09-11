@@ -12,9 +12,9 @@ def _owner_message_created_at(
     events: list[IncomingMessage], now: float
 ) -> float:
     times = [
-        float(event.occurred_at or event.received_at)
+        float(event.received_at)
         for event in events
-        if event.occurred_at or event.received_at
+        if event.received_at
     ]
     return min(times) if times else now
 

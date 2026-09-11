@@ -683,7 +683,7 @@ class MessagingTest(unittest.TestCase):
             ["file", "text"],
         )
 
-    def test_commit_turn_uses_owner_occurred_at_for_user_message(self) -> None:
+    def test_commit_turn_uses_owner_received_at_for_user_message(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
             first = IncomingMessage(
@@ -705,7 +705,7 @@ class MessagingTest(unittest.TestCase):
                    WHERE turn_id='turn-owner-time' ORDER BY id"""
             ).fetchall()
             self.assertEqual([row["role"] for row in rows], ["user", "assistant"])
-            self.assertEqual(rows[0]["created_at"], first.occurred_at)
+            self.assertEqual(rows[0]["created_at"], first.received_at)
             self.assertGreaterEqual(rows[1]["created_at"], before)
             self.assertLessEqual(rows[1]["created_at"], after)
             self.assertGreater(rows[1]["created_at"], rows[0]["created_at"])

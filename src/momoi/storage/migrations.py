@@ -220,6 +220,37 @@ def _restore_last_heartbeat_activity(database: sqlite3.Connection) -> None:
     )
 
 
+def _normalize_owner_message_received_at(database: sqlite3.Connection) -> None:
+    """Restore owner text from its source events and use their reception time."""
+
+    rows = database.execute(
+        "SELECT id, source_event_ids_json FROM messages WHERE role='user'"
+    ).fetchall()
+    for message_id, source_json in rows:
+        try:
+            source_ids = json.loads(source_json)
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(source_ids, list) or not source_ids or not all(
+            isinstance(source_id, str) for source_id in source_ids
+        ):
+            continue
+        placeholders = ",".join("?" for _ in source_ids)
+        events = database.execute(
+            f"SELECT id, content, received_at FROM events WHERE id IN ({placeholders})",
+            tuple(source_ids),
+        ).fetchall()
+        by_id = {str(event[0]): event for event in events}
+        if any(source_id not in by_id for source_id in source_ids):
+            continue
+        content = "\n".join(str(by_id[source_id][1]) for source_id in source_ids)
+        received_at = min(float(by_id[source_id][2]) for source_id in source_ids)
+        database.execute(
+            "UPDATE messages SET content=?, created_at=? WHERE id=?",
+            (content, received_at, message_id),
+        )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     _add_runtime_archive_metadata,
     _add_turn_workflow_kind,
@@ -232,6 +263,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     _add_episode_cue_vectors,
     _restore_last_heartbeat_activity,
     _add_current_state_workflow,
+    _normalize_owner_message_received_at,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 

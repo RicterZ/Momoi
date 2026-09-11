@@ -4,31 +4,13 @@ from xml.sax.saxutils import escape, quoteattr
 from zoneinfo import ZoneInfo
 
 from ...conversation_roles import speaker_label
+from ...context_time import context_timestamp
 
 from .models import (
     DEFAULT_ACTION_LIMIT,
-    DEFAULT_GAP_SECONDS,
     TranscriptGroup,
     text_value,
 )
-
-
-def _marker(
-    moment_at: float, previous_at: float, gap: float, timezone: ZoneInfo
-) -> str:
-    """Render a time marker only where it changes how the text reads."""
-
-    if moment_at <= 0:
-        return ""
-    moment = datetime.fromtimestamp(moment_at, timezone)
-    if previous_at <= 0:
-        return moment.isoformat(timespec="minutes")
-    earlier = datetime.fromtimestamp(previous_at, timezone)
-    if moment.date() != earlier.date():
-        return moment.isoformat(timespec="minutes")
-    if moment_at - previous_at >= gap:
-        return moment.strftime("%H:%M")
-    return ""
 
 def _elapsed(seconds: float) -> str:
     if seconds >= 86400:
@@ -78,8 +60,18 @@ def _silence(
         return _message("user", f"[owner did not reply · {_elapsed(waited)} later]")
     return _message("assistant", "[ended the Turn without replying]")
 
-def render_bubble(text: str, *, delivery_state: str = "delivered", turn: str = "") -> str:
-    attributes = f" turn={quoteattr(turn)}" if turn else ""
+def render_bubble(
+    text: str,
+    *,
+    delivery_state: str = "delivered",
+    turn: str = "",
+    time: str = "",
+) -> str:
+    attributes = ""
+    if time:
+        attributes += f" time={quoteattr(time)}"
+    if turn:
+        attributes += f" turn={quoteattr(turn)}"
     if delivery_state == "queued":
         attributes += ' delivery="queued"'
     return f"<bubble{attributes}>\n{escape(text)}\n</bubble>"
@@ -106,9 +98,15 @@ def render_review(
     )
 
 
-def _part_bubble(group: TranscriptGroup, index: int, turn: str = "") -> str:
+def _part_bubble(
+    group: TranscriptGroup, index: int, timezone: ZoneInfo, turn: str = ""
+) -> str:
     state = group.part_states[index] if index < len(group.part_states) else "delivered"
-    return render_bubble(group.parts[index], delivery_state=state, turn=turn)
+    moment = group.part_times[index] if index < len(group.part_times) else 0.0
+    timestamp = context_timestamp(moment, timezone) if moment > 0 else ""
+    return render_bubble(
+        group.parts[index], delivery_state=state, turn=turn, time=timestamp
+    )
 
 
 def _message(role: str, text: str) -> dict[str, object]:
@@ -151,6 +149,7 @@ def _assistant_body(
     group: TranscriptGroup,
     records: Sequence[Mapping[str, object]],
     action_limit: int,
+    timezone: ZoneInfo,
     turn: str,
 ) -> list[str]:
     """Interleave what a Turn said with what it did, in the order it happened.
@@ -164,7 +163,7 @@ def _assistant_body(
     events: list[tuple[float, int, object]] = []
     for index in range(len(group.parts)):
         at = group.part_times[index] if index < len(group.part_times) else 0.0
-        events.append((at, 1, _part_bubble(group, index, turn)))
+        events.append((at, 1, _part_bubble(group, index, timezone, turn)))
     for record in records:
         events.append((float(record.get("at") or 0.0), 0, record))
     events.sort(key=lambda item: (item[0], item[1]))
@@ -202,7 +201,6 @@ def render_messages(
     groups: Sequence[TranscriptGroup],
     *,
     timezone: ZoneInfo,
-    gap_seconds: float = DEFAULT_GAP_SECONDS,
     tool_activity: Mapping[str, Sequence[Mapping[str, object]]] | None = None,
     action_limit: int = DEFAULT_ACTION_LIMIT,
     labels: Mapping[str, str] | None = None,
@@ -233,21 +231,13 @@ def render_messages(
         silence = _silence(group, previous)
         if silence is not None:
             messages.append(silence)
-        annotations = []
         group_labels = [
             str((labels or {}).get(turn_id) or "")
             for turn_id in group.turn_ids
             if (labels or {}).get(turn_id)
         ]
         turn = ",".join(dict.fromkeys(group_labels))
-        marker = _marker(
-            group.started_at,
-            previous.ended_at if previous else 0.0,
-            gap_seconds,
-            timezone,
-        )
-        if marker:
-            annotations.append(marker)
+        annotations = []
         if group.uncertain:
             annotations.append("delivery uncertain")
         lines: list[str] = []
@@ -279,9 +269,12 @@ def render_messages(
                 if lower <= float(record.get("at") or 0.0) < upper
             ]
         if records:
-            lines.extend(_assistant_body(group, records, action_limit, turn))
+            lines.extend(_assistant_body(group, records, action_limit, timezone, turn))
         else:
-            lines.extend(_part_bubble(group, index, turn) for index in range(len(group.parts)))
+            lines.extend(
+                _part_bubble(group, index, timezone, turn)
+                for index in range(len(group.parts))
+            )
         messages.append(_message(group.role, "\n".join(lines)))
         previous = group
     return messages

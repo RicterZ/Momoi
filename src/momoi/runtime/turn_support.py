@@ -4,7 +4,7 @@ from collections.abc import Callable, Sequence
 from importlib.resources import files
 from typing import Any
 from zoneinfo import ZoneInfo
-from xml.sax.saxutils import escape
+from xml.sax.saxutils import escape, quoteattr
 
 from ..context_time import context_timestamp
 from ..observability.events import log_event
@@ -200,9 +200,12 @@ def owner_content_blocks(
         # that keeps the sections readable has to be part of the text.
         blocks.append({"type": "text", "text": f"{runtime_text}\n\n"})
     for index, event in enumerate(events):
-        line = f"{context_timestamp(event.occurred_at, timezone)} {event.text}".strip()
+        received_at = context_timestamp(event.received_at, timezone)
         opening = "<current_owner_bubbles>\n" if index == 0 else ""
-        blocks.append({"type": "text", "text": f"{opening}<bubble>\n{escape(line)}"})
+        blocks.append({
+            "type": "text",
+            "text": f'{opening}<bubble time={quoteattr(received_at)}>\n{escape(event.text)}',
+        })
         blocks.extend(content_blocks(event.segments))
         blocks.append({"type": "text", "text": "\n</bubble>\n"})
     closing = "</current_owner_bubbles>" if events else ""

@@ -50,7 +50,10 @@ def test_turn_labels_are_stable_for_each_runtime_turn():
     assert labels == {"turn-a": "T-1", "turn-b": "T-2"}
     for message, label in zip(messages, ["T-1", "T-1", "T-2"], strict=True):
         document = ElementTree.fromstring(f"<history>{text(message)}</history>")
-        assert document.find("bubble").attrib == {"turn": label}
+        assert document.find("bubble").attrib == {
+            "time": "2026-08-31T20:00:00+08:00",
+            "turn": label,
+        }
         assert "turn=" not in (document.text or "")
 
 
@@ -142,7 +145,7 @@ def test_a_later_spontaneous_message_is_not_folded_into_the_reply():
     )
     assert len(groups) == 3
     assert groups[2].turn_ids == ("hb1",)
-    messages = render_messages(groups, gap_seconds=1800)
+    messages = render_messages(groups)
     assert [message["role"] for message in messages] == [
         "user",
         "assistant",
@@ -150,7 +153,8 @@ def test_a_later_spontaneous_message_is_not_folded_into_the_reply():
         "assistant",
     ]
     assert text(messages[2]) == "[owner did not reply · 8h later]"
-    assert text(messages[3]).startswith("[2026-09-01T04:00")
+    document = ElementTree.fromstring(f"<history>{text(messages[3])}</history>")
+    assert document.find("bubble").attrib["time"] == "2026-09-01T04:00:00+08:00"
 
 
 def test_a_turn_that_deliberately_said_nothing_is_recorded():
@@ -377,17 +381,20 @@ def test_work_is_interleaved_with_the_words_that_narrate_it(label):
         },
         labels={"t1": label},
     )
-    opening = f'<bubble turn="{label}">' if label else "<bubble>"
+    def opening(offset):
+        turn = f' turn="{label}"' if label else ""
+        return f'<bubble time="2026-08-31T20:00:0{offset}+08:00"{turn}>'
+
     assert text(messages[1]).split("\n") == [
-        opening,
+        opening(1),
         "好的，我刷微博",
         "</bubble>",
         "[tool_call] weibo_feed(home) -> ok",
-        opening,
+        opening(3),
         "我发现了内容XXX",
         "</bubble>",
         "[tool_call] weibo_detail(4012) -> ok · ref=tr-9",
-        opening,
+        opening(5),
         "刷完了",
         "</bubble>",
     ]
@@ -441,7 +448,13 @@ def test_queued_bubbles_keep_boundaries_and_individual_delivery_state(with_tools
     )
     document = ElementTree.fromstring(f"<history>{text(messages[1])}</history>")
     bubbles = document.findall("bubble")
-    assert [item.attrib for item in bubbles] == [{}, {"delivery": "queued"}]
+    assert [item.attrib for item in bubbles] == [
+        {"time": "2026-08-31T20:00:01+08:00"},
+        {
+            "time": "2026-08-31T20:00:03+08:00",
+            "delivery": "queued",
+        },
+    ]
     assert [item.text for item in bubbles] == [
         "\n两点了\n", "\n起来走走\n喝口水 & 休息一下\n",
     ]
@@ -457,7 +470,8 @@ def test_pending_proactive_speech_is_evidence_without_claiming_owner_silence():
     evidence = render_proactive_bubble_evidence(
         transcript.orphaned, timezone=TEST_TIMEZONE,
     )
-    assert evidence.count('<bubble delivery="queued">') == 2
+    assert evidence.count('delivery="queued"') == 2
+    assert evidence.count('<bubble time="') == 2
     assert "喝水啦" in evidence and "外卖到了" in evidence
     assert "still being delivered" in evidence
     assert "owner did not reply" not in evidence
@@ -496,7 +510,10 @@ def test_proactive_speech_without_an_owner_message_is_kept_as_evidence():
         timezone=TEST_TIMEZONE,
     )
     assert "[ASSISTANT]" in evidence
-    assert "<bubble>\n我看到一条新闻\n</bubble>" in evidence
+    assert (
+        '<bubble time="2026-08-31T20:00:00+08:00">\n'
+        '我看到一条新闻\n</bubble>'
+    ) in evidence
     assert "[owner did not reply" in evidence
     assert "你还没睡吧" in evidence
 
@@ -533,7 +550,7 @@ def test_selection_keeps_the_latest_exchange_under_a_tight_budget():
     assert [group.parts for group in selected] == [("刚刚",)]
 
 
-def test_time_marker_appears_only_when_it_changes_meaning():
+def test_each_bubble_carries_its_timestamp_without_a_separate_marker():
     messages = render_messages(
         build_groups(
             [
@@ -541,26 +558,18 @@ def test_time_marker_appears_only_when_it_changes_meaning():
                 bubble(2, "早", offset=5),
                 owner(3, "在忙吗", offset=2 * 3600),
             ]
-        ),
-        gap_seconds=1800,
+        )
     )
-    assert text(messages[0]).startswith("[2026-08-31T20:00")
-    assert text(messages[1]) == "<bubble>\n早\n</bubble>"
-    assert text(messages[2]).startswith("[22:00]")
-
-
-def test_a_new_day_shows_the_date_rather_than_only_a_clock_time():
-    messages = render_messages(
-        build_groups(
-            [
-                owner(1, "晚安"),
-                bubble(2, "晚安", offset=5),
-                owner(3, "早", offset=5 * 3600),
-            ]
-        ),
-        gap_seconds=1800,
-    )
-    assert text(messages[2]).startswith("[2026-09-01T01:00")
+    documents = [
+        ElementTree.fromstring(f"<history>{text(message)}</history>")
+        for message in messages
+    ]
+    assert [document.find("bubble").attrib["time"] for document in documents] == [
+        "2026-08-31T20:00:00+08:00",
+        "2026-08-31T20:00:05+08:00",
+        "2026-08-31T22:00:00+08:00",
+    ]
+    assert all(not (document.text or "").strip() for document in documents)
 
 
 def test_build_transcript_returns_protocol_messages_and_groups():

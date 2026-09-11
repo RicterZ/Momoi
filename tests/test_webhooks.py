@@ -7,6 +7,7 @@ import unittest
 import time
 from pathlib import Path
 from unittest.mock import patch
+from xml.etree import ElementTree
 
 from momoi.channel.napcat import NapCatConfig
 from momoi.config.models import AppConfig, WebhookConfig
@@ -431,7 +432,10 @@ class WebhooksAsyncTest(unittest.IsolatedAsyncioTestCase):
                 context_text.index("<current_webhook_task>"),
             )
             self.assertNotIn("<owner_preferences>", context_text)
-            self.assertRegex(context_text, r"\[\d{4}-\d{2}-\d{2}T")
+            owner_bubble = ElementTree.fromstring(
+                historical[0]["content"][0]["text"]
+            )
+            self.assertEqual(owner_bubble.attrib["time"], "1970-01-01T00:00:01+00:00")
             self.assertIn("以后回家时帮我留意快递", context_text)
             self.assertIn("好，回家时我会留意", context_text)
             daemon.store.close()
