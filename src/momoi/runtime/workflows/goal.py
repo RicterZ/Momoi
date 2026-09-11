@@ -108,7 +108,8 @@ class GoalWorkflow:
             if self._stop_requested:
                 self.store.cancel_turn(turn_id)
             raise
-        except ProviderError as error:
+        except Exception as error:
+            provider_error = isinstance(error, ProviderError)
             log_event(
                 logger,
                 logging.ERROR,
@@ -116,34 +117,10 @@ class GoalWorkflow:
                 stage="goal",
                 turn_id=turn_id,
                 goal_id=goal_id,
-                layer="provider",
+                layer="provider" if provider_error else "runtime",
                 error_type=type(error).__name__,
                 reason=safe_preview(str(error), 300),
-            )
-            retry_at = self.store.defer_goal_failure(goal_id)
-            self.store.record_turn_failure(turn_id, type(error).__name__)
-            self.agenda_changed.set()
-            log_event(
-                logger,
-                logging.INFO,
-                "goal_deferred",
-                stage="goal",
-                turn_id=turn_id,
-                goal_id=goal_id,
-                retry_at=retry_at,
-            )
-            return
-        except Exception as error:
-            log_event(
-                logger,
-                logging.ERROR,
-                "turn_failure",
-                stage="goal",
-                turn_id=turn_id,
-                goal_id=goal_id,
-                layer="runtime",
-                error_type=type(error).__name__,
-                exc_info=True,
+                **({} if provider_error else {"exc_info": True}),
             )
             retry_at = self.store.defer_goal_failure(goal_id)
             self.store.record_turn_failure(turn_id, type(error).__name__)

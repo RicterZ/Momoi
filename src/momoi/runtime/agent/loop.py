@@ -32,22 +32,22 @@ from ..turn_support import (
 
 logger = logging.getLogger("momoi.runtime.turns")
 class AgentLoop:
-    async def _append_owner_updates(
+    def _absorb_owner_updates(
         self,
         updates: list[IncomingMessage],
-        current_events: list[IncomingMessage],
-        turn_id: str,
-        authority: str,
-        tools: list[dict[str, Any]],
         messages: list[dict[str, Any]],
         delivery_channel: Channel,
-    ) -> tuple[list[dict[str, Any]], str]:
+        harness: TurnHarness,
+    ) -> str:
+        """Fold newly arrived owner messages into the Turn and reopen the harness."""
+
         messages.append(
             self._owner_update_message(
                 updates, delivery_channel, self.owner_context_baseline()
             )
         )
-        return tools, updates[-1].event_id
+        harness.accept_owner_update()
+        return updates[-1].event_id
 
     async def _run_tool_loop(
         self,
@@ -75,10 +75,7 @@ class AgentLoop:
         failed_tool_rounds = 0
         last_tool_error = ""
         history_messages = max(0, len(messages) - 1)
-        visible_since_owner_update = False
-        previous_tool_name: str | None = None
-        last_sent_messages = None
-        last_sent_channel = ""
+        batch_state = ToolBatchState()
         llm_round = 0
         remind_owner_bubbles = False
         enable_tool_groups = self.tool_surface.mcp_server_groups()
@@ -112,20 +109,10 @@ class AgentLoop:
                 else []
             )
             if updates:
-                visible_since_owner_update = False
-                previous_tool_name = None
-                last_sent_messages = None
-                last_sent_channel = ""
-                tools, source_event_id = await self._append_owner_updates(
-                    updates,
-                    current_events,
-                    turn_id,
-                    authority,
-                    tools,
-                    messages,
-                    delivery_channel,
+                batch_state = ToolBatchState()
+                source_event_id = self._absorb_owner_updates(
+                    updates, messages, delivery_channel, harness
                 )
-                harness.accept_owner_update()
                 failed_tool_rounds = 0
                 remind_owner_bubbles = False
             required_tool = harness.spec.first_tool if not harness.started else None
@@ -203,20 +190,10 @@ class AgentLoop:
                         current_events, delivery_channel.name
                     )
                 )
-                visible_since_owner_update = False
-                previous_tool_name = None
-                last_sent_messages = None
-                last_sent_channel = ""
-                tools, source_event_id = await self._append_owner_updates(
-                    updates,
-                    current_events,
-                    turn_id,
-                    authority,
-                    tools,
-                    messages,
-                    delivery_channel,
+                batch_state = ToolBatchState()
+                source_event_id = self._absorb_owner_updates(
+                    updates, messages, delivery_channel, harness
                 )
-                harness.accept_owner_update()
                 failed_tool_rounds = 0
                 remind_owner_bubbles = False
                 continue
@@ -237,10 +214,7 @@ class AgentLoop:
                 else []
             )
             if updates:
-                visible_since_owner_update = False
-                previous_tool_name = None
-                last_sent_messages = None
-                last_sent_channel = ""
+                batch_state = ToolBatchState()
                 messages.append(assistant_history_message(response.content, response.continuation))
                 if response.tool_calls:
                     messages.append(
@@ -254,16 +228,9 @@ class AgentLoop:
                             ],
                         }
                     )
-                tools, source_event_id = await self._append_owner_updates(
-                    updates,
-                    current_events,
-                    turn_id,
-                    authority,
-                    tools,
-                    messages,
-                    delivery_channel,
+                source_event_id = self._absorb_owner_updates(
+                    updates, messages, delivery_channel, harness
                 )
-                harness.accept_owner_update()
                 failed_tool_rounds = 0
                 remind_owner_bubbles = False
                 continue
@@ -414,12 +381,7 @@ class AgentLoop:
                     delivery_channel=delivery_channel,
                     heartbeat_owner_event_revision=heartbeat_owner_event_revision,
                     workflow=workflow,
-                    state=ToolBatchState(
-                        visible_since_owner_update=visible_since_owner_update,
-                        previous_tool_name=previous_tool_name,
-                        last_sent_bubbles=last_sent_messages,
-                        last_sent_channel=last_sent_channel,
-                    ),
+                    state=batch_state,
                     prepare_heartbeat_context=self.prepare_heartbeat_context,
                     submit_owner_context=self.submit_owner_context,
                     settle_owner_updates=self.owner_updates.settle,
@@ -428,26 +390,13 @@ class AgentLoop:
             results = batch.results
             updates = batch.owner_updates
             external_tool_used = external_tool_used or batch.external_effect
-            visible_since_owner_update = batch.state.visible_since_owner_update
-            previous_tool_name = batch.state.previous_tool_name
-            last_sent_messages = batch.state.last_sent_bubbles
-            last_sent_channel = batch.state.last_sent_channel
+            batch_state = batch.state
             last_tool_error = batch.last_tool_error
             if updates:
-                visible_since_owner_update = False
-                previous_tool_name = None
-                last_sent_messages = None
-                last_sent_channel = ""
-                tools, source_event_id = await self._append_owner_updates(
-                    updates,
-                    current_events,
-                    turn_id,
-                    authority,
-                    tools,
-                    messages,
-                    delivery_channel,
+                batch_state = ToolBatchState()
+                source_event_id = self._absorb_owner_updates(
+                    updates, messages, delivery_channel, harness
                 )
-                harness.accept_owner_update()
                 failed_tool_rounds = 0
                 continue
             if batch.ended:
