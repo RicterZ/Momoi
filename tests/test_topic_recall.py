@@ -1,6 +1,5 @@
 import asyncio
 import json
-import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -23,7 +22,7 @@ class TopicRecallTest(unittest.TestCase):
                     (json.dumps([{'text': t, 'evidence_message_ids': [1]} for t in
                                  (['一起模拟面试','准备求职'] if id=='a' else ['职业规划'])]),id))
             store._db.commit()
-            space=store.ensure_semantic_space(model='BAAI/bge-small-zh-v1.5',dimensions=512,
+            store.ensure_semantic_space(model='BAAI/bge-small-zh-v1.5',dimensions=512,
                 calibration_profile='bge-small-zh-v1.5-momoi-v1',state='active')
             client=AsyncMock();client.encode.side_effect=lambda texts,query: [vector() for _ in texts]
             service=SemanticRecallService(store,EmbeddingConfig(enabled=True),client=client);service.start()
@@ -62,7 +61,7 @@ class TopicRecallTest(unittest.TestCase):
     def test_legacy_vector_table_migration_preserves_ready_vectors(self):
         with tempfile.TemporaryDirectory() as directory:
             path=Path(directory)/'db';store=Store(path)
-            space=store.ensure_semantic_space(model='BAAI/bge-small-zh-v1.5',dimensions=512,
+            store.ensure_semantic_space(model='BAAI/bge-small-zh-v1.5',dimensions=512,
                 calibration_profile='bge-small-zh-v1.5-momoi-v1',state='active')
             db=store._db
             sql=db.execute("SELECT sql FROM sqlite_master WHERE name='semantic_documents'").fetchone()[0]
