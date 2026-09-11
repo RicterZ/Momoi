@@ -24,10 +24,6 @@ from momoi.runtime.workflows.episode import (
     EPISODE_CONSOLIDATION_FINISH_SPEC,
     EPISODE_SUMMARY_FINISH_SPEC,
 )
-from momoi.runtime.turn_support import (
-    EPISODE_CONSOLIDATION_SYSTEM_PROMPT,
-    EPISODE_SUMMARY_SYSTEM_PROMPT,
-)
 from momoi.storage import (
     EPISODE_CONSOLIDATION_BATCH_SIZE,
     EPISODE_CONSOLIDATION_DEFER_TIMEOUT_SECONDS,
@@ -670,7 +666,6 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                     tools: list[dict[str, object]],
                     **_: object,
                 ) -> ProviderResponse:
-                    self.assertEqual(system, EPISODE_SUMMARY_SYSTEM_PROMPT)
                     self.assertEqual(tools, [EPISODE_SUMMARY_FINISH_SPEC])
                     prompt = str(messages[0]["content"])
                     provider_self.prompts.append(prompt)
@@ -1015,7 +1010,6 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                 )
 
             class Provider:
-                systems: list[object] = []
                 contexts: list[dict[str, object]] = []
                 consolidation_round = 0
 
@@ -1026,9 +1020,10 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                     _tools: list[dict[str, object]],
                     **_: object,
                 ) -> ProviderResponse:
-                    provider_self.systems.append(system)
                     provider_self.contexts.append(current_log_context())
-                    if system == EPISODE_CONSOLIDATION_SYSTEM_PROMPT:
+                    # Discriminate on the tool surface, not on prompt text: only the
+                    # consolidation stage is offered episode_classify_turns.
+                    if EPISODE_CLASSIFY_TURNS_SPEC in _tools:
                         provider_self.consolidation_round += 1
                         self.assertEqual(
                             _tools,
@@ -1119,14 +1114,6 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
             provider = Provider()
             daemon.provider = provider  # type: ignore[assignment]
             self.assertTrue(await daemon._run_episode_annealing_once())
-            self.assertEqual(
-                provider.systems,
-                [
-                    EPISODE_CONSOLIDATION_SYSTEM_PROMPT,
-                    EPISODE_CONSOLIDATION_SYSTEM_PROMPT,
-                    EPISODE_SUMMARY_SYSTEM_PROMPT,
-                ],
-            )
             self.assertEqual(
                 [context["stage"] for context in provider.contexts],
                 ["episode_consolidate", "episode_consolidate", "episode_anneal"],
