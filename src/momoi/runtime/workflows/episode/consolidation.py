@@ -28,7 +28,13 @@ class EpisodeConsolidationWorkflow:
         through = ""
         if context_items and isinstance(context_items[-1], dict):
             through = str(context_items[-1].get("turn_id") or "")
-        turn_id = self._turn_id("episode-consolidate", *turn_ids, f"through:{through}")
+        marks = self.store.episode_consolidation_decision_marks(turn_ids)
+        turn_id = self._turn_id(
+            "episode-consolidate",
+            *turn_ids,
+            f"through:{through}",
+            *(f"decided:{mark}" for mark in marks),
+        )
         state = self.store.begin_turn(
             turn_id,
             "episode_consolidate",

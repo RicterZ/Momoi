@@ -251,6 +251,29 @@ class EpisodeConsolidationStore:
             "candidate_episodes": candidate_episodes,
         }
 
+    def episode_consolidation_decision_marks(
+        self, turn_ids: list[str]
+    ) -> list[float]:
+        """Latest decision timestamp per Turn, 0 when undecided.
+
+        Seeds the consolidation Turn identity: a deferred Turn becoming
+        eligible again must start a fresh attempt, while a crash retry with
+        unchanged decisions keeps the same id and stays idempotent.
+        """
+
+        if not turn_ids:
+            return []
+        placeholders = ",".join("?" for _ in turn_ids)
+        rows = self._db.execute(
+            f"""SELECT turn_id, MAX(processed_at) AS mark
+                FROM episode_consolidation_decisions
+                WHERE turn_id IN ({placeholders})
+                GROUP BY turn_id""",
+            tuple(turn_ids),
+        ).fetchall()
+        marks = {str(row["turn_id"]): float(row["mark"]) for row in rows}
+        return [marks.get(turn_id, 0.0) for turn_id in turn_ids]
+
     def episode_consolidation_remaining(
         self, turn_ids: list[str]
     ) -> list[str]:

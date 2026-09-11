@@ -1,6 +1,7 @@
 import json
 import logging
 import math
+import sqlite3
 import time
 
 from ..observability.events import log_event
@@ -13,6 +14,19 @@ logger = logging.getLogger(__name__)
 
 
 class EpisodeAnnealingStore:
+    def _dismiss_episode_summary_retry(self, episode: sqlite3.Row) -> None:
+        """A content-based skip makes a past failure retry moot.
+
+        Clearing retry_at keeps the scheduler from treating the Episode as due
+        work; new content makes it claimable again regardless.
+        """
+
+        if episode["summary_retry_at"] is not None:
+            self._db.execute(
+                "UPDATE conversation_episodes SET summary_retry_at=NULL WHERE id=?",
+                (episode["id"],),
+            )
+
     def claim_episode_annealing_candidate(
         self, raw_tail_turns: int, raw_token_budget: int,
         *, window: tuple[float, float] | None = None,
@@ -80,6 +94,8 @@ class EpisodeAnnealingStore:
                 ordinals = list(dict.fromkeys(int(row["ordinal"]) for row in rows))
                 tail_turns = raw_tail_turns if window is None and episode["status"] != "closed" else 0
                 if not rows and episode["narrative_summary"]:
+                    if window is None:
+                        self._dismiss_episode_summary_retry(episode)
                     continue
                 if not rows and episode["working_summary_claims_json"] != "[]":
                     cursor = self._db.execute(
@@ -97,6 +113,8 @@ class EpisodeAnnealingStore:
                         }
                     continue
                 if len(ordinals) <= tail_turns:
+                    if window is None:
+                        self._dismiss_episode_summary_retry(episode)
                     continue
                 tokens = sum(estimate_tokens(str(row["content"])) for row in rows)
                 if (
@@ -104,6 +122,7 @@ class EpisodeAnnealingStore:
                     and len(ordinals) <= raw_tail_turns * 2
                     and tokens <= math.ceil(raw_token_budget * 1.25)
                 ):
+                    self._dismiss_episode_summary_retry(episode)
                     continue
                 compact: list[dict[str, object]] = []
                 compact_tokens = 0
@@ -127,6 +146,8 @@ class EpisodeAnnealingStore:
                     compact_tokens += group_tokens
                     through = ordinal
                 if not compact:
+                    if window is None:
+                        self._dismiss_episode_summary_retry(episode)
                     continue
                 cursor = self._db.execute(
                     """UPDATE conversation_episodes SET summary_claimed_at=?
