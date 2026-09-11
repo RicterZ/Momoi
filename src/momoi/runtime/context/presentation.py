@@ -1,4 +1,6 @@
 import json
+from collections.abc import Mapping, Sequence
+from xml.etree.ElementTree import Element, SubElement, indent, tostring
 from xml.sax.saxutils import escape, quoteattr
 
 
@@ -74,6 +76,61 @@ def heartbeat_topic_lines(items: list[dict[str, object]]) -> str:
         if fields:
             lines.append("- " + " ".join(fields))
     return "\n".join(lines)
+
+
+def due_goal_lines(
+    goal: Mapping[str, object], *, scheduled_review_at: str
+) -> str:
+    attributes = {
+        key: str(goal[key])
+        for key in ("id", "authority", "status")
+        if goal.get(key) not in (None, "")
+    }
+    if scheduled_review_at:
+        attributes["review_at"] = scheduled_review_at
+    record = Element("goal", attributes)
+    for tag, field in (
+        ("title", "title"),
+        ("success_criteria", "success_criteria"),
+    ):
+        SubElement(record, tag).text = str(goal.get(field) or "")
+
+    steps = goal.get("plan")
+    if isinstance(steps, Sequence) and not isinstance(steps, (str, bytes)):
+        if steps:
+            plan = SubElement(record, "plan")
+            for step in steps:
+                SubElement(plan, "step").text = str(step)
+
+    for tag, field in (
+        ("next_action", "next_action"),
+        ("waiting_for", "waiting_for"),
+        ("latest_result", "latest_result"),
+    ):
+        if goal.get(field) not in (None, ""):
+            SubElement(record, tag).text = str(goal[field])
+
+    schedule = goal.get("schedule")
+    if isinstance(schedule, Mapping):
+        schedule_attributes = (
+            {"kind": str(schedule["kind"])}
+            if schedule.get("kind") not in (None, "")
+            else {}
+        )
+        schedule_node = SubElement(
+            record,
+            "schedule",
+            schedule_attributes,
+        )
+        if schedule.get("kind") == "daily":
+            times = schedule.get("times")
+            if isinstance(times, Sequence) and not isinstance(times, (str, bytes)):
+                for value in times:
+                    SubElement(schedule_node, "time").text = str(value)
+        elif schedule.get("every_seconds") is not None:
+            schedule_node.set("every_seconds", str(schedule["every_seconds"]))
+    indent(record, space="  ")
+    return tostring(record, encoding="unicode")
 
 
 def heartbeat_self_state_lines(value: str = "{}", *, current_time: str = "") -> str:

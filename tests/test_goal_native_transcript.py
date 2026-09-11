@@ -6,6 +6,7 @@ import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
+from xml.etree import ElementTree
 
 from momoi.channel.napcat import NapCatConfig
 from momoi.config.models import AppConfig
@@ -48,10 +49,12 @@ class GoalNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                     {
                         "title": "检查任务",
                         "success_criteria": "记录检查结果",
+                        "plan": ["执行检查", "记录结果"],
                         "next_action": "执行检查",
-                        "next_review_at": (
-                            datetime.now(ZoneInfo("UTC")) + timedelta(minutes=1)
-                        ).isoformat(),
+                        "schedule": {
+                            "kind": "daily",
+                            "times": ["10:30", "14:00"],
+                        },
                     },
                 ),
                 draft,
@@ -157,6 +160,26 @@ class GoalNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("<recent_conversation>", rendered)
             self.assertNotIn("<recent_turns>", rendered)
             self.assertIn("<due_goal>", rendered)
+            current = provider.first_messages[-1]["content"][0]["text"]
+            context = ElementTree.fromstring("<context>" + current + "</context>")
+            due = context.find("due_goal/goal")
+            self.assertEqual(due.attrib["id"], goal_id)
+            self.assertIn("review_at", due.attrib)
+            self.assertEqual(
+                due.findtext("success_criteria"), "记录检查结果"
+            )
+            self.assertEqual(
+                [item.text for item in due.findall("plan/step")],
+                ["执行检查", "记录结果"],
+            )
+            self.assertEqual(due.find("schedule").attrib, {"kind": "daily"})
+            self.assertEqual(
+                [item.text for item in due.findall("schedule/time")],
+                ["10:30", "14:00"],
+            )
+            self.assertIsNone(due.find("waiting_for"))
+            self.assertIsNone(due.find("latest_result"))
+            self.assertNotIn("Trusted autonomous event", current)
             self.assertEqual(
                 [message["role"] for message in provider.first_messages],
                 ["user", "user", "assistant", "user", "assistant", "user"],

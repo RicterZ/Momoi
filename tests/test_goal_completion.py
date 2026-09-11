@@ -307,7 +307,7 @@ class GoalCompletionTest(unittest.IsolatedAsyncioTestCase):
             current = messages[-1]["content"][0]["text"]
             self.assertIn(f"<recent_goals>\n{stable_id}\n</recent_goals>", current)
             self.assertNotIn("Checked: no notification needed", current)
-            self.assertIn(f"Goal id: {other_goal}", current)
+            self.assertIn(f'<goal id="{other_goal}"', current)
             for tag in ("episode_directory", "recall_memories", "reflection_memories"):
                 self.assertNotIn(f"<{tag}>", current)
 
