@@ -3,10 +3,9 @@ from xml.etree.ElementTree import Element, SubElement
 from ..memory_rendering import memory_element, owner_evidence_element, xml_sections
 
 
-def render_memory_operation_request(*, now, timestamp, max_recent_ttl_hours,
+def render_memory_operation_request(*, now, timestamp,
                                     operations, visible, snapshots, evidence):
-    clock = Element("current_time", {"at": timestamp, "unix": str(now),
-                                     "max_recent_ttl_hours": str(max_recent_ttl_hours)})
+    clock = Element("current_time", {"at": timestamp, "unix": str(now)})
     requests = Element("operation_requests")
     for operation in operations:
         attrs = {key: str(operation[key]) for key in ("id", "type", "target_id") if key in operation}

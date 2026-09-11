@@ -84,12 +84,11 @@ def sections(*items: tuple[str, str]) -> str:
 
 
 # Prefix-cache order for DeepSeek/OpenAI (byte 0 of the user text). Durable
-# owner memory and the bounded recent-memory baseline are always available
-# first, followed by the fixed agenda state. Query-specific recall and
-# conversation evidence come after that stable semantic prefix.
+# owner memory is always available first, followed by the fixed agenda state.
+# Query-specific recall and conversation evidence come after that stable
+# semantic prefix.
 USER_CONTEXT_SECTION_ORDER = (
     "long_term_memories",
-    "recent_memories",
     "goal_directory",
     "current_state",
     "active_goals",
@@ -127,7 +126,7 @@ def pack_user_context(*items: tuple[str, str]) -> str:
     # These sections are serialized by the context renderers, which escape
     # individual values. Other sections still contain plain text.
     structured = {
-        "long_term_memories", "recent_memories", "recall_memories", "goal_directory",
+        "long_term_memories", "recall_memories", "goal_directory",
         "recent_episodes", "recent_recall_context", "runtime_state", "episode_directory",
         "current_state", "due_goal",
     }

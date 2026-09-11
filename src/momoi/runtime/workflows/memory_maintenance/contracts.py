@@ -75,16 +75,16 @@ MEMORY_MAINTENANCE_FINISH_SPEC: dict[str, object] = {
                                 },
                                 "activation": {
                                     "type": "string",
-                                    "enum": ["always", "recent", "recall"],
+                                    "enum": ["always", "recall"],
                                     "description": (
                                         "Final activation."
                                     ),
                                 },
                                 "expires_at": {
-                                    "type": ["number", "null"],
+                                    "type": "null",
                                     "description": (
-                                        "Unix timestamp only for recent; otherwise "
-                                        "null. Never invent an expiry."
+                                        "Always null; memories do not expire. "
+                                        "Temporary state belongs to current state."
                                     ),
                                 },
                                 "evidence": {
@@ -156,17 +156,16 @@ MEMORY_MAINTENANCE_FINISH_SPEC: dict[str, object] = {
                                 },
                                 "activation": {
                                     "type": "string",
-                                    "enum": ["always", "recent", "recall"],
+                                    "enum": ["always", "recall"],
                                     "description": (
                                         "Final activation; always is legal only "
                                         "when every merged row was already always."
                                     ),
                                 },
                                 "expires_at": {
-                                    "type": ["number", "null"],
+                                    "type": "null",
                                     "description": (
-                                        "For a merged recent event use the latest "
-                                        "applicable source expiry; otherwise null."
+                                        "Always null; memories do not expire."
                                     ),
                                 },
                                 "evidence_event_ids": {

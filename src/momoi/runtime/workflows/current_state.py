@@ -119,12 +119,7 @@ class CurrentStateWorkflow:
         # a queued memory review must never capture this Turn's own tool rounds.
         draft = TurnDraft(memory_context=injected, memory_conversation=[*messages])
         context = context_data_message(
-            ("long_term_memories", self.store._memory_context(
-                [row for row in injected.values() if row["activation"] == "always"]
-            )),
-            ("recent_memories", self.store._memory_context(
-                [row for row in injected.values() if row["activation"] == "recent"]
-            )),
+            ("long_term_memories", self.store._memory_context(list(injected.values()))),
         )
         if context:
             messages.insert(0, context)

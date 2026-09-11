@@ -25,11 +25,7 @@ class MemoryOperationStore:
 
     def injected_memory_snapshots(self) -> dict[int, dict[str, object]]:
         self.purge_expired_memories()
-        ids = [
-            int(row["id"])
-            for activation in ("always", "recent")
-            for row in self._memory_rows(activation)
-        ]
+        ids = [int(row["id"]) for row in self._memory_rows("always")]
         return self.memory_snapshots(ids)
 
     def _queue_memory_operations(

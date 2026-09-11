@@ -256,7 +256,6 @@ def assemble_main_context(
             summary_token_budget,
         ),
         "long_term_memories": str(retrieval.get("long_term_memories") or ""),
-        "recent_memories": str(retrieval.get("recent_memories") or ""),
         "recall_memories": _memory_lines(retrieval.get("recall_memories")),
         "query_recall": str(retrieval.get("query_recall") or ""),
         "reflection_memories": (

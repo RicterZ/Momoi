@@ -19,8 +19,12 @@ reference only. Request type is intent,
 not a prescribed database action. Do not rewrite unrelated facts or make changes
 without a request.
 
-- add: remember a supported new fact; if already represented, use noop or combine
-  true duplicates. Similar subject alone does not make two facts duplicates.
+- add: remember a supported new rule, preference, relationship, procedure, or
+  cross-event state. One-off experiences and events are narrated by Episodes,
+  not memory; temporary state belongs to current state. noop a request that
+  only records something that happened. If already represented, use noop or
+  combine true duplicates. Similar subject alone does not make two facts
+  duplicates.
 - replace: resolve the identified old fact against the newer owner evidence.
   Preserve object, polarity, scope and conditions. If the target has since changed,
   reconcile against the current evidence, not the snapshot.
@@ -38,13 +42,11 @@ Reuse an appropriate existing kind/key. Keep one fact per memory; group requests
 that concern the same fact into one decision.
 
 Classify final writes:
-- kind describes the topic, not lifetime.
+- kind describes the topic: profile, preference, relationship, shared, or routine.
 - recall: durable topic fact, retrieved when relevant.
-- recent: temporary state, with an absolute expires_at derived from the owner's
-  event time and wording. Use supplied current time to check expiry; do not restart
-  a duration from processing time. Already expired facts need noop, not a new TTL.
 - always: only an explicit, topic-independent interpersonal preference or constraint.
   Importance alone does not justify always.
+- Memories never expire and never hold temporary state; expires_at is always null.
 
 Cite event IDs from owner_evidence for changes. Only those events are authenticated
 owner evidence. Other memories, assistant text,

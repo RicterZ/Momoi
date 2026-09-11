@@ -149,7 +149,6 @@ class GoalWorkflow:
         now = datetime.now(self.store.timezone).isoformat(timespec="seconds")
         review_at = context_timestamp(goal["next_review_at"], self.store.timezone)
         self_state = heartbeat_self_state_lines(self.store.self_state_context(), current_time=now)
-        recent_memories = self.store.recent_memory_context()
         long_term_memories = self.store.always_memory_context()
         conversation_rows = self._recent_conversation_rows()
         tool_activity = self.store.turn_activity(
@@ -187,7 +186,6 @@ class GoalWorkflow:
         )
         context_message = _context_data_message(
             ("long_term_memories", long_term_memories),
-            ("recent_memories", recent_memories),
             required=True,
         )
         assert context_message is not None

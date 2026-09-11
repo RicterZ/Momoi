@@ -53,7 +53,7 @@ def test_memory_xml_distinguishes_stale_and_deleted_snapshots_without_internal_f
     operation = {"id": "op-1", "type": "replace", "target_id": 1, "event_id": 'owner-"1',
                  "content": "新的要求", "evidence": "忘记旧要求"}
     rendered = render_memory_operation_request(
-        now=125, timestamp="2026-09-11T12:00:02+08:00", max_recent_ttl_hours=168,
+        now=125, timestamp="2026-09-11T12:00:02+08:00",
         operations=[operation], visible={1: old, 2: deleted}, snapshots={1: current}, evidence=evidence,
     )
     root = fromstring("<request>" + rendered + "</request>")

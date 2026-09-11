@@ -517,7 +517,6 @@ def build_plan_retrieval(
         "version": CURRENT_RETRIEVAL_VERSION,
         "episodes": episodes,
         "long_term_memories": store.always_memory_context(),
-        "recent_memories": store.recent_memory_context(),
         "recall_memories": recall_memories,
         "reflection_memories": reflection_memories,
         "goals": goals,

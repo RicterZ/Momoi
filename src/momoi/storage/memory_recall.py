@@ -14,7 +14,6 @@ from ..search import (
 from .episode_ranking import rank_recall_items
 from .memory_values import (
     MEMORY_ACTIVATIONS,
-    RECENT_MEMORY_WINDOW_SECONDS,
     REFLECTION_MEMORY_CAUTION,
     MemoryRecallQuery,
     format_reflection_memory,
@@ -409,13 +408,12 @@ class MemoryRecallStore:
                FROM memories
                WHERE superseded_by IS NULL
                  AND (expires_at IS NULL OR expires_at > ?)
-                 AND (activation<>'recent' OR updated_at>=?)
                  AND (? IS NULL OR activation=?)
                  AND NOT EXISTS (
                      SELECT 1 FROM memory_tombstones AS t
                      WHERE t.kind=memories.kind AND t.key=memories.key
                  )""",
-            (time.time(), time.time() - RECENT_MEMORY_WINDOW_SECONDS, activation, activation),
+            (time.time(), activation, activation),
         ).fetchall()
         core_kinds = {"profile", "relationship", "shared"}
         ranked: list[tuple[float, sqlite3.Row]] = []

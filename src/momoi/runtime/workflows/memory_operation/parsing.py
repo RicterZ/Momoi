@@ -1,4 +1,3 @@
-import math
 import re
 import time
 from typing import Any
@@ -15,7 +14,6 @@ def parse_decisions(
     operations: list[dict[str, Any]],
     memories: dict[int, dict[str, Any]],
     evidence: dict[str, str],
-    max_ttl_hours: float,
 ) -> list[dict[str, Any]]:
     if (
         set(arguments) != {"decisions"}
@@ -134,18 +132,8 @@ def parse_decisions(
             or len(memory["content"]) > 2000
         ):
             raise ValueError("invalid memory content")
-        expiry = memory["expires_at"]
-        if memory["activation"] == "recent":
-            if (
-                type(expiry) not in {int, float}
-                or not math.isfinite(expiry)
-                or not now < expiry <= now + max_ttl_hours * 3600
-            ):
-                raise ValueError(
-                    "recent expiry must be future and within the configured lifetime; use noop for an already expired fact"
-                )
-        elif expiry is not None:
-            raise ValueError("only recent memory has expires_at")
+        if memory["expires_at"] is not None:
+            raise ValueError("memories do not expire; temporary state belongs to current state")
     if resolved != set(requests):
         raise ValueError("resolve every operation exactly once")
     return arguments["decisions"]

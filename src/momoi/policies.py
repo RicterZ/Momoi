@@ -21,11 +21,6 @@ class ContextPolicy:
 
 
 @dataclass(frozen=True)
-class MemoryPolicy:
-    recent_max_ttl_hours: float = 30 * 24
-
-
-@dataclass(frozen=True)
 class SemanticPolicy:
     query_failure_limit: int = 2
     query_breaker_seconds: float = 30.0
@@ -39,5 +34,4 @@ class SemanticPolicy:
 class RuntimePolicies:
     daemon: DaemonPolicy = DaemonPolicy()
     context: ContextPolicy = ContextPolicy()
-    memory: MemoryPolicy = MemoryPolicy()
     semantic: SemanticPolicy = SemanticPolicy()

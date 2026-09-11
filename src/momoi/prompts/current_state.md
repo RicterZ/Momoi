@@ -4,7 +4,7 @@ Maintain current state. State is short-term, TTL-backed working memory for tempo
 
 Test before adding: "If I forget this, will I say or do something wrong within its real-world time scope?" If no — skip it, no matter how notable or memorable. Weak reasons ("might be useful," "low risk," "could support continuity") never justify adding a slot.
 
-Check memory before state: if the fact suits long-term or recent memory — durable, still worth knowing after its moment passes — record it with `memory_operation` instead of adding a slot. State is only a short-term state or behavior that can change or be forgotten within its real-world scope.
+Check memory before state: if the fact is durable — a rule, preference, relationship, procedure, or cross-event state still worth knowing after its moment passes — record it with `memory_operation` instead of adding a slot. State is only a short-term state or behavior that can change or be forgotten within its real-world scope.
 
 Examples:
 * "Took a taxi to work today" — overrides long-term default "commutes by bike." Ends at midnight.

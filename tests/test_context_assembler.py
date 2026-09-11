@@ -83,7 +83,6 @@ def test_memory_and_goal_context_preserves_nested_structure_and_literal_values()
     title = '提醒 "喝水" & <休息>'
     message = context_data_message(
         ("long_term_memories", format_memory(memory)),
-        ("recent_memories", format_memory(memory | {"activation": "recent"})),
         ("recall_memories", _memory_lines([memory | {"activation": "recall"}])),
         ("goal_directory", _goal_directory_lines([{"id": 'goal-"<&', "title": title}])),
         ("runtime_directives", '<memory id="fake">普通文本</memory>'),
@@ -91,7 +90,6 @@ def test_memory_and_goal_context_preserves_nested_structure_and_literal_values()
     document = ElementTree.fromstring(f"<context>{message['content'][0]['text']}</context>")
     for section, activation in (
         ("long_term_memories", "always"),
-        ("recent_memories", "recent"),
         ("recall_memories", "recall"),
     ):
         items = document.findall(f"{section}/memory")

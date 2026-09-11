@@ -88,7 +88,7 @@ def apply(store, batch, decisions, snapshots=None):
     for item in store.memory_maintenance_evidence_for_memories(list(snapshots)):
         evidence[item["event_id"]] = item["content"]
     decisions = parse_decisions(
-        {"decisions": decisions}, batch["operations"], snapshots, evidence, 720
+        {"decisions": decisions}, batch["operations"], snapshots, evidence
     )
     store.apply_memory_operation(batch, decisions, snapshots)
 
@@ -221,7 +221,7 @@ def test_grouped_requests_require_complete_coverage_and_evidence(store):
     ]
     decision = write(source, ids=["op", "second"])
     assert parse_decisions(
-        {"decisions": [decision]}, operations, {}, {source.event_id: source.text}, 720
+        {"decisions": [decision]}, operations, {}, {source.event_id: source.text}
     )
     for invalid in (
         [write(source)],
@@ -233,8 +233,7 @@ def test_grouped_requests_require_complete_coverage_and_evidence(store):
                 {"decisions": invalid},
                 operations,
                 {},
-                {source.event_id: source.text},
-                720,
+                {source.event_id: source.text}
             )
 
 
@@ -648,28 +647,6 @@ def test_existing_database_migration_preserves_foreign_keys_and_reopens(tmp_path
         upgraded.close()
 
 
-def test_recent_expiry_must_be_finite_future_and_bounded(store):
-    for index, expiry in enumerate((None, True, float("inf"), -1, 10**15)):
-        operation = f"op-{index}"
-        source = event(store, name=f"owner-{index}")
-        draft = submit(
-            store,
-            source,
-            name=operation,
-            turn_id=f"source-{index}",
-        )
-        decision = write(source, ids=[operation])
-        decision["memory"].update(activation="recent", expires_at=expiry)
-        with pytest.raises(ValueError, match="recent expiry"):
-            parse_decisions(
-                {"decisions": [decision]},
-                draft.memory_operations,
-                {},
-                {source.event_id: source.text},
-                720,
-            )
-
-
 def test_forget_only_request_cannot_create_memory(store):
     source = event(store, text="忘记这个偏好")
     draft = submit(store, source, action="forget")
@@ -678,8 +655,7 @@ def test_forget_only_request_cannot_create_memory(store):
             {"decisions": [write(source)]},
             draft.memory_operations,
             {},
-            {source.event_id: source.text},
-            720,
+            {source.event_id: source.text}
         )
 
 

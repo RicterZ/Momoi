@@ -13,15 +13,12 @@ MEMORY_KINDS = {
     "preference",
     "relationship",
     "shared",
-    "episodic",
     "routine",
 }
 
-MEMORY_ACTIVATIONS = {"always", "recent", "recall"}
+MEMORY_ACTIVATIONS = {"always", "recall"}
 
 ALWAYS_MEMORY_KINDS = {"profile", "preference", "relationship"}
-
-RECENT_MEMORY_WINDOW_SECONDS = 30 * 24 * 60 * 60
 
 
 REFLECTION_MEMORY_CAUTION = (

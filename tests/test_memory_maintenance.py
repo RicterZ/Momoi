@@ -292,10 +292,10 @@ class MemoryMaintenanceProtocolTest(unittest.TestCase):
             "survivor_id": 1,
             "source_ids": [2],
             "content": "计划去长寿湖，单程三四小时。",
-            "activation": "recent",
-            "expires_at": 2000000000,
+            "activation": "recall",
+            "expires_at": None,
             "evidence_event_ids": ["owner-1", "owner-2"],
-            "reason": "同一次短期行程。",
+            "reason": "同一次行程。",
         }
         payload = {
             "reviewed_ids": [],
@@ -334,8 +334,8 @@ class MemoryMaintenanceProtocolTest(unittest.TestCase):
         self.assertIsNone(result)
         self.assertIn("cannot merge memory 2", error)
 
-        rows[1]["activation"] = "recent"
-        change["activation"] = "recent"
+        rows[1]["activation"] = "recall"
+        change["activation"] = "recall"
         change["evidence_event_ids"] = ["qq:owner-1"]
         result, error = parse_memory_maintenance_result(
             payload,

@@ -272,8 +272,7 @@ class OwnerWorkflow:
         # tail, which is rebuilt anyway.
         injected_memories = self.store.injected_memory_snapshots()
         context_message = _owner_context_message(
-            ("long_term_memories", self.store._memory_context([row for row in injected_memories.values() if row["activation"] == "always"])),
-            ("recent_memories", self.store._memory_context([row for row in injected_memories.values() if row["activation"] == "recent"])),
+            ("long_term_memories", self.store._memory_context(list(injected_memories.values()))),
             ("goal_directory", recalled["goal_directory"]),
         )
         runtime_text = pack_current_turn_context(

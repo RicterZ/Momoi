@@ -24,7 +24,6 @@ class WebhookWorkflow:
         state = self.store.begin_turn(turn_id, "webhook", [turn_id])
         if state in {"completed", "cancelled", "needs_reconciliation"}:
             raise RuntimeError(f"webhook turn is {state}")
-        recent_memories = self.store.recent_memory_context()
         long_term_memories = self.store.always_memory_context()
         conversation_rows = self._recent_conversation_rows()
         tool_activity = self.store.turn_activity(
@@ -77,7 +76,6 @@ class WebhookWorkflow:
         system = self._system()
         context_message = _context_data_message(
             ("long_term_memories", long_term_memories),
-            ("recent_memories", recent_memories),
             required=True,
         )
         assert context_message is not None

@@ -103,7 +103,6 @@ class MemoryOperationWorkflow:
         now = time.time()
         request = render_memory_operation_request(
             now=now, timestamp=self.store.context_timestamp(now),
-            max_recent_ttl_hours=self.memory_tools.policy.recent_max_ttl_hours,
             operations=batch["operations"], visible=visible, snapshots=snapshots,
             evidence=evidence_records,
         )
@@ -154,7 +153,6 @@ class MemoryOperationWorkflow:
                     batch["operations"],
                     snapshots,
                     evidence,
-                    self.memory_tools.policy.recent_max_ttl_hours,
                 )
                 self.store.apply_memory_operation(batch, decisions, snapshots)
             except (TypeError, ValueError, KeyError) as error:

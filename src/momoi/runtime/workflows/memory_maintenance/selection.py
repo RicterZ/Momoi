@@ -12,7 +12,6 @@ _GENERIC_KEY_TERMS = {
     "preference",
     "relationship",
     "shared",
-    "episodic",
     "routine",
     "life",
     "work",

@@ -3588,12 +3588,6 @@ class StorageMemoryTest(unittest.TestCase):
                     "不要用波浪号",
                 ),
                 (
-                    "recent",
-                    "current.recovery",
-                    "老师这几天在恢复身体状态",
-                    "这几天在恢复身体状态",
-                ),
-                (
                     "recall",
                     "hobby.cycling",
                     "老师喜欢骑车",
@@ -3605,44 +3599,30 @@ class StorageMemoryTest(unittest.TestCase):
                     f"activation-{index}", f"activation-{index}", evidence, 1, 1
                 )
                 store.add_event(event)
-                seed_memory(store, event, key=key, content=content, activation=activation,
-                            expires_at=time.time()+48*3600 if activation == "recent" else None)
+                seed_memory(store, event, key=key, content=content, activation=activation)
 
             always = store.always_memory_context()
-            recent = store.recent_memory_context()
             recalled = str(store.search_memories("骑车", 6))
             self.assertIn("波浪号", always)
             self.assertNotIn("骑车", always)
-            self.assertIn("恢复身体", recent)
-            self.assertNotIn("波浪号", recent)
             self.assertIn("喜欢骑车", recalled)
             self.assertNotIn("波浪号", recalled)
-            self.assertNotIn("恢复身体", recalled)
             ranked_context, _ = store.ranked_memory_context("骑车", 6)
             ranked_memory = ElementTree.fromstring(ranked_context)
             self.assertEqual(ranked_memory.tag, "memory")
             self.assertEqual(ranked_memory.get("key"), "hobby.cycling")
             self.assertEqual(ranked_memory.text, "老师喜欢骑车")
             self.assertEqual(always.count("波浪号"), 1)
-            for activation, rendered in (("always", always), ("recent", recent)):
-                row = store._db.execute(
-                    "SELECT * FROM memories WHERE activation=?", (activation,)
-                ).fetchone()
-                memory = ElementTree.fromstring(rendered)
-                self.assertEqual(memory.tag, "memory")
-                self.assertEqual(memory.attrib, {
-                    "id": str(row["id"]), "kind": row["kind"],
-                    "key": row["key"], "activation": activation,
-                })
-                self.assertEqual(memory.text, row["content"])
-            recent_row = store._db.execute(
-                "SELECT expires_at FROM memories WHERE key='current.recovery'"
+            row = store._db.execute(
+                "SELECT * FROM memories WHERE activation='always'"
             ).fetchone()
-            self.assertIsNotNone(recent_row["expires_at"])
-            always_row = store._db.execute(
-                "SELECT expires_at FROM memories WHERE key='communication.punctuation.tilde'"
-            ).fetchone()
-            self.assertIsNone(always_row["expires_at"])
+            memory = ElementTree.fromstring(always)
+            self.assertEqual(memory.tag, "memory")
+            self.assertEqual(memory.attrib, {
+                "id": str(row["id"]), "kind": row["kind"],
+                "key": row["key"], "activation": "always",
+            })
+            self.assertEqual(memory.text, row["content"])
             store.close()
 
     def test_injected_memory_preserves_duplicates_whitespace_and_cached_prefix(self) -> None:
@@ -3654,57 +3634,47 @@ class StorageMemoryTest(unittest.TestCase):
             content = "第一条规则  保留空格\n第二行\n\n最后一段"
             now = time.time()
             with store._db:
-                for activation in ("always", "recent"):
-                    for index in range(2):
-                        store._db.execute(
-                            """INSERT INTO memories
-                               (kind, key, content, activation, authority, source_event_id,
-                                evidence_quote, importance, created_at, updated_at, expires_at)
-                               VALUES ('preference', ?, ?, ?, 'owner', 'evidence', ?, ?, ?, ?, ?)""",
-                            (f"{activation}.rule.{index}", content, activation, content,
-                             index, now, now, now + 3600 if activation == "recent" else None),
-                        )
+                for index in range(2):
+                    store._db.execute(
+                        """INSERT INTO memories
+                           (kind, key, content, activation, authority, source_event_id,
+                            evidence_quote, importance, created_at, updated_at, expires_at)
+                           VALUES ('preference', ?, ?, 'always', 'owner', 'evidence', ?, ?, ?, ?, NULL)""",
+                        (f"always.rule.{index}", content, content,
+                         index, now, now),
+                    )
 
             def prefix():
                 return context_data_message(
                     ("long_term_memories", store.always_memory_context()),
-                    ("recent_memories", store.recent_memory_context()),
                 )
 
             before = prefix()
             self.assertEqual(before["role"], "user")
             self.assertEqual(before["content"][0]["cache_control"], {"type": "ephemeral"})
             text = before["content"][0]["text"]
-            self.assertEqual(text.count(content), 4)
-            for activation in ("always", "recent"):
-                document = ElementTree.fromstring(f"<context>{text}</context>")
-                section = "long_term_memories" if activation == "always" else "recent_memories"
-                self.assertEqual(
-                    [item.get("key") for item in document.findall(f"{section}/memory")],
-                    [f"{activation}.rule.0", f"{activation}.rule.1"],
-                )
+            self.assertEqual(text.count(content), 2)
+            document = ElementTree.fromstring(f"<context>{text}</context>")
+            self.assertEqual(
+                [item.get("key") for item in document.findall("long_term_memories/memory")],
+                ["always.rule.0", "always.rule.1"],
+            )
             store.add_event(IncomingMessage("later", "later", "无关的新消息", 1, 1))
             self.assertEqual(prefix(), before)
 
-    def test_recent_memory_drops_after_ttl(self) -> None:
+    def test_expired_memory_drops_after_ttl(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
             event = IncomingMessage("qq:ttl", "ttl", "现在窝在沙发上", 1, 1)
             store.add_event(event)
-            before = time.time()
             seed_memory(store, event, key="current.sofa", content="小桃现在抱着靠枕窝在沙发上。",
-                        activation="recent", expires_at=time.time()+2*3600)
-            expires_at = store._db.execute(
-                "SELECT expires_at FROM memories WHERE key='current.sofa'"
-            ).fetchone()["expires_at"]
-            self.assertGreaterEqual(expires_at, before + 2 * 3600 - 1)
-            self.assertLessEqual(expires_at, time.time() + 2 * 3600 + 1)
-            self.assertIn("沙发", store.recent_memory_context())
+                        activation="recall", expires_at=time.time()+2*3600)
+            self.assertIn("沙发", str(store.search_memories("沙发", 6)))
             store._db.execute(
                 "UPDATE memories SET expires_at=? WHERE key='current.sofa'",
                 (time.time() - 1,),
             )
             store._db.commit()
-            self.assertNotIn("沙发", store.recent_memory_context())
+            self.assertNotIn("沙发", str(store.search_memories("沙发", 6)))
             self.assertEqual(store.list_memories(), [])
             store.close()

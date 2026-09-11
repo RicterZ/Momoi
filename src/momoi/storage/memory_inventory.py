@@ -3,14 +3,13 @@ from __future__ import annotations
 import sqlite3
 import time
 
-from .memory_values import MEMORY_ACTIVATIONS, RECENT_MEMORY_WINDOW_SECONDS, format_memory
+from .memory_values import MEMORY_ACTIVATIONS, format_memory
 
 
 class MemoryInventoryStore:
     def maintenance_memory_inventory(self) -> list[dict[str, object]]:
         self.purge_expired_memories()
         now = time.time()
-        cutoff = now - RECENT_MEMORY_WINDOW_SECONDS
         rows = self._db.execute(
             """SELECT id, kind, key, content, activation, authority,
                       source_event_id, evidence_quote, importance,
@@ -18,30 +17,26 @@ class MemoryInventoryStore:
                FROM memories AS m
                WHERE m.superseded_by IS NULL
                  AND (m.expires_at IS NULL OR m.expires_at>?)
-                 AND (m.activation<>'recent' OR m.updated_at>=?)
                  AND NOT EXISTS (
                      SELECT 1 FROM memory_tombstones AS t
                      WHERE t.kind=m.kind AND t.key=m.key
                  )
                ORDER BY m.id""",
-            (now, cutoff),
+            (now,),
         ).fetchall()
         return [dict(row) for row in rows]
 
     def purge_expired_memories(self, *, now: float | None = None) -> int:
         now = time.time() if now is None else now
-        cutoff = now - RECENT_MEMORY_WINDOW_SECONDS
         rows = self._db.execute(
             """SELECT id FROM memories AS m
                WHERE m.superseded_by IS NULL
-                 AND (m.expires_at IS NOT NULL AND m.expires_at <= ?
-                      OR m.activation='recent' AND m.expires_at IS NULL
-                         AND m.updated_at < ?)
+                 AND m.expires_at IS NOT NULL AND m.expires_at <= ?
                  AND NOT EXISTS (
                      SELECT 1 FROM memory_tombstones AS t
                      WHERE t.kind=m.kind AND t.key=m.key
                  )""",
-            (now, cutoff),
+            (now,),
         ).fetchall()
         if not rows:
             return 0
@@ -63,19 +58,17 @@ class MemoryInventoryStore:
         if activation not in MEMORY_ACTIVATIONS:
             raise ValueError("invalid memory activation")
         now = time.time() if now is None else now
-        recent_cutoff = now - RECENT_MEMORY_WINDOW_SECONDS
         return self._db.execute(
             """SELECT id, kind, key, content, activation, importance, updated_at
                FROM memories AS m
                WHERE m.activation=? AND m.superseded_by IS NULL
                  AND (m.expires_at IS NULL OR m.expires_at > ?)
-                 AND (m.activation<>'recent' OR m.updated_at>=?)
                  AND NOT EXISTS (
                      SELECT 1 FROM memory_tombstones AS t
                      WHERE t.kind=m.kind AND t.key=m.key
                  )
                ORDER BY m.id""",
-            (activation, now, recent_cutoff),
+            (activation, now),
         ).fetchall()
 
     @staticmethod
@@ -87,10 +80,6 @@ class MemoryInventoryStore:
 
     def always_memory_context(self) -> str:
         return self._memory_context(self._memory_rows("always"))
-
-    def recent_memory_context(self) -> str:
-        self.purge_expired_memories()
-        return self._memory_context(self._memory_rows("recent"))
 
     def has_memory(self, kind: str, key: str) -> bool:
         return (

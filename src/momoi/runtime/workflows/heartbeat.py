@@ -226,8 +226,7 @@ class HeartbeatWorkflow:
         system = self._system()
         injected_memories = self.store.injected_memory_snapshots()
         context_message = _context_data_message(
-            ("long_term_memories", self.store._memory_context([row for row in injected_memories.values() if row["activation"] == "always"])),
-            ("recent_memories", self.store._memory_context([row for row in injected_memories.values() if row["activation"] == "recent"])),
+            ("long_term_memories", self.store._memory_context(list(injected_memories.values()))),
             required=True,
         )
         assert context_message is not None

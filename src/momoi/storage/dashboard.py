@@ -2,7 +2,6 @@ import sqlite3
 import time
 from dataclasses import asdict
 
-from .memory_values import RECENT_MEMORY_WINDOW_SECONDS
 from .timestamps import add_context_timestamps
 
 def _dashboard_unix(value: object) -> float | None:
@@ -110,19 +109,17 @@ class DashboardStore:
                FROM memories AS m
                WHERE m.superseded_by IS NULL
                  AND (m.expires_at IS NULL OR m.expires_at > ?)
-                 AND (m.activation<>'recent' OR m.updated_at>=?)
                  AND NOT EXISTS (
                      SELECT 1 FROM memory_tombstones AS t
                      WHERE t.kind=m.kind AND t.key=m.key
                  )
                ORDER BY CASE m.activation
                           WHEN 'always' THEN 0
-                          WHEN 'recent' THEN 1
-                          ELSE 2
+                          ELSE 1
                         END,
                         m.updated_at DESC, m.id DESC
                LIMIT ?""",
-            (now, now - RECENT_MEMORY_WINDOW_SECONDS, limit),
+            (now, limit),
         ).fetchall()
         results: list[dict[str, object]] = []
         for row in rows:

@@ -147,7 +147,6 @@ class ReflectionWorkflow:
         )
         open_conversations = self.store.open_conversation_inventory()
         open_episode_ids = {str(item["id"]) for item in open_conversations}
-        recent_memories = self.store.recent_memory_context()
         current_input = _pack_user_context(
             (
                 "workflow_contract",
@@ -156,7 +155,6 @@ class ReflectionWorkflow:
                 + _live_prompt(REFLECTION_PROMPT_PATH, REFLECTION_SYSTEM_PROMPT),
             ),
             ("open_conversations", self.store.open_conversation_inventory_context()),
-            ("recent_memories", recent_memories),
             ("recall_memories", confirmed_memory),
             ("reflection_memories", learned),
             ("mood_timeline", str(source.get("mood_timeline") or "(none)")),

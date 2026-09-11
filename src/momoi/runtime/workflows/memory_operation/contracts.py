@@ -35,28 +35,20 @@ _MEMORY = {
         "content": {"type": "string", "minLength": 1, "maxLength": 2000},
         "activation": {"type": "string", "enum": sorted(MEMORY_ACTIVATIONS)},
         "expires_at": {
-            "type": ["number", "null"],
-            "description": "Absolute Unix expiry derived from owner evidence; never extend a past deadline.",
+            "type": "null",
+            "description": "Memories do not expire; always null. Temporary state belongs to current state.",
         },
     },
     "required": ["kind", "key", "content", "activation", "expires_at"],
     "oneOf": [
         {
             "properties": {
-                "activation": {"enum": ["recent"]},
-                "expires_at": {"type": "number"},
-            }
-        },
-        {
-            "properties": {
                 "activation": {"enum": ["recall"]},
-                "expires_at": {"type": "null"},
             }
         },
         {
             "properties": {
                 "activation": {"enum": ["always"]},
-                "expires_at": {"type": "null"},
                 "kind": {"enum": sorted(ALWAYS_MEMORY_KINDS)},
             }
         },

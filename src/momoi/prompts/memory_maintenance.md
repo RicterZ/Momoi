@@ -32,8 +32,10 @@ Assess relationship → choose action → check evidence → set activation → 
 **Activation**
 
 - `always`: a standing interpersonal rule affecting unrelated Turns.
-- `recent`: a temporary state or situation with a real expiry.
 - `recall`: a durable topic fact or procedure.
+- Memories hold rules, preferences, relationships, procedures, and cross-event
+  states — never one-off experiences (Episodes narrate those) or temporary
+  state (current state owns that).
 - Re-evaluate activation from the final content; do not inherit it
   from the survivor. A rule limited to a game, device, tool, or other
   topic is `recall`, not `always`.
@@ -48,9 +50,8 @@ Assess relationship → choose action → check evidence → set activation → 
 - For different facets of a temporary event, rebuild the merged content
   from owner evidence; exclude source-only details. Cite all owner
   evidence used.
-- Merge different facets of the same concrete temporary event and use
-  the latest applicable source expiry. Similar timing or topic alone is
-  not enough.
+- Merge different facets of the same concrete event. Similar timing or
+  topic alone is not enough.
 - Do not merge motivation with outcome, emotion with plan, or general
   rule with scoped exception merely because they are related.
 - A regrouped batch is only a review set; it may contain several

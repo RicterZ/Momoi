@@ -11,7 +11,6 @@ from ..models import (
     ToolCall,
     TurnDraft,
 )
-from ..policies import MemoryPolicy
 from ..search import SearchBackend, search_expression
 from ..storage import (
     Store,
@@ -121,11 +120,9 @@ class MemoryTools:
     def __init__(
         self,
         store: Store,
-        policy: MemoryPolicy = MemoryPolicy(),
         semantic_recall: SemanticRecallService | None = None,
     ) -> None:
         self.store = store
-        self.policy = policy
         self.semantic_recall = semantic_recall
 
     async def execute_async(

@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 import re
 import json
+import time
 from collections.abc import Callable
 
 from .episode_claims import render_verified_claims
@@ -380,6 +381,32 @@ def _add_memory_operation_failed_state(database: sqlite3.Connection) -> None:
         database.execute("PRAGMA foreign_keys=ON")
 
 
+def _retire_episodic_and_recent_memories(database: sqlite3.Connection) -> None:
+    """Retire the episodic kind and the recent activation.
+
+    Episodes narrate one-off events and current state owns temporary state;
+    memories keep only durable rules, preferences, relationships, procedures,
+    and cross-event states. Tombstoned rows stay invisible everywhere and the
+    semantic triggers reindex them out.
+    """
+
+    rows = database.execute(
+        """SELECT kind, key, source_event_id, evidence_quote FROM memories
+           WHERE superseded_by IS NULL AND (kind='episodic' OR activation='recent')"""
+    ).fetchall()
+    for kind, key, source_event_id, evidence_quote in rows:
+        database.execute(
+            """INSERT INTO memory_tombstones
+               (kind, key, source_event_id, evidence_quote, created_at)
+               VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(kind, key) DO UPDATE SET
+                 source_event_id=excluded.source_event_id,
+                 evidence_quote=excluded.evidence_quote,
+                 created_at=excluded.created_at""",
+            (kind, key, source_event_id, evidence_quote, time.time()),
+        )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     _add_runtime_archive_metadata,
     _add_turn_workflow_kind,
@@ -395,6 +422,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     _normalize_owner_message_received_at,
     _drop_goal_authority,
     _add_memory_operation_failed_state,
+    _retire_episodic_and_recent_memories,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 

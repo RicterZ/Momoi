@@ -51,14 +51,7 @@ class MemoryMaintenanceCommitStore:
                     expires_at = change.get("expires_at")
                     if row["activation"] != "always" and activation == "always":
                         raise ValueError("memory_maintenance_promotes_always")
-                    if activation == "recent":
-                        if (
-                            isinstance(expires_at, bool)
-                            or not isinstance(expires_at, (int, float))
-                            or not now < float(expires_at) <= now + 7 * 86400
-                        ):
-                            raise ValueError("invalid_memory_maintenance_expiry")
-                    elif expires_at is not None:
+                    if expires_at is not None:
                         raise ValueError("invalid_memory_maintenance_expiry")
                     evidence = change.get("evidence")
                     if isinstance(evidence, dict):
@@ -103,14 +96,7 @@ class MemoryMaintenanceCommitStore:
                     expires_at = change.get("expires_at")
                     if survivor["activation"] != "always" and activation == "always":
                         raise ValueError("memory_maintenance_promotes_always")
-                    if activation == "recent":
-                        if (
-                            isinstance(expires_at, bool)
-                            or not isinstance(expires_at, (int, float))
-                            or not now < float(expires_at) <= now + 7 * 86400
-                        ):
-                            raise ValueError("invalid_memory_maintenance_expiry")
-                    elif expires_at is not None:
+                    if expires_at is not None:
                         raise ValueError("invalid_memory_maintenance_expiry")
                     evidence_event_ids = [
                         str(event_id) for event_id in change["evidence_event_ids"]

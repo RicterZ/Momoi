@@ -94,7 +94,7 @@ class MomoiDaemon(
         self.store.ensure_heartbeat(config.heartbeat)
         self.agenda_tools = AgendaTools(self.store)
         self.memory_tools = MemoryTools(
-            self.store, config.policies.memory, self.semantic_recall
+            self.store, self.semantic_recall
         )
         self.thinking_tools = ThinkingTools(self.store)
         self.builtin_tools = BuiltinTools(

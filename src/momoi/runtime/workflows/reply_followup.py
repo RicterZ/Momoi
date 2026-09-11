@@ -29,7 +29,6 @@ class ReplyFollowupWorkflow:
             target_channel or str(pending.get("channel") or self.channel.name)
         )
         long_term_memories = self.store.always_memory_context()
-        recent_memories = self.store.recent_memory_context()
         conversation_rows = self._recent_conversation_rows()
         tool_activity = self.store.turn_activity(
             [str(row["turn_id"]) for row in conversation_rows]
@@ -63,7 +62,6 @@ class ReplyFollowupWorkflow:
         system = self._system()
         context_message = _context_data_message(
             ("long_term_memories", long_term_memories),
-            ("recent_memories", recent_memories),
             required=True,
         )
         assert context_message is not None
