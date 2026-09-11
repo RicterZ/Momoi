@@ -1,6 +1,6 @@
 import json
 from collections.abc import Mapping, Sequence
-from xml.etree.ElementTree import Element, SubElement, indent, tostring
+from xml.etree.ElementTree import Element, SubElement, tostring
 from xml.sax.saxutils import escape, quoteattr
 
 
@@ -129,7 +129,6 @@ def due_goal_lines(
                     SubElement(schedule_node, "time").text = str(value)
         elif schedule.get("every_seconds") is not None:
             schedule_node.set("every_seconds", str(schedule["every_seconds"]))
-    indent(record, space="  ")
     return tostring(record, encoding="unicode")
 
 

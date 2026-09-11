@@ -146,7 +146,6 @@ def _episode_match_lines(
 def _fit_episode_xml(text: str, token_budget: int) -> str:
     """Fit text nodes, keeping XML boundaries and attributes intact."""
     root = ElementTree.fromstring(text)
-    ElementTree.indent(root, space="  ")
 
     def serialize() -> str:
         return ElementTree.tostring(root, encoding="unicode", short_empty_elements=False)

@@ -5,7 +5,7 @@ import logging
 import time
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from xml.etree.ElementTree import Element, SubElement, indent, tostring
+from xml.etree.ElementTree import Element, SubElement, tostring
 
 from .structured_selection import SelectionProtocolError, select_structured
 from ..storage.episode_cues import cue_texts
@@ -63,7 +63,6 @@ def render_topic_selection_request(payload: Mapping[str, object]) -> str:
                 },
             )
 
-    indent(root, space="  ")
     return tostring(root, encoding="unicode")
 
 
