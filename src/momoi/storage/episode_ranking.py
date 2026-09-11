@@ -255,25 +255,6 @@ def _query_relevance_confidence(
     return confidence
 
 
-def _relevance_confidence(
-    matched_queries: tuple[EpisodeRankedQuery, ...],
-) -> float:
-    """Return the strongest independently supported retrieval need.
-
-    The semantic score below still rewards priority and evidence spanning
-    multiple queries.  Eligibility is intentionally the maximum per-query
-    confidence so unrelated retrieval needs cannot veto one another.
-    """
-
-    return max(
-        (
-            _query_relevance_confidence(query)
-            for query in matched_queries
-        ),
-        default=0.0,
-    )
-
-
 def rank_episode_matches(
     queries: list[EpisodeRecallQuery],
     matches: list[EpisodeQueryMatches],

@@ -13,7 +13,6 @@ from momoi.storage.episode_search import (
     EpisodeSearchField,
     StringEpisodeSearchBackend,
 )
-from momoi.storage.migrations import SCHEMA_VERSION
 from momoi.storage.semantic_documents import _episode_summary_document, _episode_cue_documents
 from tests.test_episode_search import document
 from tests.test_episode_annealing import add_turn, config

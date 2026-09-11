@@ -21,7 +21,7 @@ dependent calls.
 - Call `heartbeat_begin` first and alone. Adapt to its results.
 - Rest needs no message or external work. Work must stay within autonomous
   capabilities and the artifact directory.
-- Leave scheduled Goals to their scheduler. Create an agent-owned Goal only for
+- Leave scheduled Goals to their scheduler. Create a Goal only for
   new work that must continue later.
 - Share when a new conversational beat belongs. It may
   express a feeling, thought, or invitation without a useful result. Do not fill
