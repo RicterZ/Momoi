@@ -114,6 +114,10 @@ class CurrentStateWorkflow:
             self.store, list(rows.values()), source_turn_ids,
         )
         injected = self.store.injected_memory_snapshots()
+        events = self._source_turn_owner_events(source_turn_ids)
+        # Snapshot the transcript before the tool loop mutates the live list;
+        # a queued memory review must never capture this Turn's own tool rounds.
+        draft = TurnDraft(memory_context=injected, memory_conversation=[*messages])
         context = context_data_message(
             ("long_term_memories", self.store._memory_context(
                 [row for row in injected.values() if row["activation"] == "always"]
@@ -132,8 +136,6 @@ class CurrentStateWorkflow:
         tools = copy.deepcopy(tasks[-1].get("tools"))
         if tools is None:
             tools = self.tool_surface.conversation_specs()
-        events = self._source_turn_owner_events(source_turn_ids)
-        draft = TurnDraft(memory_context=injected, memory_conversation=messages)
 
         async def execute_tool(call):
             nonlocal complete

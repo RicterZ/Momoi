@@ -309,6 +309,77 @@ def _drop_goal_authority(database: sqlite3.Connection) -> None:
         database.execute("PRAGMA foreign_keys=ON")
 
 
+def _add_memory_operation_failed_state(database: sqlite3.Connection) -> None:
+    """Deterministically failing batches must stop retrying: add a failed state."""
+
+    sql = str(
+        database.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' "
+            "AND name='memory_operation_batches'"
+        ).fetchone()[0]
+    )
+    if "'failed'" in sql:
+        return
+    objects = [
+        row[0]
+        for row in database.execute(
+            "SELECT sql FROM sqlite_master WHERE tbl_name='memory_operation_batches' "
+            "AND type IN ('index','trigger') AND sql IS NOT NULL"
+        )
+    ]
+    database.commit()
+    database.execute("PRAGMA foreign_keys=OFF")
+    try:
+        with database:
+            database.execute("BEGIN")
+            database.execute(
+                """CREATE TABLE memory_operation_batches_new (
+                    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id TEXT NOT NULL UNIQUE REFERENCES turns(id),
+                    state TEXT NOT NULL DEFAULT 'pending'
+                        CHECK(state IN ('pending','running','completed','failed')),
+                    operations_json TEXT NOT NULL,
+                    context_json TEXT NOT NULL,
+                    conversation_json TEXT NOT NULL,
+                    events_json TEXT NOT NULL,
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    retry_at REAL NOT NULL DEFAULT 0,
+                    result_json TEXT,
+                    error TEXT,
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL
+                )"""
+            )
+            columns = ",".join(
+                '"' + str(row[1]) + '"'
+                for row in database.execute(
+                    "PRAGMA table_info(memory_operation_batches)"
+                )
+            )
+            database.execute(
+                f"INSERT INTO memory_operation_batches_new ({columns}) "
+                f"SELECT {columns} FROM memory_operation_batches"
+            )
+            database.execute("DROP TABLE memory_operation_batches")
+            database.execute(
+                "ALTER TABLE memory_operation_batches_new "
+                "RENAME TO memory_operation_batches"
+            )
+            for statement in objects:
+                database.execute(statement)
+            database.execute(
+                "UPDATE sqlite_sequence SET seq=("
+                "SELECT COALESCE(MAX(sequence), 0) FROM memory_operation_batches"
+                ") WHERE name='memory_operation_batches'"
+            )
+            if database.execute("PRAGMA foreign_key_check").fetchone():
+                raise ValueError(
+                    "foreign key violation after memory_operation_batches migration"
+                )
+    finally:
+        database.execute("PRAGMA foreign_keys=ON")
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     _add_runtime_archive_metadata,
     _add_turn_workflow_kind,
@@ -323,6 +394,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     _add_current_state_workflow,
     _normalize_owner_message_received_at,
     _drop_goal_authority,
+    _add_memory_operation_failed_state,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 

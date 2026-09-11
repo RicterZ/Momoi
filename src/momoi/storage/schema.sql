@@ -649,7 +649,7 @@ CREATE INDEX IF NOT EXISTS llm_usage_created ON llm_usage(created_at);
 CREATE TABLE IF NOT EXISTS memory_operation_batches (
     sequence INTEGER PRIMARY KEY AUTOINCREMENT,
     id TEXT NOT NULL UNIQUE REFERENCES turns(id),
-    state TEXT NOT NULL DEFAULT 'pending' CHECK(state IN ('pending','running','completed')),
+    state TEXT NOT NULL DEFAULT 'pending' CHECK(state IN ('pending','running','completed','failed')),
     operations_json TEXT NOT NULL,
     context_json TEXT NOT NULL,
     conversation_json TEXT NOT NULL,

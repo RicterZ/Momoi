@@ -794,3 +794,14 @@ def test_maintenance_can_queue_memory_operation(daemon):
     assert [item["content"] for item in operations] == ["老师今天打车上班"]
     assert operations[0]["event_id"] == "evt-1"
     assert batch["id"] == task_row(daemon.store)["maintenance_turn_id"]
+    # The queued conversation is a pre-loop transcript snapshot: none of the
+    # maintenance Turn's own tool calls may leak in, or providers reject the
+    # review request for an unanswered tool_call.
+    conversation = json.loads(batch["conversation_json"])
+    for message in conversation:
+        content = message.get("content")
+        if isinstance(content, list):
+            assert not any(
+                isinstance(block, dict) and block.get("type") == "tool_use"
+                for block in content
+            )

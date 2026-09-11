@@ -829,3 +829,65 @@ def test_owner_assistant_text_never_becomes_a_delivered_bubble(daemon):
     assert not replies
     assert [row.text for row in daemon.store.due_outbox()] == ['这是气泡']
     assert daemon.store._db.execute("SELECT state FROM turns WHERE id='source'").fetchone()[0] == 'completed'
+
+
+def test_repeated_failures_mark_batch_failed_and_unblock_later(store):
+    from momoi.storage.memory_operations import MEMORY_OPERATION_MAX_ATTEMPTS
+
+    first = event(store, "first")
+    submit(store, first, turn_id="first")
+    second = event(store, "second")
+    submit(store, second, turn_id="second")
+    for _ in range(MEMORY_OPERATION_MAX_ATTEMPTS):
+        batch = store.claim_memory_operation("first")
+        assert batch is not None
+        store.release_memory_operation(
+            "first", batch["turn_id"], "ProviderError: HTTP 400"
+        )
+        with store._db:
+            store._db.execute(
+                "UPDATE memory_operation_batches SET retry_at=0 WHERE id='first'"
+            )
+    row = store._db.execute(
+        "SELECT state FROM memory_operation_batches WHERE id='first'"
+    ).fetchone()
+    assert row["state"] == "failed"
+    assert store.pending_memory_operation() == "second"
+
+
+def test_repaired_conversation_drops_unanswered_tool_calls():
+    from momoi.runtime.workflows.memory_operation.workflow import (
+        _repaired_conversation,
+    )
+
+    conversation = [
+        {"role": "user", "content": "历史"},
+        {
+            "role": "assistant",
+            "content": [
+                {"type": "tool_use", "id": "a1", "name": "memory_operation", "input": {}}
+            ],
+        },
+        {
+            "role": "user",
+            "content": [{"type": "tool_result", "tool_use_id": "a1", "content": "ok"}],
+        },
+        {
+            "role": "assistant",
+            "content": [
+                {"type": "text", "text": "半截"},
+                {"type": "tool_use", "id": "a2", "name": "current_state_finish", "input": {}},
+            ],
+        },
+    ]
+    repaired = _repaired_conversation(conversation)
+    assert len(repaired) == 4
+    assert repaired[-1]["content"] == [{"type": "text", "text": "半截"}]
+    # A fully unanswered assistant message is dropped entirely.
+    conversation.append(
+        {
+            "role": "assistant",
+            "content": [{"type": "tool_use", "id": "a3", "name": "x", "input": {}}],
+        }
+    )
+    assert len(_repaired_conversation(conversation)) == 4

@@ -2,7 +2,6 @@ import json
 import logging
 
 from ..observability.events import log_event
-from .integrity import decode_stored_json
 from .memory_values import estimate_tokens, truncate_tokens
 
 logger = logging.getLogger(__name__)

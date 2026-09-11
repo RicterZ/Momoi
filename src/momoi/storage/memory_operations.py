@@ -6,6 +6,8 @@ import time
 from ..models import IncomingMessage, TurnDraft
 from .memory_values import memory_snapshot_fingerprint
 
+MEMORY_OPERATION_MAX_ATTEMPTS = 5
+
 
 class MemoryOperationStore:
     def memory_snapshots(self, ids: list[int]) -> dict[int, dict[str, object]]:
@@ -80,7 +82,8 @@ class MemoryOperationStore:
 
     def next_memory_operation_due_at(self) -> float | None:
         row = self._db.execute(
-            """SELECT state,retry_at FROM memory_operation_batches WHERE state<>'completed'
+            """SELECT state,retry_at FROM memory_operation_batches
+               WHERE state IN ('pending','running')
                ORDER BY sequence LIMIT 1"""
         ).fetchone()
         # Ready work is already enqueued; only a future retry needs a timer.
@@ -92,7 +95,8 @@ class MemoryOperationStore:
 
     def pending_memory_operation(self) -> str | None:
         row = self._db.execute(
-            """SELECT id,state,retry_at FROM memory_operation_batches WHERE state<>'completed'
+            """SELECT id,state,retry_at FROM memory_operation_batches
+               WHERE state IN ('pending','running')
                ORDER BY sequence LIMIT 1"""
         ).fetchone()
         return (
@@ -151,11 +155,26 @@ class MemoryOperationStore:
     ) -> None:
         now = time.time()
         with self._db:
-            self._db.execute(
-                """UPDATE memory_operation_batches SET state='pending', error=?, retry_at=?, updated_at=?
-                   WHERE id=? AND state='running'""",
-                (error[:500], now if interrupted else now + 300, now, batch_id),
-            )
+            row = self._db.execute(
+                "SELECT attempts FROM memory_operation_batches WHERE id=? AND state='running'",
+                (batch_id,),
+            ).fetchone()
+            if row is None:
+                return
+            # A deterministic failure (e.g. a malformed request) cannot be
+            # retried into success; stop after a bounded number of attempts.
+            if not interrupted and int(row["attempts"]) >= MEMORY_OPERATION_MAX_ATTEMPTS:
+                self._db.execute(
+                    """UPDATE memory_operation_batches
+                       SET state='failed', error=?, updated_at=? WHERE id=?""",
+                    (error[:500], now, batch_id),
+                )
+            else:
+                self._db.execute(
+                    """UPDATE memory_operation_batches SET state='pending', error=?, retry_at=?, updated_at=?
+                       WHERE id=? AND state='running'""",
+                    (error[:500], now if interrupted else now + 300, now, batch_id),
+                )
             self._db.execute(
                 """UPDATE turns SET state='cancelled',stage='cancelled',failure_reason=?,updated_at=?
                    WHERE id=? AND state='running'""",
