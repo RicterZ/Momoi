@@ -117,7 +117,6 @@ CREATE TABLE IF NOT EXISTS goals (
     id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
     success_criteria TEXT NOT NULL,
-    authority TEXT NOT NULL CHECK (authority IN ('owner', 'agent')),
     source_event_id TEXT NOT NULL,
     status TEXT NOT NULL CHECK (
         status IN ('active', 'waiting', 'blocked', 'done', 'cancelled')

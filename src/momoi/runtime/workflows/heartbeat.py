@@ -177,7 +177,7 @@ class HeartbeatWorkflow:
                 break
             recent_topics.append(topic)
             topic_tokens += size
-        goals = self.store.active_goals_context(authority="agent")
+        goals = self.store.active_goals_context()
         conversation_rows = self._recent_conversation_rows()
         tool_activity = self.store.turn_activity(
             [str(row["turn_id"]) for row in conversation_rows]

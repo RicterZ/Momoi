@@ -324,7 +324,6 @@ class ToolBatchExecutor:
                 result = self.agenda_tools.execute(
                     call,
                     request.draft,
-                    authority=execution.authority,
                     source_event_id=request.source_event_id,
                 )
             elif source == "memory":

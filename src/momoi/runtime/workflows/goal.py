@@ -228,7 +228,6 @@ class GoalWorkflow:
                 ],
             },
         ]
-        agent_owned = goal["authority"] == "agent"
         tools = self.tool_surface.conversation_specs()
         draft = TurnDraft()
         await self._run_tool_loop(
@@ -240,15 +239,7 @@ class GoalWorkflow:
             execution=TurnExecutionSpec(
                 "goal",
                 goal_id=goal_id,
-                allowed_capabilities=(
-                    frozenset({"read", "write"}) if agent_owned else None
-                ),
-                artifact_root=(
-                    self.tool_executor.artifact_root if agent_owned else None
-                ),
-                permitted_tools=self.tool_surface.permitted_names(
-                    "goal", agent_owned_goal=agent_owned
-                ),
+                permitted_tools=self.tool_surface.permitted_names("goal"),
             ),
             source_event_id=f"goal:{goal_id}",
             turn_id=turn_id,

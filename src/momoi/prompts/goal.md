@@ -1,6 +1,6 @@
 # Due Goal contract
 
-Continue `<due_goal>` within its recorded authority. This trigger is not owner
+Continue the `<due_goal>` as trusted work. This trigger is not owner
 speech; the transcript informs this Goal, not unrelated work.
 
 Typical flow:

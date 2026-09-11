@@ -120,7 +120,7 @@ class ToolSurface:
         self._log_conversation_surface(tools)
         return tools
 
-    def permitted_names(self, stage: str, *, agent_owned_goal: bool = False) -> frozenset[str]:
+    def permitted_names(self, stage: str) -> frozenset[str]:
         external = {
             str(spec.get("name") or "")
             for spec in [*self.builtin_specs, *self.mcp.tool_specs]
@@ -161,17 +161,16 @@ class ToolSurface:
         if stage == "reply_followup":
             return frozenset(general_chat)
         if stage == "goal":
-            goal_agenda = {"goal_create"} if not agent_owned_goal else set()
             return frozenset(
                 {
                     "goal_review",
+                    "goal_create",
                     "memory_search",
                     *voice,
                     "send_bubbles",
                     "read_tool_result",
                     "tool_enable",
                     "end_turn",
-                    *goal_agenda,
                     *external,
                 }
             )

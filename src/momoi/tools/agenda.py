@@ -37,12 +37,11 @@ class AgendaTools:
         call: ToolCall,
         draft: TurnDraft,
         *,
-        authority: str,
         source_event_id: str,
     ) -> dict[str, Any]:
         try:
             if call.name == "goal_create":
-                return self._create(call.arguments, draft, authority, source_event_id)
+                return self._create(call.arguments, draft, source_event_id)
             if call.name == "goal_update":
                 return self._update(call.arguments, draft)
             if call.name in {"goal_finish", "goal_cancel"}:
@@ -74,7 +73,6 @@ class AgendaTools:
         self,
         arguments: dict[str, Any],
         draft: TurnDraft,
-        authority: str,
         source_event_id: str,
     ) -> dict[str, Any]:
         title = str(arguments.get("title") or "").strip()
@@ -99,7 +97,6 @@ class AgendaTools:
             "id": goal_id,
             "title": title[:500],
             "success_criteria": criteria[:2000],
-            "authority": authority,
             "source_event_id": source_event_id,
             "status": "active",
             "plan": [str(item)[:1000] for item in arguments.get("plan", [])][:50],

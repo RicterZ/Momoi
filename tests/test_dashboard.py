@@ -83,10 +83,10 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             )
             self.store._db.execute(
                 """INSERT INTO goals
-                   (id, title, success_criteria, authority, source_event_id, status,
+                   (id, title, success_criteria, source_event_id, status,
                     plan_json, next_action, waiting_for, blocked_reason, latest_result,
                     schedule_json, next_review_at, created_at, updated_at)
-                   VALUES ('goal-one', '整理桌面', '桌面干净', 'owner', 'event',
+                   VALUES ('goal-one', '整理桌面', '桌面干净', 'event',
                            'active', '[]', '收拾文件', '', '', '', '', ?, ?, ?)""",
                 (now + 3600, now, now),
             )

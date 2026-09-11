@@ -167,7 +167,6 @@ class GoalCompletionTest(unittest.IsolatedAsyncioTestCase):
         result = self.daemon.agenda_tools.execute(
             ToolCall("create", "goal_create", args),
             draft,
-            authority="owner",
             source_event_id="test",
         )
         self.assertTrue(result["ok"])
@@ -595,18 +594,15 @@ class GoalCompletionTest(unittest.IsolatedAsyncioTestCase):
             tool["name"] for tool in self.daemon.tool_surface.conversation_specs()
         }
         self.assertIn("end_turn", surface)
-        for owned in (True, False):
-            permitted = self.daemon.tool_surface.permitted_names(
-                "goal", agent_owned_goal=owned
+        permitted = self.daemon.tool_surface.permitted_names("goal")
+        harness = TurnHarness.for_stage("goal", permitted_tool_names=permitted)
+        for name in ("goal_update", "goal_finish", "goal_cancel"):
+            self.assertEqual(
+                harness.validate(
+                    [ToolCall("mutation", name, {"goal_id": self.goal_id})]
+                ),
+                "tool_not_allowed",
             )
-            harness = TurnHarness.for_stage("goal", permitted_tool_names=permitted)
-            for name in ("goal_update", "goal_finish", "goal_cancel"):
-                self.assertEqual(
-                    harness.validate(
-                        [ToolCall("mutation", name, {"goal_id": self.goal_id})]
-                    ),
-                    "tool_not_allowed",
-                )
         self.assertTrue(
             {"goal_update", "goal_finish", "goal_cancel"}
             <= self.daemon.tool_surface.permitted_names("owner")

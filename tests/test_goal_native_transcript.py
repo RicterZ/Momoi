@@ -58,7 +58,6 @@ class GoalNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                     },
                 ),
                 draft,
-                authority="agent",
                 source_event_id=event.event_id,
             )
             goal_id = str(created["goal"]["id"])

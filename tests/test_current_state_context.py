@@ -106,7 +106,6 @@ def test_real_workflows_inject_only_current_input_and_preserve_history(daemon, s
                 },
             ),
             draft,
-            authority="owner",
             source_event_id="event",
         )
         assert result["ok"]

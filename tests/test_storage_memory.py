@@ -11,6 +11,7 @@ from unittest.mock import patch
 from zoneinfo import ZoneInfo
 from xml.etree import ElementTree
 
+from momoi.storage.migrations import MIGRATIONS, _normalize_owner_message_received_at
 from momoi.tools.agenda import AgendaTools
 from momoi.tools.builtin import BuiltinTools
 from momoi.channel.napcat import NapCatConfig
@@ -1620,13 +1621,16 @@ class StorageMemoryTest(unittest.TestCase):
                 AgentReply([]),
                 turn_id="legacy-owner",
             )
-            version = int(store._db.execute("PRAGMA user_version").fetchone()[0])
+            # Rewind to just before the normalization migration so reopening
+            # re-runs it (and anything appended after it) regardless of how
+            # many migrations follow.
+            version = MIGRATIONS.index(_normalize_owner_message_received_at)
             with store._db:
                 store._db.execute(
                     "UPDATE messages SET content=?, created_at=? WHERE turn_id=?",
                     ("1970-01-01T00:01:40+00:00 正文", 100, "legacy-owner"),
                 )
-                store._db.execute(f"PRAGMA user_version={version - 1}")
+                store._db.execute(f"PRAGMA user_version={version}")
             store.close()
 
             reopened = Store(path)
@@ -2247,7 +2251,6 @@ class StorageMemoryTest(unittest.TestCase):
                     },
                 ),
                 draft,
-                authority="owner",
                 source_event_id=event.event_id,
             )
             self.assertTrue(created["ok"])
@@ -2272,7 +2275,6 @@ class StorageMemoryTest(unittest.TestCase):
                     },
                 ),
                 autonomous,
-                authority="agent",
                 source_event_id=f"goal:{goal_id}",
             )
             self.assertTrue(updated["ok"])
@@ -3211,7 +3213,6 @@ class StorageMemoryTest(unittest.TestCase):
                     },
                 ),
                 draft,
-                authority="owner",
                 source_event_id=event.event_id,
             )
             self.assertTrue(created["ok"], created)
@@ -3231,7 +3232,6 @@ class StorageMemoryTest(unittest.TestCase):
                     },
                 ),
                 occurrence_draft,
-                authority="agent",
                 source_event_id="goal-review",
             )
             self.assertTrue(occurrence["ok"], occurrence)
@@ -3245,7 +3245,6 @@ class StorageMemoryTest(unittest.TestCase):
                     {"goal_id": goal_id, "result": "总体成功标准已达成"},
                 ),
                 TurnDraft(),
-                authority="agent",
                 source_event_id="goal-review",
             )
             self.assertTrue(finished["ok"], finished)
@@ -3258,7 +3257,6 @@ class StorageMemoryTest(unittest.TestCase):
                     {"goal_id": goal_id, "reason": "周期任务已明确停止"},
                 ),
                 TurnDraft(),
-                authority="owner",
                 source_event_id="owner-stop",
             )
             self.assertTrue(cancelled["ok"], cancelled)
@@ -3343,7 +3341,6 @@ class StorageMemoryTest(unittest.TestCase):
                     },
                 ),
                 draft,
-                authority="owner",
                 source_event_id="test",
             )
             self.assertTrue(created["ok"], created)

@@ -1352,7 +1352,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     },
                 ),
                 draft,
-                authority="owner",
                 source_event_id=event.event_id,
             )["goal"]
             daemon.store.commit_turn([event], event.text, AgentReply(["好"]), draft)
@@ -1641,7 +1640,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             await daemon._complete_heartbeat_turn(asyncio.Event())
             self.assertEqual(daemon.store.due_outbox()[0].text, "刚想到一个关卡点子！")
             goal = daemon.store.list_goals()[0]
-            self.assertEqual(goal["authority"], "agent")
             self.assertEqual(goal["title"], "继续整理关卡点子")
             self.assertEqual(provider.calls, 9)
             daemon.store.close()
@@ -1950,7 +1948,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                     },
                 ),
                 draft,
-                authority="owner",
                 source_event_id=source.event_id,
             )
             goal_id = created["goal"]["id"]

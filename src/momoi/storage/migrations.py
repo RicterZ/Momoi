@@ -251,6 +251,64 @@ def _normalize_owner_message_received_at(database: sqlite3.Connection) -> None:
         )
 
 
+def _drop_goal_authority(database: sqlite3.Connection) -> None:
+    """Goals no longer split owner/agent authority; every Goal Turn runs trusted."""
+
+    if "authority" not in _columns(database, "goals"):
+        return
+    objects = [
+        row[0]
+        for row in database.execute(
+            "SELECT sql FROM sqlite_master WHERE tbl_name='goals' "
+            "AND type IN ('index','trigger') AND sql IS NOT NULL"
+        )
+    ]
+    database.commit()
+    database.execute("PRAGMA foreign_keys=OFF")
+    try:
+        with database:
+            database.execute("BEGIN")
+            database.execute(
+                """CREATE TABLE goals_new (
+                    id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    success_criteria TEXT NOT NULL,
+                    source_event_id TEXT NOT NULL,
+                    status TEXT NOT NULL CHECK (
+                        status IN ('active', 'waiting', 'blocked', 'done', 'cancelled')
+                    ),
+                    plan_json TEXT NOT NULL,
+                    next_action TEXT NOT NULL DEFAULT '',
+                    waiting_for TEXT NOT NULL DEFAULT '',
+                    blocked_reason TEXT NOT NULL DEFAULT '',
+                    latest_result TEXT NOT NULL DEFAULT '',
+                    schedule_json TEXT NOT NULL DEFAULT '',
+                    next_review_at REAL,
+                    retry_at REAL,
+                    failure_count INTEGER NOT NULL DEFAULT 0,
+                    review_claimed_at REAL,
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL
+                )"""
+            )
+            columns = ",".join(
+                '"' + str(row[1]) + '"'
+                for row in database.execute("PRAGMA table_info(goals)")
+                if str(row[1]) != "authority"
+            )
+            database.execute(
+                f"INSERT INTO goals_new ({columns}) SELECT {columns} FROM goals"
+            )
+            database.execute("DROP TABLE goals")
+            database.execute("ALTER TABLE goals_new RENAME TO goals")
+            for statement in objects:
+                database.execute(statement)
+            if database.execute("PRAGMA foreign_key_check").fetchone():
+                raise ValueError("foreign key violation after goals migration")
+    finally:
+        database.execute("PRAGMA foreign_keys=ON")
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     _add_runtime_archive_metadata,
     _add_turn_workflow_kind,
@@ -264,6 +322,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     _restore_last_heartbeat_activity,
     _add_current_state_workflow,
     _normalize_owner_message_received_at,
+    _drop_goal_authority,
 )
 SCHEMA_VERSION = len(MIGRATIONS)
 

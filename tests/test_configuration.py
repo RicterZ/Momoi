@@ -448,7 +448,6 @@ class ConfigurationTest(unittest.TestCase):
                     },
                 ),
                 TurnDraft(),
-                authority="owner",
                 source_event_id="test",
             )
             self.assertTrue(result["ok"], result)

@@ -1428,9 +1428,9 @@ class ContextAssemblerTest(unittest.TestCase):
             )
             store._db.executemany(
                 """INSERT INTO goals
-                   (id, title, success_criteria, authority, source_event_id,
+                   (id, title, success_criteria, source_event_id,
                     status, plan_json, next_action, created_at, updated_at)
-                   VALUES (?, ?, '完成', 'owner', 'source', 'active', '[]', ?, ?, ?)""",
+                   VALUES (?, ?, '完成', 'source', 'active', '[]', ?, ?, ?)""",
                 [
                     ("goal-mail", "跟进项目邮件", "检查项目邮件", now, now),
                     ("goal-social", "整理微博收藏", "整理微博", now, now),

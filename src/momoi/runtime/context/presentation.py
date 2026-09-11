@@ -83,7 +83,7 @@ def due_goal_lines(
 ) -> str:
     attributes = {
         key: str(goal[key])
-        for key in ("id", "authority", "status")
+        for key in ("id", "status")
         if goal.get(key) not in (None, "")
     }
     if scheduled_review_at:

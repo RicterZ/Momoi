@@ -7,6 +7,18 @@ from ..models import TurnDraft
 from .scheduling import next_schedule_at, normalize_schedule
 
 
+def _schedule_brief(schedule: object) -> str:
+    if not isinstance(schedule, dict):
+        return "none"
+    kind = str(schedule.get("kind") or "")
+    if kind == "interval":
+        return f"interval/{schedule.get('every_seconds')}s"
+    if kind == "daily":
+        times = ",".join(str(item) for item in schedule.get("times") or [])
+        return f"daily@{times}"
+    return "none"
+
+
 class GoalStore:
     """Goal persistence, scheduling, claims, and Turn-draft mutations."""
 
@@ -147,15 +159,12 @@ class GoalStore:
         with self._db:
             self._apply_goal_mutations(draft, time.time())
 
-    def active_goals_context(self, authority: str | None = None) -> str:
-        authority_clause = " AND authority=?" if authority else ""
+    def active_goals_context(self) -> str:
         rows = self._db.execute(
-            f"""SELECT * FROM goals
+            """SELECT * FROM goals
                WHERE status IN ('active', 'waiting', 'blocked')
-               {authority_clause}
                ORDER BY COALESCE(next_review_at, 1e30), updated_at DESC
-               LIMIT 20""",
-            (authority,) if authority else (),
+               LIMIT 20"""
         ).fetchall()
         if not rows:
             return ""
@@ -167,7 +176,7 @@ class GoalStore:
                 f"next_action={goal['next_action'] or 'none'} "
                 f"next_review_at={goal.get('next_review_timestamp') or 'none'} "
                 f"retry_at={goal.get('retry_timestamp') or 'none'} "
-                f"schedule={json.dumps(goal['schedule'], ensure_ascii=False) if goal['schedule'] else 'none'}"
+                f"schedule={_schedule_brief(goal['schedule'])}"
             )
         return "\n".join(lines)
 
@@ -243,10 +252,10 @@ class GoalStore:
         for goal in draft.goals.values() if draft else []:
             self._db.execute(
                 """INSERT INTO goals
-                   (id, title, success_criteria, authority, source_event_id, status,
+                   (id, title, success_criteria, source_event_id, status,
                     plan_json, next_action, waiting_for, blocked_reason, latest_result,
                     schedule_json, next_review_at, review_claimed_at, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
                    ON CONFLICT(id) DO UPDATE SET
                      title=excluded.title,
                      success_criteria=excluded.success_criteria,
@@ -266,7 +275,6 @@ class GoalStore:
                     goal["id"],
                     goal["title"],
                     goal["success_criteria"],
-                    goal["authority"],
                     goal["source_event_id"],
                     goal["status"],
                     json.dumps(goal.get("plan", []), ensure_ascii=False),

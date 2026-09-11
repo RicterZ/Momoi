@@ -108,7 +108,6 @@ def goal(args: argparse.Namespace) -> None:
             result = tools.execute(
                 ToolCall("cli-goal-add", "goal_create", arguments),
                 draft,
-                authority="owner",
                 source_event_id="cli:goal",
             )
         else:
@@ -126,7 +125,6 @@ def goal(args: argparse.Namespace) -> None:
                     {"goal_id": matches[0]["id"], "reason": args.reason},
                 ),
                 draft,
-                authority="owner",
                 source_event_id="cli:goal",
             )
         if not result.get("ok"):
