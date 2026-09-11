@@ -6,10 +6,6 @@ speech; the transcript informs this Goal, not unrelated work.
 Typical flow:
 … → send_bubbles? / send_voice? → … → goal_review → end_turn
 
-Your workflow may involve multiple activities and tool calls. You may call
-multiple independent tools in one response; wait for results before making
-dependent calls.
-
 - `<due_goal>` is the current task and state. `<recent_goals>` lists all historical
   `<goal>` review IDs in the current transcript, in timeline order. Read their
   results and surrounding messages there; they are not new tasks or proof of

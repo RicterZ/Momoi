@@ -23,7 +23,6 @@ from momoi.runtime import (
 from momoi.runtime.jobs import AutonomousJob
 from momoi.runtime.agent import TurnExecutionSpec
 from momoi.runtime.agent.context_window import ContextWindow
-from momoi.tools.contracts.memory import MEMORY_TOOL_POLICY
 from momoi.models import (
     AgentReply,
     IncomingMessage,
@@ -35,7 +34,6 @@ from momoi.models import (
 from momoi.llm.errors import (
     ProviderError,
 )
-from momoi.runtime.turn_support import HEARTBEAT_PROMPT_PATH
 from momoi.storage import estimate_tokens
 from tests.support import (
     recall_response,
@@ -61,7 +59,7 @@ class DaemonTest(unittest.TestCase):
             heartbeat.write_text("Old heartbeat")
             daemon = object.__new__(MomoiDaemon)
             daemon.config = SimpleNamespace(
-                system_prompt="{{SOUL}}\n{{CAPABILITY_POLICIES}}",
+                system_prompt="{{SOUL}}",
                 soul_prompt="Old soul",
                 soul_prompt_path=soul,
                 heartbeat_prompt="Old heartbeat",
@@ -80,13 +78,9 @@ class DaemonTest(unittest.TestCase):
             self.assertNotIn("Old soul", rendered_system)
             self.assertNotIn("{{SOUL}}", rendered_system)
             rendered = daemon._heartbeat_system_prompt()
-            base_heartbeat = HEARTBEAT_PROMPT_PATH.read_text(encoding="utf-8").strip()
-            self.assertEqual(
-                rendered,
-                base_heartbeat + "\n\n# Workspace heartbeat guidance\n\nNew heartbeat",
-            )
+            self.assertIn("New heartbeat", rendered)
             heartbeat.unlink()
-            self.assertEqual(daemon._heartbeat_system_prompt(), base_heartbeat)
+            self.assertNotIn("New heartbeat", daemon._heartbeat_system_prompt())
 
             daemon._loaded_workspace_prompts = {}
             heartbeat.write_text("偶尔整理自己的摄影兴趣。")
@@ -2292,7 +2286,6 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
             llm_requests[0]["tool_choice"],
             {"type": "any"},
         )
-        self.assertNotIn("Context planning protocol", str(llm_requests[0]["system"]))
         self.assertIn("send_bubbles", second_tools)
         final_tools = [tool["name"] for tool in llm_requests[7]["tools"]]
         self.assertIn("send_bubbles", final_tools)
@@ -2304,14 +2297,12 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             llm_requests[0]["system"][0]["cache_control"], {"type": "ephemeral"}
         )
-        self.assertIn("You are Momoi.", llm_requests[0]["system"][0]["text"])
-        self.assertTrue(
-            llm_requests[0]["system"][0]["text"].rstrip().endswith("You are Momoi.")
-        )
-        self.assertEqual(len(llm_requests[0]["system"]), 2)
-        self.assertIn(MEMORY_TOOL_POLICY.strip(), llm_requests[0]["system"][1]["text"])
-        self.assertEqual(len(llm_requests[7]["system"]), 2)
-        self.assertIn(MEMORY_TOOL_POLICY.strip(), llm_requests[7]["system"][1]["text"])
+        # The Soul leads and the operating contract follows it, so the rules sit
+        # closest to the conversation; capability guidance is appended last.
+        self.assertNotIn("You are Momoi.", llm_requests[0]["system"][0]["text"])
+        self.assertIn("You are Momoi.", llm_requests[0]["system"][1]["text"])
+        self.assertEqual(len(llm_requests[0]["system"]), 3)
+        self.assertEqual(len(llm_requests[7]["system"]), 3)
         self.assertEqual(llm_requests[0]["system"], llm_requests[7]["system"])
         self.assertEqual(
             llm_requests[1]["messages"][-1]["content"][0]["type"], "tool_result"

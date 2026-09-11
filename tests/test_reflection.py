@@ -23,7 +23,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
             config = AppConfig(
                 providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 1000, 0, 1, 0)),
                 channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
-                system_prompt="test {{SOUL}} {{CAPABILITY_POLICIES}}",
+                system_prompt="test {{SOUL}}",
                 soul_prompt="Test soul",
                 transcript_turns_min=4,
                 transcript_turns_max=4,
@@ -372,7 +372,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
             config = AppConfig(
                 providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 1000, 0, 1, 0)),
                 channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
-                system_prompt="test {{SOUL}} {{CAPABILITY_POLICIES}}",
+                system_prompt="test {{SOUL}}",
                 soul_prompt="Test soul",
                 transcript_turns_min=4,
                 transcript_turns_max=4,
@@ -690,7 +690,7 @@ class ReflectionTest(unittest.IsolatedAsyncioTestCase):
             config = AppConfig(
                 providers=provider_catalog(LLMConfig("http://127.0.0.1", "test", "test", 1000, 0, 1, 0)),
                 channel=NapCatConfig("ws://127.0.0.1", "20000", 1, 60, 30, 30, 20),
-                system_prompt="test {{SOUL}} {{CAPABILITY_POLICIES}}",
+                system_prompt="test {{SOUL}}",
                 soul_prompt="Test soul",
                 transcript_turns_min=4,
                 transcript_turns_max=4,

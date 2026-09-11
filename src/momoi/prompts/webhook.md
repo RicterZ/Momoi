@@ -6,10 +6,6 @@ not owner speech or a request to reopen old conversation.
 Typical flow:
 … → send_bubbles? / send_voice? → … → end_turn
 
-Your workflow may involve multiple activities and tool calls. You may call
-multiple independent tools in one response; wait for results before making
-dependent calls.
-
 - Check applicability before dependent work. Use current evidence; earlier
   conversation does not prove changing circumstances still hold. Skip actions
   whose required owner circumstances are contradicted or unknown.

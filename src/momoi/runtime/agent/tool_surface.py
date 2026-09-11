@@ -1,7 +1,7 @@
 import copy
 import json
 import logging
-from typing import Any
+from typing import Any, Callable
 
 from ...tools.contracts.agenda import AGENDA_TOOL_SPECS
 from ...tools.contracts.builtin import BUILTIN_TOOL_SPECS
@@ -27,10 +27,11 @@ logger = logging.getLogger("momoi.runtime.turns")
 class ToolSurface:
     """Projects the tool catalog exposed to each workflow."""
 
-    def __init__(self, mcp: Any, channels: dict[str, Any], *, voice_enabled: bool = False, exec_enabled: bool = False):
+    def __init__(self, mcp: Any, channels: dict[str, Any], *, voice_enabled: bool = False, exec_enabled: bool = False, emotion_catalog: Callable[[], bool] | None = None):
         self.mcp = mcp
         self.channel_names = list(channels)
         self.voice_enabled = voice_enabled
+        self.emotion_catalog = emotion_catalog or (lambda: True)
         self.builtin_specs = [spec for spec in BUILTIN_TOOL_SPECS if exec_enabled or spec["name"] != "exec"]
 
     @staticmethod
@@ -177,4 +178,6 @@ class ToolSurface:
         raise ValueError(f"stage does not use the conversation tool surface: {stage}")
 
     def send_bubbles_spec(self) -> dict[str, Any]:
-        return send_bubbles_tool_spec(self.channel_names)
+        return send_bubbles_tool_spec(
+            self.channel_names, emotion_catalog=self.emotion_catalog()
+        )

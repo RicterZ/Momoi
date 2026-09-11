@@ -362,13 +362,35 @@ SEND_BUBBLES_TOOL_SPEC: dict[str, Any] = {
 }
 
 
-def send_bubbles_tool_spec(channel_names: list[str]) -> dict[str, Any]:
+def _bubble_schema(*, emotion_catalog: bool) -> dict[str, Any]:
+    """Bubble schema, with the reaction format only when a catalog exists.
+
+    Naming `emotion://` is only meaningful alongside the `<emotion_catalog>`
+    block that lists valid slugs, so both appear or neither does.
+    """
+    if emotion_catalog:
+        return CHANNEL_BUBBLE_SCHEMA
+    schema = copy.deepcopy(CHANNEL_BUBBLE_SCHEMA)
+    schema["oneOf"][0]["description"] = (
+        "Put blank-line-separated text in separate bubbles."
+    )
+    return schema
+
+
+def send_bubbles_tool_spec(
+    channel_names: list[str], *, emotion_catalog: bool = True
+) -> dict[str, Any]:
+    properties = SEND_BUBBLES_TOOL_SPEC["input_schema"]["properties"]
     return {
         **SEND_BUBBLES_TOOL_SPEC,
         "input_schema": {
             **SEND_BUBBLES_TOOL_SPEC["input_schema"],
             "properties": {
-                **SEND_BUBBLES_TOOL_SPEC["input_schema"]["properties"],
+                **properties,
+                "bubbles": {
+                    **properties["bubbles"],
+                    "items": _bubble_schema(emotion_catalog=emotion_catalog),
+                },
                 "channel": {
                     "type": "string",
                     "enum": channel_names,

@@ -5,10 +5,6 @@ Respond to `<current_owner_bubbles>` using shared history and recalled memory.
 Typical flow:
 recall → … → send_bubbles? / send_voice? → … → end_turn
 
-Your workflow may involve multiple activities and tool calls. You may call
-multiple independent tools in one response; wait for results before making
-dependent calls.
-
 - Include exactly one `recall` in the opening batch; independent tools may
   accompany it. Retry until recall succeeds. New owner messages preserve that
   completion and prior tool results; continue from them.

@@ -61,6 +61,11 @@ def managed_emotion_bytes(workspace: str | Path, data: bytes, filename: str) -> 
     return destination
 
 
+EMOTION_REACTION_POLICY = """Optional reactions use the catalogued `emotion://` slugs above. A reaction may
+stand alone, but it never replaces necessary information; place it where it fits
+the message sequence."""
+
+
 class EmotionStore:
     """Emotion asset catalog and storage-path policy."""
 

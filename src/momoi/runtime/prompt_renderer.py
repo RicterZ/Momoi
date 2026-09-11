@@ -4,6 +4,7 @@ from typing import Any
 from ..tools.contracts.agenda import AGENDA_TOOL_POLICY
 from ..observability.events import log_event
 from ..mcp.prompt import MCP_TOOL_POLICY
+from ..storage.delivery.emotions import EMOTION_REACTION_POLICY
 from ..tools.contracts.memory import MEMORY_TOOL_POLICY
 from ..tools.contracts.thinking import THINKING_TOOL_POLICY
 from .turn_support import (
@@ -66,26 +67,48 @@ class PromptRenderer:
         self._log_workspace_prompt("soul", path, text, optional=False)
         return text
 
+    def _contract(self) -> str:
+        """The operating contract, without the Soul.
+
+        The Soul is delivered as its own leading block, so a contract template
+        that embeds `{{SOUL}}` is split here and the placeholder dropped.
+        """
+        template = self.config.system_prompt
+        if self.config.soul_prompt_path is not None:
+            template = _live_prompt(SYSTEM_PROMPT_PATH, template)
+        if "{{SOUL}}" not in template:
+            return template.strip()
+        head, _, tail = template.partition("{{SOUL}}")
+        return "\n\n".join(part.strip() for part in (head, tail) if part.strip())
+
     def _system(self) -> list[dict[str, Any]]:
-        system_prompt = self.config.system_prompt
-        soul_path = self.config.soul_prompt_path
-        if soul_path is not None:
-            system_prompt = _live_prompt(SYSTEM_PROMPT_PATH, system_prompt)
-        soul_prompt = self._workspace_soul()
-        text = system_prompt.replace(
-            "{{SOUL}}", soul_prompt or "No additional Soul is configured."
-        ).replace("{{CAPABILITY_POLICIES}}", "")
-        blocks: list[dict[str, Any]] = [
-            {"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}
-        ]
+        soul_prompt = self._workspace_soul() or "No additional Soul is configured."
+        blocks: list[dict[str, Any]] = []
+        # Identity first, operating contract second: the rules then sit closest to
+        # the conversation, where their influence on the next step is strongest.
+        # Both are stable, so both stay inside the cached prefix.
+        for text in (soul_prompt, self._contract()):
+            if text:
+                blocks.append(
+                    {
+                        "type": "text",
+                        "text": text,
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                )
         # Keep the catalog as its own cached system block so editing stickers does
-        # not invalidate the large contract/Soul prefix.
+        # not invalidate the large Soul/contract prefix. The reaction guidance
+        # travels with the catalog: with no catalog there is nothing to reference,
+        # so neither the slugs nor the instruction to use them is injected.
         emotions = self.store.emotion_context()
         if emotions.strip():
             blocks.append(
                 {
                     "type": "text",
-                    "text": _sections(("emotion_catalog", emotions)),
+                    "text": _sections(
+                        ("emotion_catalog", emotions),
+                        ("emotion_reactions", EMOTION_REACTION_POLICY),
+                    ),
                     "cache_control": {"type": "ephemeral"},
                 }
             )
