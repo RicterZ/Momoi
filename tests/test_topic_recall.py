@@ -61,7 +61,7 @@ class TopicRecallTest(unittest.TestCase):
     def test_legacy_vector_table_migration_preserves_ready_vectors(self):
         with tempfile.TemporaryDirectory() as directory:
             path=Path(directory)/'db';store=Store(path)
-            store.ensure_semantic_space(model='BAAI/bge-small-zh-v1.5',dimensions=512,
+            space=store.ensure_semantic_space(model='BAAI/bge-small-zh-v1.5',dimensions=512,
                 calibration_profile='bge-small-zh-v1.5-momoi-v1',state='active')
             db=store._db
             sql=db.execute("SELECT sql FROM sqlite_master WHERE name='semantic_documents'").fetchone()[0]
