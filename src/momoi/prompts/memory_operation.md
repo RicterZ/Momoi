@@ -35,7 +35,7 @@ without a request.
   the same evidence is not automatically retried. Do not guess an answer.
 
 An empty search result only means this query found no eligible records.
-A missing or deleted target is not permission to recreate it. Never resurrect a
+A missing or deleted target is not licence to recreate it. Never resurrect a
 forgotten fact from historical context; fresh owner evidence is required.
 
 Reuse an appropriate existing kind/key. Keep one fact per memory; group requests
