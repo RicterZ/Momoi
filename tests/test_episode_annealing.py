@@ -1199,6 +1199,102 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
             )
             daemon.store.close()
 
+    async def test_redeferred_turn_is_reconsolidated_with_a_fresh_turn(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(config(directory))
+            daemon.store.create_episode("长期项目", episode_id="episode-main")
+            add_turn(daemon, 1)
+            daemon.store.commit_turn([], "好 我去喝水", AgentReply([]), turn_id="pending-1")
+
+            class Provider:
+                def __init__(self) -> None:
+                    self.rounds = 0
+
+                async def complete(
+                    self,
+                    system: object,
+                    messages: list[dict[str, object]],
+                    _tools: list[dict[str, object]],
+                    **_: object,
+                ) -> ProviderResponse:
+                    self.rounds += 1
+                    if self.rounds % 2 == 1:
+                        ids = re.findall(
+                            r'<turn id="([^"]+)"',
+                            prompt_section(
+                                str(messages[-1]["content"]), "pending_turns"
+                            ),
+                            re.MULTILINE,
+                        )
+                        return workflow_calls_response([
+                            (
+                                "episode_classify_turns",
+                                {
+                                    "decisions": [
+                                        {
+                                            "action": "defer",
+                                            "turn_ids": ids,
+                                            "reason": "等待更多语境",
+                                        }
+                                    ]
+                                },
+                            ),
+                        ])
+                    return workflow_response("episode_consolidation_finish", {})
+
+            provider = Provider()
+            daemon.provider = provider  # type: ignore[assignment]
+
+            candidate = daemon.store.claim_episode_consolidation_candidate(minimum=1)
+            self.assertIsNotNone(candidate)
+            self.assertTrue(await daemon._consolidate_episode_turns(candidate))
+            first_id = daemon.store._db.execute(
+                "SELECT id FROM turns WHERE workflow_kind='episode_consolidate'"
+            ).fetchone()["id"]
+
+            # A newer completed owner Turn re-eligible the deferred one without
+            # changing the consolidation context, so the deterministic id would
+            # collide without decision marks in the seed.
+            daemon.store.begin_turn("later-1", "owner", [])
+            daemon.store.complete_background_turn("later-1")
+
+            candidate = daemon.store.claim_episode_consolidation_candidate(minimum=1)
+            self.assertIsNotNone(candidate)
+            self.assertTrue(await daemon._consolidate_episode_turns(candidate))
+            turn_ids = {
+                row["id"]
+                for row in daemon.store._db.execute(
+                    "SELECT id FROM turns WHERE workflow_kind='episode_consolidate'"
+                ).fetchall()
+            }
+            self.assertEqual(len(turn_ids), 2)
+            self.assertIn(first_id, turn_ids)
+            self.assertEqual(provider.rounds, 4)
+            daemon.store.close()
+
+    def test_content_starved_retry_episode_dismisses_its_retry(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            daemon = MomoiDaemon(config(directory))
+            daemon.store.create_episode("长期项目", episode_id="episode-main")
+            for ordinal in range(1, 4):
+                add_turn(daemon, ordinal)
+            with daemon.store._db:
+                daemon.store._db.execute(
+                    """UPDATE conversation_episodes
+                       SET summarized_through_ordinal=1, summary_failure_count=1,
+                           summary_retry_at=?
+                       WHERE id='episode-main'""",
+                    (time.time() - 100,),
+                )
+            # Two new ordinals stay within the raw tail: nothing worth
+            # summarizing, so the past failure retry is moot.
+            self.assertIsNone(daemon.store.claim_episode_annealing_candidate(2, 10000))
+            episode = daemon.store.episode("episode-main")
+            self.assertIsNone(episode["summary_retry_at"])
+            self.assertEqual(episode["summary_failure_count"], 1)
+            self.assertIsNone(daemon.store.next_episode_annealing_retry_at())
+            daemon.store.close()
+
 
 def add_named_turn(
     daemon: MomoiDaemon, episode_id: str, ordinal: int, prefix: str
