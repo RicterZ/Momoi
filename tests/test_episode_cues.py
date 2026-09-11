@@ -105,7 +105,11 @@ class EpisodeCuesTest(unittest.TestCase):
                     "episode-main", 1, claims, recall_cues=cues
                 )
 
-            finish([" 初次  交流 ", "初次 交流"])
+            messy = [
+                {"text": " 初次  交流 ", "evidence_message_ids": [row["id"]]},
+                {"text": "初次 交流", "evidence_message_ids": [row["id"]]},
+            ]
+            finish(messy)
             self.assertEqual(
                 store.episode("episode-main")["recall_cues"], ["初次 交流"]
             )
@@ -126,7 +130,14 @@ class EpisodeCuesTest(unittest.TestCase):
             source = store._db.execute("SELECT * FROM conversation_episodes").fetchone()
             before = _episode_summary_document(source).content
             self.assertEqual(_episode_cue_documents(source)[0].content, "初次 交流")
-            for invalid in ([""], ["x" * 101], ["x"] * 9, "phrase", [1], {}):
+            for invalid in (
+                [{"text": "", "evidence_message_ids": [row["id"]]}],
+                [{"text": "x" * 101, "evidence_message_ids": [row["id"]]}],
+                [{"text": "x", "evidence_message_ids": [row["id"]]}] * 9,
+                "phrase",
+                [1],
+                [{}],
+            ):
                 with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                     finish(invalid)
                 self.assertEqual(
@@ -176,7 +187,7 @@ class EpisodeCuesTest(unittest.TestCase):
                 store._db.execute("DELETE FROM semantic_dirty_sources")
                 store._db.execute(
                     "UPDATE conversation_episodes SET recall_cues_json=? WHERE id='legacy'",
-                    (json.dumps(["旧事线索"]),),
+                    (json.dumps([{"text": "旧事线索", "evidence_message_ids": [1]}]),),
                 )
             self.assertIsNotNone(
                 store._db.execute(

@@ -63,11 +63,8 @@ def render_cue_review(claims, cues):
 
 async def verify_episode_cues(provider, cues, claims):
     normalized = normalize_cues(cues, claims)
-    # Legacy labels remain readable. New generation uses structured provenance.
-    if not normalized or all(isinstance(cue, str) for cue in normalized):
+    if not normalized:
         return normalized
-    if any(not isinstance(cue, dict) for cue in normalized):
-        raise ValueError("cannot mix legacy and evidence-linked generated cues")
     def parse(arguments):
         indices = arguments.get("supported_indices") if isinstance(arguments, dict) else None
         if not isinstance(indices, list) or any(

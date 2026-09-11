@@ -900,6 +900,12 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                     _tools: list[dict[str, object]],
                     **_: object,
                 ) -> ProviderResponse:
+                    if any(
+                        tool["name"] == "episode_cue_admit" for tool in _tools
+                    ):
+                        return workflow_response(
+                            "episode_cue_admit", {"supported_indices": [0]}
+                        )
                     message = annealing_items(
                         str(messages[0]["content"]), "new_messages", "Message"
                     )[0]
@@ -921,7 +927,12 @@ class EpisodeAnnealingTest(unittest.IsolatedAsyncioTestCase):
                                 "tone": "合作",
                             },
                             "outcomes": ["完成一次阶段讨论"],
-                            "recall_cues": ["阶段讨论回顾"],
+                            "recall_cues": [
+                                {
+                                    "text": "阶段讨论回顾",
+                                    "evidence_message_ids": [message["message_id"]],
+                                }
+                            ],
                         },
                     )
 

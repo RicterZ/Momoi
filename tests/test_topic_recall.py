@@ -20,7 +20,8 @@ class TopicRecallTest(unittest.TestCase):
             for id in ['a','b']:
                 store.create_episode('旧话题', episode_id=id)
                 store._db.execute("UPDATE conversation_episodes SET status='closed',recall_cues_json=? WHERE id=?",
-                    (json.dumps(['一起模拟面试','准备求职'] if id=='a' else ['职业规划']),id))
+                    (json.dumps([{'text': t, 'evidence_message_ids': [1]} for t in
+                                 (['一起模拟面试','准备求职'] if id=='a' else ['职业规划'])]),id))
             store._db.commit()
             space=store.ensure_semantic_space(model='BAAI/bge-small-zh-v1.5',dimensions=512,
                 calibration_profile='bge-small-zh-v1.5-momoi-v1',state='active')
@@ -42,7 +43,7 @@ class TopicRecallTest(unittest.TestCase):
     def test_topic_query_uses_metadata_not_raw_claim_text(self):
         with tempfile.TemporaryDirectory() as directory:
             store=Store(Path(directory)/'db');store.create_episode('一次聊天',episode_id='a')
-            store._db.execute("UPDATE conversation_episodes SET working_summary='只在原文的秘密词',narrative_summary='一起模拟面试',recall_cues_json=? WHERE id='a'",(json.dumps(['求职准备']),));store._db.commit()
+            store._db.execute("UPDATE conversation_episodes SET working_summary='只在原文的秘密词',narrative_summary='一起模拟面试',recall_cues_json=? WHERE id='a'",(json.dumps([{'text': '求职准备', 'evidence_message_ids': [1]}]),));store._db.commit()
             self.assertEqual(store.search_topic_queries([EpisodeRecallQuery('秘密词')],8),[])
             self.assertEqual(store.search_topic_queries([EpisodeRecallQuery('求职准备')],8)[0]['id'],'a')
             self.assertEqual(store.search_topic_queries([EpisodeRecallQuery('求职准备')],8)[0]['matches'],[])
