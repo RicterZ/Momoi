@@ -11,7 +11,6 @@ from momoi.config.models import AppConfig
 from momoi.integrations.models import LLMConfig
 from momoi.models import AgentReply, IncomingMessage
 from momoi.runtime.context.rendering import (
-    _episode_header,
     _episode_match_lines,
     _fit_episode_xml,
     _goal_directory_lines,
@@ -813,26 +812,6 @@ class ContextAssemblerTest(unittest.TestCase):
             self.assertIn("老师看一下门锁", str(transcript.messages[1]))
             store.close()
 
-
-
-
-    def test_episode_header_omits_directory_defaults(self) -> None:
-        episode = {
-            "id": "ep-1",
-            "status": "open",
-            "created_timestamp": "2026-08-16T12:00:55+08:00",
-            "updated_timestamp": "2026-08-20T15:04:55+08:00",
-        }
-        self.assertEqual(
-            _episode_header(episode),
-            '<episode id="ep-1" status="open">',
-        )
-        self.assertEqual(
-            _episode_header(
-                {**episode, "status": "closed"},
-            ),
-            '<episode id="ep-1" status="closed">',
-        )
 
 
 

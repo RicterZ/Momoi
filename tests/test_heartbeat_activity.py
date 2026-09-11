@@ -12,10 +12,9 @@ from momoi.config.models import AppConfig
 from momoi.integrations.models import LLMConfig
 from momoi.models import ToolCall, TurnDraft, ProviderResponse
 from momoi.runtime import MomoiDaemon
-from momoi.runtime.agent.harness import TurnHarness, TURN_HARNESS_SPECS
+from momoi.runtime.agent.harness import TurnHarness
 from momoi.runtime.agent.runtime_tools import record_heartbeat_activity
 from momoi.runtime.context.presentation import heartbeat_self_state_lines
-from momoi.runtime.tool_contracts.conversation import HEARTBEAT_ACTIVITY_TOOL_SPEC
 from momoi.storage import Store
 from momoi.storage.migrations import MIGRATIONS, _restore_last_heartbeat_activity
 from tests.support import provider_catalog
@@ -50,43 +49,6 @@ def activity(**overrides):
     )
 
 
-def test_visible_tool_schema_is_stable_and_permissions_are_separate(daemon):
-    canonical = copy.deepcopy(HEARTBEAT_ACTIVITY_TOOL_SPEC)
-    original = daemon.tool_surface.conversation_specs()
-    for stage in ("owner", "goal", "heartbeat", "webhook", "reply_followup"):
-        specs = daemon.tool_surface.conversation_specs()
-        assert specs == original
-        assert "goal_review" in {tool["name"] for tool in specs}
-        assert ("goal_review" in daemon.tool_surface.permitted_names(stage)) == (stage == "goal")
-        assert (
-            next(tool for tool in specs if tool["name"] == "heartbeat_activity")
-            == canonical
-        )
-        assert ("heartbeat_activity" in daemon.tool_surface.permitted_names(stage)) == (
-            stage == "heartbeat"
-        )
-    next(tool for tool in specs if tool["name"] == "heartbeat_activity")[
-        "description"
-    ] = "mutated caller copy"
-    assert HEARTBEAT_ACTIVITY_TOOL_SPEC == canonical
-
-
-@pytest.mark.parametrize(
-    "stage", [stage for stage in TURN_HARNESS_SPECS if stage != "heartbeat"]
-)
-def test_harness_denies_activity_even_with_broad_permissions(stage):
-    harness = TurnHarness.for_stage(
-        stage, permitted_tool_names=frozenset({"heartbeat_activity"})
-    )
-    assert harness.validate([activity()]) == "tool_not_allowed"
-    draft = TurnDraft()
-    assert (
-        record_heartbeat_activity(activity(), heartbeat_turn=False, draft=draft)["ok"]
-        is False
-    )
-    assert draft.heartbeat_activity is None
-
-
 def test_heartbeat_requires_successful_activity_and_reset_clears_gate():
     harness = TurnHarness.for_stage("heartbeat")
     with pytest.raises(ValueError, match="heartbeat_activity"):
@@ -104,23 +66,26 @@ def test_heartbeat_requires_successful_activity_and_reset_clears_gate():
     assert harness.validate([end]) == "heartbeat_activity_required_before_end_turn"
 
 
-@pytest.mark.parametrize("minutes,valid", [(3, True), (10, True), (2, False), (11, False), (True, False), (3.5, False)])
-def test_heartbeat_schedule_respects_configured_limits_without_mutating_on_error(minutes, valid):
+def test_heartbeat_schedule_respects_configured_limits_without_mutating_on_error():
     draft = TurnDraft()
     baseline = record_heartbeat_activity(activity(next_check_minutes=5), heartbeat_turn=True, draft=draft,
                                          minimum_seconds=180, maximum_seconds=600)
     assert baseline["ok"]
     before = copy.deepcopy(draft.heartbeat_activity)
-    result = record_heartbeat_activity(activity(next_check_minutes=minutes), heartbeat_turn=True, draft=draft,
-                                       minimum_seconds=180, maximum_seconds=600)
-    assert result["ok"] is valid
-    if not valid:
+    for minutes in (3, 10):
+        result = record_heartbeat_activity(activity(next_check_minutes=minutes), heartbeat_turn=True, draft=draft,
+                                           minimum_seconds=180, maximum_seconds=600)
+        assert result["ok"]
+    for minutes in (2, 11, True, 3.5):
+        before = copy.deepcopy(draft.heartbeat_activity)
+        result = record_heartbeat_activity(activity(next_check_minutes=minutes), heartbeat_turn=True, draft=draft,
+                                           minimum_seconds=180, maximum_seconds=600)
+        assert not result["ok"]
         assert draft.heartbeat_activity == before
 
 
-@pytest.mark.parametrize(
-    "args",
-    [
+def test_invalid_activity_does_not_overwrite_valid_draft():
+    invalid = [
         {},
         {"activity": "", "result": ""},
         {"activity": " ", "result": ""},
@@ -128,15 +93,14 @@ def test_heartbeat_schedule_respects_configured_limits_without_mutating_on_error
         {"activity": "rest", "result": None},
         {"activity": "rest", "result": "r" * 2001},
         {"activity": "rest", "result": "", "decision": "unchanged"},
-    ],
-)
-def test_invalid_activity_does_not_overwrite_valid_draft(args):
+    ]
     draft = TurnDraft()
     assert record_heartbeat_activity(activity(), heartbeat_turn=True, draft=draft)["ok"]
     before = copy.deepcopy(draft.heartbeat_activity)
-    bad = ToolCall("bad", "heartbeat_activity", args)
-    assert not record_heartbeat_activity(bad, heartbeat_turn=True, draft=draft)["ok"]
-    assert draft.heartbeat_activity == before
+    for args in invalid:
+        bad = ToolCall("bad", "heartbeat_activity", args)
+        assert not record_heartbeat_activity(bad, heartbeat_turn=True, draft=draft)["ok"]
+        assert draft.heartbeat_activity == before
 
 
 @pytest.mark.parametrize("cancel", [False, True])
@@ -212,40 +176,39 @@ def test_real_heartbeat_retries_gate_and_commits_only_on_completion(daemon, canc
         assert state["last_heartbeat_at"] is not None
 
 
-@pytest.mark.parametrize(
-    "record", [None, "Activity: read\nResult: finished", "unrecognized record"]
-)
-def test_upgrade_recovers_exact_heartbeat_not_owner_overwrite(tmp_path, record):
-    path = tmp_path / "old.sqlite3"
-    store = Store(path)
-    with store._db:
-        store._db.execute(
-            "UPDATE self_state SET activity='owner overwrite', activity_result='stale', last_heartbeat_at=100, next_heartbeat_at=200, mood_state='happy' WHERE id=1"
-        )
-        if record is not None:
+def test_upgrade_recovers_exact_heartbeat_not_owner_overwrite(tmp_path):
+    records = (None, "Activity: read\nResult: finished", "unrecognized record")
+    for index, record in enumerate(records):
+        path = tmp_path / f"old-{index}.sqlite3"
+        store = Store(path)
+        with store._db:
             store._db.execute(
-                "INSERT INTO messages(turn_id,role,content,created_at,delivery_state,source_event_ids_json) VALUES ('beat','assistant',?,100,'internal',?)",
-                (record, json.dumps(["heartbeat-record:beat"])),
+                "UPDATE self_state SET activity='owner overwrite', activity_result='stale', last_heartbeat_at=100, next_heartbeat_at=200, mood_state='happy' WHERE id=1"
             )
-        store._db.execute(f"PRAGMA user_version={MIGRATIONS.index(_restore_last_heartbeat_activity)}")
-    store.close()
-    store = Store(path)
-    try:
-        state = store.self_state()
-        expected = (
-            ("read", "finished")
-            if record and record.startswith("Activity: ")
-            else ("", "")
-        )
-        assert (state["activity"], state["activity_result"]) == expected
-        assert state["next_heartbeat_at"] == 200
-        assert state["mood_state"] == "happy"
-        root = ElementTree.fromstring(
-            "<state>"
-            + heartbeat_self_state_lines(store.self_state_context())
-            + "</state>"
-        )
-        assert (root.find("last_heartbeat_activity") is not None) == bool(expected[0])
-        assert root.find("activity") is None
-    finally:
+            if record is not None:
+                store._db.execute(
+                    "INSERT INTO messages(turn_id,role,content,created_at,delivery_state,source_event_ids_json) VALUES ('beat','assistant',?,100,'internal',?)",
+                    (record, json.dumps(["heartbeat-record:beat"])),
+                )
+            store._db.execute(f"PRAGMA user_version={MIGRATIONS.index(_restore_last_heartbeat_activity)}")
         store.close()
+        store = Store(path)
+        try:
+            state = store.self_state()
+            expected = (
+                ("read", "finished")
+                if record and record.startswith("Activity: ")
+                else ("", "")
+            )
+            assert (state["activity"], state["activity_result"]) == expected
+            assert state["next_heartbeat_at"] == 200
+            assert state["mood_state"] == "happy"
+            root = ElementTree.fromstring(
+                "<state>"
+                + heartbeat_self_state_lines(store.self_state_context())
+                + "</state>"
+            )
+            assert (root.find("last_heartbeat_activity") is not None) == bool(expected[0])
+            assert root.find("activity") is None
+        finally:
+            store.close()

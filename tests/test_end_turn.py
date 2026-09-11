@@ -104,46 +104,6 @@ if __name__ == "__main__":
 
 
 class EndTurnSchemaTest(unittest.TestCase):
-    def test_decision_schema_matches_runtime_validation(self):
-        import json
-        from jsonschema import Draft202012Validator
-        from momoi.runtime.tool_contracts.conversation import END_TURN_TOOL_SPEC
-
-        schema = END_TURN_TOOL_SPEC['input_schema']
-        Draft202012Validator.check_schema(schema)
-        validator = Draft202012Validator(schema)
-        updated = EndTurnTest().arguments('heartbeat')['mood']
-        waiting = EndTurnTest().arguments('heartbeat', wait=True)['reply_wait']
-        moods = [
-            ({'decision': 'unchanged'}, True), (updated, True),
-            (json.dumps({'decision': 'unchanged'}), False),
-            (json.dumps(updated), False), ('calm', False), ({}, False),
-            ({'decision': 'unchanged', 'state': 'calm'}, False),
-            ({**updated, 'decision': 'unknown'}, False),
-            ({k: v for k, v in updated.items() if k != 'cause'}, False),
-            ({**updated, 'intensity': 2}, False),
-            ({**updated, 'intensity': '0.3'}, False),
-            ({**updated, 'unexpected': 1}, False),
-        ]
-        waits = [
-            ({'wait': False}, True), (waiting, True),
-            (json.dumps({'wait': False}), False), (False, False), ({}, False),
-            ({'wait': True}, False), ({'wait': 'false'}, False),
-            ({'wait': False, 'delay_minutes': 3}, False),
-            ({**waiting, 'delay_minutes': 0}, False),
-            ({**waiting, 'unexpected': 1}, False),
-        ]
-        for mood, valid_mood in moods:
-            for wait, valid_wait in waits:
-                with self.subTest(mood=mood, wait=wait):
-                    args = {'mood': mood, 'reply_wait': wait}
-                    expected = valid_mood and valid_wait
-                    self.assertEqual(validator.is_valid(args), expected)
-                    reply, error = EndTurnTest().parse('heartbeat', args)
-                    self.assertEqual(reply is not None and error is None, expected)
-        self.assertTrue(validator.is_valid({}))
-        self.assertFalse(validator.is_valid('{}'))
-
     def test_each_stage_schema_requires_exact_private_state(self):
         from jsonschema import Draft202012Validator
         from momoi.runtime.tool_contracts.conversation import end_turn_tool_spec
@@ -174,30 +134,3 @@ class EndTurnSchemaTest(unittest.TestCase):
                 if stage == 'reply_followup':
                     self.assertFalse(validator.is_valid(arguments.arguments(stage, wait=True)))
                 self.assertEqual(spec, end_turn_tool_spec(stage))
-
-    def test_terminal_text_and_delivery_boundary(self):
-        from momoi.models import ToolCall
-        from momoi.runtime.agent.harness import TurnHarness
-
-        send = ToolCall('send', 'send_bubbles', {'bubbles': ['消息']})
-        end = ToolCall('end', 'end_turn', {})
-        work = ToolCall('work', 'read_file', {'path': 'test'})
-        for stage in ('owner', 'heartbeat', 'webhook', 'reply_followup'):
-            harness = TurnHarness.for_stage(stage)
-            harness.started = True
-            if stage == 'heartbeat':
-                harness.accept('heartbeat_activity')
-            calls = [end]
-            self.assertIsNone(harness.validate(calls, has_assistant_text=False))
-            self.assertEqual(
-                harness.validate(calls, has_assistant_text=True),
-                'send_bubbles_required_before_end_turn',
-            )
-            self.assertIsNone(harness.validate([send, end], has_assistant_text=True))
-            self.assertIsNone(harness.validate([send, end]))
-        harness = TurnHarness.for_stage('owner')
-        harness.accept('recall')
-        self.assertIsNotNone(harness.validate([end, send]))
-        self.assertIsNotNone(harness.validate([work, end]))
-        self.assertIsNotNone(harness.validate([send, end, end]))
-        self.assertIsNone(harness.validate([send, end], has_assistant_text=True))

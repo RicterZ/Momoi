@@ -113,9 +113,8 @@ def test_frontend_queues_only_on_commit_and_deduplicates(store):
     assert not store.maintenance_memory_inventory()
 
 
-@pytest.mark.parametrize(
-    "args",
-    [
+def test_frontend_rejects_invalid_requests(store):
+    invalid = [
         {"type": "forge"},
         {"type": []},
         {"target_id": 999},
@@ -123,16 +122,15 @@ def test_frontend_queues_only_on_commit_and_deduplicates(store):
         {"evidence": "不存在的原话"},
         {"content": " "},
         {"ttl": 12},
-    ],
-)
-def test_frontend_rejects_invalid_requests(store, args):
+    ]
     source = event(store)
-    draft = TurnDraft()
-    arguments = {"type": "add", "content": source.text, "evidence": source.text, **args}
-    assert not MemoryTools(store).execute(
-        ToolCall("op", "memory_operation", arguments), [source], draft
-    )["ok"]
-    assert not draft.memory_operations
+    for args in invalid:
+        draft = TurnDraft()
+        arguments = {"type": "add", "content": source.text, "evidence": source.text, **args}
+        assert not MemoryTools(store).execute(
+            ToolCall("op", "memory_operation", arguments), [source], draft
+        )["ok"]
+        assert not draft.memory_operations
 
 
 def test_no_operation_means_no_review_and_failed_commit_rolls_back(store):
@@ -650,20 +648,26 @@ def test_existing_database_migration_preserves_foreign_keys_and_reopens(tmp_path
         upgraded.close()
 
 
-@pytest.mark.parametrize("expiry", [None, True, float("inf"), -1, 10**15])
-def test_recent_expiry_must_be_finite_future_and_bounded(store, expiry):
-    source = event(store)
-    draft = submit(store, source)
-    decision = write(source)
-    decision["memory"].update(activation="recent", expires_at=expiry)
-    with pytest.raises(ValueError, match="recent expiry"):
-        parse_decisions(
-            {"decisions": [decision]},
-            draft.memory_operations,
-            {},
-            {source.event_id: source.text},
-            720,
+def test_recent_expiry_must_be_finite_future_and_bounded(store):
+    for index, expiry in enumerate((None, True, float("inf"), -1, 10**15)):
+        operation = f"op-{index}"
+        source = event(store, name=f"owner-{index}")
+        draft = submit(
+            store,
+            source,
+            name=operation,
+            turn_id=f"source-{index}",
         )
+        decision = write(source, ids=[operation])
+        decision["memory"].update(activation="recent", expires_at=expiry)
+        with pytest.raises(ValueError, match="recent expiry"):
+            parse_decisions(
+                {"decisions": [decision]},
+                draft.memory_operations,
+                {},
+                {source.event_id: source.text},
+                720,
+            )
 
 
 def test_forget_only_request_cannot_create_memory(store):

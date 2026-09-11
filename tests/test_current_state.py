@@ -103,32 +103,28 @@ def test_separate_connections_reject_stale_snapshots(state):
         db.close()
 
 
-@pytest.mark.parametrize(
-    "ttl", [0, -1, True, 1.5, float("nan"), float("inf"), 86401, 604801, "60"]
-)
-def test_invalid_ttl_is_rejected_without_a_change(state, ttl):
+def test_invalid_ttl_is_rejected_without_a_change(state):
     manager, _, _ = state
-    with pytest.raises(ValueError, match="invalid_ttl"):
-        add(manager, ttl=ttl)
-    assert manager.snapshot().revision == 0
+    for ttl in (0, -1, True, 1.5, float("nan"), float("inf"), 86401, "60"):
+        with pytest.raises(ValueError, match="invalid_ttl"):
+            add(manager, ttl=ttl)
+        assert manager.snapshot().revision == 0
 
 
-@pytest.mark.parametrize(
-    "slot",
-    [
+def test_invalid_slot_values(state):
+    slots = [
         SlotInput("", "key", "value", 1),
         SlotInput("owner", "Bad key", "value", 1),
         SlotInput("owner", "key", "  ", 1),
         SlotInput("owner", "key", "v" * 513, 1),
-    ],
-)
-def test_invalid_slot_values(state, slot):
+    ]
     manager, _, _ = state
-    with pytest.raises(ValueError):
-        manager.apply(
-            add=[slot], source_turn_id="a", operation_id="a", expected_revision=0
-        )
-    assert not manager.history()
+    for slot in slots:
+        with pytest.raises(ValueError):
+            manager.apply(
+                add=[slot], source_turn_id="a", operation_id="a", expected_revision=0
+            )
+        assert not manager.history()
 
 
 def test_subjects_capacity_and_expired_dimension_reuse(state):

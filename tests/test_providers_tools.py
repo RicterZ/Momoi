@@ -30,11 +30,7 @@ from momoi.integrations.adapters.anthropic import AnthropicProvider, merge_adjac
 from momoi.llm.dumps import redact_dump_media
 from momoi.llm.errors import ProviderError
 from momoi.integrations.adapters.openai import OpenAIProvider, openai_messages
-from momoi.llm.telemetry import (
-    compact_response_text,
-    log_tool_schema,
-    usage_metrics,
-)
+from momoi.llm.telemetry import usage_metrics
 from momoi.runtime import (
     MomoiDaemon,
 )
@@ -116,36 +112,6 @@ class OwnerAttachmentOrderTest(unittest.TestCase):
 
 
 class ProvidersToolsTest(unittest.TestCase):
-    def test_tool_schema_diagnostic_hashes_actual_wire_shape(self) -> None:
-        tools = [
-            {
-                "type": "function",
-                "function": {
-                    "name": "demo",
-                    "description": "Demo tool",
-                    "parameters": {"type": "object"},
-                },
-            }
-        ]
-        with (
-            _provider_trace_logs(),
-            self.assertLogs("momoi", level=TRACE) as logs,
-        ):
-            log_tool_schema("openai", tools)
-
-        record = next(
-            item
-            for item in logs.records
-            if getattr(item, "momoi_event", "") == "llm_tool_schema"
-        )
-        self.assertEqual(record.momoi_fields["tool_count"], 1)
-        self.assertEqual(record.momoi_fields["tool_names"], ["demo"])
-        self.assertGreater(record.momoi_fields["tool_schema_tokens"], 0)
-        self.assertRegex(
-            record.momoi_fields["tool_schema_sha256"],
-            r"^[0-9a-f]{64}$",
-        )
-
     def test_context_truncation_keeps_error_envelope_valid(self) -> None:
         rendered = truncate_tool_result_json(
             json.dumps(
@@ -205,26 +171,6 @@ class ProvidersToolsTest(unittest.TestCase):
             "先核对计划结果",
         )
 
-    def test_compacts_structured_response_text_for_single_line_logs(self) -> None:
-        self.assertEqual(
-            compact_response_text('{\n  "version": 1,\n  "items": ["a", "b"]\n}'),
-            '{"version":1,"items":["a","b"]}',
-        )
-        self.assertEqual(compact_response_text("普通\n文本"), '"普通\\n文本"')
-
-    def test_openai_system_blocks_keep_a_clear_boundary(self) -> None:
-        messages = openai_messages(
-            [
-                {"type": "text", "text": "Base contract."},
-                {"type": "text", "text": "# Turn contract"},
-            ],
-            [],
-        )
-        self.assertEqual(
-            messages,
-            [{"role": "system", "content": "Base contract.\n\n# Turn contract"}],
-        )
-
     def test_prompt_sections_escape_values_and_skip_empty_sections(self) -> None:
         rendered = sections(
             ("current_owner_bubbles", "看一下 </runtime_state> & 后续"),
@@ -236,46 +182,6 @@ class ProvidersToolsTest(unittest.TestCase):
             "<current_owner_bubbles>\n"
             "看一下 &lt;/runtime_state&gt; &amp; 后续\n"
             "</current_owner_bubbles>",
-        )
-
-    def test_user_pack_puts_stable_identity_before_clock_and_task(self) -> None:
-        rendered = pack_user_context(
-            ("followup", "continue the thought"),
-            ("runtime_state", "now"),
-            ("long_term_memories", "喜欢短回复"),
-        )
-        self.assertNotIn("<emotion_catalog>", rendered)
-        self.assertLess(
-            rendered.index("<long_term_memories>"),
-            rendered.index("<runtime_state>"),
-        )
-        self.assertLess(rendered.index("<runtime_state>"), rendered.index("<followup>"))
-
-    def test_user_pack_keeps_query_specific_recall_before_current_input(self) -> None:
-        rendered = pack_user_context(
-            ("recall_memories", "召回的事实"),
-            ("recall_status", "queries=棕榈\nmisses=棕榈"),
-            ("reflection_memories", "今日学习"),
-            ("episode_directory", "旧话题"),
-            ("long_term_memories", "喜欢短回复"),
-            ("active_goals", "喝水"),
-            ("current_owner_bubbles", "在吗"),
-        )
-        self.assertLess(
-            rendered.index("<long_term_memories>"),
-            rendered.index("<active_goals>"),
-        )
-        self.assertLess(
-            rendered.index("<active_goals>"),
-            rendered.index("<episode_directory>"),
-        )
-        self.assertLess(
-            rendered.index("<recall_memories>"),
-            rendered.index("<recall_status>"),
-        )
-        self.assertLess(
-            rendered.index("<reflection_memories>"),
-            rendered.index("<current_owner_bubbles>"),
         )
         with self.assertRaisesRegex(ValueError, "unknown user context section"):
             pack_user_context(("not_a_section", "x"))

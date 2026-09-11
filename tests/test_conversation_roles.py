@@ -2,35 +2,36 @@ import json
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-import pytest
-
 from momoi.conversation_roles import speaker_label
 from momoi.runtime.workflows.episode.rendering import _speaker
 from momoi.storage.reflection_values import reflection_window
 from momoi.storage import Store
 from momoi.storage.episode_claims import render_verified_claims
-from momoi.storage.migrations import SCHEMA_VERSION
 from momoi.storage.semantic_documents import _message_parts
 from momoi.tools.memory import _episode_match_excerpt
 
 
-@pytest.mark.parametrize("role,label", [
-    ("user", "OWNER"), ("assistant", "ASSISTANT"), ("event", "EVENT"),
-    ("goal", "GOAL"), ("heartbeat", "HEARTBEAT"), ("", "UNKNOWN"),
-])
-def test_evidence_renderers_preserve_speaker_and_original_names(role, label):
+def test_evidence_renderers_preserve_speaker_and_original_names():
     content = '优香提到桃井；MOMOI 是应用名\n"我" 保留原文'
-    row = {"role": role, "delivery_state": "uncertain", "turn_id": "turn-1",
-           "ordinal": 1, "content": content, "quote": content}
-    assert speaker_label(role) == label
-    assert _speaker(row) == (f"{label} delivery=uncertain" if role == "assistant" else label)
-    parts = _message_parts(row)
-    assert parts == [f"[{label} turn=turn-1 ordinal=1 delivery=uncertain] {content}"]
-    excerpt = _episode_match_excerpt({"matches": [row]})
-    assert excerpt == f"- [{label} ordinal=1] {json.dumps(content, ensure_ascii=False)}"
-    summary = render_verified_claims([row])
-    source = f"{label} delivery=uncertain" if role == "assistant" else label
-    assert summary == f"- [source {source} turn=turn-1 ordinal=1] {json.dumps(content, ensure_ascii=False)}"
+    for role, label in (
+        ("user", "OWNER"),
+        ("assistant", "ASSISTANT"),
+        ("event", "EVENT"),
+        ("goal", "GOAL"),
+        ("heartbeat", "HEARTBEAT"),
+        ("", "UNKNOWN"),
+    ):
+        row = {"role": role, "delivery_state": "uncertain", "turn_id": "turn-1",
+               "ordinal": 1, "content": content, "quote": content}
+        assert speaker_label(role) == label
+        assert _speaker(row) == (f"{label} delivery=uncertain" if role == "assistant" else label)
+        parts = _message_parts(row)
+        assert parts == [f"[{label} turn=turn-1 ordinal=1 delivery=uncertain] {content}"]
+        excerpt = _episode_match_excerpt({"matches": [row]})
+        assert excerpt == f"- [{label} ordinal=1] {json.dumps(content, ensure_ascii=False)}"
+        summary = render_verified_claims([row])
+        source = f"{label} delivery=uncertain" if role == "assistant" else label
+        assert summary == f"- [source {source} turn=turn-1 ordinal=1] {json.dumps(content, ensure_ascii=False)}"
 
 
 def test_reflection_preserves_delivery_and_owner_evidence(tmp_path):

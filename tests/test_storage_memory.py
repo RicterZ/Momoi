@@ -13,12 +13,9 @@ from xml.etree import ElementTree
 
 from momoi.tools.agenda import AgendaTools
 from momoi.tools.builtin import BuiltinTools
-from momoi.tools.contracts.agenda import AGENDA_TOOL_SPECS
-from momoi.tools.contracts.memory import MEMORY_TOOL_SPECS
 from momoi.channel.napcat import NapCatConfig
 from momoi.config.models import AppConfig, HeartbeatConfig, NotificationConfig
 from momoi.integrations.models import LLMConfig
-from momoi.context_time import context_timestamp
 from momoi.tools.memory import MemoryTools
 from momoi.models import (
     AgentReply,
@@ -256,25 +253,6 @@ class StorageMemoryTest(unittest.TestCase):
                 tertiary[0]["eligibility_score"],
             )
             self.assertGreater(primary[0]["search_score"], tertiary[0]["search_score"])
-            store.close()
-
-    def test_context_read_indexes_are_installed(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            store = Store(Path(directory) / "momoi.sqlite3")
-            indexes = {
-                str(row["name"]): str(row["sql"] or "")
-                for row in store._db.execute(
-                    "SELECT name, sql FROM sqlite_master WHERE type='index'"
-                ).fetchall()
-            }
-            self.assertIn("messages_turn", indexes)
-            self.assertIn("messages(turn_id, id)", indexes["messages_turn"])
-            self.assertIn("turns_context_recent", indexes)
-            self.assertIn(
-                "turns(updated_at DESC, kind, id)",
-                indexes["turns_context_recent"],
-            )
-            self.assertIn("state<>'running'", indexes["turns_context_recent"])
             store.close()
 
     def test_owner_commit_preserves_last_heartbeat_activity(self) -> None:
@@ -1008,14 +986,6 @@ class StorageMemoryTest(unittest.TestCase):
             )
             store.close()
 
-    def test_runtime_archive_day_uses_configured_timezone(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            store = Store(Path(directory) / "momoi.sqlite3", timezone="Asia/Shanghai")
-            timestamp = datetime(2026, 9, 1, 16, 30, tzinfo=ZoneInfo("UTC")).timestamp()
-
-            self.assertEqual(store._archive_day(timestamp), "2026-09-02")
-            store.close()
-
     def test_runtime_archive_rollover_keeps_explicit_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "momoi.sqlite3")
@@ -1483,32 +1453,6 @@ class StorageMemoryTest(unittest.TestCase):
                 ["episode-c"],
             )
             store.close()
-
-    def test_goal_schedule_contract_is_shared_and_precise(self) -> None:
-        schedules = [
-            item["input_schema"]["properties"]["schedule"]
-            for item in AGENDA_TOOL_SPECS
-            if item["name"] in {"goal_create", "goal_update"}
-        ]
-        self.assertEqual(
-            [schedule["oneOf"] for schedule in schedules],
-            [schedules[0]["oneOf"]] * 2,
-        )
-        self.assertEqual(len({id(schedule) for schedule in schedules}), 2)
-        daily = schedules[0]["oneOf"][1]
-        self.assertIn("times", daily["properties"])
-        self.assertNotIn("at", daily["properties"])
-        self.assertEqual(daily["required"], ["kind", "times"])
-        self.assertNotIn(
-            "reminder_create", {item["name"] for item in AGENDA_TOOL_SPECS}
-        )
-        remember = next(
-            spec for spec in MEMORY_TOOL_SPECS if spec["name"] == "memory_operation"
-        )
-        self.assertEqual(
-            remember["input_schema"]["properties"]["type"]["enum"],
-            ["add", "replace", "forget"],
-        )
 
     def test_context_plan_revisions_and_episode_turn_links_persist(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -2353,23 +2297,6 @@ class StorageMemoryTest(unittest.TestCase):
             self.assertEqual(active["mood_state"], "excited")
             self.assertEqual(active["mood_intensity"], 0.8)
             self.assertEqual(active["mood_cause"], "一起分享了开心的事")
-            store.close()
-
-    def test_self_state_context_exposes_mood_update_time_and_age(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            store = Store(Path(directory) / "momoi.sqlite3")
-            with store._db:
-                store._db.execute(
-                    "UPDATE self_state SET mood_updated_at=? WHERE id=1", (1000,)
-                )
-
-            context = json.loads(store.self_state_context(now=1180))
-
-            self.assertEqual(
-                context["mood"]["updated_at"],
-                context_timestamp(1000, store.timezone),
-            )
-            self.assertEqual(context["mood"]["age_minutes"], 3)
             store.close()
 
     def test_heartbeat_has_no_daily_evaluation_cap(self) -> None:

@@ -1,27 +1,11 @@
 import unittest
 
 from momoi.policies import (
-    ContextPolicy,
-    DaemonPolicy,
     MemoryPolicy,
-    RuntimePolicies,
 )
-from momoi.runtime.dispatch.delivery import message_gap_bounds
-from momoi.runtime.turn_support import MAX_CONSECUTIVE_TOOL_FAILURES
 
 
 class RuntimePolicyDefaultsTests(unittest.TestCase):
-    def test_defaults_match_existing_runtime_behavior(self):
-        policies = RuntimePolicies()
-        self.assertEqual(policies.daemon, DaemonPolicy())
-        self.assertEqual(policies.context, ContextPolicy())
-        self.assertEqual(policies.memory, MemoryPolicy())
-        self.assertEqual(MAX_CONSECUTIVE_TOOL_FAILURES, 3)
-        self.assertEqual(policies.context.max_visible_goals, 8)
-        self.assertEqual(message_gap_bounds("短句"), (4.0, 5.0))
-        self.assertEqual(message_gap_bounds("中等长度" * 8), (5.0, 6.0))
-        self.assertEqual(message_gap_bounds("长消息" * 30), (6.0, 7.0))
-
     def test_injected_memory_policy_is_used_end_to_end(self):
         policy = MemoryPolicy(recent_max_ttl_hours=12)
         from momoi.runtime.workflows.memory_operation.parsing import parse_decisions

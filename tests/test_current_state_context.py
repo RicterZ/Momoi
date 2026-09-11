@@ -165,9 +165,9 @@ def test_empty_current_state_omits_section_and_reading_never_renews_ttl(daemon):
     assert daemon.store.current_state.snapshot().revision == 1
 
 
-@pytest.mark.parametrize(
-    "stage",
-    [
+def test_private_processing_cannot_use_live_state_context(daemon):
+    seed(daemon)
+    for stage in (
         "reflection",
         "episode_consolidate",
         "episode_anneal",
@@ -175,12 +175,9 @@ def test_empty_current_state_omits_section_and_reading_never_renews_ttl(daemon):
         "memory_operation",
         "memory_maintenance",
         "unknown",
-    ],
-)
-def test_private_processing_cannot_use_live_state_context(daemon, stage):
-    seed(daemon)
-    with pytest.raises(ValueError, match="current state is not available"):
-        pack_current_turn_context(daemon.store, stage)
+    ):
+        with pytest.raises(ValueError, match="current state is not available"):
+            pack_current_turn_context(daemon.store, stage)
 
 
 def test_cues_audit_receives_only_cues_and_claims(daemon):
