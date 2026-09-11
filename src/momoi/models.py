@@ -4,6 +4,15 @@ from typing import Any
 from .contracts import GoalMutation
 
 
+def speaker_label(role: object) -> str:
+    """Identity-neutral speaker label for archived conversation evidence."""
+
+    value = str(role or "").strip().lower()
+    return {"user": "OWNER", "assistant": "ASSISTANT"}.get(
+        value, value.upper() or "UNKNOWN"
+    )
+
+
 @dataclass(frozen=True)
 class IncomingMessage:
     event_id: str

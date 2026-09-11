@@ -5,15 +5,15 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
-from momoi.search import StringSearchBackend
+from momoi.storage.core.search import StringSearchBackend
 from momoi.storage import Store
-from momoi.storage.episode_ranking import EpisodeRecallQuery, rank_episode_matches
-from momoi.storage.episode_search import (
+from momoi.storage.episode.episode_ranking import EpisodeRecallQuery, rank_episode_matches
+from momoi.storage.episode.episode_search import (
     EpisodeQueryService,
     EpisodeSearchField,
     StringEpisodeSearchBackend,
 )
-from momoi.storage.semantic_documents import _episode_summary_document, _episode_cue_documents
+from momoi.storage.semantic.semantic_documents import _episode_summary_document, _episode_cue_documents
 from tests.test_episode_search import document
 from tests.test_episode_annealing import add_turn, config
 from momoi.runtime import MomoiDaemon

@@ -1,6 +1,6 @@
 from typing import Any
 
-from ....storage.memory_values import (
+from ....storage.memory.memory_values import (
     ALWAYS_MEMORY_KINDS,
     MEMORY_ACTIVATIONS,
     MEMORY_KINDS,

@@ -3,8 +3,8 @@ from datetime import datetime
 from xml.sax.saxutils import escape, quoteattr
 from zoneinfo import ZoneInfo
 
-from ...conversation_roles import speaker_label
-from ...context_time import context_timestamp
+from ...models import speaker_label
+from ...storage.core.timestamps import context_timestamp
 
 from .models import (
     DEFAULT_ACTION_LIMIT,

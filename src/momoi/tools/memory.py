@@ -2,22 +2,21 @@ import json
 import logging
 from typing import Any
 
-from ..conversation_roles import speaker_label
-
 from .time_range import parse_history_time_range
 from ..observability.events import log_event
 from ..models import (
     IncomingMessage,
     ToolCall,
     TurnDraft,
+    speaker_label,
 )
-from ..search import SearchBackend, search_expression
+from ..storage.core.search import SearchBackend, search_expression
 from ..storage import (
     Store,
     MemoryRecallQuery,
     truncate_tokens,
 )
-from ..storage.episode_ranking import EpisodeRecallQuery
+from ..storage.episode.episode_ranking import EpisodeRecallQuery
 from ..semantic.models import DenseRecallEvidence
 from ..semantic.service import SemanticRecallService
 

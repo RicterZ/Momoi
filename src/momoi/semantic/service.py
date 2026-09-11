@@ -11,8 +11,8 @@ from ..integrations.models import EmbeddingSpaceConfig
 from ..observability.events import log_event
 from ..policies import SemanticPolicy
 from ..storage import MemoryRecallQuery, Store
-from ..storage.semantic_documents import DOCUMENT_TEMPLATE_VERSION, QUERY_TEMPLATE_VERSION
-from ..storage.episode_ranking import EpisodeRecallQuery
+from ..storage.semantic.semantic_documents import DOCUMENT_TEMPLATE_VERSION, QUERY_TEMPLATE_VERSION
+from ..storage.episode.episode_ranking import EpisodeRecallQuery
 from ..integrations.contracts.embedding import Embedder
 from ..integrations.errors import error_category
 from .models import (

@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 from ..channel import login_channel
 from ..config.loading import load_config
-from ..emotions import managed_emotion_path, remove_unreferenced_emotion_asset
+from ..storage.delivery.emotions import managed_emotion_path, remove_unreferenced_emotion_asset
 from ..models import ToolCall, TurnDraft
 from ..semantic.service import SemanticRecallService
 from ..storage import Store

@@ -35,7 +35,7 @@ from momoi.models import (
     ProviderResponse,
     ToolCall,
 )
-from momoi.reply_wait import decode_reply_wait, encode_reply_wait
+from momoi.storage.delivery.reply_wait import decode_reply_wait, encode_reply_wait
 from momoi.runtime.parsing import (
     parse_bubbles,
     parse_response,

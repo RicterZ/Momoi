@@ -19,7 +19,7 @@ from momoi.dashboard.auth import (
 )
 from momoi.dashboard.settings import DashboardSettings, PromptFile
 from momoi.storage import Store
-from momoi.storage.current_state import SlotInput
+from momoi.storage.memory.current_state import SlotInput
 
 
 def _dashboard_frontend_built() -> bool:
@@ -838,7 +838,7 @@ class DashboardTest(unittest.IsolatedAsyncioTestCase):
             "SELECT 1 FROM semantic_dirty_sources WHERE source_type='reflection_memory' AND source_id=?",
             (str(memory_id),),
         ).fetchone())
-        from momoi.storage.memory_values import MemoryRecallQuery
+        from momoi.storage.memory.memory_values import MemoryRecallQuery
         recalled = self.store.rank_recalled_memories(
             [MemoryRecallQuery("复盘日记", ("复盘日记",))], 6
         )

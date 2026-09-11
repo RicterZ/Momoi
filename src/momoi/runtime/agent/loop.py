@@ -21,7 +21,7 @@ from .protocol import (
 from .tool_batch import ToolBatchRequest, ToolBatchState
 from ..tool_contracts.conversation import end_turn_tool_spec, end_turn_correction
 from ..tool_contracts.context import recall_correction
-from ...storage.current_state_contract import CURRENT_STATE_SOURCE_STAGES
+from ...storage.memory.current_state_contract import CURRENT_STATE_SOURCE_STAGES
 from ..turn_support import (
     ExternalToolTurnError,
     MAX_CONSECUTIVE_TOOL_FAILURES,

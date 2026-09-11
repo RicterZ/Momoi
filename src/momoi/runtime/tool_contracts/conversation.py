@@ -2,7 +2,7 @@ import copy
 from typing import Any
 
 from ...tools.contracts.agenda import GOAL_REVIEW_SCHEMA
-from ...reply_wait import REPLY_WAIT_MAX_MINUTES, REPLY_WAIT_MIN_MINUTES
+from ...storage.delivery.reply_wait import REPLY_WAIT_MAX_MINUTES, REPLY_WAIT_MIN_MINUTES
 
 SEGMENT_SCHEMA: dict[str, Any] = {
     "type": "object",

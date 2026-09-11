@@ -37,7 +37,7 @@ class EpisodeCueVerifierTest(unittest.IsolatedAsyncioTestCase):
 
 
 def test_query_cue_can_reference_all_messages_needed_for_its_retrieval_intent():
-    from momoi.storage.episode_cues import normalize_cues
+    from momoi.storage.episode.episode_cues import normalize_cues
 
     # One retrieval intent can span more messages than the number of cues.
     claims = [{"message_id": i} for i in range(1, 11)]

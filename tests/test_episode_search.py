@@ -1,13 +1,13 @@
 import math
 import unittest
 
-from momoi.search import StringSearchBackend
-from momoi.storage.episode_ranking import (
+from momoi.storage.core.search import StringSearchBackend
+from momoi.storage.episode.episode_ranking import (
     EpisodeRecallQuery,
     _saturate_sparse_score,
     rank_episode_matches,
 )
-from momoi.storage.episode_search import (
+from momoi.storage.episode.episode_search import (
     EpisodeQueryService,
     EpisodeSearchDocument,
     EpisodeSearchField,

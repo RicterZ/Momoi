@@ -9,7 +9,7 @@ from typing import Any
 from ...observability.events import log_event
 from ...observability.values import safe_preview
 from ...models import AgentReply, TurnDraft
-from ...reply_wait import REPLY_FOLLOWUP_RETRY_SECONDS
+from ...storage.delivery.reply_wait import REPLY_FOLLOWUP_RETRY_SECONDS
 from ...storage import estimate_tokens, truncate_tokens
 from ..agent import TurnExecutionSpec
 from ..context.current_state import pack_current_turn_context

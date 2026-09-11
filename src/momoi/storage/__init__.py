@@ -1,4 +1,4 @@
-from .memory_values import (
+from .memory.memory_values import (
     ALWAYS_MEMORY_KINDS,
     MEMORY_ACTIVATIONS,
     MEMORY_KINDS,
@@ -9,19 +9,19 @@ from .memory_values import (
     memory_snapshot_fingerprint,
     truncate_tokens,
 )
-from .reflection_values import REFLECTION_MEMORY_KINDS
-from .episode_consolidation import (
+from .reflection.reflection_values import REFLECTION_MEMORY_KINDS
+from .episode.episode_consolidation import (
     EPISODE_CONSOLIDATION_BATCH_SIZE,
     EPISODE_CONSOLIDATION_DEFER_TIMEOUT_SECONDS,
     EPISODE_CONSOLIDATION_PARTIAL_IDLE_SECONDS,
 )
-from .current_state_tasks import (
+from .memory.current_state_tasks import (
     CURRENT_STATE_BATCH_SIZE,
     CURRENT_STATE_FULL_IDLE_SECONDS,
     CURRENT_STATE_PARTIAL_IDLE_SECONDS,
 )
 from .store import Store
-from .semantic_documents import (
+from .semantic.semantic_documents import (
     DOCUMENT_TEMPLATE_VERSION,
     QUERY_TEMPLATE_VERSION,
     SEMANTIC_PROVIDER,

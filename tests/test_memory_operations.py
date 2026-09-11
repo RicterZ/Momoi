@@ -609,7 +609,7 @@ def test_existing_database_migration_preserves_foreign_keys_and_reopens(tmp_path
     import momoi.storage
 
     path = tmp_path / "old.sqlite3"
-    schema_path = Path(momoi.storage.__file__).with_name("schema.sql")
+    schema_path = Path(momoi.storage.__file__).parent / "core" / "schema.sql"
     old_schema = schema_path.read_text().replace("'memory_operation', ", "")
     old_schema = old_schema[
         : old_schema.index("CREATE TABLE IF NOT EXISTS memory_operation_batches")
@@ -808,7 +808,7 @@ def test_owner_assistant_text_never_becomes_a_delivered_bubble(daemon):
 
 
 def test_repeated_failures_mark_batch_failed_and_unblock_later(store):
-    from momoi.storage.memory_operations import MEMORY_OPERATION_MAX_ATTEMPTS
+    from momoi.storage.memory.memory_operations import MEMORY_OPERATION_MAX_ATTEMPTS
 
     first = event(store, "first")
     submit(store, first, turn_id="first")

@@ -16,7 +16,7 @@ from .auth import (
     issue_dashboard_jwt,
 )
 from .settings import DashboardSettings
-from ..emotions import (
+from ..storage.delivery.emotions import (
     managed_emotion_bytes,
     remove_unreferenced_emotion_asset,
     valid_emotion_slug,

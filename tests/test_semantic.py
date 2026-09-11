@@ -9,7 +9,7 @@ import httpx
 
 from momoi.integrations.models import EmbeddingConfig
 from momoi.policies import SemanticPolicy
-from momoi.search import StringSearchBackend
+from momoi.storage.core.search import StringSearchBackend
 from momoi.integrations.adapters.embedding import EmbeddingClient
 from momoi.integrations.errors import error_category
 from momoi.semantic.models import (
@@ -19,8 +19,8 @@ from momoi.semantic.models import (
 )
 from momoi.semantic.service import SemanticRecallService
 from momoi.storage import MemoryRecallQuery, Store, encode_vector
-from momoi.storage.episode_ranking import EpisodeRecallQuery, rank_episode_matches
-from momoi.storage.episode_search import (
+from momoi.storage.episode.episode_ranking import EpisodeRecallQuery, rank_episode_matches
+from momoi.storage.episode.episode_search import (
     EpisodeQueryService,
     EpisodeSearchDocument,
     StringEpisodeSearchBackend,

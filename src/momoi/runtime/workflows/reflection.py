@@ -4,7 +4,7 @@ from typing import Any
 
 from ...observability.events import log_event
 from ...models import ToolCall
-from ...storage.reflection_values import reflection_window
+from ...storage.reflection.reflection_values import reflection_window
 from ..agent import AgentWorkflow
 from ..parsing import parse_reflection_finish
 from ..tool_contracts.reflection import REFLECTION_FINISH_SPEC

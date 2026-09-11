@@ -27,14 +27,14 @@ from momoi.runtime.agent.harness import TURN_HARNESS_SPECS
 from momoi.runtime.jobs import AutonomousJob
 from momoi.runtime.tool_contracts.current_state import current_state_finish_spec
 from momoi.storage import Store
-from momoi.storage.current_state import SlotInput
-from momoi.storage.current_state_contract import CURRENT_STATE_SOURCE_STAGES
-from momoi.storage.current_state_tasks import (
+from momoi.storage.memory.current_state import SlotInput
+from momoi.storage.memory.current_state_contract import CURRENT_STATE_SOURCE_STAGES
+from momoi.storage.memory.current_state_tasks import (
     CURRENT_STATE_BATCH_SIZE,
     CURRENT_STATE_FULL_IDLE_SECONDS,
     CURRENT_STATE_PARTIAL_IDLE_SECONDS,
 )
-from momoi.storage.migrations import MIGRATIONS, _add_current_state_workflow
+from momoi.storage.core.migrations import MIGRATIONS, _add_current_state_workflow
 from momoi.tools.contracts.memory import MEMORY_TOOL_SPECS
 from momoi.webhooks.catalog import bind_workflow
 from momoi.webhooks.service import WebhookService
@@ -521,7 +521,7 @@ def test_actual_old_schema_upgrade_preserves_foreign_keys_and_supports_new_stage
     tmp_path,
 ):
     path = tmp_path / "old.sqlite3"
-    schema = files("momoi").joinpath("storage/schema.sql").read_text()
+    schema = files("momoi").joinpath("storage/core/schema.sql").read_text()
     schema = schema.replace(", 'current_state_maintenance'", "")
     db = sqlite3.connect(path)
     db.executescript(schema)

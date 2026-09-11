@@ -24,12 +24,12 @@ from momoi.runtime.context.retrieval import (
 )
 from momoi.runtime.transcript.building import build_transcript
 from momoi.storage import Store, estimate_tokens, format_reflection_memory
-from momoi.storage.episode_ranking import rank_recall_items
+from momoi.storage.episode.episode_ranking import rank_recall_items
 from momoi.runtime.turn_support import context_data_message
 from momoi.runtime.context.presentation import (
     heartbeat_self_state_lines, recent_episode_lines, recall_context_lines, turn_label_ranges,
 )
-from momoi.storage.memory_values import format_memory
+from momoi.storage.memory.memory_values import format_memory
 
 
 def test_episode_catalog_and_recall_context_are_nested_xml():

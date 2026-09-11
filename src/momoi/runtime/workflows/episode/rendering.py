@@ -1,7 +1,7 @@
 from collections.abc import Mapping, Sequence
 from xml.sax.saxutils import quoteattr
 
-from ....conversation_roles import speaker_label
+from ....models import speaker_label
 from ...transcript.rendering import render_pending_turns
 
 

@@ -8,7 +8,7 @@ from pathlib import Path
 from xml.etree.ElementTree import Element, SubElement, tostring
 
 from .structured_selection import SelectionProtocolError, select_structured
-from ..storage.episode_cues import cue_texts
+from ..storage.episode.episode_cues import cue_texts
 from ..observability.events import log_event
 
 logger = logging.getLogger(__name__)

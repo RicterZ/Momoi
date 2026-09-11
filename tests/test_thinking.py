@@ -15,7 +15,7 @@ from momoi.llm.telemetry import (
     persist_thinking,
 )
 from momoi.storage import Store
-from momoi.storage.thinking import (
+from momoi.storage.ops.thinking import (
     decode_reasoning,
     encode_reasoning,
     month_key,

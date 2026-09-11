@@ -1,8 +1,8 @@
 """Semantic admission for generated cue text, after source citation validation."""
 from xml.etree.ElementTree import Element, SubElement, tostring
 
-from ..conversation_roles import speaker_label
-from ..storage.episode_cues import normalize_cues
+from ..models import speaker_label
+from ..storage.episode.episode_cues import normalize_cues
 from .structured_selection import SelectionProtocolError, select_structured
 
 SYSTEM = """Use only the episode_cue_admit tool; never return plain assistant text.

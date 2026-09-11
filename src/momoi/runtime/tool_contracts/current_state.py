@@ -1,6 +1,6 @@
 """Stable visible schema; the harness grants execution only during maintenance."""
 
-from ...storage.current_state import CurrentStateManager
+from ...storage.memory.current_state import CurrentStateManager
 
 
 def current_state_finish_spec() -> dict:

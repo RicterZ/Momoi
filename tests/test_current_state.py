@@ -4,7 +4,7 @@ import pytest
 
 from momoi.storage import Store
 from momoi.models import AgentReply
-from momoi.storage.current_state import CurrentStateManager, SlotInput, StateConflict
+from momoi.storage.memory.current_state import CurrentStateManager, SlotInput, StateConflict
 
 
 @pytest.fixture

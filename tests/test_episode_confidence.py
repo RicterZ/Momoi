@@ -6,7 +6,7 @@ from momoi.runtime.context.rendering import _episode_context, _episode_header
 from momoi.runtime.context.retrieval import build_plan_retrieval
 from momoi.semantic.models import DenseEpisodeHit, DenseRecallEvidence
 from momoi.storage import Store
-from momoi.storage.episode_ranking import EpisodeRecallQuery
+from momoi.storage.episode.episode_ranking import EpisodeRecallQuery
 from tests.test_episode_annealing import config
 
 

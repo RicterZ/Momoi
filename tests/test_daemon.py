@@ -696,7 +696,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 channel="napcat",
             )
             now = datetime(2026, 9, 11, 4, tzinfo=ZoneInfo("Asia/Shanghai")).timestamp()
-            with patch("momoi.storage.reflection_schedule.time.time", return_value=now):
+            with patch("momoi.storage.reflection.reflection_schedule.time.time", return_value=now):
                 await daemon._receive(command)
                 await daemon._receive(command)
 
@@ -715,7 +715,7 @@ class DaemonAsyncTest(unittest.IsolatedAsyncioTestCase):
                 (local_date,),
             )
             daemon.store._db.commit()
-            with patch("momoi.storage.reflection_schedule.time.time", return_value=now + 60):
+            with patch("momoi.storage.reflection.reflection_schedule.time.time", return_value=now + 60):
                 await daemon._receive(
                     IncomingMessage(
                         "qq:manual-reflect-again",

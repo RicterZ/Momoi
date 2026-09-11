@@ -8,8 +8,8 @@ from ...config.models import AppConfig
 from ...observability.events import log_event
 from ...observability.values import safe_preview
 from ...storage import MemoryRecallQuery, Store, truncate_tokens
-from ...storage.context_plan_adapter import CURRENT_RETRIEVAL_VERSION
-from ...storage.episode_ranking import EpisodeRecallQuery, rank_recall_items
+from ...storage.context.context_plan_adapter import CURRENT_RETRIEVAL_VERSION
+from ...storage.episode.episode_ranking import EpisodeRecallQuery, rank_recall_items
 
 if TYPE_CHECKING:
     from ...semantic.models import DenseRecallEvidence

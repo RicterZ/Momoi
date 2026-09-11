@@ -6,7 +6,7 @@ from xml.etree import ElementTree
 from momoi.integrations.request_context import requested_thinking_effort
 from momoi.models import ProviderResponse, ToolCall
 from momoi.semantic.topic_selector import select_topics
-from momoi.storage.episode_ranking import EpisodeRecallQuery
+from momoi.storage.episode.episode_ranking import EpisodeRecallQuery
 
 
 def response(indices):

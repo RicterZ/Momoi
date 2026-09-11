@@ -11,7 +11,7 @@ from ..llm.accounting import parse_protocol_usage
 from ..observability.context import current_log_context
 from ..observability.events import TRACE, log_event
 from ..storage import estimate_tokens
-from ..storage.thinking import persist_thinking_failure
+from ..storage.ops.thinking import persist_thinking_failure
 
 logger = logging.getLogger(__name__)
 

@@ -1,6 +1,6 @@
 import unittest
 
-from momoi.search import (
+from momoi.storage.core.search import (
     StringSearchBackend,
     alternative_weights,
     document_frequency,

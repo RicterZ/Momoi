@@ -3,7 +3,7 @@ import uuid
 
 from ...models import IncomingMessage
 from ...storage import MemoryRecallQuery
-from ...storage.episode_ranking import EpisodeRecallQuery
+from ...storage.episode.episode_ranking import EpisodeRecallQuery
 from ...semantic.topic_selector import TOPIC_CANDIDATE_LIMIT, select_topics
 from ..agent.context_window import context_compaction_tokens
 from .presentation import recent_episode_lines, recall_context_lines

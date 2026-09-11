@@ -2,12 +2,12 @@ import json
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from momoi.conversation_roles import speaker_label
+from momoi.models import speaker_label
 from momoi.runtime.workflows.episode.rendering import _speaker
-from momoi.storage.reflection_values import reflection_window
+from momoi.storage.reflection.reflection_values import reflection_window
 from momoi.storage import Store
-from momoi.storage.episode_claims import render_verified_claims
-from momoi.storage.semantic_documents import _message_parts
+from momoi.storage.episode.episode_claims import render_verified_claims
+from momoi.storage.semantic.semantic_documents import _message_parts
 from momoi.tools.memory import _episode_match_excerpt
 
 

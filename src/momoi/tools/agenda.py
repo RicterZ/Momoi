@@ -7,7 +7,7 @@ from typing import Any
 from ..observability.events import log_event
 from ..models import ToolCall, TurnDraft
 from ..storage import Store
-from ..storage.scheduling import next_schedule_at, normalize_schedule
+from ..storage.core.scheduling import next_schedule_at, normalize_schedule
 from .contracts.agenda import AGENDA_TOOL_SPECS, GOAL_REVIEW_SCHEMA
 
 logger = logging.getLogger(__name__)

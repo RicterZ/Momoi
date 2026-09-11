@@ -3,7 +3,7 @@
 from xml.sax.saxutils import escape, quoteattr
 
 from ...storage import Store
-from ...storage.current_state_contract import (
+from ...storage.memory.current_state_contract import (
     CURRENT_STATE_SOURCE_STAGES,
     MAX_SLOTS,
     SLOT_SOFT_WARNING_THRESHOLD,

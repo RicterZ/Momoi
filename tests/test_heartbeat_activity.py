@@ -16,7 +16,7 @@ from momoi.runtime.agent.harness import TurnHarness
 from momoi.runtime.agent.runtime_tools import record_heartbeat_activity
 from momoi.runtime.context.presentation import heartbeat_self_state_lines
 from momoi.storage import Store
-from momoi.storage.migrations import MIGRATIONS, _restore_last_heartbeat_activity
+from momoi.storage.core.migrations import MIGRATIONS, _restore_last_heartbeat_activity
 from tests.support import provider_catalog
 
 

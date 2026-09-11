@@ -3,7 +3,7 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from ...context_time import context_timestamp
+from ...storage.core.timestamps import context_timestamp
 from ...observability.events import log_event
 from ...observability.values import safe_preview
 from ...models import TurnDraft

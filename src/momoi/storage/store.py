@@ -4,61 +4,61 @@ import sqlite3
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from ..context_time import context_timestamp
 from ..llm.accounting import UsageAccounting
-from ..search import (
+from .core.search import (
     SearchBackend,
     StringSearchBackend,
 )
-from .context_plans import ContextPlanStore
-from .current_state import CurrentStateManager
-from .current_state_tasks import CurrentStateTaskStore
-from .delivery import DeliveryStore
-from .episode_search import (
+from .context.context_plans import ContextPlanStore
+from .memory.current_state import CurrentStateManager
+from .memory.current_state_tasks import CurrentStateTaskStore
+from .delivery.delivery import DeliveryStore
+from .episode.episode_search import (
     EpisodeQueryService,
     EpisodeSearchBackend,
     StringEpisodeSearchBackend,
 )
-from .episode_annealing import EpisodeAnnealingStore
-from .episode_consolidation import EpisodeConsolidationStore
-from .memory_operations import MemoryOperationStore
-from .memory_mutations import MemoryMutationStore
-from .memory_inventory import MemoryInventoryStore
-from .memory_recall import MemoryRecallStore
-from .memory_maintenance_commits import MemoryMaintenanceCommitStore
-from .memory_maintenance_evidence import MemoryMaintenanceEvidenceStore
-from .memory_maintenance_queue import MemoryMaintenanceQueueStore
-from .goals import GoalStore
-from .emotions import EmotionStore
-from .turns import TurnStore
-from .inbox import InboxStore
-from .heartbeat_commits import HeartbeatCommitStore
-from .heartbeat_schedule import HeartbeatScheduleStore
-from .heartbeat_state import HeartbeatStateStore
-from .semantic_queue import SemanticQueueStore
-from .semantic_spaces import SemanticSpaceStore
-from .semantic_sources import SemanticSourceStore
-from .thinking import ThinkingStore
-from .observability import ObservabilityStore
-from .reflection_records import ReflectionRecordStore
-from .reflection_schedule import ReflectionScheduleStore
-from .reflection_source import ReflectionSourceStore
-from .dashboard import DashboardStore
-from .episode_lifecycle import EpisodeLifecycleStore
-from .episode_links import EpisodeLinkStore
-from .episode_plans import EpisodePlanStore
-from .episode_records import EpisodeRecordStore
-from .conversation_views import ConversationViewStore
-from .transcripts import TranscriptStore
-from .episode_queries import EpisodeQueryStore
-from .episode_index import EpisodeIndexStore
-from .notifications import NotificationStore
-from .outbox import OutboxStore
-from .reconciliation import ReconciliationStore
-from .runtime_archives import RuntimeArchiveStore
-from .turn_commits import TurnCommitStore
-from .webhooks import WebhookStore
-from .lifecycle import LifecycleStore
+from .episode.episode_annealing import EpisodeAnnealingStore
+from .episode.episode_consolidation import EpisodeConsolidationStore
+from .memory.memory_operations import MemoryOperationStore
+from .memory.memory_mutations import MemoryMutationStore
+from .memory.memory_inventory import MemoryInventoryStore
+from .memory.memory_recall import MemoryRecallStore
+from .memory.memory_maintenance_commits import MemoryMaintenanceCommitStore
+from .memory.memory_maintenance_evidence import MemoryMaintenanceEvidenceStore
+from .memory.memory_maintenance_queue import MemoryMaintenanceQueueStore
+from .agenda.goals import GoalStore
+from .delivery.emotions import EmotionStore
+from .conversation.turns import TurnStore
+from .conversation.inbox import InboxStore
+from .agenda.heartbeat_commits import HeartbeatCommitStore
+from .agenda.heartbeat_schedule import HeartbeatScheduleStore
+from .agenda.heartbeat_state import HeartbeatStateStore
+from .semantic.semantic_queue import SemanticQueueStore
+from .semantic.semantic_spaces import SemanticSpaceStore
+from .semantic.semantic_sources import SemanticSourceStore
+from .ops.thinking import ThinkingStore
+from .ops.observability import ObservabilityStore
+from .reflection.reflection_records import ReflectionRecordStore
+from .reflection.reflection_schedule import ReflectionScheduleStore
+from .reflection.reflection_source import ReflectionSourceStore
+from .ops.dashboard import DashboardStore
+from .episode.episode_lifecycle import EpisodeLifecycleStore
+from .episode.episode_links import EpisodeLinkStore
+from .episode.episode_plans import EpisodePlanStore
+from .episode.episode_records import EpisodeRecordStore
+from .conversation.conversation_views import ConversationViewStore
+from .core.timestamps import context_timestamp
+from .conversation.transcripts import TranscriptStore
+from .episode.episode_queries import EpisodeQueryStore
+from .episode.episode_index import EpisodeIndexStore
+from .agenda.notifications import NotificationStore
+from .delivery.outbox import OutboxStore
+from .ops.reconciliation import ReconciliationStore
+from .ops.runtime_archives import RuntimeArchiveStore
+from .conversation.turn_commits import TurnCommitStore
+from .ops.webhooks import WebhookStore
+from .core.lifecycle import LifecycleStore
 
 class Store(
     CurrentStateTaskStore,

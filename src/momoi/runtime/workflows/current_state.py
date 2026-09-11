@@ -8,7 +8,7 @@ from time import time
 
 from ...models import IncomingMessage, TurnDraft
 from ...observability.events import log_event
-from ...storage.current_state import StateConflict
+from ...storage.memory.current_state import StateConflict
 from ..agent import AgentWorkflow
 from ..context.current_state import pack_current_turn_context
 from ..transcript.maintenance import maintenance_transcript
