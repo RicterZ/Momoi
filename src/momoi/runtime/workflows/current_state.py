@@ -2,9 +2,11 @@
 
 import asyncio
 import copy
+import json
 import logging
 from time import time
 
+from ...models import IncomingMessage, TurnDraft
 from ...observability.events import log_event
 from ...storage.current_state import StateConflict
 from ..agent import AgentWorkflow
@@ -20,6 +22,36 @@ MAINTENANCE_TIMEOUT_SECONDS = 30
 
 
 class CurrentStateWorkflow:
+    def _source_turn_owner_events(
+        self, source_turn_ids: list[str]
+    ) -> list[IncomingMessage]:
+        """Owner events behind the maintained Turns, for memory evidence checks."""
+
+        placeholders = ",".join("?" for _ in source_turn_ids)
+        rows = self.store._db.execute(
+            f"""SELECT source_event_ids_json FROM messages
+                WHERE turn_id IN ({placeholders}) AND role='user'""",
+            tuple(source_turn_ids),
+        ).fetchall()
+        event_ids: list[str] = []
+        for (source_json,) in rows:
+            try:
+                ids = json.loads(str(source_json))
+            except (TypeError, ValueError):
+                continue
+            if isinstance(ids, list):
+                event_ids.extend(str(item) for item in ids)
+        event_ids = list(dict.fromkeys(event_ids))
+        if not event_ids:
+            return []
+        placeholders = ",".join("?" for _ in event_ids)
+        event_rows = self.store._db.execute(
+            f"SELECT * FROM events WHERE id IN ({placeholders})"
+            " ORDER BY received_at, rowid",
+            tuple(event_ids),
+        ).fetchall()
+        return [self.store._incoming_message(row) for row in event_rows]
+
     async def _complete_current_state_task(self, source_turn_id: str) -> None:
         batch = self.store.claim_current_state_batch(source_turn_id)
         if batch is None:
@@ -81,9 +113,14 @@ class CurrentStateWorkflow:
         messages, turn_labels = maintenance_transcript(
             self.store, list(rows.values()), source_turn_ids,
         )
+        injected = self.store.injected_memory_snapshots()
         context = context_data_message(
-            ("long_term_memories", self.store.always_memory_context()),
-            ("recent_memories", self.store.recent_memory_context()),
+            ("long_term_memories", self.store._memory_context(
+                [row for row in injected.values() if row["activation"] == "always"]
+            )),
+            ("recent_memories", self.store._memory_context(
+                [row for row in injected.values() if row["activation"] == "recent"]
+            )),
         )
         if context:
             messages.insert(0, context)
@@ -95,6 +132,8 @@ class CurrentStateWorkflow:
         tools = copy.deepcopy(tasks[-1].get("tools"))
         if tools is None:
             tools = self.tool_surface.conversation_specs()
+        events = self._source_turn_owner_events(source_turn_ids)
+        draft = TurnDraft(memory_context=injected, memory_conversation=messages)
 
         async def execute_tool(call):
             nonlocal complete
@@ -102,6 +141,8 @@ class CurrentStateWorkflow:
                 source_turn_ids, turn_id
             ):
                 raise StateConflict("source_turn_no_longer_current")
+            if call.name == "memory_operation":
+                return self.memory_tools.execute(call, events, draft)
             try:
                 self.store.current_state.apply_arguments(
                     call.arguments,
@@ -114,13 +155,14 @@ class CurrentStateWorkflow:
                 raise
             except ValueError as error:
                 return {"ok": False, "error": str(error)}
+            self.store._queue_memory_operations(turn_id, draft, events, time())
             self.store.finish_current_state_batch(source_turn_ids, turn_id)
             complete = True
             return {"ok": True, "state": "completed"}
 
         workflow = AgentWorkflow(
             stage="current_state_maintenance",
-            tool_names=frozenset({"current_state_finish"}),
+            tool_names=frozenset({"current_state_finish", "memory_operation"}),
             execute_tool=execute_tool,
             is_complete=lambda: complete,
             completion_result=lambda: {"ok": True} if complete else None,

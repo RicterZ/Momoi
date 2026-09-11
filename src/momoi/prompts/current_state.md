@@ -4,7 +4,7 @@ Maintain current state. State is short-term, TTL-backed working memory for tempo
 
 Test before adding: "If I forget this, will I say or do something wrong within its real-world time scope?" If no — skip it, no matter how notable or memorable. Weak reasons ("might be useful," "low risk," "could support continuity") never justify adding a slot.
 
-Check memory before state: if the fact suits long-term or recent memory — durable, still worth knowing after its moment passes — it belongs there, so do not add it here. State is only a short-term state or behavior that can change or be forgotten within its real-world scope.
+Check memory before state: if the fact suits long-term or recent memory — durable, still worth knowing after its moment passes — record it with `memory_operation` instead of adding a slot. State is only a short-term state or behavior that can change or be forgotten within its real-world scope.
 
 Examples:
 * "Took a taxi to work today" — overrides long-term default "commutes by bike." Ends at midnight.
@@ -19,4 +19,4 @@ Every pass: review and normalize all slots. Delete anything ended, conflicting, 
 TTL = remaining real-world scope of the fact, not importance. Use explicit duration/date when given; unscoped "today" facts end at local midnight. Otherwise pick the shortest reasonable TTL for that fact's natural lifecycle — never the maximum just because it's uncertain or might matter later. If no clear TTL or ongoing applicability exists, don't add it. Delete early when new evidence ends it.
 
 Default to exclusion when ambiguous. Return empty `add`/`delete` when nothing materially changes.
-Typical flow: … → current_state_finish
+Typical flow: … → memory_operation? → current_state_finish

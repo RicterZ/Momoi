@@ -35,6 +35,7 @@ from momoi.storage.current_state_tasks import (
     CURRENT_STATE_PARTIAL_IDLE_SECONDS,
 )
 from momoi.storage.migrations import MIGRATIONS, _add_current_state_workflow
+from momoi.tools.contracts.memory import MEMORY_TOOL_SPECS
 from momoi.webhooks.catalog import bind_workflow
 from momoi.webhooks.service import WebhookService
 from tests.support import provider_catalog
@@ -736,3 +737,60 @@ def test_retry_uses_latest_snapshot_and_then_advances_queue(daemon):
     assert task_row(daemon.store)["state"] == "completed"
     assert task_row(daemon.store, "second")["state"] == "completed"
     assert pending_state_source(daemon.store) is None
+
+
+def test_maintenance_can_queue_memory_operation(daemon):
+    store = daemon.store
+    event = IncomingMessage("evt-1", "m1", "今天打车上班，淋了雨", 100.0, 100.0)
+    store.add_event(event)
+    memory_operation_spec = next(
+        spec for spec in MEMORY_TOOL_SPECS if spec["name"] == "memory_operation"
+    )
+    store.begin_turn("source", "owner", ["evt-1"])
+    assert store.stage_current_state_task(
+        "source",
+        "owner",
+        [{"type": "text", "text": "ORIGINAL_SYSTEM"}],
+        [current_state_finish_spec(), memory_operation_spec],
+    )
+    with store._db:
+        store._db.execute(
+            """INSERT INTO messages
+               (turn_id, role, content, created_at, source_event_ids_json, delivery_state)
+               VALUES ('source', 'user', '今天打车上班，淋了雨', 100.0, '["evt-1"]',
+                       'delivered')"""
+        )
+    store.complete_background_turn("source")
+
+    calls = [
+        response(
+            ToolCall(
+                "memop",
+                "memory_operation",
+                {
+                    "type": "add",
+                    "content": "老师今天打车上班",
+                    "evidence": "今天打车上班",
+                },
+            )
+        ),
+        finish(),
+    ]
+
+    async def complete(_system, _messages, _tools, **kwargs):
+        return calls.pop(0)
+
+    daemon.provider = SimpleNamespace(
+        complete=complete, config=SimpleNamespace(api_format="anthropic")
+    )
+    asyncio.run(daemon._complete_current_state_task("source"))
+
+    assert task_row(daemon.store)["state"] == "completed"
+    batch = daemon.store._db.execute(
+        "SELECT * FROM memory_operation_batches"
+    ).fetchone()
+    assert batch is not None
+    operations = json.loads(batch["operations_json"])
+    assert [item["content"] for item in operations] == ["老师今天打车上班"]
+    assert operations[0]["event_id"] == "evt-1"
+    assert batch["id"] == task_row(daemon.store)["maintenance_turn_id"]
