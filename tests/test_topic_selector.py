@@ -5,12 +5,16 @@ from xml.etree import ElementTree
 
 from momoi.integrations.request_context import requested_thinking_effort
 from momoi.models import ProviderResponse, ToolCall
-from momoi.semantic.topic_selector import select_topics
+from momoi.semantic.topic_selector import RecallSelection, select_topics
 from momoi.storage.episode.episode_ranking import EpisodeRecallQuery
 
 
-def response(indices):
-    return ProviderResponse([], [ToolCall('selection', 'select_topics', {'indices': indices})])
+def response(indices, memory_indices=(), reflection_indices=()):
+    return ProviderResponse([], [ToolCall('selection', 'select_topics', {
+        'indices': indices,
+        'memory_indices': list(memory_indices),
+        'reflection_indices': list(reflection_indices),
+    })])
 
 
 def test_topic_selection_preserves_all_eight_and_model_order_without_evidence():
@@ -33,20 +37,20 @@ def test_topic_selection_preserves_all_eight_and_model_order_without_evidence():
 
     provider = SimpleNamespace(complete=complete)
     selected = asyncio.run(select_topics(provider, store, 'request', [EpisodeRecallQuery('topic')], rows))
-    assert selected == list(reversed(rows))
+    assert selected == RecallSelection(list(reversed(rows)), [], [])
 
 
 def test_invalid_indices_repair_and_fail_closed():
     rows = [dict(id='a', title='topic')]
     store = SimpleNamespace(topic_conversation_time=lambda _: None)
     provider = SimpleNamespace(complete=AsyncMock(side_effect=[response([True]), response([0])]))
-    assert asyncio.run(select_topics(provider, store, 'request', [], rows)) == rows
+    assert asyncio.run(select_topics(provider, store, 'request', [], rows)) == RecallSelection(rows, [], [])
     assert provider.complete.await_count == 2
     provider.complete = AsyncMock(return_value=response([9]))
-    assert asyncio.run(select_topics(provider, store, 'request', [], rows)) == []
+    assert asyncio.run(select_topics(provider, store, 'request', [], rows)) == RecallSelection([], [], [])
     assert provider.complete.await_count == 2
     provider.complete = AsyncMock(return_value=response([]))
-    assert asyncio.run(select_topics(provider, store, 'request', [], rows)) == []
+    assert asyncio.run(select_topics(provider, store, 'request', [], rows)) == RecallSelection([], [], [])
     provider.complete.assert_awaited_once()
 
 
@@ -80,9 +84,9 @@ def test_runtime_prefilter_bypasses_gate_and_keeps_selection_order(tmp_path):
 
         service.provider = SimpleNamespace(complete=complete)
         selected = asyncio.run(service._select_recall_topics('shared topic', queries, None))
-        assert len(captured[0].findall('candidates/candidate')) == len(selected) == 8
-        retrieval = build_plan_retrieval(store, plan, service.config, selected_episode_rows=selected)
-        assert [r['episode_id'] for r in retrieval['episodes']] == [r['id'] for r in selected]
+        assert len(captured[0].findall('candidates/candidate')) == len(selected.episodes) == 8
+        retrieval = build_plan_retrieval(store, plan, service.config, selected_episode_rows=selected.episodes)
+        assert [r['episode_id'] for r in retrieval['episodes']] == [r['id'] for r in selected.episodes]
         rendered = assemble_main_context(store, retrieval, 8000)['episodes']
         assert rendered.count('<episode ') == 8
         empty = build_plan_retrieval(store, plan, service.config, selected_episode_rows=[])
@@ -114,8 +118,33 @@ def test_configured_effort_applies_to_initial_call_and_repair():
                     assert requested_thinking_effort() == 'high'
                     return result
 
-        assert asyncio.run(run()) == rows
+        assert asyncio.run(run()) == RecallSelection(rows, [], [])
         assert seen == [effort or 'provider-default'] * 2
         assert [context['turn_id'] for context in call_contexts] == ['turn-one'] * 2
         assert all(context['call_id'] != 'owner-call' for context in call_contexts)
         assert len({context['call_id'] for context in call_contexts}) == 2
+
+
+def test_topic_selection_filters_memory_and_reflection_candidates_in_returned_order():
+    episodes = [dict(id='episode', title='episode')]
+    memories = [
+        dict(id=1, source='confirmed', kind='profile', key='teacher.lunch', content='12:20 一起吃午饭。'),
+        dict(id=2, source='confirmed', kind='practice', key='motorcycle.tools', content='带上套筒扳手。'),
+        dict(id=3, source='reflection', kind='preference', key='food.place', content='主人常去观音桥吃饭。',
+             local_date='2026-09-11', confidence=0.8, evidence='主人提到观音桥。'),
+    ]
+    store = SimpleNamespace(topic_conversation_time=lambda _: None)
+
+    async def complete(_system, messages, _tools, **_kwargs):
+        payload = ElementTree.fromstring(messages[0]['content'])
+        assert [node.findtext('key') for node in payload.findall('memory_candidates/candidate')] == [
+            'teacher.lunch', 'motorcycle.tools'
+        ]
+        assert [node.findtext('key') for node in payload.findall('reflection_candidates/candidate')] == ['food.place']
+        return response([], [1, 0], [])
+
+    selected = asyncio.run(select_topics(
+        SimpleNamespace(complete=complete), store, '修车后在哪里吃午饭', [], episodes,
+        memory_candidates=memories,
+    ))
+    assert selected == RecallSelection([], memories[:2][::-1], [])

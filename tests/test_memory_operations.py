@@ -749,6 +749,11 @@ def test_owner_recall_snapshot_reaches_private_queue(daemon):
 
     async def complete(*args, **kwargs):
         nonlocal count
+        if kwargs.get("required_tool") == "select_topics":
+            return response(ToolCall(
+                "selection", "select_topics",
+                {"indices": [], "memory_indices": [0], "reflection_indices": []},
+            ))
         count += 1
         if count == 1:
             initial = recall_response()

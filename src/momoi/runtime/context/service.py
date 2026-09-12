@@ -5,7 +5,7 @@ from ...models import IncomingMessage
 from ...storage import MemoryRecallQuery
 from ...storage import MEMORY_KINDS
 from ...storage.episode.episode_ranking import EpisodeRecallQuery
-from ...semantic.topic_selector import TOPIC_CANDIDATE_LIMIT, select_topics
+from ...semantic.topic_selector import RecallSelection, TOPIC_CANDIDATE_LIMIT, select_topics
 from ..agent.context_window import context_compaction_tokens
 from .presentation import recent_episode_lines, recall_context_lines
 from .rendering import assemble_main_context
@@ -20,22 +20,41 @@ class ContextService:
             diagnostics.update(
                 status="skipped", skip_reason="no_queries" if not selected else "disabled",
                 fallback_reason=dense_evidence.fallback_reason if dense_evidence else "disabled",
-                candidate_count=0, selected_ids=[], candidates=[],
+                candidate_count=0, selected_ids=[], candidates=[], memory_candidates=[],
+                reflection_candidates=[], selected_memory_ids=[], selected_reflection_ids=[],
             )
-        if not selected or self.config.summary_results <= 0:
-            return []
+        if not selected:
+            return RecallSelection([], [], [])
         queries = [EpisodeRecallQuery(
             expression=str(item["expression"]),
             unit_ids=tuple(str(value) for value in item["unit_ids"]),
             priority=int(item["priority"]),
             semantic_expression=str(item["semantic_expression"]),
         ) for item in selected]
-        candidates = self.store.search_topic_queries(
-            queries, TOPIC_CANDIDATE_LIMIT, dense_evidence=dense_evidence,
-            minimum_confidence=0,
+        candidates = (
+            self.store.search_topic_queries(
+                queries, TOPIC_CANDIDATE_LIMIT, dense_evidence=dense_evidence,
+                minimum_confidence=0,
+            )
+            if self.config.summary_results > 0 else []
+        )
+        memory_candidates = self.store.rank_recalled_memories(
+            [
+                MemoryRecallQuery(
+                    expression=str(item["expression"]),
+                    unit_ids=tuple(str(value) for value in item["unit_ids"]),
+                    priority=int(item["priority"]),
+                    semantic_expression=str(item["semantic_expression"]),
+                    kinds=tuple(str(kind) for kind in item.get("kinds") or []),
+                )
+                for item in selected
+            ],
+            max(0, self.config.memory_results),
+            dense_evidence=dense_evidence,
         )
         return await select_topics(
             self.provider, self.store, request, queries, candidates,
+            memory_candidates=memory_candidates,
             thinking_effort=self.config.thinking_stages.get("topic_selection", "low"),
             diagnostics=diagnostics,
         )
@@ -281,12 +300,13 @@ class ContextService:
                 output_limit=max(self.config.memory_results, TOPIC_CANDIDATE_LIMIT),
             )
         topic_selection = {}
-        topic_rows = await self._select_recall_topics(
+        selection = await self._select_recall_topics(
             "\n".join(event.text for event in events), selected, dense_evidence, topic_selection
         )
         retrieval = build_plan_retrieval(
             self.store, plan, self.config, dense_evidence=dense_evidence,
-            selected_episode_rows=topic_rows,
+            selected_episode_rows=selection.episodes,
+            selected_memory_rows=[*selection.memories, *selection.reflections],
             topic_selection=topic_selection,
         )
         stored = self.store.save_context_retrieval(
@@ -357,10 +377,11 @@ class ContextService:
             output_limit=max(self.config.memory_results, TOPIC_CANDIDATE_LIMIT),
         )
         topic_selection = {}
-        topic_rows = await self._select_recall_topics(activity, selected, dense_evidence, topic_selection)
+        selection = await self._select_recall_topics(activity, selected, dense_evidence, topic_selection)
         retrieval = build_plan_retrieval(
             self.store, plan, self.config, dense_evidence=dense_evidence,
-            selected_episode_rows=topic_rows,
+            selected_episode_rows=selection.episodes,
+            selected_memory_rows=[*selection.memories, *selection.reflections],
             topic_selection=topic_selection,
         )
         return {

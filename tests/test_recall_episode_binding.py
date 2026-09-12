@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, patch
 from momoi.channel.napcat import NapCatConfig
 from momoi.config.models import AppConfig
 from momoi.integrations.models import LLMConfig
-from momoi.models import AgentReply, IncomingMessage, ToolCall
+from momoi.models import AgentReply, IncomingMessage, ProviderResponse, ToolCall
 from momoi.runtime import MomoiDaemon
 from momoi.runtime.agent.runtime_tools import recall_owner_context
 
@@ -56,6 +56,16 @@ class RecallEpisodeBindingTest(unittest.IsolatedAsyncioTestCase):
             daemon.store.add_event(event)
             turn_id = daemon._turn_id(event.event_id)
             daemon.store.begin_turn(turn_id, "owner", [event.event_id])
+
+            async def select_all(_system, _messages, tools, **_kwargs):
+                memory_count = tools[0]["input_schema"]["properties"]["memory_indices"]["maxItems"]
+                return ProviderResponse([], [ToolCall(
+                    "selection", "select_topics",
+                    {"indices": [], "memory_indices": list(range(memory_count)),
+                     "reflection_indices": []},
+                )])
+
+            daemon.provider = SimpleNamespace(complete=select_all)
             unit = {
                 "intent": "茶的信息",
                 "kind": ["preference"],
@@ -169,6 +179,16 @@ class RecallEpisodeBindingTest(unittest.IsolatedAsyncioTestCase):
                 side_effect=AssertionError("disabled embedding was called")
             )
             daemon.semantic_recall.client = SimpleNamespace(encode=encoder)
+
+            async def select_all(_system, _messages, tools, **_kwargs):
+                memory_count = tools[0]["input_schema"]["properties"]["memory_indices"]["maxItems"]
+                return ProviderResponse([], [ToolCall(
+                    "selection", "select_topics",
+                    {"indices": [], "memory_indices": list(range(memory_count)),
+                     "reflection_indices": []},
+                )])
+
+            daemon.provider = SimpleNamespace(complete=select_all)
             semantic = "semantic-only-sentinel"
             with daemon.store._db:
                 for key, content in (

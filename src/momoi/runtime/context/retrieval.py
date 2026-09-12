@@ -167,6 +167,7 @@ def build_plan_retrieval(
     config: AppConfig,
     dense_evidence: DenseRecallEvidence | None = None,
     selected_episode_rows: list[dict[str, object]] | None = None,
+    selected_memory_rows: list[dict[str, object]] | None = None,
     topic_selection: dict[str, object] | None = None,
 ) -> dict[str, object]:
     recent_episode_ids: set[str] = set()
@@ -298,19 +299,23 @@ def build_plan_retrieval(
         for query in row.get("matched_queries") or []
         if isinstance(query, dict) and query.get("expression")
     }
-    ranked_memories = store.rank_recalled_memories(
-        [
-            MemoryRecallQuery(
-                expression=str(item["expression"]),
-                unit_ids=tuple(str(value) for value in item["unit_ids"]),
-                priority=int(item["priority"]),
-                semantic_expression=str(item["semantic_expression"]),
-                kinds=tuple(str(kind) for kind in item.get("kinds") or []),
-            )
-            for item in recall_queries
-        ],
-        max(0, config.memory_results),
-        dense_evidence=dense_evidence,
+    ranked_memories = (
+        selected_memory_rows
+        if selected_memory_rows is not None
+        else store.rank_recalled_memories(
+            [
+                MemoryRecallQuery(
+                    expression=str(item["expression"]),
+                    unit_ids=tuple(str(value) for value in item["unit_ids"]),
+                    priority=int(item["priority"]),
+                    semantic_expression=str(item["semantic_expression"]),
+                    kinds=tuple(str(kind) for kind in item.get("kinds") or []),
+                )
+                for item in recall_queries
+            ],
+            max(0, config.memory_results),
+            dense_evidence=dense_evidence,
+        )
     )
     recall_memories = [
         {
