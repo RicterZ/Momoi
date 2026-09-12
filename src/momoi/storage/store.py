@@ -27,7 +27,7 @@ from .memory.memory_recall import MemoryRecallStore
 from .memory.memory_maintenance_commits import MemoryMaintenanceCommitStore
 from .memory.memory_maintenance_evidence import MemoryMaintenanceEvidenceStore
 from .memory.memory_maintenance_queue import MemoryMaintenanceQueueStore
-from .agenda.goals import GoalStore
+from .agenda.crontabs import GoalStore
 from .delivery.emotions import EmotionStore
 from .conversation.turns import TurnStore
 from .conversation.inbox import InboxStore

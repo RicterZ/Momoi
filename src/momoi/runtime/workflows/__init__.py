@@ -1,5 +1,5 @@
 from .episode import EpisodeAnnealingWorkflow, EpisodeConsolidationWorkflow
-from .goal import GoalWorkflow
+from .crontab import GoalWorkflow
 from .heartbeat import HeartbeatWorkflow
 from .memory_maintenance import MemoryMaintenanceWorkflow
 from .memory_operation import MemoryOperationWorkflow
