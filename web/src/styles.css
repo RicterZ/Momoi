@@ -994,6 +994,7 @@ main.is-record .error {
   background: var(--surface);
   box-shadow: 4px 4px 0 var(--blue);
 }
+.record-layout > * { min-width: 0; }
 .record-list {
   min-height: 0;
   overflow-x: hidden;
@@ -1338,6 +1339,15 @@ a.tag:hover {
   border-top: 2px solid var(--ink);
 }
 .goal-details p { margin: 5px 0 0; font-size: 12px; line-height: 1.6; }
+
+/* Keep the timeline readable on compact desktop windows while preserving the
+   two-column record view until the mobile breakpoint. */
+@media (min-width: 761px) and (max-width: 1100px) {
+  main.is-record { padding-right: 24px; padding-left: 24px; }
+  main.is-record #content { padding-right: 0; }
+  .record-layout { grid-template-columns: 280px minmax(0, 1fr); }
+  .conversation { padding-right: 28px; padding-left: 28px; }
+}
 
 .emotion-grid {
   display: grid;

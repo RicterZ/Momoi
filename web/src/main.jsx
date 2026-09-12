@@ -2493,6 +2493,16 @@ function ThinkingDetail({ item, calls, recall }) {
   const titleItem = item?.stages?.length || item?.stage
     ? item
     : { stages: flow.map((call) => call.stage) };
+  // A recall can be recorded even when every candidate is filtered out. Keep
+  // that decision visible before the timeline so an empty result is not
+  // mistaken for missing data at the bottom of the scroll area.
+  const recallHasEvidence = Boolean(
+    recall && (
+      recall.memories?.length ||
+      recall.reflections?.length ||
+      recall.episodes?.length
+    ),
+  );
   // Recall is persisted once per Turn; place that single panel after the
   // complete CUES sequence instead of duplicating it for each CUES call.
   const lastCuesIndex = flow.reduce(
@@ -2513,6 +2523,7 @@ function ThinkingDetail({ item, calls, recall }) {
           </a>
         ) : null}
       </header>
+      {recall && !recallHasEvidence ? <RecallDetail recall={recall} /> : null}
       <div className="messages">
         {flow.map((call, index) => (
           <Fragment key={call.call_id}>
@@ -2533,7 +2544,7 @@ function ThinkingDetail({ item, calls, recall }) {
                 </div>
               </div>
             </article>
-            {((lastCuesIndex >= 0 && index === lastCuesIndex) ||
+            {recall && recallHasEvidence && ((lastCuesIndex >= 0 && index === lastCuesIndex) ||
               (lastCuesIndex < 0 && index === flow.length - 1)) ? (
               <RecallDetail recall={recall} />
             ) : null}
