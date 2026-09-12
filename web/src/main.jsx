@@ -1,4 +1,4 @@
-import { StrictMode, createContext, useContext, useEffect, useId, useRef, useState } from "react";
+import { Fragment, StrictMode, createContext, useContext, useEffect, useId, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 import Loading from "./Loading.jsx";
@@ -2502,7 +2502,7 @@ function ThinkingDetail({ item, calls, recall }) {
       </header>
       <div className="messages">
         {flow.map((call) => (
-          <React.Fragment key={call.call_id}>
+          <Fragment key={call.call_id}>
           <article className="message">
             <div className="message-role momoi">
               {thinkingStageCode(call.stage)}
@@ -2521,7 +2521,7 @@ function ThinkingDetail({ item, calls, recall }) {
             </div>
           </article>
           {call.stage === "topic_selection" ? <RecallDetail recall={recall} /> : null}
-          </React.Fragment>
+          </Fragment>
         ))}
       </div>
     </>
