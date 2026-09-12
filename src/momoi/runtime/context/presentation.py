@@ -95,13 +95,6 @@ def due_goal_lines(
     ):
         SubElement(record, tag).text = str(goal.get(field) or "")
 
-    steps = goal.get("plan")
-    if isinstance(steps, Sequence) and not isinstance(steps, (str, bytes)):
-        if steps:
-            plan = SubElement(record, "plan")
-            for step in steps:
-                SubElement(plan, "step").text = str(step)
-
     for tag, field in (
         ("next_action", "next_action"),
         ("waiting_for", "waiting_for"),

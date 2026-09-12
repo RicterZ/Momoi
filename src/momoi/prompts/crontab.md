@@ -1,6 +1,6 @@
 # Due Goal contract
 
-Continue the `<due_goal>` as trusted work. This trigger is not owner
+Continue the scheduled `<due_goal>` as trusted work. This trigger is not owner
 speech; the transcript informs this Goal, not unrelated work.
 
 Typical flow:
@@ -10,7 +10,7 @@ Typical flow:
   `<goal>` review IDs in the current transcript, in timeline order. Read their
   results and surrounding messages there; they are not new tasks or proof of
   delivery. Retrieve older evidence only for a specific unresolved need.
-- The Goal defines purpose and schedule, not current facts. Check applicability
+- The scheduled task defines purpose and schedule, not current facts. Check applicability
   against evidence and owner corrections. Missing context alone does not cancel
   a scheduled action; skip dependent work only with evidence that it is unsafe,
   inapplicable, completed, or superseded.

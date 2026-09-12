@@ -99,7 +99,6 @@ class AgendaTools:
             "success_criteria": criteria[:2000],
             "source_event_id": source_event_id,
             "status": "active",
-            "plan": [str(item)[:1000] for item in arguments.get("plan", [])][:50],
             "next_action": next_action[:2000],
             "waiting_for": "",
             "blocked_reason": "",
@@ -128,8 +127,6 @@ class AgendaTools:
         for field in ("next_action", "waiting_for", "blocked_reason", "latest_result"):
             if field in arguments:
                 goal[field] = str(arguments[field] or "")[:2000]
-        if "plan" in arguments:
-            goal["plan"] = [str(item)[:1000] for item in arguments["plan"]][:50]
         clear_schedule = arguments.get("clear_schedule", False)
         if not isinstance(clear_schedule, bool):
             raise ValueError("clear_schedule must be boolean")
@@ -237,11 +234,6 @@ class AgendaTools:
             }[status]
             if not str(decision.get(required) or "").strip():
                 raise ValueError(f"goal.{required} is required for {status}")
-            if "plan" in decision and (
-                not isinstance(decision["plan"], list)
-                or any(not isinstance(step, str) for step in decision["plan"])
-            ):
-                raise ValueError("goal.plan must be an array of strings")
             if status == "blocked" and "next_review_at" in decision:
                 raise ValueError("blocked goal cannot schedule a review")
             arguments = {

@@ -49,7 +49,6 @@ class GoalNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
                     {
                         "title": "检查任务",
                         "success_criteria": "记录检查结果",
-                        "plan": ["执行检查", "记录结果"],
                         "next_action": "执行检查",
                         "schedule": {
                             "kind": "daily",
@@ -167,10 +166,7 @@ class GoalNativeTranscriptTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 due.findtext("success_criteria"), "记录检查结果"
             )
-            self.assertEqual(
-                [item.text for item in due.findall("plan/step")],
-                ["执行检查", "记录结果"],
-            )
+            self.assertEqual(due.find("plan"), None)
             self.assertEqual(due.find("schedule").attrib, {"kind": "daily"})
             self.assertEqual(
                 [item.text for item in due.findall("schedule/time")],

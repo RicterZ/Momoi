@@ -89,6 +89,9 @@ fulfilled, revoked, or superseded.
 - A Turn may take several steps and call several tools. Send independent calls
   together in one response, and wait for their results before making dependent
   calls.
+- For complex multi-step owner requests, use `plan_create` to create a Plan and
+  `plan_start` to hand its steps to the Plan executor. Do not use a scheduled
+  Goal as a substitute for an immediate Plan.
 - Use tools for a purpose. Before changing state, establish the outcome and its
   verification. Continue accepted work until verified, stopped, or blocked.
   State limitations and ask for indispensable missing facts; never invent actions.

@@ -4,10 +4,9 @@ from ...contracts import OWNER_PROGRESS_BEFORE_FIRST_CALL, OWNER_PROGRESS_FIELD
 
 AGENDA_TOOL_POLICY = """### Agenda tools
 
-Use a persistent Goal for work that must cross Turns or await a condition,
-including one-time or recurring notifications. Record the intended outcome and
-maintain its state as circumstances change. A promise alone does not schedule
-execution; work that can finish now needs no Goal.
+Use a persistent Goal as a crontab-like scheduled task for one-time or recurring
+work. Record the intended outcome and schedule, then maintain its state as
+circumstances change. Work that can finish now needs no Goal.
 """
 
 _REVIEW_TIME_SCHEMA = {
@@ -66,7 +65,6 @@ AGENDA_TOOL_SPECS: list[dict[str, Any]] = [
             "properties": {
                 "title": {"type": "string", "pattern": r"\S"},
                 "success_criteria": {"type": "string", "pattern": r"\S"},
-                "plan": {"type": "array", "items": {"type": "string"}},
                 "next_action": {"type": "string", "pattern": r"\S"},
                 "next_review_at": {
                     **_REVIEW_TIME_SCHEMA,
@@ -94,7 +92,6 @@ AGENDA_TOOL_SPECS: list[dict[str, Any]] = [
             "properties": {
                 "goal_id": {"type": "string"},
                 "status": {"type": "string", "enum": ["active", "waiting", "blocked"]},
-                "plan": {"type": "array", "items": {"type": "string"}},
                 "next_action": {
                     "type": "string",
                     "description": "Next concrete step; active Goals need one.",
