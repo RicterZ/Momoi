@@ -29,6 +29,14 @@ class EpisodeConsolidationWorkflow:
         if context_items and isinstance(context_items[-1], dict):
             through = str(context_items[-1].get("turn_id") or "")
         marks = self.store.episode_consolidation_decision_marks(turn_ids)
+        # A deferred decision is provisional: when this Turn is selected again
+        # after newer owner context, it must be eligible for replacement. A
+        # defer produced during this batch is already covered until the next
+        # selection, so track those separately from the reprocessable set.
+        reprocessable_source = {
+            turn_id for turn_id, mark in zip(turn_ids, marks, strict=True) if mark > 0
+        }
+        resolved: set[str] = set()
         turn_id = self._turn_id(
             "episode-consolidate",
             *turn_ids,
@@ -49,6 +57,9 @@ class EpisodeConsolidationWorkflow:
             source_turn_ids,
         )
         source_ids = {labels[value]: value for value in source_turn_ids}
+        reprocessable = {
+            labels[value] for value in reprocessable_source if value in labels
+        }
         referenced = copy.deepcopy(candidate)
         for key in ("turns", "context_turns"):
             for item in referenced.get(key, []):
@@ -66,9 +77,19 @@ class EpisodeConsolidationWorkflow:
         workflow_result: dict[str, object] | None = None
 
         def remaining() -> list[str]:
-            return [labels[value] for value in self.store.episode_consolidation_remaining(
+            pending_source = set(self.store.episode_consolidation_remaining(
                 [source_ids[value] for value in turn_ids]
-            )]
+            ))
+            pending_source.update(
+                source_ids[value]
+                for value in reprocessable
+                if value not in resolved
+            )
+            return [
+                value
+                for value in turn_ids
+                if source_ids[value] in pending_source
+            ]
 
         async def execute_tool(call: ToolCall) -> dict[str, Any]:
             nonlocal workflow_complete, workflow_result
@@ -153,6 +174,7 @@ class EpisodeConsolidationWorkflow:
                     candidate_episode_ids,
                     allow_ignore_latest=True,
                 )
+                resolved.update(selected)
             except ValueError as error:
                 return {
                     "ok": False,
@@ -216,4 +238,3 @@ class EpisodeConsolidationWorkflow:
         except Exception as error:
             self.store.record_turn_failure(turn_id, type(error).__name__)
             raise
-
