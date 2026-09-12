@@ -1988,7 +1988,7 @@ function olderMonths(available, month) {
 }
 
 function thinkingFlowTitle(item) {
-  if (item?.plan_id || item?.plan) return "计划·步骤执行";
+  if (item?.plan_id || item?.plan) return "计划 · 步骤执行";
   const stages = (item.stages || [item.stage]).filter((stage) => stage !== undefined);
   const auxiliaryStages = new Set(["topic_selection", "episode_cue_admit"]);
   // CUES is an internal retrieval phase of its enclosing business Turn, not a
@@ -2517,7 +2517,7 @@ function ThinkingDetail({ item, calls, recall }) {
   return (
     <>
       <header className={`conversation-head${recall ? " has-recall" : ""}`}>
-        <h2>{item?.plan_id || item?.plan ? "计划·步骤执行" : thinkingFlowTitle(titleItem)}</h2>
+        <h2>{item?.plan_id || item?.plan ? "计划 · 步骤执行" : thinkingFlowTitle(titleItem)}</h2>
         {episodeId ? (
           <a
             className="tag thinking-conversation"
