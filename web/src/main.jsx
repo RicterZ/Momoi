@@ -36,6 +36,7 @@ const thinkingStageLabels = {
   heartbeat: "心跳 · 自主活动",
   reflection: "记忆 · 每日复盘",
   goal: "目标 · 执行",
+  plan_step: "计划 · 步骤执行",
   memory_maintenance: "记忆 · 维护整理",
   memory_operation: "记忆 · 操作",
   episode_anneal: "对话 · 话题摘要",
