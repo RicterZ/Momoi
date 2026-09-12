@@ -2298,7 +2298,6 @@ function RecallDetail({ recall }) {
     ...(recall.reflections || []).map((item) => ({ ...item, source: "reflection" })),
   ];
   const episodes = recall.episodes || [];
-  const topics = recall.topics || [];
   const evidenceCount = memories.length + episodes.length;
   const searchCount = units.filter((unit) => unit.mode === "search").length;
   const reuseCount = units.filter((unit) => unit.mode === "reuse").length;
@@ -2485,6 +2484,7 @@ function RecallInline({ recall }) {
     ...(recall.reflections || []).map((item) => ({ ...item, source: "reflection" })),
   ];
   const episodes = recall.episodes || [];
+  const topics = recall.topics || [];
   const evidenceCount = memories.length + episodes.length;
   const units = recall.units || [];
   return (
