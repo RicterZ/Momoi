@@ -2601,6 +2601,18 @@ function ThinkingDetail({ item, calls, recall }) {
         ) : null}
       </header>
       <div className="messages">
+        {recall ? (
+          <article className="message message-cues">
+            <div className="message-role momoi">CUES</div>
+            <div className="message-body">
+              <p className="message-content thinking-body">话题筛选与召回依据</p>
+              <RecallInline recall={recall} />
+              <div className="message-meta">
+                <span>CUES · 话题筛选</span>
+              </div>
+            </div>
+          </article>
+        ) : null}
         {flow.map((call) => (
           <article className="message" key={call.call_id}>
             <div className="message-role momoi">
@@ -2610,7 +2622,6 @@ function ThinkingDetail({ item, calls, recall }) {
               <p className="message-content thinking-body">
                 {call.reasoning || call.excerpt || "这次调用没有可见推理。"}
               </p>
-              {call.stage === "topic_selection" ? <RecallInline recall={recall} /> : null}
               <div className="message-meta">
                 <time>{formatDate(call.created_at)}</time>
                 <span>
