@@ -2536,7 +2536,13 @@ function ThinkingDetail({ item, calls, recall }) {
               </div>
               <div className="message-body">
                 {call.plan_step_id && (index === 0 || flow[index - 1]?.plan_step_id !== call.plan_step_id) ? (
-                  <div className="plan-step-marker"><span>STEP {call.plan_step_id}</span><strong>{call.plan_step_task || "执行计划步骤"}</strong><em>{call.plan_step_status || "pending"}</em></div>
+                  <div className="plan-step-marker">
+                    <span>STEP {call.plan_step_id}</span>
+                    <strong>{call.plan_step_task || "执行计划步骤"}</strong>
+                    {call.plan_step_status && call.plan_step_status !== "succeeded" ? (
+                      <em>{call.plan_step_status}</em>
+                    ) : null}
+                  </div>
                 ) : null}
                 <p className="message-content thinking-body">
                   {call.reasoning || call.excerpt || "这次调用没有可见推理。"}
